@@ -104,10 +104,21 @@ banned_phrases:
     - "navigate the complexities"
     - "it's worth noting"
     - "underscore (soft)"
+    - underscores
     - underpin
     - seamlessly
     - "move the needle"
     - "circle back"
+    - boasts
+    - boast
+    - boasting
+  stock_openers:
+    - "I am writing to express my interest in"
+    - "I am excited to apply for"
+    - "I am thrilled to apply for"
+    - "To Whom It May Concern"
+    - "Dear Sir/Madam"
+    - "Dear Sir or Madam"
   filler_starters:
     - "Notably,"
     - "Importantly,"

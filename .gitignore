@@ -83,3 +83,8 @@ __pycache__/
 # Morning discovery automation logs (LaunchAgent com.abhishek.discovery)
 /logs/
 profile/llm.yaml
+
+# Fixed staging dir for Word/osascript PDF conversion (see /tailor, /cover-letter).
+# Word's sandbox grant doesn't reliably persist across new per-job output dirs;
+# converting through one unchanging folder keeps a single one-time grant valid.
+.pdf_staging/

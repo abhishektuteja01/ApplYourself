@@ -7,6 +7,8 @@ allowed-tools:
   - Read
   - Write
   - Edit
+  - WebSearch
+  - WebFetch
 argument-hint: <job_id> [--to "Hiring Manager Name"]
 ---
 
@@ -87,6 +89,28 @@ was modified), do not re-read it. The two `${OUT_DIR}` files are per-job;
 always read them. When in doubt whether a file changed, re-read —
 correctness beats the token saving.
 
+## Step 2b — company mission research (always attempt, never blocking)
+
+The company's real mission/focus (not marketing tagline) is a legitimate
+thing to speak to in a cover letter — but only if it's specific enough to
+prove you actually looked, not generic enough to paste into any letter.
+
+Search for it using the company name **plus a disambiguating detail
+pulled from `jd_snapshot.md`** (industry/domain phrase from the JD body,
+or HQ/location if the JD states one) — many portfolio-company and
+common-word names (e.g. "Distyl", "The Agentic Loop", "Glean") collide
+with unrelated companies on a bare-name search. If the ATS slug in
+`companies.yaml`/the job URL suggests an obvious domain (e.g.
+`boards.greenhouse.io/<slug>` → try `<slug>.com`), prefer fetching that
+company's own About/Mission page directly over a generic web search.
+
+Pull at most 1-2 concrete themes (what they actually build, who they
+serve, a stated focus tied to the JD's actual work) — not their homepage
+tagline verbatim. If the search returns nothing specific, returns an
+unrelated company, or only turns up generic marketing copy, drop this
+entirely and draft without it. This step never hard-refuses or blocks
+Step 3 — it's enrichment, not a prerequisite.
+
 ## Step 3 — draft the letter content
 
 **Fabrication discipline (R2/R3, identical to /tailor):** every sentence
@@ -104,6 +128,39 @@ byte-for-byte. You are only generating the TEXT that fills its
 `{{SIGNOFF_NAME}}` placeholder paragraphs. Do not invent a
 header/contact block — the template already has one.
 
+This is fresh prose about a specific role, not a mail-merge — do not treat
+the following as a fill-in-the-blanks template. There's no fixed
+paragraph count or per-paragraph assignment; let the shape follow the
+content. Across the letter, cover:
+- the role and company, and a genuine reason for this role (fold in a
+  Step 2b theme here ONLY if you found something specific — if not,
+  ground the "why this role" in the JD's actual work, not the company)
+- 2-3 `bullets.md` achievements mapped onto the JD's `keywords_to_mirror`,
+  honest and specific, no invented scope
+- a close
+
+**Structural AI-tells to self-check before writing to the JSON file**
+(these are patterns, not banned phrases — the linter in Step 4 can't
+catch them, so check by eye):
+- Tricolon overuse — don't structure things as "X, Y, and Z" more than
+  once across the letter (e.g. "research, collaboration, and
+  problem-solving" is the classic LLM rhythm; one clean triad reads fine,
+  three of them in one letter reads like a template).
+- "Not only X, but also Y" contrast constructions — say the thing plainly
+  instead.
+- Uniform sentence rhythm — if every sentence in the letter is roughly
+  the same length and grammatical shape, vary it; real writing has some
+  short sentences and some longer ones, not a metronome.
+
+Avoid the formulaic openers and closers this template used to produce —
+don't default to "I am writing to express my interest in..." or "I look
+forward to hearing from you." Vary the opening line and the closing line
+letter-to-letter; vary sentence length and rhythm within the letter
+instead of a run of same-length sentences. If a Step 2b mission theme
+didn't come back specific enough to prove real research, leave it out
+entirely rather than reaching for a generic "I'm inspired by your
+mission to..." line — that's a bigger AI tell than not mentioning it.
+
 Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
 
 ```json
@@ -111,9 +168,9 @@ Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
   "date": "June 16, 2026",
   "salutation": "Dear Hiring Manager,",
   "body": [
-    "Paragraph 1 -- name the role and company, one line on why this role.",
-    "Paragraph 2 -- map 2-3 bullets.md achievements onto the JD's keywords_to_mirror; honest, specific, no invented scope.",
-    "Paragraph 3 (optional) -- more ground / closing call to action."
+    "First paragraph text.",
+    "Second paragraph text.",
+    "Optional third paragraph text."
   ],
   "closing": "Sincerely,",
   "signoff_name": "Abhishek Tuteja"
@@ -197,11 +254,16 @@ message verbatim and stop — `TemplateError` here means the template is
 missing `{{SALUTATION}}` or `{{BODY}}`; tell the user to add the missing
 placeholder paragraph(s) to `profile/cover_letter_template.docx`.
 
-Then convert to PDF via Microsoft Word (same pattern as `/tailor` Step 6):
+Then convert to PDF via Microsoft Word, routed through the same fixed staging
+dir as `/tailor` Step 6 (Word's sandbox grant only reliably persists for one
+unchanging path, not the new `${OUT_DIR}` each job gets):
 
 ```bash
-DOCX_ABS=$(cd "${OUT_DIR}" && pwd)/Abhishek_Tuteja_Cover_Letter.docx
-PDF_ABS=$(cd "${OUT_DIR}" && pwd)/Abhishek_Tuteja_Cover_Letter.pdf
+STAGING="$(pwd)/.pdf_staging"
+mkdir -p "$STAGING"
+cp "${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.docx" "${STAGING}/Abhishek_Tuteja_Cover_Letter.docx"
+DOCX_ABS="${STAGING}/Abhishek_Tuteja_Cover_Letter.docx"
+PDF_ABS="${STAGING}/Abhishek_Tuteja_Cover_Letter.pdf"
 osascript <<ASEOF
 tell application "Microsoft Word"
     open POSIX file "${DOCX_ABS}"
@@ -210,7 +272,13 @@ tell application "Microsoft Word"
     close active document saving no
 end tell
 ASEOF
-echo "pdf rendered: ${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf"
+if [ -s "${PDF_ABS}" ]; then
+    cp "${PDF_ABS}" "${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf"
+    rm -f "${DOCX_ABS}" "${PDF_ABS}"
+    echo "pdf rendered: ${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf"
+else
+    echo "WARNING: PDF conversion via Word failed — docx is primary, PDF supplementary."
+fi
 ```
 
 If `osascript` fails (non-zero exit), surface the error and continue — the

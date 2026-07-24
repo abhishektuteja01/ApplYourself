@@ -154,7 +154,11 @@ San Francisco, CA • +555-0100 • user@example.com • [Portfolio](https://www
 
 **SUMMARY**
 
-<one-line summary tailored to JD; bound by truth from the vertical's résumé>
+<one-line summary tailored to JD; bound by truth from the vertical's résumé.
+This is the one freeform sentence in the whole resume — don't stuff it into
+a tricolon ("X, Y, and Z" skills list) or a "not only X but also Y"
+construction; both are classic AI-tell rhythms and stand out precisely
+because everything else on the page is a terse bullet.>
 
 **WORK EXPERIENCE**
 
@@ -301,11 +305,17 @@ print('rendered:', '${OUT_DIR}/Abhishek_Tuteja_Resume.docx')
 enforce structural constraints Step 1 can't: missing styles, tables, inline
 shapes) — surface verbatim and stop.
 
-Then convert to PDF via Word/AppleScript:
+Then convert to PDF via Word/AppleScript. Word's sandbox only reliably keeps a
+folder-access grant for one unchanging path — routing every conversion through
+the same fixed staging dir means the one-time grant never needs re-approval, even
+though each job gets a new `${OUT_DIR}`:
 
 ```bash
-DOCX_ABS=$(cd "${OUT_DIR}" && pwd)/Abhishek_Tuteja_Resume.docx
-PDF_ABS=$(cd "${OUT_DIR}" && pwd)/Abhishek_Tuteja_Resume.pdf
+STAGING="$(pwd)/.pdf_staging"
+mkdir -p "$STAGING"
+cp "${OUT_DIR}/Abhishek_Tuteja_Resume.docx" "${STAGING}/Abhishek_Tuteja_Resume.docx"
+DOCX_ABS="${STAGING}/Abhishek_Tuteja_Resume.docx"
+PDF_ABS="${STAGING}/Abhishek_Tuteja_Resume.pdf"
 osascript <<ASEOF
 tell application "Microsoft Word"
     open POSIX file "${DOCX_ABS}"
@@ -314,7 +324,13 @@ tell application "Microsoft Word"
     close active document saving no
 end tell
 ASEOF
-echo "pdf rendered: ${OUT_DIR}/Abhishek_Tuteja_Resume.pdf"
+if [ -s "${PDF_ABS}" ]; then
+    cp "${PDF_ABS}" "${OUT_DIR}/Abhishek_Tuteja_Resume.pdf"
+    rm -f "${DOCX_ABS}" "${PDF_ABS}"
+    echo "pdf rendered: ${OUT_DIR}/Abhishek_Tuteja_Resume.pdf"
+else
+    echo "WARNING: PDF conversion via Word failed — docx is primary, PDF supplementary."
+fi
 ```
 
 If `osascript` fails, surface the error and continue — the docx is primary, the
