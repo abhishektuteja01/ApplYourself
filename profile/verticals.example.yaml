@@ -1,0 +1,123 @@
+# TEMPLATE — copy to profile/verticals.yaml and edit.
+# Also copy profile/verticals/example_primary/ -> profile/verticals/<your_name>/
+# for each vertical you define (each dir needs rubric.md + tailoring.md).
+#
+# Two fictional verticals below demonstrate every feature:
+#   - mapping order under `verticals:` = shortlist section order; first = primary
+#   - classifier_rules order = ambiguity policy (first match wins; one vertical
+#     may own several rules at different priorities)
+#   - a phrase + title disqualifier (example_secondary) vs years-only
+#     (example_primary)
+# Vertical names must match ^[a-z][a-z0-9_]*$ — they become parquet values,
+# applications/<name>/ directories, and staging-file suffixes.
+
+schema_version: 1
+default_vertical: example_primary
+
+verticals:
+  example_primary:
+    display_name: Widget Engineering
+    # Optional: repo-relative path to the attested resume LLM judges score
+    # against (score.md Step J1). Omit to use the sap resume as shared default.
+    # Set a lane-specific file when a vertical reads better against a resume
+    # framed for it. The file must exist or the prereq check fails loud.
+    # resume_file: profile/resume_widget.md
+    search_terms:
+      # spine
+      - Widget Engineer
+      - Widget Platform Analyst
+      - Gizmo Systems Consultant
+      # adjacent
+      - Widget Operations Analyst
+    # Reduced list for LinkedIn (429 mitigation); may equal search_terms.
+    linkedin_terms:
+      - Widget Engineer
+      - Gizmo Systems Consultant
+    # 0-10 integer weights; consumed by LLM judges for jd_skill_overlap,
+    # opaque to src/. Base every entry on attested experience only.
+    skill_weights:
+      widgets:
+        widget_assembly: 10   # 2yr production experience
+        gizmo_calibration: 7  # secondary tooling
+      domain:
+        widget_supply_chain: 9
+    disqualifier:
+      # JD explicit-minimum years ABOVE max_years -> auto-skip ("years").
+      max_years: 4
+      # No phrase disqualifier for this vertical.
+      phrases: []
+      scored_by: "rubric:example-primary-jd-years-disqualifier"
+      reasoning_years: >-
+        Auto-skipped by deterministic pre-screen: JD states an explicit
+        minimum of 5+ years of experience.
+
+  example_secondary:
+    display_name: Sprocket Compliance
+    search_terms:
+      - Sprocket Compliance Analyst
+      - Sprocket Governance Analyst
+      - Sprocket Risk Analyst
+    linkedin_terms:
+      - Sprocket Compliance Analyst
+      - Sprocket Governance Analyst
+    # OPTIONAL title include-gate (all three lists default to empty = gate
+    # OFF, historical exclusion-only behavior). When title_include_terms is
+    # nonempty, a non-manual row is kept iff its title matches the lane:
+    #   strong_keep  OR  (matches an include term  AND NOT an exclude term)
+    # All matching is word-boundary, case-insensitive; manual/URL rows exempt.
+    # Use this when job boards fuzzy-match your search terms into hundreds of
+    # distinct off-lane titles that a title_exclude_terms blocklist cannot
+    # keep up with. Derive the lists from a full read of the vertical's title
+    # pool (see risk_ai in profile/verticals.yaml for a worked example).
+    title_include_terms:
+      - sprocket compliance
+      - sprocket governance
+      - sprocket risk
+    # title_exclude_terms kills in-lane leakage that passes the include-gate.
+    title_exclude_terms:
+      - sprocket sales
+      - sprocket marketing
+    # strong_keep overrides every exclude — unambiguous in-lane signals that
+    # must survive even if the title also trips an exclude term.
+    title_strong_keep_terms:
+      - sprocket model risk
+    skill_weights:
+      sprocket_governance:
+        sprocket_audit_tool: 8
+    disqualifier:
+      max_years: 4
+      # Case-insensitive JD substrings -> auto-skip ("phrase").
+      phrases:
+        - sprocket certification required
+        - advanced sprocketry degree required
+      # Case-insensitive TITLE substrings -> auto-skip ("title"). Optional;
+      # requires reasoning_title when nonempty. Checked before phrases/years.
+      title_phrases:
+        - sprocket director
+      scored_by: "rubric:example-secondary-jd-disqualifier"
+      reasoning_phrase: >-
+        Auto-skipped by deterministic pre-screen: JD requires a credential
+        this profile does not hold.
+      reasoning_title: >-
+        Auto-skipped by deterministic pre-screen: job title signals a
+        seniority level or specialization outside this vertical's lane.
+      reasoning_years: >-
+        Auto-skipped by deterministic pre-screen: JD states an explicit
+        minimum of 5+ years of experience.
+
+out_of_lane:
+  reasoning: >-
+    Auto-skipped by deterministic pre-screen: title matches no configured
+    vertical, so it cannot reach the shortlist.
+
+# Ordered — first match wins. example_primary owns two rules at different
+# priorities: a strong signal ABOVE example_secondary (unambiguous primary
+# always wins) and a generic catch-all BELOW it (ambiguity defaults to
+# primary). Titles matching nothing classify as "" (out-of-lane).
+classifier_rules:
+  - vertical: example_primary
+    pattern: '\b(?:widget|gizmo)\b'
+  - vertical: example_secondary
+    pattern: '\b(?:sprocket|governance|compliance)\b'
+  - vertical: example_primary
+    pattern: '\b(?:operations|systems? analyst)\b'

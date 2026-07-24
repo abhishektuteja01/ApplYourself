@@ -1,0 +1,29 @@
+# Career-board watchlist template. Copy to profile/companies.yaml
+# (gitignored — this is job-search strategy) and replace with real companies.
+#
+# Discovery polls each company's public ATS JSON board directly (src/careers.py):
+#   greenhouse -> https://boards-api.greenhouse.io/v1/boards/<slug>/jobs?content=true
+#   lever      -> https://api.lever.co/v0/postings/<slug>?mode=json
+#   ashby      -> https://api.ashbyhq.com/posting-api/job-board/<slug>?includeCompensation=true
+#
+# Finding the slug: open the company's careers page and read it from the URL —
+#   job-boards.greenhouse.io/<slug>, jobs.lever.co/<slug>, jobs.ashbyhq.com/<slug>.
+#
+# `name` must be the human company name AS JOB BOARDS SPELL IT (it feeds
+# company_normalized and therefore job_id — the same role found on LinkedIn
+# and on the board must collapse to one row). `slug` is the ATS identifier.
+#
+# Only postings whose title matches a verticals.yaml classifier rule enter
+# the pipeline; the rest of the board is dropped at scrape time.
+
+schema_version: 1
+companies:
+  - name: Acme AI
+    ats: greenhouse
+    slug: acmeai
+  - name: Widgets R Us
+    ats: lever
+    slug: widgets-r-us
+  - name: Sprocket Labs
+    ats: ashby
+    slug: sprocket-labs

@@ -1,0 +1,178 @@
+# Read by src/lint.py via /tailor (resume.md before docx render) and /outreach
+# (draft body before write).
+#
+# Mechanical violations are auto-fixed. Banned phrases are FLAGGED and Claude
+# rewrites the offending line; linter re-runs until clean.
+
+mechanical:
+  em_dash: ", "
+  en_dash_in_range: "-"
+  en_dash_parenthetical: ", "
+  smart_quote_single: "'"
+  smart_quote_double: '"'
+  ellipsis: "..."
+  nbsp: " "
+  zero_width: ""
+
+banned_phrases:
+  soft_verbs:
+    - leveraged
+    - spearheaded
+    - orchestrated
+    - championed
+    - "drove (soft)"
+    - "enabled (soft)"
+    - "facilitated (soft)"
+    - unlocked
+    - unleashed
+    - harnessed
+    - fostered
+    - bolstered
+    - garnered
+    - galvanized
+    - catalyzed
+    - cultivated
+    - pioneered
+    - streamlined
+    - "streamline (soft)"
+    - "foster (soft)"
+    - fostering
+    - "excels (non-literal)"
+  stock_adjectives:
+    - robust
+    - seamless
+    - cutting-edge
+    - best-in-class
+    - world-class
+    - innovative
+    - transformative
+    - holistic
+    - comprehensive
+    - "scalable (non-literal)"
+    - dynamic
+    - synergistic
+    - passionate
+    - results-driven
+    - detail-oriented
+    - self-starter
+    - go-getter
+    - pivotal
+    - "crucial (non-literal)"
+    - "vital (non-literal)"
+    - unparalleled
+    - unwavering
+    - multifaceted
+    - meticulous
+    - exceptional
+    - exemplary
+    - "state-of-the-art"
+    - "next-level"
+    - "top-notch"
+    - "game-changing"
+    - groundbreaking
+    - "ever-evolving"
+    - visionary
+    - cohesive
+    - proactive
+    - results-oriented
+    - vibrant
+    - intricate
+  stock_nouns:
+    - synergy
+    - "ecosystem (non-literal)"
+    - paradigm
+    - tapestry
+    - myriad
+    - plethora
+    - realm
+    - "landscape (figurative)"
+    - nuance
+    - cornerstone
+    - keystone
+    - "testament to"
+    - "paradigm shift"
+    - "game changer"
+    - "thought leader"
+    - "value-add"
+    - "low-hanging fruit"
+  stock_verbs:
+    - delve
+    - dive deep
+    - deep dive
+    - embark
+    - endeavor
+    - "navigate the complexities"
+    - "it's worth noting"
+    - "underscore (soft)"
+    - underpin
+    - seamlessly
+    - "move the needle"
+    - "circle back"
+  filler_starters:
+    - "Notably,"
+    - "Importantly,"
+    - "Crucially,"
+    - "Furthermore,"
+    - "Moreover,"
+    - "Additionally,"
+    - "Specifically,"
+    - "Indeed,"
+    - "In conclusion,"
+    - "It is important to note"
+    - "In today's fast-paced"
+    - "When it comes to"
+    - "At the end of the day,"
+    - "That being said,"
+    - "On the other hand,"
+    - "In essence,"
+    - "Overall,"
+    - "All in all,"
+    - "Last but not least,"
+    - "In summary,"
+    - "At its core,"
+    - "It's important to remember"
+  resume_cliches:
+    - "responsible for"
+    - "helped with"
+    - "worked on (no metric)"
+    - "team player"
+    - "proven track record"
+    - "proven ability"
+    - "wealth of experience"
+    - "deep expertise"
+  hedges_when_softening_own_work:
+    - may
+    - might
+    - could
+    - potentially
+    - approximately
+    - roughly
+    - arguably
+    - "to some extent"
+  no_emoji: true
+  no_exclamation: true
+
+outreach_only:
+  # Additionally banned in outreach drafts only.
+  - "I hope this message finds you well"
+  - "I came across your profile"
+  - "I was impressed by your work on"
+  - "Your background caught my eye"
+  - "I wanted to reach out"
+  - "I'm reaching out because"
+  - "<greeting>!"  # any greeting line ending in an exclamation mark
+  # Newer 2026 "punchy blog / LinkedIn" hooks and unsolicited-validation tells
+  - "Here's the kicker"
+  - "Here's the thing"
+  - "But here's the thing"
+  - "The best part?"
+  - "Here's the part most people miss"
+  - "Here's the breakdown"
+  - "Here's the key takeaway"
+  - "You're not alone"
+  - "You're not imagining it"
+
+# CONDITIONAL EXEMPTION GATE.
+# Flip to true ONLY after the one-time onboarding diction pass over bullets.md.
+# Until true, bullets.md text is fully linted in tailored docx context.
+bullets_diction_pass_completed: true

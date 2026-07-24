@@ -1,0 +1,13 @@
+schema_version: 1
+deadline_hours: 6
+location_allowlist:
+  countries: ["United States"]
+  # states: ["TX", "NY"]      # optional narrowing; empty/absent = all states
+  # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
+sources:
+  linkedin:   {enabled: true, pacing_seconds: 3}
+  indeed:     {enabled: true, pacing_seconds: 2}
+  greenhouse: {enabled: true, pacing_seconds: 1}
+  lever:      {enabled: true, pacing_seconds: 1}
+  ashby:      {enabled: true, pacing_seconds: 2}
+raw_retention_days: 30

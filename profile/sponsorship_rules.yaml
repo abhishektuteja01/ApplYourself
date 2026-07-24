@@ -1,0 +1,48 @@
+# JD-text-only sponsorship labeling. Read by /score BEFORE fit-scoring.
+# Precedence: ineligible wins outright -> opt_ok -> sponsors -> unknown.
+# false_positive_guard phrases alone are NEVER blockers (I am authorized on OPT).
+# Labels: sponsors | opt_ok | ineligible | unknown.
+
+# Deterministic pre-label (src/scoring_io.py carve-out): unambiguous
+# clearance/citizenship substrings ONLY. Matching rows are labeled ineligible
+# before any judge runs — same shortlist exclusion as a judge label. Nuanced
+# wording (the "now or in the future" family, which appears verbatim in neutral
+# application-form questions) MUST stay out of this list — judge-only, below.
+hard_ineligible:
+  - "US citizenship required"
+  - "must be a US citizen"
+  - "green card required"
+  - "active security clearance"
+  - "ability to obtain a security clearance"
+  - "public trust clearance"
+
+ineligible:
+  - "US citizen"
+  - "US citizenship required"
+  - "must be a US citizen"
+  - "green card required"
+  - "active security clearance"
+  - "ability to obtain a security clearance"
+  - "public trust clearance"
+  - "not provide sponsorship now or in the future"
+  - "not sponsor now or in the future"
+  - "require sponsorship now or in the future"
+  - "not now or in the future require sponsorship"
+  - "does not now or in the future require"
+
+opt_ok:
+  - "no sponsorship"
+  - "unable to sponsor"
+  - "will not sponsor"
+  - "no visa sponsorship"
+
+sponsors:
+  - "visa sponsorship"
+  - "H-1B sponsorship"
+  - "sponsorship available"
+  - "willing to sponsor"
+
+false_positive_guard:
+  - "must be authorized to work in the US"
+  - "work authorization required"
+  - "authorized to work in the United States"

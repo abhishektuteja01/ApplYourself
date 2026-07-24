@@ -1,0 +1,85 @@
+# =============================================================================
+# PII — CRITICAL. NEVER commit. Verify these patterns BEFORE any push to remote.
+# Contains other people's names, emails, conversation content.
+# =============================================================================
+profile/contacts.yaml
+profile/voice_samples.md
+pipeline/*/outreach/
+# Application history — companies, scores, dates (strategy, not for a public repo).
+pipeline/*/state.yaml
+# Resume/cover-letter templates embed real name, email, phone.
+profile/resume_template.docx
+profile/cover_letter_template.docx
+
+# =============================================================================
+# Job-search strategy — mine, not for a public repo (PRD §7.15).
+# Committed templates: profile/verticals.example.yaml + profile/verticals/example_*/
+# (`profile/verticals/*` not `.../`: git cannot re-include children of an
+# excluded directory, only of an excluded glob.)
+# =============================================================================
+profile/verticals.yaml
+profile/verticals/*
+!profile/verticals/example_primary/
+!profile/verticals/example_secondary/
+# Career-board watchlist (PRD §7.19); committed template: profile/companies.example.yaml
+profile/companies.yaml
+# Discovery settings; committed template: profile/discovery.example.yaml
+profile/discovery.yaml
+# Personal profile prose — real experience, bullets, skills, scoring guidance.
+# Direct children of profile/ only; example templates in profile/verticals/* are
+# re-included above and unaffected.
+profile/*.md
+
+# =============================================================================
+# Regeneratable artifacts (re-created by discovery / scoring / tailoring runs)
+# =============================================================================
+jobs/raw/
+jobs/clean.parquet
+# Seen-ledger retention memory (PRD §7.20) — losing it only resets expiry clocks
+jobs/seen.parquet
+jobs/clean.preview.jsonl
+jobs/scored.parquet
+jobs/scored.staging/
+jobs/runs/
+jobs/universe_health.parquet
+shortlist/
+pipeline.md
+applications/
+profile/resume.docx
+
+# =============================================================================
+# Inbox — raw JD clips (may contain confidential recruiter / company text)
+# =============================================================================
+inbox/*.md
+inbox/.processed/
+inbox/.malformed/
+
+# =============================================================================
+# Python / uv / tooling
+# =============================================================================
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# =============================================================================
+# IDE / OS
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+# Microsoft Word lock files (created when a docx is open in Word)
+~$*
+
+# NOTE: uv.lock is intentionally NOT ignored — committed for reproducibility.
+
+# Morning discovery automation logs (LaunchAgent com.abhishek.discovery)
+/logs/
+profile/llm.yaml
