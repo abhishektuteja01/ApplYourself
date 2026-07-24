@@ -1,6 +1,16 @@
 import re
+import unicodedata
 from dataclasses import dataclass
 import geonamescache
+
+
+def _fold(s: str) -> str:
+    """Lowercase and strip diacritics so scraped ASCII forms match the
+    accented geonames spellings (e.g. "Iasi" -> geonames "Iaşi", "Zurich"
+    -> "Zürich", "Sao Paulo" -> "São Paulo")."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
+    ).lower()
 
 @dataclass
 class LocationParse:
@@ -34,6 +44,35 @@ for city in sorted(CITIES.values(), key=lambda x: x.get('population', 0), revers
         name = city['name'].lower()
         if name not in US_CITIES:
             US_CITIES[name] = city
+
+# ISO2 country code -> canonical country name, for turning a foreign city's
+# `countrycode` into the same country string the country-name matcher emits.
+CC_TO_COUNTRY = {code: data['name'] for code, data in COUNTRIES.items()}
+
+# Diacritic-folded set of every US city name, so a foreign city that is ALSO
+# a US city (Paris/Manchester/Cambridge/Vancouver/Portland ...) is left to the
+# US matcher and never counts as a foreign signal — we stay conservative and
+# read a bare namesake as its US city.
+US_CITY_FOLDED = {_fold(name) for name in US_CITIES}
+
+# Major non-US cities, keyed by diacritic-folded lowercase name -> country.
+# Population floor keeps this to real world cities (and off short place-names
+# that collide with ordinary tokens); namesake collisions with US cities are
+# excluded above. Sorted by population so the biggest bearer of a name wins
+# (e.g. "london" -> London, GB, not London, ON).
+FOREIGN_CITY_MIN_POP = 150000
+FOREIGN_CITIES: dict[str, str] = {}
+for city in sorted(CITIES.values(), key=lambda x: x.get('population', 0), reverse=True):
+    if city['countrycode'] == 'US':
+        continue
+    if city.get('population', 0) < FOREIGN_CITY_MIN_POP:
+        continue
+    folded = _fold(city['name'])
+    if folded in US_CITY_FOLDED or folded in FOREIGN_CITIES:
+        continue
+    country = CC_TO_COUNTRY.get(city['countrycode'], "")
+    if country:
+        FOREIGN_CITIES[folded] = country
 
 def parse_location(raw: str) -> LocationParse:
     if not raw:
@@ -77,7 +116,9 @@ def parse_location(raw: str) -> LocationParse:
     # We should probably only match cities if they are in the string as whole words.
     # To make it fast, we could split the string into tokens and n-grams and check.
     # Or just use the string text
-    words = re.findall(r'[a-zA-Z]+', text)
+    # Unicode letters (not just a-z) so accented city spellings like
+    # "Zürich"/"São Paulo" tokenize as one word and fold to their ASCII form.
+    words = re.findall(r'[^\W\d_]+', text, re.UNICODE)
     # Generate 1 to 3 word n-grams
     ngrams = []
     for i in range(len(words)):
@@ -92,15 +133,24 @@ def parse_location(raw: str) -> LocationParse:
             # wait, if it's "New York", we find it.
             # but is it "San Francisco" in "San Francisco Bay Area"?
             found_city_names.add(ngram)
+        foreign_country = FOREIGN_CITIES.get(_fold(ngram))
+        if foreign_country:
+            found_countries.add(foreign_country)
 
     # Now we need to reconcile.
     if found_states or found_city_names:
         found_countries.add("United States")
 
-    # If we have multiple countries, we might be a global role.
+    # Multiple countries -> a multi-region listing. If the United States is
+    # one of them it's a US-inclusive global role: don't guess a single spot,
+    # return empty (the caller keeps it). If every country is foreign, the row
+    # is positively non-US -> return a foreign country so the allowlist drops
+    # it (rather than the old behavior of returning empty and keeping it).
     if len(found_countries) > 1:
-        return LocationParse("", "", "", remote)
-        
+        if "United States" in found_countries:
+            return LocationParse("", "", "", remote)
+        return LocationParse(sorted(found_countries)[0], "", "", remote)
+
     country = list(found_countries)[0] if found_countries else ""
     state = ""
     city = ""

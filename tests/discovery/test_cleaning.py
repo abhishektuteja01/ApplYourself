@@ -571,12 +571,36 @@ def test_location_filter():
     
     out = filter_and_canonicalize_location(df, cfg)
     assert len(out) == 4
-    
+
     locs = out.set_index("job_id")["location"].to_dict()
     assert locs["1"] == "Austin, TX"
     assert locs["3"] == ""
     assert locs["4"] == "Remote"
     assert locs["5"] == "San Francisco, CA"
+
+
+def test_location_filter_drops_bare_foreign_cities():
+    # Regression: bare foreign-city strings (no country suffix) used to parse
+    # to nothing and slip through the US allowlist onto the shortlist.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["United States"])
+    )
+    df = pd.DataFrame({
+        "job_id": ["kept_us", "kept_namesake", "drop_london", "drop_stockholm",
+                   "drop_iasi", "drop_kl"],
+        "location": ["Austin, TX", "Paris, TX", "London", "Stockholm",
+                     "Iasi", "Kuala Lumpur"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+
+    assert set(out["job_id"]) == {"kept_us", "kept_namesake"}
+    locs = out.set_index("job_id")["location"].to_dict()
+    assert locs["kept_us"] == "Austin, TX"
+    assert locs["kept_namesake"] == "Paris, TX"  # US namesake, not dropped
 
 # ---------- T15: raw retention ----------
 
