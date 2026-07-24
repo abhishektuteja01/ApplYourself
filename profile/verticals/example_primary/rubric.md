@@ -17,8 +17,8 @@ the scaffold: `title_match` 0-30, `jd_skill_overlap` 0-30, `seniority_fit`
 - `seniority_fit` (0-20): Analyst/Associate/Junior → 18-20 (target level);
   standalone Consultant/Specialist → 6-10; Senior anything → 6-10;
   Lead/Principal/Manager/Director → 0-6. Explicit years override the title
-  heuristic: 3+ yrs → cap 14; 4+ yrs → cap 10 (5+ yrs is pre-screened out
-  deterministically and never reaches you).
+  heuristic (for a range use the lower bound, e.g. "7-10 years" → 7): 3 yrs →
+  cap 14; 4 yrs → cap 10; 5+ yrs → seniority_fit = 0 regardless of title.
 - `domain_bonus` (0-20): top (16-20): widget-supply-chain signals; mid
   (8-12): generic manufacturing; none → 0.
 
