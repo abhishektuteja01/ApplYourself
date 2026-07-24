@@ -38,9 +38,10 @@ Exists to enforce R2 (no fabrication) and R5 (de-AI'd writing).
 
 ## Step 1 — prerequisites + row load + output dir (one block, fail loud)
 
-One deterministic block: prereq checks, row load, diction gate, output-dir
-computation. Exits at the FIRST failed check. If it exits nonzero, **stop — no
-partial work.**
+`src.tailor_cli prep` is the deterministic front-matter: it runs every prereq
+check, merges the clean+scored row to `/tmp/tailor_<job_id>_row.json`, resolves
+the vertical, and creates the versioned output dir — all in one process, exiting
+nonzero at the FIRST bad check. If it exits nonzero, **stop — no partial work.**
 
 `vertical` is read from the row (precomputed at discovery, stable per `job_id`) —
 never re-derived from JD text. Versioning is count-based across the role's
@@ -50,60 +51,18 @@ always TODAY's.
 ```bash
 JOB_ID="$1"
 test -n "$JOB_ID" || { echo "ERROR: /tailor requires a job_id argument."; exit 1; }
-test -f jobs/clean.parquet || { echo "ERROR: jobs/clean.parquet missing — run discovery first."; exit 1; }
-test -f jobs/scored.parquet || { echo "ERROR: jobs/scored.parquet missing — run /score first."; exit 1; }
-test -f profile/bullets.md || { echo "ERROR: profile/bullets.md missing — author it."; exit 1; }
-test -f profile/de_ai_rules.yaml || { echo "ERROR: profile/de_ai_rules.yaml missing — author it."; exit 1; }
-test -f profile/skills_master.md || { echo "ERROR: profile/skills_master.md missing — author it."; exit 1; }
-test -f profile/preferences.md || { echo "ERROR: profile/preferences.md missing. Author it (locations, comp floor, deal-breakers, must-haves)."; exit 1; }
-test -f profile/resume_template.docx || { echo "ERROR: profile/resume_template.docx missing. Author it in Word with the ATS constraints (Calibri, single column, no tables, bold section headers, no images/icons)."; exit 1; }
+# Validate the verticals config + per-vertical prose/resume files (owns its own
+# actionable message); prep then consumes the loaded config.
 uv run python -m src.verticals || { echo "ERROR: verticals config invalid or per-vertical prose files missing — see message above."; exit 1; }
-test -f "pipeline/${JOB_ID}/state.yaml" || { echo "ERROR: pipeline/${JOB_ID}/state.yaml missing. Run /track ${JOB_ID} saved first to register the role (the state.yaml is the canonical role record)."; exit 1; }
-
-mkdir -p applications
-uv run python -c "
-import json, pandas as pd
-from pathlib import Path
-JOB_ID = '$1'
-clean = pd.read_parquet('jobs/clean.parquet').set_index('job_id')
-scored = pd.read_parquet('jobs/scored.parquet').set_index('job_id')
-if JOB_ID not in clean.index:
-    raise SystemExit(f'ERROR: job_id {JOB_ID} not in clean.parquet')
-if JOB_ID not in scored.index:
-    raise SystemExit(f'ERROR: job_id {JOB_ID} not in scored.parquet -- run /score first')
-row = {**clean.loc[JOB_ID].to_dict(), **scored.loc[JOB_ID].to_dict()}
-print(json.dumps({k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in row.items()}, default=str, indent=2))
-" > /tmp/tailor_${JOB_ID}_row.json || exit 1
-
-# Diction-pass gate (one line; the linter reads the full file itself)
-grep -q "bullets_diction_pass_completed: true" profile/de_ai_rules.yaml \
-  && echo "diction_pass: true" || echo "diction_pass: false"
-
-TODAY=$(date +%Y-%m-%d)
-read -r VERTICAL COMPANY_SLUG TITLE_SLUG <<< "$(uv run python -c "
-import json, re
-row = json.load(open('/tmp/tailor_${JOB_ID}_row.json'))
-v = row.get('vertical') or ''
-slug = lambda s: re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-')
-from src.verticals import get_config
-cfg = get_config()
-print(v if v in cfg.verticals else cfg.default_vertical, slug(row['company']), slug(row['title'])[:60])
-")"
-test -n "$VERTICAL" || { echo "ERROR: vertical resolution failed — see message above."; exit 1; }
-mkdir -p "applications/${VERTICAL}"
-# Count prior tailor dirs for this job_id within its vertical folder
-PRIOR_COUNT=$(ls -d applications/${VERTICAL}/*_${JOB_ID}* 2>/dev/null | wc -l | tr -d ' ')
-if [ "$PRIOR_COUNT" = "0" ]; then
-    DIRNAME="${VERTICAL}/${TODAY}_${COMPANY_SLUG}_${TITLE_SLUG}_${JOB_ID}"
-else
-    NEXT_V=$((PRIOR_COUNT + 1))
-    DIRNAME="${VERTICAL}/${TODAY}_${COMPANY_SLUG}_${TITLE_SLUG}_${JOB_ID}_v${NEXT_V}"
-fi
-OUT_DIR="applications/${DIRNAME}"
-mkdir -p "${OUT_DIR}"
-echo "tailoring to: ${OUT_DIR}  (vertical=${VERTICAL})"
-cat /tmp/tailor_${JOB_ID}_row.json
+# prep prints VERTICAL / DIRNAME / OUT_DIR / DICTION_PASS / ROW_JSON on stdout
+# (the full row JSON + status go to stderr); eval brings them into the shell.
+PREP="$(uv run tailor-prep "$JOB_ID")" || exit 1
+eval "$PREP"
+test -n "$OUT_DIR" || { echo "ERROR: tailor-prep produced no OUT_DIR."; exit 1; }
 ```
+
+After this block `$VERTICAL`, `$DIRNAME`, `$OUT_DIR`, `$DICTION_PASS`, and
+`$ROW_JSON` (= `/tmp/tailor_${JOB_ID}_row.json`) are set for every later step.
 
 ## Step 2 — read the JD row + profile
 
@@ -401,28 +360,12 @@ over-claims) is eyeball-catchable.
 `scored.parquet.keywords_to_mirror` and where each landed (which resume line, or
 "not landed — kept verbatim canonical to preserve attestation").
 
-**`${OUT_DIR}/jd_snapshot.md`** — the full JD body from `clean.parquet.jd_text`
-(frozen snapshot; written deterministically, never retyped):
+**`${OUT_DIR}/jd_snapshot.md`** — the full JD body (frozen snapshot; written
+deterministically from the row.json already on disk, never retyped, no second
+`clean.parquet` read):
 
 ```bash
-uv run python <<PYEOF
-import pandas as pd
-from pathlib import Path
-row = pd.read_parquet('jobs/clean.parquet').set_index('job_id').loc['${JOB_ID}']
-snap = f"""---
-job_id: ${JOB_ID}
-company: {row['company']}
-title: {row['title']}
-url: {row['url']}
-posted_date: {row['posted_date']}
-snapshot_at: $(date +%Y-%m-%d)
----
-
-{row['jd_text']}
-"""
-Path('${OUT_DIR}/jd_snapshot.md').write_text(snap)
-print('jd_snapshot.md written:', len(row['jd_text']), 'chars of JD body')
-PYEOF
+uv run tailor-prep snapshot "$JOB_ID" "$OUT_DIR"
 ```
 
 **`${OUT_DIR}/lint_report.md`** — sections:

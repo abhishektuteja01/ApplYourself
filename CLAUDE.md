@@ -111,7 +111,7 @@ never exempt.
 ## Commands
 
 ```bash
-# Tests (315 pass expected). Run this after any src/ or fixture change.
+# Tests (328 pass expected). Run this after any src/ or fixture change.
 uv run pytest tests -q
 uv run pytest tests/test_verticals.py -q          # single test file
 uv run pytest tests/test_verticals.py::<name>     # single test
@@ -122,12 +122,16 @@ uv run verticals-check                # validate config + rubric/tailoring dirs
 uv run ingest-url <url>               # pull one JD into inbox/
 uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...)
 uv run track <job_id> <state> [--note ...]   # state transition
+uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
 ```
 
 The user-facing workflow is the slash commands (`/score`, `/tailor`,
 `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
-`/suggest-synonyms`, `/rescore`), defined in `.claude/commands/*.md`. There is
-**no** `tailor` or `extract` module in `src/` — those flows are prompt-only.
+`/suggest-synonyms`, `/rescore`), defined in `.claude/commands/*.md`. There is no
+`extract` module in `src/`, and no LLM *judging* in `src/` — but the deterministic
+plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
+`/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself
+stays in the command session).
 
 ## Gotchas
 

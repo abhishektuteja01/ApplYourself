@@ -20,6 +20,7 @@ dependencies = [
 ingest-url = "src.discovery.ingest_url:main"
 score = "src.score_cli:main"
 track = "src.track_cli:main"
+tailor-prep = "src.tailor_cli:main"
 discover = "src.discovery.orchestrator:main"
 verticals-check = "src.verticals:main"
 
