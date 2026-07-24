@@ -763,6 +763,60 @@ def compute_shortlist(
     }
 
 
+def render_shortlist_markdown(
+    shortlist: dict, cfg: "verticals.VerticalsConfig",
+    date_str: str, n_scored: int, n_clean: int,
+) -> str:
+    """Render shortlist/<date>.md from compute_shortlist()'s output.
+    Asserts invariants inline (fit>=50, subscore sum, no ineligible/skip
+    leakage, no cross-vertical leakage) — raises AssertionError, never
+    silently drops a row."""
+    def subscores(row):
+        s = row["fit_subscores"]
+        return json.loads(s) if isinstance(s, str) else s
+
+    sections = []
+    total_keepers = 0
+    for v in cfg.names:
+        rows = shortlist["main"].get(v, [])
+        assert len(rows) <= 25, f"{v}: {len(rows)} rows exceeds cap 25"
+        lines = [f"## {cfg.verticals[v].display_name} ({len(rows)})", ""]
+        if not rows:
+            lines.append("No keepers today in this vertical.")
+        for i, row in enumerate(rows, 1):
+            assert row["vertical"] == v, f"{row['job_id']} leaked into {v} section"
+            assert row["fit_score"] >= 50, f"{row['job_id']}: fit {row['fit_score']} < 50"
+            sub = subscores(row)
+            assert sum(sub[a] for a in SUBSCORE_AXES) == row["fit_score"], \
+                f"{row['job_id']}: subscores {sub} != fit_score {row['fit_score']}"
+            assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
+            status = row["application_status"] if row.get("already_seen") else "new"
+            kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
+            lines.append(
+                f"### {i}. {row['fit_score']} — {row['company']} — {row['title']}\n"
+                f"- **job_id:** `{row['job_id']}`\n"
+                f"- **location:** {row['location']} · **source:** {row['source']} "
+                f"· **posted:** {row['posted_date']}\n"
+                f"- **fit:** {row['fit_score']} (title {sub['title']} / skills {sub['skills']} "
+                f"/ seniority {sub['seniority']} / domain {sub['domain']})\n"
+                f"- **sponsorship:** {row['sponsorship_label']} — \"{row['sponsorship_evidence']}\"\n"
+                f"- **why:** {row['reasoning']}\n"
+                f"- **mirror in tailoring:** {kws}\n"
+                f"- **status:** {status}\n"
+                f"- **suggested:** {row['suggested_action']}\n"
+                f"- **verify E-Verify** before submitting (manual v1 step)\n"
+                f"- {row['url']}\n"
+            )
+        sections.append("\n".join(lines))
+        total_keepers += len(rows)
+
+    header = (f"# Shortlist — {date_str}\n\n"
+              f"({n_scored} of {n_clean} scored, top 25 per vertical with fit >= 50)\n")
+    if total_keepers == 0:
+        return header + "\nNo keepers today in this vertical.\n"
+    return header + "\n" + "\n".join(sections)
+
+
 def dump_shortlist_input(
     scored_path: Path,
     clean_path: Path,

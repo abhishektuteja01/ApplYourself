@@ -3,6 +3,12 @@
 Each subcommand wraps src.scoring_io so the slash-command markdown stays a
 thin sequence of one-liners. Judging is never done here.
 
+  prepare [--force-all]              recover leftover batches (merge+prune),
+                                     dump, split by vertical; prints counts +
+                                     one `range <vertical> <A>-<B>` line per
+                                     100-row judge chunk
+  render                             compute + write shortlist/<date>.md,
+                                     asserting invariants inline
   dump [--vertical V] [--force-all]  clear staging, dump unscored rows,
                                      merge the auto-skip categories (out-of-
                                      lane + hard-ineligible + one per
@@ -30,10 +36,12 @@ from src.scoring_io import (
     auto_score_disqualified,
     auto_score_ineligible,
     auto_score_out_of_lane,
+    compute_shortlist,
     dump_shortlist_input,
     dump_unscored,
     merge_scores_from_dir,
     prune_scored,
+    render_shortlist_markdown,
 )
 
 log = logging.getLogger(__name__)
@@ -156,11 +164,95 @@ def _cmd_shortlist_input(args: argparse.Namespace) -> int:
     return 0
 
 
+def judge_ranges(counts: dict[str, int], chunk: int = 100) -> list[tuple[str, int, int]]:
+    """Chunk each vertical's row count into consecutive 1-indexed ranges of
+    at most `chunk` rows (last may be short). Verticals with count 0 emit no
+    range."""
+    out: list[tuple[str, int, int]] = []
+    for v, n in counts.items():
+        start = 1
+        while start <= n:
+            end = min(start + chunk - 1, n)
+            out.append((v, start, end))
+            start = end + 1
+    return out
+
+
+def _cmd_prepare(args: argparse.Namespace) -> int:
+    if not CLEAN.exists():
+        print("ERROR: jobs/clean.parquet missing — run discovery first")
+        return 1
+    sponsorship_rules = Path("profile/sponsorship_rules.yaml")
+    if not sponsorship_rules.exists():
+        print(f"ERROR: {sponsorship_rules} missing")
+        return 1
+    try:
+        cfg = verticals.get_config()
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        return 1
+
+    STAGING.mkdir(parents=True, exist_ok=True)
+    recovered = 0
+    if any(STAGING.glob("batch_*.json")):
+        recovered = merge_scores_from_dir(SCORED, STAGING, scored_by_model=DEFAULT_MODEL)
+        prune_scored(SCORED, CLEAN)
+
+    clear_staging(STAGING)
+    n_judge = dump_unscored(CLEAN, SCORED, STAGING / "unscored.jsonl",
+                            force_all=args.force_all)
+    n_skip = auto_score_out_of_lane(STAGING / "auto_skip.jsonl", SCORED)
+    n_ineligible = auto_score_ineligible(
+        STAGING / "auto_skip_ineligible.jsonl", SCORED)
+    per_vertical = {
+        v.name: auto_score_disqualified(
+            v, STAGING / f"auto_skip_{v.name}.jsonl", SCORED)
+        for v in cfg.verticals.values()
+    }
+    counts = (split_by_vertical(STAGING / "unscored.jsonl") if n_judge
+              else dict.fromkeys(cfg.names, 0))
+
+    print(f"recovered={recovered} rows_to_score={n_judge} auto_skipped={n_skip} "
+          f"auto_ineligible={n_ineligible} "
+          + " ".join(f"auto_skipped_{v}={n}" for v, n in per_vertical.items()))
+    for v, a, b in judge_ranges(counts):
+        print(f"range {v} {a}-{b}")
+    return 0
+
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    from datetime import date
+
+    cfg = verticals.get_config()
+    result = compute_shortlist(SCORED, CLEAN, PIPELINE, top_n=25, min_fit=50)
+    n_scored = len(pd.read_parquet(SCORED)) if SCORED.exists() else 0
+    n_clean = len(pd.read_parquet(CLEAN))
+    date_str = date.today().isoformat()
+    md = render_shortlist_markdown(result, cfg, date_str, n_scored, n_clean)
+
+    out_dir = Path("shortlist")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{date_str}.md"
+    out_path.write_text(md)
+
+    keepers = sum(len(rows) for rows in result["main"].values())
+    print(f"shortlist={out_path} keepers={keepers} scored={n_scored}/{n_clean}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     parser = argparse.ArgumentParser(prog="python -m src.score_cli",
                                      description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_prep = sub.add_parser("prepare", help="recover, dump, split; print judge ranges")
+    p_prep.add_argument("--force-all", action="store_true",
+                        help="ignore scored.parquet (used by /rescore)")
+    p_prep.set_defaults(func=_cmd_prepare)
+
+    p_render = sub.add_parser("render", help="write shortlist/<date>.md")
+    p_render.set_defaults(func=_cmd_render)
 
     p_dump = sub.add_parser("dump", help="clear staging, dump unscored, merge auto-skips")
     p_dump.add_argument("--vertical", choices=verticals.get_config().names, default=None)
