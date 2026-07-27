@@ -7,6 +7,7 @@ allowed-tools:
   - Read
   - Write
   - Edit
+  - Skill
   - WebSearch
   - WebFetch
 argument-hint: <job_id> [--to "Hiring Manager Name"]
@@ -139,27 +140,16 @@ content. Across the letter, cover:
   honest and specific, no invented scope
 - a close
 
-**Structural AI-tells to self-check before writing to the JSON file**
-(these are patterns, not banned phrases — the linter in Step 4 can't
-catch them, so check by eye):
-- Tricolon overuse — don't structure things as "X, Y, and Z" more than
-  once across the letter (e.g. "research, collaboration, and
-  problem-solving" is the classic LLM rhythm; one clean triad reads fine,
-  three of them in one letter reads like a template).
-- "Not only X, but also Y" contrast constructions — say the thing plainly
-  instead.
-- Uniform sentence rhythm — if every sentence in the letter is roughly
-  the same length and grammatical shape, vary it; real writing has some
-  short sentences and some longer ones, not a metronome.
+Don't hand-police structural AI-tells here (tricolons, "not only X but
+also Y", uniform rhythm, formulaic "I am writing to express my
+interest..." / "I look forward to hearing from you" openers and closers)
+— Step 4's no_ai_slop pass owns that cleanup. Just draft in plain, varied
+prose and move on.
 
-Avoid the formulaic openers and closers this template used to produce —
-don't default to "I am writing to express my interest in..." or "I look
-forward to hearing from you." Vary the opening line and the closing line
-letter-to-letter; vary sentence length and rhythm within the letter
-instead of a run of same-length sentences. If a Step 2b mission theme
-didn't come back specific enough to prove real research, leave it out
-entirely rather than reaching for a generic "I'm inspired by your
-mission to..." line — that's a bigger AI tell than not mentioning it.
+One cover-letter-specific call stays yours at draft time: if a Step 2b
+mission theme didn't come back specific enough to prove real research,
+leave it out entirely rather than reaching for a generic "I'm inspired by
+your mission to..." line — that's a bigger AI tell than not mentioning it.
 
 Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
 
@@ -181,7 +171,28 @@ Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
 - `date`: the `TODAY` value Step 1 printed. Only needed if the template has a `{{DATE}}` placeholder — Step 1 already printed the template's actual placeholder list; use it. Omit keys from the JSON for placeholders the template doesn't have (the `{{SALUTATION}}`/`{{BODY}}` hard-refuse already happened in Step 1). If a placeholder the template DOES have (e.g. `{{CLOSING}}`) has no natural generated value, still include the key with an empty string -- the renderer blanks unfilled-but-present placeholders rather than leaving the raw `{{TOKEN}}` text in the letter, but it's cleaner for the JSON to be explicit.
 - 2-3 `body` entries is typical; aim for ~250-400 words total across them so the letter fits one page in the template's own layout.
 
-## Step 4 — lint loop (fully linted, no bullets.md exemption)
+## Step 4 — no_ai_slop editing pass (before lint)
+
+Run the `no_ai_slop` skill in **edit** mode over the drafted prose — the
+`salutation` plus every `body[]` entry from
+`/tmp/cover_letter_${JOB_ID}_draft.json`. This is the deep pass for the
+structural AI-tells the banned-phrase linter can't catch (binary
+contrasts, colon reveals, importance puffery, summary-recap endings,
+robotic rhythm, fake-profound kickers).
+
+This is a voice/structure edit, NOT a rewrite of substance. The edit must
+not add any claim, tool, metric, scope, or date beyond what
+`profile/bullets.md` attests (R2) — no_ai_slop already forbids inventing
+facts; hold that line here. Keep the letter's mapping to the
+`keywords_to_mirror` intact.
+
+Feed the skill the salutation + body paragraphs, take its edited prose,
+and write the edited text back into the same JSON file (`salutation` +
+`body[]`), preserving the JSON shape and leaving any
+`date`/`closing`/`signoff_name` keys untouched. Then proceed to the lint
+loop, which remains the final gate before render.
+
+## Step 5 — lint loop (fully linted, no bullets.md exemption)
 
 Cover letters are fresh-generated prose, not verbatim bullet text — there
 is **no exemption** here, same as outreach. Lint
@@ -236,7 +247,7 @@ the user which phrase/category kept failing.
 
 When `violations` is empty, proceed to Step 5.
 
-## Step 5 — render the docx
+## Step 6 — render the docx
 
 ```bash
 uv run python -c "
@@ -284,7 +295,7 @@ fi
 If `osascript` fails (non-zero exit), surface the error and continue — the
 docx is the primary artifact; the PDF is supplementary.
 
-## Step 6 — append the dir to state.yaml.cover_letters[]
+## Step 7 — append the dir to state.yaml.cover_letters[]
 
 This is the side-list mutation `/cover-letter` is allowed
 (same pattern as `/tailor`'s `tailored_dirs[]`). State transitions remain
@@ -300,17 +311,17 @@ print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 "
 ```
 
-## Step 7 — runtime assertions before reporting done
+## Step 8 — runtime assertions before reporting done
 
 Before reporting success, verify on disk:
 - [ ] `${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.docx` exists and is non-empty
 - [ ] `${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf` exists and is non-empty (warn but don't fail if osascript errored)
-- [ ] One final lint pass (re-run Step 4's Python against the file at `/tmp/cover_letter_${JOB_ID}_draft.json`) returns zero violations
+- [ ] One final lint pass (re-run Step 5's Python against the file at `/tmp/cover_letter_${JOB_ID}_draft.json`) returns zero violations
 - [ ] `pipeline/${JOB_ID}/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
 If any check fails, do NOT report success — diagnose and fix.
 
-## Step 8 — report
+## Step 9 — report
 
 Tell the user:
 ```
