@@ -4,7 +4,9 @@ from jobspy import scrape_jobs
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
 
-RESULTS_WANTED = 50
+# A/B test (2026-07-29): bumped from 50 for more ai_eng coverage. Revert to 50
+# if run reports show LinkedIn 429s climbing.
+RESULTS_WANTED = 100
 HOURS_OLD = 336
 DESCRIPTION_FORMAT = "markdown"
 
@@ -73,3 +75,9 @@ class LinkedinSource(JobSpySource):
 
 class IndeedSource(JobSpySource):
     name = "indeed"
+
+# A/B test (2026-07-29): new source, remove (here + config.py allowed_sources/
+# defaults + orchestrator.py get_sources/fixed_order) if it errors out or
+# returns zero rows across runs.
+class ZipRecruiterSource(JobSpySource):
+    name = "zip_recruiter"
