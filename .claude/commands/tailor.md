@@ -54,6 +54,7 @@ test -n "$JOB_ID" || { echo "ERROR: /tailor requires a job_id argument."; exit 1
 # Validate the verticals config + per-vertical prose/resume files (owns its own
 # actionable message); prep then consumes the loaded config.
 uv run python -m src.verticals || { echo "ERROR: verticals config invalid or per-vertical prose files missing — see message above."; exit 1; }
+uv run python -m src.track_cli "$JOB_ID" saved || exit 1
 # prep prints VERTICAL / DIRNAME / OUT_DIR / DICTION_PASS / ROW_JSON on stdout
 # (the full row JSON + status go to stderr); eval brings them into the shell.
 PREP="$(uv run tailor-prep "$JOB_ID")" || exit 1
