@@ -29,7 +29,7 @@ class DiscoveryConfig:
     sources: dict[str, SourceConfig] = field(default_factory=lambda: {
         "linkedin": SourceConfig(True, 3.0),
         "indeed": SourceConfig(True, 2.0),
-        "zip_recruiter": SourceConfig(True, 2.0),
+        "zip_recruiter": SourceConfig(False, 2.0),
         "greenhouse": SourceConfig(True, 1.0),
         "lever": SourceConfig(True, 1.0),
         "ashby": SourceConfig(True, 2.0),
