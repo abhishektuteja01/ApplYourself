@@ -7,6 +7,7 @@ and break pipeline/<job_id>/state.yaml + applications/<dir> keys."""
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -426,6 +427,64 @@ def test_cleaning_idempotent(tmp_path):
     pd.testing.assert_frame_equal(
         out1.reset_index(drop=True), out2.reset_index(drop=True)
     )
+
+
+# ---------- run-report stat chain ----------
+
+def test_report_dropped_stats_chain_off_predecessor(tmp_path):
+    """Every `dropped_*` must equal its own stage's loss (previous_after -
+    current_after). dropped_short used to subtract from raw_rows, re-counting
+    every title-gate drop."""
+    # site must not be "manual" — manual rows are exempt from the title gate.
+    raw_dir = _make_raw_parquet(tmp_path, [
+        # survives every stage
+        {"site": "linkedin", "company": "Acme", "title": "SAP SD Consultant",
+         "description": "x" * 300},
+        # classify as sap, then trip a title_exclude_term -> gate drops both
+        {"site": "linkedin", "company": "Beta", "title": "SAP Clinical Data Consultant",
+         "description": "y" * 300},
+        {"site": "linkedin", "company": "Gamma", "title": "SAP MM Nurse Lead",
+         "description": "z" * 300},
+        # in-lane but too short -> the only legitimate short-JD drop
+        {"site": "linkedin", "company": "Delta", "title": "SAP SD Consultant",
+         "description": "q" * 10},
+    ])
+    cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text()
+
+    def stage(label: str) -> tuple[int, int]:
+        """Return (after, dropped) for a report line."""
+        line = next(ln for ln in report.splitlines() if ln.startswith(f"- {label}"))
+        after = int(re.search(r":\s*(\d+)", line).group(1))
+        dropped = int(re.search(r"\(dropped (\d+)\)", line).group(1))
+        return after, dropped
+
+    raw_rows = int(re.search(r"- raw rows loaded: (\d+)", report).group(1))
+    assert raw_rows == 4
+
+    excl_after, excl_dropped = stage("after classification/exclusion")
+    short_after, short_dropped = stage("after short-JD drop")
+
+    # The title gate ate 2 rows; the short-JD filter ate exactly 1.
+    assert (excl_after, excl_dropped) == (2, 2)
+    assert (short_after, short_dropped) == (1, 1)
+    # The regression: raw_rows - short_after would have reported 3.
+    assert short_dropped != raw_rows - short_after
+
+    # Whole chain must telescope: each dropped == predecessor_after - after.
+    prev = short_after
+    for label in ("after stale drop", "after exact dedupe", "after near dedupe",
+                  "after seen-ledger expiry", "after location filter"):
+        after, dropped = stage(label)
+        assert dropped == prev - after, f"{label}: {dropped} != {prev} - {after}"
+        prev = after
 
 
 # ---------- T12: career-board staleness exemption ----------

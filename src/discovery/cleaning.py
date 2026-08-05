@@ -785,7 +785,8 @@ def run(
         "dropped_exclusion": raw_rows - after_exclusion,
         "drops_per_vertical": drops_per_vertical,
         "after_short_jd": after_short,
-        "dropped_short": raw_rows - after_short,
+        # Every dropped_* chains off its predecessor, never raw_rows.
+        "dropped_short": after_exclusion - after_short,
         "after_stale": after_stale,
         "dropped_stale": after_short - after_stale,
         "after_exact_dedupe": after_exact,
