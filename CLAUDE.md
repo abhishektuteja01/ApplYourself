@@ -156,9 +156,9 @@ stays in the command session).
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).
 - Read the relevant command `.md` before running its slash command — the real
   orchestration logic lives there, not in `src/`.
-- `HANDOFF.md` (live breakage/fixes), `cleaning.md` (cleanup backlog) and
-  `publish.md` (publish backlog) are gitignored working notes. Read them if
-  they exist locally; on a fresh clone they won't.
+- `HANDOFF.md` (live breakage/fixes) and `publish.md` (publish backlog) are
+  gitignored working notes. Read them if they exist locally; on a fresh clone
+  they won't.
 - `plans/*.md` are reference, not instructions: `discovery_plan.md` is the
   completed v2 discovery build, `discovery_next.md` its downstream handoff, and
   `ats_application_forms_research.md` un-built research. Nothing there is a live

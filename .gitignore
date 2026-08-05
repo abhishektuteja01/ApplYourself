@@ -83,11 +83,10 @@ __pycache__/
 
 # NOTE: uv.lock is intentionally NOT ignored — committed for reproducibility.
 
-# Private working notes — live breakage tracker, cleanup backlog, publish
-# backlog. They carry measured funnel counts, real lane names and local paths;
-# versioned in the private bare repo, not here.
+# Private working notes — live breakage tracker, publish backlog. They carry
+# measured funnel counts, real lane names and local paths; versioned in the
+# private bare repo, not here.
 /HANDOFF.md
-/cleaning.md
 /publish.md
 
 # Morning discovery automation logs (scheduler job)
