@@ -13,16 +13,18 @@ import pandas as pd
 import pytest
 import yaml
 
+from src import verticals
 from src.discovery.cleaning import CLEAN_COLUMNS
 from src.scoring_io import (
     AUTO_SKIP_SCORED_BY,
+    AXIS_MAXIMA,
     SCORED_COLUMNS,
     auto_score_disqualified,
     auto_score_ineligible,
     auto_score_out_of_lane,
     compute_shortlist,
     disqualify_reason,
-    dump_shortlist_input,
+    fit_score_from_subscores,
     dump_unscored,
     hard_ineligible_phrase,
     load_hard_ineligible,
@@ -30,6 +32,7 @@ from src.scoring_io import (
     merge_scores,
     merge_scores_from_dir,
     prune_scored,
+    render_shortlist_markdown,
     select_unscored,
     validate_scores,
 )
@@ -141,6 +144,100 @@ def test_dump_unscored_force_all_ignores_scored(tmp_path):
     out_path = tmp_path / "unscored.jsonl"
     n = dump_unscored(clean_p, scored_p, out_path, force_all=True)
     assert n == 2  # both, despite aaaaaaaa already scored
+
+
+# ---------- dump_unscored file-handle safety ----------
+
+def _patch_failing_open(monkeypatch, fail_on: int):
+    """Make the fail_on'th write-mode Path.open raise OSError. Returns a dict
+    with the call count and every handle that was successfully opened, so the
+    caller can assert they all got closed."""
+    real_open = Path.open
+    seen = {"calls": 0, "opened": []}
+
+    def fake_open(self, mode="r", *args, **kwargs):
+        if "w" not in mode:
+            return real_open(self, mode, *args, **kwargs)
+        seen["calls"] += 1
+        if seen["calls"] == fail_on:
+            raise OSError(28, "No space left on device")
+        f = real_open(self, mode, *args, **kwargs)
+        seen["opened"].append(f)
+        return f
+
+    monkeypatch.setattr(Path, "open", fake_open)
+    return seen
+
+
+# 1-3 are unscored/auto_skip/auto_skip_ineligible; 4 is the first per-vertical
+# skip file, opened inside a dict comprehension that binds no name per handle.
+@pytest.mark.parametrize("fail_on", [1, 2, 3, 4])
+def test_dump_unscored_open_failure_surfaces_oserror(tmp_path, monkeypatch, fail_on):
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+    ])
+    scored_p = tmp_path / "scored.parquet"
+    out_path = tmp_path / "unscored.jsonl"
+    seen = _patch_failing_open(monkeypatch, fail_on)
+    with pytest.raises(OSError) as exc:
+        dump_unscored(clean_p, scored_p, out_path)
+    monkeypatch.undo()
+    assert not isinstance(exc.value, NameError)
+    assert seen["calls"] == fail_on  # aborted at the failing open, no others tried
+    assert len(seen["opened"]) == fail_on - 1
+    assert all(f.closed for f in seen["opened"])
+
+
+def test_dump_unscored_open_failure_in_last_skip_file_leaks_nothing(tmp_path, monkeypatch):
+    """The per-vertical handles are opened inside one comprehension, so a
+    failure on the last one must still close the earlier ones."""
+    names = verticals.get_config().names
+    if len(names) < 2:
+        pytest.skip("needs >=2 configured verticals to have an earlier handle to leak")
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+    ])
+    scored_p = tmp_path / "scored.parquet"
+    out_path = tmp_path / "unscored.jsonl"
+    seen = _patch_failing_open(monkeypatch, 3 + len(names))
+    with pytest.raises(OSError):
+        dump_unscored(clean_p, scored_p, out_path)
+    monkeypatch.undo()
+    assert len(seen["opened"]) == 2 + len(names)
+    assert all(f.closed for f in seen["opened"])
+
+
+def test_dump_unscored_closes_every_handle_on_success(tmp_path, monkeypatch):
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "bbbbbbbb", "title": "Public Health Data Analyst", "vertical": ""},
+    ])
+    scored_p = tmp_path / "scored.parquet"
+    out_path = tmp_path / "unscored.jsonl"
+    seen = _patch_failing_open(monkeypatch, 0)  # never fails
+    dump_unscored(clean_p, scored_p, out_path)
+    monkeypatch.undo()
+    assert len(seen["opened"]) == 3 + len(verticals.get_config().names)
+    assert all(f.closed for f in seen["opened"])
+
+
+def test_dump_unscored_row_error_closes_handles(tmp_path, monkeypatch):
+    """A failure mid-loop must still close every handle (the old try/finally's
+    one working case) and must not be masked."""
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+    ])
+    scored_p = tmp_path / "scored.parquet"
+    out_path = tmp_path / "unscored.jsonl"
+    seen = _patch_failing_open(monkeypatch, 0)
+    monkeypatch.setattr(
+        "src.scoring_io.disqualify_reason",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    with pytest.raises(RuntimeError, match="boom"):
+        dump_unscored(clean_p, scored_p, out_path)
+    monkeypatch.undo()
+    assert all(f.closed for f in seen["opened"])
 
 
 # ---------- out-of-lane pre-screen (vertical="" auto-skip) ----------
@@ -637,10 +734,66 @@ def test_merge_scores_from_dir_aggregates_batches(tmp_path):
     (staging / "batch_002.json").write_text(json.dumps([
         _valid_score(job_id="cccccccc"),
     ]))
-    n = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
+    n, skipped = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
     assert n == 3
+    assert skipped == []
     df = pd.read_parquet(scored_p)
     assert set(df["job_id"]) == {"aaaaaaaa", "bbbbbbbb", "cccccccc"}
+
+
+@pytest.mark.parametrize("bad_body", [
+    '[{"job_id": "dddddddd", "fit_score": 7',   # truncated mid-write
+    '{"job_id": "dddddddd"}',                   # object, not an array
+])
+def test_merge_scores_from_dir_reports_unreadable_batches(tmp_path, bad_body):
+    """Skipping an unreadable batch is fine; failing to REPORT it is what lets
+    the caller delete ~100 judged rows behind a healthy merged= count."""
+    scored_p = tmp_path / "scored.parquet"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "batch_001.json").write_text(json.dumps([
+        _valid_score(job_id="aaaaaaaa"),
+    ]))
+    (staging / "batch_002.json").write_text(bad_body)
+    n, skipped = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
+    assert n == 1  # the good batch still merges
+    assert [f.name for f in skipped] == ["batch_002.json"]
+
+
+def test_merge_scores_from_dir_reports_unreadable_when_nothing_merges(tmp_path):
+    """The all-batches-bad case still has to report — the early `not all_scores`
+    return is the path where merged=0 looks like an empty-staging no-op."""
+    scored_p = tmp_path / "scored.parquet"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "batch_001.json").write_text("[{")
+    n, skipped = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
+    assert n == 0
+    assert [f.name for f in skipped] == ["batch_001.json"]
+
+
+def test_merge_scores_from_dir_error_names_source_batch(tmp_path):
+    """score.md tells the operator to fix 'the named row in the named batch
+    file' — so the error has to name the file, not a concatenated row index."""
+    scored_p = tmp_path / "scored.parquet"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "batch_001.json").write_text(json.dumps([
+        _valid_score(job_id="aaaaaaaa"),
+    ]))
+    bad = _valid_score(job_id="bbbbbbbb", fit_score=70)
+    bad["fit_subscores"] = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
+    (staging / "batch_002.json").write_text(json.dumps([bad]))
+    with pytest.raises(ValueError) as exc:
+        merge_scores_from_dir(scored_p, staging, scored_by_model="t")
+    assert "batch_002.json[0]" in str(exc.value)
+    assert "fit_score 70 disagrees with fit_subscores sum 100" in str(exc.value)
+    assert not scored_p.exists()  # raises before touching the parquet
+
+
+def test_validate_scores_non_dict_row_is_an_error_not_a_crash():
+    errs = validate_scores([_valid_score(), 42])
+    assert any("expected an object, got int" in e for e in errs)
 
 
 # ---------- prune_scored ----------
@@ -671,11 +824,63 @@ def test_validate_scores_clean():
     assert validate_scores([_valid_score()]) == []
 
 
-def test_validate_scores_subscores_dont_sum():
+# ---------- fit_score is derived, never authored ----------
+
+def test_fit_score_from_subscores_sums_the_four_axes():
+    assert fit_score_from_subscores(
+        {"title": 27, "skills": 22, "seniority": 18, "domain": 11}) == 78
+
+
+def test_fit_score_from_subscores_maxima_sum_to_100():
+    assert fit_score_from_subscores(AXIS_MAXIMA) == 100
+
+
+def test_merge_derives_fit_score_when_judge_omits_it(tmp_path):
+    scored_p = tmp_path / "scored.parquet"
+    s = _valid_score(job_id="aaaaaaaa")
+    s["fit_subscores"] = {"title": 27, "skills": 22, "seniority": 18, "domain": 11}
+    del s["fit_score"]
+    merge_scores(scored_p, [s], scored_by_model="t")
+    df = pd.read_parquet(scored_p)
+    assert df.loc[0, "fit_score"] == 78.0
+
+
+def test_merge_ignores_a_stray_agreeing_fit_score(tmp_path):
+    """Subscores are authoritative: an agreeing fit_score is accepted but the
+    stored total still comes from the sum, not from the supplied key."""
+    scored_p = tmp_path / "scored.parquet"
+    s = _valid_score(job_id="aaaaaaaa", fit_score=78)
+    s["fit_subscores"] = {"title": 27, "skills": 22, "seniority": 18, "domain": 11}
+    merge_scores(scored_p, [s], scored_by_model="t")
+    df = pd.read_parquet(scored_p)
+    assert df.loc[0, "fit_score"] == 78.0
+
+
+def test_auto_skipped_rows_still_land_fit_score_zero(tmp_path):
+    """The three auto-skip paths no longer hand-write fit_score: 0 — it has to
+    fall out of their all-zero subscores."""
+    skip_p = tmp_path / "auto_skip.jsonl"
+    skip_p.write_text(json.dumps({"job_id": "aaaaaaaa", "vertical": ""}) + "\n")
+    scored_p = tmp_path / "scored.parquet"
+    n = auto_score_out_of_lane(skip_p, scored_p)
+    assert n == 1
+    df = pd.read_parquet(scored_p)
+    assert df.loc[0, "fit_score"] == 0.0
+
+
+def test_validate_scores_stray_fit_score_must_agree():
+    """A judge should omit fit_score. Emitting a disagreeing one is prompt
+    drift, so it fails loud instead of being silently overridden."""
     bad = _valid_score(fit_score=99,
                        fit_subscores={"title": 25, "skills": 25, "seniority": 15, "domain": 10})
     errs = validate_scores([bad])
-    assert any("sum 75 != fit_score 99" in e for e in errs)
+    assert any("fit_score 99 disagrees with fit_subscores sum 75" in e for e in errs)
+
+
+def test_validate_scores_fit_score_omitted_is_valid():
+    s = _valid_score()
+    del s["fit_score"]
+    assert validate_scores([s]) == []
 
 
 def test_validate_scores_missing_field():
@@ -803,18 +1008,17 @@ def test_compute_shortlist_empty_when_no_scored(tmp_path):
     assert out == {"main": {"ai_eng": [], "risk_ai": [], "sap": []}, "excluded": [], "suppressed": []}
 
 
-def test_dump_shortlist_input_writes_json(tmp_path):
+def test_compute_shortlist_output_is_json_serialisable(tmp_path):
     rows = [{"job_id": "aaaaaaaa"}]
     scores = [_valid_score(job_id="aaaaaaaa", fit_score=80)]
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores)
-    out_p = tmp_path / "shortlist_input.json"
-    dump_shortlist_input(scored_p, clean_p, pipe_d, out_p)
-    data = json.loads(out_p.read_text())
+    out = compute_shortlist(scored_p, clean_p, pipe_d)
+    data = json.loads(json.dumps(out, default=str))
     assert "main" in data and "excluded" in data and "suppressed" in data
     assert data["main"]["sap"][0]["job_id"] == "aaaaaaaa"
 
 
-def test_dump_shortlist_input_preserves_keywords_to_mirror_as_list(tmp_path):
+def test_compute_shortlist_preserves_keywords_to_mirror_as_list(tmp_path):
     """Regression: parquet stores list columns as numpy.ndarray. _to_jsonable
     must serialise them as JSON lists, not as the array's str repr (which
     would later iterate per-character and break shortlist rendering)."""
@@ -824,11 +1028,176 @@ def test_dump_shortlist_input_preserves_keywords_to_mirror_as_list(tmp_path):
         keywords_to_mirror=["Agricultural Contract Management", "Source to Pay", "S/4HANA"],
     )]
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores)
-    out_p = tmp_path / "shortlist_input.json"
-    dump_shortlist_input(scored_p, clean_p, pipe_d, out_p)
-    data = json.loads(out_p.read_text())
-    kw = data["main"]["sap"][0]["keywords_to_mirror"]
+    kw = compute_shortlist(scored_p, clean_p, pipe_d)["main"]["sap"][0]["keywords_to_mirror"]
     assert isinstance(kw, list)
     assert kw == ["Agricultural Contract Management", "Source to Pay", "S/4HANA"]
     # Anti-regression: NOT a single string of the array's repr
     assert not isinstance(kw, str)
+
+
+# ---------- render_shortlist_markdown ----------
+
+def _sl_row(**over) -> dict:
+    """One compute_shortlist "main" row, as render_shortlist_markdown sees it."""
+    row = {
+        "job_id": "aaaaaaaa",
+        "vertical": "sap",
+        "company": "Acme",
+        "title": "SAP SD Consultant",
+        "location": "Boston, MA",
+        "source": "indeed",
+        "posted_date": "2026-06-01",
+        "url": "https://x/1",
+        "fit_score": 80,
+        "fit_subscores": _split_score(80),
+        "sponsorship_label": "opt_ok",
+        "sponsorship_evidence": "no visa sponsorship language",
+        "reasoning": "strong ACM overlap",
+        "keywords_to_mirror": ["ACM", "SD", "S/4HANA", "IDoc"],
+        "suggested_action": "tailor",
+        "already_seen": False,
+        "application_status": "",
+    }
+    row.update(over)
+    if "fit_score" in over and "fit_subscores" not in over:
+        row["fit_subscores"] = _split_score(over["fit_score"])
+    return row
+
+
+def _render(cfg, main: dict, n_scored=10, n_clean=20, date_str="2026-06-06"):
+    return render_shortlist_markdown(
+        {"main": main, "excluded": [], "suppressed": []},
+        cfg, date_str, n_scored, n_clean,
+    )
+
+
+def test_render_shortlist_header_counts_and_date(cfg):
+    md = _render(cfg, {"sap": [_sl_row()]}, n_scored=7, n_clean=99)
+    assert md.startswith("# Shortlist — 2026-06-06\n")
+    assert "(7 of 99 scored, top 25 per vertical with fit >= 50)" in md
+
+
+def test_render_shortlist_row_fields(cfg):
+    md = _render(cfg, {"sap": [_sl_row()]})
+    assert "### 1. 80 — Acme — SAP SD Consultant" in md
+    assert "- **job_id:** `aaaaaaaa`" in md
+    assert "- **location:** Boston, MA · **source:** indeed · **posted:** 2026-06-01" in md
+    assert "- **sponsorship:** opt_ok — \"no visa sponsorship language\"" in md
+    assert "- **why:** strong ACM overlap" in md
+    assert "- **suggested:** tailor" in md
+    assert "- **verify E-Verify** before submitting (manual v1 step)" in md
+    assert "- https://x/1" in md
+
+
+def test_render_shortlist_mirrors_only_the_first_three_keywords(cfg):
+    md = _render(cfg, {"sap": [_sl_row()]})
+    assert "- **mirror in tailoring:** ACM, SD, S/4HANA" in md
+    assert "IDoc" not in md
+
+
+def test_render_shortlist_handles_missing_keywords(cfg):
+    row = _sl_row()
+    del row["keywords_to_mirror"]
+    assert "- **mirror in tailoring:** \n" in _render(cfg, {"sap": [row]})
+
+
+def test_render_shortlist_subscore_breakdown(cfg):
+    md = _render(cfg, {"sap": [_sl_row(fit_score=80)]})
+    sub = _split_score(80)
+    assert (f"- **fit:** 80 (title {sub['title']} / skills {sub['skills']} "
+            f"/ seniority {sub['seniority']} / domain {sub['domain']})") in md
+
+
+def test_render_shortlist_accepts_json_encoded_subscores(cfg):
+    """scored.parquet stores fit_subscores as a JSON string."""
+    md = _render(cfg, {"sap": [_sl_row(fit_subscores=json.dumps(_split_score(80)))]})
+    assert "- **fit:** 80 (title 30 / skills 30 / seniority 20 / domain 0)" in md
+
+
+def test_render_shortlist_numbers_rows_within_a_section(cfg):
+    rows = [_sl_row(job_id=f"{i:08x}", fit_score=90 - i) for i in range(3)]
+    md = _render(cfg, {"sap": rows})
+    for i in range(1, 4):
+        assert f"### {i}. " in md
+
+
+def test_render_shortlist_status_is_new_unless_already_seen(cfg):
+    md = _render(cfg, {"sap": [_sl_row(already_seen=False,
+                                       application_status="applied")]})
+    assert "- **status:** new" in md
+
+
+def test_render_shortlist_status_uses_application_status_when_seen(cfg):
+    md = _render(cfg, {"sap": [_sl_row(already_seen=True,
+                                       application_status="applied")]})
+    assert "- **status:** applied" in md
+
+
+def test_render_shortlist_sections_follow_config_order(cfg):
+    md = _render(cfg, {v: [_sl_row(vertical=v, job_id=v[:8])] for v in cfg.names})
+    positions = [md.index(f"## {cfg.verticals[v].display_name} ") for v in cfg.names]
+    assert positions == sorted(positions)
+
+
+def test_render_shortlist_section_header_carries_its_count(cfg):
+    rows = [_sl_row(job_id=f"{i:08x}") for i in range(2)]
+    md = _render(cfg, {"sap": rows})
+    assert f"## {cfg.verticals['sap'].display_name} (2)" in md
+
+
+def test_render_shortlist_empty_vertical_gets_a_placeholder(cfg):
+    md = _render(cfg, {"sap": [_sl_row()]})
+    # the two other configured verticals have no rows
+    assert md.count("No keepers today in this vertical.") == len(cfg.names) - 1
+
+
+def test_render_shortlist_all_empty_short_circuits(cfg):
+    md = _render(cfg, {v: [] for v in cfg.names})
+    assert md.endswith("\nNo keepers today in this vertical.\n")
+    assert "##" not in md  # no per-vertical sections at all
+
+
+def test_render_shortlist_missing_vertical_key_is_treated_as_empty(cfg):
+    md = _render(cfg, {})
+    assert md.endswith("\nNo keepers today in this vertical.\n")
+
+
+class TestRenderShortlistInvariants:
+    """These asserts are the last line of defence before a shortlist reaches
+    the user: an ineligible or low-fit row here means a wasted application."""
+
+    def test_over_cap_section_raises(self, cfg):
+        rows = [_sl_row(job_id=f"{i:08x}") for i in range(26)]
+        with pytest.raises(AssertionError, match="exceeds cap 25"):
+            _render(cfg, {"sap": rows})
+
+    def test_exactly_at_cap_is_allowed(self, cfg):
+        rows = [_sl_row(job_id=f"{i:08x}") for i in range(25)]
+        assert "### 25. " in _render(cfg, {"sap": rows})
+
+    def test_cross_vertical_leak_raises(self, cfg):
+        with pytest.raises(AssertionError, match="leaked into"):
+            _render(cfg, {"sap": [_sl_row(vertical="ai_eng")]})
+
+    def test_below_min_fit_raises(self, cfg):
+        with pytest.raises(AssertionError, match="fit 49 < 50"):
+            _render(cfg, {"sap": [_sl_row(fit_score=49)]})
+
+    def test_fit_exactly_50_is_allowed(self, cfg):
+        assert "### 1. 50 " in _render(cfg, {"sap": [_sl_row(fit_score=50)]})
+
+    def test_subscores_not_summing_to_fit_raises(self, cfg):
+        row = _sl_row(fit_score=80, fit_subscores={"title": 30, "skills": 30,
+                                                   "seniority": 20, "domain": 5})
+        with pytest.raises(AssertionError, match="!= fit_score 80"):
+            _render(cfg, {"sap": [row]})
+
+    def test_ineligible_row_in_main_raises(self, cfg):
+        with pytest.raises(AssertionError, match="ineligible in main"):
+            _render(cfg, {"sap": [_sl_row(sponsorship_label="ineligible")]})
+
+    def test_the_first_bad_row_raises_before_rendering_it(self, cfg):
+        """Fail loud, not "render 24 rows and drop one"."""
+        rows = [_sl_row(job_id="aaaaaaaa"), _sl_row(job_id="bbbbbbbb", fit_score=10)]
+        with pytest.raises(AssertionError):
+            _render(cfg, {"sap": rows})

@@ -1,5 +1,4 @@
 import pandas as pd
-import datetime
 
 COLUMNS: list[str] = [
     "site",

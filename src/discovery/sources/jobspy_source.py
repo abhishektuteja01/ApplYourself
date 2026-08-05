@@ -29,8 +29,7 @@ class JobSpySource(Source):
         locations = ctx.config.location_allowlist.countries or ["United States"]
         
         total_queries = 0
-        total_rows = 0
-        
+
         for v in ctx.verticals.verticals.values():
             terms = v.linkedin_terms if self.name == "linkedin" else v.search_terms
             for term in terms:
@@ -72,8 +71,8 @@ class JobSpySource(Source):
                                 record["vertical"] = v.name
                                 rows.append(make_row(**record))
                             report_lines.append(f"- term='{term}' remote={is_remote}: {len(df)} rows")
-                        total_rows += len(df)
-                        
+
+
         report_lines.append(f"Queries made: {total_queries}")
         return SourceResult(rows, report_lines, errors)
 

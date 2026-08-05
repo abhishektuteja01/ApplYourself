@@ -6,6 +6,8 @@ import pandas as pd
 import csv
 from datetime import timedelta
 
+from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
+
 log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -13,13 +15,6 @@ DEFAULT_COMPANIES_PATH = REPO_ROOT / "profile" / "companies.yaml"
 CSV_DIR = REPO_ROOT / "data" / "universe"
 HEALTH_PATH = REPO_ROOT / "jobs" / "universe_health.parquet"
 _SCHEMA_VERSION = 1
-
-# Delay import to avoid circular dependency since registry might import us
-# Or hardcode here if simple
-try:
-    from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
-except ImportError:
-    ATS_SOURCE_NAMES = {"greenhouse", "lever", "ashby"}
 
 @dataclass(frozen=True)
 class UniverseCompany:
@@ -29,6 +24,8 @@ class UniverseCompany:
     priority: bool = False
 
 def update_health(ats: str, slug: str, success: bool, rows: int = 0):
+    """success=False counts a strike toward pruning; call it only for a board
+    that is permanently dead, never for a transient fetch failure."""
     if HEALTH_PATH.exists():
         df = pd.read_parquet(HEALTH_PATH)
     else:

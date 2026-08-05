@@ -15,11 +15,14 @@ thin sequence of one-liners. Judging is never done here.
                                      configured vertical)
   split                              route unscored.jsonl into per-vertical
                                      unscored_<vertical>.jsonl files
+  ranges                             print counts + one `range <vertical>
+                                     <A>-<B>` line per judge chunk, from the
+                                     per-vertical files on disk (/rescore's
+                                     fan-out; /score gets these from prepare)
   check-coverage                     compare staged batch job_ids against the
                                      dump (exit 1 if gaps/dupes/strays)
   merge [--model M]                  merge staged batches + prune, delete
                                      consumed staging files on success
-  shortlist-input                    write shortlist_input.json, print counts
 """
 from __future__ import annotations
 
@@ -37,14 +40,11 @@ from src.scoring_io import (
     auto_score_ineligible,
     auto_score_out_of_lane,
     compute_shortlist,
-    dump_shortlist_input,
     dump_unscored,
     merge_scores_from_dir,
     prune_scored,
     render_shortlist_markdown,
 )
-
-log = logging.getLogger(__name__)
 
 CLEAN = Path("jobs/clean.parquet")
 SCORED = Path("jobs/scored.parquet")
@@ -92,8 +92,20 @@ def coverage(staging: Path) -> dict:
     """Compare job_ids staged in batch_*.json against the dump. Counting
     only — batch contents are never judged or rewritten here."""
     staged: list[str] = []
+    unreadable: list[str] = []
     for f in sorted(staging.glob("batch_*.json")):
-        staged += [r["job_id"] for r in json.loads(f.read_text())]
+        # An unreadable batch must be REPORTED, not raised on — a traceback
+        # here tells the operator nothing about which rows are at risk.
+        try:
+            batch = json.loads(f.read_text())
+        except json.JSONDecodeError:
+            unreadable.append(f.name)
+            continue
+        if not isinstance(batch, list):
+            unreadable.append(f.name)
+            continue
+        staged += [r["job_id"] for r in batch
+                   if isinstance(r, dict) and "job_id" in r]
     with (staging / "unscored.jsonl").open() as f:
         expected = [json.loads(line)["job_id"] for line in f if line.strip()]
     return {
@@ -102,6 +114,7 @@ def coverage(staging: Path) -> dict:
         "missing": sorted(set(expected) - set(staged)),
         "unexpected": sorted(set(staged) - set(expected)),
         "dupes": len(staged) - len(set(staged)),
+        "unreadable": sorted(unreadable),
     }
 
 
@@ -132,42 +145,72 @@ def _cmd_split(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ranges(args: argparse.Namespace) -> int:
+    """Print the judge fan-out for the current split, from the per-vertical
+    unscored files on disk. The one range printer /score (via prepare) and
+    /rescore share, so neither re-derives chunking in prose."""
+    counts = {}
+    for v in verticals.get_config().names:
+        p = STAGING / f"unscored_{v}.jsonl"
+        counts[v] = (sum(1 for line in p.read_text().splitlines() if line.strip())
+                     if p.exists() else 0)
+    print(" ".join(f"{v}={n}" for v, n in counts.items()))
+    for v, a, b in judge_ranges(counts):
+        print(f"range {v} {a}-{b}")
+    return 0
+
+
 def _cmd_check_coverage(args: argparse.Namespace) -> int:
     report = coverage(STAGING)
     print(f"staged={report['staged']} expected={report['expected']}")
     print(f"missing: {report['missing']}")
     print(f"unexpected: {report['unexpected']}")
     print(f"dupes: {report['dupes']}")
+    print(f"unreadable: {report['unreadable']}")
     clean = (report["staged"] == report["expected"]
              and not report["missing"] and not report["unexpected"]
-             and report["dupes"] == 0)
+             and report["dupes"] == 0 and not report["unreadable"])
     return 0 if clean else 1
 
 
 def _cmd_merge(args: argparse.Namespace) -> int:
-    n_merged = merge_scores_from_dir(SCORED, STAGING, scored_by_model=args.model)
+    n_merged, skipped = merge_scores_from_dir(
+        SCORED, STAGING, scored_by_model=args.model)
     n_pruned = prune_scored(SCORED, CLEAN)
-    clear_staging(STAGING)
     print(f"merged={n_merged} pruned={n_pruned}")
+    if skipped:
+        # Each unreadable batch holds ~100 judged rows. Clearing staging here
+        # would destroy them behind the healthy merged= count above.
+        print(f"ERROR: {len(skipped)} unreadable batch file(s), staging kept:")
+        for f in skipped:
+            print(f"  {f.name}")
+        print("Repair or delete them, then re-run merge (rows already merged "
+              "overwrite by job_id, so re-running is safe).")
+        return 1
+    clear_staging(STAGING)
     return 0
 
 
-def _cmd_shortlist_input(args: argparse.Namespace) -> int:
-    STAGING.mkdir(parents=True, exist_ok=True)
-    dump_shortlist_input(
-        SCORED, CLEAN, PIPELINE, STAGING / "shortlist_input.json",
-        top_n=25, min_fit=50,
-    )
-    n_scored = len(pd.read_parquet(SCORED))
-    n_clean = len(pd.read_parquet(CLEAN))
-    print(f"n_scored={n_scored} n_clean={n_clean}")
-    return 0
+JUDGE_CHUNK = 100
+JUDGE_BATCH = 10
 
 
-def judge_ranges(counts: dict[str, int], chunk: int = 100) -> list[tuple[str, int, int]]:
+def judge_ranges(counts: dict[str, int],
+                 chunk: int = JUDGE_CHUNK) -> list[tuple[str, int, int]]:
     """Chunk each vertical's row count into consecutive 1-indexed ranges of
     at most `chunk` rows (last may be short). Verticals with count 0 emit no
-    range."""
+    range.
+
+    `chunk` must be a multiple of JUDGE_BATCH: score-judge.md names its output
+    `batch_<v>_NNN.json` with NNN = ceil(first_row/JUDGE_BATCH), which is only
+    unique per judge while every range starts on a JUDGE_BATCH boundary. Off
+    that grid two judges write the same filename, and check-coverage reports
+    the lost rows as `missing`, so /score re-spawns into the same collision."""
+    if chunk % JUDGE_BATCH or chunk < JUDGE_BATCH:
+        raise ValueError(
+            f"chunk must be a positive multiple of {JUDGE_BATCH} (got {chunk}) "
+            f"— batch_<v>_NNN.json filenames collide between judges otherwise"
+        )
     out: list[tuple[str, int, int]] = []
     for v, n in counts.items():
         start = 1
@@ -195,8 +238,20 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     STAGING.mkdir(parents=True, exist_ok=True)
     recovered = 0
     if any(STAGING.glob("batch_*.json")):
-        recovered = merge_scores_from_dir(SCORED, STAGING, scored_by_model=DEFAULT_MODEL)
+        recovered, skipped = merge_scores_from_dir(
+            SCORED, STAGING, scored_by_model=DEFAULT_MODEL)
         prune_scored(SCORED, CLEAN)
+        if skipped:
+            # Abort before clear_staging: prepare would otherwise delete
+            # unrecovered judged rows and re-dump their job_ids for a fresh
+            # fan-out, leaving no trace of the loss.
+            print(f"recovered={recovered}")
+            print(f"ERROR: {len(skipped)} unreadable leftover batch file(s):")
+            for f in skipped:
+                print(f"  {f.name}")
+            print("Repair them and re-run merge, or delete them to discard "
+                  "those rows, then re-run prepare.")
+            return 1
 
     clear_staging(STAGING)
     n_judge = dump_unscored(CLEAN, SCORED, STAGING / "unscored.jsonl",
@@ -263,6 +318,9 @@ def main(argv: list[str] | None = None) -> int:
     p_split = sub.add_parser("split", help="split unscored.jsonl by vertical")
     p_split.set_defaults(func=_cmd_split)
 
+    p_ranges = sub.add_parser("ranges", help="print judge ranges for the current split")
+    p_ranges.set_defaults(func=_cmd_ranges)
+
     p_cov = sub.add_parser("check-coverage", help="staged batches vs dump")
     p_cov.set_defaults(func=_cmd_check_coverage)
 
@@ -270,9 +328,6 @@ def main(argv: list[str] | None = None) -> int:
     p_merge.add_argument("--model", default=DEFAULT_MODEL,
                          help="scored_by_model stamp (default: %(default)s)")
     p_merge.set_defaults(func=_cmd_merge)
-
-    p_sl = sub.add_parser("shortlist-input", help="write shortlist_input.json")
-    p_sl.set_defaults(func=_cmd_shortlist_input)
 
     args = parser.parse_args(argv)
     return args.func(args)

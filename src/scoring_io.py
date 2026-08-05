@@ -8,6 +8,7 @@ even though the scoring prompt itself does not.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -301,13 +302,16 @@ def dump_unscored(
     n_skip = 0
     n_ineligible = 0
     n_skip_by_vertical = dict.fromkeys(cfg.names, 0)
-    skip_files = {}
-    try:
-        f_judge = out_path.open("w")
-        f_skip = auto_skip_path.open("w")
-        f_inel = (out_path.parent / "auto_skip_ineligible.jsonl").open("w")
+    with contextlib.ExitStack() as stack:
+        f_judge = stack.enter_context(out_path.open("w"))
+        f_skip = stack.enter_context(auto_skip_path.open("w"))
+        f_inel = stack.enter_context(
+            (out_path.parent / "auto_skip_ineligible.jsonl").open("w")
+        )
         skip_files = {
-            name: (out_path.parent / f"auto_skip_{name}.jsonl").open("w")
+            name: stack.enter_context(
+                (out_path.parent / f"auto_skip_{name}.jsonl").open("w")
+            )
             for name in cfg.names
         }
         for _, row in df[available].iterrows():
@@ -333,9 +337,6 @@ def dump_unscored(
             else:
                 f_judge.write(json.dumps(d, default=str) + "\n")
                 n_judge += 1
-    finally:
-        for f in (f_judge, f_skip, f_inel, *skip_files.values()):
-            f.close()
     log.info(
         "dump_unscored: to_judge=%d auto_skip=%d auto_ineligible=%d %s",
         n_judge, n_skip, n_ineligible,
@@ -367,7 +368,6 @@ def auto_score_ineligible(
             row = json.loads(line)
             new_scores.append({
                 "job_id": row["job_id"],
-                "fit_score": 0,
                 "fit_subscores": {"title": 0, "skills": 0, "seniority": 0, "domain": 0},
                 "vertical": row.get("vertical", ""),
                 "sponsorship_label": "ineligible",
@@ -407,7 +407,6 @@ def auto_score_out_of_lane(
             row = json.loads(line)
             new_scores.append({
                 "job_id": row["job_id"],
-                "fit_score": 0,
                 "fit_subscores": {"title": 0, "skills": 0, "seniority": 0, "domain": 0},
                 "vertical": "",
                 "sponsorship_label": "unknown",
@@ -458,7 +457,6 @@ def auto_score_disqualified(
             ) or default_reasoning
             new_scores.append({
                 "job_id": row["job_id"],
-                "fit_score": 0,
                 "fit_subscores": {"title": 0, "skills": 0, "seniority": 0, "domain": 0},
                 "vertical": vertical.name,
                 "sponsorship_label": "unknown",
@@ -480,14 +478,31 @@ def auto_score_disqualified(
 # Validation
 # =====================================================================
 
+def fit_score_from_subscores(subs: dict) -> int:
+    """The single source of truth for a row's total. Judges emit only the four
+    per-axis subscores; the total is derived here so a judge can never anchor
+    on a preordained number and back-fill axes to justify it, and so
+    `sum != fit_score` is unrepresentable rather than merely validated.
+    Axis maxima sum to 100, so the result is always in [0,100]."""
+    return sum(int(subs[a]) for a in SUBSCORE_AXES)
+
+
 def validate_scores(scores: list[dict]) -> list[str]:
     """Return a list of error strings (one per problem). Empty = all valid."""
     errors: list[str] = []
     for i, s in enumerate(scores):
-        prefix = f"row {i} (job_id={s.get('job_id', '?')!r})"
+        if not isinstance(s, dict):
+            errors.append(f"row {i}: expected an object, got {type(s).__name__}")
+            continue
+        # _source is stamped by merge_scores_from_dir so the operator can find
+        # the offending row without grepping every batch file.
+        where = s.get("_source", f"row {i}")
+        prefix = f"{where} (job_id={s.get('job_id', '?')!r})"
         # Required fields first; if missing, skip further checks for this row.
+        # fit_score is NOT required — it is derived from fit_subscores by
+        # fit_score_from_subscores, so judges never author a total.
         missing = [f for f in (
-            "job_id", "fit_score", "fit_subscores", "vertical",
+            "job_id", "fit_subscores", "vertical",
             "sponsorship_label", "sponsorship_evidence",
             "reasoning", "keywords_to_mirror", "suggested_action",
         ) if f not in s]
@@ -535,14 +550,16 @@ def validate_scores(scores: list[dict]) -> list[str]:
                         f"out of range [0,{AXIS_MAXIMA[axis]}]"
                     )
                     axes_ok = False
-            if axes_ok:
+            # A judge should omit fit_score entirely. If one emits it anyway
+            # that is prompt drift, so require it to agree rather than
+            # silently overriding it — the disagreement is the signal.
+            if axes_ok and "fit_score" in s:
                 total = sum(subs[a] for a in SUBSCORE_AXES)
                 if total != s["fit_score"]:
                     errors.append(
-                        f"{prefix}: fit_subscores sum {total} != fit_score {s['fit_score']}"
+                        f"{prefix}: fit_score {s['fit_score']} disagrees with "
+                        f"fit_subscores sum {total} — omit fit_score, it is derived"
                     )
-        if isinstance(s["fit_score"], int) and not (0 <= s["fit_score"] <= 100):
-            errors.append(f"{prefix}: fit_score {s['fit_score']} out of [0,100]")
         if s["sponsorship_label"] == "ineligible":
             ev = s["sponsorship_evidence"]
             if not isinstance(ev, str) or not ev.strip():
@@ -582,7 +599,7 @@ def merge_scores(
     kept = existing[~existing["job_id"].astype(str).isin(new_ids)].copy()
     new_rows = [{
         "job_id": s["job_id"],
-        "fit_score": float(s["fit_score"]),
+        "fit_score": float(fit_score_from_subscores(s["fit_subscores"])),
         "fit_subscores": json.dumps(s["fit_subscores"]),
         "vertical": s["vertical"],
         "sponsorship_label": s["sponsorship_label"],
@@ -609,27 +626,42 @@ def merge_scores_from_dir(
     staging_dir: Path,
     scored_by_model: str,
     scored_at: datetime | None = None,
-) -> int:
+) -> tuple[int, list[Path]]:
     """Read all batch_*.json files from staging_dir as JSON arrays of score
-    dicts, then call merge_scores. Returns count of merged rows.
-    /score writes batches to scored.staging/ so partial-batch failures
-    survive for debugging (user Q5 call: not /tmp)."""
+    dicts, then call merge_scores. Returns (count of merged rows, list of
+    batch files that could not be read).
+
+    Unreadable batches are skipped, never merged — but they are also RETURNED,
+    because each one holds ~100 judged rows. The caller must refuse to clear
+    staging while that list is non-empty, or those rows are destroyed while a
+    healthy `merged=` count prints. /score writes batches to scored.staging/
+    so partial-batch failures survive for debugging (user Q5 call: not /tmp).
+
+    validate_scores errors name their source file, so the operator can repair
+    the named row in the named batch and re-run merge (idempotent: rows
+    overwrite by job_id)."""
     if not staging_dir.exists():
-        return 0
+        return 0, []
     all_scores: list[dict] = []
+    skipped: list[Path] = []
     for f in sorted(staging_dir.glob("batch_*.json")):
         try:
             batch = json.loads(f.read_text())
         except json.JSONDecodeError as e:
             log.error("Skipping malformed %s: %s", f, e)
+            skipped.append(f)
             continue
         if not isinstance(batch, list):
             log.error("Skipping %s: expected JSON array, got %s", f, type(batch).__name__)
+            skipped.append(f)
             continue
+        for i, s in enumerate(batch):
+            if isinstance(s, dict):
+                s.setdefault("_source", f"{f.name}[{i}]")
         all_scores.extend(batch)
     if not all_scores:
-        return 0
-    return merge_scores(scored_path, all_scores, scored_by_model, scored_at)
+        return 0, skipped
+    return merge_scores(scored_path, all_scores, scored_by_model, scored_at), skipped
 
 
 def prune_scored(scored_path: Path, clean_path: Path) -> int:
@@ -817,17 +849,3 @@ def render_shortlist_markdown(
     return header + "\n" + "\n".join(sections)
 
 
-def dump_shortlist_input(
-    scored_path: Path,
-    clean_path: Path,
-    pipeline_dir: Path,
-    out_path: Path,
-    top_n: int = 25,
-    min_fit: int = 50,
-) -> dict:
-    """Compute the shortlist split and write it to out_path as JSON for the
-    rendering LLM to consume. Returns the same dict."""
-    result = compute_shortlist(scored_path, clean_path, pipeline_dir, top_n, min_fit)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(result, indent=2, default=str))
-    return result

@@ -55,6 +55,36 @@ def test_unknown_source_key(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         load_config(p)
 
+@pytest.mark.parametrize("version", [2, 0, "1"])
+def test_unsupported_schema_version_rejected(tmp_path, monkeypatch, version):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+
+    p = tmp_path / "v2.yaml"
+    p.write_text(yaml.dump({"schema_version": version, "deadline_hours": 3}))
+    with pytest.raises(ValueError, match="schema_version must be 1"):
+        load_config(p)
+
+def test_schema_version_1_and_absent_both_accepted(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+
+    explicit = tmp_path / "v1.yaml"
+    explicit.write_text(yaml.dump({"schema_version": 1, "deadline_hours": 3}))
+    absent = tmp_path / "no_version.yaml"
+    absent.write_text(yaml.dump({"deadline_hours": 3}))
+    for p in (explicit, absent):
+        cfg = load_config(p)
+        assert cfg.schema_version == 1
+        assert cfg.deadline_hours == 3.0
+
+def test_example_config_declares_the_supported_schema_version(monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+
+    cfg = load_config(Path("profile/discovery.example.yaml"))
+    assert cfg.schema_version == 1
+
 def test_missing_verticals_yaml(tmp_path, monkeypatch):
     from src import verticals
     def mock_get_config():

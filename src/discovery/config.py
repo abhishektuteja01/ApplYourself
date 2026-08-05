@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "discovery.yaml"
+_SCHEMA_VERSION = 1
 
 @dataclass
 class SourceConfig:
@@ -23,7 +24,7 @@ class LocationAllowlist:
 
 @dataclass
 class DiscoveryConfig:
-    schema_version: int = 1
+    schema_version: int = _SCHEMA_VERSION
     deadline_hours: float = 6.0
     location_allowlist: LocationAllowlist = field(default_factory=lambda: LocationAllowlist(["United States"]))
     sources: dict[str, SourceConfig] = field(default_factory=lambda: {
@@ -58,7 +59,12 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         raise ValueError("Config must be a dictionary")
 
     cfg = DiscoveryConfig()
-    
+
+    version = data.get("schema_version", _SCHEMA_VERSION)
+    if version != _SCHEMA_VERSION:
+        raise ValueError(f"{p}: schema_version must be {_SCHEMA_VERSION}, got {version!r}")
+    cfg.schema_version = _SCHEMA_VERSION
+
     if "sources" in data:
         allowed_sources = {"linkedin", "indeed", "zip_recruiter", "google", "greenhouse", "lever", "ashby"}
         for k, v in data["sources"].items():
@@ -79,6 +85,5 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
     cfg.raw_retention_days = int(data.get("raw_retention_days", cfg.raw_retention_days))
-    cfg.schema_version = int(data.get("schema_version", cfg.schema_version))
-    
+
     return cfg

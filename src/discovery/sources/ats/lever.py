@@ -1,4 +1,3 @@
-import logging
 import time
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.sources.ats.http import fetch_json, CareersError, ms_date
@@ -6,8 +5,6 @@ from src.discovery.htmlutil import html_to_text
 from src.discovery import universe
 from src.discovery import cleaning
 from src.discovery.schema import make_row
-
-log = logging.getLogger(__name__)
 
 def lever_rows(payload, company: str) -> list[dict]:
     rows: list[dict] = []
@@ -81,15 +78,16 @@ class LeverSource(Source):
             polled += 1
             url = f"https://api.lever.co/v0/postings/{c.slug}?mode=json"
             try:
-                payload = fetch_json(url)
+                payload = fetch_json(url, deadline_ts=ctx.deadline_ts)
             except CareersError as e:
-                is_404 = "404" in str(e)
+                is_404 = e.status == 404
                 if is_404:
                     err_404 += 1
                 else:
                     err_other += 1
                 errors.append(f"{c.name}: {e}")
-                universe.update_health(self.name, c.slug, success=False)
+                if e.permanent:
+                    universe.update_health(self.name, c.slug, success=False)
                 if c.priority or not is_404:
                     report_lines.append(f"| {c.name} | ERROR | 0 | 0 | {str(e).replace('|', '\\|')[:80]} |")
                 continue
