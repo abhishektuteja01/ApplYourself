@@ -29,9 +29,7 @@ class DiscoveryConfig:
     sources: dict[str, SourceConfig] = field(default_factory=lambda: {
         "linkedin": SourceConfig(True, 3.0),
         "indeed": SourceConfig(True, 2.0),
-        # Both dead upstream as of 2026-08-04 (zip_recruiter: bot block; google:
-        # jobspy returns 0 rows for every query shape). Default off so a config
-        # that omits the key doesn't silently scrape a dead source all night.
+        # Dead upstream; off by default so an omitted key can't enable them.
         "zip_recruiter": SourceConfig(False, 2.0),
         "google": SourceConfig(False, 2.0),
         "greenhouse": SourceConfig(True, 1.0),

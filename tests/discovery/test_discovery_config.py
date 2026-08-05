@@ -13,9 +13,8 @@ def test_missing_file(tmp_path, monkeypatch):
     assert "linkedin" in config.sources
 
 def test_dead_sources_default_disabled(tmp_path, monkeypatch):
-    """zip_recruiter and google are dead upstream. load_config only overrides
-    keys physically present in the YAML, so a config that omits them must not
-    scrape them — a fresh clone from discovery.example.yaml depends on this."""
+    """load_config only overrides keys present in the YAML, so a config that
+    omits these dead sources must not enable them."""
     from src import verticals
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
@@ -27,8 +26,7 @@ def test_dead_sources_default_disabled(tmp_path, monkeypatch):
 
 
 def test_example_config_covers_every_allowed_source(monkeypatch):
-    """The onboarding template must list all 7 sources the loader accepts, so
-    copying it never leaves a source on an implicit code default."""
+    """The template must list every source the loader accepts."""
     from src import verticals
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
