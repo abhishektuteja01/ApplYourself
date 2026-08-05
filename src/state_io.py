@@ -161,6 +161,27 @@ def transition(
     return data
 
 
+def ensure_state(
+    state_path: Path,
+    initial_fields: dict,
+    now: datetime | None = None,
+) -> tuple[dict, bool]:
+    """Bootstrap-only counterpart to transition(): create state.yaml at
+    `saved` if absent, do nothing if present. Never a transition, so /tailor
+    can register a role without writing state (R10) and a re-tailor of any
+    role -- terminal included -- leaves `state` untouched.
+
+    Returns (state_dict, created)."""
+    existing = load_state(state_path)
+    if existing is not None:
+        return existing, False
+    data = transition(
+        state_path, "saved", note="auto-registered by /tailor",
+        initial_fields=initial_fields, now=now,
+    )
+    return data, True
+
+
 # ---------------------------------------------------------------
 # Side-list mutations (/tailor + /cover-letter + /outreach helpers)
 # ---------------------------------------------------------------

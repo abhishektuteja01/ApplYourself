@@ -81,3 +81,39 @@ def test_outreach_sent_missing_state_file_errors(tmp_path, capsys):
     rc = track_cli.main(["outreach-sent", "aaaaaaaa", "--channel", "recruiter", "--to", "Jane"])
     assert rc == 1
     assert "state.yaml missing" in capsys.readouterr().err
+
+
+def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
+    """/tailor calls this: create the role once, then never touch it."""
+    _write_clean(tmp_path, [{
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
+        "source": "indeed", "url": "https://x", "location": "Remote",
+        "vertical": "sap",
+    }])
+
+    assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
+    p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    assert yaml.safe_load(p.read_text())["state"] == "saved"
+    assert "registered" in capsys.readouterr().out
+
+    assert track_cli.main(["aaaaaaaa", "applied"]) == 0
+    before = p.read_text()
+
+    assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
+    out = capsys.readouterr().out
+    assert "already registered" in out and "applied" in out
+    assert p.read_text() == before
+
+
+def test_ensure_does_not_raise_on_terminal_state(tmp_path):
+    """A re-tailor of a rejected role must not hit the terminal-state check."""
+    _write_clean(tmp_path, [{
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
+        "source": "", "url": "", "location": "", "vertical": "sap",
+    }])
+    track_cli.main(["aaaaaaaa", "rejected"])
+    p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    before = p.read_text()
+
+    assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
+    assert p.read_text() == before

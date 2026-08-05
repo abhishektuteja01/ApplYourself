@@ -14,6 +14,7 @@ from src.state_io import (
     VALID_STATES,
     append_outreach_draft,
     append_tailored_dir,
+    ensure_state,
     load_all_states,
     load_state,
     mark_outreach_sent,
@@ -281,3 +282,43 @@ def test_write_is_atomic_no_partial_corruption(tmp_path, monkeypatch):
         transition(p, "tailored")
     # File should still hold the original content; no half-written YAML
     assert _yaml_load(p) == original
+
+
+# ---------- ensure_state: bootstrap only, never a transition (R10) ----------
+
+def test_ensure_state_creates_at_saved_when_absent(tmp_path):
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    data, created = ensure_state(p, initial_fields=_initial())
+    assert created is True
+    assert data["state"] == "saved"
+    assert len(data["state_history"]) == 1
+    assert _yaml_load(p)["state"] == "saved"
+
+
+@pytest.mark.parametrize("existing_state", sorted(VALID_STATES))
+def test_ensure_state_never_mutates_an_existing_role(tmp_path, existing_state):
+    """A re-tailor must not touch state, terminal states included."""
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    transition(p, existing_state, initial_fields=_initial())
+    before = p.read_text()
+
+    data, created = ensure_state(p, initial_fields=_initial())
+
+    assert created is False
+    assert data["state"] == existing_state
+    assert p.read_text() == before, "ensure_state rewrote the file"
+
+
+def test_ensure_state_preserves_applied_at_and_history(tmp_path):
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    transition(p, "saved", initial_fields=_initial())
+    transition(p, "applied")
+    applied_at = _yaml_load(p)["applied_at"]
+    assert applied_at is not None
+
+    ensure_state(p, initial_fields=_initial())
+
+    after = _yaml_load(p)
+    assert after["state"] == "applied"
+    assert after["applied_at"] == applied_at
+    assert len(after["state_history"]) == 2

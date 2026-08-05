@@ -8,9 +8,16 @@
   outreach-sent <job_id> --channel C --to "N"     flip the latest matching
                                                    draft outreach[] entry to
                                                    sent
+  ensure <job_id>                                 create state.yaml at `saved`
+                                                   if absent; no-op if present.
+                                                   Bootstrap only, never a
+                                                   transition -- this is what
+                                                   /tailor calls so a re-tailor
+                                                   cannot rewind live state.
 
 Run directly: `uv run python -m src.track_cli <job_id> <state> [--note "..."]`
-or `uv run python -m src.track_cli outreach-sent <job_id> --channel C --to "N"`.
+or `uv run python -m src.track_cli outreach-sent <job_id> --channel C --to "N"`
+or `uv run python -m src.track_cli ensure <job_id>`.
 """
 from __future__ import annotations
 
@@ -20,7 +27,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.state_io import VALID_STATES, mark_outreach_sent, state_path_for, transition
+from src.state_io import (
+    VALID_STATES,
+    ensure_state,
+    mark_outreach_sent,
+    state_path_for,
+    transition,
+)
 
 PIPELINE = Path("pipeline")
 CLEAN = Path("jobs/clean.parquet")
@@ -85,6 +98,23 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ensure(args: argparse.Namespace) -> int:
+    job_id = args.job_id
+    p = state_path_for(PIPELINE, job_id)
+    initial = None if p.exists() else _gather_initial_fields(job_id)
+    try:
+        data, created = ensure_state(p, initial_fields=initial or {})
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    if created:
+        print(f"OK: registered {job_id} at state=saved  file: {p}")
+    else:
+        print(f"OK: {job_id} already registered  state={data.get('state')}  "
+              f"(unchanged)  file: {p}")
+    return 0
+
+
 def _cmd_outreach_sent(args: argparse.Namespace) -> int:
     job_id, channel, to_name = args.job_id, args.channel, args.to
     p = state_path_for(PIPELINE, job_id)
@@ -102,6 +132,12 @@ def _cmd_outreach_sent(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+
+    if argv and argv[0] == "ensure":
+        parser = argparse.ArgumentParser(prog="python -m src.track_cli ensure")
+        parser.add_argument("job_id")
+        args = parser.parse_args(argv[1:])
+        return _cmd_ensure(args)
 
     if argv and argv[0] == "outreach-sent":
         parser = argparse.ArgumentParser(prog="python -m src.track_cli outreach-sent")

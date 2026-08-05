@@ -207,3 +207,46 @@ def test_snapshot_missing_row_json_errors(tmp_path):
     (tmp_path / "applications").mkdir()
     with pytest.raises(SystemExit, match="run `tailor-prep"):
         tailor_cli.main(["snapshot", "aaaaaaaa", str(tmp_path / "applications")])
+
+
+# ---------- versioning: max+1, never count ----------
+
+def _mkdirs(root, vertical, names):
+    d = root / "applications" / vertical
+    d.mkdir(parents=True, exist_ok=True)
+    for n in names:
+        (d / n).mkdir()
+
+
+def test_versioned_dirname_increments_normally(tmp_path):
+    base = "2026-08-04_acme_analyst_abc12345"
+    args = ("sap", "acme", "analyst", "abc12345", "2026-08-04")
+    assert tailor_cli._versioned_dirname(*args) == f"sap/{base}"
+    _mkdirs(tmp_path, "sap", [base])
+    assert tailor_cli._versioned_dirname(*args) == f"sap/{base}_v2"
+    _mkdirs(tmp_path, "sap", [f"{base}_v2"])
+    assert tailor_cli._versioned_dirname(*args) == f"sap/{base}_v3"
+
+
+def test_versioned_dirname_skips_gaps_left_by_deleted_versions(tmp_path):
+    """Count-based versioning reused a live name once an intermediate version
+    had been pruned: v1+v3 on disk resolved to _v3 again."""
+    base = "2026-08-04_acme_analyst_abc12345"
+    _mkdirs(tmp_path, "sap", [base, f"{base}_v3"])  # v2 was deleted
+    got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
+    assert got == f"sap/{base}_v4"
+    assert not (tmp_path / "applications" / got).exists()
+
+
+def test_versioned_dirname_ignores_other_job_ids(tmp_path):
+    base = "2026-08-04_acme_analyst_abc12345"
+    _mkdirs(tmp_path, "sap", ["2026-08-04_other_role_99999999",
+                              "2026-08-04_other_role_99999999_v2"])
+    got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
+    assert got == f"sap/{base}"
+
+
+def test_versioned_dirname_uses_todays_date_not_the_originals(tmp_path):
+    _mkdirs(tmp_path, "sap", ["2026-06-01_acme_analyst_abc12345"])
+    got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
+    assert got == "sap/2026-08-04_acme_analyst_abc12345_v2"

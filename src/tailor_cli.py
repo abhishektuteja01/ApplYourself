@@ -104,14 +104,23 @@ def _resolve_vertical(row: dict) -> str:
 
 def _versioned_dirname(vertical: str, company_slug: str, title_slug: str,
                        job_id: str, today: str) -> str:
-    """Count-based versioning across the role's lifetime: the first tailor gets
-    the bare name, each re-tailor bumps _vN. The leading date is always today's
-    (when this attempt was made), never the original date."""
-    prior = list((APPLICATIONS / vertical).glob(f"*_{job_id}*"))
+    """Versioning across the role's lifetime: the first tailor gets the bare
+    name, each re-tailor bumps _vN. The leading date is always today's, never
+    the original date.
+
+    Version numbers are max(existing)+1, never len(existing): counting priors
+    reused a live name once any intermediate version had been deleted."""
     base = f"{vertical}/{today}_{company_slug}_{title_slug}_{job_id}"
+    prior = list((APPLICATIONS / vertical).glob(f"*_{job_id}"))
+    prior += list((APPLICATIONS / vertical).glob(f"*_{job_id}_v*"))
     if not prior:
         return base
-    return f"{base}_v{len(prior) + 1}"
+    highest = 1
+    for p in prior:
+        m = re.search(rf"_{re.escape(job_id)}_v(\d+)$", p.name)
+        if m:
+            highest = max(highest, int(m.group(1)))
+    return f"{base}_v{highest + 1}"
 
 
 def _cmd_prep(args: argparse.Namespace) -> int:
@@ -128,9 +137,9 @@ def _cmd_prep(args: argparse.Namespace) -> int:
     state_path = PIPELINE / job_id / "state.yaml"
     if not state_path.is_file():
         raise _die(
-            f"pipeline/{job_id}/state.yaml missing. Run /track {job_id} saved "
-            "first to register the role (the state.yaml is the canonical role "
-            "record)."
+            f"pipeline/{job_id}/state.yaml missing. Run "
+            f"`uv run python -m src.track_cli ensure {job_id}` first to "
+            "register the role. /tailor does this for you."
         )
 
     row = _load_row(job_id)
@@ -145,7 +154,13 @@ def _cmd_prep(args: argparse.Namespace) -> int:
 
     dirname = _versioned_dirname(vertical, company_slug, title_slug, job_id, today)
     out_dir = APPLICATIONS / dirname
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # _versioned_dirname never reuses a number, so this means a bug.
+    if out_dir.exists():
+        raise _die(
+            f"{out_dir} already exists -- refusing to overwrite a previous "
+            "tailor's artifacts. Move or delete it, then re-run."
+        )
+    out_dir.mkdir(parents=True)
 
     # STDERR: human status + the full row (kept out of stdout so the eval below
     # stays clean; the command's Step 2 also reads the row.json file).
