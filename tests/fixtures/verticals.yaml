@@ -24,6 +24,15 @@ verticals:
       - SAP IS-OIL
       - SAP S/4HANA Consultant
       - SAP Business Analyst
+      # Module/process spine — what in-lane keepers are actually titled.
+      - SAP Analyst
+      - SAP Systems Analyst
+      - SAP FICO
+      - SAP SD
+      - SAP MM
+      - SAP EWM
+      - SAP Master Data
+      - SAP Order to Cash
       # adjacency tail trimmed 2026-07-21 for Indeed precision — dropped the
       # broad non-SAP-prefixed terms (SOX IT / Risk and Controls / Commodities
       # Operations / ERP Functional Analyst) that pulled cross-domain noise;
@@ -35,12 +44,14 @@ verticals:
     # per-source run report shows it holding up.
     linkedin_terms:
       - SAP Functional Consultant
-      - SAP ACM
-      - SAP Commodity Management
-      - SAP ETRM
-      - SAP CTRM
       - SAP S/4HANA Consultant
       - SAP Business Analyst
+      - SAP Analyst
+      - SAP Systems Analyst
+      - SAP FICO
+      - SAP SD
+      - SAP MM
+      - SAP EWM
     # Off-lane occupations pulled in by loose Indeed keyword matching and ATS
     # board classification (added 2026-07-21). Word-boundary, applied per
     # vertical, manual-source rows exempt. Drops ~1% clearly non-ACM titles
@@ -367,10 +378,21 @@ verticals:
       - GenAI Engineer
       - LLM Engineer
       - AI Software Engineer
+      - AI Application Engineer
       - Full Stack AI Engineer
+      # Adjacency spine: highest-yield titles by scored-keeper count that the
+      # narrow term set was missing (board-crawl finds only).
+      - Applied AI Engineer
+      - Artificial Intelligence Engineer
+      - Agentic AI Engineer
+      - AI Applications Engineer
+      - AI Developer
+      - Founding AI Engineer
+      - Software Engineer, Applied AI
       # customer-facing build tail (consulting-background fit)
       - Forward Deployed Engineer
       - AI Solutions Engineer
+      - Forward Deployed AI Engineer
     # LinkedIn-reduced set: spine + FDE, drops the qualified variants —
     # same 429-mitigation rationale as sap's and risk_ai's.
     linkedin_terms:
@@ -378,6 +400,10 @@ verticals:
       - Generative AI Engineer
       - LLM Engineer
       - AI Software Engineer
+      - AI Application Engineer
+      - Applied AI Engineer
+      - Artificial Intelligence Engineer
+      - Agentic AI Engineer
       - Forward Deployed Engineer
     title_exclude_terms:
       - Senior
@@ -449,29 +475,38 @@ verticals:
     # the trading-risk tail now reaches this vertical only via classifier_rules
     # on other sources, not active Indeed queries.
     search_terms:
-      # governance/AI lean
-      - Model Risk Analyst
-      - Model Validation Analyst
-      - Model Risk and Validation Analyst
-      - AI Governance Analyst
-      - AI Compliance Analyst
-      - AI Risk Analyst
-      - AI Risk and Compliance Analyst
-      - Responsible AI Analyst
+      # governance/AI lean. Bare noun phrases, not "<X> Analyst": in-lane
+      # keepers are titled Manager/Lead/Associate/Officer/VP as often as
+      # Analyst, and seniority is filtered downstream by title_exclude_terms
+      # + disqualifier.title_phrases.
+      - Model Risk
+      - Model Validation
+      - Model Governance
+      - Model Risk Management
+      - Model Development
+      - AI Governance
+      - AI Compliance
+      - AI Risk
+      - Responsible AI
+      # trading-risk tail
+      - Quantitative Risk
+      - Quantitative Analytics
+      - Market Risk Analyst
+      - Credit Risk Analyst
       # trading-risk tail dropped 2026-07-21 for Indeed precision (Quantitative
       # / Trading / Financial Risk Analyst pulled generic finance/credit noise);
       # classifier_rules still labels these titles if they arrive elsewhere.
     # LinkedIn-reduced set: keeps only the governance/AI lean terms, drops
     # the trading-risk tail — same 429-mitigation rationale as sap's.
     linkedin_terms:
-      - Model Risk Analyst
-      - Model Validation Analyst
-      - Model Risk and Validation Analyst
-      - AI Governance Analyst
-      - AI Compliance Analyst
-      - AI Risk Analyst
-      - AI Risk and Compliance Analyst
-      - Responsible AI Analyst
+      - Model Risk
+      - Model Validation
+      - Model Governance
+      - AI Governance
+      - AI Compliance
+      - AI Risk
+      - Responsible AI
+      - Quantitative Risk
     # Off-lane occupations (added 2026-07-21) — same rationale as sap's list:
     # loose Indeed matching / ATS classification pulls healthcare, trades, and
     # public-sector titles that score out at judge time. Word-boundary, manual
@@ -829,11 +864,22 @@ classifier_rules:
   - vertical: sap
     pattern: '\b(?:sap|acm|s/?4(?:hana)?|etrm|ctrm|o2c|order to cash|sales and distribution|commodit\w*|signavio|mark[- ]to[- ]market|reconciliation|recon|erp)\b'
   - vertical: risk_ai
-    pattern: '\b(?:model\s+risk|model\s+validation|validation|governance|grc|quant\w*|responsible\s+ai|trading\s+risk|financial\s+risk|ai\s+risk|ai\s+compliance)\b'
+    pattern: '\b(?:model\s+risk|model\s+validation|model\s+development|validation|governance|grc|quant\w*|responsible\s+ai|trading\s+risk|financial\s+risk|market\s+risk|credit\s+risk|operational\s+risk|enterprise\s+risk|risk\s*(?:&|and)\s*compliance|ai\s+risk|ai\s+compliance|artificial\s+intelligence\s+(?:risk|governance|compliance))\b'
   - vertical: ai_eng
     pattern: "AI Engineer"
   - vertical: ai_eng
     pattern: "AI Software Engineer"
+  # Families the "AI Engineer" literal misses: spelled-out "Artificial
+  # Intelligence", the AI Application(s)/Developer/Agent titles. Ordered after
+  # risk_ai, so governance/risk titles still land there first.
+  - vertical: ai_eng
+    pattern: "Artificial Intelligence"
+  - vertical: ai_eng
+    pattern: "AI Application"
+  - vertical: ai_eng
+    pattern: "AI Developer"
+  - vertical: ai_eng
+    pattern: "AI Agent"
   - vertical: ai_eng
     pattern: "LLM"
   - vertical: ai_eng

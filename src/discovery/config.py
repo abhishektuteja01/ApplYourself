@@ -29,7 +29,11 @@ class DiscoveryConfig:
     sources: dict[str, SourceConfig] = field(default_factory=lambda: {
         "linkedin": SourceConfig(True, 3.0),
         "indeed": SourceConfig(True, 2.0),
+        # Both dead upstream as of 2026-08-04 (zip_recruiter: bot block; google:
+        # jobspy returns 0 rows for every query shape). Default off so a config
+        # that omits the key doesn't silently scrape a dead source all night.
         "zip_recruiter": SourceConfig(False, 2.0),
+        "google": SourceConfig(False, 2.0),
         "greenhouse": SourceConfig(True, 1.0),
         "lever": SourceConfig(True, 1.0),
         "ashby": SourceConfig(True, 2.0),
@@ -58,7 +62,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     cfg = DiscoveryConfig()
     
     if "sources" in data:
-        allowed_sources = {"linkedin", "indeed", "zip_recruiter", "greenhouse", "lever", "ashby"}
+        allowed_sources = {"linkedin", "indeed", "zip_recruiter", "google", "greenhouse", "lever", "ashby"}
         for k, v in data["sources"].items():
             if k not in allowed_sources:
                 raise ValueError(f"Unknown source key: {k}")

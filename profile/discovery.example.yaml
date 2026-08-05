@@ -4,10 +4,15 @@ location_allowlist:
   countries: ["United States"]
   # states: ["TX", "NY"]      # optional narrowing; empty/absent = all states
   # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
+# All 7 keys the loader accepts. An omitted key falls back to the code default
+# in src/discovery/config.py, so list every source here to stay explicit.
 sources:
-  linkedin:   {enabled: true, pacing_seconds: 3}
-  indeed:     {enabled: true, pacing_seconds: 2}
-  greenhouse: {enabled: true, pacing_seconds: 1}
-  lever:      {enabled: true, pacing_seconds: 1}
-  ashby:      {enabled: true, pacing_seconds: 2}
+  linkedin:      {enabled: true,  pacing_seconds: 3}
+  indeed:        {enabled: true,  pacing_seconds: 2}
+  greenhouse:    {enabled: true,  pacing_seconds: 1}
+  lever:         {enabled: true,  pacing_seconds: 1}
+  ashby:         {enabled: true,  pacing_seconds: 2}
+  # Wired but dead upstream (2026-08-04). Flip to true when they work again.
+  zip_recruiter: {enabled: false, pacing_seconds: 2}
+  google:        {enabled: false, pacing_seconds: 2}
 raw_retention_days: 30

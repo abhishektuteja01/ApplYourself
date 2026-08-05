@@ -4,13 +4,20 @@ from jobspy import scrape_jobs
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
 
-# A/B test (2026-07-29): bumped from 50 for more ai_eng coverage. Revert to 50
-# if run reports show LinkedIn 429s climbing.
+# Bumped 50 -> 100 on 2026-07-29 for more ai_eng coverage. A/B RESOLVED
+# 2026-08-04: keep 100. Five consecutive runs (07-31..08-04) show LinkedIn
+# ~1,352 -> ~3,200 rows/run and Indeed ~2,322 -> ~4,615, with **zero 429s** in
+# any run report over 07-29..08-04. Do not revert.
 RESULTS_WANTED = 100
 HOURS_OLD = 336
 DESCRIPTION_FORMAT = "markdown"
 
 class JobSpySource(Source):
+    # Only Google Jobs needs a natural-language query; every other site keys
+    # off search_term alone and must be passed None.
+    def google_search_term(self, term: str, location: str, is_remote: bool) -> str | None:
+        return None
+
     def fetch(self, ctx) -> SourceResult:
         rows = []
         errors = []
@@ -41,7 +48,7 @@ class JobSpySource(Source):
                             df = scrape_jobs(
                                 site_name=self.name,
                                 search_term=term,
-                                google_search_term=None,
+                                google_search_term=self.google_search_term(term, location, is_remote),
                                 location=location,
                                 is_remote=is_remote,
                                 results_wanted=RESULTS_WANTED,
@@ -81,3 +88,17 @@ class IndeedSource(JobSpySource):
 # returns zero rows across runs.
 class ZipRecruiterSource(JobSpySource):
     name = "zip_recruiter"
+
+# Aggregator across boards; no 429 pressure like LinkedIn, so it would carry the
+# search-term adjacency tail that linkedin_terms omits. Recency is left to the
+# cleaning-stage staleness drop rather than a Google "since ..." qualifier,
+# whose granularity (week/month) doesn't match HOURS_OLD.
+# DISABLED in profile/discovery.yaml (2026-08-04): jobspy 1.1.82 returns 0 rows
+# for every query shape tried ("initial cursor not found"). Kept wired so
+# re-enabling is a one-line config flip when upstream fixes Google Jobs.
+class GoogleSource(JobSpySource):
+    name = "google"
+
+    def google_search_term(self, term: str, location: str, is_remote: bool) -> str:
+        where = "remote" if is_remote else f"in {location}"
+        return f"{term} jobs {where}"
