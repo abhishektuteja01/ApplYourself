@@ -1,5 +1,5 @@
 ---
-description: Three-track synonym/skills audit. Track 1 — gap-fill allowable_synonyms from shortlist JD keywords (profile/bullets.md). Track 2 — memory unlock prompts for adjacent tools/concepts the user likely touched but hasn't documented, covering BOTH the Deloitte/SAP role and the personal projects (PROVA, CapTrack, Options Pricing ML). Track 3 — same gap-fill + memory-unlock pattern applied to profile/skills_master.md. Never writes to bullets.md or skills_master.md directly.
+description: Three-track synonym/skills audit. Track 1 — gap-fill allowable_synonyms from shortlist JD keywords (profile/bullets.md). Track 2 — memory unlock prompts for adjacent tools/concepts the user likely touched but hasn't documented, across every context in bullets.md (each employment and each project). Track 3 — same gap-fill + memory-unlock pattern applied to profile/skills_master.md. Never writes to bullets.md or skills_master.md directly.
 model: sonnet
 effort: medium
 allowed-tools:
@@ -18,10 +18,8 @@ that let `/tailor` mirror high-frequency JD terms.
 
 **Track 2 — memory unlock (bullets):** independently reasons about tools, interfaces, and
 processes the user *likely touched but hasn't documented*, given the specifics of
-their role (Deloitte Advisory Analyst on SAP ACM S/4HANA for a Fortune 100
-agri-commodity client, multi-region rollouts, COE, oil & gas Signavio engagement)
-**and** the personal projects (PROVA SR 11-7 compliance tool, CapTrack
-trade/P&L platform, Options Pricing ML predictor). These are surfaced as
+each context in `profile/bullets.md` — every distinct `source:` value is one
+context (an employment, a teaching role, a personal project). These are surfaced as
 **confirm-before-adding prompts** — the user says yes/no, then decides whether to
 add a new bullet or extend an existing one.
 
@@ -29,8 +27,8 @@ add a new bullet or extend an existing one.
 to `profile/skills_master.md` instead of `profile/bullets.md`. Gap-fill checks
 shortlist JD keywords against existing skill entries/`allowable_synonyms` and
 proposes new alias entries. Memory unlock reasons about specific tools/libraries
-the user likely used (across BOTH the Deloitte/SAP role and the personal projects)
-but hasn't entered as a `SKILL-*` block.
+the user likely used (across every `bullets.md` context) but hasn't entered as a
+`SKILL-*` block.
 
 The key distinction across tracks:
 - Track 1/3-gapfill = "you did X; here's better JD vocabulary for it"
@@ -38,9 +36,12 @@ The key distinction across tracks:
 
 **Hard constraints (same as /tailor's NO-FAB / NO-DRIFT):**
 - A synonym must re-package the SAME underlying process or claim.
-- ACM commodity-contract settlement is NOT generic SD Order-to-Cash. Do not propose
-  that relabeling.
-- No standalone MM/SD/PP config claims. Integration-level mentions only.
+- **Analogy is not equivalence.** A specialized process is not its generic
+  industry cousin, and integration-level exposure to a component is not
+  configuring or owning it. Never propose a relabel that widens scope, even when
+  the JD's vocabulary invites it. Each bullet's `canonical` text plus `evidence`
+  field is the outer bound of what it may be restated as; the vertical's
+  `tailoring.md` names any domain-specific relabels that are banned outright.
 - Memory-unlock suggestions are hypotheses only — never assert the user did something;
   always frame as a question ("Did you use X? If yes, this would be addable.")
 - If a JD keyword has no honest anchor, write `UNMAPPABLE` — do not invent.
@@ -123,25 +124,17 @@ your head before writing any output:
    If yes → mark `already_covered`. No new entry needed.
 
 2. **Find the best anchor bullet:** Which canonical bullet, if any, describes the
-   same underlying process/claim that this JD keyword refers to? Consider:
-   - B-DEL-01: MTM risk report, position reconciliation, P&L validation, landed cost
-   - B-DEL-02: defect investigation, settlement chain, UAT, production support
-   - B-DEL-03: global rollout, KT, COE leadership, localization
-   - B-DEL-04: Signavio, risk & controls, SOX/RCM, process mapping, oil & gas
-   - B-TA-01: teaching, Python/Java/SQL instruction
-   - B-PROVA-01..06: multi-agent LLM, SR 11-7 compliance, PDF report generation,
-     Next.js/Supabase production app, prompt-injection defense, AI regression suite
-   - B-CAPTRACK-01..05: trade/portfolio P&L, accounting logic, accuracy testing,
-     multi-tenant Next.js/Supabase app, market-data/FX API integration
-   - B-OPT-01..05: ML models, Black-Scholes, XGBoost benchmarking, option Greeks
-     feature engineering, grid-search/K-Fold tuning pipeline
-   (Always re-check against the current `profile/bullets.md` — this list is a
-   pointer, not the source.)
+   same underlying process/claim that this JD keyword refers to? Build the
+   candidate index from `profile/bullets.md` itself as you read it — one entry per
+   `B-*` ID, summarising that bullet's claim from its `canonical` text and `tags`.
+   Do not work from a remembered index: bullets are added and reworded, so the
+   file you just read is the only valid list.
 
 3. **Honest mapping only:** The synonym must be a re-phrasing of what the bullet
    already claims — same scope, same tool, same metric. If the JD keyword implies
-   a capability the user does not have (e.g. "configured SD pricing procedures"),
-   write `UNMAPPABLE — no canonical anchor`.
+   a capability no bullet attests (typically a configure/own claim where the
+   evidence is integration-level exposure), write
+   `UNMAPPABLE — no canonical anchor`.
 
 4. **Draft the synonym text:** A short phrase (2–6 words) using JD vocabulary that
    a reader would recognize as equivalent to the canonical claim.
@@ -166,12 +159,12 @@ Only add entries you can stand behind on a call — these are attested claims.
 These map cleanly to a canonical bullet. Copy the `allowable_synonyms:` patch
 block into the corresponding bullet in `profile/bullets.md` after review.
 
-### B-DEL-01 (MTM / P&L reconciliation)
+### <B-ID> (<short label for that bullet's claim>)
 **Add to `allowable_synonyms`:**
 - "phrase one" — maps from JD keyword "X" (seen N times across shortlist)
 - "phrase two" — maps from JD keyword "Y" (seen M times across shortlist)
 
-### B-DEL-02 (defect investigation / UAT)
+### <next B-ID> (<short label>)
 **Add to `allowable_synonyms`:**
 - ...
 
@@ -186,8 +179,8 @@ canonical bullet. Do NOT add these as synonyms.
 
 | keyword | frequency | reason unmappable |
 |---|---|---|
-| "SAP SD configuration" | 8 | user configured no SAP module; ACM integration-level only |
-| ...                    |   |                                                                |
+| "<a configure/own claim from a JD>" | 8 | no bullet attests ownership; evidence is integration-level only |
+| ...                                 |   |                                                                 |
 
 ---
 
@@ -198,8 +191,8 @@ No action needed.
 
 | keyword | frequency | covered by |
 |---|---|---|
-| "UAT" | 12 | B-DEL-02 canonical |
-| ...   |    |                    |
+| "<keyword>" | 12 | <B-ID> canonical |
+| ...         |    |                  |
 ```
 
 Rules for the "Ready to add" section:
@@ -219,93 +212,52 @@ Independently of the JD keyword list, reason about the user's specific role cont
 and generate a list of tools/interfaces/processes they **probably encountered** but
 haven't documented in any bullet's canonical text or `allowable_synonyms`.
 
-Use this role context as your inference base:
+**Build the inference base yourself from `profile/bullets.md`** — do not work from
+a remembered description of the user's background. Group the bullets by their
+`source:` field: each distinct value is one context (an employment, a teaching
+role, a personal project). For each context, read across its bullets' `canonical`
+text, `tags` and `evidence` to establish the domain, the platform or stack, the
+scale, the seniority, and the period. That grouping IS the inference base, and it
+stays correct as bullets are added or reworded.
 
-> Deloitte Advisory Analyst, May 2022 – Jul 2024. Supported a Fortune 100
-> agricultural commodities client on SAP ACM (Agricultural Contract Management)
-> running on S/4HANA. Daily production support: MTM risk reports, defect
-> investigation across contract→load-capture→settlement chain, UAT validation
-> with ABAP developers. Led a 3-analyst Center of Excellence (COE). Supported
-> global S/4HANA ACM rollouts across LATAM, EMEA, APAC (regional localization,
-> KT). Separate engagement: SAP Signavio-driven ERP transformation for a US
-> downstream oil & gas client (risk & controls, SOX/non-SOX RCM, process workshops).
+Then, per context, think through: what tools, interfaces, commands and adjacent
+processes does someone in this *exact* environment almost certainly encounter,
+even if no bullet mentions them? Reason from the specifics you just read — a
+platform implies its own tooling, an ops cadence implies ticketing, a rollout
+implies methodology artifacts.
 
-Think through: what tools, interfaces, transaction codes, and adjacent processes
-does someone in this *exact* environment almost certainly encounter, even if not
-explicitly mentioned in their bullets?
+Reason along these axes, which apply to most contexts (not exhaustive, and not
+every axis fits every context):
 
-Candidate categories to reason through (not exhaustive — use your knowledge of
-large SAP S/4HANA implementations):
-
-- **UI layer:** SAP Fiori launchpad, Fiori apps (used by end-users and functional
-  analysts in S/4HANA environments — almost universal)
-- **Transport & change management:** Transport requests (SE09/SE10), ChaRM /
-  Solution Manager change control (standard in Deloitte engagements)
-- **Testing tools:** SAP Solution Manager Test Suite, HPQC/ALM for UAT defect
-  tracking, or equivalent
-- **Collaboration / ITSM:** ServiceNow (Deloitte standard for incident management),
-  JIRA, or similar — the user mentions "daily open issues to near-zero"
-- **Reporting / analytics layer:** SAP BW (already in B-DEL-01), Analysis for
-  Office (AO) — common companion to BW reporting
-- **Data tools used during reconciliation:** SAP GUI SE16/SE16N table browsing,
-  SQVI, or Excel-based reconciliation — what did they actually use to pull records?
-- **ACM-specific transactions:** e.g., ACM Cockpit, SAPLM or equivalent ACM
-  transaction codes touched during daily support
-- **Signavio engagement specifics:** SAP Signavio Process Manager, process
-  collaboration hub, swim-lane diagrams — what specific Signavio capability did
-  they use?
-- **Roll-out toolkit:** SAP Activate methodology artifacts (Fit-to-Standard, BBPs),
-  cutover planning, data migration support (LTMC/LTMOM) — common on global rollouts
-- **Communication / documentation:** MS Teams/SharePoint (Deloitte standard),
-  Confluence, or similar — relevant for KT documentation claim in B-DEL-03
+- **UI / access layer** — what the user actually clicked or typed into daily
+- **Change & release management** — how a change reached production
+- **Testing** — the framework or suite behind any validation/QA claim
+- **Ticketing / ITSM / collaboration** — implied by any incident, defect or
+  support cadence
+- **Reporting & analytics** — the companion tools to any reporting claim
+- **Data access** — how records were actually pulled for a reconciliation,
+  investigation or analysis claim
+- **Domain-specific commands/transactions/APIs** — the named operations
+  characteristic of that platform
+- **Methodology artifacts** — implied by any rollout, migration or transformation
+- **Documentation & knowledge transfer** — implied by any KT, enablement or
+  onboarding claim
+- **For a software project specifically:** the dependency/library layer behind
+  each claim, data ingestion and validation, the testing approach, deployment
+  target, and observability
 
 For each candidate, rate your confidence: `likely` (would be surprising if not
-used given the role) vs `possible` (plausible but not universal). Only include
+used given the context) vs `possible` (plausible but not universal). Only include
 `likely` items in the output — omit `possible` unless it appears in the shortlist
 keywords, in which case note it as lower-confidence.
 
-**Also reason through the personal projects** — separate inference base,
-same `likely`/`possible` discipline:
+Apply the same `likely`/`possible` discipline to every context, employment and
+project alike — a project's dependency choices are as unlogged as an employer's
+internal tooling.
 
-> PROVA — SR 11-7 Model Documentation Compliance Tool (Mar 2026 – May 2026,
-> personal project). Multi-agent LLM system (3 concurrent agents + judge/orchestrator),
-> compliance pipeline evaluating model docs against 20 SR 11-7 elements across the
-> three validation pillars (Conceptual Soundness, Outcomes Analysis, Ongoing
-> Monitoring), PDF report generation with weighted scoring.
->
-> CapTrack (Dec 2025 – Feb 2026, personal project). Trade/portfolio analysis
-> platform: broker trade ingestion/normalization, multi-asset/multi-currency
-> position construction with realized/unrealized P&L, deterministic accounting
-> logic for edge cases (partial fills, shorts), reconciliation across large
-> structured datasets, P&L accuracy testing framework.
->
-> Options Pricing ML Predictor (Dec 2025 – Feb 2026, personal project). Benchmarked
-> Linear Regression / Random Forest / XGBoost against real options market data
-> (yfinance), compared against a Black-Scholes baseline via RMSE/R², identified
-> XGBoost as the top performer.
-
-Candidate categories for the personal-projects context (not exhaustive):
-
-- **LLM tooling layer (PROVA):** which specific LLM provider/API, orchestration
-  framework (e.g. LangChain, raw API calls), prompt-versioning approach, retry/
-  backoff implementation — what did the judge/orchestrator layer actually call?
-- **Document handling (PROVA):** PDF parsing/extraction library used to ingest
-  source model-documentation, structured-output parsing (e.g. Pydantic/JSON schema
-  enforcement) for the per-element gap findings
-- **Data ingestion (CapTrack):** specific broker-feed format(s) parsed, the
-  normalization library/approach, how trade data was validated on ingest
-  (schema checks?)
-- **Testing approach (CapTrack):** what testing framework backed the "P&L accuracy
-  testing framework" claim — pytest, custom assertions, golden-file comparisons?
-- **Data science tooling (Options Pricing):** cross-validation/train-test split
-  methodology, feature engineering specifics, hyperparameter tuning approach for
-  XGBoost, visualization library for the model comparison
-- **Source data (Options Pricing):** what exactly yfinance pulled (options chains,
-  implied vol, underlying price history) — any other data source blended in?
-
-Also check the shortlist keywords for any terms that fall into either "memory
-unlock" bucket (Deloitte/SAP role OR personal projects) — JD terms the user likely
-knows from practice but hasn't documented.
+Also check the shortlist keywords for any terms that fall into any context's
+"memory unlock" bucket — JD terms the user likely knows from practice but hasn't
+documented.
 
 Add a section to the draft output file:
 
@@ -314,22 +266,21 @@ Add a section to the draft output file:
 
 ## Memory unlocks — confirm before adding
 
-Tools and concepts you likely touched (across the Deloitte/SAP role AND the
-personal projects) but haven't documented. **For each: answer yes/no.
+Tools and concepts you likely touched (across every context in `bullets.md`)
+but haven't documented. **For each: answer yes/no.
 If yes, decide whether to add it as a synonym to an existing bullet, or flag
 it for a new bullet entirely.**
 
 | tool / concept | source context | confidence | why you probably touched it | which bullet to extend (or "new bullet") | question to confirm |
 |---|---|---|---|---|---|
-| SAP Fiori launchpad | Deloitte/SAP | likely | Standard UI layer in all S/4HANA environments; end-users and functional analysts interact with it daily | B-DEL-01 or B-DEL-02 (daily ops context) | Did you use Fiori tiles/apps during daily reconciliation or defect investigation, even passively? |
-| Pydantic / JSON schema validation | PROVA (personal project) | likely | Structured per-element gap findings need enforced output shape from an LLM call | B-PROVA-02 | Did you enforce a structured output schema (Pydantic, JSON schema, or similar) on the LLM's gap-finding output? |
+| <tool> | <the `source:` this context came from> | likely | <what in that context's bullets makes this near-certain> | <B-ID> (<why that bullet>) | <a yes/no question naming the tool and where it would have been used> |
 | ... | ... | ... | ... | ... | ... |
 ```
 
 Only include entries where the confidence is `likely`. Cap at 12 rows total
-across both contexts — if you have more candidates, rank by shortlist keyword
-frequency (Deloitte/SAP items) and project-specificity (personal-project items),
-and cut the tail.
+across all contexts — if you have more candidates, rank employment items by
+shortlist keyword frequency and project items by how specific they are to that
+project, then cut the tail.
 
 For items that appear in the shortlist keywords AND are memory-unlock candidates,
 add a note: `(also appears in shortlist — high value if confirmable)`.
@@ -364,8 +315,8 @@ handled by Track 1 — those belong to bullets, not skills), check:
 
 **Memory-unlock half:** reason about specific tools/libraries the user likely
 used but hasn't entered as a `SKILL-*` block, anchored to evidence already
-established in `profile/bullets.md` (the same Deloitte/SAP and personal-project
-context from Step 3b above) — e.g. if a Track 2 memory-unlock item gets
+established in `profile/bullets.md` (the same per-`source:` contexts you grouped
+in Step 3b above) — e.g. if a Track 2 memory-unlock item gets
 confirmed `yes` by the user in a prior run, or is independently inferable as
 `likely` from the bullet text already on record, propose it here too. Frame
 every row as a yes/no question, never an assertion.
@@ -397,7 +348,7 @@ command never writes a new skill entry directly — same discipline as bullets).
 
 | tool / library | category | anchor evidence | confidence | question to confirm |
 |---|---|---|---|---|
-| Pydantic | ai_ml | B-PROVA-02 (structured per-element gap findings) | likely | Did you use Pydantic (or an equivalent schema-validation library) to enforce structured LLM output in PROVA? |
+| <library> | <a skills_master category> | <B-ID> (<the claim it backs>) | likely | Did you use <library> (or an equivalent) for <the specific job it would have done> in <context>? |
 | ... | ... | ... | ... | ... |
 ```
 
@@ -412,7 +363,7 @@ Tell the user:
 - Track 1: N ready-to-add synonyms across M bullets, K unmappable keywords
 - Track 1: top 3 highest-frequency unmappable keywords (market wants this; profile can't claim it)
 - Track 2: X memory-unlock prompts (Y flagged as "also in shortlist — high value if confirmable"),
-  broken out by source context (Deloitte/SAP vs personal projects)
+  broken out by `source:` context
 - Track 3: P ready-to-add skill aliases across Q skills, R memory-unlock prompts
   for skills_master.md
 - Reminder: "Answer the yes/no questions in the Memory unlocks tables first — that's

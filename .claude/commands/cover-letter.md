@@ -125,8 +125,9 @@ Step 3 — it's enrichment, not a prerequisite.
 mapping your experience to the JD must trace to a specific bullet's
 canonical text or that bullet's `allowable_synonyms`. No tools, metrics,
 scopes, or dates beyond what `profile/bullets.md` attests. "Analogy is not
-equivalence" applies here too — do not relabel the ACM commodity lifecycle
-as generic SD Order-to-Cash to chase JD vocabulary.
+equivalence" applies here too — do not relabel a specialized process as its
+generic industry cousin, or integration-level exposure as ownership, to chase JD
+vocabulary. The vertical's `tailoring.md` names any relabel banned outright.
 
 Unlike `/tailor`, the output here is NOT markdown rendered into freshly
 created paragraphs — `profile/cover_letter_template.docx` is the user's
@@ -340,6 +341,6 @@ state.yaml.cover_letters[] now references this dir.
 
 Next:
   1. Open ${FILE_SLUG}_Cover_Letter.docx -- confirm no fabricated claims and no
-     ACM-as-O2C-style drift against profile/bullets.md.
+     scope-widening drift against profile/bullets.md.
   2. Submit manually alongside ${FILE_SLUG}_Resume.docx.
 ```

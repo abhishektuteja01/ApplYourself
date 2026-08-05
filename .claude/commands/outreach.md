@@ -102,7 +102,9 @@ LinkedIn DM doesn't apply.
 ### alumni
 
 - **≤ 100 words**
-- **LEAD with the alumni connection** (NEU, Manipal, Deloitte, etc.)
+- **LEAD with the shared affiliation** -- a school or employer the recipient
+  and the user have in common, taken from `profile/contacts.yaml`, the `--via`
+  context, or a `source:` field in `profile/bullets.md`
 - **Ask for a 15-minute call -- NOT a referral up front**
 - **OPT disclosure: light, honest, upfront mention**
 
