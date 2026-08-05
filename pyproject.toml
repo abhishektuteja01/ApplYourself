@@ -10,10 +10,8 @@ dependencies = [
     "rapidfuzz>=3.6",
     "python-docx>=1.1",
     "pyyaml>=6.0",
-    "python-dateutil>=2.9",
     "requests>=2.34.2",
     "geonamescache>=3.0.1",
-    "pydantic>=2.0",
 ]
 
 [project.scripts]
@@ -23,9 +21,6 @@ track = "src.track_cli:main"
 tailor-prep = "src.tailor_cli:main"
 discover = "src.discovery.orchestrator:main"
 verticals-check = "src.verticals:main"
-
-[project.optional-dependencies]
-rich = ["rich>=13.7"]
 
 [dependency-groups]
 dev = [
