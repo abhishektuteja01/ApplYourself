@@ -30,13 +30,14 @@ hardcode a vertical name, search term, or company. Those come only from
 
 1. **Discovery** (`src/discovery/`, CLI `discover`) — deterministic, LLM-free
    overnight scrape. Sources in order: manual `inbox/*.md` clips → JobSpy
-   (LinkedIn + Indeed) → Greenhouse/Lever/Ashby JSON boards over
+   (LinkedIn + Indeed; ZipRecruiter and Google are wired but `enabled: false` —
+   dead upstream, see `HANDOFF.md`) → Greenhouse/Lever/Ashby JSON boards over
    `data/universe/*.csv` + `profile/companies.yaml`. Board/inbox rows are
    title-classified into a vertical at fetch time; unclassified rows dropped.
    Always ends by running cleaning (try/finally), even after a crash/deadline.
-2. **Cleaning** (`src/discovery/cleaning.py`) — normalize,
-   drop short/stale rows, dedupe (exact then rapidfuzz WRatio ≥ 90), assign
-   `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery
+2. **Cleaning** (`src/discovery/cleaning.py`) — normalize, drop short/stale rows,
+   drop rows outside the location allowlist, dedupe (exact then rapidfuzz
+   WRatio ≥ 90), assign `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery
    output downstream reads) + `clean.preview.jsonl`.
 3. **Scoring** (`/score`, `/rescore`; plumbing in `src/scoring_io.py`,
    `src/score_cli.py`) — LLM judges rows and writes `jobs/scored.parquet` +
@@ -119,7 +120,7 @@ never exempt.
 ## Commands
 
 ```bash
-# Tests (328 pass expected). Run this after any src/ or fixture change.
+# Tests — must be fully green. Run this after any src/ or fixture change.
 uv run pytest tests -q
 uv run pytest tests/test_verticals.py -q          # single test file
 uv run pytest tests/test_verticals.py::<name>     # single test
@@ -135,7 +136,9 @@ uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load,
 
 The user-facing workflow is the slash commands (`/score`, `/tailor`,
 `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
-`/suggest-synonyms`, `/rescore`), defined in `.claude/commands/*.md`. There is no
+`/suggest-synonyms`, `/rescore`, `/no_ai_slop`), defined in
+`.claude/commands/*.md`. `score-judge.md` also lives there but is spawned by
+`/score`, never invoked directly. There is no
 `extract` module in `src/`, and no LLM *judging* in `src/` — but the deterministic
 plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
 `/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself
@@ -146,6 +149,8 @@ stays in the command session).
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).
 - Read the relevant command `.md` before running its slash command — the real
   orchestration logic lives there, not in `src/`.
-- `HANDOFF.md` tracks live breakage/fixes; `plans/*.md` are step-by-step execution
-  plans for the v2 discovery/extraction rebuilds (follow in order, tick checkboxes,
-  never work around a `[BLOCKED]` silently).
+- `HANDOFF.md` tracks live breakage/fixes; `cleaning.md` is the cleanup backlog.
+- `plans/*.md` are reference, not instructions: `discovery_plan.md` is the
+  completed v2 discovery build, `discovery_next.md` its downstream handoff, and
+  `ats_application_forms_research.md` un-built research. Nothing there is a live
+  checklist to resume.
