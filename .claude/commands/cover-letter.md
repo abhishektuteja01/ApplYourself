@@ -1,5 +1,5 @@
 ---
-description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. risk_ai/2026-... or sap/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor. Writes Abhishek_Tuteja_Cover_Letter.docx + Abhishek_Tuteja_Cover_Letter.pdf into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
+description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. risk_ai/2026-... or sap/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor. Writes <Name>_Cover_Letter.docx + .pdf (named from the vertical's resume_file) into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
 model: sonnet
 effort: medium
 allowed-tools:
@@ -56,6 +56,13 @@ OUT_DIR="applications/${LATEST_DIR}"
 test -d "$OUT_DIR" || { echo "ERROR: ${OUT_DIR} referenced by state.yaml does not exist on disk."; exit 1; }
 test -f "${OUT_DIR}/jd_snapshot.md" || { echo "ERROR: ${OUT_DIR}/jd_snapshot.md missing."; exit 1; }
 test -f "${OUT_DIR}/keywords_to_mirror.md" || { echo "ERROR: ${OUT_DIR}/keywords_to_mirror.md missing."; exit 1; }
+
+# tailored_dirs[] entries are vertical-prefixed, so the lane is the first path
+# segment. APPLICANT_NAME/FILE_SLUG come from that vertical's resume_file (its
+# first bold line) -- no name is hardcoded in this file.
+VERTICAL="${LATEST_DIR%%/*}"
+eval "$(uv run tailor-prep identity "$VERTICAL")" || exit 1
+test -n "$FILE_SLUG" || { echo "ERROR: no FILE_SLUG for vertical ${VERTICAL} -- its resume_file needs a bold name line."; exit 1; }
 
 TODAY=$(date "+%B %-d, %Y")
 echo "today: ${TODAY}"
@@ -163,7 +170,7 @@ Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
     "Optional third paragraph text."
   ],
   "closing": "Sincerely,",
-  "signoff_name": "Abhishek Tuteja"
+  "signoff_name": "<$APPLICANT_NAME from Step 1>"
 }
 ```
 
@@ -255,8 +262,8 @@ import json
 from pathlib import Path
 from src.docx_render import render_cover_letter
 content = json.loads(Path('/tmp/cover_letter_${JOB_ID}_draft.json').read_text())
-render_cover_letter(content, Path('profile/cover_letter_template.docx'), Path('${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.docx'))
-print('rendered:', '${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.docx')
+render_cover_letter(content, Path('profile/cover_letter_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx'))
+print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx')
 "
 ```
 
@@ -272,9 +279,9 @@ unchanging path, not the new `${OUT_DIR}` each job gets):
 ```bash
 STAGING="$(pwd)/.pdf_staging"
 mkdir -p "$STAGING"
-cp "${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.docx" "${STAGING}/Abhishek_Tuteja_Cover_Letter.docx"
-DOCX_ABS="${STAGING}/Abhishek_Tuteja_Cover_Letter.docx"
-PDF_ABS="${STAGING}/Abhishek_Tuteja_Cover_Letter.pdf"
+cp "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx" "${STAGING}/${FILE_SLUG}_Cover_Letter.docx"
+DOCX_ABS="${STAGING}/${FILE_SLUG}_Cover_Letter.docx"
+PDF_ABS="${STAGING}/${FILE_SLUG}_Cover_Letter.pdf"
 osascript <<ASEOF
 tell application "Microsoft Word"
     open POSIX file "${DOCX_ABS}"
@@ -284,9 +291,9 @@ tell application "Microsoft Word"
 end tell
 ASEOF
 if [ -s "${PDF_ABS}" ]; then
-    cp "${PDF_ABS}" "${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf"
+    cp "${PDF_ABS}" "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf"
     rm -f "${DOCX_ABS}" "${PDF_ABS}"
-    echo "pdf rendered: ${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf"
+    echo "pdf rendered: ${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf"
 else
     echo "WARNING: PDF conversion via Word failed — docx is primary, PDF supplementary."
 fi
@@ -314,8 +321,8 @@ print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 ## Step 8 — runtime assertions before reporting done
 
 Before reporting success, verify on disk:
-- [ ] `${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.docx` exists and is non-empty
-- [ ] `${OUT_DIR}/Abhishek_Tuteja_Cover_Letter.pdf` exists and is non-empty (warn but don't fail if osascript errored)
+- [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx` exists and is non-empty
+- [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf` exists and is non-empty (warn but don't fail if osascript errored)
 - [ ] One final lint pass (re-run Step 5's Python against the file at `/tmp/cover_letter_${JOB_ID}_draft.json`) returns zero violations
 - [ ] `pipeline/${JOB_ID}/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
@@ -326,13 +333,13 @@ If any check fails, do NOT report success — diagnose and fix.
 Tell the user:
 ```
 Cover letter written into: ${OUT_DIR}/
-  - Abhishek_Tuteja_Cover_Letter.docx ({size} bytes)
-  - Abhishek_Tuteja_Cover_Letter.pdf ({size} bytes)
+  - ${FILE_SLUG}_Cover_Letter.docx ({size} bytes)
+  - ${FILE_SLUG}_Cover_Letter.pdf ({size} bytes)
 
 state.yaml.cover_letters[] now references this dir.
 
 Next:
-  1. Open Abhishek_Tuteja_Cover_Letter.docx -- confirm no fabricated claims and no
+  1. Open ${FILE_SLUG}_Cover_Letter.docx -- confirm no fabricated claims and no
      ACM-as-O2C-style drift against profile/bullets.md.
-  2. Submit manually alongside Abhishek_Tuteja_Resume.docx.
+  2. Submit manually alongside ${FILE_SLUG}_Resume.docx.
 ```

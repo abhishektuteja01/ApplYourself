@@ -61,15 +61,20 @@ test -n "$JOB_ID" || { echo "ERROR: /tailor requires a job_id argument."; exit 1
 # actionable message); prep then consumes the loaded config.
 uv run python -m src.verticals || { echo "ERROR: verticals config invalid or per-vertical prose files missing — see message above."; exit 1; }
 uv run python -m src.track_cli ensure "$JOB_ID" || exit 1
-# prep prints VERTICAL / DIRNAME / OUT_DIR / DICTION_PASS / ROW_JSON on stdout
+# prep prints VERTICAL / DIRNAME / OUT_DIR / DICTION_PASS / ROW_JSON /
+# APPLICANT_NAME / FILE_SLUG on stdout
 # (the full row JSON + status go to stderr); eval brings them into the shell.
 PREP="$(uv run tailor-prep "$JOB_ID")" || exit 1
 eval "$PREP"
 test -n "$OUT_DIR" || { echo "ERROR: tailor-prep produced no OUT_DIR."; exit 1; }
+test -n "$FILE_SLUG" || { echo "ERROR: tailor-prep produced no FILE_SLUG -- the vertical's resume_file needs a bold name line."; exit 1; }
 ```
 
-After this block `$VERTICAL`, `$DIRNAME`, `$OUT_DIR`, `$DICTION_PASS`, and
-`$ROW_JSON` (= `/tmp/tailor_${JOB_ID}_row.json`) are set for every later step.
+After this block `$VERTICAL`, `$DIRNAME`, `$OUT_DIR`, `$DICTION_PASS`,
+`$ROW_JSON` (= `/tmp/tailor_${JOB_ID}_row.json`), `$APPLICANT_NAME` and
+`$FILE_SLUG` are set for every later step. The last two come from the first bold
+line of the vertical's `resume_file`, so every output file is named after
+whoever that résumé belongs to -- no name is hardcoded here.
 
 ## Step 2 — read the JD row + profile
 
@@ -110,10 +115,10 @@ bullet mix and section order; JD content fills the floor, never lowers it.
   binding; 10 is the absolute minimum for any vertical.** Below the floor,
   expand 1-bullet projects to 2 before proceeding. Where the vertical also
   states a ceiling, do not exceed it.
-- Keep ALL three projects visible (PROVA, CapTrack, Options Pricing) for every
-  vertical; pick 1–3 bullets each to hit budget. Drop a whole project ONLY when
-  genuinely off-domain (e.g. ML options pricing on a pure SAP-config role);
-  default to "include with 1 bullet".
+- Keep EVERY project named in the vertical's `tailoring.md` "Project ordering"
+  visible; pick 1–3 bullets each to hit budget. Drop a whole project ONLY when
+  genuinely off-domain for this JD, and only where that vertical's `tailoring.md`
+  sanctions the drop; default to "include with 1 bullet".
 
 **3d — summary (VERT-DEFAULT, NO-FAB).** Freely written per JD but bound by truth
 from the vertical's résumé / `bullets.md` — no new facts. Frame per `tailoring.md`.
@@ -135,7 +140,7 @@ under different headers in different verticals. Per line:
 JD content may fine-tune order WITHIN a line only.
 
 **Tailoring scope:**
-- **Editable:** Summary; Deloitte bullets; project bullets (order + selection +
+- **Editable:** Summary; employer bullets; project bullets (order + selection +
   rephrase); Skills section (select + order per 3e)
 - **Frozen:** Education, contact, all dates
 
@@ -156,10 +161,17 @@ never silently absorb the difference.
 Write the draft to `/tmp/tailor_${JOB_ID}_draft_resume.md` now — before lint. Use
 this shape exactly so the docx renderer's parser handles it:
 
-```markdown
-**Abhishek Tuteja**
+Every frozen line below — the name, the contact line, each role/degree header
+with its employer, location and dates — is **copied verbatim from the vertical's
+`resume_file`**, which you read in Step 1. Never retype, reformat or update one
+from memory: `resume_file` is the only source for them (see the frozen-section
+row in Step 6). You generate only the SUMMARY, the bullet selection, the project
+titles/order, and the SKILLS lines.
 
-San Francisco, CA • +555-0100 • user@example.com • [Portfolio](https://www.abhishektuteja.com/) • [LinkedIn](http://linkedin.com/in/abhishektuteja) • [GitHub](http://github.com/abhishektuteja01)
+```markdown
+**<name line, verbatim from resume_file>**
+
+<contact line, verbatim from resume_file>
 
 **SUMMARY**
 
@@ -171,39 +183,33 @@ because everything else on the page is a terse bullet.>
 
 **WORK EXPERIENCE**
 
-**Advisory Analyst** - Deloitte	Bengaluru, IN | May 2022 – Jul 2024
+**<Role>** - <Employer>	<Location> | <Start – End>        <- verbatim from resume_file
 
-* <chosen B-DEL-XX canonical or rephrase>
-* <chosen B-DEL-YY canonical or rephrase>
+* <chosen canonical bullet or rephrase, by its bullets.md ID>
+* <chosen canonical bullet or rephrase>
 * ...
 
-**Teaching Assistant** - Northeastern University	Oakland, CA | Jan 2025 – Apr 2026
+**<Role>** - <Employer>	<Location> | <Start – End>        <- verbatim from resume_file
 
-* <B-TA-01 canonical>
+* <chosen canonical bullet or rephrase>
 
 **PROJECTS**
 
 **<Project Title>**	<Date – Date>
 
-* <chosen B-PROVA/CAPTRACK/OPT-XX canonical or rephrase>
+* <chosen project bullet canonical or rephrase, by its bullets.md ID>
 * ...
 
 **EDUCATION**
 
-**Master of Science in Computer Science**	Sep 2024 – May 2026
+**<Degree>**	<Start – End>                                 <- verbatim from resume_file
 
-Northeastern University, Oakland, CA | GPA: X.XX | Coursework: ...
-
-**Bachelor of Technology in Mechanical Engineering (Minor: Data Science)**	Jul 2018 – Jul 2022
-
-Manipal Institute of Technology, Manipal, KA
+<Institution, Location> | GPA: <x.xx> | Coursework: ...       <- verbatim from resume_file
 
 **TECHNICAL SKILLS**
 
-**Programming:** ...
-**AI & Machine Learning:** ...
-**SAP & Enterprise:** ...
-**Databases & Tools:** ...
+<one line per category from the vertical's "Skills layout" in tailoring.md, e.g.>
+**<Category>:** ...
 ```
 
 **Renderer parser contract (hard rules):**
@@ -305,8 +311,8 @@ uv run python -c "
 from pathlib import Path
 from src.docx_render import render_resume
 md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text()
-render_resume(md, Path('profile/resume_template.docx'), Path('${OUT_DIR}/Abhishek_Tuteja_Resume.docx'))
-print('rendered:', '${OUT_DIR}/Abhishek_Tuteja_Resume.docx')
+render_resume(md, Path('profile/resume_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Resume.docx'))
+print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 "
 ```
 
@@ -322,9 +328,9 @@ though each job gets a new `${OUT_DIR}`:
 ```bash
 STAGING="$(pwd)/.pdf_staging"
 mkdir -p "$STAGING"
-cp "${OUT_DIR}/Abhishek_Tuteja_Resume.docx" "${STAGING}/Abhishek_Tuteja_Resume.docx"
-DOCX_ABS="${STAGING}/Abhishek_Tuteja_Resume.docx"
-PDF_ABS="${STAGING}/Abhishek_Tuteja_Resume.pdf"
+cp "${OUT_DIR}/${FILE_SLUG}_Resume.docx" "${STAGING}/${FILE_SLUG}_Resume.docx"
+DOCX_ABS="${STAGING}/${FILE_SLUG}_Resume.docx"
+PDF_ABS="${STAGING}/${FILE_SLUG}_Resume.pdf"
 osascript <<ASEOF
 tell application "Microsoft Word"
     open POSIX file "${DOCX_ABS}"
@@ -334,9 +340,9 @@ tell application "Microsoft Word"
 end tell
 ASEOF
 if [ -s "${PDF_ABS}" ]; then
-    cp "${PDF_ABS}" "${OUT_DIR}/Abhishek_Tuteja_Resume.pdf"
+    cp "${PDF_ABS}" "${OUT_DIR}/${FILE_SLUG}_Resume.pdf"
     rm -f "${DOCX_ABS}" "${PDF_ABS}"
-    echo "pdf rendered: ${OUT_DIR}/Abhishek_Tuteja_Resume.pdf"
+    echo "pdf rendered: ${OUT_DIR}/${FILE_SLUG}_Resume.pdf"
 else
     echo "WARNING: PDF conversion via Word failed — docx is primary, PDF supplementary."
 fi
@@ -434,8 +440,8 @@ print(f'tailored_dirs[] now has {len(data[\"tailored_dirs\"])} entry/entries')
 
 Verify on disk; if any check fails, do NOT report success — diagnose and fix.
 
-- [ ] `${OUT_DIR}/Abhishek_Tuteja_Resume.docx` exists and is non-empty
-- [ ] `${OUT_DIR}/Abhishek_Tuteja_Resume.pdf` exists and is non-empty (warn but don't fail if osascript errored)
+- [ ] `${OUT_DIR}/${FILE_SLUG}_Resume.docx` exists and is non-empty
+- [ ] `${OUT_DIR}/${FILE_SLUG}_Resume.pdf` exists and is non-empty (warn but don't fail if osascript errored)
 - [ ] `${OUT_DIR}/resume.md` exists
 - [ ] `${OUT_DIR}/trace.md` exists with one entry per non-frozen line
 - [ ] `${OUT_DIR}/jd_snapshot.md` contains the full JD body
@@ -448,8 +454,8 @@ Verify on disk; if any check fails, do NOT report success — diagnose and fix.
 
 ```
 Tailored: ${OUT_DIR}/
-  - Abhishek_Tuteja_Resume.docx ({size} bytes)
-  - Abhishek_Tuteja_Resume.pdf ({size} bytes)
+  - ${FILE_SLUG}_Resume.docx ({size} bytes)
+  - ${FILE_SLUG}_Resume.pdf ({size} bytes)
   - trace.md ({N} entries, {M} rephrases — eyeball-scan for ACM→O2C drift)
   - lint_report.md ({K} mechanical fixes, 0 unresolved phrase flags)
   - keywords_to_mirror.md, jd_snapshot.md
