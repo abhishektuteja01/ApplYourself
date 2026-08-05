@@ -65,6 +65,9 @@ import json, pandas as pd
 from pathlib import Path
 
 scored = pd.read_parquet('jobs/scored.parquet')
+# company lives only in clean.parquet; scored.parquet has no company column
+clean = pd.read_parquet('jobs/clean.parquet', columns=['job_id', 'company'])
+scored = scored.merge(clean, on='job_id', how='left')
 # Only shortlist-worthy rows (fit >= 50, not ineligible)
 keepers = scored[
     (scored.fit_score >= 50) &
@@ -82,11 +85,11 @@ for _, row in keepers.iterrows():
         for kw in kws:
             kw = str(kw).strip()
             if kw:
-                all_kw.append({'keyword': kw, 'job_id': row.name,
-                               'company': row.get('company',''), 'fit': float(row.get('fit_score',0))})
+                all_kw.append({'keyword': kw, 'job_id': row['job_id'],
+                               'company': row.get('company') or '', 'fit': float(row.get('fit_score',0))})
     elif isinstance(kws, str) and kws:
-        all_kw.append({'keyword': kws.strip(), 'job_id': row.name,
-                       'company': row.get('company',''), 'fit': float(row.get('fit_score',0))})
+        all_kw.append({'keyword': kws.strip(), 'job_id': row['job_id'],
+                       'company': row.get('company') or '', 'fit': float(row.get('fit_score',0))})
 
 # Deduplicate + count frequency
 from collections import Counter

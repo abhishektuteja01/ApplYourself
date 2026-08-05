@@ -5,7 +5,7 @@ around YOUR attested experience. Judges read this file IN FULL alongside the
 shared scaffold in `profile/scoring_rubric.md` and apply ONLY this vertical's
 tiers to rows whose `vertical` matches. Axis names and maxima are fixed by
 the scaffold: `title_match` 0-30, `jd_skill_overlap` 0-30, `seniority_fit`
-0-20, `domain_bonus` 0-20; integer subscores sum to `fit_score`.
+0-20, `domain_bonus` 0-20. Emit integer subscores only — the total is derived.
 
 - `title_match` (0-30): three tiers — niche spine (29-30): "Widget Engineer"
   exact-lane titles; general spine (25-28): platform/consultant variants;

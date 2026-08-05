@@ -108,7 +108,10 @@ LinkedIn DM doesn't apply.
 
 ### Output file structure
 
-Write to `pipeline/${JOB_ID}/outreach/${DATE}_${CHANNEL}_${RECIPIENT_SLUG}.md`:
+Write to `pipeline/<job_id>/outreach/<YYYY-MM-DD>_<channel>_<recipient-slug>.md`
+— today's date, the `$CHANNEL` arg, and the recipient's name lowercased with
+non-alphanumerics collapsed to `-` (`Priya Raman` -> `priya-raman`). Call this
+path DRAFT_PATH below; Step 5 records the filename in `state.yaml`:
 
 ```markdown
 ---
@@ -196,7 +199,7 @@ print(f'OK: outreach[] now has {len(data[\"outreach\"])} entry/entries')
 
 ## Step 6 — runtime assertions
 
-- [ ] Draft file exists at `$DRAFT_PATH`
+- [ ] Draft file exists at DRAFT_PATH (the Step 4 path)
 - [ ] Final lint pass returns zero violations in outreach context
 - [ ] Word count is within the channel limit
 - [ ] state.yaml.outreach[] has a new `{channel, to, status: draft, draft_file}` entry
@@ -208,14 +211,14 @@ If any assertion fails, do NOT report success.
 
 ## Step 7 — report
 
-Tell the user:
+Tell the user, filling every `<...>` from what you actually wrote:
 ```
-Outreach drafted: pipeline/${JOB_ID}/outreach/${DRAFT_FILENAME}
-  - channel: ${CHANNEL}   to: ${TO_NAME}   medium: ${MEDIUM}
-  - word count: ${WC} (channel limit: ${LIMIT})
+Outreach drafted: <DRAFT_PATH>
+  - channel: <channel>   to: <recipient name>   medium: <linkedin | email>
+  - word count: <n> (channel limit: <the limit for this channel>)
   - lint: 0 violations
   - "Why this approach" footer is at the bottom — DELETE before sending.
 
 Send manually, then:
-  /track outreach-sent ${JOB_ID} --channel ${CHANNEL} --to "${TO_NAME}"
+  /track outreach-sent <job_id> --channel <channel> --to "<recipient name>"
 ```

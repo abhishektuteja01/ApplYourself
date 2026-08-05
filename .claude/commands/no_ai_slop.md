@@ -88,6 +88,6 @@ Often-empty phrases: it's worth noting, it's important to note, at the end of th
 1. Read the full draft before editing.
 2. Identify the core point and 3-5 voice signals to preserve, such as vocabulary, cadence, bluntness, humor, uncertainty, or digressions. Keep this note internal. If you cannot identify the core point, ask the user.
 3. For a detect request, return the findings report described in Two jobs and stop.
-4. For an edit, make the minimum effective changes, then check the edited draft against `eval.md` yourself.
-5. If any check fails, fix the draft and run the checks again.
+4. For an edit, make the minimum effective changes, then re-read the draft against Editing principles, Words to cut, and Patterns to cut.
+5. Fix what that pass turns up and re-read once more. Two passes is the limit — if something still reads wrong on the third look, leave it and name it in What changed.
 6. Output the full edited draft and a short **What changed** section.

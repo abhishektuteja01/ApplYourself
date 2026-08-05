@@ -59,10 +59,15 @@ uv run python -m src.score_cli split
 
 ## Step 2 — fan out judges
 
-`split` prints `<vertical>=N` per configured vertical. Chunk each
-nonzero count into consecutive ranges of 100 (last may be short); spawn
-one Agent per range, single message, parallel, model sonnet, prompt
-exactly `/score-judge --range <A>-<B> --vertical <name>`.
+```bash
+uv run python -m src.score_cli ranges
+```
+
+Each `range <vertical> <A>-<B>` line is one judge to spawn. Spawn one
+Agent per line, single message, parallel, model sonnet, prompt exactly
+`/score-judge --range <A>-<B> --vertical <name>`. No other content in the
+prompt. Never chunk the counts by hand — `ranges` is the same printer
+`prepare` uses for `/score`.
 
 ## Steps 3-5 — identical to /score
 

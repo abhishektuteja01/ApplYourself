@@ -105,8 +105,10 @@ covering multiple is a higher-priority keep.
 
 **3c — budget & projects (VERT-DEFAULT).** The vertical's `tailoring.md` sets the
 bullet mix and section order; JD content fills the floor, never lowers it.
-- **≥10 total bullets is a hard floor.** Below 10, expand 1-bullet projects to 2
-  before proceeding.
+- **The vertical's `tailoring.md` states the total-bullet floor, and it is
+  binding; 10 is the absolute minimum for any vertical.** Below the floor,
+  expand 1-bullet projects to 2 before proceeding. Where the vertical also
+  states a ceiling, do not exceed it.
 - Keep ALL three projects visible (PROVA, CapTrack, Options Pricing) for every
   vertical; pick 1–3 bullets each to hit budget. Drop a whole project ONLY when
   genuinely off-domain (e.g. ML options pricing on a pure SAP-config role);

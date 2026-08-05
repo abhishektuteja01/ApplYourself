@@ -217,7 +217,10 @@ set. Verify: `grep -c "vertical_lean:.*<name>" profile/skills_master.md`.
    ```bash
    uv run python -m src.verticals && uv run python -m pytest -q
    # TestFixtureMirrors covers fixture sync; this is the eyeball version.
-   diff <(grep -v '^#' profile/verticals.yaml) <(grep -v '^#' tests/fixtures/verticals.yaml)
+   # BOTH mirrors, not just the root one -- either can drift alone.
+   for m in tests/fixtures/verticals.yaml tests/discovery/fixtures/verticals.yaml; do
+     echo "--- $m"; diff <(grep -v '^#' profile/verticals.yaml) <(grep -v '^#' "$m")
+   done
    ```
 5. Completion summary: every file touched, every locked decision (terms,
    rule position + collision rulings, disqualifier, rubric anchors, budget),

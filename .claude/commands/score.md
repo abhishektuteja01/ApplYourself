@@ -31,13 +31,22 @@ internally; for a full vertical re-judge use `/rescore --vertical`.)
      yourself. Never merge partial coverage.
    - Unexpected/duplicate job_ids → delete those batch files, re-spawn
      those ranges, same one-retry rule.
-   - Row-level problems (bad subscores/label) are not a re-spawn trigger —
-     they surface at merge.
+   - `unreadable: [...]` → a judge wrote a corrupt batch. Repair the JSON
+     in place if the rows are recoverable; only if they are not, delete the
+     file and re-spawn that range. Never merge with a batch unreadable.
+   - Row-level problems (out-of-range axis, bad label) are not a re-spawn
+     trigger — they surface at merge.
 
    3a. `uv run python -m src.score_cli merge`
    - `ValueError: Cannot merge N invalid score(s)` → fix only the named
      row(s) in the named batch file in place, re-run merge. Never
      re-spawn a judge for a row fix. Never suppress an invalid row.
+     Each error is prefixed `batch_<name>.json[<i>]` — the file and the
+     0-indexed position within its array.
+   - Exit 1 with `unreadable batch file(s), staging kept` → rows already
+     merged are banked and staging is intact. Repair the named file, re-run
+     merge (safe: rows overwrite by job_id). Never delete a batch to make
+     merge pass — that discards ~100 judged rows.
 
 4. `uv run python -m src.score_cli render`
    - Writes `shortlist/<date>.md`, prints the report line.
