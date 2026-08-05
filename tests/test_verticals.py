@@ -27,7 +27,7 @@ def _write_and_load(tmp_path: Path, data: dict) -> verticals.VerticalsConfig:
 class TestFixtureHappyPath:
     def test_names_in_config_order(self, cfg):
         assert cfg.names == ("sap", "ai_eng", "risk_ai")
-        assert cfg.default_vertical == "sap"
+        assert cfg.default_vertical == "ai_eng"
 
     def test_valid_verticals_includes_empty(self, cfg):
         assert cfg.valid_verticals == frozenset({"sap", "ai_eng", "risk_ai", ""})
@@ -252,7 +252,38 @@ class TestExampleTemplate:
     def test_example_dirs_have_prose_files(self, name, fname):
         assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
 
+    def test_example_resume_files_exist(self):
+        """resume_file is required and existence-checked, so a copied template
+        must pass verticals-check without the user creating anything."""
+        cfg = verticals.load_verticals(REPO_ROOT / "profile" / "verticals.example.yaml")
+        for v in cfg.verticals.values():
+            assert (REPO_ROOT / v.resume_file).is_file(), v.resume_file
+
 
 class TestSingleton:
     def test_set_config_wins(self, cfg):
         assert verticals.get_config() is cfg
+
+
+class TestFixtureMirrors:
+    """The two fixtures must mirror each other and the real config. Drift here
+    is invisible: tests keep passing against rules production doesn't use."""
+
+    FIXTURES = (
+        REPO_ROOT / "tests" / "fixtures" / "verticals.yaml",
+        REPO_ROOT / "tests" / "discovery" / "fixtures" / "verticals.yaml",
+    )
+
+    def test_mirrors_are_identical(self):
+        a, b = (p.read_text() for p in self.FIXTURES)
+        assert a == b, "tests/fixtures and tests/discovery/fixtures have diverged"
+
+    def test_mirrors_match_real_config(self):
+        real = REPO_ROOT / "profile" / "verticals.yaml"
+        if not real.is_file():
+            pytest.skip("profile/verticals.yaml is gitignored user data")
+        expected = yaml.safe_load(real.read_text())
+        for p in self.FIXTURES:
+            assert yaml.safe_load(p.read_text()) == expected, (
+                f"{p.relative_to(REPO_ROOT)} has drifted from profile/verticals.yaml"
+            )

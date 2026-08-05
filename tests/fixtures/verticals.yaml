@@ -1,20 +1,27 @@
-# Vertical registry — single source of truth for vertical definitions.
-# USER DATA, gitignored (job-search strategy). New users copy
-# profile/verticals.example.yaml + the profile/verticals/example_* dirs.
+# Test fixture — mirror of the real profile/verticals.yaml.
 #
-# Mapping order under `verticals:` is load-bearing: shortlist section order,
-# and "primary" = first. classifier_rules order is the ambiguity policy —
-# first match wins.
+# Kept byte-identical to the real config below the banner so the strict loader
+# and the classifier/title-gate tests run against production rules.
+# test_fixtures_mirror_real_config guards the sync.
+#
+# Contains real job-search strategy (search terms, exclude lists, skill
+# weights). Sanitize before pushing this repo anywhere public.
+
+# Vertical registry — single source of truth. USER DATA, gitignored.
+# `verticals` order = shortlist order (first = primary).
+# `classifier_rules` order = ambiguity policy (first match wins).
 
 schema_version: 1
-default_vertical: sap
+default_vertical: ai_eng
 
 verticals:
   sap:
     display_name: SAP
-    # Search taxonomy — vertical 1: SAP (primary).
+    # Scoring + tailoring resume for this vertical (score.md J1).
+    resume_file: profile/verticals/sap/resume_sap.md
+    # vertical 1: SAP (primary).
     search_terms:
-      # ~80% SAP functional spine
+      # SAP functional spine
       - SAP Functional Analyst
       - SAP Functional Consultant
       - SAP ACM
@@ -33,15 +40,12 @@ verticals:
       - SAP EWM
       - SAP Master Data
       - SAP Order to Cash
-      # adjacency tail trimmed 2026-07-21 for Indeed precision — dropped the
-      # broad non-SAP-prefixed terms (SOX IT / Risk and Controls / Commodities
-      # Operations / ERP Functional Analyst) that pulled cross-domain noise;
-      # kept the one ACM-specific term. classifier_rules still labels these
-      # titles if they arrive via LinkedIn / boards / manual clips.
+      # Adjacency tail: classifier_rules still labels these off-search.
       - Trade Reconciliation Analyst
-    # LinkedIn gets a reduced term set (429 risk under
-    # linkedin_fetch_description=True). Widen back to search_terms once the
-    # per-source run report shows it holding up.
+    # LinkedIn: reduced term set (429-rate-limit mitigation). The niche
+    # commodity terms (ACM/ETRM/CTRM/Commodity Management) are omitted here —
+    # they returned ~0 rows across runs; they stay in search_terms for the
+    # cheaper Indeed/Google passes.
     linkedin_terms:
       - SAP Functional Consultant
       - SAP S/4HANA Consultant
@@ -52,12 +56,8 @@ verticals:
       - SAP SD
       - SAP MM
       - SAP EWM
-    # Off-lane occupations pulled in by loose Indeed keyword matching and ATS
-    # board classification (added 2026-07-21). Word-boundary, applied per
-    # vertical, manual-source rows exempt. Drops ~1% clearly non-ACM titles
-    # (nurse/teacher/welder/clinical/warehouse/civil engineer) that scored out
-    # at judge time anyway. Ambiguous words (maintenance/government/security)
-    # deliberately left to the scoring disqualifier to avoid false drops.
+    # Off-lane occupations. Word-boundary; manual rows exempt. Ambiguous words
+    # (maintenance/government/security) left to the scoring disqualifier.
     title_exclude_terms:
       - civil engineer
       - mechanical engineer
@@ -90,13 +90,8 @@ verticals:
       - firefighter
       - police
       - tree trimmer
-      # Seniority + adjacent title families — verbatim mirror of sap
-      # disqualifier.title_phrases (KEEP IN SYNC when either changes), promoted
-      # from the scoring pre-screen to discovery 2026-07-21. Mined from 760
-      # judged rows with zero >=70 hits; word-boundary here (narrower than the
-      # scoring substring match), so borderline seniority-tagged SAP roles in
-      # the 60-69 band are the only known casualties. Drops ~52% of the sap
-      # universe, 0 rows that ever scored >=70.
+      # Seniority + adjacent families — mirror of disqualifier.title_phrases
+      # (KEEP IN SYNC); word-boundary.
       - senior
       - manager
       - director
@@ -111,15 +106,9 @@ verticals:
       - engineer
       - financial
       - security
-      # Include-gate negative terms (added 2026-07-21). NOT a mirror of
-      # disqualifier.phrases/title_phrases — these kill in-lane leakage that
-      # passes title_include_terms: SAP technical tracks (ABAP/Basis/BTP/CPI/
-      # Fiori/BW/dev), off-lane HR (HCM/payroll/SuccessFactors/HRIS), non-
-      # functional SAP-company roles (AE/iXp/delivery/sales/PMO/scrum/training/
-      # admin/GRC), analytics/BI, and competing ERP vendors. Mined from a full
-      # read of all 2,290 unique sap titles (noise ~82% under the strict
-      # ACM-functional bar); word-boundary; verified 0 collateral against the
-      # 415-title keep set. title_strong_keep_terms would override these.
+      # Include-gate negatives: kill in-lane leakage that passes
+      # title_include_terms (SAP tech tracks, HR, non-functional SAP roles,
+      # analytics/BI, competing ERPs). Word-boundary.
       - abap
       - basis
       - fiori
@@ -208,14 +197,9 @@ verticals:
       - business central
       - banner
       - colleague
-    # Title include-gate (added 2026-07-21). Keep a non-manual sap row only if
-    # its title carries a genuine SAP-functional signal — the word "SAP", a
-    # module/process token (FICO/MM/SD/EWM/PP/QM/PS/TM/MDG/IBP/GTS/...), an
-    # order-to-cash / procure-to-pay / plan-to-stock process, or a vendor-less
-    # "ERP / functional consultant/analyst" role — else drop it. Mined from a
-    # full read of all 2,290 unique sap titles; 405/415 real SAP roles kept,
-    # ~98% of noise dropped. Word-boundary; manual/URL rows exempt. Combines
-    # with title_exclude_terms: keep iff (include AND NOT exclude).
+    # Title include-gate: keep only titles with a genuine SAP-functional signal
+    # (SAP, a module/process token, or a vendor-less functional role).
+    # Word-boundary; manual rows exempt. Keep iff (include AND NOT exclude).
     title_include_terms:
       - sap
       - erp
@@ -280,11 +264,8 @@ verticals:
       - functional analyst
       - functional specialist
       - key user
-    # Weighted skill taxonomy for the jd_skill_overlap axis (0-30).
-    # Weights are 0-10 integers; ACM/commodity_management > generic SAP > all else.
-    # Based solely on attested experience in profile/bullets.md and this
-    # vertical's resume_file.
-    # Tune as real shortlists surface mis-weighted matches.
+    # Skill weights for the jd_skill_overlap axis (judge-only). 0-10 ints;
+    # ACM/commodity > generic SAP > all else. Attested experience only.
     skill_weights:
       sap:
         acm: 10                   # Agricultural Contract Management — 2yr production spine
@@ -303,14 +284,8 @@ verticals:
         sox_rcm: 8                # SOX/Non-SOX RCM maintenance through stakeholder sign-off
         oil_gas: 5                # Downstream O&G client (secondary; Signavio engagement)
     disqualifier:
-      # Phrase bundle added 2026-07-14 from a mined analysis of 760 judged
-      # sap rows (fit<60 vs >=70 contrast, zero >=70 hits per phrase; 7
-      # historical hits in the 65-69 band accepted knowingly). Two flagged
-      # substring quirks, accepted: "sap pm" also catches "SAP PMO" and
-      # "sap pp" catches "SAP PPM" — both out-of-lane anyway, never >=65.
-      # Categories: non-ACM SAP module specializations (HCM/payroll/PP/PM/
-      # Basis/BTP/Concur/SuccessFactors), competing ERP platforms
-      # (Workday/NetSuite/PeopleSoft), architect-level hiring pools.
+      # JD-text phrase disqualifier: non-ACM SAP modules, competing ERPs,
+      # architect-level pools. ("sap pm"/"sap pp" also catch PMO/PPM — fine.)
       max_years: 4
       phrases:
         - successfactors
@@ -327,13 +302,8 @@ verticals:
         - workday
         - netsuite
         - peoplesoft
-      # Title-level disqualifier (mechanism + mining 2026-07-14).
-      # Seniority families and adjacent title families (buyer/sourcing/
-      # procurement/engineer) with zero >=70 scores across 760 judged rows.
-      # Known 65-69 casualties accepted: "senior" (2 — e.g. Senior SAP FICO
-      # Consultant at 65-69; a senior title never reached 70 for this
-      # profile). Substring semantics — "lead" also catches "leader" etc.,
-      # intended.
+      # Title disqualifier: seniority + adjacent families. Substring match
+      # ("lead" catches "leader", intended).
       title_phrases:
         - senior
         - manager
@@ -347,9 +317,6 @@ verticals:
         - sourcing
         - procurement
         - engineer
-        # Added 2026-07-15 (mined vs today's-config residual, 146 low<50 vs
-        # 120 surviving >=50; both zero >=50 hits): FICO/financial-analyst
-        # and security title pools outside the ACM lane.
         - financial
         - security
       reasoning_title: >-
@@ -365,12 +332,11 @@ verticals:
 
   ai_eng:
     display_name: AI Engineering
-    # Search taxonomy — vertical 2: AI Engineering (opened
-    # 2026-07-13, slotted second: outranks risk_ai on the shortlist, SAP
-    # stays primary). Lane charter: AI/LLM application engineering —
-    # production LLM-powered software (agents, full-stack AI products) plus
-    # customer-facing build roles. Classic MLE/data-science/research titles
-    # are out-of-lane; AI Risk/Governance titles belong to risk_ai.
+    # Scoring + tailoring resume for this vertical (AI-forward narrative).
+    resume_file: profile/verticals/ai_eng/resume_ai.md
+    # vertical 2: AI Engineering. Lane: AI/LLM application engineering
+    # (agents, full-stack AI products, FDE). MLE/DS/research -> out-of-lane;
+    # AI Risk/Governance -> risk_ai.
     search_terms:
       # AI/LLM application spine
       - AI Engineer
@@ -389,37 +355,191 @@ verticals:
       - AI Developer
       - Founding AI Engineer
       - Software Engineer, Applied AI
-      # customer-facing build tail (consulting-background fit)
+      # customer-facing build tail
       - Forward Deployed Engineer
       - AI Solutions Engineer
       - Forward Deployed AI Engineer
-    # LinkedIn-reduced set: spine + FDE, drops the qualified variants —
-    # same 429-mitigation rationale as sap's and risk_ai's.
+    # Reduced set (429-rate-limit mitigation): the adjacency tail rides
+    # Indeed/Google instead.
     linkedin_terms:
       - AI Engineer
       - Generative AI Engineer
+      - GenAI Engineer
       - LLM Engineer
       - AI Software Engineer
       - AI Application Engineer
+      - Full Stack AI Engineer
       - Applied AI Engineer
       - Artificial Intelligence Engineer
       - Agentic AI Engineer
       - Forward Deployed Engineer
+      - AI Solutions Engineer
+    title_include_terms:
+      - "ai"
+      - "a.i."
+      - "artificial intelligence"
+      - "genai"
+      - "gen ai"
+      - "generative ai"
+      - "generative"
+      - "llm"
+      - "llms"
+      - "agentic"
+      - "agent"
+      - "agents"
+      - "agentforce"
+      - "applied ai"
+      - "copilot"
+      - "rag"
+      - "prompt"
+      - "chatbot"
+      - "nlp"
+      - "code generation"
+      - "evals"
+      - "evaluations"
+      - "forward deployed"
+      - "forward-deployed"
+      - "foward deploy"
+      - "forward deployment"
+      - "fde"
+      - "deployed"
     title_exclude_terms:
-      - Senior
-      - Sr
-      - Staff
-      - Principal
-      - Lead
-      - Director
-      - VP
-      - Vice President
-      - Head
-      - Manager
-    # Anchored ONLY to B-PROVA-01/04/05/06, B-CAPTRACK-01/02/04/05, and
-    # B-TA-01 (supporting) per the Stage 0 charter. Ceiling 9 (locked
-    # 2026-07-13): above risk_ai's 8, below sap.acm's 10 production spine.
-    # Options ML bullets are deliberately NOT cited — MLE is out-of-lane.
+      - "Senior"
+      - "Sr"
+      - "Staff"
+      - "Principal"
+      - "Lead"
+      - "Director"
+      - "VP"
+      - "Vice President"
+      - "Head"
+      - "Manager"
+      - "Distinguished"
+      - "SMTS"
+      - "AVP"
+      - "SVP"
+      - "RVP"
+      - "scientist"
+      - "researcher"
+      - "research"
+      - "postdoc"
+      - "postdoctoral"
+      - "phd"
+      - "consultant"
+      - "strategist"
+      - "account executive"
+      - "sales"
+      - "presales"
+      - "pre-sales"
+      - "recruiter"
+      - "evangelist"
+      - "advocate"
+      - "coach"
+      - "mentor"
+      - "instructor"
+      - "professor"
+      - "adjunct"
+      - "trainer"
+      - "annotator"
+      - "annotation"
+      - "designer"
+      - "product owner"
+      - "product manager"
+      - "specialist"
+      - "supervisor"
+      - "intern"
+      - "internship"
+      - "co-op"
+      - "residency"
+      - "accelerator"
+      - "working student"
+      - "extern"
+      - "apprentice"
+      - "robotics"
+      - "robotic"
+      - "autonomy"
+      - "autonomous"
+      - "automotive"
+      - "vehicle"
+      - "drone"
+      - "uav"
+      - "perception"
+      - "computer vision"
+      - "lidar"
+      - "radar"
+      - "slam"
+      - "speech"
+      - "voice"
+      - "tts"
+      - "audio"
+      - "reinforcement learning"
+      - "recommendation"
+      - "recsys"
+      - "gameplay"
+      - "post-training"
+      - "pretraining"
+      - "interpretability"
+      - "foundation model"
+      - "infrastructure"
+      - "infra"
+      - "platform"
+      - "devops"
+      - "devsecops"
+      - "mlops"
+      - "llmops"
+      - "sre"
+      - "site reliability"
+      - "kubernetes"
+      - "inference"
+      - "serving"
+      - "gpu"
+      - "hpc"
+      - "cluster"
+      - "kernel"
+      - "observability"
+      - "data engineer"
+      - "data scientist"
+      - "data science"
+      - "analytics"
+      - "qa"
+      - "sdet"
+      - "clearance"
+      - "ts/sci"
+      - "polygraph"
+      - "fulfillment"
+      - "enrollment"
+      - "pharmacy"
+      - "warehouse"
+      - "m/f/d"
+      - "m/w/d"
+      - "f/m/x"
+      - "h/f"
+      - "f/h"
+      - "all genders"
+      - "gn"
+      - "london"
+      - "paris"
+      - "berlin"
+      - "dublin"
+      - "barcelona"
+      - "emea"
+      - "latam"
+      - "dach"
+      - "korea"
+      - "japan"
+      - "india"
+      - "uae"
+      - "toronto"
+      - "vancouver"
+      - "canada"
+      - "netherlands"
+      - "portugal"
+      - "poland"
+      - "germany"
+      - "greece"
+    # Skill weights (judge-only). Anchored to B-PROVA-01/04/05/06,
+    # B-CAPTRACK-01/02/04/05, B-TA-01. Ceiling 9 (< sap.acm's 10). No Options
+    # ML — MLE is out-of-lane.
     skill_weights:
       ai_llm:
         agentic_llm_systems: 9      # B-PROVA-01 — deployed multi-agent system, judge/orchestrator, retry logic
@@ -435,22 +555,18 @@ verticals:
         domain_logic: 5             # B-CAPTRACK-01/02 — deterministic accounting engine, edge-case handling
         python_sql_fundamentals: 5  # B-TA-01 — Python/Java/SQL instruction (supporting)
     disqualifier:
-      # PhD-required bundle (locked 2026-07-13): kills research-scientist
-      # postings that leak in under engineer titles. "required"-only wording
-      # avoids false-positiving on "PhD preferred" — same guard as risk_ai.
-      # No CFA/FRM/stochastic-calculus phrases: those are risk_ai signals.
+      # PhD-required bundle: kills research-scientist leakage. "required"-only
+      # avoids "PhD preferred" false positives. No CFA/FRM — those are risk_ai.
       max_years: 4
       phrases:
         - phd required
         - ph.d. required
         - doctorate required
-        # Added 2026-07-14 (mined, zero >=65 hits): GPU-systems and AV
-        # hiring pools that leak in under engineer titles.
+        # GPU-systems / AV pool leakage.
         - autonomous vehicles
         - cuda
-      # Title-level disqualifier (2026-07-14): research/DS titles and people-
-      # management titles that leak in under engineer search terms. "intern"
-      # deliberately NOT listed (an Intern AI Engineer row scored >=70).
+      # Title disqualifier: research/DS + people-management leakage.
+      # "intern" deliberately NOT listed.
       title_phrases:
         - scientist
         - manager
@@ -467,18 +583,16 @@ verticals:
 
   risk_ai:
     display_name: Risk-AI
-    # Search taxonomy — vertical 3: Risk-AI (secondary, opened
-    # 2026-06-16). Deliberately lopsided per locked decision: 8 governance/AI
-    # terms vs. 3 trading-risk tail terms, leaning toward Model
-    # Risk/Validation and AI Governance/Compliance over generic trading-risk
-    # titles. Indeed search set trimmed to the governance/AI lean 2026-07-21;
-    # the trading-risk tail now reaches this vertical only via classifier_rules
-    # on other sources, not active Indeed queries.
+    # Scoring + tailoring resume for this vertical (model-risk/AI-governance
+    # narrative).
+    resume_file: profile/verticals/risk_ai/resume_risk.md
+    # vertical 3: Risk-AI (secondary). Lean: Model Risk/Validation + AI
+    # Governance/Compliance over trading-risk (tail reaches via classifier only).
+    # Bare noun phrases, not "<X> Analyst": in-lane keepers are titled
+    # Manager/Lead/Associate/Officer/VP just as often as Analyst, and seniority
+    # is filtered downstream by title_exclude_terms + disqualifier.title_phrases.
     search_terms:
-      # governance/AI lean. Bare noun phrases, not "<X> Analyst": in-lane
-      # keepers are titled Manager/Lead/Associate/Officer/VP as often as
-      # Analyst, and seniority is filtered downstream by title_exclude_terms
-      # + disqualifier.title_phrases.
+      # governance/AI lean
       - Model Risk
       - Model Validation
       - Model Governance
@@ -488,16 +602,12 @@ verticals:
       - AI Compliance
       - AI Risk
       - Responsible AI
-      # trading-risk tail
+      # Trading-risk tail: classifier_rules still labels these off-search.
       - Quantitative Risk
       - Quantitative Analytics
       - Market Risk Analyst
       - Credit Risk Analyst
-      # trading-risk tail dropped 2026-07-21 for Indeed precision (Quantitative
-      # / Trading / Financial Risk Analyst pulled generic finance/credit noise);
-      # classifier_rules still labels these titles if they arrive elsewhere.
-    # LinkedIn-reduced set: keeps only the governance/AI lean terms, drops
-    # the trading-risk tail — same 429-mitigation rationale as sap's.
+    # LinkedIn: reduced set (429-rate-limit mitigation).
     linkedin_terms:
       - Model Risk
       - Model Validation
@@ -507,11 +617,8 @@ verticals:
       - AI Risk
       - Responsible AI
       - Quantitative Risk
-    # Off-lane occupations (added 2026-07-21) — same rationale as sap's list:
-    # loose Indeed matching / ATS classification pulls healthcare, trades, and
-    # public-sector titles that score out at judge time. Word-boundary, manual
-    # rows exempt. GRC-in-government and validation stay in lane, so bare
-    # "government"/"validation" are intentionally NOT excluded here.
+    # Off-lane occupations. Word-boundary; manual rows exempt. Bare
+    # "government"/"validation" NOT excluded (in-lane here).
     title_exclude_terms:
       - civil engineer
       - mechanical engineer
@@ -544,11 +651,8 @@ verticals:
       - firefighter
       - police
       - tree trimmer
-      # Adjacent title families — verbatim mirror of risk_ai
-      # disqualifier.title_phrases (KEEP IN SYNC when either changes), promoted
-      # to discovery 2026-07-21. Mined with zero >=70 hits; word-boundary.
-      # nurse/clinical also appear above (harmless duplicates). Drops ~25% of
-      # the risk_ai universe, 0 rows that ever scored >=70.
+      # Adjacent families — mirror of disqualifier.title_phrases (KEEP IN
+      # SYNC); word-boundary. nurse/clinical dup'd above (harmless).
       - quality
       - clinical
       - privacy
@@ -566,14 +670,9 @@ verticals:
       - services
       - policy
       - compliance specialist
-      # Include-gate negative terms (added 2026-07-21). NOT a mirror of
-      # disqualifier.title_phrases — these exist to kill in-lane leakage that
-      # passes title_include_terms: security/IT-GRC, role-type mismatches
-      # (SWE/PM/marketing/solutions-eng), data-governance, AI-enablement and
-      # generic AI/ML/DS. Mined from a full read of all 2,368 risk_ai titles;
-      # word-boundary; title_strong_keep_terms override these. Zero rows that
-      # ever scored >=70 dropped except families deliberately gated out by
-      # title (AI enablement/security/quant-trading).
+      # Include-gate negatives: kill in-lane leakage that passes
+      # title_include_terms (security/IT-GRC, SWE/PM, data-governance,
+      # AI-enablement, generic AI/ML/DS). Word-boundary; strong-keep overrides.
       - cybersecurity
       - cyber security
       - cyber
@@ -671,12 +770,8 @@ verticals:
       - alation
       - systems engineer
       - systems integration
-    # Title include-gate (added 2026-07-21). Keep a non-manual row only if its
-    # title matches the genuine risk_ai lane; drop everything else. Mined from
-    # a full read of all 2,368 unique risk_ai titles (noise was ~84% under the
-    # strict profile-fit bar); a blocklist alone could not win against ~677
-    # distinct junk titles. Empty => gate OFF (sap/ai_eng are gate-off until
-    # analysed). Word-boundary; manual/URL rows exempt.
+    # Title include-gate: keep only in-lane titles. Empty => gate OFF.
+    # Word-boundary; manual rows exempt.
     title_include_terms:
       - model risk
       - model validation
@@ -736,9 +831,7 @@ verticals:
       - quant model
       - quantitative model
       - quant analytics
-    # Strong-keep: unambiguous in-lane signals that override every exclude
-    # (so e.g. "Model Risk Management Lead, Machine Learning" and "AI Red
-    # Teamer" survive the ML/role-type excludes). Added 2026-07-21.
+    # Strong-keep: in-lane signals that override every exclude.
     title_strong_keep_terms:
       - model risk
       - model validation
@@ -760,10 +853,7 @@ verticals:
       - ai risk assessment
       - ai tech risk
       - model risk management
-    # Risk-AI vertical (secondary, opened 2026-06-16). Weighted below sap.acm
-    # (10) per "SAP stays primary" — governance/AI weighted above
-    # trading_quant per the locked lean (8 governance/AI search terms vs. 3
-    # trading-risk tail terms).
+    # Skill weights (judge-only). governance/AI > trading_quant; all < sap.acm.
     skill_weights:
       model_risk:
         sr_11_7_validation: 8       # PROVA — SR 11-7 model-documentation compliance tool
@@ -773,12 +863,8 @@ verticals:
         pnl_reconciliation: 5       # CapTrack — realized/unrealized P&L, position reconciliation
         options_pricing_ml: 5       # Options Pricing ML Predictor — XGBoost vs Black-Scholes
     disqualifier:
-      # JD-text phrase disqualifier. Starter bundle
-      # (2026-06-16) — most candidates competing for Model Risk/Validation/AI
-      # Governance titles are math/stats/finance PhDs with no CS/software
-      # angle; these phrases reliably signal that pool. "required"-only
-      # wording avoids false-positiving on "PhD preferred". Retune once a
-      # real shortlist shows what noise remains.
+      # JD-text phrase disqualifier: signals the math/stats/finance-PhD pool
+      # with no CS angle. "required"-only avoids "PhD preferred" false positives.
       max_years: 4
       phrases:
         - phd required
@@ -788,30 +874,19 @@ verticals:
         - cfa charter required
         - frm required
         - frm certification required
-        # "stochastic calculus" REMOVED 2026-07-14: the only judged row ever
-        # containing it scored 88 ("familiarity with stochastic calculus" as
-        # a soft plus — JPMC Model Risk Program Associate). Bare-substring
-        # form is a proven false positive; it survived only because the row
-        # was judged before the phrase was added (a /rescore would kill it).
-        # Added 2026-07-14 (mined, zero >=65 hits): credit/actuarial/AML
-        # and front-office trading-platform pools with no AI-governance angle.
+        # Credit/actuarial/AML + front-office trading platforms.
+        # (Bare "stochastic calculus" excluded — false positive as substring.)
         - loan portfolio
         - actuary
         - sanctions screening
         - murex
         - calypso
-        # Added 2026-07-15 (mined vs today's-config residual, 346 low<50 vs
-        # 153 surviving >=50; both phrases zero >=50 hits): Salesforce-stack
-        # roles and third-party/vendor-risk pools with no model-risk angle.
+        # Salesforce-stack + third-party/vendor-risk pools.
         - salesforce
         - third party risk
-      # Title-level disqualifier (2026-07-14): non-financial "validation"/
-      # "risk" title families that job boards fuzzy-match into this lane
-      # (Quality/Clinical Validation, Privacy, Ops, QA Automation, Nursing).
-      # Seniority words (manager/director/VP) deliberately NOT listed —
-      # "Manager, AI Risk Management" and "Director, AI Risk Management"
-      # scored >=70 here, unlike sap. "cyber" also excluded: a Cybersecurity
-      # + AI Governance hybrid hit 65-69.
+      # Title disqualifier: non-financial validation/risk families
+      # (quality/clinical/privacy/ops/QA/nursing). Seniority NOT listed (scores
+      # >=70 here, unlike sap). "cyber" excluded.
       title_phrases:
         - quality
         - clinical
@@ -819,12 +894,8 @@ verticals:
         - automation
         - operations
         - nurse
-        # Added 2026-07-15 (mined vs today's-config residual, 346 low<50 vs
-        # 153 surviving >=50; every phrase zero >=50 hits): generic analyst/
-        # developer/banking title families that search terms fuzzy-match into
-        # this lane. "policy" and "services" accepted knowingly as broad
-        # substrings (would also catch a future "AI Policy Analyst" /
-        # "Financial Services Risk Analyst") — user-approved 2026-07-15.
+        # Generic analyst/developer/banking families. "policy"/"services" are
+        # broad substrings, accepted knowingly.
         - business analyst
         - data analyst
         - financial analyst
@@ -854,12 +925,9 @@ out_of_lane:
     Out-of-lane: title contains no in-lane keyword, so title_match=0 and the
     row cannot reach the fit>=50 shortlist.
 
-# Ordered title-classifier rules — the fallback for rows with no search term
-# (manual inbox clips, legacy backfill). First match wins. Current order
-# encodes the locked "primary on ambiguity" rule: unambiguous SAP
-# signal > Risk-AI signal > AI-engineering signal > generic SAP-adjacent
-# catch-all (bare "Risk Analyst" defaults to sap). A title matching nothing
-# classifies as "".
+# Title-classifier fallback for rows with no search term. First match wins.
+# Order = ambiguity policy: SAP > Risk-AI > AI-eng > generic SAP catch-all
+# (bare "Risk Analyst" -> sap). No match -> "".
 classifier_rules:
   - vertical: sap
     pattern: '\b(?:sap|acm|s/?4(?:hana)?|etrm|ctrm|o2c|order to cash|sales and distribution|commodit\w*|signavio|mark[- ]to[- ]market|reconciliation|recon|erp)\b'
@@ -881,7 +949,7 @@ classifier_rules:
   - vertical: ai_eng
     pattern: "AI Agent"
   - vertical: ai_eng
-    pattern: "LLM"
+    pattern: "\\bLLMs?\\b"
   - vertical: ai_eng
     pattern: "GenAI"
   - vertical: ai_eng

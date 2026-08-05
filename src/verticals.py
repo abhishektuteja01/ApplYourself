@@ -149,9 +149,9 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
 
     # Per-vertical scoring resume: the attested resume LLM judges read in
     # score.md Step J1 (also the tailoring frozen-section/summary source).
-    # Absent => the sap resume as the shared default. Existence is enforced in
-    # main() so the /score & /rescore prereq check fails loud.
-    resume_file = raw.get("resume_file", "profile/verticals/sap/resume_sap.md")
+    # Required: a shared default silently scored a lane against another
+    # lane's resume. Existence is enforced in main().
+    resume_file = raw.get("resume_file")
     if not isinstance(resume_file, str) or not resume_file.strip():
         raise _fail(path, f"{where}.resume_file must be a nonempty string")
 

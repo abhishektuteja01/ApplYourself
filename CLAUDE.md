@@ -61,13 +61,17 @@ A "vertical" is a job lane (e.g. `ai_eng`, `sap`, `risk_ai`). `src/verticals.py`
 is the single source of truth loader.
 
 - Config lives in `profile/verticals.yaml` (gitignored user data) with a matching
-  `profile/verticals/<name>/{rubric.md, tailoring.md}` dir per vertical.
+  `profile/verticals/<name>/{rubric.md, tailoring.md}` dir per vertical, plus the
+  resume each block's required `resume_file` points at (judges score against it,
+  `score.md` J1). `verticals-check` fails loud if any of the three is missing.
 - The loader is **strict**: every vertical block must have all current required
   keys or it raises `ValueError`. Because `tests/conftest.py` injects the config
   via an autouse fixture, a malformed block errors the *entire* test suite.
 - **Two fixture mirrors must stay in sync** with the real config for tests to pass:
   `tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml`.
   Any classifier/schema change must be mirrored into both in the same change.
+  `TestFixtureMirrors` enforces this (it skips the real-config half when
+  `profile/verticals.yaml` is absent, as in a fresh clone).
 - Consumers must call `verticals.get_config()` **inside function bodies**, never at
   module level, so test injection via `set_config()` always wins.
 - Templates for onboarding a new vertical: `profile/*.example.yaml` and

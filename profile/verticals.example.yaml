@@ -17,11 +17,9 @@ default_vertical: example_primary
 verticals:
   example_primary:
     display_name: Widget Engineering
-    # Optional: repo-relative path to the attested resume LLM judges score
-    # against (score.md Step J1). Omit to use the sap resume as shared default.
-    # Set a lane-specific file when a vertical reads better against a resume
-    # framed for it. The file must exist or the prereq check fails loud.
-    # resume_file: profile/resume_widget.md
+    # Required: repo-relative path to the attested resume LLM judges score
+    # against (score.md Step J1). Must exist or the prereq check fails loud.
+    resume_file: profile/verticals/example_primary/resume_example_primary.md
     search_terms:
       # spine
       - Widget Engineer
@@ -53,6 +51,7 @@ verticals:
 
   example_secondary:
     display_name: Sprocket Compliance
+    resume_file: profile/verticals/example_secondary/resume_example_secondary.md
     search_terms:
       - Sprocket Compliance Analyst
       - Sprocket Governance Analyst

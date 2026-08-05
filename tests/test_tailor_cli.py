@@ -117,10 +117,11 @@ def test_prep_stderr_carries_row_json(tmp_path, capsys):
 
 # ---------------- prep: vertical resolution + versioning ----------------
 
-def test_prep_unknown_vertical_falls_back_to_default(tmp_path, capsys):
+def test_prep_unknown_vertical_falls_back_to_default(tmp_path, capsys, cfg):
     _setup(tmp_path, vertical="not_a_vertical")
     tailor_cli.main(["aaaaaaaa", "--today", "2026-07-24"])
-    assert _parse_eval(capsys.readouterr().out)["VERTICAL"] == "sap"
+    got = _parse_eval(capsys.readouterr().out)["VERTICAL"]
+    assert got == cfg.default_vertical
 
 
 def test_prep_versions_on_retailor(tmp_path, capsys):

@@ -724,8 +724,8 @@ def test_title_exclusion(cfg):
 
 
 def test_title_inclusion_gate(cfg):
-    """risk_ai and sap configure a title include-gate: keep iff strong_keep OR
-    (include AND NOT exclude). ai_eng has no include terms => gate off."""
+    """All three verticals configure a title include-gate: keep iff strong_keep
+    OR (include AND NOT exclude)."""
     from src.discovery.cleaning import apply_title_exclusion
     import pandas as pd
 
@@ -769,3 +769,38 @@ def test_title_inclusion_gate(cfg):
 
     assert drops["risk_ai"] == 3
     assert drops["sap"] == 2
+
+
+def test_title_inclusion_gate_ai_eng(cfg):
+    """ai_eng's include-gate does the most work of the three lanes. It went
+    untested while the fixtures omitted title_include_terms for it."""
+    from src.discovery.cleaning import apply_title_exclusion
+    import pandas as pd
+
+    keep = ["AI Engineer", "Applied AI Engineer", "Agentic AI Engineer"]
+    drop = [
+        "Backend Engineer, Payments",       # no include term
+        "Data Engineer",
+        "Full Stack Engineer",
+        "Platform Engineer",
+        "Solutions Engineer",
+        "Distinguished Engineer, AI",       # include hit, seniority exclude
+        "Research Scientist, LLM",          # include hit, role-type exclude
+        "Machine Learning Engineer, LLM Platform",
+    ]
+    df = pd.DataFrame(
+        [{"title": t, "vertical": "ai_eng", "source": "linkedin"} for t in keep + drop]
+        # manual rows stay exempt from the gate
+        + [{"title": "Totally Off-Lane Widget Maker", "vertical": "ai_eng",
+            "source": "manual"}]
+    )
+
+    out, drops = apply_title_exclusion(df, cfg)
+    titles = out["title"].tolist()
+
+    for t in keep:
+        assert t in titles, f"{t} should survive the ai_eng gate"
+    for t in drop:
+        assert t not in titles, f"{t} should be dropped by the ai_eng gate"
+    assert "Totally Off-Lane Widget Maker" in titles
+    assert drops["ai_eng"] == len(drop)

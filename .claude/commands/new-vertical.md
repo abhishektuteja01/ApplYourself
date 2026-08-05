@@ -62,7 +62,7 @@ No file edits.
 2. Checks:
    ```bash
    uv run python -m src.verticals   # current config must be valid before touching it
-   grep -n "<name>" profile/verticals.yaml tests/fixtures/verticals.yaml || echo "name unused"
+   grep -rn "<name>" profile/verticals.yaml tests/fixtures/verticals.yaml tests/discovery/fixtures/verticals.yaml || echo "name unused"
    ```
    If the name already appears, stop and ask (resume vs rename).
 3. Interview the **charter**: target job titles/lanes, what's explicitly
@@ -79,6 +79,10 @@ Interview, then draft the new vertical's block (place it at the confirmed
 position in the `verticals:` mapping):
 
 - `display_name` — shortlist section header text.
+- `resume_file` — REQUIRED. Repo-relative path to the resume judges score
+  this lane against (`score.md` J1); convention is
+  `profile/verticals/<name>/resume_<name>.md`. Stage 3 creates the file; the
+  block won't load until it exists.
 - `search_terms` — full discovery query list; `linkedin_terms` — the
   reduced LinkedIn set (429 mitigation; may equal `search_terms`). Mirror
   the existing blocks' comment style (spine vs adjacent/tail tiers, rationale).
@@ -136,9 +140,18 @@ print('MISCLASSIFIED:', bad or 'none')"
 
 Fix pattern/priority (with confirmation) until clean.
 
-## Stage 3 — `rubric.md` + `tailoring.md`
+## Stage 3 — `rubric.md` + `tailoring.md` + the scoring resume
 
 Create `profile/verticals/<name>/`:
+
+- **the scoring resume** — the file `<name>.resume_file` points at (Stage 1
+  set it; `profile/verticals/<name>/resume_<name>.md` is the convention).
+  `resume_file` is REQUIRED and its target must exist, so Stage 1's block
+  won't load until this file is on disk. Ask the user which existing resume
+  this lane should be judged against: copy that one and reframe its summary
+  and section order for the lane, or start from
+  `profile/verticals/example_primary/resume_example_primary.md`. Everything
+  in it must be attested in `profile/bullets.md` (R2/R3).
 
 - **`rubric.md`** — mirror the existing files' shape (read
   `profile/verticals/sap/rubric.md` as the reference; the committed
@@ -164,11 +177,12 @@ Verify:
 uv run python -m src.verticals   # must now pass fully
 ```
 
-## Stage 4 — mirror into the test fixture
+## Stage 4 — mirror into BOTH test fixtures
 
-Apply the SAME Stage 1 block and Stage 2 rules to
-`tests/fixtures/verticals.yaml` (keep it content-identical to the live
-config). The config-driven agreement test in `tests/test_cleaning.py`
+Apply the SAME Stage 1 block and Stage 2 rules to **both**
+`tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml`,
+keeping each content-identical to the live config.
+`TestFixtureMirrors` fails if either drifts. The config-driven agreement test in `tests/test_cleaning.py`
 (terms↔classifier agreement) picks the new vertical up from the fixture
 automatically, but several tests pin the fixture's exact shape as literals
 and WILL fail on a new vertical — expect to update (with confirmation)
@@ -202,7 +216,8 @@ set. Verify: `grep -c "vertical_lean:.*<name>" profile/skills_master.md`.
 2. Final audit + report:
    ```bash
    uv run python -m src.verticals && uv run python -m pytest -q
-   diff <(grep -v '^#' profile/verticals.yaml) <(grep -v '^#' tests/fixtures/verticals.yaml)   # content-identical (comments may differ)
+   # TestFixtureMirrors covers fixture sync; this is the eyeball version.
+   diff <(grep -v '^#' profile/verticals.yaml) <(grep -v '^#' tests/fixtures/verticals.yaml)
    ```
 5. Completion summary: every file touched, every locked decision (terms,
    rule position + collision rulings, disqualifier, rubric anchors, budget),
