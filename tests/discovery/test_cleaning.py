@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -605,6 +606,101 @@ def test_load_raw_window_shards(tmp_path):
     df = load_raw_window(raw_dir, today=pd.Timestamp("2026-07-16"))
     assert len(df) == 3
     assert set(df["source"]) == {"jobspy", "greenhouse", "lever"}
+
+
+def _salary_shards(raw_dir: Path) -> None:
+    """A board shard (no salary at all) beside a job-site shard that has one."""
+    pd.DataFrame({"id": [1, 2], "min_amount": [None, None]}).to_parquet(
+        raw_dir / "2026-07-15_1200_greenhouse.parquet"
+    )
+    pd.DataFrame({"id": [3], "min_amount": [90000.0]}).to_parquet(
+        raw_dir / "2026-07-15_1200_indeed.parquet"
+    )
+
+
+def test_load_raw_window_pins_numeric_dtype_past_all_na_shards(tmp_path):
+    """Guards salary_min/salary_max against a pandas bump.
+
+    Boards leave min_amount/max_amount entirely null, so those shards land as
+    object dtype. Pandas currently drops all-NA columns when inferring the
+    concat result dtype; a future version will not, which would turn the whole
+    column object and silently break the numeric salary fields downstream.
+    """
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    _salary_shards(raw_dir)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        df = load_raw_window(raw_dir, today=pd.Timestamp("2026-07-16"))
+
+    assert df["min_amount"].dtype == "float64"
+    assert len(df) == 3
+    assert df.loc[df["id"] == 3, "min_amount"].iloc[0] == 90000.0
+    assert df.loc[df["id"].isin([1, 2]), "min_amount"].isna().all()
+
+
+def test_load_raw_window_keeps_column_all_na_in_every_shard(tmp_path):
+    """Only columns typed by some other shard are excluded — never a column
+    that is empty everywhere, which must survive for project_raw to default."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    pd.DataFrame({"id": [1], "job_level": [None]}).to_parquet(
+        raw_dir / "2026-07-15_1200_greenhouse.parquet"
+    )
+    pd.DataFrame({"id": [2], "job_level": [None]}).to_parquet(
+        raw_dir / "2026-07-15_1200_lever.parquet"
+    )
+
+    df = load_raw_window(raw_dir, today=pd.Timestamp("2026-07-16"))
+    assert "job_level" in df.columns
+    assert len(df) == 2
+    assert df["job_level"].isna().all()
+
+
+def test_load_raw_window_zero_row_shard_does_not_set_dtype(tmp_path):
+    """The manual shard is written empty on every run with an inbox miss; it
+    must not drive the dtype of a column real shards populate."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    empty = pd.DataFrame({"id": [], "is_remote": pd.Series([], dtype=object)})
+    empty.to_parquet(raw_dir / "2026-07-15_1200_manual.parquet")
+    pd.DataFrame({"id": [1], "is_remote": [True]}).to_parquet(
+        raw_dir / "2026-07-15_1200_indeed.parquet"
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        df = load_raw_window(raw_dir, today=pd.Timestamp("2026-07-16"))
+
+    assert len(df) == 1
+    assert df["is_remote"].dtype == "bool"
+
+
+def test_load_raw_window_all_shards_empty_keeps_columns(tmp_path):
+    """Nothing scraped anywhere: still return the column shape, not a bare
+    frame, so the pipeline's column lookups stay valid."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    cols = pd.DataFrame({"id": [], "company": [], "title": []})
+    cols.to_parquet(raw_dir / "2026-07-15_1200_manual.parquet")
+    cols.to_parquet(raw_dir / "2026-07-15_1200_greenhouse.parquet")
+
+    df = load_raw_window(raw_dir, today=pd.Timestamp("2026-07-16"))
+    assert df.empty
+    assert list(df.columns) == ["id", "company", "title"]
+
+
+def test_project_raw_remote_flag_no_future_warning():
+    """remote_flag arrives object-typed from mixed shards; the fillna must not
+    lean on the deprecated silent downcast."""
+    df = pd.DataFrame({"remote_flag": pd.Series([True, None, False], dtype=object)})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        out = project_raw(df)
+
+    assert out["remote_flag"].dtype == "bool"
+    assert list(out["remote_flag"]) == [True, False, False]
 
 
 def test_apply_expiry_boundary_day_still_visible():

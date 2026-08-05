@@ -478,9 +478,11 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
     if "remote_flag" not in df.columns:
         df["remote_flag"] = False
     else:
-        df["remote_flag"] = (
-            df["remote_flag"].fillna(False).infer_objects(copy=False).astype(bool)
-        )
+        # .where, not .fillna — fillna on an object column downcasts, and the
+        # trailing astype already fixes the type. NaN is truthy, so the null
+        # fill has to happen before the cast, not via astype alone.
+        flag = df["remote_flag"]
+        df["remote_flag"] = flag.where(flag.notna(), False).astype(bool)
     if "scraped_date" not in df.columns:
         df["scraped_date"] = pd.Timestamp.today().normalize()
     df["scraped_date"] = pd.to_datetime(df["scraped_date"], errors="coerce")
