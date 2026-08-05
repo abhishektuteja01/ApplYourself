@@ -1,6 +1,7 @@
 import logging
 import argparse
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
@@ -75,7 +76,7 @@ def main(args=None):
         try:
             health_df = pd.read_parquet(health_path)
             pruned_count = health_df["pruned_at"].notna().sum()
-            report_lines.append(f"Universe Health: {pruned_count} companies pruned (3x 404s)")
+            report_lines.append(f"Universe Health: {pruned_count} companies pruned (3x dead board)")
             report_lines.append("")
         except Exception as e:
             log.warning(f"Could not read universe health for report: {e}")
@@ -105,9 +106,26 @@ def main(args=None):
                 continue
                 
             t0 = time.time()
-            res = source.fetch(ctx)
+            try:
+                res = source.fetch(ctx)
+            except Exception:
+                # No shard is written, so --resume retries this source.
+                log.exception(f"Source {source.name} crashed; continuing.")
+                report_lines.extend([
+                    f"### Source: {source.name}",
+                    f"Time: {time.time() - t0:.1f}s",
+                    "**CRASHED** — no shard written, source skipped this run",
+                    "```",
+                    traceback.format_exc().rstrip(),
+                    "```",
+                    "",
+                ])
+                if ctx.deadline_reached():
+                    report_lines.append(f"**DEADLINE REACHED** after {source.name}.")
+                    break
+                continue
             dur = time.time() - t0
-            
+
             df = pd.DataFrame(res.rows) if res.rows else pd.DataFrame()
             if not df.empty:
                 df["ingested_run_id"] = run_id

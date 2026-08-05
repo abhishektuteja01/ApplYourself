@@ -661,6 +661,84 @@ def test_location_filter_drops_bare_foreign_cities():
     assert locs["kept_us"] == "Austin, TX"
     assert locs["kept_namesake"] == "Paris, TX"  # US namesake, not dropped
 
+
+def test_out_of_allowlist_rows_never_enter_the_seen_ledger(tmp_path, monkeypatch):
+    """The location filter runs before the seen-ledger. Otherwise a foreign row
+    gets first_seen stamped while invisible, and widening the allowlist surfaces
+    it already expired — the change looks like a no-op for RESURFACE_AFTER_DAYS."""
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+
+    us_only = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["United States"]))
+    monkeypatch.setattr(cleaning, "load_config", lambda *a, **k: us_only)
+
+    rows = [
+        {"company": "Acme", "title": "SAP SD Consultant", "location": "Austin, TX"},
+        {"company": "Beta", "title": "SAP MM Consultant", "location": "Bengaluru, India"},
+    ]
+    jobs = tmp_path / "jobs"
+    raw_dir = _make_raw_parquet(tmp_path, rows, run_id="2026-06-06_1000")
+    cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=jobs,
+        runs_dir=jobs / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    india_id = compute_job_id(normalize_company("Beta"), normalize_title("SAP MM Consultant"))
+    ledger_ids = set(pd.read_parquet(jobs / "seen.parquet")["job_id"])
+    assert india_id not in ledger_ids, "dropped row was stamped first_seen"
+
+    # Widen the allowlist and re-scrape past RETENTION_LOW_DAYS. The row is new
+    # to the ledger, so it gets today's first_seen and survives apply_expiry.
+    plus_india = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["United States", "India"])
+    )
+    monkeypatch.setattr(cleaning, "load_config", lambda *a, **k: plus_india)
+    later = pd.Timestamp("2026-06-22")  # 16d > RETENTION_LOW_DAYS
+    _make_raw_parquet(
+        tmp_path,
+        [{**r, "date_posted": later, "scraped_date": later} for r in rows],
+        run_id="2026-06-22_1000",
+    )
+    df = cleaning.run(
+        run_id="2026-06-22_1000",
+        raw_dir=raw_dir,
+        clean_dir=jobs,
+        runs_dir=jobs / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=later,
+    )
+    assert india_id in set(df["job_id"])
+
+
+def test_dedupe_survivor_chosen_among_in_allowlist_rows(tmp_path, monkeypatch):
+    """Dedupe keeps the longest jd_text, blind to location. Filtering after it
+    let a foreign duplicate win the group and then get dropped, losing the
+    in-allowlist row with it."""
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+
+    us_only = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["United States"]))
+    monkeypatch.setattr(cleaning, "load_config", lambda *a, **k: us_only)
+
+    raw_dir = _make_raw_parquet(tmp_path, [
+        {"company": "Acme", "title": "SAP SD Consultant",
+         "location": "Bengaluru, India", "description": "x" * 900},
+        {"company": "Acme", "title": "SAP SD Consultant",
+         "location": "Austin, TX", "description": "y" * 300},
+    ])
+    df = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    assert len(df) == 1
+    assert df.iloc[0]["location"] == "Austin, TX"
+
+
 # ---------- T15: raw retention ----------
 
 def test_prune_raw_files(tmp_path):

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from src import verticals
-from src.discovery import universe
+from src.discovery import inbox, universe
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 
@@ -32,3 +32,12 @@ def isolate_universe_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "universe_health.parquet")
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "universe_csv")
     monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+
+
+@pytest.fixture(autouse=True)
+def isolate_inbox_path(monkeypatch, tmp_path):
+    """ingest_inbox() defaults to the repo-root inbox/ and *moves* what it reads
+    into .processed/. Any test reaching InboxSource.fetch() would consume a real
+    pending clip and discard its row into a tmp shard. Redirect for every test;
+    tests that patch it explicitly still win."""
+    monkeypatch.setattr(inbox, "INBOX", tmp_path / "inbox")

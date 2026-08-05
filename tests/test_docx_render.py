@@ -15,6 +15,7 @@ from src.docx_render import (
     TemplateError,
     TemplateMissingError,
     parse_resume_md,
+    render_cover_letter,
     render_resume,
 )
 
@@ -347,3 +348,265 @@ def test_validate_template_requires_hyperlink_character_style(tmp_path):
             style.delete()
     with pytest.raises(TemplateError, match="Hyperlink"):
         _validate_template(doc, template)
+
+
+# =====================================================================
+# render_cover_letter — placeholder fill-in over the user's own design
+# =====================================================================
+
+def _make_cl_template(path: Path, *, tokens=("{{SALUTATION}}", "{{BODY}}"),
+                      duplicate: str | None = None,
+                      static_text=("Static header line",),
+                      body_style: str | None = None,
+                      body_bold: bool = False) -> Path:
+    """A cover-letter template: static paragraphs plus one paragraph per token.
+    body_style/body_bold mark the {{BODY}} paragraph so clone-formatting is
+    observable in the output."""
+    doc = Document()
+    for line in static_text:
+        doc.add_paragraph(line)
+    for tok in tokens:
+        if tok == "{{BODY}}" and (body_style or body_bold):
+            p = doc.add_paragraph()
+            if body_style:
+                if body_style not in {s.name for s in doc.styles}:
+                    doc.styles.add_style(body_style, WD_STYLE_TYPE.PARAGRAPH)
+                p.style = doc.styles[body_style]
+            run = p.add_run(tok)
+            run.bold = body_bold
+        else:
+            doc.add_paragraph(tok)
+    if duplicate:
+        doc.add_paragraph(duplicate)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+    return path
+
+
+def _texts(path: Path) -> list[str]:
+    return [p.text for p in Document(str(path)).paragraphs]
+
+
+def _content(**over) -> dict:
+    c = {"salutation": "Dear Hiring Manager,", "body": ["First para.", "Second para."]}
+    c.update(over)
+    return c
+
+
+# ---------- fail-loud paths ----------
+
+def test_cover_letter_fails_loud_on_missing_template(tmp_path):
+    out = tmp_path / "cl.docx"
+    with pytest.raises(TemplateMissingError) as exc:
+        render_cover_letter(_content(), tmp_path / "nope.docx", out)
+    msg = str(exc.value)
+    assert "nope.docx missing" in msg
+    # actionable: names both placeholder sets
+    assert "{{SALUTATION}}" in msg and "{{BODY}}" in msg
+    assert "{{DATE}}" in msg
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("tokens,missing", [
+    (("{{BODY}}",), "{{SALUTATION}}"),
+    (("{{SALUTATION}}",), "{{BODY}}"),
+    ((), "{{SALUTATION}}"),
+])
+def test_cover_letter_missing_required_placeholder(tmp_path, tokens, missing):
+    t = _make_cl_template(tmp_path / "t.docx", tokens=tokens)
+    out = tmp_path / "cl.docx"
+    with pytest.raises(TemplateError) as exc:
+        render_cover_letter(_content(), t, out)
+    assert missing in str(exc.value)
+    assert not out.exists()
+
+
+def test_cover_letter_duplicate_placeholder_is_rejected(tmp_path):
+    """Two {{BODY}} paragraphs = ambiguous insert point; fail rather than
+    guess."""
+    t = _make_cl_template(tmp_path / "t.docx", duplicate="{{BODY}}")
+    with pytest.raises(TemplateError, match="more than one paragraph"):
+        render_cover_letter(_content(), t, tmp_path / "cl.docx")
+
+
+def test_cover_letter_duplicate_optional_placeholder_is_rejected(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx",
+                          tokens=("{{SALUTATION}}", "{{BODY}}", "{{DATE}}"),
+                          duplicate="{{DATE}}")
+    with pytest.raises(TemplateError, match=r"\{\{DATE\}\}"):
+        render_cover_letter(_content(), t, tmp_path / "cl.docx")
+
+
+@pytest.mark.parametrize("bad", [
+    {"salutation": "", "body": ["x"]},
+    {"body": ["x"]},
+    {"salutation": None, "body": ["x"]},
+])
+def test_cover_letter_requires_a_salutation(tmp_path, bad):
+    t = _make_cl_template(tmp_path / "t.docx")
+    with pytest.raises(ValueError, match="salutation"):
+        render_cover_letter(bad, t, tmp_path / "cl.docx")
+
+
+@pytest.mark.parametrize("bad", [
+    {"salutation": "Dear X,", "body": []},
+    {"salutation": "Dear X,"},
+    {"salutation": "Dear X,", "body": None},
+])
+def test_cover_letter_requires_a_nonempty_body(tmp_path, bad):
+    t = _make_cl_template(tmp_path / "t.docx")
+    with pytest.raises(ValueError, match="body"):
+        render_cover_letter(bad, t, tmp_path / "cl.docx")
+
+
+def test_cover_letter_validation_runs_before_writing(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    out = tmp_path / "nested" / "cl.docx"
+    with pytest.raises(ValueError):
+        render_cover_letter({"salutation": "Dear X,"}, t, out)
+    assert not out.exists()
+
+
+# ---------- happy paths ----------
+
+def test_cover_letter_fills_salutation_and_expands_body(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert _texts(out) == [
+        "Static header line", "Dear Hiring Manager,", "First para.", "Second para.",
+    ]
+
+
+def test_cover_letter_removes_the_body_placeholder(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert "{{BODY}}" not in "\n".join(_texts(out))
+
+
+def test_cover_letter_leaves_no_raw_token_behind(tmp_path):
+    t = _make_cl_template(
+        tmp_path / "t.docx",
+        tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}", "{{CLOSING}}",
+                "{{SIGNOFF_NAME}}"))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(date="2026-06-06", closing="Sincerely,",
+                                signoff_name="Jane Doe"), t, out)
+    assert "{{" not in "\n".join(_texts(out))
+    assert _texts(out) == [
+        "Static header line", "2026-06-06", "Dear Hiring Manager,",
+        "First para.", "Second para.", "Sincerely,", "Jane Doe",
+    ]
+
+
+def test_cover_letter_blanks_an_unsupplied_optional_placeholder(tmp_path):
+    """A present-but-unfilled token becomes an empty line — never a literal
+    {{DATE}} in a letter the user is about to send."""
+    t = _make_cl_template(tmp_path / "t.docx",
+                          tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}"))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert _texts(out) == [
+        "Static header line", "", "Dear Hiring Manager,",
+        "First para.", "Second para.",
+    ]
+
+
+def test_cover_letter_skips_optional_placeholders_absent_from_the_template(tmp_path):
+    """The template may carry static text there instead; supplying the field
+    must not inject a new paragraph."""
+    t = _make_cl_template(tmp_path / "t.docx",
+                          static_text=("Static header line", "Sincerely,"))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(closing="IGNORED", signoff_name="IGNORED"), t, out)
+    texts = _texts(out)
+    assert "IGNORED" not in texts
+    assert texts == ["Static header line", "Sincerely,", "Dear Hiring Manager,",
+                     "First para.", "Second para."]
+
+
+def test_cover_letter_preserves_untouched_static_paragraphs(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx",
+                          static_text=("Jane Doe", "jane@example.com", "617-555-0100"))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert _texts(out)[:3] == ["Jane Doe", "jane@example.com", "617-555-0100"]
+
+
+def test_cover_letter_body_clones_keep_the_placeholder_formatting(tmp_path):
+    """Each body paragraph inherits the {{BODY}} paragraph's style and run
+    formatting — that is the whole point of cloning rather than appending."""
+    t = _make_cl_template(tmp_path / "t.docx", body_style="CL Body", body_bold=True)
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    paras = [p for p in Document(str(out)).paragraphs
+             if p.text in ("First para.", "Second para.")]
+    assert len(paras) == 2
+    for p in paras:
+        assert p.style.name == "CL Body"
+        assert p.runs[0].bold is True
+
+
+def test_cover_letter_body_order_is_preserved(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(body=[f"P{i}." for i in range(6)]), t, out)
+    assert _texts(out)[1:] == ["Dear Hiring Manager,"] + [f"P{i}." for i in range(6)]
+
+
+def test_cover_letter_single_body_paragraph(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(body=["Only one."]), t, out)
+    assert _texts(out) == ["Static header line", "Dear Hiring Manager,", "Only one."]
+
+
+def test_cover_letter_creates_missing_output_dirs(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    out = tmp_path / "applications" / "sap" / "2026-06-06_acme" / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert out.exists()
+
+
+def test_cover_letter_leaves_the_template_untouched(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    before = t.read_bytes()
+    render_cover_letter(_content(), t, tmp_path / "cl.docx")
+    assert t.read_bytes() == before
+
+
+def test_cover_letter_token_split_across_runs_is_still_matched(tmp_path):
+    """Word often splits a typed token into several runs; matching on the
+    paragraph's full text is what makes a hand-authored template work."""
+    doc = Document()
+    p = doc.add_paragraph()
+    for chunk in ("{{SAL", "UTA", "TION}}"):
+        p.add_run(chunk)
+    doc.add_paragraph("{{BODY}}")
+    t = tmp_path / "t.docx"
+    doc.save(str(t))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert _texts(out) == ["Dear Hiring Manager,", "First para.", "Second para."]
+
+
+def test_cover_letter_surrounding_whitespace_in_a_token_is_tolerated(tmp_path):
+    doc = Document()
+    doc.add_paragraph("  {{SALUTATION}}  ")
+    doc.add_paragraph("{{BODY}}")
+    t = tmp_path / "t.docx"
+    doc.save(str(t))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert "Dear Hiring Manager," in _texts(out)
+
+
+def test_cover_letter_token_with_other_text_is_not_a_placeholder(tmp_path):
+    """Only a paragraph whose ENTIRE text is the token counts — otherwise the
+    renderer would mangle prose that happens to mention a token."""
+    t = _make_cl_template(tmp_path / "t.docx",
+                          static_text=("Use {{DATE}} in your template.",))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(date="2026-06-06"), t, out)
+    assert _texts(out)[0] == "Use {{DATE}} in your template."

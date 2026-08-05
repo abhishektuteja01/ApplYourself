@@ -287,3 +287,117 @@ class TestFixtureMirrors:
             assert yaml.safe_load(p.read_text()) == expected, (
                 f"{p.relative_to(REPO_ROOT)} has drifted from profile/verticals.yaml"
             )
+
+
+class TestMainCli:
+    """`uv run verticals-check` — every slash command's one-line prerequisite
+    check, and the only thing standing between a half-onboarded vertical and a
+    /score run that judges against the wrong resume."""
+
+    def _setup(self, tmp_path, monkeypatch, *, drop_prose=(), drop_resume=()):
+        """Build a self-contained repo root from the fixture config, minus any
+        prose/resume files named in drop_*."""
+        monkeypatch.setattr(verticals, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(verticals, "DEFAULT_CONFIG_PATH",
+                            tmp_path / "profile" / "verticals.yaml")
+        monkeypatch.setattr(verticals, "VERTICALS_DIR",
+                            tmp_path / "profile" / "verticals")
+        (tmp_path / "profile").mkdir()
+        (tmp_path / "profile" / "verticals.yaml").write_text(FIXTURE_PATH.read_text())
+        cfg = verticals.load_verticals(FIXTURE_PATH)
+        for name, v in cfg.verticals.items():
+            d = tmp_path / "profile" / "verticals" / name
+            d.mkdir(parents=True)
+            for fname in ("rubric.md", "tailoring.md"):
+                if (name, fname) not in drop_prose:
+                    (d / fname).write_text("# prose")
+            if name not in drop_resume:
+                r = tmp_path / v.resume_file
+                r.parent.mkdir(parents=True, exist_ok=True)
+                r.write_text("# resume")
+        return cfg
+
+    def test_success_prints_names_and_default(self, tmp_path, monkeypatch, capsys):
+        cfg = self._setup(tmp_path, monkeypatch)
+        assert verticals.main() == 0
+        out = capsys.readouterr().out
+        assert out.strip() == (
+            f"verticals={','.join(cfg.names)} default={cfg.default_vertical}"
+        )
+
+    def test_missing_config_file(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(verticals, "DEFAULT_CONFIG_PATH",
+                            tmp_path / "profile" / "verticals.yaml")
+        assert verticals.main() == 1
+        out = capsys.readouterr().out
+        assert out.startswith("ERROR: ")
+        assert "not found" in out
+        # the pointer at the committed template is the actionable part
+        assert "verticals.example.yaml" in out
+
+    def test_malformed_config_reports_instead_of_raising(self, tmp_path, monkeypatch, capsys):
+        self._setup(tmp_path, monkeypatch)
+        data = yaml.safe_load((tmp_path / "profile" / "verticals.yaml").read_text())
+        data["schema_version"] = 2
+        (tmp_path / "profile" / "verticals.yaml").write_text(yaml.safe_dump(data))
+        assert verticals.main() == 1
+        assert "schema_version must be 1" in capsys.readouterr().out
+
+    def test_missing_rubric_is_named(self, tmp_path, monkeypatch, capsys):
+        self._setup(tmp_path, monkeypatch, drop_prose={("sap", "rubric.md")})
+        assert verticals.main() == 1
+        out = capsys.readouterr().out
+        assert "missing per-vertical prose files" in out
+        assert "sap/rubric.md" in out
+        assert "sap/tailoring.md" not in out
+
+    def test_missing_tailoring_is_named(self, tmp_path, monkeypatch, capsys):
+        self._setup(tmp_path, monkeypatch, drop_prose={("ai_eng", "tailoring.md")})
+        assert verticals.main() == 1
+        assert "ai_eng/tailoring.md" in capsys.readouterr().out
+
+    def test_every_missing_prose_file_is_listed_not_just_the_first(
+            self, tmp_path, monkeypatch, capsys):
+        """A half-onboarded vertical usually misses several files; listing one
+        per run turns onboarding into a guessing game."""
+        self._setup(tmp_path, monkeypatch, drop_prose={
+            ("sap", "rubric.md"), ("sap", "tailoring.md"),
+            ("risk_ai", "rubric.md"),
+        })
+        assert verticals.main() == 1
+        out = capsys.readouterr().out
+        for expected in ("sap/rubric.md", "sap/tailoring.md", "risk_ai/rubric.md"):
+            assert expected in out
+
+    def test_missing_resume_file_is_named(self, tmp_path, monkeypatch, capsys):
+        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"sap"})
+        assert verticals.main() == 1
+        out = capsys.readouterr().out
+        assert "missing per-vertical scoring resume files (score.md J1)" in out
+        assert cfg.verticals["sap"].resume_file in out
+
+    def test_every_missing_resume_is_listed(self, tmp_path, monkeypatch, capsys):
+        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"sap", "risk_ai"})
+        assert verticals.main() == 1
+        out = capsys.readouterr().out
+        assert cfg.verticals["sap"].resume_file in out
+        assert cfg.verticals["risk_ai"].resume_file in out
+
+    def test_prose_check_reports_before_the_resume_check(
+            self, tmp_path, monkeypatch, capsys):
+        """Both are broken; the prose error returns first. Pin the order so a
+        reshuffle doesn't silently change what the user sees."""
+        self._setup(tmp_path, monkeypatch,
+                    drop_prose={("sap", "rubric.md")}, drop_resume={"sap"})
+        assert verticals.main() == 1
+        out = capsys.readouterr().out
+        assert "prose files" in out
+        assert "score.md J1" not in out
+
+    def test_a_dir_that_is_not_a_file_counts_as_missing(
+            self, tmp_path, monkeypatch, capsys):
+        """is_file(), not exists() — a directory named rubric.md is not prose."""
+        self._setup(tmp_path, monkeypatch, drop_prose={("sap", "rubric.md")})
+        (tmp_path / "profile" / "verticals" / "sap" / "rubric.md").mkdir()
+        assert verticals.main() == 1
+        assert "sap/rubric.md" in capsys.readouterr().out
