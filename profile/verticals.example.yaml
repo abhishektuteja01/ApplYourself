@@ -67,7 +67,7 @@ verticals:
     # Use this when job boards fuzzy-match your search terms into hundreds of
     # distinct off-lane titles that a title_exclude_terms blocklist cannot
     # keep up with. Derive the lists from a full read of the vertical's title
-    # pool (see risk_ai in profile/verticals.yaml for a worked example).
+    # pool.
     title_include_terms:
       - sprocket compliance
       - sprocket governance

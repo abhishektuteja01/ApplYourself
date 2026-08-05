@@ -257,8 +257,8 @@ def ingest(
 
     # A URL ingest is a deliberate, user-initiated add (URL-mode /tailor), so it
     # must bypass discovery's title_exclude_terms exactly like an inbox/ manual
-    # clip — otherwise a saved role like "Senior SAP ACM Lead" would be dropped
-    # by the seniority/adjacent title families. _fetch_generic already tags
+    # clip — otherwise a deliberately saved senior role would be dropped by the
+    # seniority/adjacent title families. _fetch_generic already tags
     # site="manual"; normalize the ATS fetch paths (greenhouse/lever/ashby) here
     # too. Scoped to ingest() only — the ATS *scraper* keeps its real source.
     row["site"] = "manual"

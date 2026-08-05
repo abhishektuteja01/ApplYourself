@@ -83,7 +83,14 @@ __pycache__/
 
 # NOTE: uv.lock is intentionally NOT ignored — committed for reproducibility.
 
-# Morning discovery automation logs (LaunchAgent com.abhishek.discovery)
+# Private working notes — live breakage tracker, cleanup backlog, publish
+# backlog. They carry measured funnel counts, real lane names and local paths;
+# versioned in the private bare repo, not here.
+/HANDOFF.md
+/cleaning.md
+/publish.md
+
+# Morning discovery automation logs (scheduler job)
 /logs/
 
 # Fixed staging dir for Word/osascript PDF conversion (see /tailor, /cover-letter).

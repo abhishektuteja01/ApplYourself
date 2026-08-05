@@ -4,10 +4,9 @@ from jobspy import scrape_jobs
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
 
-# Bumped 50 -> 100 on 2026-07-29 for more ai_eng coverage. A/B RESOLVED
-# 2026-08-04: keep 100. Five consecutive runs (07-31..08-04) show LinkedIn
-# ~1,352 -> ~3,200 rows/run and Indeed ~2,322 -> ~4,615, with **zero 429s** in
-# any run report over 07-29..08-04. Do not revert.
+# Bumped 50 -> 100 for coverage. A/B resolved: keep 100. Five consecutive runs
+# roughly doubled rows/run on both LinkedIn and Indeed with zero 429s in any
+# run report. Do not revert.
 RESULTS_WANTED = 100
 HOURS_OLD = 336
 DESCRIPTION_FORMAT = "markdown"

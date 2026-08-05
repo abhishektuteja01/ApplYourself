@@ -214,7 +214,7 @@ accept dict rules:
 
 ```yaml
 classifier_rules:
-  ai_eng:
+  <vertical>:
     - "AI Engineer"                                   # plain: matches anywhere
     - {match: "ML Engineer", require_any: ["LLM", "GenAI"]}  # compound
 ```
@@ -224,13 +224,9 @@ least one `require_any` term is also a substring (both case-insensitive).
 Plain-string rules keep exact current behavior. The fixture
 `tests/fixtures/verticals.yaml` must gain the same rule shapes.
 
-The concrete ai_eng rule list lives in the gitignored config and is approved by
-the user in step 5.2 — do not invent it. Approved (final, post-5.2 review):
-match-anywhere = AI Engineer, AI Software Engineer, LLM, GenAI, Generative AI,
-Applied AI, AI Agents, AI Solution; compound-gated = Forward Deployed (require_any
-[Engineer]), ML Engineer / Machine Learning / Research Engineer with require_any
-[LLM, GenAI, Generative, NLP, Foundation Model]. Do NOT include "Member of
-Technical Staff" in any form.
+The concrete rule list for any given lane lives in the gitignored
+`profile/verticals.yaml` and is approved by the user in step 5.2 — do not
+invent it, and do not copy it into a committed file.
 
 ### 6.1 Title exclusion (contract for step 5.3)
 
@@ -251,13 +247,10 @@ list of strings. Semantics (exact):
   key behave exactly as today.
 - Fixture rule R8 applies: mirror the key into `tests/fixtures/verticals.yaml`.
 
-The concrete ai_eng list is user-approved (do not modify without a new gate):
-
-```yaml
-title_exclude_terms:
-  [Senior, Sr, Staff, Principal, Lead, Director, VP, Vice President,
-   Head, Manager]
-```
+Each lane's concrete list is user-approved and lives only in the gitignored
+`profile/verticals.yaml` (do not modify without a new gate). A seniority
+blocklist — Senior, Sr, Staff, Principal, Lead, Director, VP, Head, Manager —
+is the typical shape.
 
 ## 7. Location handling (`location.py` + cleaning wiring)
 
@@ -409,19 +402,18 @@ or original string when unparsed) after parsing.
   "Senior ML Engineer - LLM Serving"; compound rule does NOT match
   "ML Engineer, Ads Ranking"; case-insensitive.
   Verify: `uv run pytest tests/test_verticals.py tests/test_cleaning.py -x`.
-- [x] **5.2 ai_eng rules update — USER GATE.** Draft the new ai_eng
+- [x] **5.2 Lane rules update — USER GATE.** Draft the lane's new
   `classifier_rules` block per the §6 direction. Run the classifier over all
   titles currently in clean.parquet; produce two lists: titles newly matched,
   titles no longer matched. STOP: present the draft block + both lists to the
   user. Only after explicit approval: write the block into
-  profile/verticals.yaml AND mirror it into tests/fixtures/verticals.yaml.
+  profile/verticals.yaml.
   Verify: `uv run pytest -x`.
 - [x] **5.3 Title exclusion (seniority filter).** Implement §6.1 exactly:
   loader support for optional `title_exclude_terms` in src/verticals.py,
   word-boundary exclusion in cleaning after classification, manual-source
-  exemption, per-vertical report line. Write the user-approved ai_eng list
-  from §6.1 into profile/verticals.yaml and mirror the key into
-  tests/fixtures/verticals.yaml.
+  exemption, per-vertical report line. Write the user-approved list
+  from §6.1 into profile/verticals.yaml.
   Tests (all mandatory): "Senior Software Engineer (AI Agents)" dropped;
   "Sr. AI Engineering Lead" dropped; "Software Engineer, Applied AI, New Grad"
   kept; word-boundary — "Internal Tools AI Engineer" kept ("Internal" is not

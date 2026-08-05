@@ -26,9 +26,9 @@ lint loop).
 - **NO-FAB** — never introduce a tool, metric, scope, date, or claim
   absent from the source (canonical bullet, or the vertical's résumé for
   frozen/summary text). No fabricated module-config claims.
-- **NO-DRIFT** — analogy is not equivalence. Example: ACM commodity-contract
-  settlement is NOT generic SD order-to-cash. Relabeling that asserts equivalence
-  is fabrication even if it reads naturally. This is the drift `trace.md` catches.
+- **NO-DRIFT** — analogy is not equivalence. A specialized module's workflow is
+  not the generic workflow it resembles. Relabeling that asserts equivalence is
+  fabrication even if it reads naturally. This is the drift `trace.md` catches.
 - **SKILLS-SOURCE** — the Skills section is built from `profile/skills_master.md`
   entries only, never copied from the résumé's Skills block.
 - **REPHRASE-LICENSE** — a `rephrase` may use ONLY words in the bullet's canonical
@@ -383,8 +383,8 @@ Header:
 # trace.md — per-line audit for ${OUT_DIR}
 
 Tailored for job_id `${JOB_ID}` on $(date +%Y-%m-%d).
-Rule: every rephrase records before→after so NO-DRIFT (ACM→O2C, MM/SD
-over-claims) is eyeball-catchable.
+Rule: every rephrase records before→after so NO-DRIFT (a specialized workflow
+relabeled as the generic one it resembles) is eyeball-catchable.
 ```
 
 **`${OUT_DIR}/keywords_to_mirror.md`** — the 2–3 keywords from
@@ -456,7 +456,7 @@ Verify on disk; if any check fails, do NOT report success — diagnose and fix.
 Tailored: ${OUT_DIR}/
   - ${FILE_SLUG}_Resume.docx ({size} bytes)
   - ${FILE_SLUG}_Resume.pdf ({size} bytes)
-  - trace.md ({N} entries, {M} rephrases — eyeball-scan for ACM→O2C drift)
+  - trace.md ({N} entries, {M} rephrases — eyeball-scan for NO-DRIFT breaches)
   - lint_report.md ({K} mechanical fixes, 0 unresolved phrase flags)
   - keywords_to_mirror.md, jd_snapshot.md
 

@@ -9,9 +9,9 @@ on 2026-07-28 unless explicitly marked as unverified.
 
 Discovery captures the **JD**. It does not capture the **application form** — the
 custom questions, work-authorization dropdowns, years-of-experience gates, essay
-prompts, and EEO/demographic blocks you only see after clicking Apply. For an F-1
-OPT candidate, a chunk of the real disqualification logic lives in that form, not
-in the JD text. Goal would be: pull the form ahead of time, both to prep answers
+prompts, and EEO/demographic blocks you only see after clicking Apply. For anyone
+who needs sponsorship, a chunk of the real disqualification logic lives in that
+form, not in the JD text. Goal would be: pull the form ahead of time, both to prep answers
 and to catch gates before investing in a tailored resume.
 
 ## What each ATS actually exposes (all three probed live)
@@ -207,13 +207,6 @@ Form-reachable: **25/75 = 33%**.
 - `suggested_action` within this cut: **tailor 304**, manual-review 7, skip 2
 - On the shortlist **and** >=80 (n=44): linkedin 23, ashby 12, greenhouse 6, lever 2, other 1
 
-By vertical, fit >= 80:
-
-| vertical | ashby | greenhouse | lever | linkedin | other | workday | indeed | jobvite | icims |
-|---|---|---|---|---|---|---|---|---|---|
-| ai_eng | 107 | 52 | 14 | 94 | 12 | 3 | 4 | 2 | 1 |
-| risk_ai | 1 | 2 | 0 | 19 | 1 | 1 | 0 | 0 | 0 |
-
 ## Conclusions from the data
 
 1. **Ashby is the feature; Greenhouse is the bonus.** 108 vs 54 at fit>=80, a 2:1
@@ -223,12 +216,12 @@ By vertical, fit >= 80:
 2. **Lever is not worth an HTML scraper.** 14 rows at fit>=80, 3 on the shortlist.
    Highest maintenance cost, lowest yield.
 3. **The LinkedIn bucket is worth less than its count.** The 113 LinkedIn rows at
-   fit>=80 skew heavily to staffing/consultancy: BeaconFire (3), Stealth Startup (3),
-   Precision Technologies, CriticalRiver, Access Data Consulting, Pentangle Tech
-   Services, Veridic Solutions, TCS, h3 Technologies. That segment largely doesn't
-   run Greenhouse/Ashby, and "applying" there is a recruiter email, not a form.
-4. **This would serve `ai_eng` and essentially not `risk_ai`.** risk_ai at fit>=80
-   is 19/24 LinkedIn, 3 reachable.
+   fit>=80 skew heavily to staffing and consultancy firms. That segment largely
+   doesn't run Greenhouse/Ashby, and "applying" there is a recruiter email, not
+   a form.
+4. **Yield is very uneven across lanes.** A lane whose postings concentrate on
+   aggregators gets almost nothing from this; check per-lane reachability before
+   building.
 5. **Volume is a non-issue at this threshold.** 304 of the 313 are already
    `suggested_action: tailor`, so gating the fetch on fit>=80 means fetching roughly
    the rows you'd tailor anyway — order ~50 requests per scoring window, not thousands.

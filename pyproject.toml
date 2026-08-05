@@ -1,7 +1,7 @@
 [project]
 name = "auto-app-filler"
 version = "0.1.0"
-description = "Personal, human-gated job-search pipeline (F-1 OPT, SAP ACM functional)."
+description = "Human-gated, config-driven job-search pipeline: scrape, score, tailor."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "python-jobspy>=1.1.80",

@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal, human-gated job-search pipeline for an F-1 OPT candidate. It scrapes
+A personal, human-gated job-search pipeline, sponsorship-aware throughout (the
+scoring pre-screen and the outreach disclosure rules both know about it). It scrapes
 jobs, scores them against a profile, and generates tailored application material.
 Every outward action (applying, sending outreach) is gated on the user; the code
 never submits anything.
@@ -36,7 +37,7 @@ its own and does not match this file's.
 1. **Discovery** (`src/discovery/`, CLI `discover`) — deterministic, LLM-free
    overnight scrape. Sources in order: manual `inbox/*.md` clips → JobSpy
    (LinkedIn + Indeed; ZipRecruiter and Google are wired but `enabled: false` —
-   dead upstream, see `HANDOFF.md`) → Greenhouse/Lever/Ashby JSON boards over
+   dead upstream) → Greenhouse/Lever/Ashby JSON boards over
    `data/universe/*.csv` + `profile/companies.yaml`. Board/inbox rows are
    title-classified into a vertical at fetch time; unclassified rows dropped.
    Always ends by running cleaning (try/finally), even after a crash/deadline.
@@ -155,7 +156,9 @@ stays in the command session).
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).
 - Read the relevant command `.md` before running its slash command — the real
   orchestration logic lives there, not in `src/`.
-- `HANDOFF.md` tracks live breakage/fixes; `cleaning.md` is the cleanup backlog.
+- `HANDOFF.md` (live breakage/fixes), `cleaning.md` (cleanup backlog) and
+  `publish.md` (publish backlog) are gitignored working notes. Read them if
+  they exist locally; on a fresh clone they won't.
 - `plans/*.md` are reference, not instructions: `discovery_plan.md` is the
   completed v2 discovery build, `discovery_next.md` its downstream handoff, and
   `ats_application_forms_research.md` un-built research. Nothing there is a live

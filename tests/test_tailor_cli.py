@@ -17,10 +17,10 @@ from src import tailor_cli, verticals
 
 @pytest.fixture(autouse=True)
 def isolate_resume_files(tmp_path, monkeypatch, cfg):
-    """The injected fixture config's resume_file paths are the real
-    (gitignored) profile ones, so prep would read the user's actual resume
-    during tests. Repoint REPO_ROOT at tmp_path and write a stand-in for every
-    configured vertical -- same isolation pattern as isolate_inbox_path."""
+    """prep resolves resume_file against verticals.REPO_ROOT. Repoint it at
+    tmp_path and write a stand-in for every configured vertical, so a test
+    never depends on the committed example resumes' contents -- same isolation
+    pattern as isolate_inbox_path."""
     monkeypatch.setattr(verticals, "REPO_ROOT", tmp_path)
     for v in cfg.verticals.values():
         p = tmp_path / v.resume_file
@@ -86,11 +86,11 @@ def _setup(tmp_path, *, job_id="aaaaaaaa", company="Acme Corp.", title="Widget F
         clean_rows=[{
             "job_id": job_id, "company": company, "title": title,
             "vertical": vertical, "url": "https://x", "posted_date": "2026-07-01",
-            "jd_text": "We need an Widget FN consultant. Order-to-cash.",
+            "jd_text": "We need a widget functional consultant. Gizmo calibration.",
         }],
         scored_rows=[{
             "job_id": job_id, "fit_score": 80, "vertical": vertical,
-            "keywords_to_mirror": ["SD", "O2C"],
+            "keywords_to_mirror": ["widget assembly", "gizmo"],
         }],
     )
     _write_profile(tmp_path, diction=diction, skip=skip_profile)
@@ -215,7 +215,7 @@ def test_snapshot_writes_from_row_json_without_reading_parquet(tmp_path, capsys)
     assert "company: Acme Corp." in snap
     assert "title: Widget Functional Consultant" in snap
     assert "snapshot_at: 2026-07-24" in snap
-    assert snap.rstrip().endswith("Order-to-cash.")
+    assert snap.rstrip().endswith("Gizmo calibration.")
     assert "chars of JD body" in capsys.readouterr().out
 
 
