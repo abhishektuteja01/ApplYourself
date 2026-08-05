@@ -1,7 +1,7 @@
 """Deterministic cleaning.
 
 No LLM calls (R7). Reads pipeline/*/state.yaml but never writes there.
-Operations execute in the exact §6.2 step order:
+Operations execute in this exact step order:
   1. Normalize company / title fields (seniority preserved)
   2. Drop rows where jd_text < 200 chars
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
@@ -689,7 +689,7 @@ def write_outputs(
 
 
 # ---------------------------------------------------------------------
-# Orchestration — §6.2 in exact order
+# Orchestration — the module-docstring steps in exact order
 # ---------------------------------------------------------------------
 
 def run(

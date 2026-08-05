@@ -12,7 +12,7 @@ argument-hint: <job_id> <channel> [--to "..."] [--via "..."]
 # /outreach — draft message in the user's voice
 
 Three channels in v1: `recruiter`, `referral`, `alumni`.
-**NO cold-DM hiring managers** (R6). NO drip campaigns. NO auto-send.
+**NO cold-DM hiring managers.** NO drip campaigns. NO auto-send.
 Draft only -- the user sends.
 
 ---
@@ -103,7 +103,7 @@ LinkedIn DM doesn't apply.
 
 - **≤ 100 words**
 - **LEAD with the alumni connection** (NEU, Manipal, Deloitte, etc.)
-- **Ask for a 15-minute call -- NOT a referral up front** (R6)
+- **Ask for a 15-minute call -- NOT a referral up front**
 - **OPT disclosure: light, honest, upfront mention**
 
 ### Output file structure
@@ -143,7 +143,7 @@ Filename slug rule for `RECIPIENT_SLUG`: lowercase the `--to` value,
 collapse non-alphanumerics to `-`, strip leading/trailing `-`. If no
 `--to` was given (rare; recruiter cold-DM), use `unknown`.
 
-## Step 4 — LINT the draft (R5, outreach context)
+## Step 4 — LINT the draft (outreach context)
 
 Outreach is fresh-generation text -- **NO bullets.md exemption applies.**
 
@@ -175,7 +175,7 @@ If any violation:
   that won't clean, and tell the user to either tweak the draft by hand
   or expand `voice_samples.md` with an alternate phrasing.
 
-**Per R5: never silently let a banned phrase ship.**
+**Never silently let a banned phrase ship.**
 
 ## Step 5 — register the draft in state.yaml.outreach[]
 

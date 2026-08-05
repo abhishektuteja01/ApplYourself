@@ -14,6 +14,9 @@ resume at the first unchecked step. Never skip a verify sub-step.
 
 ## R. Global rules (apply to every step)
 
+These R-numbers are local to this plan and do NOT match `CLAUDE.md`'s R7/R10 —
+R1 here is the determinism boundary, which `CLAUDE.md` calls R7.
+
 - R1: No LLM calls anywhere in this plan's code. All of `src/discovery/` is
   deterministic. Never replace a deterministic step with an LLM call or a
   "smart" heuristic.

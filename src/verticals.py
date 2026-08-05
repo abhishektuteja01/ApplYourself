@@ -51,7 +51,7 @@ class Vertical:
     title_exclude_terms: tuple[str, ...]
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
-    resume_file: str  # repo-relative path to the attested resume LLM judges score against (§6.3 / score.md J1)
+    resume_file: str  # repo-relative path to the attested resume judges score against (read by score-judge.md)
 
 
 @dataclass(frozen=True)
@@ -147,8 +147,8 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     if not isinstance(strong_keep_terms, list) or not all(isinstance(t, str) for t in strong_keep_terms):
         raise _fail(path, f"{where}.title_strong_keep_terms must be a list of strings")
 
-    # Per-vertical scoring resume: the attested resume LLM judges read in
-    # score.md Step J1 (also the tailoring frozen-section/summary source).
+    # Per-vertical scoring resume: the attested resume judges read via
+    # score-judge.md (also the tailoring frozen-section/summary source).
     # Required: a shared default silently scored a lane against another
     # lane's resume. Existence is enforced in main().
     resume_file = raw.get("resume_file")
@@ -283,7 +283,7 @@ def main() -> int:
         if not (REPO_ROOT / v.resume_file).is_file()
     })
     if missing_resumes:
-        print("ERROR: missing per-vertical scoring resume files (score.md J1):")
+        print("ERROR: missing per-vertical scoring resume files (resume_file):")
         for m in missing_resumes:
             print(f"  {m}")
         return 1

@@ -73,14 +73,15 @@ _APPLIED_STATES = frozenset({
 # precomputed clean.parquet `vertical` column; the stamp below is the generic
 # mechanism, the
 # human-facing reasoning text lives in profile/verticals.yaml
-# `out_of_lane.reasoning` (§7.15).
+# `out_of_lane.reasoning`.
 AUTO_SKIP_SCORED_BY = "rubric:title-out-of-lane"
 
 # Hard-ineligible pre-label (carve-out, added 2026-07-14):
 # rows whose JD contains an unambiguous clearance/citizenship phrase from
 # `sponsorship_rules.yaml: hard_ineligible` are labeled ineligible before
 # any judge runs — identical shortlist-exclusion routing to a judge-assigned
-# label (never a `skip`; R8 separation holds). Judgment-free substring
+# label (never a `skip`; a suppressed row is not an ineligible row).
+# Judgment-free substring
 # match only; every nuanced sponsorship case stays with the LLM judge.
 SPONSORSHIP_RULES_PATH = Path("profile/sponsorship_rules.yaml")
 HARD_INELIGIBLE_SCORED_BY = "rubric:hard-ineligible-pre-screen"
@@ -731,8 +732,8 @@ def compute_shortlist(
             # excludes ineligible/suppressed (locked 2026-06-16:
             # independently-ranked sections, not one blended list — a
             # vertical's fit_score is never compared against another's)
-        "excluded":   [row, ...]   # sponsorship_label == 'ineligible' (R4: only sponsorship gate)
-        "suppressed": [row, ...]   # state_history skip count >= 1 (R8: skip != ineligible)
+        "excluded":   [row, ...]   # sponsorship_label == 'ineligible' (sponsorship is the only exclusion gate)
+        "suppressed": [row, ...]   # state_history skip count >= 1 (a skip is not an ineligible)
       }
 
     Sort key within each vertical's section (locked):

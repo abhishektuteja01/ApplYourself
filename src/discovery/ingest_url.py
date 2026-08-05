@@ -1,7 +1,7 @@
 """URL ingest: fetch ONE job description by URL into the normal raw archive
 and rebuild jobs/clean.parquet (same cleaning path as discovery).
 
-Deterministic plumbing: no LLM calls, no browser automation (R1)
+Deterministic plumbing: no LLM calls (R7), no browser automation
 — one or two unauthenticated GETs. Recognized ATS posting URLs (Greenhouse /
 Lever / Ashby) are fetched via their public JSON APIs and parsed by the
 existing careers.py parsers, so company/title/JD are structured, not scraped.
@@ -235,7 +235,7 @@ def ingest(
     pipeline_dir: Path = PIPELINE,
 ) -> dict:
     """Fetch the JD at url, archive it as a raw row, rebuild clean.parquet
-    via the standard §6.2 cleaning path, and return
+    via the standard cleaning path, and return
     {job_id, company, title, vertical, url, source, location, jd_text}.
     Fails loud (IngestError) on every dead end — never a partial write."""
     row = fetch_row(url, company=company, title=title)

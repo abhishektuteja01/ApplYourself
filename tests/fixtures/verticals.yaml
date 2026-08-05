@@ -17,7 +17,7 @@ default_vertical: ai_eng
 verticals:
   sap:
     display_name: SAP
-    # Scoring + tailoring resume for this vertical (score.md J1).
+    # Scoring + tailoring resume for this vertical (read by score-judge.md).
     resume_file: profile/verticals/sap/resume_sap.md
     # vertical 1: SAP (primary).
     search_terms:

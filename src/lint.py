@@ -6,7 +6,7 @@ find_phrase_violations as the deterministic referee.
 
 Tier 1 (mechanical, auto-fix): em/en-dash, smart quotes, ellipsis, NBSP,
 zero-width. Applied to everything including verbatim canonical text — no
-exemption (R5).
+exemption.
 
 Tier 2 (phrase, flag-and-rewrite): banned phrases per profile/de_ai_rules.yaml.
 NEVER auto-rewritten. The caller loops the LLM to rewrite the offending line

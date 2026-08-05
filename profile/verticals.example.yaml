@@ -18,7 +18,7 @@ verticals:
   example_primary:
     display_name: Widget Engineering
     # Required: repo-relative path to the attested resume LLM judges score
-    # against (score.md Step J1). Must exist or the prereq check fails loud.
+    # against (read by score-judge.md). Must exist or the prereq check fails loud.
     resume_file: profile/verticals/example_primary/resume_example_primary.md
     search_terms:
       # spine

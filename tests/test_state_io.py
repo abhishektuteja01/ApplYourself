@@ -119,7 +119,7 @@ def test_transition_rejects_unknown_state(tmp_path):
 
 @pytest.mark.parametrize("terminal", sorted(TERMINAL_STATES))
 def test_transition_rejects_out_of_every_terminal_state(tmp_path, terminal):
-    """R8 / §6.5: no transitions out of any of the 4 terminal states."""
+    """No transitions out of any of the 4 terminal states."""
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, terminal, initial_fields=_initial())
     with pytest.raises(ValueError, match="cannot transition out of terminal"):

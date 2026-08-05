@@ -39,7 +39,7 @@ regressed.
   untouched — they are already generic over the config. `tests/*.py` is
   likewise untouched EXCEPT the Stage 4 fixture-literal updates and
   optional collision cases (see Stage 4).
-- **R2 no fabrication:** `skill_weights`, rubric tier anchors, and
+- **No fabrication:** `skill_weights`, rubric tier anchors, and
   `vertical_lean` tags come ONLY from the user's answers plus existing
   `profile/bullets.md` / `profile/skills_master.md` content. Never invent
   skills or experience; never add a new `SKILL-*` entry — only tag existing
@@ -80,14 +80,14 @@ position in the `verticals:` mapping):
 
 - `display_name` — shortlist section header text.
 - `resume_file` — REQUIRED. Repo-relative path to the resume judges score
-  this lane against (`score.md` J1); convention is
+  this lane against (read by `score-judge.md`); convention is
   `profile/verticals/<name>/resume_<name>.md`. Stage 3 creates the file; the
   block won't load until it exists.
 - `search_terms` — full discovery query list; `linkedin_terms` — the
   reduced LinkedIn set (429 mitigation; may equal `search_terms`). Mirror
   the existing blocks' comment style (spine vs adjacent/tail tiers, rationale).
 - `skill_weights` — 0-10 integer blocks anchored ONLY to attested
-  bullets/skills (R2); name the evidence in inline comments like the
+  bullets/skills; name the evidence in inline comments like the
   existing blocks do.
 - `disqualifier` — `max_years` (default 4 unless the user argues otherwise),
   `phrases` (interview whether this lane has a deterministic JD kill-signal;
@@ -151,7 +151,7 @@ Create `profile/verticals/<name>/`:
   this lane should be judged against: copy that one and reframe its summary
   and section order for the lane, or start from
   `profile/verticals/example_primary/resume_example_primary.md`. Everything
-  in it must be attested in `profile/bullets.md` (R2/R3).
+  in it must be attested in `profile/bullets.md`.
 
 - **`rubric.md`** — mirror the existing files' shape (read
   `profile/verticals/sap/rubric.md` as the reference; the committed
@@ -163,7 +163,7 @@ Create `profile/verticals/<name>/`:
   across verticals; note that rows over `max_years` are pre-screened out),
   `domain_bonus` tiers — plus any LLM-judged caps and an "Additional
   self-check items" section. Every tier anchored to the user's REAL evidence
-  from Stage 0 (R2); interview what makes a top-band vs bottom-band match.
+  from Stage 0; interview what makes a top-band vs bottom-band match.
 - **`tailoring.md`** — same reference pattern: page-budget hard floor
   (bullet mix summing to ≥10 non-frozen bullets), project ordering default
   + JD fine-tune allowances, summary framing (what leads, what supports),
@@ -212,7 +212,7 @@ set. Verify: `grep -c "vertical_lean:.*<name>" profile/skills_master.md`.
 
 ## Stage 6 — doc pointers + final audit
 
-1. `CLAUDE.md` §5 — extend the "Currently configured" sentence.
+1. `CLAUDE.md` — extend the "Currently configured" sentence.
 2. Final audit + report:
    ```bash
    uv run python -m src.verticals && uv run python -m pytest -q

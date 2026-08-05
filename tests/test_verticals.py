@@ -373,7 +373,7 @@ class TestMainCli:
         cfg = self._setup(tmp_path, monkeypatch, drop_resume={"sap"})
         assert verticals.main() == 1
         out = capsys.readouterr().out
-        assert "missing per-vertical scoring resume files (score.md J1)" in out
+        assert "missing per-vertical scoring resume files (resume_file)" in out
         assert cfg.verticals["sap"].resume_file in out
 
     def test_every_missing_resume_is_listed(self, tmp_path, monkeypatch, capsys):
@@ -392,7 +392,7 @@ class TestMainCli:
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "prose files" in out
-        assert "score.md J1" not in out
+        assert "scoring resume files" not in out
 
     def test_a_dir_that_is_not_a_file_counts_as_missing(
             self, tmp_path, monkeypatch, capsys):

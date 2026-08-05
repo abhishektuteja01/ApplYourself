@@ -1,5 +1,5 @@
 ---
-description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. risk_ai/2026-... or sap/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor (R2/R3). Writes Abhishek_Tuteja_Cover_Letter.docx + Abhishek_Tuteja_Cover_Letter.pdf into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
+description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. risk_ai/2026-... or sap/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor. Writes Abhishek_Tuteja_Cover_Letter.docx + Abhishek_Tuteja_Cover_Letter.pdf into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
 model: sonnet
 effort: medium
 allowed-tools:
@@ -17,7 +17,7 @@ argument-hint: <job_id> [--to "Hiring Manager Name"]
 
 You are writing a real cover letter for a specific role, reusing the most
 recent `/tailor` output for that `job_id`. **This slice exists to enforce
-R2 (no fabrication) and R5 (de-AI'd writing) for fresh-generated prose**.
+no fabrication and de-AI'd writing for fresh-generated prose**.
 
 Arguments: `$1` is the 8-hex `job_id`. Parse `$ARGUMENTS` for an optional
 `--to "Name"` flag (same convention as `/outreach`'s `--to`/`--via`): if
@@ -114,7 +114,7 @@ Step 3 — it's enrichment, not a prerequisite.
 
 ## Step 3 — draft the letter content
 
-**Fabrication discipline (R2/R3, identical to /tailor):** every sentence
+**Fabrication discipline (/tailor's NO-FAB, identical here):** every sentence
 mapping your experience to the JD must trace to a specific bullet's
 canonical text or that bullet's `allowable_synonyms`. No tools, metrics,
 scopes, or dates beyond what `profile/bullets.md` attests. "Analogy is not
@@ -182,7 +182,7 @@ robotic rhythm, fake-profound kickers).
 
 This is a voice/structure edit, NOT a rewrite of substance. The edit must
 not add any claim, tool, metric, scope, or date beyond what
-`profile/bullets.md` attests (R2) — no_ai_slop already forbids inventing
+`profile/bullets.md` attests — no_ai_slop already forbids inventing
 facts; hold that line here. Keep the letter's mapping to the
 `keywords_to_mirror` intact.
 

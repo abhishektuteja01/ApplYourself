@@ -13,7 +13,8 @@ argument-hint: <job_id>
 # /tailor — generate a tailored, audited resume
 
 Tailor the real-bullets-only resume for one role. `$1` = the 8-hex `job_id`.
-Exists to enforce R2 (no fabrication) and R5 (de-AI'd writing).
+Exists to enforce no fabrication (NO-FAB below) and de-AI'd writing (Step 5's
+lint loop).
 
 ## Invariants (govern every step; stated once here)
 
@@ -22,10 +23,10 @@ Exists to enforce R2 (no fabrication) and R5 (de-AI'd writing).
   only fine-tunes *within* that default; it never adds/removes a section or line,
   and never overrides absent a strong JD-specific reason. Vertical sets the
   starting point, JD fine-tunes — never the reverse.
-- **NO-FAB (R2/R3)** — never introduce a tool, metric, scope, date, or claim
+- **NO-FAB** — never introduce a tool, metric, scope, date, or claim
   absent from the source (canonical bullet, or the vertical's résumé for
   frozen/summary text). No fabricated module-config claims.
-- **NO-DRIFT (R2b)** — analogy is not equivalence. Example: ACM commodity-contract
+- **NO-DRIFT** — analogy is not equivalence. Example: ACM commodity-contract
   settlement is NOT generic SD order-to-cash. Relabeling that asserts equivalence
   is fabrication even if it reads naturally. This is the drift `trace.md` catches.
 - **SKILLS-SOURCE** — the Skills section is built from `profile/skills_master.md`
@@ -230,8 +231,8 @@ Manipal Institute of Technology, Manipal, KA
 
 ## Step 5 — lint loop (the enforcement chain)
 
-Run mechanical fix + phrase scan. **Loop until phrase violations are zero** (R5:
-never silently let a banned phrase ship). The Python reads the Step 4 draft and
+Run mechanical fix + phrase scan. **Loop until phrase violations are zero** —
+never silently let a banned phrase ship. The Python reads the Step 4 draft and
 re-saves the mechanical-fixed version over it.
 
 ```bash

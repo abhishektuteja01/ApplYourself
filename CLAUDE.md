@@ -22,9 +22,14 @@ happens inside a slash-command session in `.claude/commands/*.md`, which calls t
 `src/` helpers via Bash for the deterministic parts. When editing, keep judging out
 of `src/` and keep parquet/state mutation out of the command prose.
 
-A corollary (R2): `src/` is **vertical-agnostic and company-agnostic**. Never
+A corollary: `src/` is **vertical-agnostic and company-agnostic**. Never
 hardcode a vertical name, search term, or company. Those come only from
 `profile/*.yaml` and `data/universe/*.csv`.
+
+**R7 and R10 are the only rule codes in this repo.** Every other rule is stated
+inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words. An
+`R<n>` anywhere else is local to `plans/discovery_plan.md`, whose numbering is
+its own and does not match this file's.
 
 ## Pipeline stages (data flow)
 
@@ -64,7 +69,7 @@ is the single source of truth loader.
 - Config lives in `profile/verticals.yaml` (gitignored user data) with a matching
   `profile/verticals/<name>/{rubric.md, tailoring.md}` dir per vertical, plus the
   resume each block's required `resume_file` points at (judges score against it,
-  `score.md` J1). `verticals-check` fails loud if any of the three is missing.
+  per `score-judge.md`). `verticals-check` fails loud if any of the three is missing.
 - The loader is **strict**: every vertical block must have all current required
   keys or it raises `ValueError`. Because `tests/conftest.py` injects the config
   via an autouse fixture, a malformed block errors the *entire* test suite.

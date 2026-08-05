@@ -36,7 +36,7 @@ The key distinction across tracks:
 - Track 1/3-gapfill = "you did X; here's better JD vocabulary for it"
 - Track 2/3-unlock = "you probably touched Y given your role/projects; did you? If yes, add it"
 
-**Hard constraints (same as /tailor's R2):**
+**Hard constraints (same as /tailor's NO-FAB / NO-DRIFT):**
 - A synonym must re-package the SAME underlying process or claim.
 - ACM commodity-contract settlement is NOT generic SD Order-to-Cash. Do not propose
   that relabeling.
@@ -186,7 +186,7 @@ canonical bullet. Do NOT add these as synonyms.
 
 | keyword | frequency | reason unmappable |
 |---|---|---|
-| "SAP SD configuration" | 8 | user configured no SAP module; ACM integration-level only (R3) |
+| "SAP SD configuration" | 8 | user configured no SAP module; ACM integration-level only |
 | ...                    |   |                                                                |
 
 ---
@@ -209,8 +209,9 @@ Rules for the "Ready to add" section:
   it mirrors AND the frequency count so the user can prioritize.
 
 Rules for "Unmappable":
-- Be specific about WHY it's unmappable (R2b, R3, or "no canonical anchor").
-- Do not soft-pedal R3 violations — if it's a standalone module config claim, say so.
+- Be specific about WHY it's unmappable (drift, a fabricated scope claim, or
+  "no canonical anchor").
+- Do not soft-pedal fabrication — if it's a standalone module config claim, say so.
 
 ## Step 3b — Track 2: memory unlock audit
 

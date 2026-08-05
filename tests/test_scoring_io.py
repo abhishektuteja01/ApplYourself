@@ -73,7 +73,7 @@ def _valid_score(**overrides) -> dict:
 
 
 def _make_clean(tmp_path: Path, rows: list[dict]) -> Path:
-    """Write a clean.parquet with the §7.1 schema. Defaults are sensible;
+    """Write a clean.parquet with the CLEAN_COLUMNS schema. Defaults are sensible;
     callers override only what they need to vary."""
     base = {c: "" for c in CLEAN_COLUMNS}
     base.update({
@@ -976,7 +976,7 @@ def test_compute_shortlist_suppressed_on_first_skip(tmp_path):
     out = compute_shortlist(scored_p, clean_p, pipe_d)
     assert {r["job_id"] for r in out["main"]["sap"]} == {"aaaaaaaa"}
     assert {r["job_id"] for r in out["suppressed"]} == {"bbbbbbbb"}
-    assert {r["job_id"] for r in out["excluded"]}   == set()  # NOT in excluded; R8
+    assert {r["job_id"] for r in out["excluded"]}   == set()  # a skip is not an ineligible
 
 
 def test_compute_shortlist_sort_fit_score_desc(tmp_path):

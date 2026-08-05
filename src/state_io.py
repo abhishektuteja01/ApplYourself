@@ -96,8 +96,8 @@ def transition(
 
     If state.yaml exists:
       - rejects new_state not in VALID_STATES
-      - rejects any transition out of a TERMINAL_STATE (R8 / §6.5)
-      - appends to state_history (append-only, R9)
+      - rejects any transition out of a TERMINAL_STATE
+      - appends to state_history (append-only)
       - updates last_touch
       - sets applied_at on first transition to "applied"
 

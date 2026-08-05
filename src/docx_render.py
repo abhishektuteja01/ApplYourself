@@ -12,7 +12,7 @@ Template contract — the template MUST define these 5 named paragraph styles:
   - Resume Body        (contact line, summary text, skills lines)
   - Resume Bullet      (bulleted items)
 Forbidden in the resume template (renderer rejects loudly):
-  - Tables (ATS-unfriendly per §6.4)
+  - Tables (ATS-unfriendly)
   - Inline shapes (images, icons)
 
 Cover-letter path (render_cover_letter): placeholder fill-in instead --

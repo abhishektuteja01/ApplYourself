@@ -5,7 +5,7 @@ City, ST | [phone](tel:+10000000000) | [email](mailto:you@example.com) | [Portfo
 **SUMMARY**
 
 Two or three sentences framing your experience for THIS vertical. Judges read
-this file to score a job against you (`score.md` Step J1), so it must describe
+this file to score a job against you (read by `score-judge.md`), so it must describe
 what you can actually attest to — not what a lane's job postings ask for.
 
 **EXPERIENCE**
