@@ -79,13 +79,11 @@ def parse_location(raw: str) -> LocationParse:
         return LocationParse("", "", "", False)
         
     remote = "remote" in raw.lower()
-    
-    # We want to parse out locations.
-    # To avoid matching "New York, London or Singapore" to just NY,
-    # we can check if there are multiple parts separated by " or ", " and ", "&", or "/"
-    # But let's first clean the string.
-    
-    # Let's extract all possible signals.
+
+    # Collect every signal in the string first, then reconcile. A multi-region
+    # string like "New York, London or Singapore" must not resolve to NY, so
+    # separators are never used to pick one part — the reconcile step below
+    # bails out on conflicting signals instead.
     found_countries = set()
     found_states = set()
     found_city_names = set()
@@ -93,14 +91,12 @@ def parse_location(raw: str) -> LocationParse:
     text = raw
     text_lower = text.lower()
     
-    # 4. Country match
-    # Look for countries in the string (word boundaries)
+    # 1. Countries, on word boundaries.
     for c_name, c_canon in COUNTRY_NAMES.items():
         if re.search(r'\b' + re.escape(c_name) + r'\b', text_lower):
             found_countries.add(c_canon)
             
-    # 2. State match
-    # full state names
+    # 2. States, full names first.
     for s_name, s_code in STATE_NAMES.items():
         if re.search(r'\b' + re.escape(s_name) + r'\b', text_lower):
             found_states.add(s_code)
@@ -111,15 +107,10 @@ def parse_location(raw: str) -> LocationParse:
         if code in STATE_CODES:
             found_states.add(code)
             
-    # 3. City match (US cities only)
-    # This is tricky because city names can be generic words. 
-    # We should probably only match cities if they are in the string as whole words.
-    # To make it fast, we could split the string into tokens and n-grams and check.
-    # Or just use the string text
-    # Unicode letters (not just a-z) so accented city spellings like
-    # "Zürich"/"São Paulo" tokenize as one word and fold to their ASCII form.
+    # 3. Cities, matched over 1-3 word n-grams rather than substrings, since city
+    # names are often ordinary tokens. Unicode letters (not just a-z) so accented
+    # spellings like "Zürich"/"São Paulo" tokenize as one word and fold to ASCII.
     words = re.findall(r'[^\W\d_]+', text, re.UNICODE)
-    # Generate 1 to 3 word n-grams
     ngrams = []
     for i in range(len(words)):
         ngrams.append(words[i].lower())
@@ -130,14 +121,14 @@ def parse_location(raw: str) -> LocationParse:
             
     for ngram in ngrams:
         if ngram in US_CITIES:
-            # wait, if it's "New York", we find it.
-            # but is it "San Francisco" in "San Francisco Bay Area"?
+            # An n-gram hit anywhere counts, so "San Francisco Bay Area" resolves
+            # to San Francisco.
             found_city_names.add(ngram)
         foreign_country = FOREIGN_CITIES.get(_fold(ngram))
         if foreign_country:
             found_countries.add(foreign_country)
 
-    # Now we need to reconcile.
+    # Reconcile. A US state or city implies the country.
     if found_states or found_city_names:
         found_countries.add("United States")
 
@@ -155,29 +146,26 @@ def parse_location(raw: str) -> LocationParse:
     state = ""
     city = ""
     
-    # If we found exactly one state, let's use it
+    # Exactly one state is a usable signal; several means a multi-site listing,
+    # which resolves to nothing (the caller keeps it).
     if len(found_states) == 1:
         state = list(found_states)[0]
         country = "United States"
     elif len(found_states) > 1:
-        # multiple states? probably not a single location
         return LocationParse("", "", "", remote)
-        
-    # If we found multiple cities, we should be careful.
-    # We can filter cities by the state if we found a state.
+
+    # A known state disambiguates city namesakes; drop cities that contradict it.
     valid_cities = []
     for c in found_city_names:
         city_data = US_CITIES[c]
-        # if state is specified, city must match the state
         if state and city_data['admin1code'] != state:
             continue
         valid_cities.append(c)
-        
-    # What if no state was found, but we found a US city?
-    # e.g., "San Francisco Bay Area" -> city "San Francisco", state CA, country US
+
+    # A lone city hit fills state + country from geonames when the string didn't
+    # provide them ("San Francisco Bay Area" -> San Francisco, CA, US).
     if not state and len(valid_cities) == 1:
         city_data = US_CITIES[valid_cities[0]]
-        # A city hit fills state+country from geonames data when string didn't provide them.
         state = city_data['admin1code']
         country = "United States"
         city = city_data['name']

@@ -203,6 +203,65 @@ def drop_stale(
 
 
 # ---------------------------------------------------------------------
+# Step 3b — location allowlist filter
+# ---------------------------------------------------------------------
+
+def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+        
+    allow_countries = {c.lower() for c in cfg.location_allowlist.countries}
+    allow_states = {s.lower() for s in cfg.location_allowlist.states}
+    allow_cities = {c.lower() for c in cfg.location_allowlist.cities}
+    
+    keep_indices = []
+    new_locations = []
+    
+    for idx, raw_loc in zip(df.index, df["location"]):
+        raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
+        parsed = parse_location(raw_loc_str)
+        
+        # 1. Nothing parsed, or remote-only -> KEEP
+        if not parsed.country and not parsed.state and not parsed.city:
+            keep_indices.append(idx)
+            if parsed.remote:
+                new_locations.append("Remote")
+            else:
+                new_locations.append(raw_loc_str)
+            continue
+            
+        # 2. Parsed to a place positively OUTSIDE the allowlist -> DROP
+        # 3. Parsed country/state/city all within location_allowlist (hierarchical) -> KEEP
+        drop = False
+        if allow_countries and parsed.country.lower() not in allow_countries:
+            drop = True
+        elif allow_states and parsed.state and parsed.state.lower() not in allow_states:
+            drop = True
+        elif allow_cities and parsed.city and parsed.city.lower() not in allow_cities:
+            drop = True
+            
+        if not drop:
+            keep_indices.append(idx)
+            canon = ""
+            if parsed.city and parsed.state:
+                canon = f"{parsed.city}, {parsed.state}"
+            elif parsed.state:
+                canon = parsed.state
+            elif parsed.country:
+                canon = parsed.country
+                
+            if parsed.remote:
+                # Remote plus a parsed place keeps both: "Remote - Austin, TX".
+                canon = f"Remote - {canon}" if canon else "Remote"
+            
+            new_locations.append(canon)
+            
+    filtered = df.loc[keep_indices].copy()
+    filtered["location"] = new_locations
+    return filtered
+
+
+# ---------------------------------------------------------------------
 # Step 4 — exact dedupe
 # ---------------------------------------------------------------------
 
@@ -346,69 +405,6 @@ def apply_expiry(
         return df.copy()
     drop = df["job_id"].isin(expired_ids) & ~df["already_seen"]
     return df[~drop].copy()
-
-
-# ---------------------------------------------------------------------
-# Step 9b — location allowlist filter
-# ---------------------------------------------------------------------
-
-def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
-    if df.empty:
-        return df.copy()
-        
-    allow_countries = {c.lower() for c in cfg.location_allowlist.countries}
-    allow_states = {s.lower() for s in cfg.location_allowlist.states}
-    allow_cities = {c.lower() for c in cfg.location_allowlist.cities}
-    
-    keep_indices = []
-    new_locations = []
-    
-    for idx, raw_loc in zip(df.index, df["location"]):
-        raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
-        parsed = parse_location(raw_loc_str)
-        
-        # 1. Nothing parsed, or remote-only -> KEEP
-        if not parsed.country and not parsed.state and not parsed.city:
-            keep_indices.append(idx)
-            if parsed.remote:
-                new_locations.append("Remote")
-            else:
-                new_locations.append(raw_loc_str)
-            continue
-            
-        # 2. Parsed to a place positively OUTSIDE the allowlist -> DROP
-        # 3. Parsed country/state/city all within location_allowlist (hierarchical) -> KEEP
-        drop = False
-        if allow_countries and parsed.country.lower() not in allow_countries:
-            drop = True
-        elif allow_states and parsed.state and parsed.state.lower() not in allow_states:
-            drop = True
-        elif allow_cities and parsed.city and parsed.city.lower() not in allow_cities:
-            drop = True
-            
-        if not drop:
-            keep_indices.append(idx)
-            canon = ""
-            if parsed.city and parsed.state:
-                canon = f"{parsed.city}, {parsed.state}"
-            elif parsed.state:
-                canon = parsed.state
-            elif parsed.country:
-                canon = parsed.country
-                
-            if parsed.remote:
-                # wait, canonical for Remote + Austin, TX? 
-                # Let's just use Remote - City, ST? Or does spec say "City, ST (or Remote, or original)"?
-                # "canonical 'City, ST' (or 'Remote', or original string when unparsed)"
-                # Let's use "Remote - City, ST" if both, or just "Remote" if only remote.
-                # Actually, the spec says "canonical 'City, ST' (or 'Remote', or original string when unparsed)".
-                canon = f"Remote - {canon}" if canon else "Remote"
-            
-            new_locations.append(canon)
-            
-    filtered = df.loc[keep_indices].copy()
-    filtered["location"] = new_locations
-    return filtered
 
 
 # ---------------------------------------------------------------------
@@ -633,6 +629,8 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"(dropped {stats.get('dropped_short', 0)})",
         f"- after stale drop (>14d): {stats.get('after_stale', 0)} "
         f"(dropped {stats.get('dropped_stale', 0)})",
+        f"- after location filter: {stats.get('after_location', 0)} "
+        f"(dropped {stats.get('dropped_location', 0)})",
         f"- after exact dedupe: {stats.get('after_exact_dedupe', 0)} "
         f"(dropped {stats.get('dropped_exact', 0)})",
         f"- after near dedupe (WRatio>=90): {stats.get('after_near_dedupe', 0)} "
@@ -640,8 +638,6 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"- changed job_ids vs seen ledger: {stats.get('changed_seen', 0)}",
         f"- after seen-ledger expiry: {stats.get('after_expiry', 0)} "
         f"(dropped {stats.get('dropped_expired', 0)})",
-        f"- after location filter: {stats.get('after_location', 0)} "
-        f"(dropped {stats.get('dropped_location', 0)})",
         f"- final rows: {stats.get('final_rows', 0)}",
         f"- pruned {stats.get('pruned_raw', 0)} raw files",
         "",
@@ -722,6 +718,11 @@ def run(
     # step 3
     df = drop_stale(df, today=today)
     after_stale = len(df)
+    # step 3b — location filter. Runs before dedupe so the survivor of a
+    # company+title group is picked among eligible rows only, and before the
+    # seen-ledger so an allowlist change isn't masked by stale first_seen.
+    df = filter_and_canonicalize_location(df, cfg)
+    after_location = len(df)
     # step 4
     df = exact_dedupe(df)
     after_exact = len(df)
@@ -765,11 +766,6 @@ def run(
     # step 9 — retention expiry (tracked rows exempt)
     df = apply_expiry(df, ledger, today_ts)
     after_expiry = len(df)
-    
-    # step 9b - location filter
-    df = filter_and_canonicalize_location(df, cfg)
-    after_location = len(df)
-    
     # step 10
     df = init_claude_columns(df)
     # step 11
@@ -789,14 +785,14 @@ def run(
         "dropped_short": after_exclusion - after_short,
         "after_stale": after_stale,
         "dropped_stale": after_short - after_stale,
+        "after_location": after_location,
+        "dropped_location": after_stale - after_location,
         "after_exact_dedupe": after_exact,
-        "dropped_exact": after_stale - after_exact,
+        "dropped_exact": after_location - after_exact,
         "after_near_dedupe": after_near,
         "dropped_near": after_exact - after_near,
         "after_expiry": after_expiry,
         "dropped_expired": after_near - after_expiry,
-        "after_location": after_location,
-        "dropped_location": after_expiry - after_location,
         "changed_seen": changed_seen,
         "final_rows": len(df),
         "per_source": per_source,

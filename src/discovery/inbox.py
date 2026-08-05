@@ -9,8 +9,6 @@ log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INBOX = REPO_ROOT / "inbox"
-INBOX_PROCESSED = INBOX / ".processed"
-INBOX_MALFORMED = INBOX / ".malformed"
 
 def parse_inbox_file(path: Path) -> dict | None:
     """Parse one manual JD clip. Returns a JobSpy-shaped row dict, or None on
@@ -62,24 +60,29 @@ def parse_inbox_file(path: Path) -> dict | None:
     }
 
 
-def ingest_inbox(inbox_dir: Path = INBOX) -> tuple[pd.DataFrame, dict]:
+def ingest_inbox(inbox_dir: Path | None = None) -> tuple[pd.DataFrame, dict]:
     """Read inbox_dir/*.md (skipping .processed/ and .malformed/).
     Valid clips become DataFrame rows + move to .processed/.
-    Malformed clips move to .malformed/ with a stderr log."""
+    Malformed clips move to .malformed/ with a stderr log.
+    inbox_dir defaults to INBOX, resolved at call time so patching it takes;
+    both destinations derive from it, so a passed-in dir is self-contained."""
+    inbox_dir = INBOX if inbox_dir is None else inbox_dir
     if not inbox_dir.exists():
         return pd.DataFrame(), {"processed": 0, "malformed": 0}
+    processed_dir = inbox_dir / ".processed"
+    malformed_dir = inbox_dir / ".malformed"
     rows: list[dict] = []
     processed = malformed = 0
     for md in sorted(inbox_dir.glob("*.md")):
         parsed = parse_inbox_file(md)
         if parsed is None:
-            INBOX_MALFORMED.mkdir(parents=True, exist_ok=True)
-            md.rename(INBOX_MALFORMED / md.name)
+            malformed_dir.mkdir(parents=True, exist_ok=True)
+            md.rename(malformed_dir / md.name)
             malformed += 1
         else:
             rows.append(parsed)
-            INBOX_PROCESSED.mkdir(parents=True, exist_ok=True)
-            md.rename(INBOX_PROCESSED / md.name)
+            processed_dir.mkdir(parents=True, exist_ok=True)
+            md.rename(processed_dir / md.name)
             processed += 1
     df = pd.DataFrame(rows) if rows else pd.DataFrame()
     return df, {"processed": processed, "malformed": malformed}
@@ -90,10 +93,9 @@ class InboxSource(Source):
 
     def fetch(self, ctx) -> SourceResult:
         df, counts = ingest_inbox()
-        # Convert NaN amounts to None if needed, or let validate_frame handle it.
-        # But we need to return list[dict].
+        # A Source returns list[dict], and NaN must become None on the way out so
+        # downstream sees a missing value, not a float.
         if not df.empty:
-            # We must convert to dict, replacing nan with None
             df = df.where(pd.notnull(df), None)
             rows = df.to_dict("records")
         else:
