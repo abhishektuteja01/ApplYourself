@@ -8,8 +8,10 @@ pipeline/*/outreach/
 # Application history — companies, scores, dates (strategy, not for a public repo).
 pipeline/*/state.yaml
 # Resume/cover-letter templates embed real name, email, phone.
-profile/resume_template.docx
-profile/cover_letter_template.docx
+# Globbed: a .bak sibling is still the same PII.
+profile/resume_template.docx*
+profile/cover_letter_template.docx*
+profile/*.docx.bak
 
 # =============================================================================
 # Job-search strategy — mine, not for a public repo (PRD §7.15).
