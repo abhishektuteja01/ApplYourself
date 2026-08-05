@@ -9,6 +9,10 @@ jobs, scores them against a profile, and generates tailored application material
 Every outward action (applying, sending outreach) is gated on the user; the code
 never submits anything.
 
+## Instructions
+
+1. No dated references if not needed, no extra verbose paragraphs explaining why the decision was made. If absolutely needed (in case of A/B tests and similar), a concise one liner is enough.
+
 ## The one rule that shapes everything: the determinism boundary (R7)
 
 **No module under `src/` ever calls an LLM.** `src/` is deterministic plumbing:
@@ -30,7 +34,7 @@ hardcode a vertical name, search term, or company. Those come only from
    `data/universe/*.csv` + `profile/companies.yaml`. Board/inbox rows are
    title-classified into a vertical at fetch time; unclassified rows dropped.
    Always ends by running cleaning (try/finally), even after a crash/deadline.
-2. **Cleaning** (`src/cleaning.py` + `src/discovery/cleaning.py`) — normalize,
+2. **Cleaning** (`src/discovery/cleaning.py`) — normalize,
    drop short/stale rows, dedupe (exact then rapidfuzz WRatio ≥ 90), assign
    `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery
    output downstream reads) + `clean.preview.jsonl`.
