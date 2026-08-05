@@ -10,9 +10,14 @@ track_cli). Judging and drafting stay in the .claude/commands/tailor.md session.
                                          create the versioned output dir. Prints
                                          shell-eval-able var assignments
                                          (VERTICAL/DIRNAME/OUT_DIR/DICTION_PASS/
-                                         ROW_JSON) to STDOUT; the full row JSON +
+                                         ROW_JSON/APPLICANT_NAME/FILE_SLUG) to
+                                         STDOUT; the full row JSON +
                                          status go to STDERR. Fails loud (nonzero,
                                          no partial vars) at the first bad check.
+
+  identity <vertical>                    print APPLICANT_NAME/FILE_SLUG only,
+                                         read from that vertical's resume_file,
+                                         for the commands that don't run prep.
 
   snapshot <job_id> <out_dir> [--today YYYY-MM-DD]
                                          write <out_dir>/jd_snapshot.md from the
@@ -31,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import sys
 from datetime import date
 from pathlib import Path
@@ -60,9 +66,51 @@ REQUIRED_PROFILE_FILES: list[tuple[str, str]] = [
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
+# The applicant's name is the first bold line of the vertical's resume_file —
+# the same line src/docx_render.py parses as the `name` block. Reading it here
+# keeps one source of truth for it and keeps the name out of `src/` and out of
+# the command prose (R2).
+_NAME_RE = re.compile(r"^\s*#?\s*\*\*(.+?)\*\*\s*$")
+# Unicode-aware: an accented name keeps its letters ("José Álvarez" ->
+# "José_Álvarez", not "Jos_lvarez").
+_FILE_SLUG_RE = re.compile(r"[^\w]+", re.UNICODE)
+
 
 def _slug(text: str) -> str:
     return _SLUG_RE.sub("-", text.lower()).strip("-")
+
+
+def file_slug(name: str) -> str:
+    """Output-filename stem from a display name: "Ada Lovelace" -> "Ada_Lovelace"."""
+    return _FILE_SLUG_RE.sub("_", name).strip("_")
+
+
+def resume_display_name(resume_path: Path) -> str:
+    """The applicant's display name, read from the first bold line of a
+    vertical's resume_file. Raises SystemExit when the file has no such line,
+    since every downstream artifact is named after it."""
+    if not resume_path.is_file():
+        raise _die(f"{resume_path} missing — the vertical's resume_file must exist.")
+    for line in resume_path.read_text().splitlines():
+        m = _NAME_RE.match(line)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+    raise _die(
+        f"{resume_path} has no name line. Its first bold line must be your "
+        "name (e.g. `**Ada Lovelace**`) — /tailor names every output file "
+        "after it and src/docx_render.py renders it as the resume header."
+    )
+
+
+def _identity_for(vertical: str) -> tuple[str, str]:
+    """(display_name, file_slug) for a configured vertical. resume_file is
+    repo-relative, resolved against verticals.REPO_ROOT the same way
+    verticals.main()'s existence check does."""
+    cfg = verticals.get_config()
+    if vertical not in cfg.verticals:
+        raise _die(f"unknown vertical {vertical!r} — configured: {', '.join(cfg.names)}")
+    name = resume_display_name(verticals.REPO_ROOT / cfg.verticals[vertical].resume_file)
+    return name, file_slug(name)
 
 
 def _row_json_path(job_id: str) -> Path:
@@ -149,6 +197,7 @@ def _cmd_prep(args: argparse.Namespace) -> int:
     diction_pass = "true" if "bullets_diction_pass_completed: true" in diction else "false"
 
     vertical = _resolve_vertical(row)
+    applicant_name, applicant_slug = _identity_for(vertical)
     company_slug = _slug(str(row.get("company", "")))
     title_slug = _slug(str(row.get("title", "")))[:60]
 
@@ -167,14 +216,26 @@ def _cmd_prep(args: argparse.Namespace) -> int:
     print(f"tailoring to: {out_dir}  (vertical={vertical})", file=sys.stderr)
     print(row_json.read_text(), file=sys.stderr)
 
-    # STDOUT: single-quoted assignments for `eval "$(uv run tailor-prep ...)"`.
-    # Every value is a slug / hex id / configured vertical name / fixed literal,
-    # so it never contains a single quote.
-    print(f"VERTICAL='{vertical}'")
-    print(f"DIRNAME='{dirname}'")
-    print(f"OUT_DIR='{out_dir}'")
-    print(f"DICTION_PASS='{diction_pass}'")
-    print(f"ROW_JSON='{row_json}'")
+    # STDOUT: quoted assignments for `eval "$(uv run tailor-prep ...)"`.
+    # APPLICANT_NAME comes from a user-authored file and may contain an
+    # apostrophe ("O'Brien"), so every value goes through shlex.quote rather
+    # than relying on the others being quote-free slugs.
+    print(f"VERTICAL={shlex.quote(vertical)}")
+    print(f"DIRNAME={shlex.quote(dirname)}")
+    print(f"OUT_DIR={shlex.quote(str(out_dir))}")
+    print(f"DICTION_PASS={shlex.quote(diction_pass)}")
+    print(f"ROW_JSON={shlex.quote(str(row_json))}")
+    print(f"APPLICANT_NAME={shlex.quote(applicant_name)}")
+    print(f"FILE_SLUG={shlex.quote(applicant_slug)}")
+    return 0
+
+
+def _cmd_identity(args: argparse.Namespace) -> int:
+    """Same APPLICANT_NAME/FILE_SLUG lines prep prints, for the commands that
+    don't run prep (/cover-letter reuses /tailor's existing output dir)."""
+    name, slug = _identity_for(args.vertical)
+    print(f"APPLICANT_NAME={shlex.quote(name)}")
+    print(f"FILE_SLUG={shlex.quote(slug)}")
     return 0
 
 
@@ -207,6 +268,11 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+
+    if argv and argv[0] == "identity":
+        parser = argparse.ArgumentParser(prog="python -m src.tailor_cli identity")
+        parser.add_argument("vertical")
+        return _cmd_identity(parser.parse_args(argv[1:]))
 
     if argv and argv[0] == "snapshot":
         parser = argparse.ArgumentParser(prog="python -m src.tailor_cli snapshot")

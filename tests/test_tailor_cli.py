@@ -11,7 +11,21 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import tailor_cli
+from src import tailor_cli, verticals
+
+
+@pytest.fixture(autouse=True)
+def isolate_resume_files(tmp_path, monkeypatch, cfg):
+    """The injected fixture config's resume_file paths are the real
+    (gitignored) profile ones, so prep would read the user's actual resume
+    during tests. Repoint REPO_ROOT at tmp_path and write a stand-in for every
+    configured vertical -- same isolation pattern as isolate_inbox_path."""
+    monkeypatch.setattr(verticals, "REPO_ROOT", tmp_path)
+    for v in cfg.verticals.values():
+        p = tmp_path / v.resume_file
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("**Ada Lovelace**\n\nLondon | ada@example.com\n")
+    return tmp_path
 
 
 def _parse_eval(out: str) -> dict:
@@ -251,3 +265,99 @@ def test_versioned_dirname_uses_todays_date_not_the_originals(tmp_path):
     _mkdirs(tmp_path, "sap", ["2026-06-01_acme_analyst_abc12345"])
     got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
     assert got == "sap/2026-08-04_acme_analyst_abc12345_v2"
+
+
+# ---------------- identity: name + file slug from resume_file ----------------
+
+@pytest.mark.parametrize("line", [
+    "**Ada Lovelace**",
+    "# **Ada Lovelace**",
+    "  **Ada Lovelace**  ",
+])
+def test_resume_display_name_accepts_the_docx_render_name_shapes(tmp_path, line):
+    """Must match what src/docx_render.py parses as the `name` block:
+    `**Name**` or `# **Name**`, first such line only."""
+    p = tmp_path / "r.md"
+    p.write_text(f"{line}\n\nLondon | ada@example.com\n\n**SUMMARY**\n")
+    assert tailor_cli.resume_display_name(p) == "Ada Lovelace"
+
+
+def test_resume_display_name_takes_the_first_bold_line_only(tmp_path):
+    p = tmp_path / "r.md"
+    p.write_text("**Ada Lovelace**\n\n**SUMMARY**\n\n**WORK EXPERIENCE**\n")
+    assert tailor_cli.resume_display_name(p) == "Ada Lovelace"
+
+
+def test_resume_display_name_missing_file_errors(tmp_path):
+    with pytest.raises(SystemExit, match="resume_file must exist"):
+        tailor_cli.resume_display_name(tmp_path / "nope.md")
+
+
+@pytest.mark.parametrize("body", ["", "\n\n", "Ada Lovelace\n", "**  **\n"])
+def test_resume_display_name_without_a_name_line_errors(tmp_path, body):
+    p = tmp_path / "r.md"
+    p.write_text(body)
+    with pytest.raises(SystemExit, match="no name line"):
+        tailor_cli.resume_display_name(p)
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("Ada Lovelace", "Ada_Lovelace"),
+    ("Ada B. Lovelace", "Ada_B_Lovelace"),
+    ("O'Brien", "O_Brien"),
+    ("  Ada   Lovelace  ", "Ada_Lovelace"),
+    ("José Álvarez", "José_Álvarez"),      # accents survive, not stripped
+    ("Ada Lovelace 2nd", "Ada_Lovelace_2nd"),
+])
+def test_file_slug(name, expected):
+    assert tailor_cli.file_slug(name) == expected
+
+
+def test_prep_emits_applicant_name_and_file_slug(tmp_path, capsys):
+    _setup(tmp_path)
+    tailor_cli.main(["aaaaaaaa", "--today", "2026-07-24"])
+    ev = _parse_eval(capsys.readouterr().out)
+    assert ev["APPLICANT_NAME"] == "Ada Lovelace"
+    assert ev["FILE_SLUG"] == "Ada_Lovelace"
+
+
+def test_identity_subcommand_prints_only_the_two_vars(tmp_path, capsys):
+    rc = tailor_cli.main(["identity", "sap"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert _parse_eval(out) == {"APPLICANT_NAME": "Ada Lovelace", "FILE_SLUG": "Ada_Lovelace"}
+    assert "OUT_DIR" not in out  # identity never creates or resolves a dir
+
+
+def test_identity_unknown_vertical_errors_and_names_the_configured_ones(tmp_path):
+    with pytest.raises(SystemExit, match="unknown vertical 'nope'"):
+        tailor_cli.main(["identity", "nope"])
+
+
+def test_identity_missing_resume_file_errors(tmp_path, cfg):
+    (tmp_path / cfg.verticals["sap"].resume_file).unlink()
+    with pytest.raises(SystemExit, match="resume_file must exist"):
+        tailor_cli.main(["identity", "sap"])
+
+
+def test_prep_eval_output_survives_an_apostrophe_in_the_name(tmp_path, capsys, cfg):
+    """A name is user-authored text, so `eval "$(tailor-prep ...)"` must not
+    break on O'Brien -- the reason every value goes through shlex.quote."""
+    import subprocess
+    for v in cfg.verticals.values():
+        (tmp_path / v.resume_file).write_text("**Grace O'Brien**\n")
+    _setup(tmp_path)
+    tailor_cli.main(["aaaaaaaa", "--today", "2026-07-24"])
+    out = capsys.readouterr().out
+    got = subprocess.run(
+        ["bash", "-c", f'eval "$(cat <<\'EOF\'\n{out}\nEOF\n)"; printf "%s|%s" "$APPLICANT_NAME" "$FILE_SLUG"'],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert got == "Grace O'Brien|Grace_O_Brien"
+
+
+def test_resume_files_are_read_from_tmp_not_the_real_profile(tmp_path, cfg):
+    """Isolation guard: the injected config's resume_file paths are the real
+    gitignored ones, so a regression here would read the user's own resume."""
+    assert tailor_cli._identity_for("sap") == ("Ada Lovelace", "Ada_Lovelace")
+    assert (tmp_path / cfg.verticals["sap"].resume_file).is_file()
