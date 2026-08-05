@@ -1,5 +1,5 @@
 [project]
-name = "auto-app-filler"
+name = "job-search-pipeline"
 version = "0.1.0"
 description = "Human-gated, config-driven job-search pipeline: scrape, score, tailor."
 requires-python = ">=3.12,<3.13"

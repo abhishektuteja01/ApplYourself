@@ -10,7 +10,7 @@ RETRY_BASE_DELAY = 1.5
 REQUEST_TIMEOUT = 30
 # Retry-After is remote input; a board asking for an hour gets skipped instead.
 MAX_RETRY_AFTER = 60
-_HEADERS = {"User-Agent": "auto-app-filler (personal job-search pipeline)"}
+_HEADERS = {"User-Agent": "job-search-pipeline (personal job-search pipeline)"}
 
 class CareersError(Exception):
     """Board fetch failed after retries, or the board does not exist.
