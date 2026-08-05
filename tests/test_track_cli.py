@@ -25,9 +25,9 @@ def _write_clean(tmp_path, rows):
 
 def test_first_transition_creates_state_from_clean_parquet(tmp_path, capsys):
     _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
         "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "sap",
+        "vertical": "example_primary",
     }])
     rc = track_cli.main(["aaaaaaaa", "saved"])
     assert rc == 0
@@ -47,8 +47,8 @@ def test_missing_job_id_in_clean_parquet_errors(tmp_path):
 
 def test_transition_out_of_terminal_state_errors(tmp_path, capsys):
     _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
-        "source": "", "url": "", "location": "", "vertical": "sap",
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
+        "source": "", "url": "", "location": "", "vertical": "example_primary",
     }])
     assert track_cli.main(["aaaaaaaa", "rejected"]) == 0
     rc = track_cli.main(["aaaaaaaa", "applied"])
@@ -65,7 +65,7 @@ def test_outreach_sent_flips_latest_draft(tmp_path, capsys):
     state_dir = tmp_path / "pipeline" / "aaaaaaaa"
     state_dir.mkdir(parents=True)
     (state_dir / "state.yaml").write_text(yaml.safe_dump({
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
         "state": "saved", "state_history": [], "outreach": [
             {"channel": "recruiter", "to": "Jane", "status": "draft"},
         ],
@@ -86,9 +86,9 @@ def test_outreach_sent_missing_state_file_errors(tmp_path, capsys):
 def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
     """/tailor calls this: create the role once, then never touch it."""
     _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
         "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "sap",
+        "vertical": "example_primary",
     }])
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
@@ -108,8 +108,8 @@ def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
 def test_ensure_does_not_raise_on_terminal_state(tmp_path):
     """A re-tailor of a rejected role must not hit the terminal-state check."""
     _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
-        "source": "", "url": "", "location": "", "vertical": "sap",
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
+        "source": "", "url": "", "location": "", "vertical": "example_primary",
     }])
     track_cli.main(["aaaaaaaa", "rejected"])
     p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"

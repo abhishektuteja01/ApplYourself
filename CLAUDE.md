@@ -63,7 +63,7 @@ Changing the hash inputs would silently orphan `pipeline/<job_id>/state.yaml` an
 
 ## Verticals: the config spine
 
-A "vertical" is a job lane (e.g. `ai_eng`, `sap`, `risk_ai`). `src/verticals.py`
+A "vertical" is a job lane. `src/verticals.py`
 is the single source of truth loader.
 
 - Config lives in `profile/verticals.yaml` (gitignored user data) with a matching
@@ -73,20 +73,21 @@ is the single source of truth loader.
 - The loader is **strict**: every vertical block must have all current required
   keys or it raises `ValueError`. Because `tests/conftest.py` injects the config
   via an autouse fixture, a malformed block errors the *entire* test suite.
-- **Two fixture mirrors must stay in sync** with the real config for tests to pass:
-  `tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml`.
-  Any classifier/schema change must be mirrored into both in the same change.
-  `TestFixtureMirrors` enforces this (it skips the real-config half when
-  `profile/verticals.yaml` is absent, as in a fresh clone).
+- **Two fixture mirrors must stay byte-identical to each other** for tests to
+  pass: `tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml`.
+  Any schema change must be mirrored into both in the same change.
+  `TestFixtureMirrors` enforces it.
 - Consumers must call `verticals.get_config()` **inside function bodies**, never at
   module level, so test injection via `set_config()` always wins.
 - Templates for onboarding a new vertical: `profile/*.example.yaml` and
   `profile/verticals/example_{primary,secondary}/`. Use `/new-vertical`.
 
-> The two `tests/**/fixtures/verticals.yaml` files are full copies of the real
-> strategy config (search terms, exclude lists, skill weights). They are committed
-> so the strict loader keeps tests green, but must be sanitized to placeholder
-> values before this repo is pushed to any public remote. Local-only for now.
+> The two `tests/**/fixtures/verticals.yaml` files are **synthetic** — three
+> fictional verticals (`example_primary/secondary/tertiary`), no real search
+> terms or skill weights. The real config is covered separately by
+> `tests/test_real_config_drift.py`, which skips when `profile/verticals.yaml`
+> is absent. Keep real strategy out of the fixtures; add real-config assertions
+> to the drift test instead, structurally (never pin a real term — it is committed).
 
 ## Scoring architecture (`/score`)
 

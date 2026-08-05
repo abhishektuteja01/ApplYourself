@@ -564,7 +564,7 @@ def test_cover_letter_single_body_paragraph(tmp_path):
 
 def test_cover_letter_creates_missing_output_dirs(tmp_path):
     t = _make_cl_template(tmp_path / "t.docx")
-    out = tmp_path / "applications" / "sap" / "2026-06-06_acme" / "cl.docx"
+    out = tmp_path / "applications" / "example_primary" / "2026-06-06_acme" / "cl.docx"
     render_cover_letter(_content(), t, out)
     assert out.exists()
 

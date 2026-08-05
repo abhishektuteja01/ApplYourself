@@ -38,7 +38,7 @@ def _raw_row(**overrides) -> dict:
     base = {
         "site": "manual",
         "company": "Acme",
-        "title": "SAP SD Consultant",
+        "title": "Widget Functional Consultant",
         "location": "Remote",
         "is_remote": False,
         "date_posted": pd.Timestamp("2026-06-01"),
@@ -64,8 +64,8 @@ def _clean_df(rows: list[dict]) -> pd.DataFrame:
         "source": "manual",
         "company": "Acme",
         "company_normalized": "acme",
-        "title": "SAP SD Consultant",
-        "title_normalized": "sap sd consultant",
+        "title": "Widget Functional Consultant",
+        "title_normalized": "widget functional consultant",
         "location": "",
         "remote_flag": False,
         "posted_date": pd.Timestamp("2026-06-01"),
@@ -111,8 +111,8 @@ def _make_raw_parquet(
 # ---------- T1: job_id determinism ----------
 
 def test_job_id_deterministic():
-    a = compute_job_id("acme", "sap sd consultant")
-    b = compute_job_id("acme", "sap sd consultant")
+    a = compute_job_id("acme", "widget functional consultant")
+    b = compute_job_id("acme", "widget functional consultant")
     assert a == b
     assert len(a) == 8
     assert all(c in "0123456789abcdef" for c in a)
@@ -136,7 +136,7 @@ def test_job_id_url_independent():
     # Same normalized inputs across two simulated runs whose only differences
     # would be the (excluded) url and (excluded) jd_text → identical job_id.
     company_norm = "acme"
-    title_norm = "sap sd consultant"
+    title_norm = "widget functional consultant"
     id_run1 = compute_job_id(company_norm, title_norm)
     id_run2 = compute_job_id(company_norm, title_norm)
     assert id_run1 == id_run2
@@ -183,22 +183,22 @@ def test_normalize_company(raw, expected):
 # ---------- T4: normalize_title — seniority preserved ----------
 
 def test_normalize_title_seniority_preserved():
-    assert normalize_title("Senior SAP SD Consultant") == "senior sap sd consultant"
-    assert normalize_title("Sr. ERP Analyst") == "sr erp analyst"
-    assert "senior" in normalize_title("SENIOR sap sd!")
-    assert "sr" in normalize_title("Sr. SAP SD")
+    assert normalize_title("Senior Widget Functional Consultant") == "senior widget functional consultant"
+    assert normalize_title("Sr. Gizmo Analyst") == "sr gizmo analyst"
+    assert "senior" in normalize_title("SENIOR widget fn!")
+    assert "sr" in normalize_title("Sr. Widget FN")
     # Lead/Principal/Manager preserved too (they trigger seniority penalty in scoring)
-    assert "lead" in normalize_title("Lead SAP Consultant")
+    assert "lead" in normalize_title("Lead Widget Consultant")
     assert "principal" in normalize_title("Principal Business Analyst")
 
 
 # ---------- T5: rapidfuzz near-dedupe boundary + longest-jd wins ----------
 
 def test_rapidfuzz_dedupe_boundary():
-    collapse_a = "sap sd consultant"
-    collapse_b = "sap sd consultant senior"
+    collapse_a = "widget functional consultant"
+    collapse_b = "widget functional consultant senior"
     keep_a = "data analyst"
-    keep_b = "machine learning engineer"
+    keep_b = "cog learning engineer"
     # Sanity-pin the pairs to the correct side of the threshold.
     assert fuzz.WRatio(collapse_a, collapse_b) >= 90
     assert fuzz.WRatio(keep_a, keep_b) < 90
@@ -255,9 +255,9 @@ def test_drop_stale():
 
 def test_exact_dedupe_keeps_longest_jd():
     df = _clean_df([
-        {"company_normalized": "acme", "title_normalized": "sap sd consultant",
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "short " * 40, "url": "https://example.com/short"},
-        {"company_normalized": "acme", "title_normalized": "sap sd consultant",
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "longer description text " * 60, "url": "https://example.com/long"},
     ])
     out = exact_dedupe(df)
@@ -270,9 +270,9 @@ def test_exact_dedupe_keeps_longest_jd():
 
 def test_clean_schema_closed(tmp_path):
     raw_dir = _make_raw_parquet(tmp_path, [
-        {"company": "Acme Inc", "title": "SAP SD Consultant",
+        {"company": "Acme Inc", "title": "Widget Functional Consultant",
          "description": "x" * 300, "date_posted": pd.Timestamp("2026-06-01")},
-        {"company": "Beta LLC", "title": "ERP Business Analyst",
+        {"company": "Beta LLC", "title": "Gizmo Business Analyst",
          "description": "y" * 300, "date_posted": pd.Timestamp("2026-06-02")},
     ])
     out = cleaning.run(
@@ -296,47 +296,47 @@ def test_project_raw_backfills_missing_vertical_from_title():
     rather than left empty — 'discovery decides, scoring consumes',
     with cleaning.py as the fallback layer for the no-search-term case."""
     df = pd.DataFrame([
-        _raw_row(title="SAP SD Consultant"),
-        _raw_row(title="Model Risk Analyst"),
+        _raw_row(title="Widget Functional Consultant"),
+        _raw_row(title="Sprocket Risk Analyst"),
         _raw_row(title="Senior Platform Engineer"),
     ])
     out = project_raw(df)
-    assert list(out["vertical"]) == ["sap", "risk_ai", ""]
+    assert list(out["vertical"]) == ["example_primary", "example_secondary", ""]
 
 
 def test_project_raw_never_overrides_discovery_set_vertical():
-    """A row discovery already tagged (e.g. risk_ai via search term, even
-    though its title superficially reads sap-adjacent) keeps that tag —
+    """A row discovery already tagged (e.g. secondary via search term, even
+    though its title superficially reads primary-adjacent) keeps that tag —
     the title-fallback only fills genuinely empty values."""
     df = pd.DataFrame([
-        _raw_row(title="Risk Analyst", vertical="risk_ai"),
+        _raw_row(title="Risk Analyst", vertical="example_secondary"),
     ])
     out = project_raw(df)
-    assert out.iloc[0]["vertical"] == "risk_ai"
+    assert out.iloc[0]["vertical"] == "example_secondary"
 
 
 def test_classify_vertical_sap_strong_signal():
-    assert classify_vertical_from_title("SAP ACM Functional Consultant") == "sap"
-    assert classify_vertical_from_title("S/4HANA Functional Lead") == "sap"
-    assert classify_vertical_from_title("Commodity Trading Operations Lead") == "sap"
+    assert classify_vertical_from_title("Widget Assembly Functional Consultant") == "example_primary"
+    assert classify_vertical_from_title("Doohickey Functional Lead") == "example_primary"
+    assert classify_vertical_from_title("Gizmo Trading Operations Lead") == "example_primary"
 
 
-def test_classify_vertical_risk_ai_signal():
-    assert classify_vertical_from_title("Model Risk Analyst") == "risk_ai"
-    assert classify_vertical_from_title("Model Validation Analyst") == "risk_ai"
-    assert classify_vertical_from_title("AI Governance Analyst") == "risk_ai"
-    assert classify_vertical_from_title("Quantitative Risk Analyst") == "risk_ai"
-    assert classify_vertical_from_title("Financial Risk Analyst") == "risk_ai"
+def test_classify_vertical_secondary_signal():
+    assert classify_vertical_from_title("Sprocket Risk Analyst") == "example_secondary"
+    assert classify_vertical_from_title("Sprocket Validation Analyst") == "example_secondary"
+    assert classify_vertical_from_title("Cog Governance Analyst") == "example_secondary"
+    assert classify_vertical_from_title("Quantitative Sprocket Analyst") == "example_secondary"
+    assert classify_vertical_from_title("Sprocket Compliance Analyst") == "example_secondary"
 
 
 def test_classify_vertical_sap_wins_on_ambiguity():
-    # title containing both a strong SAP signal and a risk_ai-ish word -> sap
-    assert classify_vertical_from_title("SAP Model Risk Analyst") == "sap"
+    # title containing both a strong primary signal and a secondary-ish word -> primary
+    assert classify_vertical_from_title("Widget Sprocket Risk Analyst") == "example_primary"
 
 
 def test_classify_vertical_sap_adjacent_fallback():
-    # bare "Risk Analyst" with no SAP-strong or risk_ai-specific phrase -> sap
-    assert classify_vertical_from_title("Risk and Controls Analyst") == "sap"
+    # bare "Risk Analyst" with no primary-strong or secondary-specific phrase -> primary
+    assert classify_vertical_from_title("Risk and Controls Analyst") == "example_primary"
 
 
 def test_classify_vertical_unclassified():
@@ -345,34 +345,35 @@ def test_classify_vertical_unclassified():
     assert classify_vertical_from_title(None) == ""
 
 
-def test_classify_vertical_ai_eng_signal():
-    assert classify_vertical_from_title("AI Engineer") == "ai_eng"
-    assert classify_vertical_from_title("Forward Deployed Engineer") == "ai_eng"
-    # standalone genai/llm tokens catch the AI-qualifier-after-engineer shape
-    assert classify_vertical_from_title("Software Engineer - Generative AI") == "ai_eng"
-    # ai_eng's rule sits before sap's catch-all, so trad* doesn't pull it away
-    assert classify_vertical_from_title("AI Engineer, Trading Systems") == "ai_eng"
+def test_classify_vertical_tertiary_signal():
+    assert classify_vertical_from_title("Cog Engineer") == "example_tertiary"
+    assert classify_vertical_from_title("Forward Deployed Engineer") == "example_tertiary"
+    # a trailing lane qualifier still classifies, not just a leading one
+    assert classify_vertical_from_title("Software Engineer - Applied Cog") == "example_tertiary"
+    # tertiary's rules sit before primary's catch-all, so a catch-all word
+    # in the same title doesn't pull it away
+    assert classify_vertical_from_title("Cog Engineer, Operations") == "example_tertiary"
 
 
-def test_classify_vertical_ai_eng_collisions_keep_prior_verticals():
-    # risk_ai's rule sits before ai_eng's — AI Risk/Governance titles stay risk_ai
-    assert classify_vertical_from_title("AI Risk Engineer") == "risk_ai"
-    assert classify_vertical_from_title("AI Governance Analyst") == "risk_ai"
-    # sap's strong-signal rule is still first
-    assert classify_vertical_from_title("SAP AI Engineer") == "sap"
-    # bare "Risk Analyst" still lands on the sap catch-all
-    assert classify_vertical_from_title("Risk Analyst") == "sap"
-    # Machine Learning Engineer is out-of-lane by charter (locked 2026-07-13)
-    assert classify_vertical_from_title("Machine Learning Engineer") == ""
+def test_classify_vertical_tertiary_collisions_keep_prior_verticals():
+    # secondary's rule sits before tertiary's — risk/governance titles stay secondary
+    assert classify_vertical_from_title("Cog Risk Engineer") == "example_secondary"
+    assert classify_vertical_from_title("Cog Governance Analyst") == "example_secondary"
+    # example_primary's strong-signal rule is still first
+    assert classify_vertical_from_title("Widget Cog Engineer") == "example_primary"
+    # bare "Risk Analyst" still lands on the example_primary catch-all
+    assert classify_vertical_from_title("Risk Analyst") == "example_primary"
+    # the compound rule needs its qualifier — bare, this is out-of-lane
+    assert classify_vertical_from_title("Cog Learning Engineer") == ""
 
 
 def test_classify_vertical_agrees_with_search_terms(cfg):
     """The title-fallback classifier must agree with how discovery.py tags a
     row by search term — otherwise a manual inbox clip or legacy row for the
     exact same title silently lands in the wrong rubric. Caught a real bug
-    where "AI Compliance Analyst" (a risk_ai search term) fell through to the
-    sap-adjacent "compliance" catch-all instead of matching risk_ai. Iterates
-    the config so every current AND future vertical is covered."""
+    where a secondary-lane search term fell through to the primary-adjacent
+    catch-all instead of matching its own lane. Iterates the config so every
+    current AND future vertical is covered."""
     for vertical in cfg.verticals.values():
         for term in vertical.search_terms + vertical.linkedin_terms:
             assert classify_vertical_from_title(term) == vertical.name, term
@@ -382,8 +383,8 @@ def test_classify_vertical_agrees_with_search_terms(cfg):
 
 def test_already_seen_from_state_yaml(tmp_path):
     df = _clean_df([
-        {"company_normalized": "acme", "title_normalized": "sap sd consultant"},
-        {"company_normalized": "beta", "title_normalized": "erp business analyst"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant"},
+        {"company_normalized": "beta", "title_normalized": "gizmo business analyst"},
     ])
     matched_id = df.iloc[0]["job_id"]
     unmatched_id = df.iloc[1]["job_id"]
@@ -393,7 +394,7 @@ def test_already_seen_from_state_yaml(tmp_path):
     (pipeline_dir / matched_id / "state.yaml").write_text(yaml.safe_dump({
         "job_id": matched_id,
         "company": "Acme",
-        "title": "SAP SD Consultant",
+        "title": "Widget Functional Consultant",
         "state": "tailored",
     }))
 
@@ -410,9 +411,9 @@ def test_already_seen_from_state_yaml(tmp_path):
 
 def test_cleaning_idempotent(tmp_path):
     raw_dir = _make_raw_parquet(tmp_path, [
-        {"company": "Acme Inc", "title": "SAP SD Consultant",
+        {"company": "Acme Inc", "title": "Widget Functional Consultant",
          "description": "x" * 300, "date_posted": pd.Timestamp("2026-06-01")},
-        {"company": "Beta LLC", "title": "ERP Business Analyst",
+        {"company": "Beta LLC", "title": "Gizmo Business Analyst",
          "description": "y" * 300, "date_posted": pd.Timestamp("2026-06-02")},
     ])
     kwargs = dict(
@@ -438,15 +439,15 @@ def test_report_dropped_stats_chain_off_predecessor(tmp_path):
     # site must not be "manual" — manual rows are exempt from the title gate.
     raw_dir = _make_raw_parquet(tmp_path, [
         # survives every stage
-        {"site": "linkedin", "company": "Acme", "title": "SAP SD Consultant",
+        {"site": "linkedin", "company": "Acme", "title": "Widget Functional Consultant",
          "description": "x" * 300},
-        # classify as sap, then trip a title_exclude_term -> gate drops both
-        {"site": "linkedin", "company": "Beta", "title": "SAP Clinical Data Consultant",
+        # classify as example_primary, then trip a title_exclude_term -> gate drops both
+        {"site": "linkedin", "company": "Beta", "title": "Widget Clinical Data Consultant",
          "description": "y" * 300},
-        {"site": "linkedin", "company": "Gamma", "title": "SAP MM Nurse Lead",
+        {"site": "linkedin", "company": "Gamma", "title": "Widget MM Nurse Lead",
          "description": "z" * 300},
         # in-lane but too short -> the only legitimate short-JD drop
-        {"site": "linkedin", "company": "Delta", "title": "SAP SD Consultant",
+        {"site": "linkedin", "company": "Delta", "title": "Widget Functional Consultant",
          "description": "q" * 10},
     ])
     cleaning.run(
@@ -672,8 +673,8 @@ def test_out_of_allowlist_rows_never_enter_the_seen_ledger(tmp_path, monkeypatch
     monkeypatch.setattr(cleaning, "load_config", lambda *a, **k: us_only)
 
     rows = [
-        {"company": "Acme", "title": "SAP SD Consultant", "location": "Austin, TX"},
-        {"company": "Beta", "title": "SAP MM Consultant", "location": "Bengaluru, India"},
+        {"company": "Acme", "title": "Widget Functional Consultant", "location": "Austin, TX"},
+        {"company": "Beta", "title": "Widget MM Consultant", "location": "Bengaluru, India"},
     ]
     jobs = tmp_path / "jobs"
     raw_dir = _make_raw_parquet(tmp_path, rows, run_id="2026-06-06_1000")
@@ -685,7 +686,7 @@ def test_out_of_allowlist_rows_never_enter_the_seen_ledger(tmp_path, monkeypatch
         pipeline_dir=tmp_path / "pipeline",
         today=pd.Timestamp("2026-06-06"),
     )
-    india_id = compute_job_id(normalize_company("Beta"), normalize_title("SAP MM Consultant"))
+    india_id = compute_job_id(normalize_company("Beta"), normalize_title("Widget MM Consultant"))
     ledger_ids = set(pd.read_parquet(jobs / "seen.parquet")["job_id"])
     assert india_id not in ledger_ids, "dropped row was stamped first_seen"
 
@@ -722,9 +723,9 @@ def test_dedupe_survivor_chosen_among_in_allowlist_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(cleaning, "load_config", lambda *a, **k: us_only)
 
     raw_dir = _make_raw_parquet(tmp_path, [
-        {"company": "Acme", "title": "SAP SD Consultant",
+        {"company": "Acme", "title": "Widget Functional Consultant",
          "location": "Bengaluru, India", "description": "x" * 900},
-        {"company": "Acme", "title": "SAP SD Consultant",
+        {"company": "Acme", "title": "Widget Functional Consultant",
          "location": "Austin, TX", "description": "y" * 300},
     ])
     df = cleaning.run(
@@ -775,30 +776,30 @@ def test_title_exclusion(cfg):
     import pandas as pd
     
     df = pd.DataFrame([
-        {"title": "Senior Software Engineer (AI Agents)", "vertical": "ai_eng", "source": "linkedin"},
-        {"title": "Sr. AI Engineering Lead", "vertical": "ai_eng", "source": "linkedin"},
-        {"title": "Software Engineer, Applied AI, New Grad", "vertical": "ai_eng", "source": "linkedin"},
-        {"title": "Internal Tools AI Engineer", "vertical": "ai_eng", "source": "linkedin"},
-        {"title": "Senior AI Engineer", "vertical": "ai_eng", "source": "manual"},
-        {"title": "Senior SAP Consultant", "vertical": "sap", "source": "linkedin"},
-        {"title": "Senior SAP ACM Lead", "vertical": "sap", "source": "manual"},
+        {"title": "Senior Software Engineer (Cog Agents)", "vertical": "example_tertiary", "source": "linkedin"},
+        {"title": "Sr. Cog Engineering Lead", "vertical": "example_tertiary", "source": "linkedin"},
+        {"title": "Software Engineer, Applied Cog, New Grad", "vertical": "example_tertiary", "source": "linkedin"},
+        {"title": "Internal Tools Cog Engineer", "vertical": "example_tertiary", "source": "linkedin"},
+        {"title": "Senior Cog Engineer", "vertical": "example_tertiary", "source": "manual"},
+        {"title": "Senior Widget Consultant", "vertical": "example_primary", "source": "linkedin"},
+        {"title": "Senior Widget Assembly Lead", "vertical": "example_primary", "source": "manual"},
     ])
 
     out, drops = apply_title_exclusion(df, cfg)
 
     titles = out["title"].tolist()
-    assert "Senior Software Engineer (AI Agents)" not in titles
-    assert "Sr. AI Engineering Lead" not in titles
-    assert "Software Engineer, Applied AI, New Grad" in titles
-    assert "Internal Tools AI Engineer" in titles
-    assert "Senior AI Engineer" in titles
-    # sap now excludes seniority title families (promoted from scoring 2026-07-21)
-    assert "Senior SAP Consultant" not in titles
+    assert "Senior Software Engineer (Cog Agents)" not in titles
+    assert "Sr. Cog Engineering Lead" not in titles
+    assert "Software Engineer, Applied Cog, New Grad" in titles
+    assert "Internal Tools Cog Engineer" in titles
+    assert "Senior Cog Engineer" in titles
+    # example_primary excludes seniority title families
+    assert "Senior Widget Consultant" not in titles
     # ...but manual/URL-ingested rows stay exempt, even with senior+lead
-    assert "Senior SAP ACM Lead" in titles
+    assert "Senior Widget Assembly Lead" in titles
 
-    assert drops["ai_eng"] == 2
-    assert drops["sap"] == 1
+    assert drops["example_tertiary"] == 2
+    assert drops["example_primary"] == 1
 
 
 def test_title_inclusion_gate(cfg):
@@ -809,67 +810,66 @@ def test_title_inclusion_gate(cfg):
 
     df = pd.DataFrame([
         # include hit, no exclude -> keep
-        {"title": "Model Risk Analyst", "vertical": "risk_ai", "source": "linkedin"},
-        {"title": "GRC Analyst", "vertical": "risk_ai", "source": "linkedin"},
+        {"title": "Sprocket Risk Analyst", "vertical": "example_secondary", "source": "linkedin"},
+        {"title": "Governance Analyst", "vertical": "example_secondary", "source": "linkedin"},
         # strong_keep overrides an exclude term (machine learning)
-        {"title": "Model Risk Management Lead, Machine Learning", "vertical": "risk_ai", "source": "linkedin"},
-        # include hit (grc) but role-type exclude (software engineer) -> drop
-        {"title": "Software Engineer, GRC", "vertical": "risk_ai", "source": "linkedin"},
+        {"title": "Sprocket Risk Management Lead, Cog Learning", "vertical": "example_secondary", "source": "linkedin"},
+        # include hit (governance) but role-type exclude (software engineer) -> drop
+        {"title": "Software Engineer, Governance", "vertical": "example_secondary", "source": "linkedin"},
         # no include term at all -> drop
-        {"title": "Body Worn Camera Coordinator", "vertical": "risk_ai", "source": "linkedin"},
-        {"title": "Quantitative Researcher", "vertical": "risk_ai", "source": "linkedin"},
+        {"title": "Body Worn Camera Coordinator", "vertical": "example_secondary", "source": "linkedin"},
+        {"title": "Quantitative Researcher", "vertical": "example_secondary", "source": "linkedin"},
         # manual rows exempt from the gate even when off-lane
-        {"title": "Totally Off-Lane Widget Maker", "vertical": "risk_ai", "source": "manual"},
-        # sap include-gate: SAP-functional signal, no exclude -> keep
-        {"title": "SAP ACM Functional Analyst", "vertical": "sap", "source": "linkedin"},
-        # sap: no SAP-functional signal at all -> drop
-        {"title": "Business Analyst", "vertical": "sap", "source": "linkedin"},
-        # sap: include hit (erp) but competing-vendor exclude (oracle) -> drop
-        {"title": "Oracle ERP Functional Consultant", "vertical": "sap", "source": "linkedin"},
-        # sap: manual row exempt even with no include term
-        {"title": "Warehouse Associate", "vertical": "sap", "source": "manual"},
+        {"title": "Totally Off-Lane Widget Maker", "vertical": "example_secondary", "source": "manual"},
+        # example_primary include-gate: in-lane signal, no exclude -> keep
+        {"title": "Widget Assembly Functional Analyst", "vertical": "example_primary", "source": "linkedin"},
+        # example_primary: no in-lane signal at all -> drop
+        {"title": "Business Analyst", "vertical": "example_primary", "source": "linkedin"},
+        # example_primary: include hit (doohickey) but competing-vendor exclude -> drop
+        {"title": "Rival Doohickey Functional Consultant", "vertical": "example_primary", "source": "linkedin"},
+        # example_primary: manual row exempt even with no include term
+        {"title": "Warehouse Associate", "vertical": "example_primary", "source": "manual"},
     ])
 
     out, drops = apply_title_exclusion(df, cfg)
     titles = out["title"].tolist()
 
-    assert "Model Risk Analyst" in titles
-    assert "GRC Analyst" in titles
-    assert "Model Risk Management Lead, Machine Learning" in titles  # strong-keep override
-    assert "Software Engineer, GRC" not in titles                   # include + exclude
+    assert "Sprocket Risk Analyst" in titles
+    assert "Governance Analyst" in titles
+    assert "Sprocket Risk Management Lead, Cog Learning" in titles  # strong-keep override
+    assert "Software Engineer, Governance" not in titles                   # include + exclude
     assert "Body Worn Camera Coordinator" not in titles             # no include
     assert "Quantitative Researcher" not in titles                  # no include
     assert "Totally Off-Lane Widget Maker" in titles                # manual exempt
-    assert "SAP ACM Functional Analyst" in titles                   # sap include hit
-    assert "Business Analyst" not in titles                         # sap: no include
-    assert "Oracle ERP Functional Consultant" not in titles         # sap: include + exclude
-    assert "Warehouse Associate" in titles                          # sap manual exempt
+    assert "Widget Assembly Functional Analyst" in titles                   # example_primary include hit
+    assert "Business Analyst" not in titles                         # example_primary: no include
+    assert "Rival Doohickey Functional Consultant" not in titles         # example_primary: include + exclude
+    assert "Warehouse Associate" in titles                          # example_primary manual exempt
 
-    assert drops["risk_ai"] == 3
-    assert drops["sap"] == 2
+    assert drops["example_secondary"] == 3
+    assert drops["example_primary"] == 2
 
 
-def test_title_inclusion_gate_ai_eng(cfg):
-    """ai_eng's include-gate does the most work of the three lanes. It went
-    untested while the fixtures omitted title_include_terms for it."""
+def test_title_inclusion_gate_tertiary(cfg):
+    """example_tertiary's include-gate does the most work of the three lanes."""
     from src.discovery.cleaning import apply_title_exclusion
     import pandas as pd
 
-    keep = ["AI Engineer", "Applied AI Engineer", "Agentic AI Engineer"]
+    keep = ["Cog Engineer", "Applied Cog Engineer", "Agentic Cog Engineer"]
     drop = [
         "Backend Engineer, Payments",       # no include term
         "Data Engineer",
         "Full Stack Engineer",
         "Platform Engineer",
         "Solutions Engineer",
-        "Distinguished Engineer, AI",       # include hit, seniority exclude
-        "Research Scientist, LLM",          # include hit, role-type exclude
-        "Machine Learning Engineer, LLM Platform",
+        "Distinguished Engineer, Cog",       # include hit, seniority exclude
+        "Research Scientist, Cog",          # include hit, role-type exclude
+        "Cog Learning Engineer, Cog Platform",
     ]
     df = pd.DataFrame(
-        [{"title": t, "vertical": "ai_eng", "source": "linkedin"} for t in keep + drop]
+        [{"title": t, "vertical": "example_tertiary", "source": "linkedin"} for t in keep + drop]
         # manual rows stay exempt from the gate
-        + [{"title": "Totally Off-Lane Widget Maker", "vertical": "ai_eng",
+        + [{"title": "Totally Off-Lane Widget Maker", "vertical": "example_tertiary",
             "source": "manual"}]
     )
 
@@ -877,8 +877,8 @@ def test_title_inclusion_gate_ai_eng(cfg):
     titles = out["title"].tolist()
 
     for t in keep:
-        assert t in titles, f"{t} should survive the ai_eng gate"
+        assert t in titles, f"{t} should survive the example_tertiary gate"
     for t in drop:
-        assert t not in titles, f"{t} should be dropped by the ai_eng gate"
+        assert t not in titles, f"{t} should be dropped by the example_tertiary gate"
     assert "Totally Off-Lane Widget Maker" in titles
-    assert drops["ai_eng"] == len(drop)
+    assert drops["example_tertiary"] == len(drop)

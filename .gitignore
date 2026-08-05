@@ -23,6 +23,7 @@ profile/verticals.yaml
 profile/verticals/*
 !profile/verticals/example_primary/
 !profile/verticals/example_secondary/
+!profile/verticals/example_tertiary/
 # Career-board watchlist (PRD §7.19); committed template: profile/companies.example.yaml
 profile/companies.yaml
 # Discovery settings; committed template: profile/discovery.example.yaml

@@ -64,9 +64,9 @@ class _CrashingSource:
 class _WorkingSource:
     name = "linkedin"
     def fetch(self, ctx):
-        row = make_row(site="linkedin", company="Acme AI", title="SAP ACM Consultant",
+        row = make_row(site="linkedin", company="Acme AI", title="Widget Assembly Consultant",
                        job_url="https://x/1", description="a" * 250)
-        row["vertical"] = "sap"
+        row["vertical"] = "example_primary"
         return SourceResult([row], [], [])
 
 def test_crashing_source_does_not_stop_later_sources(tmp_path, monkeypatch):
@@ -180,9 +180,9 @@ class _NamedSource:
         out = []
         for i in range(self.rows):
             row = make_row(site=self.name, company=f"Acme {i}",
-                           title="SAP ACM Consultant", job_url=f"https://x/{i}",
+                           title="Widget Assembly Consultant", job_url=f"https://x/{i}",
                            description="a" * 250)
-            row["vertical"] = "sap"
+            row["vertical"] = "example_primary"
             out.append(row)
         return SourceResult(out, [f"{self.name}: ok"], [])
 

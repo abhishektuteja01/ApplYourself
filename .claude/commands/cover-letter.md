@@ -1,5 +1,5 @@
 ---
-description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. risk_ai/2026-... or sap/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor. Writes <Name>_Cover_Letter.docx + .pdf (named from the vertical's resume_file) into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
+description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. <vertical>/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor. Writes <Name>_Cover_Letter.docx + .pdf (named from the vertical's resume_file) into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
 model: sonnet
 effort: medium
 allowed-tools:
@@ -29,7 +29,7 @@ present, the salutation becomes `Dear Name,` instead of the default
 ## Step 1 — prerequisites + tailor dir + template placeholders (one block, fail loud)
 
 `LATEST_DIR` already carries the vertical prefix /tailor wrote into
-`tailored_dirs[]` (e.g. `risk_ai/2026-06-17_acme_..._a1b2c3d4`)
+`tailored_dirs[]` (e.g. `<vertical>/2026-06-17_acme_..._a1b2c3d4`)
 — no separate vertical lookup needed here, `OUT_DIR` resolves correctly
 as-is. Run everything below as ONE bash block:
 

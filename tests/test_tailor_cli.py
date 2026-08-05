@@ -1,8 +1,9 @@
 """Tests for src/tailor_cli.py — the deterministic front-matter of /tailor.
 
 The conftest autouse `cfg` fixture injects tests/fixtures/verticals.yaml
-(default_vertical=sap; verticals sap/ai_eng/risk_ai), so vertical resolution
-runs against that config without touching the gitignored profile config."""
+(default_vertical=example_tertiary; verticals example_primary/example_secondary/
+example_tertiary), so vertical resolution runs against that config without
+touching the gitignored profile config."""
 from __future__ import annotations
 
 import json
@@ -78,14 +79,14 @@ def _register(tmp_path, job_id):
     (d / "state.yaml").write_text(yaml.safe_dump({"job_id": job_id, "state": "saved"}))
 
 
-def _setup(tmp_path, *, job_id="aaaaaaaa", company="Acme Corp.", title="SAP SD Consultant",
-           vertical="sap", diction=True, skip_profile=()):
+def _setup(tmp_path, *, job_id="aaaaaaaa", company="Acme Corp.", title="Widget Functional Consultant",
+           vertical="example_primary", diction=True, skip_profile=()):
     _write_parquets(
         tmp_path,
         clean_rows=[{
             "job_id": job_id, "company": company, "title": title,
             "vertical": vertical, "url": "https://x", "posted_date": "2026-07-01",
-            "jd_text": "We need an SAP SD consultant. Order-to-cash.",
+            "jd_text": "We need an Widget FN consultant. Order-to-cash.",
         }],
         scored_rows=[{
             "job_id": job_id, "fit_score": 80, "vertical": vertical,
@@ -103,9 +104,9 @@ def test_prep_creates_dir_row_json_and_prints_eval_vars(tmp_path, capsys):
     rc = tailor_cli.main(["aaaaaaaa", "--today", "2026-07-24"])
     assert rc == 0
     ev = _parse_eval(capsys.readouterr().out)
-    assert ev["VERTICAL"] == "sap"
-    assert ev["DIRNAME"] == "sap/2026-07-24_acme-corp_sap-sd-consultant_aaaaaaaa"
-    assert ev["OUT_DIR"].endswith("applications/sap/2026-07-24_acme-corp_sap-sd-consultant_aaaaaaaa")
+    assert ev["VERTICAL"] == "example_primary"
+    assert ev["DIRNAME"] == "example_primary/2026-07-24_acme-corp_widget-functional-consultant_aaaaaaaa"
+    assert ev["OUT_DIR"].endswith("applications/example_primary/2026-07-24_acme-corp_widget-functional-consultant_aaaaaaaa")
     assert ev["DICTION_PASS"] == "true"
     # side effects
     row_json = tmp_path / "tmp" / "tailor_aaaaaaaa_row.json"
@@ -145,7 +146,7 @@ def test_prep_versions_on_retailor(tmp_path, capsys):
     # Second run on a different day still bumps to _v2 (count-based, not date).
     tailor_cli.main(["aaaaaaaa", "--today", "2026-08-01"])
     ev = _parse_eval(capsys.readouterr().out)
-    assert ev["DIRNAME"] == "sap/2026-08-01_acme-corp_sap-sd-consultant_aaaaaaaa_v2"
+    assert ev["DIRNAME"] == "example_primary/2026-08-01_acme-corp_widget-functional-consultant_aaaaaaaa_v2"
     assert (tmp_path / "applications" / ev["DIRNAME"]).is_dir()
 
 
@@ -169,8 +170,8 @@ def test_prep_job_id_absent_from_scored_errors(tmp_path):
     _write_parquets(
         tmp_path,
         clean_rows=[{"job_id": "aaaaaaaa", "company": "A", "title": "T",
-                     "vertical": "sap", "url": "u", "posted_date": "d", "jd_text": "j"}],
-        scored_rows=[{"job_id": "zzzzzzzz", "fit_score": 1, "vertical": "sap"}],
+                     "vertical": "example_primary", "url": "u", "posted_date": "d", "jd_text": "j"}],
+        scored_rows=[{"job_id": "zzzzzzzz", "fit_score": 1, "vertical": "example_primary"}],
     )
     _write_profile(tmp_path)
     _register(tmp_path, "aaaaaaaa")
@@ -212,7 +213,7 @@ def test_snapshot_writes_from_row_json_without_reading_parquet(tmp_path, capsys)
     snap = (out_dir / "jd_snapshot.md").read_text()
     assert snap.startswith("---\njob_id: aaaaaaaa\n")
     assert "company: Acme Corp." in snap
-    assert "title: SAP SD Consultant" in snap
+    assert "title: Widget Functional Consultant" in snap
     assert "snapshot_at: 2026-07-24" in snap
     assert snap.rstrip().endswith("Order-to-cash.")
     assert "chars of JD body" in capsys.readouterr().out
@@ -235,36 +236,36 @@ def _mkdirs(root, vertical, names):
 
 def test_versioned_dirname_increments_normally(tmp_path):
     base = "2026-08-04_acme_analyst_abc12345"
-    args = ("sap", "acme", "analyst", "abc12345", "2026-08-04")
-    assert tailor_cli._versioned_dirname(*args) == f"sap/{base}"
-    _mkdirs(tmp_path, "sap", [base])
-    assert tailor_cli._versioned_dirname(*args) == f"sap/{base}_v2"
-    _mkdirs(tmp_path, "sap", [f"{base}_v2"])
-    assert tailor_cli._versioned_dirname(*args) == f"sap/{base}_v3"
+    args = ("example_primary", "acme", "analyst", "abc12345", "2026-08-04")
+    assert tailor_cli._versioned_dirname(*args) == f"example_primary/{base}"
+    _mkdirs(tmp_path, "example_primary", [base])
+    assert tailor_cli._versioned_dirname(*args) == f"example_primary/{base}_v2"
+    _mkdirs(tmp_path, "example_primary", [f"{base}_v2"])
+    assert tailor_cli._versioned_dirname(*args) == f"example_primary/{base}_v3"
 
 
 def test_versioned_dirname_skips_gaps_left_by_deleted_versions(tmp_path):
     """Count-based versioning reused a live name once an intermediate version
     had been pruned: v1+v3 on disk resolved to _v3 again."""
     base = "2026-08-04_acme_analyst_abc12345"
-    _mkdirs(tmp_path, "sap", [base, f"{base}_v3"])  # v2 was deleted
-    got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
-    assert got == f"sap/{base}_v4"
+    _mkdirs(tmp_path, "example_primary", [base, f"{base}_v3"])  # v2 was deleted
+    got = tailor_cli._versioned_dirname("example_primary", "acme", "analyst", "abc12345", "2026-08-04")
+    assert got == f"example_primary/{base}_v4"
     assert not (tmp_path / "applications" / got).exists()
 
 
 def test_versioned_dirname_ignores_other_job_ids(tmp_path):
     base = "2026-08-04_acme_analyst_abc12345"
-    _mkdirs(tmp_path, "sap", ["2026-08-04_other_role_99999999",
+    _mkdirs(tmp_path, "example_primary", ["2026-08-04_other_role_99999999",
                               "2026-08-04_other_role_99999999_v2"])
-    got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
-    assert got == f"sap/{base}"
+    got = tailor_cli._versioned_dirname("example_primary", "acme", "analyst", "abc12345", "2026-08-04")
+    assert got == f"example_primary/{base}"
 
 
 def test_versioned_dirname_uses_todays_date_not_the_originals(tmp_path):
-    _mkdirs(tmp_path, "sap", ["2026-06-01_acme_analyst_abc12345"])
-    got = tailor_cli._versioned_dirname("sap", "acme", "analyst", "abc12345", "2026-08-04")
-    assert got == "sap/2026-08-04_acme_analyst_abc12345_v2"
+    _mkdirs(tmp_path, "example_primary", ["2026-06-01_acme_analyst_abc12345"])
+    got = tailor_cli._versioned_dirname("example_primary", "acme", "analyst", "abc12345", "2026-08-04")
+    assert got == "example_primary/2026-08-04_acme_analyst_abc12345_v2"
 
 
 # ---------------- identity: name + file slug from resume_file ----------------
@@ -322,7 +323,7 @@ def test_prep_emits_applicant_name_and_file_slug(tmp_path, capsys):
 
 
 def test_identity_subcommand_prints_only_the_two_vars(tmp_path, capsys):
-    rc = tailor_cli.main(["identity", "sap"])
+    rc = tailor_cli.main(["identity", "example_primary"])
     assert rc == 0
     out = capsys.readouterr().out
     assert _parse_eval(out) == {"APPLICANT_NAME": "Ada Lovelace", "FILE_SLUG": "Ada_Lovelace"}
@@ -335,9 +336,9 @@ def test_identity_unknown_vertical_errors_and_names_the_configured_ones(tmp_path
 
 
 def test_identity_missing_resume_file_errors(tmp_path, cfg):
-    (tmp_path / cfg.verticals["sap"].resume_file).unlink()
+    (tmp_path / cfg.verticals["example_primary"].resume_file).unlink()
     with pytest.raises(SystemExit, match="resume_file must exist"):
-        tailor_cli.main(["identity", "sap"])
+        tailor_cli.main(["identity", "example_primary"])
 
 
 def test_prep_eval_output_survives_an_apostrophe_in_the_name(tmp_path, capsys, cfg):
@@ -359,5 +360,5 @@ def test_prep_eval_output_survives_an_apostrophe_in_the_name(tmp_path, capsys, c
 def test_resume_files_are_read_from_tmp_not_the_real_profile(tmp_path, cfg):
     """Isolation guard: the injected config's resume_file paths are the real
     gitignored ones, so a regression here would read the user's own resume."""
-    assert tailor_cli._identity_for("sap") == ("Ada Lovelace", "Ada_Lovelace")
-    assert (tmp_path / cfg.verticals["sap"].resume_file).is_file()
+    assert tailor_cli._identity_for("example_primary") == ("Ada Lovelace", "Ada_Lovelace")
+    assert (tmp_path / cfg.verticals["example_primary"].resume_file).is_file()

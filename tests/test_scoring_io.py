@@ -59,11 +59,11 @@ def _valid_score(**overrides) -> dict:
         "job_id": "aaaaaaaa",
         "fit_score": 75,
         "fit_subscores": _split_score(75),
-        "vertical": "sap",
+        "vertical": "example_primary",
         "sponsorship_label": "opt_ok",
         "sponsorship_evidence": "no visa sponsorship",
-        "reasoning": "ACM commodity lifecycle fit; senior stretch flagged.",
-        "keywords_to_mirror": ["ACM", "commodity contract"],
+        "reasoning": "widget assembly lifecycle fit; senior stretch flagged.",
+        "keywords_to_mirror": ["widget assembly", "gizmo contract"],
         "suggested_action": "tailor",
     }
     base.update(overrides)
@@ -118,8 +118,8 @@ def test_select_unscored_incremental(tmp_path):
 
 def test_dump_unscored_writes_jsonl(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "company": "Acme", "title": "SAP ACM",
-         "jd_text": "hi" * 200, "url": "https://x", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "company": "Acme", "title": "Widget Assembly",
+         "jd_text": "hi" * 200, "url": "https://x", "vertical": "example_primary"},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
@@ -129,15 +129,15 @@ def test_dump_unscored_writes_jsonl(tmp_path):
     obj = json.loads(line)
     assert obj["job_id"] == "aaaaaaaa"
     assert obj["company"] == "Acme"
-    assert obj["title"] == "SAP ACM"
+    assert obj["title"] == "Widget Assembly"
     assert "jd_text" in obj
     assert "url" in obj
 
 
 def test_dump_unscored_force_all_ignores_scored(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
-        {"job_id": "bbbbbbbb", "title": "SAP SD Consultant", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
+        {"job_id": "bbbbbbbb", "title": "Widget Functional Consultant", "vertical": "example_primary"},
     ])
     scored_p = tmp_path / "scored.parquet"
     merge_scores(scored_p, [_valid_score(job_id="aaaaaaaa")], scored_by_model="t")
@@ -174,7 +174,7 @@ def _patch_failing_open(monkeypatch, fail_on: int):
 @pytest.mark.parametrize("fail_on", [1, 2, 3, 4])
 def test_dump_unscored_open_failure_surfaces_oserror(tmp_path, monkeypatch, fail_on):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
@@ -195,7 +195,7 @@ def test_dump_unscored_open_failure_in_last_skip_file_leaks_nothing(tmp_path, mo
     if len(names) < 2:
         pytest.skip("needs >=2 configured verticals to have an earlier handle to leak")
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
@@ -209,7 +209,7 @@ def test_dump_unscored_open_failure_in_last_skip_file_leaks_nothing(tmp_path, mo
 
 def test_dump_unscored_closes_every_handle_on_success(tmp_path, monkeypatch):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
         {"job_id": "bbbbbbbb", "title": "Public Health Data Analyst", "vertical": ""},
     ])
     scored_p = tmp_path / "scored.parquet"
@@ -225,7 +225,7 @@ def test_dump_unscored_row_error_closes_handles(tmp_path, monkeypatch):
     """A failure mid-loop must still close every handle (the old try/finally's
     one working case) and must not be masked."""
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
@@ -244,9 +244,9 @@ def test_dump_unscored_row_error_closes_handles(tmp_path, monkeypatch):
 
 def test_dump_unscored_splits_in_lane_vs_out_of_lane(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
         {"job_id": "bbbbbbbb", "title": "Public Health Data Analyst", "vertical": ""},
-        {"job_id": "cccccccc", "title": "Trade Surveillance Analyst", "vertical": "sap"},
+        {"job_id": "cccccccc", "title": "Gizmo Trading Analyst", "vertical": "example_primary"},
         {"job_id": "dddddddd", "title": "Senior Platform Engineer", "vertical": ""},
     ])
     scored_p = tmp_path / "scored.parquet"
@@ -263,48 +263,48 @@ def test_dump_unscored_splits_in_lane_vs_out_of_lane(tmp_path):
 
 def test_dump_unscored_only_vertical_filters_to_one_vertical(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
-        {"job_id": "bbbbbbbb", "title": "Model Risk Analyst", "vertical": "risk_ai"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
+        {"job_id": "bbbbbbbb", "title": "Sprocket Risk Analyst", "vertical": "example_secondary"},
         {"job_id": "cccccccc", "title": "Public Health Data Analyst", "vertical": ""},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
-    n_judge = dump_unscored(clean_p, scored_p, out_path, only_vertical="risk_ai")
+    n_judge = dump_unscored(clean_p, scored_p, out_path, only_vertical="example_secondary")
     assert n_judge == 1
     judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
     assert judge_ids == {"bbbbbbbb"}
-    # sap and out-of-lane rows are left entirely untouched (not even auto-skipped)
+    # example_primary and out-of-lane rows are left entirely untouched (not even auto-skipped)
     skip_path = tmp_path / "auto_skip.jsonl"
     skip_ids = {json.loads(l)["job_id"] for l in skip_path.read_text().splitlines() if l.strip()} if skip_path.exists() else set()
     assert skip_ids == set()
 
 
-# ---------- risk_ai vertical: JD disqualifier pre-screen ----------
+# ---------- example_secondary vertical: JD disqualifier pre-screen ----------
 
-def test_risk_ai_disqualify_reason_matches_phrases(cfg):
-    risk_ai = cfg.verticals["risk_ai"]
-    assert disqualify_reason(risk_ai, "Candidates must have a PhD required for this role.") == "phrase"
-    assert disqualify_reason(risk_ai, "CFA required; 5+ years quantitative finance.") == "phrase"
-    assert disqualify_reason(risk_ai, "Sanctions screening coverage for the compliance desk.") == "phrase"
-    assert disqualify_reason(risk_ai, "FRM certification required.") == "phrase"
-
-
-def test_risk_ai_disqualify_reason_case_insensitive(cfg):
-    assert disqualify_reason(cfg.verticals["risk_ai"], "Ph.D. Required in Mathematics or Statistics") == "phrase"
+def test_secondary_disqualify_reason_matches_phrases(cfg):
+    example_secondary = cfg.verticals["example_secondary"]
+    assert disqualify_reason(example_secondary, "Candidates must have a PhD required for this role.") == "phrase"
+    assert disqualify_reason(example_secondary, "Sprocket charter required; 5+ years quantitative finance.") == "phrase"
+    assert disqualify_reason(example_secondary, "Legacy sprocket ledger coverage for the compliance desk.") == "phrase"
+    assert disqualify_reason(example_secondary, "Sprocket certification required.") == "phrase"
 
 
-def test_risk_ai_disqualify_reason_none_on_preferred_not_required(cfg):
+def test_secondary_disqualify_reason_case_insensitive(cfg):
+    assert disqualify_reason(cfg.verticals["example_secondary"], "Ph.D. Required in Mathematics or Statistics") == "phrase"
+
+
+def test_secondary_disqualify_reason_none_on_preferred_not_required(cfg):
     # "preferred" must NOT trip the disqualifier — only hard "required" wording does.
-    risk_ai = cfg.verticals["risk_ai"]
-    assert disqualify_reason(risk_ai, "PhD preferred but not required. CS background welcome.") is None
-    assert disqualify_reason(risk_ai, "") is None
-    assert disqualify_reason(risk_ai, None) is None
+    example_secondary = cfg.verticals["example_secondary"]
+    assert disqualify_reason(example_secondary, "PhD preferred but not required. CS background welcome.") is None
+    assert disqualify_reason(example_secondary, "") is None
+    assert disqualify_reason(example_secondary, None) is None
 
 
-# ---------- risk_ai vertical: explicit 5+ years experience disqualifier ----------
+# ---------- example_secondary vertical: explicit 5+ years experience disqualifier ----------
 
 def test_max_years_required_simple_and_plus_forms():
-    assert max_years_required("5+ years of experience in governance, risk, compliance") == 5
+    assert max_years_required("5+ years of experience in sprocket governance, risk, compliance") == 5
     assert max_years_required("2 years of experience required") == 2
     assert max_years_required("no year mention here") == 0
     assert max_years_required("") == 0
@@ -321,7 +321,7 @@ def test_max_years_required_takes_lower_bound_of_a_range():
 def test_max_years_required_ignores_unrelated_year_mentions():
     # "150-year legacy" must never be read as a 150-year experience requirement.
     assert max_years_required(
-        "Frost has dedicated their expertise... over 150-year legacy of providing service."
+        "Acme has dedicated their expertise... over 150-year legacy of providing service."
     ) == 0
 
 
@@ -333,150 +333,147 @@ def test_max_years_required_handles_markdown_escaped_text():
 
 def test_max_years_required_takes_max_across_multiple_clauses():
     text = (
-        "5+ years of experience in governance, risk, compliance, privacy, "
+        "5+ years of experience in sprocket governance, risk, compliance, privacy, "
         "information security, technology risk, third-party risk, model risk, "
         "audit, or a related field. 2+ years of direct experience in AI governance."
     )
     assert max_years_required(text) == 5
 
 
-def test_risk_ai_disqualify_reason_years_over_threshold(cfg):
-    risk_ai = cfg.verticals["risk_ai"]
-    assert disqualify_reason(risk_ai, "5+ years of experience in governance and risk") == "years"
-    assert disqualify_reason(risk_ai, "6+ years of experience in model risk") == "years"
-    assert disqualify_reason(risk_ai, "4+ years of experience in model risk") is None
-    assert disqualify_reason(risk_ai, "2+ years of experience, 3-4 years preferred") is None
+def test_secondary_disqualify_reason_years_over_threshold(cfg):
+    example_secondary = cfg.verticals["example_secondary"]
+    assert disqualify_reason(example_secondary, "5+ years of experience in sprocket governance and risk") == "years"
+    assert disqualify_reason(example_secondary, "6+ years of experience in sprocket risk") == "years"
+    assert disqualify_reason(example_secondary, "4+ years of experience in sprocket risk") is None
+    assert disqualify_reason(example_secondary, "2+ years of experience, 3-4 years preferred") is None
 
 
-def test_risk_ai_disqualify_reason_real_jds_with_5plus_year_requirement(cfg):
-    # Real JD text (markdown-escaped) from the Mom Project / Robert Half AI Risk
-    # & Compliance Analyst postings that originally over-scored seniority=18
-    # despite an explicit 5+ year requirement (capped at 4/20).
-    mom_project_jd = (
+def test_secondary_disqualify_reason_markdown_escaped_5plus_year_requirement(cfg):
+    # Scraped JDs arrive markdown-escaped. These two shapes originally
+    # over-scored seniority=18 despite an explicit 5+ year requirement.
+    bulleted_jd = (
         "**Skills And Qualifications**\n"
-        "* 5\\+ years of experience in governance, risk, compliance, privacy, "
-        "information security, technology risk, third\\-party risk, model risk, "
-        "audit, or a related field.\n"
-        "* 2\\+ years of direct experience in AI governance, responsible AI, "
-        "AI risk assessment, AI compliance, model risk management, machine "
-        "learning governance, or emerging technology risk."
+        "* 5\\+ years of experience in sprocket governance, risk, compliance, "
+        "privacy, third\\-party risk, sprocket validation, audit, or a related "
+        "field.\n"
+        "* 2\\+ years of direct experience in sprocket governance."
     )
-    assert disqualify_reason(cfg.verticals["risk_ai"], mom_project_jd) == "years"
+    assert disqualify_reason(cfg.verticals["example_secondary"], bulleted_jd) == "years"
 
-    robert_half_jd = (
+    bold_wrapped_jd = (
         "**Required Qualifications** \n\n\n\n* **5\\+ years** \n of experience "
         "in one or more of the following:\n"
-        "* Governance, Risk \\& Compliance (GRC), Privacy, Information Security, "
-        "Technology Risk, Third\\-Party Risk, Model Risk, or Audit\n"
+        "* Governance, Risk \\& Compliance, Privacy, Third\\-Party Risk, "
+        "Sprocket Risk, or Audit\n"
         "* **2\\+ years** of hands\\-on experience in:\n"
-        "* AI governance, Responsible AI, AI risk assessment, AI compliance, "
-        "or model risk management"
+        "* sprocket governance or sprocket risk management"
     )
-    assert disqualify_reason(cfg.verticals["risk_ai"], robert_half_jd) == "years"
+    assert disqualify_reason(cfg.verticals["example_secondary"], bold_wrapped_jd) == "years"
 
 
-def test_dump_unscored_routes_risk_ai_disqualified_to_separate_skip_file(tmp_path):
+def test_dump_unscored_routes_secondary_disqualified_to_separate_skip_file(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "Model Risk Analyst", "vertical": "risk_ai",
+        {"job_id": "aaaaaaaa", "title": "Sprocket Risk Analyst", "vertical": "example_secondary",
          "jd_text": "PhD required. " + "x" * 200},
-        {"job_id": "bbbbbbbb", "title": "Model Validation Analyst", "vertical": "risk_ai",
+        {"job_id": "bbbbbbbb", "title": "Sprocket Validation Analyst", "vertical": "example_secondary",
          "jd_text": "CS or Engineering background welcome. " + "x" * 200},
-        {"job_id": "cccccccc", "title": "SAP Functional Analyst", "vertical": "sap",
+        {"job_id": "cccccccc", "title": "Widget Functional Analyst", "vertical": "example_primary",
          "jd_text": "x" * 200},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
     n_judge = dump_unscored(clean_p, scored_p, out_path)
-    assert n_judge == 2  # bbbbbbbb (risk_ai, clean JD) + cccccccc (sap)
+    assert n_judge == 2  # bbbbbbbb (example_secondary, clean JD) + cccccccc (example_primary)
     judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
     assert judge_ids == {"bbbbbbbb", "cccccccc"}
-    # judged risk_ai rows carry their vertical through for the LLM's rubric choice
+    # judged example_secondary rows carry their vertical through for the LLM's rubric choice
     judged = {json.loads(l)["job_id"]: json.loads(l)["vertical"]
               for l in out_path.read_text().splitlines() if l.strip()}
-    assert judged["bbbbbbbb"] == "risk_ai"
-    assert judged["cccccccc"] == "sap"
-    risk_ai_skip_path = tmp_path / "auto_skip_risk_ai.jsonl"
-    assert risk_ai_skip_path.exists()
-    skip_ids = {json.loads(l)["job_id"] for l in risk_ai_skip_path.read_text().splitlines() if l.strip()}
+    assert judged["bbbbbbbb"] == "example_secondary"
+    assert judged["cccccccc"] == "example_primary"
+    secondary_skip_path = tmp_path / "auto_skip_example_secondary.jsonl"
+    assert secondary_skip_path.exists()
+    skip_ids = {json.loads(l)["job_id"] for l in secondary_skip_path.read_text().splitlines() if l.strip()}
     assert skip_ids == {"aaaaaaaa"}
     # the plain (title-out-of-lane) auto_skip.jsonl exists but is empty here
     assert (tmp_path / "auto_skip.jsonl").exists()
 
 
-def test_auto_score_disqualified_materializes_risk_ai_skip_rows(tmp_path, cfg):
-    skip_path = tmp_path / "auto_skip_risk_ai.jsonl"
+def test_auto_score_disqualified_materializes_secondary_skip_rows(tmp_path, cfg):
+    skip_path = tmp_path / "auto_skip_example_secondary.jsonl"
     skip_path.write_text(
-        json.dumps({"job_id": "aaaaaaaa", "title": "Model Risk Analyst"}) + "\n"
+        json.dumps({"job_id": "aaaaaaaa", "title": "Sprocket Risk Analyst"}) + "\n"
     )
     scored_p = tmp_path / "scored.parquet"
-    n = auto_score_disqualified(cfg.verticals["risk_ai"], skip_path, scored_p)
+    n = auto_score_disqualified(cfg.verticals["example_secondary"], skip_path, scored_p)
     assert n == 1
     df = pd.read_parquet(scored_p)
     assert df.iloc[0]["job_id"] == "aaaaaaaa"
     assert df.iloc[0]["fit_score"] == 0
-    assert df.iloc[0]["vertical"] == "risk_ai"
+    assert df.iloc[0]["vertical"] == "example_secondary"
     assert df.iloc[0]["suggested_action"] == "skip"
-    assert df.iloc[0]["scored_by_model"] == "rubric:risk-ai-jd-disqualifier"
+    assert df.iloc[0]["scored_by_model"] == "rubric:example-secondary-jd-disqualifier"
 
 
 def test_auto_score_disqualified_noop_on_missing_file(tmp_path, cfg):
     scored_p = tmp_path / "scored.parquet"
-    assert auto_score_disqualified(cfg.verticals["risk_ai"], tmp_path / "nope.jsonl", scored_p) == 0
+    assert auto_score_disqualified(cfg.verticals["example_secondary"], tmp_path / "nope.jsonl", scored_p) == 0
     assert not scored_p.exists()
 
 
-# ---------- sap vertical: explicit 5+ years experience disqualifier (extended 2026-06-17) ----------
+# ---------- example_primary vertical: explicit 5+ years experience disqualifier (extended 2026-06-17) ----------
 
-def test_sap_disqualify_reason_years_over_threshold(cfg):
-    sap = cfg.verticals["sap"]
-    assert disqualify_reason(sap, "5+ years of experience in SAP ACM commodity management") == "years"
-    assert disqualify_reason(sap, "6+ years of experience as an SAP functional analyst") == "years"
-    assert disqualify_reason(sap, "4+ years of experience as an SAP functional analyst") is None
-    assert disqualify_reason(sap, "2+ years of experience, 3-4 years preferred") is None
-    assert disqualify_reason(sap, "") is None
-    assert disqualify_reason(sap, None) is None
-    # sap has no phrase disqualifier — PhD/CFA/FRM wording alone never trips it
-    assert disqualify_reason(sap, "PhD required for this role.") is None
+def test_primary_disqualify_reason_years_over_threshold(cfg):
+    example_primary = cfg.verticals["example_primary"]
+    assert disqualify_reason(example_primary, "5+ years of experience in Widget Assembly commodity management") == "years"
+    assert disqualify_reason(example_primary, "6+ years of experience as a widget functional analyst") == "years"
+    assert disqualify_reason(example_primary, "4+ years of experience as a widget functional analyst") is None
+    assert disqualify_reason(example_primary, "2+ years of experience, 3-4 years preferred") is None
+    assert disqualify_reason(example_primary, "") is None
+    assert disqualify_reason(example_primary, None) is None
+    # example_primary's phrase list carries no credential wording, so a
+    # doctorate requirement alone never trips it
+    assert disqualify_reason(example_primary, "PhD required for this role.") is None
 
 
-def test_dump_unscored_routes_sap_disqualified_to_separate_skip_file(tmp_path):
+def test_dump_unscored_routes_primary_disqualified_to_separate_skip_file(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap",
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary",
          "jd_text": "5+ years of experience required. " + "x" * 200},
-        {"job_id": "bbbbbbbb", "title": "SAP ACM Analyst", "vertical": "sap",
+        {"job_id": "bbbbbbbb", "title": "Widget Assembly Analyst", "vertical": "example_primary",
          "jd_text": "2+ years of experience preferred. " + "x" * 200},
-        {"job_id": "cccccccc", "title": "Model Risk Analyst", "vertical": "risk_ai",
+        {"job_id": "cccccccc", "title": "Sprocket Risk Analyst", "vertical": "example_secondary",
          "jd_text": "x" * 200},
     ])
     scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
     n_judge = dump_unscored(clean_p, scored_p, out_path)
-    assert n_judge == 2  # bbbbbbbb (sap, under threshold) + cccccccc (risk_ai)
+    assert n_judge == 2  # bbbbbbbb (example_primary, under threshold) + cccccccc (example_secondary)
     judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
     assert judge_ids == {"bbbbbbbb", "cccccccc"}
-    sap_skip_path = tmp_path / "auto_skip_sap.jsonl"
-    assert sap_skip_path.exists()
-    skip_ids = {json.loads(l)["job_id"] for l in sap_skip_path.read_text().splitlines() if l.strip()}
+    primary_skip_path = tmp_path / "auto_skip_example_primary.jsonl"
+    assert primary_skip_path.exists()
+    skip_ids = {json.loads(l)["job_id"] for l in primary_skip_path.read_text().splitlines() if l.strip()}
     assert skip_ids == {"aaaaaaaa"}
 
 
-def test_auto_score_disqualified_materializes_sap_skip_rows(tmp_path, cfg):
-    skip_path = tmp_path / "auto_skip_sap.jsonl"
+def test_auto_score_disqualified_materializes_primary_skip_rows(tmp_path, cfg):
+    skip_path = tmp_path / "auto_skip_example_primary.jsonl"
     skip_path.write_text(
-        json.dumps({"job_id": "aaaaaaaa", "title": "SAP Functional Analyst",
+        json.dumps({"job_id": "aaaaaaaa", "title": "Widget Functional Analyst",
                     "_disqualify_reason": "years"}) + "\n"
     )
     scored_p = tmp_path / "scored.parquet"
-    n = auto_score_disqualified(cfg.verticals["sap"], skip_path, scored_p)
+    n = auto_score_disqualified(cfg.verticals["example_primary"], skip_path, scored_p)
     assert n == 1
     df = pd.read_parquet(scored_p)
     assert df.iloc[0]["job_id"] == "aaaaaaaa"
     assert df.iloc[0]["fit_score"] == 0
-    assert df.iloc[0]["vertical"] == "sap"
+    assert df.iloc[0]["vertical"] == "example_primary"
     assert df.iloc[0]["suggested_action"] == "skip"
-    assert df.iloc[0]["scored_by_model"] == "rubric:sap-jd-years-disqualifier"
+    assert df.iloc[0]["scored_by_model"] == "rubric:example-primary-jd-years-disqualifier"
     # a "years" skip carries the vertical's reasoning_years text
-    assert df.iloc[0]["reasoning"] == cfg.verticals["sap"].reasoning_years
+    assert df.iloc[0]["reasoning"] == cfg.verticals["example_primary"].reasoning_years
 
 
 # ---------- hard-ineligible pre-label (added 2026-07-14, carve-out) ----------
@@ -514,9 +511,9 @@ def test_hard_ineligible_phrase_matches_case_insensitive():
 def test_dump_unscored_routes_hard_ineligible_before_disqualifiers(tmp_path):
     clean_p = _make_clean(tmp_path, [
         # clearance phrase AND a disqualifying years requirement -> ineligible wins
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap",
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary",
          "jd_text": "Active security clearance. 8+ years of experience. " + "x" * 200},
-        {"job_id": "bbbbbbbb", "title": "SAP ACM Analyst", "vertical": "sap",
+        {"job_id": "bbbbbbbb", "title": "Widget Assembly Analyst", "vertical": "example_primary",
          "jd_text": "2+ years of experience preferred. " + "x" * 200},
         # out-of-lane row with a clearance phrase -> stays out-of-lane
         {"job_id": "cccccccc", "title": "Chef", "vertical": "",
@@ -532,7 +529,7 @@ def test_dump_unscored_routes_hard_ineligible_before_disqualifiers(tmp_path):
     assert [r["job_id"] for r in inel_rows] == ["aaaaaaaa"]
     assert inel_rows[0]["_ineligible_phrase"] == "active security clearance"
     # the years disqualifier never saw the row
-    assert (tmp_path / "auto_skip_sap.jsonl").read_text().strip() == ""
+    assert (tmp_path / "auto_skip_example_primary.jsonl").read_text().strip() == ""
     # out-of-lane row stayed in auto_skip.jsonl
     ool = [json.loads(l)["job_id"] for l in
            (tmp_path / "auto_skip.jsonl").read_text().splitlines() if l.strip()]
@@ -542,8 +539,8 @@ def test_dump_unscored_routes_hard_ineligible_before_disqualifiers(tmp_path):
 def test_auto_score_ineligible_materializes_labeled_rows(tmp_path):
     skip_path = tmp_path / "auto_skip_ineligible.jsonl"
     skip_path.write_text(json.dumps({
-        "job_id": "aaaaaaaa", "title": "SAP Functional Analyst",
-        "vertical": "sap", "_ineligible_phrase": "active security clearance",
+        "job_id": "aaaaaaaa", "title": "Widget Functional Analyst",
+        "vertical": "example_primary", "_ineligible_phrase": "active security clearance",
     }) + "\n")
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_ineligible(skip_path, scored_p)
@@ -553,7 +550,7 @@ def test_auto_score_ineligible_materializes_labeled_rows(tmp_path):
     assert r["sponsorship_label"] == "ineligible"
     assert r["sponsorship_evidence"] == "active security clearance"
     assert r["fit_score"] == 0
-    assert r["vertical"] == "sap"
+    assert r["vertical"] == "example_primary"
     assert r["scored_by_model"] == "rubric:hard-ineligible-pre-screen"
     assert r["reasoning"].startswith("Auto-labeled ineligible by deterministic pre-screen")
 
@@ -567,39 +564,39 @@ def test_auto_score_ineligible_noop_on_missing_file(tmp_path):
 # ---------- title-level disqualifier (added 2026-07-14) ----------
 
 def test_disqualify_reason_title_phrase_trips(cfg):
-    sap = cfg.verticals["sap"]
+    example_primary = cfg.verticals["example_primary"]
     clean_jd = "2+ years of experience preferred. " + "x" * 200
-    assert disqualify_reason(sap, clean_jd, "SAP Solution Architect") == "title"
-    assert disqualify_reason(sap, clean_jd, "Director, SAP Programs") == "title"
-    assert disqualify_reason(sap, clean_jd, "SAP Functional Analyst") is None
+    assert disqualify_reason(example_primary, clean_jd, "Widget Solution Architect") == "title"
+    assert disqualify_reason(example_primary, clean_jd, "Director, Widget Programs") == "title"
+    assert disqualify_reason(example_primary, clean_jd, "Widget Functional Analyst") is None
 
 
 def test_disqualify_reason_title_case_insensitive_and_optional(cfg):
-    sap = cfg.verticals["sap"]
-    assert disqualify_reason(sap, "x" * 50, "sap SOLUTION ARCHITECT") == "title"
+    example_primary = cfg.verticals["example_primary"]
+    assert disqualify_reason(example_primary, "x" * 50, "widget SOLUTION ARCHITECT") == "title"
     # title omitted / None / empty — jd-side checks still run, no crash
-    assert disqualify_reason(sap, "x" * 50) is None
-    assert disqualify_reason(sap, "x" * 50, None) is None
-    assert disqualify_reason(sap, "x" * 50, "") is None
+    assert disqualify_reason(example_primary, "x" * 50) is None
+    assert disqualify_reason(example_primary, "x" * 50, None) is None
+    assert disqualify_reason(example_primary, "x" * 50, "") is None
 
 
 def test_disqualify_reason_title_takes_priority_over_years(cfg):
-    sap = cfg.verticals["sap"]
+    example_primary = cfg.verticals["example_primary"]
     jd = "8+ years of experience required. " + "x" * 200
-    assert disqualify_reason(sap, jd, "SAP Solution Architect") == "title"
-    assert disqualify_reason(sap, jd, "SAP Functional Analyst") == "years"
+    assert disqualify_reason(example_primary, jd, "Widget Solution Architect") == "title"
+    assert disqualify_reason(example_primary, jd, "Widget Functional Analyst") == "years"
 
 
 def test_disqualify_reason_title_not_checked_on_vertical_without_title_phrases(cfg):
-    risk_ai = cfg.verticals["risk_ai"]
-    assert disqualify_reason(risk_ai, "x" * 50, "Solution Architect") is None
+    example_secondary = cfg.verticals["example_secondary"]
+    assert disqualify_reason(example_secondary, "x" * 50, "Solution Architect") is None
 
 
 def test_dump_unscored_routes_title_disqualified_to_skip_file(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Solution Architect", "vertical": "sap",
+        {"job_id": "aaaaaaaa", "title": "Widget Solution Architect", "vertical": "example_primary",
          "jd_text": "2+ years of experience preferred. " + "x" * 200},
-        {"job_id": "bbbbbbbb", "title": "SAP ACM Analyst", "vertical": "sap",
+        {"job_id": "bbbbbbbb", "title": "Widget Assembly Analyst", "vertical": "example_primary",
          "jd_text": "2+ years of experience preferred. " + "x" * 200},
     ])
     scored_p = tmp_path / "scored.parquet"
@@ -607,22 +604,22 @@ def test_dump_unscored_routes_title_disqualified_to_skip_file(tmp_path):
     n_judge = dump_unscored(clean_p, scored_p, out_path)
     assert n_judge == 1
     skip_rows = [json.loads(l) for l in
-                 (tmp_path / "auto_skip_sap.jsonl").read_text().splitlines() if l.strip()]
+                 (tmp_path / "auto_skip_example_primary.jsonl").read_text().splitlines() if l.strip()]
     assert [r["job_id"] for r in skip_rows] == ["aaaaaaaa"]
     assert skip_rows[0]["_disqualify_reason"] == "title"
 
 
 def test_auto_score_disqualified_uses_title_reasoning(tmp_path, cfg):
-    skip_path = tmp_path / "auto_skip_sap.jsonl"
+    skip_path = tmp_path / "auto_skip_example_primary.jsonl"
     skip_path.write_text(json.dumps({
-        "job_id": "aaaaaaaa", "title": "SAP Solution Architect",
+        "job_id": "aaaaaaaa", "title": "Widget Solution Architect",
         "_disqualify_reason": "title",
     }) + "\n")
     scored_p = tmp_path / "scored.parquet"
-    n = auto_score_disqualified(cfg.verticals["sap"], skip_path, scored_p)
+    n = auto_score_disqualified(cfg.verticals["example_primary"], skip_path, scored_p)
     assert n == 1
     df = pd.read_parquet(scored_p)
-    assert df.iloc[0]["reasoning"] == cfg.verticals["sap"].reasoning_title
+    assert df.iloc[0]["reasoning"] == cfg.verticals["example_primary"].reasoning_title
     assert df.iloc[0]["fit_score"] == 0
     assert df.iloc[0]["suggested_action"] == "skip"
 
@@ -659,7 +656,7 @@ def test_auto_score_out_of_lane_noop_on_empty_file(tmp_path):
 
 def test_end_to_end_dump_then_auto_score(tmp_path):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "SAP Functional Analyst", "vertical": "sap"},
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Analyst", "vertical": "example_primary"},
         {"job_id": "bbbbbbbb", "title": "Public Health Data Analyst", "vertical": ""},
     ])
     scored_p = tmp_path / "scored.parquet"
@@ -932,10 +929,10 @@ def test_compute_shortlist_top_n_cap_and_min_fit(tmp_path):
     scores = [_valid_score(job_id=f"{i:08x}", fit_score=95 - i * 5) for i in range(12)]
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores)
     out = compute_shortlist(scored_p, clean_p, pipe_d, top_n=10, min_fit=50)
-    assert len(out["main"]["sap"]) == 10  # cap at top_n
-    assert all(r["fit_score"] >= 50 for r in out["main"]["sap"])  # min_fit floor
+    assert len(out["main"]["example_primary"]) == 10  # cap at top_n
+    assert all(r["fit_score"] >= 50 for r in out["main"]["example_primary"])  # min_fit floor
     # Rows with fit_score 45 and 40 (i=10, 11) excluded by min_fit
-    main_ids = {r["job_id"] for r in out["main"]["sap"]}
+    main_ids = {r["job_id"] for r in out["main"]["example_primary"]}
     assert f"{10:08x}" not in main_ids
     assert f"{11:08x}" not in main_ids
 
@@ -950,7 +947,7 @@ def test_compute_shortlist_excluded_footer(tmp_path):
     ]
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores)
     out = compute_shortlist(scored_p, clean_p, pipe_d)
-    main_ids = {r["job_id"] for r in out["main"]["sap"]}
+    main_ids = {r["job_id"] for r in out["main"]["example_primary"]}
     excluded_ids = {r["job_id"] for r in out["excluded"]}
     assert main_ids == {"aaaaaaaa"}
     assert excluded_ids == {"bbbbbbbb"}
@@ -974,7 +971,7 @@ def test_compute_shortlist_suppressed_on_first_skip(tmp_path):
     }
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores, pipeline_state)
     out = compute_shortlist(scored_p, clean_p, pipe_d)
-    assert {r["job_id"] for r in out["main"]["sap"]} == {"aaaaaaaa"}
+    assert {r["job_id"] for r in out["main"]["example_primary"]} == {"aaaaaaaa"}
     assert {r["job_id"] for r in out["suppressed"]} == {"bbbbbbbb"}
     assert {r["job_id"] for r in out["excluded"]}   == set()  # a skip is not an ineligible
 
@@ -985,7 +982,7 @@ def test_compute_shortlist_sort_fit_score_desc(tmp_path):
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores)
     out = compute_shortlist(scored_p, clean_p, pipe_d)
     # 80 > 70 > 60 — main should be in descending fit_score order
-    assert [r["fit_score"] for r in out["main"]["sap"]] == [80, 70, 60]
+    assert [r["fit_score"] for r in out["main"]["example_primary"]] == [80, 70, 60]
 
 
 def test_compute_shortlist_writes_ranks_back_to_scored(tmp_path):
@@ -1005,7 +1002,7 @@ def test_compute_shortlist_empty_when_no_scored(tmp_path):
     out = compute_shortlist(
         tmp_path / "nope.parquet", tmp_path / "nope.parquet", tmp_path / "nope",
     )
-    assert out == {"main": {"ai_eng": [], "risk_ai": [], "sap": []}, "excluded": [], "suppressed": []}
+    assert out == {"main": {"example_tertiary": [], "example_secondary": [], "example_primary": []}, "excluded": [], "suppressed": []}
 
 
 def test_compute_shortlist_output_is_json_serialisable(tmp_path):
@@ -1015,7 +1012,7 @@ def test_compute_shortlist_output_is_json_serialisable(tmp_path):
     out = compute_shortlist(scored_p, clean_p, pipe_d)
     data = json.loads(json.dumps(out, default=str))
     assert "main" in data and "excluded" in data and "suppressed" in data
-    assert data["main"]["sap"][0]["job_id"] == "aaaaaaaa"
+    assert data["main"]["example_primary"][0]["job_id"] == "aaaaaaaa"
 
 
 def test_compute_shortlist_preserves_keywords_to_mirror_as_list(tmp_path):
@@ -1025,12 +1022,12 @@ def test_compute_shortlist_preserves_keywords_to_mirror_as_list(tmp_path):
     rows = [{"job_id": "aaaaaaaa"}]
     scores = [_valid_score(
         job_id="aaaaaaaa", fit_score=80,
-        keywords_to_mirror=["Agricultural Contract Management", "Source to Pay", "S/4HANA"],
+        keywords_to_mirror=["Widget Contract Management", "Source to Pay", "Doohickey"],
     )]
     clean_p, scored_p, pipe_d = _setup_shortlist(tmp_path, rows, scores)
-    kw = compute_shortlist(scored_p, clean_p, pipe_d)["main"]["sap"][0]["keywords_to_mirror"]
+    kw = compute_shortlist(scored_p, clean_p, pipe_d)["main"]["example_primary"][0]["keywords_to_mirror"]
     assert isinstance(kw, list)
-    assert kw == ["Agricultural Contract Management", "Source to Pay", "S/4HANA"]
+    assert kw == ["Widget Contract Management", "Source to Pay", "Doohickey"]
     # Anti-regression: NOT a single string of the array's repr
     assert not isinstance(kw, str)
 
@@ -1041,9 +1038,9 @@ def _sl_row(**over) -> dict:
     """One compute_shortlist "main" row, as render_shortlist_markdown sees it."""
     row = {
         "job_id": "aaaaaaaa",
-        "vertical": "sap",
+        "vertical": "example_primary",
         "company": "Acme",
-        "title": "SAP SD Consultant",
+        "title": "Widget Functional Consultant",
         "location": "Boston, MA",
         "source": "indeed",
         "posted_date": "2026-06-01",
@@ -1052,8 +1049,8 @@ def _sl_row(**over) -> dict:
         "fit_subscores": _split_score(80),
         "sponsorship_label": "opt_ok",
         "sponsorship_evidence": "no visa sponsorship language",
-        "reasoning": "strong ACM overlap",
-        "keywords_to_mirror": ["ACM", "SD", "S/4HANA", "IDoc"],
+        "reasoning": "strong widget assembly overlap",
+        "keywords_to_mirror": ["widget assembly", "gizmo", "doohickey", "calibration"],
         "suggested_action": "tailor",
         "already_seen": False,
         "application_status": "",
@@ -1072,37 +1069,37 @@ def _render(cfg, main: dict, n_scored=10, n_clean=20, date_str="2026-06-06"):
 
 
 def test_render_shortlist_header_counts_and_date(cfg):
-    md = _render(cfg, {"sap": [_sl_row()]}, n_scored=7, n_clean=99)
+    md = _render(cfg, {"example_primary": [_sl_row()]}, n_scored=7, n_clean=99)
     assert md.startswith("# Shortlist — 2026-06-06\n")
     assert "(7 of 99 scored, top 25 per vertical with fit >= 50)" in md
 
 
 def test_render_shortlist_row_fields(cfg):
-    md = _render(cfg, {"sap": [_sl_row()]})
-    assert "### 1. 80 — Acme — SAP SD Consultant" in md
+    md = _render(cfg, {"example_primary": [_sl_row()]})
+    assert "### 1. 80 — Acme — Widget Functional Consultant" in md
     assert "- **job_id:** `aaaaaaaa`" in md
     assert "- **location:** Boston, MA · **source:** indeed · **posted:** 2026-06-01" in md
     assert "- **sponsorship:** opt_ok — \"no visa sponsorship language\"" in md
-    assert "- **why:** strong ACM overlap" in md
+    assert "- **why:** strong widget assembly overlap" in md
     assert "- **suggested:** tailor" in md
     assert "- **verify E-Verify** before submitting (manual v1 step)" in md
     assert "- https://x/1" in md
 
 
 def test_render_shortlist_mirrors_only_the_first_three_keywords(cfg):
-    md = _render(cfg, {"sap": [_sl_row()]})
-    assert "- **mirror in tailoring:** ACM, SD, S/4HANA" in md
+    md = _render(cfg, {"example_primary": [_sl_row()]})
+    assert "- **mirror in tailoring:** widget assembly, gizmo, doohickey" in md
     assert "IDoc" not in md
 
 
 def test_render_shortlist_handles_missing_keywords(cfg):
     row = _sl_row()
     del row["keywords_to_mirror"]
-    assert "- **mirror in tailoring:** \n" in _render(cfg, {"sap": [row]})
+    assert "- **mirror in tailoring:** \n" in _render(cfg, {"example_primary": [row]})
 
 
 def test_render_shortlist_subscore_breakdown(cfg):
-    md = _render(cfg, {"sap": [_sl_row(fit_score=80)]})
+    md = _render(cfg, {"example_primary": [_sl_row(fit_score=80)]})
     sub = _split_score(80)
     assert (f"- **fit:** 80 (title {sub['title']} / skills {sub['skills']} "
             f"/ seniority {sub['seniority']} / domain {sub['domain']})") in md
@@ -1110,25 +1107,25 @@ def test_render_shortlist_subscore_breakdown(cfg):
 
 def test_render_shortlist_accepts_json_encoded_subscores(cfg):
     """scored.parquet stores fit_subscores as a JSON string."""
-    md = _render(cfg, {"sap": [_sl_row(fit_subscores=json.dumps(_split_score(80)))]})
+    md = _render(cfg, {"example_primary": [_sl_row(fit_subscores=json.dumps(_split_score(80)))]})
     assert "- **fit:** 80 (title 30 / skills 30 / seniority 20 / domain 0)" in md
 
 
 def test_render_shortlist_numbers_rows_within_a_section(cfg):
     rows = [_sl_row(job_id=f"{i:08x}", fit_score=90 - i) for i in range(3)]
-    md = _render(cfg, {"sap": rows})
+    md = _render(cfg, {"example_primary": rows})
     for i in range(1, 4):
         assert f"### {i}. " in md
 
 
 def test_render_shortlist_status_is_new_unless_already_seen(cfg):
-    md = _render(cfg, {"sap": [_sl_row(already_seen=False,
+    md = _render(cfg, {"example_primary": [_sl_row(already_seen=False,
                                        application_status="applied")]})
     assert "- **status:** new" in md
 
 
 def test_render_shortlist_status_uses_application_status_when_seen(cfg):
-    md = _render(cfg, {"sap": [_sl_row(already_seen=True,
+    md = _render(cfg, {"example_primary": [_sl_row(already_seen=True,
                                        application_status="applied")]})
     assert "- **status:** applied" in md
 
@@ -1141,12 +1138,12 @@ def test_render_shortlist_sections_follow_config_order(cfg):
 
 def test_render_shortlist_section_header_carries_its_count(cfg):
     rows = [_sl_row(job_id=f"{i:08x}") for i in range(2)]
-    md = _render(cfg, {"sap": rows})
-    assert f"## {cfg.verticals['sap'].display_name} (2)" in md
+    md = _render(cfg, {"example_primary": rows})
+    assert f"## {cfg.verticals['example_primary'].display_name} (2)" in md
 
 
 def test_render_shortlist_empty_vertical_gets_a_placeholder(cfg):
-    md = _render(cfg, {"sap": [_sl_row()]})
+    md = _render(cfg, {"example_primary": [_sl_row()]})
     # the two other configured verticals have no rows
     assert md.count("No keepers today in this vertical.") == len(cfg.names) - 1
 
@@ -1169,35 +1166,35 @@ class TestRenderShortlistInvariants:
     def test_over_cap_section_raises(self, cfg):
         rows = [_sl_row(job_id=f"{i:08x}") for i in range(26)]
         with pytest.raises(AssertionError, match="exceeds cap 25"):
-            _render(cfg, {"sap": rows})
+            _render(cfg, {"example_primary": rows})
 
     def test_exactly_at_cap_is_allowed(self, cfg):
         rows = [_sl_row(job_id=f"{i:08x}") for i in range(25)]
-        assert "### 25. " in _render(cfg, {"sap": rows})
+        assert "### 25. " in _render(cfg, {"example_primary": rows})
 
     def test_cross_vertical_leak_raises(self, cfg):
         with pytest.raises(AssertionError, match="leaked into"):
-            _render(cfg, {"sap": [_sl_row(vertical="ai_eng")]})
+            _render(cfg, {"example_primary": [_sl_row(vertical="example_tertiary")]})
 
     def test_below_min_fit_raises(self, cfg):
         with pytest.raises(AssertionError, match="fit 49 < 50"):
-            _render(cfg, {"sap": [_sl_row(fit_score=49)]})
+            _render(cfg, {"example_primary": [_sl_row(fit_score=49)]})
 
     def test_fit_exactly_50_is_allowed(self, cfg):
-        assert "### 1. 50 " in _render(cfg, {"sap": [_sl_row(fit_score=50)]})
+        assert "### 1. 50 " in _render(cfg, {"example_primary": [_sl_row(fit_score=50)]})
 
     def test_subscores_not_summing_to_fit_raises(self, cfg):
         row = _sl_row(fit_score=80, fit_subscores={"title": 30, "skills": 30,
                                                    "seniority": 20, "domain": 5})
         with pytest.raises(AssertionError, match="!= fit_score 80"):
-            _render(cfg, {"sap": [row]})
+            _render(cfg, {"example_primary": [row]})
 
     def test_ineligible_row_in_main_raises(self, cfg):
         with pytest.raises(AssertionError, match="ineligible in main"):
-            _render(cfg, {"sap": [_sl_row(sponsorship_label="ineligible")]})
+            _render(cfg, {"example_primary": [_sl_row(sponsorship_label="ineligible")]})
 
     def test_the_first_bad_row_raises_before_rendering_it(self, cfg):
         """Fail loud, not "render 24 rows and drop one"."""
         rows = [_sl_row(job_id="aaaaaaaa"), _sl_row(job_id="bbbbbbbb", fit_score=10)]
         with pytest.raises(AssertionError):
-            _render(cfg, {"sap": rows})
+            _render(cfg, {"example_primary": rows})

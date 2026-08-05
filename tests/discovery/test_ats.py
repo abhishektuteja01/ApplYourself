@@ -40,7 +40,7 @@ class MockContext:
 def test_greenhouse_rows_shape(monkeypatch):
     monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
     payload = {"jobs": [{
-        "title": "SAP ACM Consultant",
+        "title": "Widget Assembly Consultant",
         "absolute_url": "https://boards.greenhouse.io/acme/jobs/123",
         "content": "&lt;p&gt;" + "x" * 250 + "&lt;/p&gt;",
         "location": {"name": "New York, NY"},
@@ -53,24 +53,24 @@ def test_greenhouse_rows_shape(monkeypatch):
     r = res.rows[0]
     assert r["site"] == "greenhouse"
     assert r["company"] == "Acme AI"
-    assert r["title"] == "SAP ACM Consultant"
+    assert r["title"] == "Widget Assembly Consultant"
     assert r["job_url"] == "https://boards.greenhouse.io/acme/jobs/123"
     assert r["location"] == "New York, NY"
     assert r["date_posted"] == date(2026, 7, 1)
     assert len(r["description"]) >= 250
-    assert r["vertical"] == "sap"
+    assert r["vertical"] == "example_primary"
 
 def test_greenhouse_rows_skips_incomplete_items(monkeypatch):
     monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
     payload = {"jobs": [{"title": "", "absolute_url": "https://x"},
-                        {"title": "SAP ACM Consultant"}]}
+                        {"title": "Widget Assembly Consultant"}]}
     monkeypatch.setattr(greenhouse, "fetch_json", lambda url, **kw: payload)
     assert len(GreenhouseSource().fetch(MockContext()).rows) == 0
 
 def test_lever_rows_assembles_lists_and_maps_salary(monkeypatch):
     monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Acme AI", "lever", "acmeai")])
     payload = [{
-        "text": "SAP ACM Consultant",
+        "text": "Widget Assembly Consultant",
         "hostedUrl": "https://jobs.lever.co/acme/ab-1",
         "description": "<p>Intro paragraph.</p>",
         "lists": [{"text": "Requirements", "content": "<li>Widgets</li><li>Gizmos</li>"}],
@@ -99,7 +99,7 @@ def test_lever_rows_assembles_lists_and_maps_salary(monkeypatch):
 def test_lever_rows_falls_back_to_description_plain(monkeypatch):
     monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Acme AI", "lever", "acmeai")])
     payload = [{
-        "text": "SAP ACM Consultant",
+        "text": "Widget Assembly Consultant",
         "hostedUrl": "https://jobs.lever.co/acme/1",
         "descriptionPlain": "plain body",
     }]
@@ -109,7 +109,7 @@ def test_lever_rows_falls_back_to_description_plain(monkeypatch):
 def test_ashby_rows_salary_from_compensation_tiers(monkeypatch):
     monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Acme AI", "ashby", "acmeai")])
     payload = {"jobs": [{
-        "title": "SAP ACM Consultant",
+        "title": "Widget Assembly Consultant",
         "jobUrl": "https://jobs.ashbyhq.com/acme/j1",
         "descriptionHtml": "<p>Body text</p>",
         "location": "San Francisco",
@@ -143,7 +143,7 @@ def test_scrape_boards_isolates_per_company_failures(monkeypatch):
     def fake_fetch(url, **kw):
         if "badslug" in url:
             raise http.CareersError("board not found (404)", status=404, permanent=True)
-        return {"jobs": [{"title": "SAP ACM Consultant", "absolute_url": "https://x/1",
+        return {"jobs": [{"title": "Widget Assembly Consultant", "absolute_url": "https://x/1",
                           "content": "a" * 250}]}
     monkeypatch.setattr(greenhouse, "fetch_json", fake_fetch)
     res = GreenhouseSource().fetch(MockContext())
@@ -160,7 +160,7 @@ def test_scrape_boards_isolates_non_json_body(monkeypatch):
     def fake_get(url, timeout=None, headers=None):
         if "wallslug" in url:
             return _HtmlResponse()
-        return _JsonResponse({"jobs": [{"title": "SAP ACM Consultant",
+        return _JsonResponse({"jobs": [{"title": "Widget Assembly Consultant",
                                         "absolute_url": "https://x/1",
                                         "content": "a" * 250}]})
     monkeypatch.setattr(http.requests, "get", fake_get)

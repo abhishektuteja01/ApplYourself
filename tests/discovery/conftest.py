@@ -1,7 +1,7 @@
 """Shared fixtures. Tests never read the gitignored profile/verticals.yaml —
-the committed tests/fixtures/verticals.yaml (the real configured verticals,
-kept content-identical to the live config) is injected into the
-src.verticals singleton for every test."""
+the committed tests/discovery/fixtures/verticals.yaml (three synthetic
+verticals, a byte-identical mirror of tests/fixtures/verticals.yaml) is
+injected into the src.verticals singleton for every test."""
 
 from pathlib import Path
 

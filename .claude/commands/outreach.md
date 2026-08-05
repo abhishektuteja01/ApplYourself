@@ -66,7 +66,7 @@ Read:
 - `jobs/scored.parquet` + `jobs/clean.parquet` row (reasoning, keywords,
   full JD body)
 - `applications/<entry>/trace.md` where `<entry>` is `state.yaml.tailored_dirs[]`'s
-  last entry (already vertical-prefixed, e.g. `risk_ai/2026-06-17_acme_..._a1b2c3d4`)
+  last entry (already vertical-prefixed, e.g. `<vertical>/2026-06-17_acme_..._a1b2c3d4`)
   IF that list is non-empty (so the outreach knows which bullets your
   resume leads with)
 - `profile/contacts.yaml` (filter by company name OR tags overlap; PII;

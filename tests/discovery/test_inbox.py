@@ -14,7 +14,7 @@ company: Acme Corp
 title: Machine Learning Engineer
 url: https://acme.example/jobs/1
 location: Boston, MA
-vertical: ai_eng
+vertical: example_tertiary
 ---
 We need someone to build model pipelines.
 """
@@ -51,11 +51,11 @@ def test_parse_frontmatter_vertical_wins_over_classifier(tmp_path, cfg):
     )
     assert cleaning.classify_vertical_from_title("Totally Unclassifiable Role") == ""
     row = inbox.parse_inbox_file(write(tmp_path, "a.md", text))
-    assert row["vertical"] == "ai_eng"
+    assert row["vertical"] == "example_tertiary"
 
 
 def test_parse_missing_vertical_falls_back_to_classifier(tmp_path, cfg):
-    text = VALID.replace("vertical: ai_eng\n", "")
+    text = VALID.replace("vertical: example_tertiary\n", "")
     row = inbox.parse_inbox_file(write(tmp_path, "a.md", text))
     assert row["vertical"] == cleaning.classify_vertical_from_title(
         "Machine Learning Engineer"

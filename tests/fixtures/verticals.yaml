@@ -1,309 +1,59 @@
-# Test fixture — mirror of the real profile/verticals.yaml.
+# Synthetic test fixture — three fictional verticals. Contains no real
+# search terms, exclude lists, or skill weights.
 #
-# Kept byte-identical to the real config below the banner so the strict loader
-# and the classifier/title-gate tests run against production rules.
-# test_fixtures_mirror_real_config guards the sync.
+# Mirrored byte-for-byte at tests/fixtures/verticals.yaml and
+# tests/discovery/fixtures/verticals.yaml; TestFixtureMirrors enforces it.
+# Shaped after profile/verticals.example.yaml and enriched so every schema
+# branch is covered: include-gate on, strong-keep override, phrase/title/years
+# disqualifiers, regex + literal + compound classifier rules, and one vertical
+# owning rules at two priorities.
 #
-# Contains real job-search strategy (search terms, exclude lists, skill
-# weights). Sanitize before pushing this repo anywhere public.
-
-# Vertical registry — single source of truth. USER DATA, gitignored.
-# `verticals` order = shortlist order (first = primary).
-# `classifier_rules` order = ambiguity policy (first match wins).
+# Real-config coverage lives in tests/test_real_config_drift.py, which runs
+# only on a machine that has profile/verticals.yaml.
 
 schema_version: 1
-default_vertical: ai_eng
+# Deliberately not the first vertical: nothing may assume default == names[0].
+default_vertical: example_tertiary
 
 verticals:
-  sap:
-    display_name: SAP
-    # Scoring + tailoring resume for this vertical (read by score-judge.md).
-    resume_file: profile/verticals/sap/resume_sap.md
-    # vertical 1: SAP (primary).
+  example_primary:
+    display_name: Widget Engineering
+    resume_file: profile/verticals/example_primary/resume_example_primary.md
+    # No term contains "Engineer" — "engineer" is a title disqualifier here.
     search_terms:
-      # SAP functional spine
-      - SAP Functional Analyst
-      - SAP Functional Consultant
-      - SAP ACM
-      - SAP Commodity Management
-      - SAP ETRM
-      - SAP CTRM
-      - SAP IS-OIL
-      - SAP S/4HANA Consultant
-      - SAP Business Analyst
-      # Module/process spine — what in-lane keepers are actually titled.
-      - SAP Analyst
-      - SAP Systems Analyst
-      - SAP FICO
-      - SAP SD
-      - SAP MM
-      - SAP EWM
-      - SAP Master Data
-      - SAP Order to Cash
-      # Adjacency tail: classifier_rules still labels these off-search.
-      - Trade Reconciliation Analyst
-    # LinkedIn: reduced term set (429-rate-limit mitigation). The niche
-    # commodity terms (ACM/ETRM/CTRM/Commodity Management) are omitted here —
-    # they returned ~0 rows across runs; they stay in search_terms for the
-    # cheaper Indeed/Google passes.
+      - Widget Functional Consultant
+      - Widget Platform Analyst
+      - Widget Operations Analyst
+      - Gizmo Systems Consultant
+      - Gizmo Reconciliation Analyst
     linkedin_terms:
-      - SAP Functional Consultant
-      - SAP S/4HANA Consultant
-      - SAP Business Analyst
-      - SAP Analyst
-      - SAP Systems Analyst
-      - SAP FICO
-      - SAP SD
-      - SAP MM
-      - SAP EWM
-    # Off-lane occupations. Word-boundary; manual rows exempt. Ambiguous words
-    # (maintenance/government/security) left to the scoring disqualifier.
+      - Widget Functional Consultant
+      - Gizmo Systems Consultant
+    title_include_terms:
+      - widget
+      - gizmo
+      - doohickey
     title_exclude_terms:
-      - civil engineer
-      - mechanical engineer
-      - nurse
-      - physician
-      - clinical
-      - dental
-      - pharmacy
-      - therapist
-      - counselor
-      - social work
-      - teacher
-      - welder
-      - technician
-      - mechanic
-      - electrician
-      - plumber
-      - carpenter
-      - machinist
-      - forklift
-      - driver
-      - warehouse
-      - facilities
-      - custodian
-      - janitor
-      - groundskeeper
-      - housekeeping
-      - cook
-      - chef
-      - firefighter
-      - police
-      - tree trimmer
-      # Seniority + adjacent families — mirror of disqualifier.title_phrases
-      # (KEEP IN SYNC); word-boundary.
       - senior
-      - manager
-      - director
       - principal
       - lead
-      - architect
       - head of
-      - vice president
-      - buyer
-      - sourcing
-      - procurement
-      - engineer
-      - financial
-      - security
-      # Include-gate negatives: kill in-lane leakage that passes
-      # title_include_terms (SAP tech tracks, HR, non-functional SAP roles,
-      # analytics/BI, competing ERPs). Word-boundary.
-      - abap
-      - basis
-      - fiori
-      - bw
-      - hana developer
-      - hcm
-      - payroll
-      - ecpayroll
-      - success factor
-      - hris
-      - developer
-      - development
-      - backend
-      - data scientist
-      - data science
-      - analytics
-      - analytics cloud
-      - sac
-      - business objects
-      - businessobjects
-      - alteryx
-      - pmo
-      - scrum
-      - coordinator
-      - administrator
-      - training
-      - archiving
-      - ilm
-      - cpi
-      - btp
-      - cloud integration
-      - cloud functional
-      - data transformation
-      - commerce cloud
-      - adobe forms
-      - adobe
-      - workiva
-      - tosca
-      - grc
-      - ixp
-      - account executive
-      - delivery executive
-      - solution advisor
-      - solution sales
-      - sales head
-      - sales compensation
-      - commissions
-      - xactly
-      - client engagement
-      - vendor management
-      - staffing
-      - program management
-      - process executive
-      - process expert
-      - fp&a
-      - ptc
-      - f&o
-      - healthcare
-      - oracle
-      - workday
-      - netsuite
-      - peoplesoft
-      - dynamics
-      - d365
-      - jd edwards
-      - jde
-      - ifs
-      - qad
-      - ellucian
-      - salesforce
-      - servicenow
-      - veeva
-      - blue yonder
-      - manhattan
-      - acumatica
-      - appian
-      - mulesoft
-      - boomi
-      - onestream
-      - xstore
-      - creatio
-      - taleo
-      - hyperion
-      - anaplan
-      - infor
-      - business central
-      - banner
-      - colleague
-    # Title include-gate: keep only titles with a genuine SAP-functional signal
-    # (SAP, a module/process token, or a vendor-less functional role).
-    # Word-boundary; manual rows exempt. Keep iff (include AND NOT exclude).
-    title_include_terms:
-      - sap
-      - erp
-      - s/4hana
-      - s4hana
-      - s/4
-      - s4 hana
-      - 4hana
-      - fico
-      - fi/co
-      - fi-co
-      - fica
-      - fscm
-      - ewm
-      - mdg
-      - ibp
-      - gts
-      - isu
-      - brim
-      - vim
-      - brf
-      - rrb
-      - rsh
-      - mm
-      - sd
-      - pp
-      - qm
-      - ps
-      - tm
-      - wm
-      - pm
-      - eam
-      - mrp
-      - scm
-      - b2r
-      - a2r
-      - rtr
-      - stp
-      - p2s
-      - p2p
-      - ptp
-      - otc
-      - o2c
-      - order to cash
-      - procure to pay
-      - source to pay
-      - plan to stock
-      - materials management
-      - material master
-      - plant maintenance
-      - production planning
-      - project systems
-      - transportation management
-      - warehouse management
-      - funds management
-      - grant management
-      - group reporting
-      - receivables management
-      - record to report
-      - master data governance
-      - functional consultant
-      - functional analyst
-      - functional specialist
-      - key user
-    # Skill weights for the jd_skill_overlap axis (judge-only). 0-10 ints;
-    # ACM/commodity > generic SAP > all else. Attested experience only.
+      - clinical
+      - nurse
+      - rival doohickey
     skill_weights:
-      sap:
-        acm: 10                   # Agricultural Contract Management — 2yr production spine
-        s4hana: 9                 # S/4HANA — global rollouts LATAM/EMEA/APAC
-        bw_reconciliation: 9      # Daily ACM-to-BW MTM position reconciliation
-        production_support: 8     # Daily defect triage, fix specification, DEV→UAT cycle
-        global_rollout: 7         # Multi-country implementation and localization support
-        uat: 7                    # UAT validation cycle across the contract-to-settlement chain
-        signavio: 7               # Process mapping and risk/controls review (O&G engagement)
-        sd_integration: 6         # ACM–SD sales-contract touchpoints (not standalone SD config)
-        fi_integration: 5         # ACM–FI settlement posting validation
+      widgets:
+        widget_assembly: 10
+        gizmo_calibration: 7
       domain:
-        commodities_trading: 10   # Fortune 100 agri-commodity trading client, 2+ years
-        mark_to_market: 10        # Daily stock MTM risk report — owned end-to-end
-        risk_recon: 9             # P&L validation, long/short exposure, position reconciliation
-        sox_rcm: 8                # SOX/Non-SOX RCM maintenance through stakeholder sign-off
-        oil_gas: 5                # Downstream O&G client (secondary; Signavio engagement)
+        widget_supply_chain: 9
     disqualifier:
-      # JD-text phrase disqualifier: non-ACM SAP modules, competing ERPs,
-      # architect-level pools. ("sap pm"/"sap pp" also catch PMO/PPM — fine.)
       max_years: 4
       phrases:
-        - successfactors
-        - payroll
-        - hcm
-        - sap pm
-        - sap pp
-        - production planning
-        - plant maintenance
-        - sap basis
-        - sap btp
-        - concur
+        - rival widget suite
+        - legacy gizmo stack
+        - widget payroll module
         - solution architect
-        - workday
-        - netsuite
-        - peoplesoft
-      # Title disqualifier: seniority + adjacent families. Substring match
-      # ("lead" catches "leader", intended).
       title_phrases:
         - senior
         - manager
@@ -317,576 +67,60 @@ verticals:
         - sourcing
         - procurement
         - engineer
-        - financial
-        - security
-      reasoning_title: >-
-        Auto-skipped: title matches a sap title-disqualifier phrase (seniority
-        or adjacent family — buyer/sourcing/procurement/engineer/financial/security).
-      scored_by: "rubric:sap-jd-years-disqualifier"
+      scored_by: "rubric:example-primary-jd-years-disqualifier"
       reasoning_phrase: >-
-        Auto-skipped: JD contains a sap disqualifier phrase (non-ACM SAP module,
-        competing ERP, or architect-level pool).
+        Auto-skipped: JD contains an example_primary disqualifier phrase
+        (competing vendor stack or architect-level pool).
+      reasoning_title: >-
+        Auto-skipped: title matches an example_primary title-disqualifier
+        phrase (seniority or adjacent family).
       reasoning_years: >-
-        Auto-skipped: JD requires more years of experience than this vertical's
-        max_years.
+        Auto-skipped: JD requires more years of experience than this
+        vertical's max_years.
 
-  ai_eng:
-    display_name: AI Engineering
-    # Scoring + tailoring resume for this vertical (AI-forward narrative).
-    resume_file: profile/verticals/ai_eng/resume_ai.md
-    # vertical 2: AI Engineering. Lane: AI/LLM application engineering
-    # (agents, full-stack AI products, FDE). MLE/DS/research -> out-of-lane;
-    # AI Risk/Governance -> risk_ai.
+  example_secondary:
+    display_name: Sprocket Compliance
+    resume_file: profile/verticals/example_secondary/resume_example_secondary.md
     search_terms:
-      # AI/LLM application spine
-      - AI Engineer
-      - Generative AI Engineer
-      - GenAI Engineer
-      - LLM Engineer
-      - AI Software Engineer
-      - AI Application Engineer
-      - Full Stack AI Engineer
-      # Adjacency spine: highest-yield titles by scored-keeper count that the
-      # narrow term set was missing (board-crawl finds only).
-      - Applied AI Engineer
-      - Artificial Intelligence Engineer
-      - Agentic AI Engineer
-      - AI Applications Engineer
-      - AI Developer
-      - Founding AI Engineer
-      - Software Engineer, Applied AI
-      # customer-facing build tail
-      - Forward Deployed Engineer
-      - AI Solutions Engineer
-      - Forward Deployed AI Engineer
-    # Reduced set (429-rate-limit mitigation): the adjacency tail rides
-    # Indeed/Google instead.
+      - Sprocket Risk
+      - Sprocket Validation
+      - Sprocket Governance
+      - Sprocket Risk Management
+      - Sprocket Compliance Analyst
+      - Cog Governance Analyst
     linkedin_terms:
-      - AI Engineer
-      - Generative AI Engineer
-      - GenAI Engineer
-      - LLM Engineer
-      - AI Software Engineer
-      - AI Application Engineer
-      - Full Stack AI Engineer
-      - Applied AI Engineer
-      - Artificial Intelligence Engineer
-      - Agentic AI Engineer
-      - Forward Deployed Engineer
-      - AI Solutions Engineer
+      - Sprocket Risk
+      - Sprocket Governance
     title_include_terms:
-      - "ai"
-      - "a.i."
-      - "artificial intelligence"
-      - "genai"
-      - "gen ai"
-      - "generative ai"
-      - "generative"
-      - "llm"
-      - "llms"
-      - "agentic"
-      - "agent"
-      - "agents"
-      - "agentforce"
-      - "applied ai"
-      - "copilot"
-      - "rag"
-      - "prompt"
-      - "chatbot"
-      - "nlp"
-      - "code generation"
-      - "evals"
-      - "evaluations"
-      - "forward deployed"
-      - "forward-deployed"
-      - "foward deploy"
-      - "forward deployment"
-      - "fde"
-      - "deployed"
+      - sprocket
+      - governance
+      - compliance
+      - quantitative sprocket
     title_exclude_terms:
-      - "Senior"
-      - "Sr"
-      - "Staff"
-      - "Principal"
-      - "Lead"
-      - "Director"
-      - "VP"
-      - "Vice President"
-      - "Head"
-      - "Manager"
-      - "Distinguished"
-      - "SMTS"
-      - "AVP"
-      - "SVP"
-      - "RVP"
-      - "scientist"
-      - "researcher"
-      - "research"
-      - "postdoc"
-      - "postdoctoral"
-      - "phd"
-      - "consultant"
-      - "strategist"
-      - "account executive"
-      - "sales"
-      - "presales"
-      - "pre-sales"
-      - "recruiter"
-      - "evangelist"
-      - "advocate"
-      - "coach"
-      - "mentor"
-      - "instructor"
-      - "professor"
-      - "adjunct"
-      - "trainer"
-      - "annotator"
-      - "annotation"
-      - "designer"
-      - "product owner"
-      - "product manager"
-      - "specialist"
-      - "supervisor"
-      - "intern"
-      - "internship"
-      - "co-op"
-      - "residency"
-      - "accelerator"
-      - "working student"
-      - "extern"
-      - "apprentice"
-      - "robotics"
-      - "robotic"
-      - "autonomy"
-      - "autonomous"
-      - "automotive"
-      - "vehicle"
-      - "drone"
-      - "uav"
-      - "perception"
-      - "computer vision"
-      - "lidar"
-      - "radar"
-      - "slam"
-      - "speech"
-      - "voice"
-      - "tts"
-      - "audio"
-      - "reinforcement learning"
-      - "recommendation"
-      - "recsys"
-      - "gameplay"
-      - "post-training"
-      - "pretraining"
-      - "interpretability"
-      - "foundation model"
-      - "infrastructure"
-      - "infra"
-      - "platform"
-      - "devops"
-      - "devsecops"
-      - "mlops"
-      - "llmops"
-      - "sre"
-      - "site reliability"
-      - "kubernetes"
-      - "inference"
-      - "serving"
-      - "gpu"
-      - "hpc"
-      - "cluster"
-      - "kernel"
-      - "observability"
-      - "data engineer"
-      - "data scientist"
-      - "data science"
-      - "analytics"
-      - "qa"
-      - "sdet"
-      - "clearance"
-      - "ts/sci"
-      - "polygraph"
-      - "fulfillment"
-      - "enrollment"
-      - "pharmacy"
-      - "warehouse"
-      - "m/f/d"
-      - "m/w/d"
-      - "f/m/x"
-      - "h/f"
-      - "f/h"
-      - "all genders"
-      - "gn"
-      - "london"
-      - "paris"
-      - "berlin"
-      - "dublin"
-      - "barcelona"
-      - "emea"
-      - "latam"
-      - "dach"
-      - "korea"
-      - "japan"
-      - "india"
-      - "uae"
-      - "toronto"
-      - "vancouver"
-      - "canada"
-      - "netherlands"
-      - "portugal"
-      - "poland"
-      - "germany"
-      - "greece"
-    # Skill weights (judge-only). Anchored to B-PROVA-01/04/05/06,
-    # B-CAPTRACK-01/02/04/05, B-TA-01. Ceiling 9 (< sap.acm's 10). No Options
-    # ML — MLE is out-of-lane.
-    skill_weights:
-      ai_llm:
-        agentic_llm_systems: 9      # B-PROVA-01 — deployed multi-agent system, judge/orchestrator, retry logic
-        llm_api_integration: 8      # B-PROVA-01 — server-side Anthropic API, structured/schema-validated outputs
-        ai_evaluation_testing: 8    # B-PROVA-06 — AI regression suite, score-drift harness gating CI/CD
-        prompt_engineering: 7       # B-PROVA-01 — multi-agent prompt design (SKILL-PROMPT-ENGINEERING)
-        ai_security: 7              # B-PROVA-05 — prompt-injection defenses, LLM bias mitigation
-      software:
-        fullstack_typescript: 8     # B-PROVA-04, B-CAPTRACK-04 — production Next.js/TS/Supabase apps
-        testing_ci_cd: 6            # B-PROVA-04/06 — GitHub Actions pipeline, Jest + Playwright suites
-        api_integration: 6          # B-CAPTRACK-05 — real-time market-data/FX API integration
-        auth_data_isolation: 6      # B-PROVA-04, B-CAPTRACK-04 — JWT auth, OAuth, Row Level Security
-        domain_logic: 5             # B-CAPTRACK-01/02 — deterministic accounting engine, edge-case handling
-        python_sql_fundamentals: 5  # B-TA-01 — Python/Java/SQL instruction (supporting)
-    disqualifier:
-      # PhD-required bundle: kills research-scientist leakage. "required"-only
-      # avoids "PhD preferred" false positives. No CFA/FRM — those are risk_ai.
-      max_years: 4
-      phrases:
-        - phd required
-        - ph.d. required
-        - doctorate required
-        # GPU-systems / AV pool leakage.
-        - autonomous vehicles
-        - cuda
-      # Title disqualifier: research/DS + people-management leakage.
-      # "intern" deliberately NOT listed.
-      title_phrases:
-        - scientist
-        - manager
-      reasoning_title: >-
-        Auto-skipped: title matches an ai_eng title-disqualifier phrase
-        (research/DS or people-management pool).
-      scored_by: "rubric:ai-eng-jd-disqualifier"
-      reasoning_phrase: >-
-        Auto-skipped: JD contains an ai_eng disqualifier phrase (PhD/doctorate
-        required, CUDA/GPU, or autonomous vehicles).
-      reasoning_years: >-
-        Auto-skipped: JD requires more years of experience than this vertical's
-        max_years.
-
-  risk_ai:
-    display_name: Risk-AI
-    # Scoring + tailoring resume for this vertical (model-risk/AI-governance
-    # narrative).
-    resume_file: profile/verticals/risk_ai/resume_risk.md
-    # vertical 3: Risk-AI (secondary). Lean: Model Risk/Validation + AI
-    # Governance/Compliance over trading-risk (tail reaches via classifier only).
-    # Bare noun phrases, not "<X> Analyst": in-lane keepers are titled
-    # Manager/Lead/Associate/Officer/VP just as often as Analyst, and seniority
-    # is filtered downstream by title_exclude_terms + disqualifier.title_phrases.
-    search_terms:
-      # governance/AI lean
-      - Model Risk
-      - Model Validation
-      - Model Governance
-      - Model Risk Management
-      - Model Development
-      - AI Governance
-      - AI Compliance
-      - AI Risk
-      - Responsible AI
-      # Trading-risk tail: classifier_rules still labels these off-search.
-      - Quantitative Risk
-      - Quantitative Analytics
-      - Market Risk Analyst
-      - Credit Risk Analyst
-    # LinkedIn: reduced set (429-rate-limit mitigation).
-    linkedin_terms:
-      - Model Risk
-      - Model Validation
-      - Model Governance
-      - AI Governance
-      - AI Compliance
-      - AI Risk
-      - Responsible AI
-      - Quantitative Risk
-    # Off-lane occupations. Word-boundary; manual rows exempt. Bare
-    # "government"/"validation" NOT excluded (in-lane here).
-    title_exclude_terms:
-      - civil engineer
-      - mechanical engineer
-      - nurse
-      - physician
-      - clinical
-      - dental
-      - pharmacy
-      - therapist
-      - counselor
-      - social work
-      - teacher
-      - welder
-      - technician
-      - mechanic
-      - electrician
-      - plumber
-      - carpenter
-      - machinist
-      - forklift
-      - driver
-      - warehouse
-      - facilities
-      - custodian
-      - janitor
-      - groundskeeper
-      - housekeeping
-      - cook
-      - chef
-      - firefighter
-      - police
-      - tree trimmer
-      # Adjacent families — mirror of disqualifier.title_phrases (KEEP IN
-      # SYNC); word-boundary. nurse/clinical dup'd above (harmless).
+      - software engineer
+      - cog learning
       - quality
       - clinical
       - privacy
-      - automation
-      - operations
       - nurse
-      - business analyst
-      - data analyst
-      - financial analyst
-      - senior data
-      - systems analyst
-      - business systems
-      - developer
-      - banking
-      - services
-      - policy
-      - compliance specialist
-      # Include-gate negatives: kill in-lane leakage that passes
-      # title_include_terms (security/IT-GRC, SWE/PM, data-governance,
-      # AI-enablement, generic AI/ML/DS). Word-boundary; strong-keep overrides.
-      - cybersecurity
-      - cyber security
-      - cyber
-      - infosec
-      - information security
-      - it security
-      - it risk
-      - it grc
-      - security risk
-      - security governance
-      - security grc
-      - security analyst
-      - security engineer
-      - security architect
-      - security specialist
-      - security
-      - backend
-      - isso
-      - iam
-      - identity
-      - vulnerability
-      - threat
-      - penetration
-      - fedramp
-      - hipaa
-      - cryptography
-      - forensic
-      - endpoint
-      - data protection
-      - insider risk
-      - trust and safety
-      - trust & safety
-      - cloud governance
-      - top secret
-      - logistics
-      - supply chain
-      - aircraft
-      - aviation
-      - subcontractor
-      - food
-      - process safety
-      - environmental
-      - microgrid
-      - catastrophe
-      - geopolitical
-      - geostrategy
-      - fraud
-      - third party
-      - third-party
-      - tprm
-      - vendor
-      - data governance
-      - master data
-      - data catalog
-      - data management
-      - data strategy
-      - data steward
-      - ai enablement
-      - ai adoption
-      - ai implementation
-      - ai readiness
-      - ai solution
-      - ai consultant
-      - ai innovation
-      - ai specialist
-      - ai builder
-      - ai administrator
-      - ai trainer
-      - ai analyst
-      - ai engineer
-      - ai architect
-      - ai product
-      - ai researcher
-      - data scientist
-      - data science
-      - machine learning
-      - ml engineer
-      - artificial intelligence specialist
-      - artificial intelligence implementation
-      - trading risk
-      - hedge fund
-      - front office
-      - software engineer
-      - fullstack
-      - full stack
-      - solutions engineer
-      - solution engineer
-      - platform engineer
-      - product marketing
-      - product manager
-      - product management
-      - presales
-      - pre-sales
-      - servicenow
-      - alation
-      - systems engineer
-      - systems integration
-    # Title include-gate: keep only in-lane titles. Empty => gate OFF.
-    # Word-boundary; manual rows exempt.
-    title_include_terms:
-      - model risk
-      - model validation
-      - model governance
-      - model development
-      - model monitoring
-      - model risk management
-      - ai governance
-      - ai risk
-      - ai compliance
-      - ai assurance
-      - ai audit
-      - ai ethics
-      - ai safety
-      - responsible ai
-      - ai model
-      - ai evaluation
-      - ai red team
-      - red teamer
-      - artificial intelligence risk
-      - artificial intelligence governance
-      - agentic ai risk
-      - ai tech risk
-      - risk analyst
-      - risk management
-      - market risk
-      - enterprise risk
-      - operational risk
-      - risk manager
-      - risk officer
-      - risk analytics
-      - risk modeling
-      - risk model
-      - quantitative risk
-      - financial risk
-      - counterparty risk
-      - credit risk
-      - risk & compliance
-      - risk and compliance
-      - risk assessment
-      - risk & controls
-      - risk and controls
-      - compliance analyst
-      - regulatory compliance
-      - compliance risk
-      - compliance manager
-      - compliance officer
-      - ethics and compliance
-      - ethics & compliance
-      - regulatory governance
-      - financial crimes
-      - grc
-      - governance risk
-      - governance, risk
-      - governance & compliance
-      - governance and compliance
-      - quant model
-      - quantitative model
-      - quant analytics
-    # Strong-keep: in-lane signals that override every exclude.
     title_strong_keep_terms:
-      - model risk
-      - model validation
-      - model/anlys
-      - model/analysis
-      - model/valid
-      - anlys/valid
-      - model governance
-      - model development
-      - model behavior
-      - responsible ai
-      - ai risk management
-      - ai model validation
-      - ai audit
-      - ai auditor
-      - ai red team
-      - red teamer
-      - ai evaluation
-      - ai risk assessment
-      - ai tech risk
-      - model risk management
-    # Skill weights (judge-only). governance/AI > trading_quant; all < sap.acm.
+      - sprocket risk management
     skill_weights:
-      model_risk:
-        sr_11_7_validation: 8       # PROVA — SR 11-7 model-documentation compliance tool
-        ai_governance_compliance: 8 # PROVA — multi-agent judge/orchestrator, gap citations
-        agentic_ai_orchestration: 7 # PROVA — multi-agent LLM system, judge/orchestrator layer (B-PROVA-01)
-      trading_quant:
-        pnl_reconciliation: 5       # CapTrack — realized/unrealized P&L, position reconciliation
-        options_pricing_ml: 5       # Options Pricing ML Predictor — XGBoost vs Black-Scholes
+      sprocket_risk:
+        sprocket_validation: 9
+        sprocket_governance: 8
+      sprocket_quant:
+        sprocket_backtesting: 6
     disqualifier:
-      # JD-text phrase disqualifier: signals the math/stats/finance-PhD pool
-      # with no CS angle. "required"-only avoids "PhD preferred" false positives.
       max_years: 4
       phrases:
         - phd required
         - ph.d. required
         - doctorate required
-        - cfa required
-        - cfa charter required
-        - frm required
-        - frm certification required
-        # Credit/actuarial/AML + front-office trading platforms.
-        # (Bare "stochastic calculus" excluded — false positive as substring.)
-        - loan portfolio
-        - actuary
-        - sanctions screening
-        - murex
-        - calypso
-        # Salesforce-stack + third-party/vendor-risk pools.
-        - salesforce
-        - third party risk
-      # Title disqualifier: non-financial validation/risk families
-      # (quality/clinical/privacy/ops/QA/nursing). Seniority NOT listed (scores
-      # >=70 here, unlike sap). "cyber" excluded.
+        - sprocket charter required
+        - sprocket certification required
+        - legacy sprocket ledger
+        - vendor sprocket risk
       title_phrases:
         - quality
         - clinical
@@ -894,102 +128,102 @@ verticals:
         - automation
         - operations
         - nurse
-        # Generic analyst/developer/banking families. "policy"/"services" are
-        # broad substrings, accepted knowingly.
-        - business analyst
         - data analyst
-        - financial analyst
-        - senior data
-        - systems analyst
-        - business systems
         - developer
-        - banking
-        - services
-        - policy
-        - compliance specialist
-      reasoning_title: >-
-        Auto-skipped: title matches a risk_ai title-disqualifier phrase
-        (non-financial validation/risk or generic analyst/developer/banking
-        family).
-      scored_by: "rubric:risk-ai-jd-disqualifier"
+      scored_by: "rubric:example-secondary-jd-disqualifier"
       reasoning_phrase: >-
-        Auto-skipped: JD contains a risk_ai disqualifier phrase (PhD/CFA/FRM
-        required, credit/actuarial/AML, front-office trading platform, or
-        Salesforce/vendor-risk stack).
+        Auto-skipped: JD contains an example_secondary disqualifier phrase
+        (credential requirement, legacy ledger, or vendor-risk stack).
+      reasoning_title: >-
+        Auto-skipped: title matches an example_secondary title-disqualifier
+        phrase (adjacent validation family or generic analyst/developer).
       reasoning_years: >-
-        Auto-skipped: JD requires more years of experience than this vertical's
-        max_years.
+        Auto-skipped: JD requires more years of experience than this
+        vertical's max_years.
+
+  example_tertiary:
+    display_name: Cog Engineering
+    resume_file: profile/verticals/example_tertiary/resume_example_tertiary.md
+    search_terms:
+      - Cog Engineer
+      - Applied Cog Engineer
+      - Agentic Cog Engineer
+      - Forward Deployed Engineer
+      - Cog Platform Engineer
+    linkedin_terms:
+      - Cog Engineer
+      - Forward Deployed Engineer
+    title_include_terms:
+      - cog
+      - agentic
+      - forward deployed
+    title_exclude_terms:
+      - senior
+      - lead
+      - distinguished
+      - research scientist
+      - cog learning
+    skill_weights:
+      cog_stack:
+        cog_agents: 9
+        cog_platform: 8
+    disqualifier:
+      max_years: 4
+      phrases:
+        - phd required
+        - ph.d. required
+        - doctorate required
+        - autonomous cogs
+        - cog firmware
+      title_phrases:
+        - scientist
+        - manager
+      scored_by: "rubric:example-tertiary-jd-disqualifier"
+      reasoning_phrase: >-
+        Auto-skipped: JD contains an example_tertiary disqualifier phrase
+        (doctorate requirement or embedded/firmware pool).
+      reasoning_title: >-
+        Auto-skipped: title matches an example_tertiary title-disqualifier
+        phrase (research or people-management pool).
+      reasoning_years: >-
+        Auto-skipped: JD requires more years of experience than this
+        vertical's max_years.
 
 out_of_lane:
   reasoning: >-
     Out-of-lane: title contains no in-lane keyword, so title_match=0 and the
     row cannot reach the fit>=50 shortlist.
 
-# Title-classifier fallback for rows with no search term. First match wins.
-# Order = ambiguity policy: SAP > Risk-AI > AI-eng > generic SAP catch-all
-# (bare "Risk Analyst" -> sap). No match -> "".
+# Ordered — first match wins. example_primary owns two rules: a strong signal
+# above everything, and a generic catch-all below everything (ambiguity
+# defaults to primary). Precedence: primary-strong > secondary > tertiary >
+# primary-catch-all.
 classifier_rules:
-  - vertical: sap
-    pattern: '\b(?:sap|acm|s/?4(?:hana)?|etrm|ctrm|o2c|order to cash|sales and distribution|commodit\w*|signavio|mark[- ]to[- ]market|reconciliation|recon|erp)\b'
-  - vertical: risk_ai
-    pattern: '\b(?:model\s+risk|model\s+validation|model\s+development|validation|governance|grc|quant\w*|responsible\s+ai|trading\s+risk|financial\s+risk|market\s+risk|credit\s+risk|operational\s+risk|enterprise\s+risk|risk\s*(?:&|and)\s*compliance|ai\s+risk|ai\s+compliance|artificial\s+intelligence\s+(?:risk|governance|compliance))\b'
-  - vertical: ai_eng
-    pattern: "AI Engineer"
-  - vertical: ai_eng
-    pattern: "AI Software Engineer"
-  # Families the "AI Engineer" literal misses: spelled-out "Artificial
-  # Intelligence", the AI Application(s)/Developer/Agent titles. Ordered after
-  # risk_ai, so governance/risk titles still land there first.
-  - vertical: ai_eng
-    pattern: "Artificial Intelligence"
-  - vertical: ai_eng
-    pattern: "AI Application"
-  - vertical: ai_eng
-    pattern: "AI Developer"
-  - vertical: ai_eng
-    pattern: "AI Agent"
-  - vertical: ai_eng
-    pattern: "\\bLLMs?\\b"
-  - vertical: ai_eng
-    pattern: "GenAI"
-  - vertical: ai_eng
-    pattern: "Generative AI"
-  - vertical: ai_eng
-    pattern: "Applied AI"
-  - vertical: ai_eng
-    pattern: "AI Agents"
-  - vertical: ai_eng
-    pattern: "AI Solution"
-  - vertical: ai_eng
+  - vertical: example_primary
+    pattern: '\b(?:widget|gizmo|doohickey)\b'
+  - vertical: example_secondary
+    pattern: '\b(?:sprocket|governance|compliance|quant\w*|cog\s+(?:risk|governance|compliance))\b'
+  - vertical: example_tertiary
+    pattern: "Cog Engineer"
+  - vertical: example_tertiary
+    pattern: "Applied Cog"
+  - vertical: example_tertiary
+    pattern: "Agentic Cog"
+  - vertical: example_tertiary
+    pattern: "Cog Agent"
+  - vertical: example_tertiary
+    pattern: "Cog Platform"
+  - vertical: example_tertiary
     pattern:
       match: "Forward Deployed"
       require_any: ["Engineer"]
-  - vertical: ai_eng
+  # Compound: bare "Cog Learning Engineer" is out-of-lane by charter; only a
+  # platform/agents qualifier pulls it into the lane.
+  - vertical: example_tertiary
     pattern:
-      match: "ML Engineer"
+      match: "Cog Learning"
       require_any:
-        - "LLM"
-        - "GenAI"
-        - "Generative"
-        - "NLP"
-        - "Foundation Model"
-  - vertical: ai_eng
-    pattern:
-      match: "Machine Learning"
-      require_any:
-        - "LLM"
-        - "GenAI"
-        - "Generative"
-        - "NLP"
-        - "Foundation Model"
-  - vertical: ai_eng
-    pattern:
-      match: "Research Engineer"
-      require_any:
-        - "LLM"
-        - "GenAI"
-        - "Generative"
-        - "NLP"
-        - "Foundation Model"
-  - vertical: sap
-    pattern: '\b(?:functional|business analyst|systems? analyst|sox|risk|internal\s+controls|it\s+controls|risk[- &]+controls|trad\w*|surveillance|advisory|audit\w*|compliance)\b'
+        - Platform
+        - Agents
+  - vertical: example_primary
+    pattern: '\b(?:functional|business analyst|systems? analyst|operations|risk|audit\w*|reconciliation)\b'

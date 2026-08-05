@@ -1,5 +1,5 @@
 ---
-description: Interactive interview that onboards a brand-new job-search vertical — one profile/verticals.yaml block, classifier rules, rubric.md + tailoring.md, test-fixture mirror, doc pointers. No code edits; everything derives from the config. Every stage is draft → user confirms → apply → verify.
+description: Interactive interview that onboards a brand-new job-search vertical — one profile/verticals.yaml block, classifier rules, rubric.md + tailoring.md, doc pointers. No code edits; everything derives from the config. Every stage is draft → user confirms → apply → verify.
 model: opus
 effort: high
 allowed-tools:
@@ -37,8 +37,8 @@ regressed.
 
 - **No code edits.** `src/` and `score.md`/`rescore.md`/`tailor.md` stay
   untouched — they are already generic over the config. `tests/*.py` is
-  likewise untouched EXCEPT the Stage 4 fixture-literal updates and
-  optional collision cases (see Stage 4).
+  likewise untouched; the test fixtures are synthetic and must not be
+  edited (see Stage 4).
 - **No fabrication:** `skill_weights`, rubric tier anchors, and
   `vertical_lean` tags come ONLY from the user's answers plus existing
   `profile/bullets.md` / `profile/skills_master.md` content. Never invent
@@ -62,7 +62,7 @@ No file edits.
 2. Checks:
    ```bash
    uv run python -m src.verticals   # current config must be valid before touching it
-   grep -rn "<name>" profile/verticals.yaml tests/fixtures/verticals.yaml tests/discovery/fixtures/verticals.yaml || echo "name unused"
+   grep -rn "<name>" profile/verticals.yaml || echo "name unused"
    ```
    If the name already appears, stop and ask (resume vs rename).
 3. Interview the **charter**: target job titles/lanes, what's explicitly
@@ -111,9 +111,8 @@ files — expected; don't chase it yet.)
 
 Draft the `classifier_rules` entries. **Interview the priority explicitly**
 — the list is ordered, first match wins, and position decides collisions
-(e.g. an AI-engineering rule must sit AFTER `risk_ai`'s so "AI Risk
-Engineer" stays `risk_ai`; the trailing sap-adjacent catch-all usually stays
-last). A vertical may own multiple rules at different priorities. Patterns
+(e.g. a build-lane rule must sit AFTER a risk lane's, so "AI Risk
+Engineer" stays in the risk lane; a trailing catch-all usually stays last). A vertical may own multiple rules at different priorities. Patterns
 are single-quoted YAML, `\b(?:...)\b`-wrapped, compiled IGNORECASE by the
 loader.
 
@@ -125,7 +124,7 @@ outputs, apply, then verify:
 uv run python -c "from src.discovery.cleaning import classify_vertical_from_title as c; print([c(t) for t in ['<title1>', '<title2>', '...']])"
 ```
 
-**Consistency requirement (enforced by the fixture test in Stage 4):**
+**Consistency requirement (enforced by the drift test in Stage 4):**
 every `search_terms` and `linkedin_terms` entry from Stage 1 must classify
 to this vertical. Check now:
 
@@ -154,7 +153,8 @@ Create `profile/verticals/<name>/`:
   in it must be attested in `profile/bullets.md`.
 
 - **`rubric.md`** — mirror the existing files' shape (read
-  `profile/verticals/sap/rubric.md` as the reference; the committed
+  an existing lane's `profile/verticals/<name>/rubric.md` as the reference;
+  the committed
   `profile/verticals/example_*/rubric.md` shows the neutral template): a
   header stating who reads it, then the four axes — `title_match` tiers
   (which exact titles hit which band, out-of-lane → 0), `jd_skill_overlap`
@@ -177,23 +177,20 @@ Verify:
 uv run python -m src.verticals   # must now pass fully
 ```
 
-## Stage 4 — mirror into BOTH test fixtures
+## Stage 4 — verify against the tests
 
-Apply the SAME Stage 1 block and Stage 2 rules to **both**
-`tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml`,
-keeping each content-identical to the live config.
-`TestFixtureMirrors` fails if either drifts. The config-driven agreement test in `tests/test_cleaning.py`
-(terms↔classifier agreement) picks the new vertical up from the fixture
-automatically, but several tests pin the fixture's exact shape as literals
-and WILL fail on a new vertical — expect to update (with confirmation)
-the vertical-name/rule-order/valid-set literals and the sentinel-unpack in
-`tests/test_verticals.py::TestFixtureHappyPath`, the `split_by_vertical`
-counts dicts in `tests/test_score_cli.py`, and the empty-shortlist `main`
-dict in `tests/test_scoring_io.py`. These literal updates are a sanctioned exception to the
-no-test-code-edits rule, same as the optional collision cases below.
-Offer (optional, user's call) to add the Stage 2 collision titles as
-literal cases in `test_cleaning.py` for non-regression; if declined,
-record the skip.
+**Do NOT touch `tests/**/fixtures/verticals.yaml`.** They are synthetic
+(`example_primary/secondary/tertiary`) and deliberately do not track the real
+config; copying a real block in would put live strategy into a public file.
+A new vertical needs no fixture change.
+
+`tests/test_real_config_drift.py` runs against `profile/verticals.yaml` when
+present and is what covers the new vertical: it fails if any of its
+`search_terms`/`linkedin_terms` misclassifies (the Stage 2 requirement), if
+its `rubric.md`/`tailoring.md`/`resume_file` are missing, if its `scored_by`
+stamp collides with another lane's, or if a `title_exclude_terms` entry kills
+one of its own search terms. Add structural assertions there if the lane
+needs more — never a literal real term; that file is committed.
 
 Verify:
 
@@ -216,11 +213,7 @@ set. Verify: `grep -c "vertical_lean:.*<name>" profile/skills_master.md`.
 2. Final audit + report:
    ```bash
    uv run python -m src.verticals && uv run python -m pytest -q
-   # TestFixtureMirrors covers fixture sync; this is the eyeball version.
-   # BOTH mirrors, not just the root one -- either can drift alone.
-   for m in tests/fixtures/verticals.yaml tests/discovery/fixtures/verticals.yaml; do
-     echo "--- $m"; diff <(grep -v '^#' profile/verticals.yaml) <(grep -v '^#' "$m")
-   done
+   uv run python -m pytest tests/test_real_config_drift.py -q  # must not skip
    ```
 5. Completion summary: every file touched, every locked decision (terms,
    rule position + collision rulings, disqualifier, rubric anchors, budget),

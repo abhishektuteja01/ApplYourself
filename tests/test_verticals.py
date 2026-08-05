@@ -1,7 +1,8 @@
-"""src/verticals.py loader tests: fixture happy path, byte-parity anchors
-(stamps/reasoning texts must equal the pre-refactor literals so
-scored.parquet rows stay identical), validation failures, and the committed
-example template."""
+"""src/verticals.py loader tests: fixture happy path, verbatim carry-through
+of the stamps and reasoning texts that land in scored.parquet, validation
+failures, and the committed example template. Runs against the synthetic
+tests/fixtures/verticals.yaml; the real config is covered by
+tests/test_real_config_drift.py."""
 
 from pathlib import Path
 
@@ -26,33 +27,36 @@ def _write_and_load(tmp_path: Path, data: dict) -> verticals.VerticalsConfig:
 
 class TestFixtureHappyPath:
     def test_names_in_config_order(self, cfg):
-        assert cfg.names == ("sap", "ai_eng", "risk_ai")
-        assert cfg.default_vertical == "ai_eng"
+        assert cfg.names == ("example_primary", "example_secondary", "example_tertiary")
+        assert cfg.default_vertical == "example_tertiary"
 
     def test_valid_verticals_includes_empty(self, cfg):
-        assert cfg.valid_verticals == frozenset({"sap", "ai_eng", "risk_ai", ""})
+        assert cfg.valid_verticals == frozenset(
+            {"example_primary", "example_secondary", "example_tertiary", ""}
+        )
 
     def test_rule_order_and_ownership(self, cfg):
-        """Precedence, not rule count: strong SAP wins first, risk_ai outranks
-        ai_eng, and the SAP-adjacent catch-all stays last."""
+        """Precedence, not rule count: the strong primary signal wins first,
+        example_secondary outranks example_tertiary, and the primary-adjacent
+        catch-all stays last."""
         owners = [v for v, _ in cfg.classifier_rules]
-        assert owners[0] == "sap"
-        assert owners[-1] == "sap"
-        assert set(owners[1:-1]) <= {"risk_ai", "ai_eng"}
-        assert owners.index("risk_ai") < owners.index("ai_eng")
+        assert owners[0] == "example_primary"
+        assert owners[-1] == "example_primary"
+        assert set(owners[1:-1]) <= {"example_secondary", "example_tertiary"}
+        assert owners.index("example_secondary") < owners.index("example_tertiary")
 
     def test_patterns_match_sentinel_titles(self, cfg):
         """Walk the rules the way the classifier does, so adding rules to a
         vertical can't break this the way indexed unpacking did."""
         from src.discovery.cleaning import classify_vertical_from_title as classify
 
-        assert classify("SAP ACM Functional Consultant") == "sap"
-        assert classify("Model Risk Analyst") == "risk_ai"
-        assert classify("AI Engineer") == "ai_eng"
-        assert classify("Forward Deployed Engineer") == "ai_eng"
-        assert classify("Machine Learning Engineer") == ""
-        assert classify("Machine Learning Engineer, LLM Platform") == "ai_eng"
-        assert classify("Risk and Controls Analyst") == "sap"
+        assert classify("Widget Assembly Functional Consultant") == "example_primary"
+        assert classify("Sprocket Risk Analyst") == "example_secondary"
+        assert classify("Cog Engineer") == "example_tertiary"
+        assert classify("Forward Deployed Engineer") == "example_tertiary"
+        assert classify("Cog Learning Engineer") == ""
+        assert classify("Cog Learning Engineer, Cog Platform") == "example_tertiary"
+        assert classify("Risk and Controls Analyst") == "example_primary"
         assert classify("Senior Platform Engineer") == ""
 
     def test_term_shape(self, cfg):
@@ -66,60 +70,55 @@ class TestFixtureHappyPath:
             assert len(set(v.linkedin_terms)) == len(v.linkedin_terms)
             assert set(v.linkedin_terms) <= set(v.search_terms)
 
+    def test_fixture_prose_and_resumes_exist_on_disk(self, cfg):
+        """The fixture points at committed profile/verticals/example_*/ files;
+        TestMainCli synthesizes its own, so nothing else catches a rename."""
+        for name, v in cfg.verticals.items():
+            for fname in ("rubric.md", "tailoring.md"):
+                assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
+            assert (REPO_ROOT / v.resume_file).is_file(), v.resume_file
+
     def test_skill_weights_blocks(self, cfg):
-        assert set(cfg.verticals["sap"].skill_weights) == {"sap", "domain"}
-        assert set(cfg.verticals["risk_ai"].skill_weights) == {"model_risk", "trading_quant"}
-        assert cfg.verticals["sap"].skill_weights["sap"]["acm"] == 10
+        assert set(cfg.verticals["example_primary"].skill_weights) == {"widgets", "domain"}
+        assert set(cfg.verticals["example_secondary"].skill_weights) == {
+            "sprocket_risk", "sprocket_quant"
+        }
+        assert cfg.verticals["example_primary"].skill_weights["widgets"]["widget_assembly"] == 10
 
 
 class TestByteParityAnchors:
-    """Pin config strings against the pre-refactor src/scoring_io.py
-    literals. If any of these fail, scored.parquet rows would drift."""
+    """Config strings must reach the dataclass verbatim — these land in
+    scored.parquet rows, so any mangling here drifts scored output."""
 
     def test_scored_by_stamps(self, cfg):
-        assert cfg.verticals["sap"].disqualifier_scored_by == "rubric:sap-jd-years-disqualifier"
-        assert cfg.verticals["risk_ai"].disqualifier_scored_by == "rubric:risk-ai-jd-disqualifier"
+        assert (cfg.verticals["example_primary"].disqualifier_scored_by
+                == "rubric:example-primary-jd-years-disqualifier")
+        assert (cfg.verticals["example_secondary"].disqualifier_scored_by
+                == "rubric:example-secondary-jd-disqualifier")
 
-    def test_risk_ai_phrases(self, cfg):
-        """Phrase lists are additive over time, so anchor the originals by
-        membership; only the stamped reasoning text needs byte parity."""
-        assert set(cfg.verticals["risk_ai"].disqualifier_phrases) >= {
+    def test_phrases(self, cfg):
+        """Phrase lists are additive over time, so anchor by membership for
+        the vertical whose list grows; pin the short one exactly."""
+        assert set(cfg.verticals["example_secondary"].disqualifier_phrases) >= {
             "phd required",
             "ph.d. required",
             "doctorate required",
-            "cfa required",
-            "cfa charter required",
-            "frm required",
-            "frm certification required",
-            "loan portfolio",
-            "actuary",
-            "sanctions screening",
-            "murex",
-            "calypso",
+            "sprocket charter required",
+            "sprocket certification required",
         }
-        assert cfg.verticals["sap"].disqualifier_phrases == (
-            "successfactors",
-            "payroll",
-            "hcm",
-            "sap pm",
-            "sap pp",
-            "production planning",
-            "plant maintenance",
-            "sap basis",
-            "sap btp",
-            "concur",
+        assert cfg.verticals["example_primary"].disqualifier_phrases == (
+            "rival widget suite",
+            "legacy gizmo stack",
+            "widget payroll module",
             "solution architect",
-            "workday",
-            "netsuite",
-            "peoplesoft",
         )
-        assert cfg.verticals["sap"].reasoning_phrase.startswith(
-            "Auto-skipped: JD contains a sap disqualifier phrase"
+        assert cfg.verticals["example_primary"].reasoning_phrase.startswith(
+            "Auto-skipped: JD contains an example_primary disqualifier phrase"
         )
 
     def test_max_years(self, cfg):
-        assert cfg.verticals["sap"].disqualifier_max_years == 4
-        assert cfg.verticals["risk_ai"].disqualifier_max_years == 4
+        assert cfg.verticals["example_primary"].disqualifier_max_years == 4
+        assert cfg.verticals["example_secondary"].disqualifier_max_years == 4
 
     def test_out_of_lane_reasoning_verbatim(self, cfg):
         assert cfg.out_of_lane_reasoning == (
@@ -127,21 +126,20 @@ class TestByteParityAnchors:
             "and the row cannot reach the fit>=50 shortlist."
         )
 
-    def test_risk_ai_phrase_reasoning_verbatim(self, cfg):
-        assert cfg.verticals["risk_ai"].reasoning_phrase == (
-            "Auto-skipped: JD contains a risk_ai disqualifier phrase (PhD/CFA/FRM "
-            "required, credit/actuarial/AML, front-office trading platform, or "
-            "Salesforce/vendor-risk stack)."
+    def test_secondary_phrase_reasoning_verbatim(self, cfg):
+        assert cfg.verticals["example_secondary"].reasoning_phrase == (
+            "Auto-skipped: JD contains an example_secondary disqualifier phrase "
+            "(credential requirement, legacy ledger, or vendor-risk stack)."
         )
 
-    def test_risk_ai_years_reasoning_verbatim(self, cfg):
-        assert cfg.verticals["risk_ai"].reasoning_years == (
+    def test_secondary_years_reasoning_verbatim(self, cfg):
+        assert cfg.verticals["example_secondary"].reasoning_years == (
             "Auto-skipped: JD requires more years of experience than this "
             "vertical's max_years."
         )
 
-    def test_sap_years_reasoning_verbatim(self, cfg):
-        assert cfg.verticals["sap"].reasoning_years == (
+    def test_primary_years_reasoning_verbatim(self, cfg):
+        assert cfg.verticals["example_primary"].reasoning_years == (
             "Auto-skipped: JD requires more years of experience than this "
             "vertical's max_years."
         )
@@ -178,38 +176,38 @@ class TestValidation:
 
     def test_bad_vertical_name(self, tmp_path):
         data = _load_raw()
-        data["verticals"]["Bad-Name"] = data["verticals"]["sap"]
+        data["verticals"]["Bad-Name"] = data["verticals"]["example_primary"]
         with pytest.raises(ValueError, match="must match"):
             _write_and_load(tmp_path, data)
 
     def test_missing_linkedin_terms(self, tmp_path):
         data = _load_raw()
-        del data["verticals"]["sap"]["linkedin_terms"]
+        del data["verticals"]["example_primary"]["linkedin_terms"]
         with pytest.raises(ValueError, match="linkedin_terms"):
             _write_and_load(tmp_path, data)
 
     def test_phrases_without_reasoning_phrase(self, tmp_path):
         data = _load_raw()
-        del data["verticals"]["risk_ai"]["disqualifier"]["reasoning_phrase"]
+        del data["verticals"]["example_secondary"]["disqualifier"]["reasoning_phrase"]
         with pytest.raises(ValueError, match="reasoning_phrase"):
             _write_and_load(tmp_path, data)
 
     def test_title_phrases_without_reasoning_title(self, tmp_path):
         data = _load_raw()
-        del data["verticals"]["sap"]["disqualifier"]["reasoning_title"]
+        del data["verticals"]["example_primary"]["disqualifier"]["reasoning_title"]
         with pytest.raises(ValueError, match="reasoning_title"):
             _write_and_load(tmp_path, data)
 
     def test_title_phrases_optional(self, tmp_path):
         data = _load_raw()
-        del data["verticals"]["sap"]["disqualifier"]["title_phrases"]
-        del data["verticals"]["sap"]["disqualifier"]["reasoning_title"]
+        del data["verticals"]["example_primary"]["disqualifier"]["title_phrases"]
+        del data["verticals"]["example_primary"]["disqualifier"]["reasoning_title"]
         cfg = _write_and_load(tmp_path, data)
-        assert cfg.verticals["sap"].disqualifier_title_phrases == ()
-        assert cfg.verticals["sap"].reasoning_title is None
+        assert cfg.verticals["example_primary"].disqualifier_title_phrases == ()
+        assert cfg.verticals["example_primary"].reasoning_title is None
 
     def test_title_phrases_parsed(self, cfg):
-        assert set(cfg.verticals["sap"].disqualifier_title_phrases) >= {
+        assert set(cfg.verticals["example_primary"].disqualifier_title_phrases) >= {
             "senior",
             "manager",
             "director",
@@ -223,10 +221,10 @@ class TestValidation:
             "procurement",
             "engineer",
         }
-        assert cfg.verticals["sap"].reasoning_title.startswith(
-            "Auto-skipped: title matches a sap title-disqualifier phrase"
+        assert cfg.verticals["example_primary"].reasoning_title.startswith(
+            "Auto-skipped: title matches an example_primary title-disqualifier phrase"
         )
-        assert set(cfg.verticals["risk_ai"].disqualifier_title_phrases) >= {
+        assert set(cfg.verticals["example_secondary"].disqualifier_title_phrases) >= {
             "quality",
             "clinical",
             "privacy",
@@ -234,8 +232,8 @@ class TestValidation:
             "operations",
             "nurse",
         }
-        assert cfg.verticals["risk_ai"].reasoning_title.startswith(
-            "Auto-skipped: title matches a risk_ai title-disqualifier phrase"
+        assert cfg.verticals["example_secondary"].reasoning_title.startswith(
+            "Auto-skipped: title matches an example_secondary title-disqualifier phrase"
         )
 
 
@@ -266,8 +264,9 @@ class TestSingleton:
 
 
 class TestFixtureMirrors:
-    """The two fixtures must mirror each other and the real config. Drift here
-    is invisible: tests keep passing against rules production doesn't use."""
+    """The two fixtures must mirror each other. Drift here is invisible: the
+    discovery suite keeps passing against rules the rest of the suite doesn't
+    use."""
 
     FIXTURES = (
         REPO_ROOT / "tests" / "fixtures" / "verticals.yaml",
@@ -278,14 +277,16 @@ class TestFixtureMirrors:
         a, b = (p.read_text() for p in self.FIXTURES)
         assert a == b, "tests/fixtures and tests/discovery/fixtures have diverged"
 
-    def test_mirrors_match_real_config(self):
+    def test_fixture_is_synthetic(self):
+        """The fixtures ship publicly, so they must never be a copy of the
+        gitignored real config."""
         real = REPO_ROOT / "profile" / "verticals.yaml"
         if not real.is_file():
             pytest.skip("profile/verticals.yaml is gitignored user data")
         expected = yaml.safe_load(real.read_text())
         for p in self.FIXTURES:
-            assert yaml.safe_load(p.read_text()) == expected, (
-                f"{p.relative_to(REPO_ROOT)} has drifted from profile/verticals.yaml"
+            assert yaml.safe_load(p.read_text()) != expected, (
+                f"{p.relative_to(REPO_ROOT)} is a copy of profile/verticals.yaml"
             )
 
 
@@ -344,51 +345,51 @@ class TestMainCli:
         assert "schema_version must be 1" in capsys.readouterr().out
 
     def test_missing_rubric_is_named(self, tmp_path, monkeypatch, capsys):
-        self._setup(tmp_path, monkeypatch, drop_prose={("sap", "rubric.md")})
+        self._setup(tmp_path, monkeypatch, drop_prose={("example_primary", "rubric.md")})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "missing per-vertical prose files" in out
-        assert "sap/rubric.md" in out
-        assert "sap/tailoring.md" not in out
+        assert "example_primary/rubric.md" in out
+        assert "example_primary/tailoring.md" not in out
 
     def test_missing_tailoring_is_named(self, tmp_path, monkeypatch, capsys):
-        self._setup(tmp_path, monkeypatch, drop_prose={("ai_eng", "tailoring.md")})
+        self._setup(tmp_path, monkeypatch, drop_prose={("example_tertiary", "tailoring.md")})
         assert verticals.main() == 1
-        assert "ai_eng/tailoring.md" in capsys.readouterr().out
+        assert "example_tertiary/tailoring.md" in capsys.readouterr().out
 
     def test_every_missing_prose_file_is_listed_not_just_the_first(
             self, tmp_path, monkeypatch, capsys):
         """A half-onboarded vertical usually misses several files; listing one
         per run turns onboarding into a guessing game."""
         self._setup(tmp_path, monkeypatch, drop_prose={
-            ("sap", "rubric.md"), ("sap", "tailoring.md"),
-            ("risk_ai", "rubric.md"),
+            ("example_primary", "rubric.md"), ("example_primary", "tailoring.md"),
+            ("example_secondary", "rubric.md"),
         })
         assert verticals.main() == 1
         out = capsys.readouterr().out
-        for expected in ("sap/rubric.md", "sap/tailoring.md", "risk_ai/rubric.md"):
+        for expected in ("example_primary/rubric.md", "example_primary/tailoring.md", "example_secondary/rubric.md"):
             assert expected in out
 
     def test_missing_resume_file_is_named(self, tmp_path, monkeypatch, capsys):
-        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"sap"})
+        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"example_primary"})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "missing per-vertical scoring resume files (resume_file)" in out
-        assert cfg.verticals["sap"].resume_file in out
+        assert cfg.verticals["example_primary"].resume_file in out
 
     def test_every_missing_resume_is_listed(self, tmp_path, monkeypatch, capsys):
-        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"sap", "risk_ai"})
+        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"example_primary", "example_secondary"})
         assert verticals.main() == 1
         out = capsys.readouterr().out
-        assert cfg.verticals["sap"].resume_file in out
-        assert cfg.verticals["risk_ai"].resume_file in out
+        assert cfg.verticals["example_primary"].resume_file in out
+        assert cfg.verticals["example_secondary"].resume_file in out
 
     def test_prose_check_reports_before_the_resume_check(
             self, tmp_path, monkeypatch, capsys):
         """Both are broken; the prose error returns first. Pin the order so a
         reshuffle doesn't silently change what the user sees."""
         self._setup(tmp_path, monkeypatch,
-                    drop_prose={("sap", "rubric.md")}, drop_resume={"sap"})
+                    drop_prose={("example_primary", "rubric.md")}, drop_resume={"example_primary"})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "prose files" in out
@@ -397,7 +398,7 @@ class TestMainCli:
     def test_a_dir_that_is_not_a_file_counts_as_missing(
             self, tmp_path, monkeypatch, capsys):
         """is_file(), not exists() — a directory named rubric.md is not prose."""
-        self._setup(tmp_path, monkeypatch, drop_prose={("sap", "rubric.md")})
-        (tmp_path / "profile" / "verticals" / "sap" / "rubric.md").mkdir()
+        self._setup(tmp_path, monkeypatch, drop_prose={("example_primary", "rubric.md")})
+        (tmp_path / "profile" / "verticals" / "example_primary" / "rubric.md").mkdir()
         assert verticals.main() == 1
-        assert "sap/rubric.md" in capsys.readouterr().out
+        assert "example_primary/rubric.md" in capsys.readouterr().out

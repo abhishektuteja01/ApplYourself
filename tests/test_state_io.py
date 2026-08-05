@@ -27,9 +27,9 @@ from src.state_io import (
 
 def _initial(**overrides) -> dict:
     base = {
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "SAP SD",
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
         "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "sap", "sponsorship_label": "opt_ok", "fit_score": 75,
+        "vertical": "example_primary", "sponsorship_label": "opt_ok", "fit_score": 75,
     }
     base.update(overrides)
     return base
@@ -67,7 +67,7 @@ def test_transition_creates_state_yaml_when_missing(tmp_path):
     assert data["applied_at"] is None
     assert data["company"] == "Acme"
     assert data["fit_score"] == 75
-    assert data["vertical"] == "sap"
+    assert data["vertical"] == "example_primary"
 
 
 def test_transition_creation_defaults_vertical_when_absent(tmp_path):
@@ -143,9 +143,9 @@ def test_transition_applied_at_only_set_once(tmp_path):
 def test_append_tailored_dir(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
-    append_tailored_dir(p, "2026-06-06_acme_sap-sd_aaaaaaaa")
+    append_tailored_dir(p, "2026-06-06_acme_widget-fn_aaaaaaaa")
     data = load_state(p)
-    assert data["tailored_dirs"] == ["2026-06-06_acme_sap-sd_aaaaaaaa"]
+    assert data["tailored_dirs"] == ["2026-06-06_acme_widget-fn_aaaaaaaa"]
 
 
 def test_append_tailored_dir_idempotent(tmp_path):
@@ -330,8 +330,8 @@ def test_ensure_state_preserves_applied_at_and_history(tmp_path):
 def test_append_cover_letter(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
-    append_cover_letter(p, "sap/2026-06-06_acme_sap-sd_aaaaaaaa")
-    assert load_state(p)["cover_letters"] == ["sap/2026-06-06_acme_sap-sd_aaaaaaaa"]
+    append_cover_letter(p, "example_primary/2026-06-06_acme_widget-fn_aaaaaaaa")
+    assert load_state(p)["cover_letters"] == ["example_primary/2026-06-06_acme_widget-fn_aaaaaaaa"]
 
 
 def test_append_cover_letter_idempotent(tmp_path):
