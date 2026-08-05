@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src.cleaning import CLEAN_COLUMNS
+from src.discovery.cleaning import CLEAN_COLUMNS
 from src.scoring_io import (
     AUTO_SKIP_SCORED_BY,
     SCORED_COLUMNS,

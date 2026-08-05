@@ -118,7 +118,7 @@ that must keep their old vertical, one unclassifiable), confirm expected
 outputs, apply, then verify:
 
 ```bash
-uv run python -c "from src.cleaning import classify_vertical_from_title as c; print([c(t) for t in ['<title1>', '<title2>', '...']])"
+uv run python -c "from src.discovery.cleaning import classify_vertical_from_title as c; print([c(t) for t in ['<title1>', '<title2>', '...']])"
 ```
 
 **Consistency requirement (enforced by the fixture test in Stage 4):**
@@ -128,7 +128,7 @@ to this vertical. Check now:
 ```bash
 uv run python -c "
 from src.verticals import load_verticals
-from src.cleaning import classify_vertical_from_title as c
+from src.discovery.cleaning import classify_vertical_from_title as c
 v = load_verticals().verticals['<name>']
 bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
 print('MISCLASSIFIED:', bad or 'none')"

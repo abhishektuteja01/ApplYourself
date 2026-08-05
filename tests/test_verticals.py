@@ -44,7 +44,7 @@ class TestFixtureHappyPath:
     def test_patterns_match_sentinel_titles(self, cfg):
         """Walk the rules the way the classifier does, so adding rules to a
         vertical can't break this the way indexed unpacking did."""
-        from src.cleaning import classify_vertical_from_title as classify
+        from src.discovery.cleaning import classify_vertical_from_title as classify
 
         assert classify("SAP ACM Functional Consultant") == "sap"
         assert classify("Model Risk Analyst") == "risk_ai"
