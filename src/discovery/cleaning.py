@@ -478,7 +478,9 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
     if "remote_flag" not in df.columns:
         df["remote_flag"] = False
     else:
-        df["remote_flag"] = df["remote_flag"].fillna(False).astype(bool)
+        df["remote_flag"] = (
+            df["remote_flag"].fillna(False).infer_objects(copy=False).astype(bool)
+        )
     if "scraped_date" not in df.columns:
         df["scraped_date"] = pd.Timestamp.today().normalize()
     df["scraped_date"] = pd.to_datetime(df["scraped_date"], errors="coerce")
@@ -593,7 +595,30 @@ def load_raw_window(
             log.error("Failed to read %s: %s", path, e)
     if not frames:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+    return _concat_raw_frames(frames)
+
+
+def _concat_raw_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Concat raw shards, excluding entries pandas would ignore for dtype
+    inference anyway (zero-row shards, and all-NA columns of a column that is
+    typed in some other shard — e.g. min_amount, which boards leave empty and
+    the job sites fill). Concat realigns the dropped columns back as NaN, so the
+    result is unchanged; doing it here pins the dtype to the typed shards
+    instead of leaving it to a deprecated pandas behavior.
+    """
+    non_empty = [f for f in frames if not f.empty]
+    if not non_empty:
+        return pd.concat(frames, ignore_index=True)
+    typed_somewhere = {
+        c for f in non_empty for c in f.columns if not f[c].isna().all()
+    }
+    cleaned = []
+    for f in non_empty:
+        blank = [
+            c for c in f.columns if c in typed_somewhere and f[c].isna().all()
+        ]
+        cleaned.append(f.drop(columns=blank) if blank else f)
+    return pd.concat(cleaned, ignore_index=True)
 
 
 def prune_raw_files(raw_dir: Path, cfg, today: pd.Timestamp) -> int:

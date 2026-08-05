@@ -140,7 +140,10 @@ def main(args=None):
             report_lines.append(f"### Source: {source.name}")
             report_lines.append(f"Time: {dur:.1f}s")
             if df.empty:
-                report_lines.append("ZERO rows (likely rate-limited or no results)")
+                if source.name == "manual":
+                    report_lines.append("ZERO rows (inbox empty)")
+                else:
+                    report_lines.append("ZERO rows (likely rate-limited or no results)")
             else:
                 report_lines.append(f"Rows: {len(df)}")
             if res.errors:
