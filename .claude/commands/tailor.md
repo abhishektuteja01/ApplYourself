@@ -22,17 +22,9 @@ lint loop).
   only fine-tunes *within* that default; it never adds/removes a section or line,
   and never overrides absent a strong JD-specific reason. Vertical sets the
   starting point, JD fine-tunes — never the reverse.
-- **NO-FAB** — never introduce a tool, metric, scope, date, or claim
-  absent from the source (canonical bullet, or the vertical's résumé for
-  frozen/summary text). No fabricated module-config claims.
-- **NO-DRIFT** — analogy is not equivalence. A specialized module's workflow is
-  not the generic workflow it resembles. Relabeling that asserts equivalence is
-  fabrication even if it reads naturally. This is the drift `trace.md` catches.
-- **SKILLS-SOURCE** — the Skills section is built from `profile/skills_master.md`
-  entries only, never copied from the résumé's Skills block.
-- **REPHRASE-LICENSE** — a `rephrase` may use ONLY words in the bullet's canonical
-  text + that bullet's `allowable_synonyms`. Every content word in the result must
-  trace to one of those; otherwise it is illegal (NO-FAB/NO-DRIFT).
+- **NO-FAB**, **NO-DRIFT**, **REPHRASE-LICENSE**, **SKILLS-SOURCE** — defined in
+  `.claude/shared/no_fab.md`. **Read that file now**; the rest of this command
+  cites all four by name and Step 5's hard-refuse table depends on them.
 
 ---
 
@@ -323,36 +315,15 @@ print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 enforce structural constraints Step 1 can't: missing styles, tables, inline
 shapes) — surface verbatim and stop.
 
-Then convert to PDF via Word/AppleScript. Word's sandbox only reliably keeps a
-folder-access grant for one unchanging path — routing every conversion through
-the same fixed staging dir means the one-time grant never needs re-approval, even
-though each job gets a new `${OUT_DIR}`:
+Then convert to PDF: set the variables and follow
+`.claude/shared/render_pdf.md` verbatim.
 
 ```bash
-STAGING="$(pwd)/.pdf_staging"
-mkdir -p "$STAGING"
-cp "${OUT_DIR}/${FILE_SLUG}_Resume.docx" "${STAGING}/${FILE_SLUG}_Resume.docx"
-DOCX_ABS="${STAGING}/${FILE_SLUG}_Resume.docx"
-PDF_ABS="${STAGING}/${FILE_SLUG}_Resume.pdf"
-osascript <<ASEOF
-tell application "Microsoft Word"
-    open POSIX file "${DOCX_ABS}"
-    set theDoc to active document
-    save as theDoc file format format PDF file name "${PDF_ABS}"
-    close active document saving no
-end tell
-ASEOF
-if [ -s "${PDF_ABS}" ]; then
-    cp "${PDF_ABS}" "${OUT_DIR}/${FILE_SLUG}_Resume.pdf"
-    rm -f "${DOCX_ABS}" "${PDF_ABS}"
-    echo "pdf rendered: ${OUT_DIR}/${FILE_SLUG}_Resume.pdf"
-else
-    echo "WARNING: PDF conversion via Word failed — docx is primary, PDF supplementary."
-fi
+BASENAME=Resume   # OUT_DIR and FILE_SLUG are already set from Step 1
 ```
 
-If `osascript` fails, surface the error and continue — the docx is primary, the
-PDF supplementary.
+Read that file now and run its block. Do not reconstruct the AppleScript from
+memory — the fixed staging dir it uses is what keeps Word's sandbox grant valid.
 
 ## Step 7 — write the audit artifacts
 

@@ -53,6 +53,10 @@ or `profile/skills_master.md` directly.
 
 ---
 
+**Before anything else, read `.claude/shared/no_fab.md`.** This command
+cites NO-FAB and REPHRASE-LICENSE by name; their definitions live there,
+not in this file.
+
 ## Step 1 — load profile and today's scored shortlist
 
 ```bash

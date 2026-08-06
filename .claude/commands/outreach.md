@@ -190,7 +190,8 @@ If any violation:
 - Rewrite the offending line using a phrasing that is (a) in the user's
   voice per `voice_samples.md` and (b) not in any banned list, AND not
   in `outreach_only`.
-- Re-save and re-lint. Loop up to 5 attempts.
+- Re-save and re-lint per `.claude/shared/lint_loop.md` (read it: it holds the
+  attempt cap and the hard-refuse rule).
 - If still failing after 5: refuse with the specific line + the phrase
   that won't clean, and tell the user to either tweak the draft by hand
   or expand `voice_samples.md` with an alternate phrasing.

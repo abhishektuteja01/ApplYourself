@@ -26,6 +26,10 @@ present, the salutation becomes `Dear Name,` instead of the default
 
 ---
 
+**Before anything else, read `.claude/shared/no_fab.md`.** This command
+cites NO-FAB and REPHRASE-LICENSE by name; their definitions live there,
+not in this file.
+
 ## Step 1 — prerequisites + tailor dir + template placeholders (one block, fail loud)
 
 `LATEST_DIR` already carries the vertical prefix /tailor wrote into
@@ -252,9 +256,9 @@ prose that traces to NO bullet at all, such as the salutation, the closing, or
 a company-mission sentence from Step 2b. If the sentence carries any claim
 about your experience, it traces to a bullet and REPHRASE-LICENSE binds; the
 escape is not available. Update
-the JSON file, and re-run the lint above. Loop up to 5 attempts. If still
-failing after 5 attempts, hard-refuse: do not write any output files, tell
-the user which phrase/category kept failing.
+the JSON file, and re-run the lint above, following
+`.claude/shared/lint_loop.md` — read it; it holds the attempt cap and the
+hard-refuse rule.
 
 When `violations` is empty, proceed to Step 6.
 
@@ -276,35 +280,15 @@ message verbatim and stop — `TemplateError` here means the template is
 missing `{{SALUTATION}}` or `{{BODY}}`; tell the user to add the missing
 placeholder paragraph(s) to `profile/cover_letter_template.docx`.
 
-Then convert to PDF via Microsoft Word, routed through the same fixed staging
-dir as `/tailor` Step 6 (Word's sandbox grant only reliably persists for one
-unchanging path, not the new `${OUT_DIR}` each job gets):
+Then convert to PDF: set the variables and follow
+`.claude/shared/render_pdf.md` verbatim.
 
 ```bash
-STAGING="$(pwd)/.pdf_staging"
-mkdir -p "$STAGING"
-cp "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx" "${STAGING}/${FILE_SLUG}_Cover_Letter.docx"
-DOCX_ABS="${STAGING}/${FILE_SLUG}_Cover_Letter.docx"
-PDF_ABS="${STAGING}/${FILE_SLUG}_Cover_Letter.pdf"
-osascript <<ASEOF
-tell application "Microsoft Word"
-    open POSIX file "${DOCX_ABS}"
-    set theDoc to active document
-    save as theDoc file format format PDF file name "${PDF_ABS}"
-    close active document saving no
-end tell
-ASEOF
-if [ -s "${PDF_ABS}" ]; then
-    cp "${PDF_ABS}" "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf"
-    rm -f "${DOCX_ABS}" "${PDF_ABS}"
-    echo "pdf rendered: ${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf"
-else
-    echo "WARNING: PDF conversion via Word failed — docx is primary, PDF supplementary."
-fi
+BASENAME=Cover_Letter   # OUT_DIR and FILE_SLUG are already set
 ```
 
-If `osascript` fails (non-zero exit), surface the error and continue — the
-docx is the primary artifact; the PDF is supplementary.
+Read that file now and run its block. Do not reconstruct the AppleScript from
+memory — the fixed staging dir it uses is what keeps Word's sandbox grant valid.
 
 ## Step 7 — append the dir to state.yaml.cover_letters[]
 
