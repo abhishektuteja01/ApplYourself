@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TEMPLATE — macOS only. Replace __LABEL__ and __REPO__, then install:
+
+    sed -e "s|__LABEL__|com.$USER.applyourself.discovery|g" \
+        -e "s|__REPO__|$PWD|g" \
+        scripts/launchagent.example.plist \
+        > ~/Library/LaunchAgents/com.$USER.applyourself.discovery.plist
+
+    launchctl bootstrap gui/$(id -u) \
+        ~/Library/LaunchAgents/com.$USER.applyourself.discovery.plist
+
+  Absolute paths are mandatory: launchd does not expand ~ or $HOME here.
+
+  A LaunchAgent whose start time falls while the Mac is asleep does not run at
+  wake by default — it is skipped until the next interval. Schedule a wake a few
+  minutes before it (see /onboarding Track C):
+
+    sudo pmset repeat wakeorpoweron MTWRFSU 01:55:00
+
+  Verify:  launchctl print gui/$(id -u)/__LABEL__
+  Remove:  launchctl bootout gui/$(id -u)/__LABEL__
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/nightly_discovery.sh</string>
+  </array>
+
+  <!-- 02:00 daily, five minutes after the pmset wake above. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- launchd's own capture of the wrapper's stdout/stderr. The wrapper writes
+       its own per-run log to __REPO__/logs/discovery_<timestamp>.log. -->
+  <key>StandardOutPath</key>
+  <string>__REPO__/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/logs/launchd.err.log</string>
+
+  <!-- Background: lower I/O and CPU priority, so an overnight scrape does not
+       compete with anything in the foreground. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
