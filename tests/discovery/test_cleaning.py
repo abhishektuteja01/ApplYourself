@@ -867,6 +867,32 @@ def test_prune_raw_files(tmp_path):
     assert unparse_path.exists()
     assert not old_path.exists()
 
+@pytest.mark.parametrize("term,title,expected", [
+    # A trailing \b after "+" can never be satisfied, so these all missed.
+    ("c++", "Senior C++ Engineer", True),
+    ("c++", "Data Engineer -C++", True),
+    ("c++", "Data Engineer - C++", True),
+    ("c++", "Data Engineer (C++)", True),
+    ("c++", "Sr. Data Engineer -C++/Python", True),
+    ("c++", "Data EngineerC++", False),
+    ("c++", "ABC++ Corp", False),
+    ("c#", "C# Developer", True),
+    # Leading \b before "." is the mirror case.
+    (".net", ".NET Developer", True),
+    (".net", "ASP.NET Developer", True),
+    (".net", "Netflix Engineer", False),
+    # Alnum on both ends keeps the old behavior exactly.
+    ("data engineer", "Senior Data Engineer", True),
+    ("data engineer", "Data Engineering Lead", False),
+    ("node.js", "Node.js Engineer", True),
+])
+def test_term_pattern_matches_terms_ending_in_punctuation(term, title, expected):
+    from src.discovery.cleaning import _term_pattern
+    import re
+    rx = re.compile(_term_pattern(term), re.IGNORECASE)
+    assert bool(rx.search(title)) is expected
+
+
 def test_title_exclusion(cfg):
     from src.discovery.cleaning import apply_title_exclusion
     import pandas as pd

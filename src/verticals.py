@@ -133,19 +133,23 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     if title_phrases and not reasoning_title:
         raise _fail(path, f"{where}.disqualifier.reasoning_title is required when title_phrases is nonempty")
     
-    exclude_terms = raw.get("title_exclude_terms", [])
-    if not isinstance(exclude_terms, list) or not all(isinstance(t, str) for t in exclude_terms):
-        raise _fail(path, f"{where}.title_exclude_terms must be a list of strings")
-
-    # Title include-gate (2026-07-21): opt-in per vertical. When
-    # title_include_terms is empty the gate is OFF and apply_title_exclusion
-    # falls back to exclusion-only (historical behavior). See cleaning.py.
-    include_terms = raw.get("title_include_terms", [])
-    if not isinstance(include_terms, list) or not all(isinstance(t, str) for t in include_terms):
-        raise _fail(path, f"{where}.title_include_terms must be a list of strings")
-    strong_keep_terms = raw.get("title_strong_keep_terms", [])
-    if not isinstance(strong_keep_terms, list) or not all(isinstance(t, str) for t in strong_keep_terms):
-        raise _fail(path, f"{where}.title_strong_keep_terms must be a list of strings")
+    # Title include-gate: opt-in per vertical. When title_include_terms is
+    # empty the gate is OFF and apply_title_exclusion falls back to
+    # exclusion-only. See cleaning.py.
+    # Blank terms are rejected, not skipped: a blank compiles to a pattern
+    # that matches every title, which silently empties a whole vertical.
+    title_terms = {}
+    for key in ("title_exclude_terms", "title_include_terms",
+                "title_strong_keep_terms"):
+        terms = raw.get(key, [])
+        if not isinstance(terms, list) or not all(isinstance(t, str) for t in terms):
+            raise _fail(path, f"{where}.{key} must be a list of strings")
+        if any(not t.strip() for t in terms):
+            raise _fail(path, f"{where}.{key} contains a blank term")
+        title_terms[key] = terms
+    exclude_terms = title_terms["title_exclude_terms"]
+    include_terms = title_terms["title_include_terms"]
+    strong_keep_terms = title_terms["title_strong_keep_terms"]
 
     # Per-vertical scoring resume: the attested resume judges read via
     # score-judge.md (also the tailoring frozen-section/summary source).

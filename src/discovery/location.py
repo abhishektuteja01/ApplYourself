@@ -91,14 +91,16 @@ def parse_location(raw: str) -> LocationParse:
     text = raw
     text_lower = text.lower()
     
-    # 1. Countries, on word boundaries.
+    # 1. Countries, on word boundaries. Names are stripped: an upstream entry
+    # with a trailing space makes the closing \b unsatisfiable, so the name
+    # matches nothing.
     for c_name, c_canon in COUNTRY_NAMES.items():
-        if re.search(r'\b' + re.escape(c_name) + r'\b', text_lower):
+        if re.search(r'\b' + re.escape(c_name.strip()) + r'\b', text_lower):
             found_countries.add(c_canon)
-            
+
     # 2. States, full names first.
     for s_name, s_code in STATE_NAMES.items():
-        if re.search(r'\b' + re.escape(s_name) + r'\b', text_lower):
+        if re.search(r'\b' + re.escape(s_name.strip()) + r'\b', text_lower):
             found_states.add(s_code)
             
     # two-letter abbreviations ONLY when preceded by a comma+space token boundary ("Austin, TX")

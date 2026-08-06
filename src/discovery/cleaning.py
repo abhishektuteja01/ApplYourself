@@ -494,6 +494,20 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _term_pattern(term: str) -> str:
+    r"""Escaped `term` with a word boundary only on a side that ends in a word
+    character. \b needs a word/non-word transition, so a trailing \b after
+    "c++" or a leading one before ".net" can never be satisfied and the term
+    matches nothing. Same rule as lint.py's phrase compiler, decided per side
+    so ".net" still refuses to match a bare "net"."""
+    pat = re.escape(term)
+    if term[:1].isalnum():
+        pat = r"\b" + pat
+    if term[-1:].isalnum():
+        pat = pat + r"\b"
+    return pat
+
+
 def apply_title_exclusion(df: pd.DataFrame, cfg) -> tuple[pd.DataFrame, dict[str, int]]:
     """Per-vertical title gate (word-boundary). A non-manual row is kept iff:
         strong_keep  OR  (include_ok AND NOT exclude)
@@ -513,7 +527,7 @@ def apply_title_exclusion(df: pd.DataFrame, cfg) -> tuple[pd.DataFrame, dict[str
     def _compile(terms):
         if not terms:
             return None
-        return re.compile("|".join(rf"\b{re.escape(t)}\b" for t in terms), re.IGNORECASE)
+        return re.compile("|".join(_term_pattern(t) for t in terms), re.IGNORECASE)
 
     keep_mask = pd.Series(True, index=df.index)
 

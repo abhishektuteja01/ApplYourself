@@ -186,6 +186,18 @@ class TestValidation:
         with pytest.raises(ValueError, match="linkedin_terms"):
             _write_and_load(tmp_path, data)
 
+    @pytest.mark.parametrize("key", ["title_exclude_terms",
+                                     "title_include_terms",
+                                     "title_strong_keep_terms"])
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_title_term_is_rejected(self, tmp_path, key, blank):
+        """A blank term compiles to a pattern matching every title. In an
+        exclude list that silently empties the whole vertical."""
+        data = _load_raw()
+        data["verticals"]["example_primary"].setdefault(key, []).append(blank)
+        with pytest.raises(ValueError, match=key):
+            _write_and_load(tmp_path, data)
+
     def test_phrases_without_reasoning_phrase(self, tmp_path):
         data = _load_raw()
         del data["verticals"]["example_secondary"]["disqualifier"]["reasoning_phrase"]
