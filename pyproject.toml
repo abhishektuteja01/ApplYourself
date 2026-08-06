@@ -25,6 +25,7 @@ verticals-check = "src.verticals:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
 ]
 
 [build-system]
@@ -36,4 +37,5 @@ packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-p no:cacheprovider"
+addopts = "-p no:cacheprovider -ra --strict-markers"
+filterwarnings = ["error"]

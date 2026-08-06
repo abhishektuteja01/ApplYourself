@@ -136,6 +136,7 @@ def test_ashby_rows_salary_from_compensation_tiers(monkeypatch):
 
 
 def test_scrape_boards_isolates_per_company_failures(monkeypatch):
+    monkeypatch.setattr(greenhouse.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "load", lambda ats: [
         UniverseCompany("Broken Co", "greenhouse", "badslug"),
         UniverseCompany("Acme AI", "greenhouse", "acmeai"),
@@ -153,6 +154,8 @@ def test_scrape_boards_isolates_per_company_failures(monkeypatch):
 
 def test_scrape_boards_isolates_non_json_body(monkeypatch):
     """An HTML 200 must stay a per-company error, not escape the company loop."""
+    monkeypatch.setattr(greenhouse.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "load", lambda ats: [
         UniverseCompany("Wall Co", "greenhouse", "wallslug"),
         UniverseCompany("Acme AI", "greenhouse", "acmeai"),

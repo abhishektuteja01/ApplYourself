@@ -60,12 +60,14 @@ class TestSplitByVertical:
         ])
         counts = split_by_vertical(unscored)
         assert counts == {"example_primary": 2, "example_tertiary": 0, "example_secondary": 1}
-        sap_ids = [json.loads(l)["job_id"]
-                   for l in (tmp_path / "unscored_example_primary.jsonl").open(encoding="utf-8")]
-        assert sap_ids == ["a", "c"]
-        risk_ids = [json.loads(l)["job_id"]
-                    for l in (tmp_path / "unscored_example_secondary.jsonl").open(encoding="utf-8")]
-        assert risk_ids == ["b"]
+        primary_ids = [json.loads(l)["job_id"] for l in
+                       (tmp_path / "unscored_example_primary.jsonl")
+                       .read_text(encoding="utf-8").splitlines()]
+        assert primary_ids == ["a", "c"]
+        secondary_ids = [json.loads(l)["job_id"] for l in
+                         (tmp_path / "unscored_example_secondary.jsonl")
+                         .read_text(encoding="utf-8").splitlines()]
+        assert secondary_ids == ["b"]
 
     def test_empty_dump_writes_empty_files(self, tmp_path):
         unscored = tmp_path / "unscored.jsonl"
@@ -324,7 +326,7 @@ class TestClearStaging:
         for name in ("batch_example_primary_001.json", "batch_example_tertiary_002.json",
                      "unscored.jsonl", "unscored_example_primary.jsonl",
                      "auto_skip.jsonl", "auto_skip_ineligible.jsonl",
-                     "auto_skip_sap.jsonl"):
+                     "auto_skip_example_secondary.jsonl"):
             (staging / name).write_text("x", encoding="utf-8")
         score_cli.clear_staging(staging)
         assert sorted(p.name for p in staging.iterdir()) == []
@@ -354,6 +356,7 @@ class TestClearStaging:
         """glob on a nonexistent dir yields nothing rather than raising, so
         prepare can call this before mkdir."""
         score_cli.clear_staging(tmp_path / "absent")
+        assert not (tmp_path / "absent").exists()
 
     def test_does_not_recurse_into_subdirs(self, tmp_path):
         staging = tmp_path / "staging"

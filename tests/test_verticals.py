@@ -286,7 +286,9 @@ class TestFixtureMirrors:
     )
 
     def test_mirrors_are_identical(self):
-        a, b = (p.read_text(encoding="utf-8") for p in self.FIXTURES)
+        # Bytes, not text: read_text translates newlines, so a CRLF mirror
+        # decodes identically while no longer being byte-identical.
+        a, b = (p.read_bytes() for p in self.FIXTURES)
         assert a == b, "tests/fixtures and tests/discovery/fixtures have diverged"
 
     def test_fixture_is_synthetic(self):

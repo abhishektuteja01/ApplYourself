@@ -11,6 +11,14 @@ import pytest
 from src import verticals
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
+REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
+
+
+def pytest_report_header():
+    if not REAL_CONFIG.is_file():
+        return ("WARNING: profile/verticals.yaml absent — "
+                "tests/test_real_config_drift.py will skip; the live config is unchecked.")
+    return None
 
 
 @pytest.fixture(autouse=True)
