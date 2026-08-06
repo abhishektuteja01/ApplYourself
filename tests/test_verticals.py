@@ -45,19 +45,13 @@ class TestFixtureHappyPath:
         assert set(owners[1:-1]) <= {"example_secondary", "example_tertiary"}
         assert owners.index("example_secondary") < owners.index("example_tertiary")
 
-    def test_patterns_match_sentinel_titles(self, cfg):
-        """Walk the rules the way the classifier does, so adding rules to a
-        vertical can't break this the way indexed unpacking did."""
-        from src.discovery.cleaning import classify_vertical_from_title as classify
-
-        assert classify("Widget Assembly Functional Consultant") == "example_primary"
-        assert classify("Sprocket Risk Analyst") == "example_secondary"
-        assert classify("Cog Engineer") == "example_tertiary"
-        assert classify("Forward Deployed Engineer") == "example_tertiary"
-        assert classify("Cog Learning Engineer") == ""
-        assert classify("Cog Learning Engineer, Cog Platform") == "example_tertiary"
-        assert classify("Risk and Controls Analyst") == "example_primary"
-        assert classify("Senior Platform Engineer") == ""
+    def test_every_vertical_owns_at_least_one_rule(self, cfg):
+        """A vertical with no classifier rule can never be reached by the title
+        fallback, so an inbox clip for it silently lands out-of-lane. What each
+        rule matches is pinned by the parametrized table in
+        tests/discovery/test_cleaning.py, not duplicated here."""
+        owners = {vertical for vertical, _rule in cfg.classifier_rules}
+        assert owners == set(cfg.names)
 
     def test_term_shape(self, cfg):
         """Guards truncation/duplication without pinning counts that move

@@ -448,56 +448,44 @@ def test_project_raw_never_overrides_discovery_set_vertical():
     assert out.iloc[0]["vertical"] == "example_secondary"
 
 
-def test_classify_vertical_sap_strong_signal():
-    assert classify_vertical_from_title("Widget Assembly Functional Consultant") == "example_primary"
-    assert classify_vertical_from_title("Doohickey Functional Lead") == "example_primary"
-    assert classify_vertical_from_title("Gizmo Trading Operations Lead") == "example_primary"
-
-
-def test_classify_vertical_secondary_signal():
-    assert classify_vertical_from_title("Sprocket Risk Analyst") == "example_secondary"
-    assert classify_vertical_from_title("Sprocket Validation Analyst") == "example_secondary"
-    assert classify_vertical_from_title("Cog Governance Analyst") == "example_secondary"
-    assert classify_vertical_from_title("Quantitative Sprocket Analyst") == "example_secondary"
-    assert classify_vertical_from_title("Sprocket Compliance Analyst") == "example_secondary"
-
-
-def test_classify_vertical_sap_wins_on_ambiguity():
-    # title containing both a strong primary signal and a secondary-ish word -> primary
-    assert classify_vertical_from_title("Widget Sprocket Risk Analyst") == "example_primary"
-
-
-def test_classify_vertical_sap_adjacent_fallback():
-    # bare "Risk Analyst" with no primary-strong or secondary-specific phrase -> primary
-    assert classify_vertical_from_title("Risk and Controls Analyst") == "example_primary"
-
-
-def test_classify_vertical_unclassified():
-    assert classify_vertical_from_title("Senior Platform Engineer") == ""
-    assert classify_vertical_from_title("") == ""
-    assert classify_vertical_from_title(None) == ""
-
-
-def test_classify_vertical_tertiary_signal():
-    assert classify_vertical_from_title("Cog Engineer") == "example_tertiary"
-    assert classify_vertical_from_title("Forward Deployed Engineer") == "example_tertiary"
-    # a trailing lane qualifier still classifies, not just a leading one
-    assert classify_vertical_from_title("Software Engineer - Applied Cog") == "example_tertiary"
-    # tertiary's rules sit before primary's catch-all, so a catch-all word
-    # in the same title doesn't pull it away
-    assert classify_vertical_from_title("Cog Engineer, Operations") == "example_tertiary"
-
-
-def test_classify_vertical_tertiary_collisions_keep_prior_verticals():
-    # secondary's rule sits before tertiary's — risk/governance titles stay secondary
-    assert classify_vertical_from_title("Cog Risk Engineer") == "example_secondary"
-    assert classify_vertical_from_title("Cog Governance Analyst") == "example_secondary"
-    # example_primary's strong-signal rule is still first
-    assert classify_vertical_from_title("Widget Cog Engineer") == "example_primary"
-    # bare "Risk Analyst" still lands on the example_primary catch-all
-    assert classify_vertical_from_title("Risk Analyst") == "example_primary"
-    # the compound rule needs its qualifier — bare, this is out-of-lane
-    assert classify_vertical_from_title("Cog Learning Engineer") == ""
+# One table instead of seven near-identical functions. Each row is
+# (title, expected vertical) with the reason it is interesting; rule ORDER is
+# what most of these pin, so the comments carry the intent the names used to.
+@pytest.mark.parametrize("title,expected", [
+    # strong primary signals
+    ("Widget Assembly Functional Consultant", "example_primary"),
+    ("Doohickey Functional Lead", "example_primary"),
+    ("Gizmo Trading Operations Lead", "example_primary"),
+    # secondary's own signals
+    ("Sprocket Risk Analyst", "example_secondary"),
+    ("Sprocket Validation Analyst", "example_secondary"),
+    ("Cog Governance Analyst", "example_secondary"),
+    ("Quantitative Sprocket Analyst", "example_secondary"),
+    ("Sprocket Compliance Analyst", "example_secondary"),
+    # tertiary's signals, leading and trailing
+    ("Cog Engineer", "example_tertiary"),
+    ("Forward Deployed Engineer", "example_tertiary"),
+    ("Software Engineer - Applied Cog", "example_tertiary"),
+    # ORDER: primary's strong rule is first, so it wins over a secondary word
+    ("Widget Sprocket Risk Analyst", "example_primary"),
+    ("Widget Cog Engineer", "example_primary"),
+    # ORDER: secondary sits before tertiary, so risk/governance stays secondary
+    ("Cog Risk Engineer", "example_secondary"),
+    # ORDER: tertiary sits before primary's catch-all
+    ("Cog Engineer, Operations", "example_tertiary"),
+    # primary's adjacent catch-all is last and takes the bare titles
+    ("Risk and Controls Analyst", "example_primary"),
+    ("Risk Analyst", "example_primary"),
+    # the compound rule needs its qualifier
+    ("Cog Learning Engineer", ""),
+    ("Cog Learning Engineer, Cog Platform", "example_tertiary"),
+    # nothing matches
+    ("Senior Platform Engineer", ""),
+    ("", ""),
+    (None, ""),
+])
+def test_classify_vertical_from_title(title, expected):
+    assert classify_vertical_from_title(title) == expected
 
 
 def test_classify_vertical_agrees_with_search_terms(cfg):

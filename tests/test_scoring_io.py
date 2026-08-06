@@ -371,49 +371,74 @@ def test_secondary_disqualify_reason_markdown_escaped_5plus_year_requirement(cfg
     assert disqualify_reason(cfg.verticals["example_secondary"], bold_wrapped_jd) == "years"
 
 
-def test_dump_unscored_routes_secondary_disqualified_to_separate_skip_file(tmp_path):
+# One test for both lanes: the routing logic is per-vertical by construction, so
+# a copy per vertical only proves the loop runs twice.
+@pytest.mark.parametrize("vertical,other,dq_title,dq_jd,ok_title,ok_jd", [
+    ("example_secondary", "example_primary",
+     "Sprocket Risk Analyst", "PhD required. ",
+     "Sprocket Validation Analyst", "CS or Engineering background welcome. "),
+    ("example_primary", "example_secondary",
+     "Widget Functional Analyst", "5+ years of experience required. ",
+     "Widget Assembly Analyst", "2+ years of experience preferred. "),
+], ids=["secondary_phrase", "primary_years"])
+def test_dump_unscored_routes_disqualified_to_a_per_vertical_skip_file(
+        tmp_path, vertical, other, dq_title, dq_jd, ok_title, ok_jd):
     clean_p = _make_clean(tmp_path, [
-        {"job_id": "aaaaaaaa", "title": "Sprocket Risk Analyst", "vertical": "example_secondary",
-         "jd_text": "PhD required. " + "x" * 200},
-        {"job_id": "bbbbbbbb", "title": "Sprocket Validation Analyst", "vertical": "example_secondary",
-         "jd_text": "CS or Engineering background welcome. " + "x" * 200},
-        {"job_id": "cccccccc", "title": "Widget Functional Analyst", "vertical": "example_primary",
+        {"job_id": "aaaaaaaa", "title": dq_title, "vertical": vertical,
+         "jd_text": dq_jd + "x" * 200},
+        {"job_id": "bbbbbbbb", "title": ok_title, "vertical": vertical,
+         "jd_text": ok_jd + "x" * 200},
+        {"job_id": "cccccccc", "title": "Some Other Role", "vertical": other,
          "jd_text": "x" * 200},
     ])
-    scored_p = tmp_path / "scored.parquet"
     out_path = tmp_path / "unscored.jsonl"
-    n_judge = dump_unscored(clean_p, scored_p, out_path)
-    assert n_judge == 2  # bbbbbbbb (example_secondary, clean JD) + cccccccc (example_primary)
-    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
-    assert judge_ids == {"bbbbbbbb", "cccccccc"}
-    # judged example_secondary rows carry their vertical through for the LLM's rubric choice
+    n_judge = dump_unscored(clean_p, tmp_path / "scored.parquet", out_path)
+
     judged = {json.loads(l)["job_id"]: json.loads(l)["vertical"]
               for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
-    assert judged["bbbbbbbb"] == "example_secondary"
-    assert judged["cccccccc"] == "example_primary"
-    secondary_skip_path = tmp_path / "auto_skip_example_secondary.jsonl"
-    assert secondary_skip_path.exists()
-    skip_ids = {json.loads(l)["job_id"] for l in secondary_skip_path.read_text(encoding="utf-8").splitlines() if l.strip()}
+    assert n_judge == 2
+    assert set(judged) == {"bbbbbbbb", "cccccccc"}
+    # Each judged row carries its own vertical through, for the rubric choice.
+    assert judged["bbbbbbbb"] == vertical
+    assert judged["cccccccc"] == other
+
+    skip_path = tmp_path / f"auto_skip_{vertical}.jsonl"
+    skip_ids = {json.loads(l)["job_id"]
+                for l in skip_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert skip_ids == {"aaaaaaaa"}
-    # the plain (title-out-of-lane) auto_skip.jsonl exists but is empty here
+    # The other lane's file must not have absorbed it.
+    other_path = tmp_path / f"auto_skip_{other}.jsonl"
+    assert not other_path.exists() or not other_path.read_text(encoding="utf-8").strip()
+    # The title-out-of-lane file is a different gate and stays empty here.
     assert (tmp_path / "auto_skip.jsonl").exists()
 
 
-def test_auto_score_disqualified_materializes_secondary_skip_rows(tmp_path, cfg):
-    skip_path = tmp_path / "auto_skip_example_secondary.jsonl"
+@pytest.mark.parametrize("vertical,title,extra,stamp_attr,reason_attr", [
+    ("example_secondary", "Sprocket Risk Analyst", {},
+     "disqualifier_scored_by", None),
+    ("example_primary", "Widget Functional Analyst", {"_disqualify_reason": "years"},
+     "disqualifier_scored_by", "reasoning_years"),
+], ids=["secondary_phrase", "primary_years"])
+def test_auto_score_disqualified_materializes_skip_rows(
+        tmp_path, cfg, vertical, title, extra, stamp_attr, reason_attr):
+    v = cfg.verticals[vertical]
+    skip_path = tmp_path / f"auto_skip_{vertical}.jsonl"
     skip_path.write_text(
-        json.dumps({"job_id": "aaaaaaaa", "title": "Sprocket Risk Analyst"}) + "\n",
+        json.dumps({"job_id": "aaaaaaaa", "title": title, **extra}) + "\n",
         encoding="utf-8",
     )
     scored_p = tmp_path / "scored.parquet"
-    n = auto_score_disqualified(cfg.verticals["example_secondary"], skip_path, scored_p)
-    assert n == 1
-    df = pd.read_parquet(scored_p)
-    assert df.iloc[0]["job_id"] == "aaaaaaaa"
-    assert df.iloc[0]["fit_score"] == 0
-    assert df.iloc[0]["vertical"] == "example_secondary"
-    assert df.iloc[0]["suggested_action"] == "skip"
-    assert df.iloc[0]["scored_by_model"] == "rubric:example-secondary-jd-disqualifier"
+    assert auto_score_disqualified(v, skip_path, scored_p) == 1
+
+    row = pd.read_parquet(scored_p).iloc[0]
+    assert row["job_id"] == "aaaaaaaa"
+    assert row["fit_score"] == 0
+    assert row["vertical"] == vertical
+    assert row["suggested_action"] == "skip"
+    # The stamp is a literal config field, never another vertical's.
+    assert row["scored_by_model"] == getattr(v, stamp_attr)
+    if reason_attr:
+        assert row["reasoning"] == getattr(v, reason_attr)
 
 
 def test_auto_score_disqualified_noop_on_missing_file(tmp_path, cfg):
