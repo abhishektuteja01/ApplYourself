@@ -90,6 +90,38 @@ def test_fix_mechanical_en_dash_spacious_date_range():
     assert "May 2022 - Jul 2024" in out  # not "May 2022, Jul 2024"
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("Acme (May 2022 – Present)", "Acme (May 2022 - Present)"),
+    ("Acme (2022 – Present)", "Acme (2022 - Present)"),
+    ("Acme (May 2022 – present)", "Acme (May 2022 - present)"),
+    ("Acme (Jun 2021 – Current)", "Acme (Jun 2021 - Current)"),
+    ("Acme (Mar 2019 – ongoing)", "Acme (Mar 2019 - ongoing)"),
+    ("Acme (Mar 2019 – to date)", "Acme (Mar 2019 - to date)"),
+    ("Acme | May 2022 – Present | Boston", "Acme | May 2022 - Present | Boston"),
+])
+def test_fix_mechanical_open_ended_date_range(text, expected):
+    """The current role's end has no digit, so a digits-on-both-sides test
+    reads it as a parenthetical and ships 'May 2022, Present' in every
+    tailored resume header."""
+    out, subs = fix_mechanical(text, _rules())
+    assert out == expected
+    assert {s["category"] for s in subs} == {"en_dash_in_range"}
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Shipped in 2024 – now the standard", "Shipped in 2024, now the standard"),
+    ("Cut latency 40% – currently the fastest", "Cut latency 40%, currently the fastest"),
+    ("Raised 3 rounds – ongoing work continues", "Raised 3 rounds, ongoing work continues"),
+    ("the plan – now revised", "the plan, now revised"),
+])
+def test_fix_mechanical_open_ended_words_still_paren_mid_sentence(text, expected):
+    """'now'/'ongoing' also start asides. A real end-date terminates its
+    field; an aside continues into prose, which is what separates them."""
+    out, subs = fix_mechanical(text, _rules())
+    assert out == expected
+    assert {s["category"] for s in subs} == {"en_dash_parenthetical"}
+
+
 def test_fix_mechanical_smart_quotes():
     text = "She said “hello” and ‘goodbye’."
     out, subs = fix_mechanical(text, _rules())

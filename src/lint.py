@@ -73,19 +73,30 @@ def bullets_diction_pass_completed(rules: dict) -> bool:
     return bool(rules.get("bullets_diction_pass_completed", False))
 
 
-def _endash_has_digit_neighbors_across_space(line: str, i: int) -> bool:
-    """True if line[i] is an en-dash with digit content within an 8-char
-    window on BOTH sides. Covers all common date-range shapes:
+# An open-ended range ends in a word, not a digit: "May 2022 – Present".
+# The lookahead keeps an aside out: in "in 2024 – now the standard" the word
+# continues into prose, where a real end-date terminates its field.
+_OPEN_ENDED_RANGE = re.compile(
+    r"\s*(present|current|now|ongoing|to date)\b(?!\s+\w)", re.IGNORECASE)
+
+
+def _endash_is_date_range(line: str, i: int) -> bool:
+    """True if line[i] is an en-dash joining two dates. Covers:
       - compact:  "2022–2024"
       - spacious: "May 2022 – Jul 2024"  (digit-content nearby on each side
                    but immediate neighbor is a month abbreviation, not a digit)
       - mixed:    "2022 – Jul 2024"
-    Falls through to "parenthetical" when no digits are within reach on at
-    least one side -- e.g. "(a small – b sized)"."""
+      - open:     "May 2022 – Present"   (no digit on the right at all)
+    Falls through to "parenthetical" otherwise -- e.g. "(a small – b sized)"."""
     WINDOW = 8
     left = line[max(0, i - WINDOW):i]
     right = line[i + 1:i + 1 + WINDOW]
-    return any(c.isdigit() for c in left) and any(c.isdigit() for c in right)
+    if not any(c.isdigit() for c in left):
+        return False
+    # The open-ended test reads past the window so a wide gap after the dash
+    # can't truncate the word it is matching.
+    return (any(c.isdigit() for c in right)
+            or _OPEN_ENDED_RANGE.match(line[i + 1:]) is not None)
 
 
 def _mech_rules(rules: dict | None) -> dict:
@@ -131,7 +142,7 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
         last = 0
         for endash_match in re.finditer("–", new_line):
             i = endash_match.start()
-            is_range = _endash_has_digit_neighbors_across_space(new_line, i)
+            is_range = _endash_is_date_range(new_line, i)
             if is_range:
                 # Preserve surrounding whitespace; just swap the char.
                 new_parts.append(new_line[last:i])
