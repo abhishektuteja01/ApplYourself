@@ -24,12 +24,23 @@ example="profile/pii_denylist.example.txt"
 #                      source of every substring false positive seen so far.
 #   the example      — a file OF patterns; every pattern matches its own line,
 #                      so without this no template can ever scan clean.
+#   the two .example.docx — the ONLY tracked binaries. A Word template cannot be
+#                      a text file, and the binary check below would otherwise
+#                      reject them on sight. Narrowly allowlisted BY NAME, never
+#                      by a *.docx glob, and guarded by
+#                      tests/test_example_templates.py: it unzips both, asserts
+#                      their text is confined to an approved set, and asserts
+#                      empty core properties. Regenerate with
+#                      scripts/make_example_templates.py — do not re-save them
+#                      in Word, which stamps your name into the metadata.
 allowlist=(
   LICENSE
   "$example"
   data/universe/ashby.csv
   data/universe/greenhouse.csv
   data/universe/lever.csv
+  profile/resume_template.example.docx
+  profile/cover_letter_template.example.docx
 )
 
 in_allowlist() {
