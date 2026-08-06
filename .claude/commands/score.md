@@ -25,7 +25,8 @@ internally; for a full vertical re-judge use `/rescore --vertical`.)
 3. `uv run python -m src.score_cli check-coverage`
    - Exit 0 → merge (3a).
    - Missing job_ids → find their line numbers without printing row
-     content: `grep -n '<job_id>' jobs/scored.staging/unscored_<vertical>.jsonl | cut -d: -f1`.
+     content: `grep -n '<job_id>' "$(git rev-parse --show-toplevel)"/jobs/scored.staging/unscored_<vertical>.jsonl | cut -d: -f1`
+     (repo-anchored: `jobs/` is resolved from the repo root, not the CWD).
      Re-spawn only the incomplete ranges (same prompt format), re-check
      once. Still incomplete → stop, report failed ranges. Never judge them
      yourself. Never merge partial coverage.

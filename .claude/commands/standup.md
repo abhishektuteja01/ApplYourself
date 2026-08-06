@@ -16,6 +16,9 @@ writes a single `pipeline.md` rollup, and MUST NOT mutate any state.yaml.
 ## Step 1 — load all states
 
 ```bash
+# Every path below is repo-relative, and src/ resolves its own paths from
+# the repo root — so anchor the shell there too.
+cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 uv run python <<'PYEOF'
 import json
 from pathlib import Path

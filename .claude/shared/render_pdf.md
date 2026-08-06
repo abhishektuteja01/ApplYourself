@@ -4,8 +4,11 @@ Read by `/tailor` and `/cover-letter`. Both had a byte-identical copy of this
 block differing only in the filename, so a fix to the sandbox workaround had to
 be made twice.
 
-**Caller sets two variables first:** `OUT_DIR`, `FILE_SLUG`, and `BASENAME`
-(`Resume` or `Cover_Letter`). Then run this verbatim.
+**Caller sets three variables first:** `OUT_DIR`, `FILE_SLUG`, and `BASENAME`
+(`Resume` or `Cover_Letter`). All three must be non-empty — the block checks,
+because an unset `BASENAME` silently produces `${FILE_SLUG}_.docx`, fails the
+copy, and then reports the swallowed "conversion failed" warning as if Word were
+at fault.
 
 Word's sandbox only reliably keeps a folder-access grant for one unchanging
 path, so every conversion is routed through the same fixed staging dir — the
@@ -13,7 +16,12 @@ one-time grant never needs re-approval even though each job gets a new
 `${OUT_DIR}`.
 
 ```bash
-STAGING="$(pwd)/.pdf_staging"
+test -n "${OUT_DIR}" && test -n "${FILE_SLUG}" && test -n "${BASENAME}" || {
+    echo "ERROR: render_pdf needs OUT_DIR, FILE_SLUG and BASENAME set."; exit 1
+}
+# The repo root, not $(pwd): the whole point of a single staging dir is that the
+# path never changes, and $(pwd) changes with the shell.
+STAGING="$(git rev-parse --show-toplevel)/.pdf_staging"
 mkdir -p "$STAGING"
 cp "${OUT_DIR}/${FILE_SLUG}_${BASENAME}.docx" "${STAGING}/${FILE_SLUG}_${BASENAME}.docx"
 DOCX_ABS="${STAGING}/${FILE_SLUG}_${BASENAME}.docx"

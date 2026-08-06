@@ -39,6 +39,9 @@ check. If it exits nonzero, **stop — no partial work.**
   role is allowed. Transitions stay `/track`'s alone (R10).
 
 ```bash
+# Every path below is repo-relative, and src/ resolves its own paths from
+# the repo root — so anchor the shell there too.
+cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 JOB_ID="$1"
 test -n "$JOB_ID" || { echo "ERROR: /tailor requires a job_id argument."; exit 1; }
 # Validate the verticals config + per-vertical prose/resume files (owns its own

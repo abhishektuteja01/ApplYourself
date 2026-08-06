@@ -20,6 +20,9 @@ Draft only -- the user sends.
 ## Step 1 — HARD-REFUSE prereqs (no silent generic-voice fallback)
 
 ```bash
+# Every path below is repo-relative, and src/ resolves its own paths from
+# the repo root — so anchor the shell there too.
+cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 # voice_samples.md is the load-bearing precondition. If it's missing or
 # empty, the model would otherwise fabricate a "generic voice", which
 # is explicitly forbidden.

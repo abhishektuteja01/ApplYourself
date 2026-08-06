@@ -41,12 +41,6 @@ REQUIRED_STYLES = [
 # Required character-type style for clickable [text](url) markdown.
 REQUIRED_CHARACTER_STYLE = "Hyperlink"
 
-# Cover-letter template contract (placeholder fill-in, not markdown render --
-# the user's own .docx design is preserved untouched; only these placeholder
-# paragraphs get their text replaced). {{BODY}} is special: its paragraph's
-# formatting is cloned once per body paragraph, then the placeholder itself
-# is removed.
-
 
 class TemplateMissingError(FileNotFoundError):
     """Template file does not exist on disk."""

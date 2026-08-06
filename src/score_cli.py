@@ -45,6 +45,7 @@ from src.scoring_io import (
     merge_scores_from_dir,
     prune_scored,
 )
+from src.prescreen import SPONSORSHIP_RULES_PATH
 from src.shortlist import compute_shortlist, render_shortlist_markdown
 
 CLEAN = paths.CLEAN
@@ -258,7 +259,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     if not CLEAN.exists():
         print("ERROR: jobs/clean.parquet missing — run discovery first")
         return 1
-    sponsorship_rules = Path("profile/sponsorship_rules.yaml")
+    sponsorship_rules = SPONSORSHIP_RULES_PATH
     if not sponsorship_rules.exists():
         print(f"ERROR: {sponsorship_rules} missing")
         return 1

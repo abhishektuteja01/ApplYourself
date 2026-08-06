@@ -38,6 +38,9 @@ not in this file.
 as-is. Run everything below as ONE bash block:
 
 ```bash
+# Every path below is repo-relative, and src/ resolves its own paths from
+# the repo root — so anchor the shell there too.
+cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 JOB_ID="$1"
 
 test -n "$JOB_ID" || { echo "ERROR: /cover-letter requires a job_id argument."; exit 1; }

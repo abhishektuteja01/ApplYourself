@@ -1068,7 +1068,7 @@ def test_compute_shortlist_output_is_json_serialisable(tmp_path):
 
 
 def test_compute_shortlist_preserves_keywords_to_mirror_as_list(tmp_path):
-    """Regression: parquet stores list columns as numpy.ndarray. _to_jsonable
+    """Regression: parquet stores list columns as numpy.ndarray. to_jsonable
     must serialise them as JSON lists, not as the array's str repr (which
     would later iterate per-character and break shortlist rendering)."""
     rows = [{"job_id": "aaaaaaaa"}]

@@ -36,6 +36,7 @@ from src import verticals
 from src.discovery.location import parse_location
 from src.discovery.config import load_config
 from src.discovery.schema import naive_datetime
+from src import paths
 from src.parquet_io import write_parquet
 from src.state_io import load_state_index
 
@@ -774,10 +775,10 @@ def write_outputs(
 
 def run(
     run_id: str,
-    raw_dir: Path = Path("jobs/raw"),
-    clean_dir: Path = Path("jobs"),
-    runs_dir: Path = Path("jobs/runs"),
-    pipeline_dir: Path = Path("pipeline"),
+    raw_dir: Path = paths.JOBS_RAW,
+    clean_dir: Path = paths.JOBS,
+    runs_dir: Path = paths.JOBS_RUNS,
+    pipeline_dir: Path = paths.PIPELINE,
     today: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     runs_dir.mkdir(parents=True, exist_ok=True)

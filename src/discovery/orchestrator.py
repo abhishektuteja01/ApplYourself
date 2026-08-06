@@ -24,10 +24,10 @@ from src import paths
 log = logging.getLogger(__name__)
 
 REPO_ROOT = paths.REPO_ROOT
-JOBS_RAW = REPO_ROOT / "jobs" / "raw"
-JOBS_RUNS = REPO_ROOT / "jobs" / "runs"
-JOBS_ROOT = REPO_ROOT / "jobs"
-PIPELINE = REPO_ROOT / "pipeline"
+JOBS_RAW = paths.JOBS_RAW
+JOBS_RUNS = paths.JOBS_RUNS
+JOBS_ROOT = paths.JOBS
+PIPELINE = paths.PIPELINE
 
 def current_run_id(now: datetime | None = None) -> str:
     return (now or datetime.now()).strftime("%Y-%m-%d_%H%M")
