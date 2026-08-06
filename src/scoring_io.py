@@ -21,6 +21,7 @@ import yaml
 
 from src import verticals
 from src.parquet_io import write_parquet
+from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
 
@@ -635,9 +636,15 @@ def merge_scores(
         pd.concat([kept, new_df], ignore_index=True)
         if not kept.empty else new_df
     )
-    # Belt and braces: validate_scores rejects duplicates in the incoming
-    # batch, this catches any that reached the file some other way.
-    combined = combined.drop_duplicates(subset="job_id", keep="last")
+    # validate_scores rejects duplicates in the incoming batch, so anything
+    # caught here was already in scored.parquet — a file left corrupt by an
+    # interrupted run. Repair it, but say so; silently dropping a row would
+    # hide the corruption.
+    dupes = combined["job_id"][combined["job_id"].duplicated()].unique()
+    if len(dupes):
+        log.warning("scored.parquet held duplicate job_ids, keeping the newest "
+                    "of each: %s", ", ".join(map(str, dupes)))
+        combined = combined.drop_duplicates(subset="job_id", keep="last")
     scored_path.parent.mkdir(parents=True, exist_ok=True)
     write_parquet(combined, scored_path)
     return len(new_rows)
@@ -716,23 +723,13 @@ def _count_skips(state_history: Any) -> int:
 
 def _load_state_metadata(pipeline_dir: Path) -> dict[str, dict]:
     """{job_id: {state, skip_count}} from pipeline/*/state.yaml."""
-    out: dict[str, dict] = {}
-    if not pipeline_dir.exists():
-        return out
-    for f in pipeline_dir.glob("*/state.yaml"):
-        try:
-            data = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
-        except (yaml.YAMLError, OSError) as e:
-            log.warning("Skipping unreadable %s: %s", f, e)
-            continue
-        jid = data.get("job_id")
-        if not isinstance(jid, str):
-            continue
-        out[jid] = {
+    return {
+        jid: {
             "state": data.get("state", ""),
             "skip_count": _count_skips(data.get("state_history")),
         }
-    return out
+        for jid, data in load_state_index(pipeline_dir).items()
+    }
 
 
 def compute_shortlist(

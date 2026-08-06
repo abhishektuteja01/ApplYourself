@@ -37,6 +37,7 @@ from src.discovery.location import parse_location
 from src.discovery.config import load_config
 from src.discovery.schema import naive_datetime
 from src.parquet_io import write_parquet
+from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
 
@@ -273,21 +274,36 @@ def exact_dedupe(df: pd.DataFrame) -> pd.DataFrame:
 # Step 5 — near dedupe within company
 # ---------------------------------------------------------------------
 
-# Level, seniority and track tokens. Titles differing on any of these are
-# different roles no matter how close their WRatio: "data analyst" vs "data
-# analyst intern" scores 90 and "machine learning engineer i" vs "... ii"
-# scores 98, so ratio alone deletes real postings.
+# Level, seniority and track tokens, in canonical spelling. Two titles in one
+# company that disagree on these are different roles however close their ratio:
+# a level-numbered pair scores 98 on title alone, so ratio by itself deletes a
+# real posting.
 LEVEL_TOKENS = frozenset({
-    "i", "ii", "iii", "iv", "1", "2", "3", "4",
-    "intern", "interns", "internship", "trainee", "apprentice", "coop",
-    "junior", "jr", "entry", "graduate", "grad", "associate",
-    "senior", "sr", "staff", "principal", "distinguished", "fellow",
+    "i", "ii", "iii", "iv",
+    "intern", "coop", "trainee", "apprentice",
+    "junior", "entry", "graduate", "associate",
+    "senior", "staff", "principal", "distinguished", "fellow",
     "lead", "manager", "director", "head", "vp", "chief", "president",
 })
 
+# Compared as canonical sets, never raw tokens: the same level is routinely
+# spelled two ways across boards, and treating the spellings as different
+# levels would exempt a genuine duplicate from collapsing.
+_LEVEL_SYNONYMS = {
+    "jr": "junior", "sr": "senior",
+    "mgr": "manager", "mgmt": "manager", "management": "manager",
+    "interns": "intern", "internship": "intern", "internships": "intern",
+    "grad": "graduate", "apprenticeship": "apprentice",
+    "1": "i", "2": "ii", "3": "iii", "4": "iv",
+    "vice": "vp",
+}
+# normalize_title turns "Co-op" into two tokens, so rejoin it before matching.
+_CO_OP_RE = re.compile(r"\bco op\b")
+
 
 def _level_tokens(title: str) -> frozenset[str]:
-    return frozenset(LEVEL_TOKENS.intersection(title.split()))
+    tokens = (_LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title).split())
+    return frozenset(LEVEL_TOKENS.intersection(tokens))
 
 
 def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
@@ -377,16 +393,8 @@ def apply_state_yaml(df: pd.DataFrame, pipeline_dir: Path) -> pd.DataFrame:
     df["application_status"] = ""
     if not pipeline_dir.exists() or df.empty:
         return df
-    state_map: dict[str, str] = {}
-    for state_file in pipeline_dir.glob("*/state.yaml"):
-        try:
-            data = yaml.safe_load(state_file.read_text(encoding="utf-8")) or {}
-        except (yaml.YAMLError, OSError) as e:
-            log.warning("Skipping unreadable state file %s: %s", state_file, e)
-            continue
-        jid, state = data.get("job_id"), data.get("state")
-        if isinstance(jid, str) and isinstance(state, str):
-            state_map[jid] = state
+    state_map = {jid: d["state"] for jid, d in load_state_index(pipeline_dir).items()
+                 if isinstance(d.get("state"), str)}
     if not state_map:
         return df
     matched = df["job_id"].isin(state_map)
@@ -775,6 +783,9 @@ def run(
     # step 1
     df["company_normalized"] = df["company"].apply(normalize_company)
     df["title_normalized"] = df["title"].apply(normalize_title)
+    # Counted before any drop below it, so the per-source table's raw column
+    # still reconciles against after_exclusion.
+    per_source_raw = df["source"].value_counts().to_dict() if not df.empty else {}
     # A blank company makes job_id a function of the title alone, so two rows
     # from different employers collide and exact_dedupe deletes one.
     blank_company = df["company_normalized"].fillna("").str.strip() == "" if not df.empty else None
@@ -784,7 +795,6 @@ def run(
             log.warning("dropping row with unusable company: company=%r title=%r", c, t)
         df = df[~blank_company].copy()
     after_blank_company = len(df)
-    per_source_raw = df["source"].value_counts().to_dict() if not df.empty else {}
     # step 2
     df = drop_short_jd(df)
     after_short = len(df)
@@ -803,7 +813,7 @@ def run(
     before_near = df
     df = near_dedupe(df)
     after_near = len(df)
-    # A near-dup drop is the one silent way a role you are actively tracking
+    # A near-dup drop is the one silent way a role being actively tracked
     # leaves clean.parquet, so name the casualties in the run report.
     near_dropped = [
         f"{compute_job_id(c, t)} {c} | {t}"

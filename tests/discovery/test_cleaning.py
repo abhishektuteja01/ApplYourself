@@ -262,6 +262,28 @@ def test_near_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
     assert sorted(out["title_normalized"]) == sorted([title_a, title_b])
 
 
+# The guard compares canonical level sets. If it compared raw tokens, every
+# pair here would be exempted from collapsing and the same req scraped from two
+# boards with different spellings would survive twice, with two job_ids.
+@pytest.mark.parametrize("title_a,title_b", [
+    ("junior software engineer", "jr software engineer"),
+    ("senior widget consultant", "sr widget consultant"),
+    ("associate product manager", "associate product mgr"),
+    ("technical program manager", "technical program management"),
+    ("machine learning engineer iii", "machine learning engineer 3"),
+    ("graduate research assistant", "grad research assistant"),
+    ("data analyst intern", "data analyst internship"),
+    ("widget engineer co op", "widget engineer coop"),
+])
+def test_near_dedupe_collapses_abbreviated_spellings_of_one_level(title_a, title_b):
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": title_a, "jd_text": "a" * 300},
+        {"company_normalized": "acme", "title_normalized": title_b, "jd_text": "a" * 500},
+    ])
+    assert fuzz.WRatio(title_a, title_b) >= 90, "pair must be a ratio near-dup"
+    assert len(near_dedupe(df)) == 1
+
+
 def test_near_dedupe_still_collapses_when_levels_match():
     """The guard compares level tokens, so two titles that share one still
     collapse on ratio."""

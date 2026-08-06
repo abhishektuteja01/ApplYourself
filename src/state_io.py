@@ -310,13 +310,15 @@ def mark_outreach_sent(
 # Read-only helpers (/standup, /score skip suppression)
 # ---------------------------------------------------------------
 
-def load_all_states(pipeline_dir: Path) -> list[dict]:
-    """Glob pipeline/*/state.yaml; return parsed dicts in alphabetical
-    order of job_id. Malformed files are skipped with a logged warning,
-    not raised -- one bad file shouldn't break /standup."""
+def iter_states(pipeline_dir: Path):
+    """Yield every readable pipeline/*/state.yaml dict, in alphabetical order.
+
+    The one place the glob-and-skip-unreadable shape lives. Malformed files are
+    skipped with a logged warning, not raised -- one bad file must not break
+    /standup, a discovery run, or a shortlist.
+    """
     if not pipeline_dir.exists():
-        return []
-    out: list[dict] = []
+        return
     for state_file in sorted(pipeline_dir.glob("*/state.yaml")):
         try:
             data = load_state(state_file)
@@ -324,5 +326,17 @@ def load_all_states(pipeline_dir: Path) -> list[dict]:
             log.warning("Skipping %s: %s", state_file, e)
             continue
         if data:
-            out.append(data)
-    return out
+            yield data
+
+
+def load_all_states(pipeline_dir: Path) -> list[dict]:
+    """Every state.yaml as a list, alphabetical. Sole reader for /standup."""
+    return list(iter_states(pipeline_dir))
+
+
+def load_state_index(pipeline_dir: Path) -> dict[str, dict]:
+    """{job_id: state dict} for the consumers that key on job_id --
+    cleaning's already_seen tagging and the shortlist's skip suppression.
+    Records without a str job_id are skipped: they cannot be joined to a row."""
+    return {d["job_id"]: d for d in iter_states(pipeline_dir)
+            if isinstance(d.get("job_id"), str)}

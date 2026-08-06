@@ -17,6 +17,11 @@ from src.discovery.sources.base import Source, SourceResult
 # a row parser these become an AttributeError/TypeError that escapes the company
 # loop, and the orchestrator then discards the whole source's shard — every
 # company polled before the bad one, which can be hours of paced fetching.
+#
+# No health strike on this path: it means valid JSON of an unexpected shape,
+# which points at an API change rather than a dead board, and update_health is
+# documented as permanent-death-only. A decommissioned board serving an HTML
+# error page decodes as invalid JSON and arrives as CareersError instead.
 PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexError)
 
 
@@ -56,6 +61,7 @@ class AtsBoardSource(Source):
         ok = 0
         err_404 = 0
         err_other = 0
+        shape_errors = 0
 
         for i, c in enumerate(companies):
             if ctx.deadline_reached():
@@ -85,6 +91,13 @@ class AtsBoardSource(Source):
                 continue
             except PAYLOAD_SHAPE_ERRORS as e:
                 err_other += 1
+                shape_errors += 1
+                # These are the same exception types a bug in parse_rows would
+                # raise. One company means bad data; every company means the
+                # parser is broken, and swallowing that would hand the
+                # orchestrator a valid empty shard instead of failing loud.
+                if shape_errors > 1 and shape_errors == polled:
+                    raise
                 msg = f"malformed board payload: {type(e).__name__}: {e}"
                 errors.append(f"{c.name}: {msg}")
                 report_lines.append(

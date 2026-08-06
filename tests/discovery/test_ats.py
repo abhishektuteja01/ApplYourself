@@ -199,6 +199,19 @@ class TestMalformedPayloadStaysPerCompany:
         res = LeverSource().fetch(MockContext())
         assert len(res.rows) == 1
 
+    def test_every_company_failing_the_same_way_is_raised_not_swallowed(self, monkeypatch):
+        """A shape error on one company is bad data. On all of them it is a bug
+        in parse_rows, and containing it would hand the orchestrator a valid
+        empty shard instead of failing loud."""
+        monkeypatch.setattr(base.time, "sleep", lambda _: None)
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("A Co", "greenhouse", "a"),
+            UniverseCompany("B Co", "greenhouse", "b"),
+        ])
+        monkeypatch.setattr(base, "fetch_json", lambda url, **kw: "not an object")
+        with pytest.raises(TypeError):
+            GreenhouseSource().fetch(MockContext())
+
     def test_a_shape_error_is_reported_as_a_named_company_error(self, monkeypatch):
         monkeypatch.setattr(base.time, "sleep", lambda _: None)
         monkeypatch.setattr(universe, "load", lambda ats: [
