@@ -10,12 +10,12 @@ import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 
+from src.docx_cover_letter import render_cover_letter
 from src.docx_render import (
     REQUIRED_STYLES,
     TemplateError,
     TemplateMissingError,
     parse_resume_md,
-    render_cover_letter,
     render_resume,
 )
 

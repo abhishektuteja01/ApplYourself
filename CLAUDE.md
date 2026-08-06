@@ -47,7 +47,8 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    `shortlist/<date>.md`. See below.
 4. **Application material** (`/tailor`, `/cover-letter`, `/outreach`) — generate
    docx/pdf into `applications/<vertical>/<dir>/`; docx rendering via
-   `src/docx_render.py`; text passes `src/lint.py`.
+   `src/docx_render.py` (resume) and `src/docx_cover_letter.py`
+   (placeholder fill); text passes `src/lint.py`.
 5. **Tracking** (`/track`, `/standup`; plumbing in `src/state_io.py`,
    `src/track_cli.py`) — one `pipeline/<job_id>/state.yaml` per role moving
    through an 11-state machine.

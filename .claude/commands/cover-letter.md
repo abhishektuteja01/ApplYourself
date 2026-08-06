@@ -68,7 +68,7 @@ TODAY=$(date "+%B %-d, %Y")
 echo "today: ${TODAY}"
 uv run python -c "
 from pathlib import Path
-from src.docx_render import list_cover_letter_placeholders
+from src.docx_cover_letter import list_cover_letter_placeholders
 print('placeholders:', sorted(list_cover_letter_placeholders(Path('profile/cover_letter_template.docx'))))
 "
 echo "reusing tailor dir: ${OUT_DIR}"
@@ -264,7 +264,7 @@ When `violations` is empty, proceed to Step 6.
 uv run python -c "
 import json
 from pathlib import Path
-from src.docx_render import render_cover_letter
+from src.docx_cover_letter import render_cover_letter
 content = json.loads(Path('/tmp/cover_letter_${JOB_ID}_draft.json').read_text())
 render_cover_letter(content, Path('profile/cover_letter_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx'))
 print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx')
