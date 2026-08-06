@@ -286,7 +286,9 @@ Each item is independent. Do only the one the user wants next.
    name and contact line come from the lane's scoring resume.
 4. Tell them never to edit `profile/resume_template.example.docx` itself. It is
    tracked, and re-saving it in Word stamps their name into the document
-   metadata; the pre-push hook will block the push. They style the copy.
+   metadata; the pre-push hook will block the push. They style the copy. If they
+   already saved over it, `uv run python scripts/scrub_example_templates.py`
+   strips the metadata and `--check` confirms.
 5. **Only once `/score` has produced a shortlist**, run `/suggest-synonyms` to
    populate `allowable_synonyms` in `bullets.md` and `skills_master.md`. It reads
    `shortlist/*.md` and `jobs/scored.parquet`; with neither present it has

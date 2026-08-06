@@ -126,12 +126,18 @@ The work is filling them in.
 | `resume_template.docx` | Word template whose five named paragraph styles the resume renderer fills. Its body text is discarded. |
 | `cover_letter_template.docx` | Your own letter design. Everything that is not a `{{PLACEHOLDER}}` is **preserved into every letter**, so nothing decorative is free. |
 
-The two `.example.docx` templates are the repo's only tracked binaries. They
-carry no text beyond style samples and placeholders, and tests assert that plus
-empty document metadata, because the PII gate allowlists them by name.
-After editing either in Word, run
-`uv run python scripts/scrub_example_templates.py` to strip the name Word
-stamps into the metadata.
+The two `.example.docx` templates are the repo's only tracked binaries, so the
+PII gate allowlists them by name and `tests/test_example_templates.py` stands in
+for the text scan it skips. Every string they contain is a generic stand-in —
+`Name`, `City, ST`, `Bullet Text 1` — and the tests fail on any text outside that
+approved set, on document metadata, and on an unexpected part appearing inside
+the archive. The cover letter's letterhead is literal text, not a placeholder
+token, so **replace `NAME` and the contact line in your own copy** or every
+letter you send is headed `NAME`.
+
+They are hand-authored in Word, and every save stamps the editor's name into the
+metadata, so run `uv run python scripts/scrub_example_templates.py` after any
+edit (`--check` exits 1 if either file still needs it).
 
 Two rule files ship as real defaults rather than templates, since they are rules
 and not personal data: `profile/de_ai_rules.yaml` (banned phrasing) and
