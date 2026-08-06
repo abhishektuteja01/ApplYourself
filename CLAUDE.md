@@ -139,6 +139,7 @@ uv run ingest-url <url>               # pull one JD into inbox/
 uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...)
 uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
+./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 ```
 
 The user-facing workflow is the slash commands (`/score`, `/tailor`,
@@ -150,6 +151,16 @@ The user-facing workflow is the slash commands (`/score`, `/tailor`,
 plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
 `/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself
 stays in the command session).
+
+## The PII gate
+
+The repo is public (`github.com/abhishektuteja01/ApplYourself`).
+`scripts/pii_scan.sh` fails on any denylisted string in a tracked file, reading
+patterns from gitignored `profile/pii_denylist.txt`. `.githooks/pre-push` runs it
+(`git config core.hooksPath .githooks`, once per clone). It reads the git
+**index**, so it only sees tracked files: run it *after* staging, and never put a
+real pattern in a committed file. `LICENSE` and `data/universe/*.csv` are
+allowlisted in-script.
 
 ## Gotchas
 
