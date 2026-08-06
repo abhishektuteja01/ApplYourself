@@ -146,6 +146,23 @@ Tests run against a synthetic three-lane config in `tests/fixtures/verticals.yam
 `tests/test_real_config_drift.py` additionally checks your live
 `profile/verticals.yaml` when it exists, and skips on a fresh clone.
 
+## Before you push: the PII gate
+
+If you fork this and push anywhere public, `scripts/pii_scan.sh` fails the push
+when a denylisted string reaches a tracked file:
+
+```bash
+cp profile/pii_denylist.example.txt profile/pii_denylist.txt   # then fill it in
+git config core.hooksPath .githooks                            # once per clone
+./scripts/pii_scan.sh                                          # or run it by hand
+```
+
+Your denylist is gitignored — the list of strings to keep out is itself the thing
+being kept out. Patterns match whole words, so a short abbreviation in your list
+will not flag every longer word that happens to contain it.
+`LICENSE` and `data/universe/*.csv` are allowlisted inside the script: MIT
+attribution and vendored company names are supposed to be there.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

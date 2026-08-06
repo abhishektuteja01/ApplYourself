@@ -12,6 +12,8 @@ pipeline/*/state.yaml
 profile/resume_template.docx*
 profile/cover_letter_template.docx*
 profile/*.docx.bak
+# The PII denylist is itself PII; committed template: profile/pii_denylist.example.txt
+profile/pii_denylist.txt
 
 # =============================================================================
 # Job-search strategy — mine, not for a public repo (PRD §7.15).

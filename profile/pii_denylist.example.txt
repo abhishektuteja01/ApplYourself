@@ -1,0 +1,20 @@
+# Patterns for scripts/pii_scan.sh. Copy to profile/pii_denylist.txt (gitignored)
+# and replace these with your own.
+#
+# One extended regex per line. Matched case-insensitively against whole words, so
+# a short abbreviation will not flag every longer word that contains it. Lines
+# starting with # and blank lines are ignored. Escape regex metacharacters:
+# jane\.doe@x\.com
+#
+# Anything that identifies you or someone else:
+Jane
+Doe
+jane\.doe@example\.com
+555-0100
+ExampleUniversity
+#
+# Employers, clients, and schools whose names you do not want in a public repo:
+AcmeCorp
+#
+# Job-search strategy you keep private — real lane names, niche search terms:
+widget_engineering

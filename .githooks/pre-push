@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Blocks a push whose tracked files contain denylisted PII.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass (do not):        git push --no-verify
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/pii_scan.sh"
