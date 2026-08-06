@@ -64,6 +64,21 @@ def _paragraph_full_text(paragraph) -> str:
     return "".join(t.text or "" for t in paragraph._p.iter(qn("w:t")))
 
 
+def _iter_paragraphs(doc):
+    """Every body paragraph, including those inside table cells (nested tables
+    included). doc.paragraphs walks only direct body children, and many Word
+    letter designs lay the whole page out in an invisible table -- placeholders
+    in those cells would be invisible to detection and to filling."""
+    yield from doc.paragraphs
+    tables = list(doc.tables)
+    while tables:
+        table = tables.pop()
+        for row in table.rows:
+            for cell in row.cells:
+                yield from cell.paragraphs
+                tables.extend(cell.tables)
+
+
 def list_cover_letter_placeholders(template_path: Path) -> set[str]:
     """Return which COVER_LETTER_REQUIRED_PLACEHOLDERS /
     COVER_LETTER_OPTIONAL_PLACEHOLDERS tokens are present in
@@ -75,7 +90,7 @@ def list_cover_letter_placeholders(template_path: Path) -> set[str]:
     doc = Document(str(template_path))
     all_tokens = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(COVER_LETTER_OPTIONAL_PLACEHOLDERS)
     return {
-        text for p in doc.paragraphs
+        text for p in _iter_paragraphs(doc)
         if (text := _paragraph_full_text(p).strip()) in all_tokens
     }
 
@@ -84,7 +99,7 @@ def _fill_cover_letter_placeholders(doc, content: dict, path: Path) -> None:
     found: dict[str, object] = {}
     counts: dict[str, int] = {}
     all_tokens = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(COVER_LETTER_OPTIONAL_PLACEHOLDERS)
-    for p in doc.paragraphs:
+    for p in _iter_paragraphs(doc):
         text = _paragraph_full_text(p).strip()
         if text in all_tokens:
             counts[text] = counts.get(text, 0) + 1
@@ -142,22 +157,26 @@ def _set_paragraph_text(paragraph, text: str) -> None:
         return
     first_t = t_elems[0]
     run_elem = first_t.getparent()
-    _unwrap_sdt_ancestor(run_elem, p_elem)
+    _unwrap_run_ancestor(run_elem, p_elem)
     first_t.text = text
     for t in t_elems[1:]:
         t.text = ""
 
 
-def _unwrap_sdt_ancestor(run_elem, paragraph_elem) -> bool:
-    """If run_elem sits inside a Word content control (w:sdt) within
-    paragraph_elem, replace that w:sdt with run_elem itself (preserving
-    run_elem's formatting/position) and return True. No-op (returns
-    False) if run_elem is a direct/hyperlink-nested child with no w:sdt
-    ancestor."""
+_UNWRAP_TAGS = (qn("w:sdt"), qn("w:hyperlink"))
+
+
+def _unwrap_run_ancestor(run_elem, paragraph_elem) -> bool:
+    """If run_elem sits inside a Word content control (w:sdt) or a hyperlink
+    (w:hyperlink) within paragraph_elem, replace that wrapper with run_elem
+    itself (preserving run_elem's formatting/position) and return True. No-op
+    (returns False) for a direct child. Both wrappers must go: an sdt leaves
+    stale 'click here to type' plumbing in the letter, and a hyperlink would
+    render the generated text as a live link to the template's URL."""
     node = run_elem
     parent = node.getparent()
     while parent is not None and parent is not paragraph_elem:
-        if parent.tag == qn("w:sdt"):
+        if parent.tag in _UNWRAP_TAGS:
             parent.getparent().replace(parent, run_elem)
             return True
         node = parent

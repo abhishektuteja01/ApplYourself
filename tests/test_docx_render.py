@@ -10,7 +10,10 @@ import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 
-from src.docx_cover_letter import render_cover_letter
+from src.docx_cover_letter import (
+    list_cover_letter_placeholders,
+    render_cover_letter,
+)
 from src.docx_render import (
     REQUIRED_STYLES,
     TemplateError,
@@ -610,3 +613,55 @@ def test_cover_letter_token_with_other_text_is_not_a_placeholder(tmp_path):
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(date="2026-06-06"), t, out)
     assert _texts(out)[0] == "Use {{DATE}} in your template."
+
+
+# ---------- placeholders Word nests: hyperlinks and table cells ----------
+
+def test_cover_letter_placeholder_in_hyperlink_loses_the_link(tmp_path):
+    """A {{SALUTATION}} the user pasted as a link was detected and filled, but
+    the w:hyperlink wrapper survived — so the letter shipped its salutation as a
+    live link to whatever URL the template pointed at."""
+    from docx.oxml.ns import qn
+
+    doc = Document()
+    p = doc.add_paragraph()
+    link = p._p.makeelement(qn("w:hyperlink"), {})
+    run = p.add_run("{{SALUTATION}}")._r
+    p._p.remove(run)
+    link.append(run)
+    p._p.append(link)
+    doc.add_paragraph("{{BODY}}")
+    t = tmp_path / "hyper.docx"
+    doc.save(str(t))
+
+    assert list_cover_letter_placeholders(t) == {"{{SALUTATION}}", "{{BODY}}"}
+
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    rendered = Document(str(out))
+    assert "Dear Hiring Manager," in _texts(out)
+    assert not any(p._p.findall(qn("w:hyperlink")) for p in rendered.paragraphs)
+
+
+def test_cover_letter_placeholders_inside_a_table_cell_are_filled(tmp_path):
+    """Many Word letter designs lay the page out in an invisible table.
+    doc.paragraphs never enters a cell, so those placeholders were invisible and
+    the render failed claiming a required token was missing."""
+    doc = Document()
+    table = doc.add_table(rows=2, cols=1)
+    table.cell(0, 0).paragraphs[0].text = "{{SALUTATION}}"
+    table.cell(1, 0).paragraphs[0].text = "{{BODY}}"
+    t = tmp_path / "tbl.docx"
+    doc.save(str(t))
+
+    assert list_cover_letter_placeholders(t) == {"{{SALUTATION}}", "{{BODY}}"}
+
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    cell_texts = [
+        p.text
+        for row in Document(str(out)).tables[0].rows
+        for cell in row.cells
+        for p in cell.paragraphs
+    ]
+    assert cell_texts == ["Dear Hiring Manager,", "First para.", "Second para."]
