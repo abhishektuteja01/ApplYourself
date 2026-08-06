@@ -98,6 +98,11 @@ cp profile/companies.example.yaml       profile/companies.yaml   # optional
 uv run verticals-check     # validates config + per-lane files, fails loud
 ```
 
+Then set `bullets_diction_pass_completed: false` in `profile/de_ai_rules.yaml`.
+It ships `true`, which exempts verbatim bullet text from banned-phrase linting —
+right for bullets you have already read for diction, wrong for ones you have not
+written yet. Turn it back on once you have. (`/onboarding` does this for you.)
+
 To add a lane of your own, run **`/new-vertical`** — it interviews you and
 writes every piece. Copying `profile/verticals/example_primary/` by hand is not
 enough on its own: the copied directory is unreferenced until you also rename
