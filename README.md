@@ -76,12 +76,25 @@ uv run pytest tests -q     # should be fully green
 
 ### Configuration
 
-Copy the templates and edit:
+Run **`/onboarding`** in Claude Code. It interviews you through the whole
+install — the PII gate, every `profile/` file, your first lane, discovery
+config — one question at a time, and you can stop after any stage and re-run to
+continue. Reaching a first scored shortlist takes about 2.5–3.5 hours, most of
+it spent deciding which of your own bullets you will stand behind.
+
+It also runs as a setup audit: `/onboarding audit` on an existing install
+reports what is missing or invalid without changing anything.
+
+To do it by hand instead, every file has a template next to it:
 
 ```bash
-cp profile/verticals.example.yaml  profile/verticals.yaml
-cp profile/discovery.example.yaml  profile/discovery.yaml
-cp profile/companies.example.yaml  profile/companies.yaml
+cp profile/verticals.example.yaml       profile/verticals.yaml
+cp profile/discovery.example.yaml       profile/discovery.yaml
+cp profile/scoring_rubric.example.md    profile/scoring_rubric.md
+cp profile/preferences.example.md       profile/preferences.md
+cp profile/bullets.example.md           profile/bullets.md
+cp profile/skills_master.example.md     profile/skills_master.md
+cp profile/companies.example.yaml       profile/companies.yaml   # optional
 uv run verticals-check     # validates config + per-lane files, fails loud
 ```
 
@@ -96,23 +109,32 @@ while your lane does nothing.
 Everything under `profile/` is gitignored user data. Nothing you write there
 is ever committed.
 
-### The files you have to write yourself
+### The content only you can supply
 
-These have no template — they are your actual experience, and the pipeline
-refuses to invent them. Create them under `profile/`:
+Every file below has a `.example` template documenting its schema, but the
+templates are shapes, not content: the pipeline will not invent your experience.
+The work is filling them in.
 
 | file | what it is |
 |---|---|
 | `bullets.md` | Canonical resume bullets. **The source of truth for every generated document** — `/tailor` may reword within the synonyms you allow, never beyond them. |
 | `skills_master.md` | Your skills inventory; the Skills section is assembled from here, not written fresh. |
-| `preferences.md` | Location, comp, role-shape preferences. |
-| `scoring_rubric.md` | Shared scoring schema and sponsorship precedence, on top of each lane's own `rubric.md`. |
-| `voice_samples.md` | Writing samples so outreach sounds like you. `/outreach` **refuses to run** without it. |
+| `preferences.md` | Work authorization, location, comp, deal-breakers. |
+| `scoring_rubric.md` | Shared scoring schema and sponsorship precedence, on top of each lane's own `rubric.md`. Ships working defaults. |
+| `voice_samples.md` | Messages you actually sent, so outreach sounds like you. `/outreach` **refuses to run** without it. |
 | `contacts.yaml` | People to reach out to. Optional. |
-| `resume_template.docx`, `cover_letter_template.docx` | Word templates the renderer fills. |
+| `resume_template.docx` | Word template whose five named paragraph styles the resume renderer fills. Its body text is discarded. |
+| `cover_letter_template.docx` | Your own letter design. Everything that is not a `{{PLACEHOLDER}}` is **preserved into every letter**, so nothing decorative is free. |
 
-Two rule files ship with sensible defaults and are yours to tune:
-`profile/de_ai_rules.yaml` (banned phrasing) and `profile/sponsorship_rules.yaml`.
+The two `.example.docx` templates are the repo's only tracked binaries. They
+carry no text beyond style samples and placeholders, and tests assert that plus
+empty document metadata, because the PII gate allowlists them by name.
+Regenerate with `uv run python scripts/make_example_templates.py`.
+
+Two rule files ship as real defaults rather than templates, since they are rules
+and not personal data: `profile/de_ai_rules.yaml` (banned phrasing) and
+`profile/sponsorship_rules.yaml` (whose `false_positive_guard` assumes you are
+already authorized to work — remove those phrases if you need sponsorship).
 
 ## Lanes ("verticals")
 
@@ -138,11 +160,21 @@ uv run ingest-url <url>               # pull one posting into inbox/
 uv run score <subcommand>             # scoring plumbing (dump/split/merge/...)
 uv run track <job_id> <state>         # state transition
 uv run tailor-prep <job_id>           # /tailor's deterministic front-matter
+uv run profile-extract <file>         # dump a .docx resume's text
 ```
 
-Slash commands (in Claude Code): `/score`, `/rescore`, `/tailor`,
+Slash commands (in Claude Code): `/onboarding`, `/score`, `/rescore`, `/tailor`,
 `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
 `/suggest-synonyms`, `/no_ai_slop`.
+
+### Running it nightly (macOS)
+
+`scripts/nightly_discovery.sh` plus `scripts/launchagent.example.plist` schedule
+the scrape at 02:00, wrapped in `caffeinate` so sleep does not kill it mid-run. A
+`launchd` job whose start time falls while the Mac is asleep is skipped rather
+than deferred, so it needs a `pmset` wake a few minutes earlier. `/onboarding`
+Track C walks through it; scoring stays a morning decision, since it needs a
+Claude Code session.
 
 Read a command's `.md` before running it — the real orchestration logic lives
 there, not in `src/`.
@@ -166,8 +198,11 @@ when a denylisted string reaches a tracked file:
 ```bash
 cp profile/pii_denylist.example.txt profile/pii_denylist.txt   # then fill it in
 git config core.hooksPath .githooks                            # once per clone
-./scripts/pii_scan.sh                                          # or run it by hand
+git add -A && ./scripts/pii_scan.sh                            # or run it by hand
 ```
+
+`/onboarding` Stage 2 does this as an interview, one category at a time, which is
+the easier way to get a denylist that is actually complete.
 
 Your denylist is gitignored — the list of strings to keep out is itself the thing
 being kept out. Patterns match whole words by default, so a short abbreviation in

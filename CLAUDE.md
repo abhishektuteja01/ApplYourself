@@ -142,11 +142,13 @@ uv run ingest-url <url>               # pull one JD into inbox/
 uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...)
 uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
+uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
+uv run python scripts/make_example_templates.py   # regenerate the two .example.docx
 ```
 
-The user-facing workflow is the slash commands (`/score`, `/tailor`,
-`/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
+The user-facing workflow is the slash commands (`/onboarding`, `/score`,
+`/tailor`, `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
 `/suggest-synonyms`, `/rescore`, `/no_ai_slop`), defined in
 `.claude/commands/*.md`. `score-judge.md` also lives there but is spawned by
 `/score`, never invoked directly. There is no
@@ -154,6 +156,31 @@ The user-facing workflow is the slash commands (`/score`, `/tailor`,
 plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
 `/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself
 stays in the command session).
+
+## New-user templates (`profile/*.example.*`)
+
+Every `profile/` input a command or module reads must be either committed
+outright or shipped as a `.example` template beside it.
+`tests/test_profile_templates.py` derives that list by scanning
+`.claude/**/*.md`, `src/**/*.py` and `scripts/*.sh` for `profile/` references, so
+wiring in a new profile file fails the suite until it has a template. Excluded:
+committed defaults (`de_ai_rules.yaml`, `sponsorship_rules.yaml`), the
+`example_*` lane dirs, and dotfiles (runtime state a command writes, e.g.
+`profile/.onboarding.md`).
+
+Template content lives in the fictional widget/gizmo/sprocket/cog world of the
+`example_*` lanes, and the ids must resolve: the `SKILL-*` ids those lanes name
+in their Skills layouts must exist in `skills_master.example.md`, and every
+`evidence:` reference must point at a bullet in `bullets.example.md`. Tests
+enforce both directions.
+
+`profile/*.example.docx` are the only tracked binaries, allowlisted **by name**
+in `pii_scan.sh` (never by glob) with `tests/test_example_templates.py` standing
+in for the text scan the gate skips. Regenerate them with
+`scripts/make_example_templates.py`; never re-save them in Word, which stamps
+the editor's name into the document metadata.
+
+`/onboarding` is the interview that fills all of it in.
 
 ## The PII gate
 
