@@ -48,14 +48,19 @@ def state_path_for(pipeline_dir: Path, job_id: str) -> Path:
 
 
 def load_state(state_path: Path) -> dict | None:
-    """Return the parsed state.yaml dict, or None if the file doesn't exist.
+    """Return the parsed state.yaml dict, or None if the file doesn't exist
+    or is empty. An empty file carries no state, so callers must treat it the
+    same as an absent one -- otherwise transition() takes its existing-role
+    branch and writes a record with no job_id.
     Raises ValueError on malformed YAML or non-mapping content."""
     if not state_path.exists():
         return None
     try:
-        data = yaml.safe_load(state_path.read_text(encoding="utf-8")) or {}
+        data = yaml.safe_load(state_path.read_text(encoding="utf-8"))
     except (yaml.YAMLError, OSError) as e:
         raise ValueError(f"failed to read {state_path}: {e}") from e
+    if data is None or data == {}:
+        return None
     if not isinstance(data, dict):
         raise ValueError(f"{state_path} is not a YAML mapping")
     return data
@@ -91,7 +96,7 @@ def transition(
 ) -> dict:
     """Transition the role at state_path to new_state.
 
-    If state.yaml does NOT exist: creates it. Requires initial_fields to
+    If state.yaml does NOT exist (or is empty): creates it. Requires initial_fields to
     contain at minimum {job_id, company, title}; optional keys
     {source, url, location, vertical, sponsorship_label, fit_score}
     populate the template fields. `vertical` is set once at
@@ -99,6 +104,7 @@ def transition(
 
     If state.yaml exists:
       - rejects new_state not in VALID_STATES
+      - rejects a record with no job_id (corrupt file)
       - rejects any transition out of a TERMINAL_STATE
       - appends to state_history (append-only)
       - updates last_touch
@@ -145,6 +151,11 @@ def transition(
             "outreach":          [],
         }
     else:
+        if not existing.get("job_id"):
+            raise ValueError(
+                f"{state_path} has no job_id -- the file is corrupt. Delete it "
+                "and re-run /track to rebuild it from clean.parquet."
+            )
         current = existing.get("state")
         if current in TERMINAL_STATES:
             raise ValueError(

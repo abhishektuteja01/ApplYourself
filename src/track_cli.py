@@ -30,6 +30,7 @@ import pandas as pd
 from src.state_io import (
     VALID_STATES,
     ensure_state,
+    load_state,
     mark_outreach_sent,
     state_path_for,
     transition,
@@ -83,7 +84,14 @@ def _gather_initial_fields(job_id: str) -> dict:
 def _cmd_transition(args: argparse.Namespace) -> int:
     job_id, new_state, note = args.job_id, args.state, args.note
     p = state_path_for(PIPELINE, job_id)
-    initial = None if p.exists() else _gather_initial_fields(job_id)
+    # Gate on content, not existence: an empty state.yaml carries no state and
+    # is rebuilt from the parquets rather than transitioned in place.
+    try:
+        existing = load_state(p)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    initial = None if existing is not None else _gather_initial_fields(job_id)
     try:
         data = transition(p, new_state, note=note, initial_fields=initial)
     except ValueError as e:
@@ -101,7 +109,12 @@ def _cmd_transition(args: argparse.Namespace) -> int:
 def _cmd_ensure(args: argparse.Namespace) -> int:
     job_id = args.job_id
     p = state_path_for(PIPELINE, job_id)
-    initial = None if p.exists() else _gather_initial_fields(job_id)
+    try:
+        existing = load_state(p)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    initial = None if existing is not None else _gather_initial_fields(job_id)
     try:
         data, created = ensure_state(p, initial_fields=initial or {})
     except ValueError as e:

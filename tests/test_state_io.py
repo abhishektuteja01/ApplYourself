@@ -51,6 +51,33 @@ def test_valid_states_count_and_terminal_subset():
     assert "skip" in CLOSED_STATES and "skip" not in TERMINAL_STATES
 
 
+# ---------- load_state: truncated / corrupt files ----------
+
+def _empty_state_file(tmp_path, content: str = "") -> Path:
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    p.parent.mkdir(parents=True)
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+@pytest.mark.parametrize("content", ["", "\n", "   \n", "# comment only\n", "{}\n"])
+def test_load_state_returns_none_for_an_empty_file(tmp_path, content):
+    """A file carrying no mapping is indistinguishable from an absent one.
+    Returning {} sends transition() down its existing-role branch."""
+    assert load_state(_empty_state_file(tmp_path, content)) is None
+
+
+@pytest.mark.parametrize("content", ["- a\n- b\n", "just a string\n", "42\n"])
+def test_load_state_still_raises_on_non_mapping(tmp_path, content):
+    with pytest.raises(ValueError, match="not a YAML mapping"):
+        load_state(_empty_state_file(tmp_path, content))
+
+
+def test_load_state_raises_on_malformed_yaml(tmp_path):
+    with pytest.raises(ValueError, match="failed to read"):
+        load_state(_empty_state_file(tmp_path, "this is: not\n  - valid: yaml: :\n"))
+
+
 # ---------- transition: creation path ----------
 
 def test_transition_creates_state_yaml_when_missing(tmp_path):
@@ -90,6 +117,27 @@ def test_transition_creation_requires_core_initial_keys(tmp_path):
         transition(p, "saved", initial_fields={"job_id": "aaaaaaaa"})
 
 
+def test_transition_over_an_empty_file_rebuilds_a_full_record(tmp_path):
+    """A truncated state.yaml takes the creation path, not the update path."""
+    p = _empty_state_file(tmp_path)
+    data = transition(p, "offer", initial_fields=_initial(),
+                       now=datetime(2026, 6, 6, 10, 0))
+    assert data["job_id"] == "aaaaaaaa"
+    assert data["company"] == "Acme"
+    assert data["title"] == "Widget FN"
+    assert data["state"] == "offer"
+    assert data["state_history"] == [
+        {"state": "offer", "at": "2026-06-06T10:00:00", "note": ""},
+    ]
+    assert _yaml_load(p)["job_id"] == "aaaaaaaa"
+
+
+def test_transition_over_an_empty_file_requires_initial_fields(tmp_path):
+    p = _empty_state_file(tmp_path)
+    with pytest.raises(ValueError, match="initial_fields"):
+        transition(p, "offer")
+
+
 # ---------- transition: existing path ----------
 
 def test_transition_appends_state_history(tmp_path):
@@ -124,6 +172,21 @@ def test_transition_rejects_out_of_every_terminal_state(tmp_path, terminal):
     transition(p, terminal, initial_fields=_initial())
     with pytest.raises(ValueError, match="cannot transition out of terminal"):
         transition(p, "saved")
+
+
+@pytest.mark.parametrize("record", [
+    {"state": "saved", "state_history": []},
+    {"job_id": "", "state": "saved", "state_history": []},
+    {"job_id": None, "state": "saved", "state_history": []},
+])
+def test_transition_refuses_an_existing_record_without_job_id(tmp_path, record):
+    """A partially-written file is a dict, so it reaches the update branch —
+    which would otherwise write a record no downstream reader can key on."""
+    p = _empty_state_file(tmp_path, yaml.safe_dump(record, sort_keys=False))
+    before = p.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="no job_id"):
+        transition(p, "applied")
+    assert p.read_text(encoding="utf-8") == before
 
 
 def test_transition_applied_at_only_set_once(tmp_path):
@@ -216,6 +279,32 @@ def test_mark_outreach_sent_picks_latest_matching_draft(tmp_path):
     assert data["outreach"][1]["status"] == "sent"
 
 
+# ---------- side lists over a truncated file ----------
+
+def test_side_list_helpers_refuse_an_empty_file(tmp_path):
+    """Each would otherwise write a file holding only its own side list."""
+    p = _empty_state_file(tmp_path)
+    for call in (
+        lambda: append_tailored_dir(p, "d1"),
+        lambda: append_cover_letter(p, "c1"),
+        lambda: append_outreach_draft(p, channel="recruiter", to_name="S",
+                                      draft_file="d.md"),
+        lambda: mark_outreach_sent(p, channel="recruiter", to_name="S"),
+    ):
+        with pytest.raises(ValueError, match="does not exist"):
+            call()
+    assert p.read_text(encoding="utf-8") == ""
+
+
+def test_ensure_state_over_an_empty_file_creates(tmp_path):
+    """/tailor's bootstrap must repair a truncated file, not adopt it."""
+    p = _empty_state_file(tmp_path)
+    data, created = ensure_state(p, initial_fields=_initial())
+    assert created is True
+    assert data["job_id"] == "aaaaaaaa"
+    assert data["state"] == "saved"
+
+
 # ---------- read-only helpers ----------
 
 def test_load_all_states_globs_pipeline_dir(tmp_path):
@@ -237,6 +326,15 @@ def test_load_all_states_skips_malformed(tmp_path):
     states = load_all_states(pdir)
     # Good one survives, bad is skipped (not raised)
     assert {s["job_id"] for s in states} == {"aaaaaaaa"}
+
+
+def test_load_all_states_skips_empty_files(tmp_path):
+    pdir = tmp_path / "pipeline"
+    transition(state_path_for(pdir, "aaaaaaaa"), "saved",
+                initial_fields=_initial())
+    (pdir / "bbbbbbbb").mkdir()
+    (pdir / "bbbbbbbb" / "state.yaml").write_text("", encoding="utf-8")
+    assert {s["job_id"] for s in load_all_states(pdir)} == {"aaaaaaaa"}
 
 
 def test_load_all_states_empty_when_no_pipeline_dir(tmp_path):

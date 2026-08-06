@@ -4,6 +4,8 @@ these tests cover only the CLI's own plumbing: dispatch, parquet-backed
 initial_fields lookup, and error exit codes."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 import yaml
@@ -103,6 +105,64 @@ def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "already registered" in out and "applied" in out
     assert p.read_text(encoding="utf-8") == before
+
+
+def _truncated_state(tmp_path) -> Path:
+    p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    p.parent.mkdir(parents=True)
+    p.write_text("", encoding="utf-8")
+    return p
+
+
+def test_transition_over_a_truncated_state_file_rebuilds_it(tmp_path, capsys):
+    """The CLI gates on content, not p.exists(), so an empty state.yaml is
+    rebuilt from the parquets instead of silently losing its job_id."""
+    _write_clean(tmp_path, [{
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
+        "source": "indeed", "url": "https://x", "location": "Remote",
+        "vertical": "example_primary",
+    }])
+    p = _truncated_state(tmp_path)
+    assert track_cli.main(["aaaaaaaa", "applied"]) == 0
+    state = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert state["job_id"] == "aaaaaaaa"
+    assert state["company"] == "Acme"
+    assert state["vertical"] == "example_primary"
+    assert state["state"] == "applied"
+    assert "OK: aaaaaaaa" in capsys.readouterr().out
+
+
+def test_ensure_over_a_truncated_state_file_rebuilds_it(tmp_path, capsys):
+    _write_clean(tmp_path, [{
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
+        "source": "", "url": "", "location": "", "vertical": "example_primary",
+    }])
+    p = _truncated_state(tmp_path)
+    assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
+    state = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert state["job_id"] == "aaaaaaaa"
+    assert state["state"] == "saved"
+    assert "registered" in capsys.readouterr().out
+
+
+def test_transition_over_a_corrupt_state_file_errors(tmp_path, capsys):
+    """Content but no job_id: refuse rather than write an unkeyable record."""
+    p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    p.parent.mkdir(parents=True)
+    p.write_text(yaml.safe_dump({"state": "saved", "state_history": []}),
+                 encoding="utf-8")
+    before = p.read_text(encoding="utf-8")
+    assert track_cli.main(["aaaaaaaa", "applied"]) == 1
+    assert "no job_id" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == before
+
+
+def test_transition_over_malformed_yaml_errors(tmp_path, capsys):
+    p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    p.parent.mkdir(parents=True)
+    p.write_text("this is: not\n  - valid: yaml: :\n", encoding="utf-8")
+    assert track_cli.main(["aaaaaaaa", "applied"]) == 1
+    assert "failed to read" in capsys.readouterr().err
 
 
 def test_ensure_does_not_raise_on_terminal_state(tmp_path):
