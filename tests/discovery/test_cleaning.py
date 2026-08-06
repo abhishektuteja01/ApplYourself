@@ -121,6 +121,31 @@ def test_job_id_deterministic():
 
 # ---------- T2: job_id cross-run stability (the separate test) ----------
 
+# Golden values, not self-comparisons. These pin sha1, the "|" separator, utf-8
+# encoding and the 8-char truncation in one place. A change here is never a test
+# failure to fix: job_id keys every pipeline/<job_id>/state.yaml and
+# applications/<dir> on disk, so a new value orphans real data.
+@pytest.mark.parametrize("company,title,expected", [
+    ("acme", "widget functional consultant", "1c08ad22"),
+    ("a", "b", "9abe6de2"),
+    ("", "", "3eb41622"),
+    # Non-ascii: pins utf-8 specifically, not the platform's default codec.
+    ("josé álvarez gmbh", "señor widget engineer", "50e5989f"),
+])
+def test_job_id_golden_values(company, title, expected):
+    assert compute_job_id(company, title) == expected
+
+
+def test_job_id_separator_collision_is_unreachable_after_normalization():
+    """The key is joined on "|" with no escaping, so these two genuinely collide.
+    What makes it unreachable is that both normalizers turn "|" into a space.
+    Escaping the separator would rehash every row on disk, so the normalizers
+    are the invariant to guard, not the join."""
+    assert compute_job_id("a|b", "c") == compute_job_id("a", "b|c")
+    assert "|" not in normalize_company("Acme | Widgets")
+    assert "|" not in normalize_title("Engineer | Platform")
+
+
 def test_job_id_url_independent():
     """Same (company_normalized, title_normalized) MUST yield the same job_id
     regardless of url or jd_text. If this ever fails, the hash has started
@@ -134,15 +159,10 @@ def test_job_id_url_independent():
         "compute_job_id signature changed — url or jd_text must not be "
         "added to the hash."
     )
-    # Same normalized inputs across two simulated runs whose only differences
-    # would be the (excluded) url and (excluded) jd_text → identical job_id.
     company_norm = "acme"
     title_norm = "widget functional consultant"
-    id_run1 = compute_job_id(company_norm, title_norm)
-    id_run2 = compute_job_id(company_norm, title_norm)
-    assert id_run1 == id_run2
 
-    # And: an end-to-end check via exact_dedupe — two rows with same
+    # End-to-end via exact_dedupe — two rows with same
     # (company_norm, title_norm) but different url and different jd_text
     # length collapse to one row that still carries the same job_id as
     # either input would compute. (Defense-in-depth against future code
