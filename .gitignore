@@ -18,8 +18,8 @@ profile/*
 !profile/*.example.yaml
 !profile/*.example.txt
 !profile/*.example.md
-# The two Word templates cannot be a commented text file. Regenerate with
-# scripts/make_example_templates.py; both are allowlisted in pii_scan.sh and
+# The two Word templates cannot be a commented text file. Scrub after any Word
+# save with scripts/scrub_example_templates.py; both are allowlisted in pii_scan.sh and
 # guarded by tests/test_example_templates.py, which fails if either one grows
 # text beyond its approved set or picks up an author in its core properties.
 !profile/*.example.docx

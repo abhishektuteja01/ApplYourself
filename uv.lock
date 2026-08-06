@@ -22,6 +22,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "geonamescache" },
+    { name = "lxml" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "python-docx" },
@@ -40,6 +41,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "geonamescache", specifier = ">=3.0.1" },
+    { name = "lxml", specifier = ">=5.0" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=15.0" },
     { name = "python-docx", specifier = ">=1.1" },

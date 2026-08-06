@@ -30,9 +30,9 @@ example="profile/pii_denylist.example.txt"
 #                      by a *.docx glob, and guarded by
 #                      tests/test_example_templates.py: it unzips both, asserts
 #                      their text is confined to an approved set, and asserts
-#                      empty core properties. Regenerate with
-#                      scripts/make_example_templates.py — do not re-save them
-#                      in Word, which stamps your name into the metadata.
+#                      empty core properties. They are hand-authored in Word;
+#                      run scripts/scrub_example_templates.py after any save,
+#                      which strips the name Word stamps into the metadata.
 allowlist=(
   LICENSE
   "$example"

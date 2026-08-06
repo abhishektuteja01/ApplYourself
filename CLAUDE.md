@@ -144,7 +144,7 @@ uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
 uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
-uv run python scripts/make_example_templates.py   # regenerate the two .example.docx
+uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```
 
 The user-facing workflow is the slash commands (`/onboarding`, `/score`,
@@ -176,9 +176,10 @@ enforce both directions.
 
 `profile/*.example.docx` are the only tracked binaries, allowlisted **by name**
 in `pii_scan.sh` (never by glob) with `tests/test_example_templates.py` standing
-in for the text scan the gate skips. Regenerate them with
-`scripts/make_example_templates.py`; never re-save them in Word, which stamps
-the editor's name into the document metadata.
+in for the text scan the gate skips. They are hand-authored in Word; every
+save stamps the editor's name into the document metadata, so run
+`scripts/scrub_example_templates.py` afterwards. `--check` exits 1 if either
+file still needs it.
 
 `/onboarding` is the interview that fills all of it in.
 

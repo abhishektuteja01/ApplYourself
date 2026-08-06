@@ -129,7 +129,9 @@ The work is filling them in.
 The two `.example.docx` templates are the repo's only tracked binaries. They
 carry no text beyond style samples and placeholders, and tests assert that plus
 empty document metadata, because the PII gate allowlists them by name.
-Regenerate with `uv run python scripts/make_example_templates.py`.
+After editing either in Word, run
+`uv run python scripts/scrub_example_templates.py` to strip the name Word
+stamps into the metadata.
 
 Two rule files ship as real defaults rather than templates, since they are rules
 and not personal data: `profile/de_ai_rules.yaml` (banned phrasing) and

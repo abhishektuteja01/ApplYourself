@@ -28,7 +28,7 @@ if ! (cd "$root" && uv run pytest tests/test_example_templates.py -q >/dev/null 
   printf 'pre-push: FAIL — profile/*.example.docx failed their guard.\n\n' >&2
   (cd "$root" && uv run pytest tests/test_example_templates.py -q 2>&1 | tail -20) >&2
   printf '\nDid you re-save one in Word? That stamps your name into the metadata.\n' >&2
-  printf 'Regenerate: uv run python scripts/make_example_templates.py\n' >&2
+  printf 'Fix: uv run python scripts/scrub_example_templates.py\n' >&2
   exit 1
 fi
 

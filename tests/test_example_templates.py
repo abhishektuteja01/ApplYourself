@@ -11,11 +11,16 @@ that protection instead:
     author in its core properties. Re-saving either in Word stamps the editor's
     name into docProps/core.xml, which is exactly what the PII gate exists to
     stop and exactly what the allowlist would let through.
+
+The templates are hand-authored in Word, not generated. Run
+scripts/scrub_example_templates.py after any Word edit; these tests verify it
+was run.
 """
 from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -25,6 +30,7 @@ from docx import Document
 from src.docx_cover_letter import (
     COVER_LETTER_OPTIONAL_PLACEHOLDERS,
     COVER_LETTER_REQUIRED_PLACEHOLDERS,
+    list_cover_letter_placeholders,
     render_cover_letter,
 )
 from src.docx_render import (
@@ -36,26 +42,77 @@ from src.docx_render import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESUME_TEMPLATE = REPO_ROOT / "profile" / "resume_template.example.docx"
 COVER_TEMPLATE = REPO_ROOT / "profile" / "cover_letter_template.example.docx"
-GENERATOR = REPO_ROOT / "scripts" / "make_example_templates.py"
+SCRUBBER = REPO_ROOT / "scripts" / "scrub_example_templates.py"
 
 # Hardcoded on purpose: an independent statement of what these files are allowed
-# to contain, not a restatement of the generator. test_generator_text_matches_
-# approved_set then cross-checks the two, so drift in either direction fails.
+# to contain. Every string is a generic stand-in the user replaces in their own
+# copy. Adding one means confirming by eye that it carries no personal data.
 APPROVED_RESUME_TEXT = {
-    "YOUR NAME (TEMPLATE)",
-    "City, ST | phone | email | portfolio",
-    "SECTION HEADER",
-    "Employer or Project — Title, Dates",
-    "Restyle each of these five paragraph styles in Word.",
-    "Bullet text renders in this style.",
+    ")",
+    "Bullet Text",
+    "Bullet Text 1",
+    "Bullet Text 2",
+    "City, ST",
+    "College",
+    "Course1, Course2, Course3",
+    "Date 1 - Present",
+    "Date 1 – Date 2",
+    "EDUCATION",
+    "Email",
+    "Master of Science in Computer Science",
+    "Name",
+    "PROJECTS",
+    "Phone",
+    "Project 1",
+    "SUMMARY",
+    "Skill section :",
+    "Skill1, Skill2, Skill3",
+    "TECHNICAL SKILLS",
+    "This is for the summary section",
+    "WORK EXPERIENCE",
+    "Work 1",
+    "www.link.com",
+    "x.xx",
+    "| Coursework:",
+    "| GPA:",
+    "•",
+    "• [Portfolio](",
 }
-APPROVED_COVER_TEXT = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(
-    COVER_LETTER_OPTIONAL_PLACEHOLDERS
-)
+
+# The cover letter's letterhead is literal text by design: the user edits their
+# own name and contact details into their copy. render_cover_letter preserves
+# every non-placeholder paragraph verbatim, so this set is what ships to an
+# employer if the user forgets to edit it -- it must stay generic.
+# "2" is the footer's page number. "Recipient" is an orphaned glossary building
+# block left by the content control scrub_example_templates.py unwraps.
+APPROVED_COVER_LETTERHEAD = {
+    "2",
+    "City, ST",
+    "Email",
+    "NAME",
+    "Num",
+    "Recipient",
+    "Sincerely,",
+    "|",
+}
+# {{DATE}} is the one optional placeholder the template uses; the closing and
+# signoff are literal letterhead instead.
+USED_COVER_PLACEHOLDERS = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | {"{{DATE}}"}
+
+APPROVED_COVER_TEXT = APPROVED_COVER_LETTERHEAD | USED_COVER_PLACEHOLDERS
+
+# The same content seen a paragraph at a time. Word splits a line into several
+# runs, so the run-level set above holds "City, ST", "|" and "Email" separately
+# while python-docx reports the joined paragraph.
+APPROVED_COVER_PARAGRAPHS = {
+    "NAME",
+    "City, ST | Num| Email",
+    "Sincerely,",
+} | USED_COVER_PLACEHOLDERS
 
 # Only fields python-docx's CoreProperties actually exposes. "company" and
 # "manager" are app.xml properties, not core properties -- asserting them here
-# would raise AttributeError, and assigning them in the generator would silently
+# would raise AttributeError, and assigning them in the scrubber would silently
 # scrub nothing. They are checked against app.xml instead.
 # The run-text element, and ONLY it. A bare <w:t[^>]*> also matches <w:tbl>,
 # <w:tc>, <w:tr> and <w:tab/>, which swallows table markup into the "text" and
@@ -71,14 +128,15 @@ CORE_PROPERTIES_MUST_BE_EMPTY = (
     "category",
     "keywords",
 )
-APP_PROPERTIES_MUST_BE_EMPTY = ("Company", "Manager", "HyperlinkBase")
+# Template is included because Word writes the GUID of the personal .dotx the
+# document was authored from.
+APP_PROPERTIES_MUST_BE_EMPTY = ("Company", "Manager", "HyperlinkBase", "Template")
 
-# Exact part list both templates must have. An allowlist, not a denylist: the
-# parts that carry identity (docProps/custom.xml, word/comments.xml,
-# word/people.xml, word/footnotes.xml, word/embeddings/*) are exactly the ones
-# nobody thinks to check for. customXml/item1.xml is python-docx's inherited
-# empty bibliography.
-EXPECTED_PARTS = {
+# Exact part list each template must have. An allowlist, not a denylist: the
+# parts that carry identity (word/comments.xml, word/people.xml,
+# word/embeddings/*) are exactly the ones nobody thinks to check for.
+# The two differ because they were authored from different Word templates.
+EXPECTED_RESUME_PARTS = {
     "[Content_Types].xml",
     "_rels/.rels",
     "customXml/_rels/item1.xml.rels",
@@ -92,14 +150,45 @@ EXPECTED_PARTS = {
     "word/numbering.xml",
     "word/settings.xml",
     "word/styles.xml",
-    "word/stylesWithEffects.xml",
+    "word/theme/theme1.xml",
+    "word/webSettings.xml",
+}
+
+# docProps/custom.xml holds only Word's stock-template AssetID (TF10002039), and
+# word/glossary/* holds one orphaned "Recipient" building block. Both were
+# reviewed and carry no identity; they are listed so a THIRD new part still
+# fails this test.
+EXPECTED_COVER_PARTS = {
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "docProps/app.xml",
+    "docProps/core.xml",
+    "docProps/custom.xml",
+    "word/_rels/document.xml.rels",
+    "word/_rels/settings.xml.rels",
+    "word/document.xml",
+    "word/endnotes.xml",
+    "word/fontTable.xml",
+    "word/footer1.xml",
+    "word/footnotes.xml",
+    "word/glossary/_rels/document.xml.rels",
+    "word/glossary/document.xml",
+    "word/glossary/fontTable.xml",
+    "word/glossary/settings.xml",
+    "word/glossary/styles.xml",
+    "word/glossary/webSettings.xml",
+    "word/header1.xml",
+    "word/header2.xml",
+    "word/numbering.xml",
+    "word/settings.xml",
+    "word/styles.xml",
     "word/theme/theme1.xml",
     "word/webSettings.xml",
 }
 
 
-def _load_generator():
-    spec = importlib.util.spec_from_file_location("make_example_templates", GENERATOR)
+def _load_scrubber():
+    spec = importlib.util.spec_from_file_location("scrub_example_templates", SCRUBBER)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -179,7 +268,9 @@ class TestResumeTemplateContract:
         If that ever stops being true, the template's demo text starts appearing
         in real resumes."""
         out = tmp_path / "resume.docx"
-        render_resume("**Real Name**\n\nCity, ST", RESUME_TEMPLATE, out)
+        # Deliberately shares no string with APPROVED_RESUME_TEXT, or the input
+        # itself would trip the assertion below.
+        render_resume("**Real Name**\n\nMetropolis, ZZ", RESUME_TEMPLATE, out)
         rendered = _document_text(out)
         assert not (rendered & APPROVED_RESUME_TEXT), (
             f"template demo text leaked into the rendered resume: "
@@ -188,30 +279,67 @@ class TestResumeTemplateContract:
 
 
 class TestCoverLetterTemplateContract:
-    def test_every_placeholder_is_present_as_its_own_paragraph(self):
-        paragraphs = _document_text(COVER_TEMPLATE)
+    def test_every_required_placeholder_is_present(self):
+        """Asserted through the renderer's own finder, not doc.paragraphs: a
+        placeholder inside a content control is invisible to the latter but is
+        exactly what the renderer resolves."""
+        found = list_cover_letter_placeholders(COVER_TEMPLATE)
         for token in COVER_LETTER_REQUIRED_PLACEHOLDERS:
-            assert token in paragraphs, f"required placeholder {token} missing"
-        for token in COVER_LETTER_OPTIONAL_PLACEHOLDERS:
-            assert token in paragraphs, f"optional placeholder {token} missing"
+            assert token in found, f"required placeholder {token} missing"
 
-    def test_contains_nothing_but_placeholders(self):
-        """Non-placeholder paragraphs are preserved verbatim into every letter,
-        so any instructional or identity text here ships to an employer."""
-        extra = _document_text(COVER_TEMPLATE) - APPROVED_COVER_TEXT
-        assert not extra, f"template carries non-placeholder text: {sorted(extra)}"
+    def test_declares_no_placeholder_the_renderer_cannot_fill(self):
+        """A typo'd token is preserved verbatim, so it ships as literal
+        '{{SIGNOFF_NAM}}' inside a real cover letter."""
+        declared = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(
+            COVER_LETTER_OPTIONAL_PLACEHOLDERS
+        )
+        stray = {
+            token
+            for token in re.findall(r"\{\{[A-Z_]+\}\}", " ".join(_all_package_text(COVER_TEMPLATE)))
+            if token not in declared
+        }
+        assert not stray, f"template carries unfillable placeholders: {sorted(stray)}"
 
-    def test_has_no_tables_shapes_or_headers(self):
+    def test_literal_text_is_the_approved_letterhead(self):
+        """The letterhead is literal by design -- the user edits their own name
+        and contact details into their copy. Every non-placeholder paragraph is
+        preserved verbatim into every letter, so it must stay generic."""
+        extra = _document_text(COVER_TEMPLATE) - APPROVED_COVER_PARAGRAPHS
+        assert not extra, f"template carries unapproved literal text: {sorted(extra)}"
+
+    def test_has_no_tables_or_shapes(self):
         """render_cover_letter preserves everything that is not a placeholder
         paragraph. A letterhead table is the classic way identity text reaches
         every letter while staying invisible to a paragraph-level scan."""
         doc = Document(str(COVER_TEMPLATE))
         assert not doc.tables, "a table here ships verbatim in every letter"
         assert not doc.inline_shapes, "a shape here ships verbatim in every letter"
+
+    def test_headers_and_footers_carry_no_unapproved_text(self):
+        """The template has a page-number footer. Headers and footers are
+        preserved into every letter, so they are a live leak path -- allowed to
+        exist, not allowed to say anything unreviewed."""
+        doc = Document(str(COVER_TEMPLATE))
         for i, section in enumerate(doc.sections):
             for label, part in (("header", section.header), ("footer", section.footer)):
-                text = " ".join(p.text for p in part.paragraphs).strip()
-                assert not text, f"section {i + 1} {label} carries text: {text!r}"
+                for para in part.paragraphs:
+                    text = para.text.strip()
+                    if not text:
+                        continue
+                    assert text in APPROVED_COVER_LETTERHEAD, (
+                        f"section {i + 1} {label} carries unapproved text: {text!r}"
+                    )
+
+    def test_carries_no_content_controls(self):
+        """Word binds content controls to core properties (w:dataBinding). One
+        bound to cp:keywords re-syncs its text from a field the scrubber empties,
+        silently blanking a placeholder the renderer requires."""
+        with zipfile.ZipFile(COVER_TEMPLATE) as zf:
+            xml = zf.read("word/document.xml").decode("utf-8")
+        assert "<w:sdt>" not in xml and "<w:sdt " not in xml, (
+            "content control in document.xml; run scripts/scrub_example_templates.py"
+        )
+        assert "dataBinding" not in xml
 
     def test_renders_a_real_cover_letter(self, tmp_path):
         out = tmp_path / "cl.docx"
@@ -220,24 +348,59 @@ class TestCoverLetterTemplateContract:
                 "salutation": "Dear Hiring Manager,",
                 "body": ["First paragraph.", "Second paragraph."],
                 "date": "January 1, 2026",
-                "closing": "Sincerely,",
-                "signoff_name": "Your Name",
             },
             COVER_TEMPLATE,
             out,
         )
-        texts = [p.text for p in Document(str(out)).paragraphs if p.text.strip()]
+        texts = [p.text.strip() for p in Document(str(out)).paragraphs if p.text.strip()]
         assert texts == [
+            "NAME",
+            "City, ST | Num| Email",
             "January 1, 2026",
             "Dear Hiring Manager,",
             "First paragraph.",
             "Second paragraph.",
             "Sincerely,",
-            "Your Name",
+            "NAME",
         ]
         assert not (set(texts) & set(COVER_LETTER_REQUIRED_PLACEHOLDERS)), (
             "an unfilled placeholder survived into the output"
         )
+
+    def test_closing_and_signoff_values_are_dropped_not_rendered(self, tmp_path):
+        """The template hardcodes its closing and signoff, so a caller supplying
+        closing/signoff_name has those values silently ignored. Pinned so the
+        consequence of that design is visible rather than surprising."""
+        out = tmp_path / "cl.docx"
+        render_cover_letter(
+            {
+                "salutation": "Dear Hiring Manager,",
+                "body": ["Body."],
+                "closing": "Warm regards,",
+                "signoff_name": "Some Name",
+            },
+            COVER_TEMPLATE,
+            out,
+        )
+        texts = [p.text.strip() for p in Document(str(out)).paragraphs]
+        for dropped in ("Warm regards,", "Some Name"):
+            assert dropped not in texts, (
+                f"{dropped!r} rendered; the template regained a placeholder for it, "
+                f"so this test and the letterhead approval need revisiting"
+            )
+
+    def test_an_unsupplied_date_leaves_no_raw_token(self, tmp_path):
+        """{{DATE}} is optional. The renderer fills a found placeholder even with
+        "", so omitting the date must yield a blank line, never a literal
+        '{{DATE}}' in a letter an employer reads."""
+        out = tmp_path / "cl.docx"
+        render_cover_letter(
+            {"salutation": "Dear Hiring Manager,", "body": ["Body."]},
+            COVER_TEMPLATE,
+            out,
+        )
+        texts = [p.text for p in Document(str(out)).paragraphs]
+        assert not any("{{" in t for t in texts), f"raw token survived: {texts}"
 
 
 class TestNoPIILeak:
@@ -276,18 +439,23 @@ class TestNoPIILeak:
                 assert "w:author" not in xml, f"{path.name}:{name} carries w:author"
 
     @pytest.mark.parametrize(
-        "path", [RESUME_TEMPLATE, COVER_TEMPLATE], ids=["resume", "cover_letter"]
+        "path,expected",
+        [
+            (RESUME_TEMPLATE, EXPECTED_RESUME_PARTS),
+            (COVER_TEMPLATE, EXPECTED_COVER_PARTS),
+        ],
+        ids=["resume", "cover_letter"],
     )
-    def test_package_parts_are_an_exact_allowlist(self, path):
+    def test_package_parts_are_an_exact_allowlist(self, path, expected):
         """A denylist of known-bad parts cannot hold a file whose only other
-        guard is disabled. Any new part — docProps/custom.xml, word/comments.xml,
-        word/people.xml, word/embeddings/* — must be reviewed deliberately."""
+        guard is disabled. Any new part — word/comments.xml, word/people.xml,
+        word/embeddings/* — must be reviewed deliberately."""
         with zipfile.ZipFile(path) as zf:
             names = set(zf.namelist())
-        assert names == EXPECTED_PARTS, (
+        assert names == expected, (
             f"{path.name} part list changed.\n"
-            f"  added:   {sorted(names - EXPECTED_PARTS)}\n"
-            f"  removed: {sorted(EXPECTED_PARTS - names)}"
+            f"  added:   {sorted(names - expected)}\n"
+            f"  removed: {sorted(expected - names)}"
         )
 
     @pytest.mark.parametrize(
@@ -299,8 +467,8 @@ class TestNoPIILeak:
             value = getattr(cp, field) or ""
             assert not value.strip(), (
                 f"{path.name} core property {field!r} is {value!r}. Word stamps "
-                f"this on re-save; regenerate with "
-                f"scripts/make_example_templates.py instead."
+                f"this on re-save; run "
+                f"scripts/scrub_example_templates.py."
             )
 
     @pytest.mark.parametrize(
@@ -317,21 +485,17 @@ class TestNoPIILeak:
     @pytest.mark.parametrize(
         "path", [RESUME_TEMPLATE, COVER_TEMPLATE], ids=["resume", "cover_letter"]
     )
-    def test_no_embedded_images_headers_or_thumbnail(self, path):
-        """An image, header or thumbnail could carry a signature block the
-        paragraph scan above would never see. render_resume clears the body but
-        preserves headers and footers, so a header is a live leak path."""
+    def test_no_embedded_images_or_thumbnail(self, path):
+        """An image could carry a signature block the paragraph scan above would
+        never see."""
         with zipfile.ZipFile(path) as zf:
             names = zf.namelist()
         assert not [n for n in names if n.startswith("word/media/")], (
             f"{path.name} embeds media"
         )
-        assert not [n for n in names if "header" in n or "footer" in n], (
-            f"{path.name} carries a header/footer, which renderers preserve"
-        )
         assert "docProps/thumbnail.jpeg" not in names, (
-            f"{path.name} carries an embedded thumbnail image; regenerate with "
-            f"scripts/make_example_templates.py, which strips it"
+            f"{path.name} carries an embedded thumbnail image; run "
+            f"scripts/scrub_example_templates.py, which strips it"
         )
 
     @pytest.mark.parametrize(
@@ -344,19 +508,42 @@ class TestNoPIILeak:
         assert "thumbnail" not in rels
 
 
-class TestGeneratorStaysInSync:
-    def test_generator_text_matches_approved_set(self):
-        """Drift detector in both directions: the generator cannot quietly add a
-        line the guard does not know about, and the guard cannot rot."""
-        module = _load_generator()
-        generated = {text for _style, text in module.STYLE_DEMOS}
-        assert generated == APPROVED_RESUME_TEXT
+class TestScrubberStaysInSync:
+    """The scrubber is the only thing standing between a Word save and a name in
+    a public repo, so it has to actually cover what the guard asserts."""
 
-    def test_generator_placeholder_order_matches_source_of_truth(self):
-        module = _load_generator()
-        assert set(module.COVER_PLACEHOLDER_ORDER) == APPROVED_COVER_TEXT
+    @pytest.mark.parametrize(
+        "path", [RESUME_TEMPLATE, COVER_TEMPLATE], ids=["resume", "cover_letter"]
+    )
+    def test_committed_templates_are_already_scrubbed(self, path, tmp_path):
+        """The real invariant: running the scrubber on what is committed is a
+        no-op. Operates on a copy so a failing run cannot rewrite the tracked
+        file."""
+        module = _load_scrubber()
+        copy = tmp_path / path.name
+        shutil.copy(path, copy)
+        assert not module.scrub(copy), (
+            f"{path.name} still needs scrubbing; run "
+            f"uv run python scripts/scrub_example_templates.py"
+        )
 
-    def test_generator_declares_only_styles_the_renderer_requires(self):
-        module = _load_generator()
-        styles_written = {style for style, _text in module.STYLE_DEMOS}
-        assert styles_written <= set(REQUIRED_STYLES)
+    def test_scrubber_covers_every_app_property_the_guard_asserts(self):
+        module = _load_scrubber()
+        missing = set(APP_PROPERTIES_MUST_BE_EMPTY) - set(module.APP_FIELDS)
+        assert not missing, f"scrubber does not empty app properties: {sorted(missing)}"
+
+    def test_scrubber_covers_every_core_property_the_guard_asserts(self):
+        """python-docx attribute names vs the XML tags the scrubber rewrites."""
+        tag_for = {
+            "author": "dc:creator",
+            "last_modified_by": "cp:lastModifiedBy",
+            "title": "dc:title",
+            "subject": "dc:subject",
+            "comments": "dc:description",
+            "category": "cp:category",
+            "keywords": "cp:keywords",
+        }
+        module = _load_scrubber()
+        assert set(tag_for) == set(CORE_PROPERTIES_MUST_BE_EMPTY)
+        missing = set(tag_for.values()) - set(module.CORE_FIELDS)
+        assert not missing, f"scrubber does not empty core fields: {sorted(missing)}"
