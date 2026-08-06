@@ -10,6 +10,7 @@ until it is either committed or templated.
 """
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -43,21 +44,90 @@ _TEMPLATE_SUFFIXES = {
 }
 
 
+def _source_groups() -> dict[str, list[Path]]:
+    """The three kinds of file that can name a profile input."""
+    return {
+        "commands": list((REPO_ROOT / ".claude").rglob("*.md")),
+        "modules": list((REPO_ROOT / "src").rglob("*.py")),
+        "scripts": (
+            list((REPO_ROOT / "scripts").glob("*.sh"))
+            + list((REPO_ROOT / "scripts").glob("*.py"))
+            + list((REPO_ROOT / ".github").rglob("*.yml"))
+        ),
+    }
+
+
+def _literal_strings(node) -> list[str]:
+    """Every string constant in a list/tuple, one level of nesting deep, so both
+    ["a.md", "b.md"] and [("a.md", "hint"), ...] yield their filenames."""
+    out = []
+    if isinstance(node, (ast.List, ast.Tuple)):
+        for element in node.elts:
+            if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                out.append(element.value)
+            elif isinstance(element, (ast.List, ast.Tuple)) and element.elts:
+                first = element.elts[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    out.append(first.value)
+    return out
+
+
+def _profile_filenames_from_ast(path: Path) -> set[str]:
+    """Bare filenames a module joins onto a PROFILE constant.
+
+    The regex below cannot see these: every src/ module that reads a profile file
+    builds the path from `paths.PROFILE / "name.md"` or from a module-level
+    PROFILE_FILES list, so the literal string "profile/" never appears.
+    """
+    names: set[str] = set()
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+
+    def _is_profile_ref(node) -> bool:
+        if isinstance(node, ast.Attribute):
+            return node.attr == "PROFILE"
+        return isinstance(node, ast.Name) and node.id == "PROFILE"
+
+    for node in ast.walk(tree):
+        # paths.PROFILE / "bullets.md"
+        if (
+            isinstance(node, ast.BinOp)
+            and isinstance(node.op, ast.Div)
+            and _is_profile_ref(node.left)
+            and isinstance(node.right, ast.Constant)
+            and isinstance(node.right.value, str)
+        ):
+            names.add(node.right.value)
+        # REQUIRED_PROFILE_FILES = [("bullets.md", "hint"), ...]
+        # AnnAssign as well as Assign: the real one carries an annotation
+        # (`REQUIRED_PROFILE_FILES: list[tuple[str, str]] = [...]`), and matching
+        # only Assign silently found nothing in the file that matters most.
+        if isinstance(node, ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if any("PROFILE" in t for t in targets):
+                names.update(_literal_strings(node.value))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if "PROFILE" in node.target.id and node.value is not None:
+                names.update(_literal_strings(node.value))
+    return {n for n in names if "." in n and "/" not in n}
+
+
 def _referenced_profile_paths() -> dict[str, set[str]]:
     """{profile-relative path: {files that reference it}} for concrete paths."""
-    sources = list((REPO_ROOT / ".claude").rglob("*.md"))
-    sources += list((REPO_ROOT / "src").rglob("*.py"))
-    sources += list((REPO_ROOT / "scripts").glob("*.sh"))
     found: dict[str, set[str]] = {}
-    for path in sources:
-        text = path.read_text(encoding="utf-8")
-        for match in _PATH_RE.findall(text):
-            cleaned = match.rstrip(".,);`'\"")
-            if any(marker in cleaned for marker in _PLACEHOLDER_MARKERS):
-                continue
-            if "." not in cleaned.rsplit("/", 1)[-1]:
-                continue  # a directory, not a file
-            found.setdefault(cleaned, set()).add(str(path.relative_to(REPO_ROOT)))
+    for paths_in_group in _source_groups().values():
+        for path in paths_in_group:
+            rel = str(path.relative_to(REPO_ROOT))
+            text = path.read_text(encoding="utf-8")
+            for match in _PATH_RE.findall(text):
+                cleaned = match.rstrip(".,);`'\"")
+                if any(marker in cleaned for marker in _PLACEHOLDER_MARKERS):
+                    continue
+                if "." not in cleaned.rsplit("/", 1)[-1]:
+                    continue  # a directory, not a file
+                found.setdefault(cleaned, set()).add(rel)
+            if path.suffix == ".py":
+                for name in _profile_filenames_from_ast(path):
+                    found.setdefault(f"profile/{name}", set()).add(rel)
     return found
 
 
@@ -93,11 +163,47 @@ class TestTemplateCoverage:
         )
 
     def test_the_scan_actually_finds_things(self):
-        """A regex that silently stops matching would make the test above pass
+        """A scan that silently stops matching would make the test above pass
         vacuously forever."""
         found = _referenced_profile_paths()
         assert len(found) >= 10, f"reference scan found only {len(found)} paths"
         assert "profile/bullets.md" in found
+
+    def test_every_source_group_is_non_empty(self):
+        """A renamed or moved directory would drop a whole group from the scan
+        without failing anything above."""
+        for group, paths_in_group in _source_groups().items():
+            assert paths_in_group, f"source group {group!r} matched no files"
+
+    def test_the_ast_pass_finds_the_idiom_the_regex_cannot(self):
+        """Guards the AST pass specifically: every src/ module builds profile
+        paths from a constant plus a bare filename, so the regex sees none of
+        them. If this stops finding anything, coverage silently narrows to
+        whatever the command prose happens to mention."""
+        from_ast: set[str] = set()
+        for path in (REPO_ROOT / "src").rglob("*.py"):
+            from_ast |= _profile_filenames_from_ast(path)
+        assert from_ast, "AST pass found no PROFILE-joined filenames"
+        assert "de_ai_rules.yaml" in from_ast
+        assert "bullets.md" in from_ast
+
+    def test_an_unknown_extension_is_not_silently_exempt(self):
+        """_template_for returns None for an unmapped suffix, and the coverage
+        loop skips None. That must stay a deliberate, enumerated decision rather
+        than a hole: anything referenced with an unmapped extension fails here."""
+        unmapped = []
+        for rel_path in _referenced_profile_paths():
+            if ".example." in rel_path or rel_path in COMMITTED_DEFAULTS:
+                continue
+            if "/verticals/example_" in rel_path or Path(rel_path).name.startswith("."):
+                continue
+            if _template_for(rel_path) is None:
+                unmapped.append(rel_path)
+        assert not unmapped, (
+            f"referenced profile files whose extension has no template mapping, "
+            f"so the coverage test skips them entirely: {unmapped}. Add the "
+            f"suffix to _TEMPLATE_SUFFIXES."
+        )
 
     @pytest.mark.parametrize(
         "name",
