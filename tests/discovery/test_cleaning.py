@@ -217,7 +217,7 @@ def test_normalize_title_seniority_preserved():
 
 def test_rapidfuzz_dedupe_boundary():
     collapse_a = "widget functional consultant"
-    collapse_b = "widget functional consultant senior"
+    collapse_b = "widget functional consultant remote"
     keep_a = "data analyst"
     keep_b = "cog learning engineer"
     # Sanity-pin the pairs to the correct side of the threshold.
@@ -242,6 +242,38 @@ def test_rapidfuzz_dedupe_boundary():
     assert len(beta) == 2, "distinct titles within a company must NOT collapse"
 
 
+# Every pair here scores >= 90 on title alone, so ratio by itself deletes a
+# real posting. The survivor is picked by JD length, which is not stable across
+# re-scrapes, so the lost job_id varies run to run.
+@pytest.mark.parametrize("title_a,title_b", [
+    ("data analyst", "data analyst intern"),
+    ("software engineer", "software engineer manager"),
+    ("machine learning engineer i", "machine learning engineer ii"),
+    ("data engineer", "lead data engineer"),
+    ("widget consultant", "senior widget consultant"),
+])
+def test_near_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
+    assert fuzz.WRatio(title_a, title_b) >= 90, "pair must be a ratio near-dup"
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": title_a, "jd_text": "a" * 300},
+        {"company_normalized": "acme", "title_normalized": title_b, "jd_text": "a" * 500},
+    ])
+    out = near_dedupe(df)
+    assert sorted(out["title_normalized"]) == sorted([title_a, title_b])
+
+
+def test_near_dedupe_still_collapses_when_levels_match():
+    """The guard compares level tokens, so two titles that share one still
+    collapse on ratio."""
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "senior widget consultant",
+         "jd_text": "a" * 300},
+        {"company_normalized": "acme", "title_normalized": "senior widget consultants",
+         "jd_text": "a" * 500},
+    ])
+    assert len(near_dedupe(df)) == 1
+
+
 # ---------- T6: drop_short_jd at exactly 200 chars ----------
 
 def test_drop_short_jd():
@@ -257,12 +289,14 @@ def test_drop_short_jd():
 # ---------- T7: drop_stale + posted_date_missing flag ----------
 
 def test_drop_stale():
+    # source must be one that ages: _clean_df defaults to "manual", which is
+    # staleness-exempt along with the career boards.
     today = pd.Timestamp("2026-06-06")
     df = _clean_df([
-        {"title_normalized": "t1", "posted_date": today - pd.Timedelta(days=15)},
-        {"title_normalized": "t2", "posted_date": today - pd.Timedelta(days=14)},
-        {"title_normalized": "t3", "posted_date": today},
-        {"title_normalized": "t4", "posted_date": pd.NaT},
+        {"source": "indeed", "title_normalized": "t1", "posted_date": today - pd.Timedelta(days=15)},
+        {"source": "indeed", "title_normalized": "t2", "posted_date": today - pd.Timedelta(days=14)},
+        {"source": "indeed", "title_normalized": "t3", "posted_date": today},
+        {"source": "indeed", "title_normalized": "t4", "posted_date": pd.NaT},
     ])
     out = drop_stale(df, today=today)
     assert set(out["title_normalized"]) == {"t2", "t3", "t4"}
@@ -277,9 +311,12 @@ def test_drop_stale_survives_one_tz_aware_posted_date():
     coerce every naive value to NaT and keep the whole frame."""
     today = pd.Timestamp("2026-08-06")
     df = _clean_df([
-        {"title_normalized": "aware_fresh", "posted_date": pd.Timestamp("2026-08-01T10:00:00Z")},
-        {"title_normalized": "naive_fresh", "posted_date": pd.Timestamp("2026-08-04")},
-        {"title_normalized": "naive_stale", "posted_date": pd.Timestamp("2026-01-01")},
+        {"source": "indeed", "title_normalized": "aware_fresh",
+         "posted_date": pd.Timestamp("2026-08-01T10:00:00Z")},
+        {"source": "indeed", "title_normalized": "naive_fresh",
+         "posted_date": pd.Timestamp("2026-08-04")},
+        {"source": "indeed", "title_normalized": "naive_stale",
+         "posted_date": pd.Timestamp("2026-01-01")},
     ])
     assert df["posted_date"].dtype == object  # the trigger condition
     out = drop_stale(df, today=today)
@@ -291,9 +328,9 @@ def test_drop_stale_survives_one_tz_aware_posted_date():
 def test_drop_stale_survives_mixed_offset_strings():
     today = pd.Timestamp("2026-08-06")
     df = _clean_df([
-        {"title_normalized": "utc", "posted_date": "2026-08-01T10:00:00+00:00"},
-        {"title_normalized": "est", "posted_date": "2026-08-01T10:00:00-05:00"},
-        {"title_normalized": "stale", "posted_date": "2026-01-01"},
+        {"source": "indeed", "title_normalized": "utc", "posted_date": "2026-08-01T10:00:00+00:00"},
+        {"source": "indeed", "title_normalized": "est", "posted_date": "2026-08-01T10:00:00-05:00"},
+        {"source": "indeed", "title_normalized": "stale", "posted_date": "2026-01-01"},
     ])
     out = drop_stale(df, today=today)
     assert set(out["title_normalized"]) == {"utc", "est"}
@@ -312,6 +349,31 @@ def test_exact_dedupe_keeps_longest_jd():
     assert len(out) == 1
     assert "longer" in out["jd_text"].iloc[0]
     assert out["url"].iloc[0] == "https://example.com/long"
+
+
+def test_blank_company_rows_are_dropped_not_collapsed(tmp_path):
+    """A null company from JobSpy normalizes to "", so job_id becomes a function
+    of the title alone and two rows from different employers collide — one is
+    then silently deleted by exact_dedupe."""
+    raw_dir = _make_raw_parquet(tmp_path, [
+        {"company": None, "title": "Widget Functional Consultant",
+         "description": "x" * 300, "date_posted": pd.Timestamp("2026-06-01")},
+        {"company": "   ", "title": "Widget Functional Consultant",
+         "description": "y" * 300, "date_posted": pd.Timestamp("2026-06-02")},
+        {"company": "Acme Inc", "title": "Widget Functional Consultant",
+         "description": "z" * 300, "date_posted": pd.Timestamp("2026-06-02")},
+    ])
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    assert list(out["company_normalized"]) == ["acme"]
+    report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
+    assert "after blank-company drop: 1 (dropped 2)" in report
 
 
 # ---------- T9: end-to-end clean schema is exactly the canonical schema ----------
@@ -551,6 +613,19 @@ def test_drop_stale_exempts_career_sources():
     out = drop_stale(df, today=today)
     assert sorted(out["source"]) == ["ashby", "greenhouse", "lever", "linkedin"]
     assert pd.Timestamp("2026-05-01") not in set(out[out["source"] == "linkedin"]["posted_date"])
+
+
+def test_drop_stale_exempts_manual_adds():
+    """ingest_url rewrites site to "manual" on every path, including the ATS
+    ones, so without this a board URL for a still-live older req is dropped and
+    ingest() blames JS rendering."""
+    today = pd.Timestamp("2026-07-15")
+    df = pd.DataFrame([
+        {"source": "manual", "posted_date": pd.Timestamp("2026-05-01")},
+        {"source": "indeed", "posted_date": pd.Timestamp("2026-05-01")},
+    ])
+    out = drop_stale(df, today=today)
+    assert list(out["source"]) == ["manual"]
 
 
 # ---------- T13: seen-ledger ----------

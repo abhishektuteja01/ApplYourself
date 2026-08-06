@@ -208,9 +208,11 @@ class TestIngest:
         winner = cleaning.compute_job_id(
             cleaning.normalize_company("Acme Corp"),
             cleaning.normalize_title("Widget Assembly Analyst"))
-        # same company, near-identical title, shorter JD -> loses dedupe
+        # Same company, near-identical title, shorter JD -> loses dedupe. The
+        # variant must not differ by a level token ("II", "Senior", "Intern"),
+        # which near_dedupe now treats as a distinct role.
         monkeypatch.setattr(ingest_url, "fetch_row",
-                            lambda *a, **k: _row(title="Widget Assembly Analyst II"))
+                            lambda *a, **k: _row(title="Widget Assembly Analyst Remote"))
         with pytest.raises(IngestError, match=winner):
             ingest("https://y", vertical="example_primary", **dirs)
 

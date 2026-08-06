@@ -14,11 +14,13 @@ FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
 
 
-def pytest_report_header():
+def pytest_terminal_summary(terminalreporter):
+    """Not pytest_report_header: the header is suppressed by -q, and
+    `uv run pytest tests -q` is the documented command."""
     if not REAL_CONFIG.is_file():
-        return ("WARNING: profile/verticals.yaml absent — "
-                "tests/test_real_config_drift.py will skip; the live config is unchecked.")
-    return None
+        terminalreporter.write_line(
+            "WARNING: profile/verticals.yaml absent — test_real_config_drift.py "
+            "skipped; the live config is unchecked.", yellow=True)
 
 
 @pytest.fixture(autouse=True)

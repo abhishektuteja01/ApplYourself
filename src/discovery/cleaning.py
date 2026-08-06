@@ -60,6 +60,12 @@ CLEAN_COLUMNS: list[str] = [
 from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
 CAREER_SOURCES: tuple[str, ...] = tuple(ATS_SOURCE_NAMES)
 
+# "manual" joins them for a different reason: an inbox clip or a URL ingest is
+# a deliberate user add, and ingest_url rewrites site to "manual" for every
+# path including the ATS ones — so keying the exemption on the board name alone
+# drops a still-live posting first published more than 14 days ago.
+STALENESS_EXEMPT_SOURCES: tuple[str, ...] = CAREER_SOURCES + ("manual",)
+
 # Seen-ledger retention policy (locked 2026-07-15). Visibility is
 # measured from first_seen (time in MY system, not posting age), tiered by
 # the latest fit_score; RESURFACE_AFTER_DAYS past expiry the ledger forgets,
@@ -179,7 +185,7 @@ def drop_stale(
     df: pd.DataFrame,
     today: pd.Timestamp | None = None,
     max_age_days: int = 14,
-    exempt_sources: tuple[str, ...] = CAREER_SOURCES,
+    exempt_sources: tuple[str, ...] = STALENESS_EXEMPT_SOURCES,
 ) -> pd.DataFrame:
     df = df.copy()
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
@@ -195,8 +201,8 @@ def drop_stale(
     keep = posted.isna() | (posted >= cutoff)
     source = df.get("source")
     if source is not None:
-        # Career boards: an old-but-listed posting is live by definition;
-        # its lifetime is governed by the seen-ledger (apply_expiry), not age.
+        # Career boards and manual adds: an old-but-listed posting is live by
+        # definition; lifetime is governed by the seen-ledger, not age.
         keep = keep | source.isin(exempt_sources)
     return df[keep].copy()
 
@@ -278,6 +284,23 @@ def exact_dedupe(df: pd.DataFrame) -> pd.DataFrame:
 # Step 5 — near dedupe within company
 # ---------------------------------------------------------------------
 
+# Level, seniority and track tokens. Titles differing on any of these are
+# different roles no matter how close their WRatio: "data analyst" vs "data
+# analyst intern" scores 90 and "machine learning engineer i" vs "... ii"
+# scores 98, so ratio alone deletes real postings.
+LEVEL_TOKENS = frozenset({
+    "i", "ii", "iii", "iv", "1", "2", "3", "4",
+    "intern", "interns", "internship", "trainee", "apprentice", "coop",
+    "junior", "jr", "entry", "graduate", "grad", "associate",
+    "senior", "sr", "staff", "principal", "distinguished", "fellow",
+    "lead", "manager", "director", "head", "vp", "chief", "president",
+})
+
+
+def _level_tokens(title: str) -> frozenset[str]:
+    return frozenset(LEVEL_TOKENS.intersection(title.split()))
+
+
 def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
     if df.empty:
         return df.copy()
@@ -286,11 +309,13 @@ def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
     keep_indices: list = []
     for _, group in df.groupby("company_normalized", sort=False):
         g = group.sort_values("_jd_len", ascending=False, kind="stable")
-        kept_titles: list[str] = []
+        kept: list[tuple[str, frozenset[str]]] = []
         for idx, title in zip(g.index, g["title_normalized"]):
-            if any(fuzz.WRatio(title, kt) >= ratio_threshold for kt in kept_titles):
+            levels = _level_tokens(title)
+            if any(levels == kept_levels and fuzz.WRatio(title, kt) >= ratio_threshold
+                   for kt, kept_levels in kept):
                 continue
-            kept_titles.append(title)
+            kept.append((title, levels))
             keep_indices.append(idx)
     return df.loc[keep_indices].drop(columns="_jd_len").copy()
 
@@ -665,6 +690,8 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"- raw rows loaded: {stats.get('raw_rows', 0)}",
         f"- after classification/exclusion: {stats.get('after_exclusion', 0)} "
         f"(dropped {stats.get('dropped_exclusion', 0)})",
+        f"- after blank-company drop: {stats.get('after_blank_company', 0)} "
+        f"(dropped {stats.get('dropped_blank_company', 0)})",
         f"- after short-JD drop (<200 chars): {stats.get('after_short_jd', 0)} "
         f"(dropped {stats.get('dropped_short', 0)})",
         f"- after stale drop (>14d): {stats.get('after_stale', 0)} "
@@ -700,6 +727,15 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
     else:
         lines.append("(no rows)")
     lines.append("")
+
+    # Named, because a near-dup drop is the one silent way a tracked role
+    # leaves clean.parquet.
+    near_dropped = stats.get("near_dropped", [])
+    if near_dropped:
+        lines += ["### Near-dup rows dropped", ""]
+        lines += [f"- {row}" for row in near_dropped]
+        lines.append("")
+
     with report_path.open("a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -751,6 +787,15 @@ def run(
     # step 1
     df["company_normalized"] = df["company"].apply(normalize_company)
     df["title_normalized"] = df["title"].apply(normalize_title)
+    # A blank company makes job_id a function of the title alone, so two rows
+    # from different employers collide and exact_dedupe deletes one.
+    blank_company = df["company_normalized"].fillna("").str.strip() == "" if not df.empty else None
+    dropped_blank_company = int(blank_company.sum()) if blank_company is not None else 0
+    if dropped_blank_company:
+        for c, t in zip(df.loc[blank_company, "company"], df.loc[blank_company, "title"]):
+            log.warning("dropping row with unusable company: company=%r title=%r", c, t)
+        df = df[~blank_company].copy()
+    after_blank_company = len(df)
     per_source_raw = df["source"].value_counts().to_dict() if not df.empty else {}
     # step 2
     df = drop_short_jd(df)
@@ -767,8 +812,18 @@ def run(
     df = exact_dedupe(df)
     after_exact = len(df)
     # step 5
+    before_near = df
     df = near_dedupe(df)
     after_near = len(df)
+    # A near-dup drop is the one silent way a role you are actively tracking
+    # leaves clean.parquet, so name the casualties in the run report.
+    near_dropped = [
+        f"{compute_job_id(c, t)} {c} | {t}"
+        for c, t in zip(
+            before_near.loc[before_near.index.difference(df.index), "company_normalized"],
+            before_near.loc[before_near.index.difference(df.index), "title_normalized"],
+        )
+    ]
     # step 6
     df["job_id"] = [
         compute_job_id(c, t)
@@ -820,9 +875,11 @@ def run(
         "after_exclusion": after_exclusion,
         "dropped_exclusion": raw_rows - after_exclusion,
         "drops_per_vertical": drops_per_vertical,
+        "after_blank_company": after_blank_company,
+        "dropped_blank_company": dropped_blank_company,
         "after_short_jd": after_short,
         # Every dropped_* chains off its predecessor, never raw_rows.
-        "dropped_short": after_exclusion - after_short,
+        "dropped_short": after_blank_company - after_short,
         "after_stale": after_stale,
         "dropped_stale": after_short - after_stale,
         "after_location": after_location,
@@ -831,6 +888,7 @@ def run(
         "dropped_exact": after_location - after_exact,
         "after_near_dedupe": after_near,
         "dropped_near": after_exact - after_near,
+        "near_dropped": near_dropped,
         "after_expiry": after_expiry,
         "dropped_expired": after_near - after_expiry,
         "changed_seen": changed_seen,
