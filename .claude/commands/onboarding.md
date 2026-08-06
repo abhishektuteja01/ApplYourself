@@ -42,6 +42,9 @@ code, tests, or another command.
 - Never write a denylist pattern, bullet, or skill the user has not confirmed.
 - Never edit `src/`, `tests/`, or `.claude/`. If a stage seems to need that,
   stop and report — something is wrong with the config contract, not the setup.
+  The one exception is delegated, not taken here: `/new-vertical`, which Stage 6
+  hands the whole lane to, may add structural assertions for the new lane to
+  `tests/test_real_config_drift.py` under its own rules.
 - Do not run `discover` or `/score` on the user's behalf. Hand off with the
   command and let them run it.
 
@@ -73,9 +76,13 @@ test -s profile/discovery.yaml \
   && echo "ok   profile/discovery.yaml" \
   || echo "absent  profile/discovery.yaml (discovery runs on default filters)"
 echo "--- validity ---"
-uv run verticals-check 2>&1 | tail -2
+uv run verticals-check 2>&1 | tail -5
 test "$(git config core.hooksPath)" = ".githooks" \
   && echo "ok   pre-push hook wired" || echo "MISSING hooksPath"
+# A denylist that exists is not the same as a gate that passes. pii_scan.sh reads
+# the git index and writes nothing, so it belongs in a read-only audit; what it
+# reports is the last staged state.
+./scripts/pii_scan.sh 2>&1 | tail -5
 echo "--- progress ---"
 test -f profile/.onboarding.md && cat profile/.onboarding.md || echo "no progress file"
 ```
@@ -155,8 +162,10 @@ Unlocks: scoring that knows your constraints.
    - Empty `false_positive_guard:`, whose three phrases are boilerplate only for
      someone already authorized.
 
-   If they are a citizen or permanent resident, both lists are harmless as
-   shipped; say so and move on.
+   Time-limited authorization (F-1 OPT and similar) is the case the shipped
+   lists already assume — authorized now, sponsorship needed later — so it needs
+   no edits. Neither does a citizen or permanent resident, for whom both lists
+   are harmless as shipped. Say which applies and move on.
 
 ## Stage 4 — bullets from your real resume (45–75 min)
 
@@ -164,7 +173,10 @@ Unlocks: scoring, and every generated document.
 
 This is the longest stage and the one that matters most. Say so up front.
 
-1. Ask for the path to their current resume. Extract it:
+1. Ask for the path to their current resume. Keep it outside the repo, or inside
+   `profile/`: the repo root is not gitignored, so a resume dropped there is
+   staged by the `git add -A` in Stage 2 and Stage 8 and then fails the scan's
+   tracked-binary check. Extract it:
    - `.docx` → `uv run profile-extract <file>`
    - `.pdf` or `.md` → read it directly
 2. `cp profile/bullets.example.md profile/bullets.md`, then delete the example
@@ -183,8 +195,10 @@ This is the longest stage and the one that matters most. Say so up front.
 6. Every 3–4 bullets, report progress and offer to pause. This stage is
    resumable mid-way: bullets already written stay written.
 7. When every bullet is written, offer to read them back for diction and, if the
-   user accepts and is satisfied, set `bullets_diction_pass_completed: true`.
-   Leave it `false` otherwise — it only claims the pass happened.
+   user accepts and is satisfied, set `bullets_diction_pass_completed: true` in
+   `profile/de_ai_rules.yaml`. Leave it `false` otherwise — it only claims the
+   pass happened. That file is committed, not user data, so the flip is the one
+   edit this command makes that shows in `git status`; say so before applying it.
 
 Never invent a metric. If their resume says "improved reporting" with no number,
 the canonical text says that too.
@@ -214,6 +228,16 @@ Unlocks: discovery, classification and scoring.
 2. Run **`/new-vertical <name>`** and let it drive. It interviews for the block,
    classifier rules, `rubric.md`, `tailoring.md`, the scoring resume, and the
    `vertical_lean` tagging in `skills_master.md`. Do not duplicate any of it here.
+
+   Tell it one thing before it starts: the new lane's classifier rules go at the
+   **top** of `classifier_rules`. The example rules are still in the file until
+   step 3, and two of them match plain job-title words —
+   `\b(?:sprocket|governance|compliance)\b` and
+   `\b(?:operations|systems? analyst)\b`. A search term containing *compliance*,
+   *governance*, *operations* or *systems analyst* otherwise classifies into an
+   example lane, which fails `/new-vertical`'s misclassification check and the
+   full-suite gate behind it. First match wins, so a rule at the top passes now
+   and still passes once step 3 removes the examples.
 3. When it finishes, strip the example scaffolding from `verticals.yaml`. All
    four edits are required — the loader rejects the file if any is missed:
    - remove the `example_primary` and `example_secondary` blocks
@@ -272,8 +296,11 @@ Each item is independent. Do only the one the user wants next.
 1. `cp profile/resume_template.example.docx profile/resume_template.docx`
 2. Have them restyle it in Word: fonts, sizes and spacing on the five named
    paragraph styles. Do not rename the styles — the renderer looks them up by
-   name and rejects a template that is missing one. **No tables, no images, and
-   nothing in the header, footer or a text box.**
+   name and rejects a template that is missing one. It also requires Word's
+   built-in **`Hyperlink`** character style, which the contact line's
+   `[Portfolio](url)` renders with; a clear-formatting pass can drop it, and the
+   fix is to apply it to any one character and re-save. **No tables, no images,
+   and nothing in the header, footer or a text box.**
 3. Only the **body** is rebuilt. The renderer clears body paragraphs and writes
    the resume markdown in their place, so the sample text there is discarded —
    but headers, footers and text boxes are preserved untouched and appear on
