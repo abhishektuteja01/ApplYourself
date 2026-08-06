@@ -1,21 +1,21 @@
 # Shared: docx → pdf via Word
 
-Read by `/tailor` and `/cover-letter`. Both had a byte-identical copy of this
-block differing only in the filename, so a fix to the sandbox workaround had to
-be made twice.
+Read by `/tailor` and `/cover-letter`.
 
-**Caller sets three variables first:** `OUT_DIR`, `FILE_SLUG`, and `BASENAME`
-(`Resume` or `Cover_Letter`). All three must be non-empty — the block checks,
-because an unset `BASENAME` silently produces `${FILE_SLUG}_.docx`, fails the
-copy, and then reports the swallowed "conversion failed" warning as if Word were
-at fault.
+**`OUT_DIR`, `FILE_SLUG` and `BASENAME`** (`Resume` or `Cover_Letter`) must be set
+in the SAME Bash call as the block below — shell state does not persist between
+Bash calls. `/tailor` prepends its Step 1 preamble
+(`. /tmp/tailor_<job_id>_env.sh`) and sets `BASENAME`; `/cover-letter` substitutes
+all three as literals. All three must be non-empty; the block checks, because an
+unset one silently produces `_.docx` and then reports the failed copy as if Word
+were at fault.
 
-Word's sandbox only reliably keeps a folder-access grant for one unchanging
-path, so every conversion is routed through the same fixed staging dir — the
-one-time grant never needs re-approval even though each job gets a new
-`${OUT_DIR}`.
+Every conversion routes through the repo's fixed `.pdf_staging` dir: Word's
+sandbox keeps a folder-access grant for one unchanging path, so a single grant
+covers every job even though each gets a new `OUT_DIR`. Do not parameterize it.
 
 ```bash
+# Prepend the caller's variable preamble to this block.
 test -n "${OUT_DIR}" && test -n "${FILE_SLUG}" && test -n "${BASENAME}" || {
     echo "ERROR: render_pdf needs OUT_DIR, FILE_SLUG and BASENAME set."; exit 1
 }

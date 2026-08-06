@@ -49,18 +49,29 @@ test -n "$JOB_ID" || { echo "ERROR: /tailor requires a job_id argument."; exit 1
 uv run verticals-check || { echo "ERROR: verticals config invalid or per-vertical prose files missing — see message above."; exit 1; }
 uv run python -m src.track_cli ensure "$JOB_ID" || exit 1
 # prep prints VERTICAL / DIRNAME / OUT_DIR / DICTION_PASS / ROW_JSON /
-# APPLICANT_NAME / FILE_SLUG on stdout
-# (the full row JSON + status go to stderr); eval brings them into the shell.
-PREP="$(uv run tailor-prep "$JOB_ID")" || exit 1
-eval "$PREP"
+# APPLICANT_NAME / FILE_SLUG as shlex-quoted assignments on stdout (the full row
+# JSON + status go to stderr). Persist them to a file, because shell state does
+# NOT survive between Bash calls and re-running prep would allocate a new _vN dir.
+ENV_FILE="/tmp/tailor_$1_env.sh"
+uv run tailor-prep "$JOB_ID" > "$ENV_FILE" || { rm -f "$ENV_FILE"; exit 1; }
+. "$ENV_FILE"
 test -n "$OUT_DIR" || { echo "ERROR: tailor-prep produced no OUT_DIR."; exit 1; }
 test -n "$FILE_SLUG" || { echo "ERROR: tailor-prep produced no FILE_SLUG -- the vertical's resume_file needs a bold name line."; exit 1; }
+cat "$ENV_FILE"
 ```
 
-After this block `$VERTICAL`, `$DIRNAME`, `$OUT_DIR`, `$DICTION_PASS`,
-`$ROW_JSON` (= `/tmp/tailor_${JOB_ID}_row.json`), `$APPLICANT_NAME` and
-`$FILE_SLUG` are set for every later step. The last two come from the first bold
-line of the vertical's `resume_file` — no name is hardcoded here.
+`$VERTICAL`, `$DIRNAME`, `$OUT_DIR`, `$DICTION_PASS`, `$ROW_JSON`
+(= `/tmp/tailor_$1_row.json`), `$APPLICANT_NAME` and `$FILE_SLUG` are now in
+`/tmp/tailor_$1_env.sh`. The last two come from the first bold line of the
+vertical's `resume_file` — no name is hardcoded here.
+
+**Every later Bash block starts by re-sourcing that file.** Bash variables do not
+persist between Bash calls, so a step that referenced `$OUT_DIR` without this
+preamble would render to `/_Resume.docx` and write state for job_id `''`:
+
+```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
+```
 
 ## Step 2 — read the JD row + profile
 
@@ -68,7 +79,7 @@ Read each file below in full. Skip one already read in full this session with no
 change signal; when in doubt, re-read. Step 1 already printed the row JSON, so
 re-reading that file is optional.
 
-- `/tmp/tailor_${JOB_ID}_row.json` — the JD + score row
+- `/tmp/tailor_$1_row.json` — the JD + score row
 - the vertical's résumé — read the block's `resume_file` in
   `profile/verticals.yaml` **verbatim; never construct the path** (the filename
   does not track the vertical name). Education/contact/dates come verbatim from
@@ -143,7 +154,7 @@ never silently absorb the difference.
 
 ## Step 4 — draft the resume markdown
 
-Write the draft to `/tmp/tailor_${JOB_ID}_draft_resume.md` now — before lint. Use
+Write the draft to `/tmp/tailor_$1_draft_resume.md` now — before lint. Use
 this shape exactly so the docx renderer's parser handles it:
 
 Every frozen line — the name, the contact line, each role/degree header with its
@@ -221,6 +232,7 @@ The Python reads the Step 4 draft and re-saves the mechanical-fixed version over
 it.
 
 ```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
 uv run python <<PYEOF
 import json
 from pathlib import Path
@@ -230,14 +242,14 @@ from src.lint import (
     compute_exempt_lines, parse_bullets_md,
 )
 
-resume_md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding='utf-8')
+resume_md = Path('/tmp/tailor_$1_draft_resume.md').read_text(encoding='utf-8')
 rules = load_de_ai_rules()
 bullets = parse_bullets_md(Path('profile/bullets.md').read_text(encoding='utf-8'))
 diction_done = bullets_diction_pass_completed(rules)
 
 # Tier 1: mechanical (always applied; no exemption)
 fixed_md, subs = fix_mechanical(resume_md, rules)
-Path('/tmp/tailor_${JOB_ID}_draft_resume.md').write_text(fixed_md, encoding='utf-8')
+Path('/tmp/tailor_$1_draft_resume.md').write_text(fixed_md, encoding='utf-8')
 
 # Tier 2: phrase scan with conditional exemption
 exempt = compute_exempt_lines(fixed_md, bullets, diction_done)
@@ -286,10 +298,11 @@ rephrase passes.
 ## Step 6 — render the docx
 
 ```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
 uv run python -c "
 from pathlib import Path
 from src.docx_render import render_resume
-md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding='utf-8')
+md = Path('/tmp/tailor_$1_draft_resume.md').read_text(encoding='utf-8')
 render_resume(md, Path('profile/resume_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Resume.docx'))
 print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 "
@@ -297,16 +310,23 @@ print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 
 On `TemplateMissingError`/`TemplateError`: surface the message verbatim and stop.
 
-Then convert to PDF — set `BASENAME=Resume` (`OUT_DIR` and `FILE_SLUG` are
-already set) and run `.claude/shared/render_pdf.md` verbatim. Read that file;
-do not reconstruct the AppleScript from memory.
+Then convert to PDF: run `.claude/shared/render_pdf.md`'s block verbatim in ONE
+Bash call, prefixed with the Step 1 preamble and `BASENAME=Resume`. Read that
+file; do not reconstruct the AppleScript from memory.
+
+```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
+BASENAME=Resume
+# ...then the render_pdf.md block, unchanged.
+```
 
 ## Step 7 — write the audit artifacts
 
 **`${OUT_DIR}/resume.md`** — copy the final lint-clean draft:
 
 ```bash
-cp /tmp/tailor_${JOB_ID}_draft_resume.md "${OUT_DIR}/resume.md"
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
+cp /tmp/tailor_$1_draft_resume.md "${OUT_DIR}/resume.md"
 ```
 
 **`${OUT_DIR}/trace.md`** — per-line audit; for every NON-FROZEN line:
@@ -330,7 +350,7 @@ Header:
 ```markdown
 # trace.md — per-line audit for ${OUT_DIR}
 
-Tailored for job_id `${JOB_ID}` on $(date +%Y-%m-%d).
+Tailored for job_id `$1` on $(date +%Y-%m-%d).
 Every rephrase records before→after so NO-DRIFT is eyeball-catchable.
 ```
 
@@ -342,7 +362,8 @@ Every rephrase records before→after so NO-DRIFT is eyeball-catchable.
 already on disk. Never retyped:
 
 ```bash
-uv run tailor-prep snapshot "$JOB_ID" "$OUT_DIR"
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
+uv run tailor-prep snapshot "$1" "$OUT_DIR"
 ```
 
 **`${OUT_DIR}/lint_report.md`** — sections:
@@ -373,10 +394,11 @@ The only side-list mutation `/tailor` is allowed. State transitions remain
 `/track`'s sole job (R10); `/tailor` only adds to the artifact-reference list.
 
 ```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
 uv run python -c "
 from pathlib import Path
 from src.state_io import state_path_for, append_tailored_dir
-p = state_path_for(Path('pipeline'), '$JOB_ID')
+p = state_path_for(Path('pipeline'), '$1')
 data = append_tailored_dir(p, '$DIRNAME')
 print(f'tailored_dirs[] now has {len(data[\"tailored_dirs\"])} entry/entries')
 "
@@ -393,10 +415,10 @@ Verify on disk; if any check fails, do NOT report success — diagnose and fix.
 - [ ] `${OUT_DIR}/jd_snapshot.md` contains the full JD body
 - [ ] `${OUT_DIR}/lint_report.md` exists; "Phrase flags resolved" shows zero unresolved flags
 - [ ] One final lint pass returns zero violations. Step 5's Python reads and
-      writes `/tmp/tailor_${JOB_ID}_draft_resume.md`, so re-running it verbatim
+      writes `/tmp/tailor_$1_draft_resume.md`, so re-running it verbatim
       re-checks the draft, NOT the copy in `${OUT_DIR}`. Either run it before the
       `cp`, or change both paths to `${OUT_DIR}/resume.md` when re-running.
-- [ ] `pipeline/${JOB_ID}/state.yaml.tailored_dirs[]` contains `${DIRNAME}`
+- [ ] `pipeline/$1/state.yaml.tailored_dirs[]` contains `${DIRNAME}`
 - [ ] Every rendered Skills item traces to a `skills_master.md` `name`/`allowable_synonyms` (spot-check SKILLS-SOURCE)
 
 ## Step 10 — report and remind
@@ -414,6 +436,6 @@ state.yaml.tailored_dirs[] now references this dir.
 Next:
   1. Open resume.docx and trace.md — confirm no analogy-as-equivalence drift.
   2. Submit manually on the company's site.
-  3. Run /track ${JOB_ID} applied  (records the transition + sets applied_at).
+  3. Run /track $1 applied  (records the transition + sets applied_at).
   4. Verify the employer is E-Verify-enrolled (manual v1 step).
 ```

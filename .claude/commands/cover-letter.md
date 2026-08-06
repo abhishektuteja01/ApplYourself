@@ -44,19 +44,19 @@ cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; e
 JOB_ID="$1"
 
 test -n "$JOB_ID" || { echo "ERROR: /cover-letter requires a job_id argument."; exit 1; }
-test -f "pipeline/${JOB_ID}/state.yaml" || { echo "ERROR: pipeline/${JOB_ID}/state.yaml missing. Run /track ${JOB_ID} saved first."; exit 1; }
+test -f "pipeline/$1/state.yaml" || { echo "ERROR: pipeline/$1/state.yaml missing. Run /track $1 saved first."; exit 1; }
 test -f profile/bullets.md || { echo "ERROR: profile/bullets.md missing."; exit 1; }
 test -f profile/de_ai_rules.yaml || { echo "ERROR: profile/de_ai_rules.yaml missing."; exit 1; }
 test -f profile/cover_letter_template.docx || { echo "ERROR: profile/cover_letter_template.docx missing. Save your cover letter design there with placeholder paragraphs: {{SALUTATION}} and {{BODY}} required, {{DATE}}/{{CLOSING}}/{{SIGNOFF_NAME}} optional."; exit 1; }
 
 LATEST_DIR=$(uv run python -c "
 import yaml
-data = yaml.safe_load(open('pipeline/${JOB_ID}/state.yaml')) or {}
+data = yaml.safe_load(open('pipeline/$1/state.yaml')) or {}
 dirs = data.get('tailored_dirs') or []
 print(dirs[-1] if dirs else '')
 ")
 if [ -z "$LATEST_DIR" ]; then
-  echo "ERROR: pipeline/${JOB_ID}/state.yaml has no tailored_dirs[] entries. Run /tailor ${JOB_ID} first -- /cover-letter reuses its jd_snapshot.md and keywords_to_mirror.md rather than re-parsing the JD."
+  echo "ERROR: pipeline/$1/state.yaml has no tailored_dirs[] entries. Run /tailor $1 first -- /cover-letter reuses its jd_snapshot.md and keywords_to_mirror.md rather than re-parsing the JD."
   exit 1
 fi
 OUT_DIR="applications/${LATEST_DIR}"
@@ -72,7 +72,19 @@ eval "$(uv run tailor-prep identity "$VERTICAL")" || exit 1
 test -n "$FILE_SLUG" || { echo "ERROR: no FILE_SLUG for vertical ${VERTICAL} -- its resume_file needs a bold name line."; exit 1; }
 
 TODAY=$(date "+%B %-d, %Y")
-echo "today: ${TODAY}"
+
+# Persist the resolved values: shell state does NOT survive between Bash calls,
+# and `eval` above consumed prep's stdout so nothing printed APPLICANT_NAME or
+# FILE_SLUG for later steps to substitute.
+ENV_FILE="/tmp/cover_letter_$1_env.sh"
+{
+  printf 'VERTICAL=%q\n'        "$VERTICAL"
+  printf 'OUT_DIR=%q\n'         "$OUT_DIR"
+  printf 'APPLICANT_NAME=%q\n'  "$APPLICANT_NAME"
+  printf 'FILE_SLUG=%q\n'       "$FILE_SLUG"
+  printf 'TODAY=%q\n'           "$TODAY"
+} > "$ENV_FILE"
+cat "$ENV_FILE"
 uv run python -c "
 from pathlib import Path
 from src.docx_cover_letter import list_cover_letter_placeholders
@@ -82,6 +94,13 @@ echo "reusing tailor dir: ${OUT_DIR}"
 ```
 
 If ANY check fails, exit immediately. **No partial work.**
+
+**Every later Bash block starts by re-sourcing the printed values.** Bash
+variables do not persist between Bash calls:
+
+```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
+```
 
 Use the helper above, never a hand-rolled `paragraph.text` scan: Word wraps
 placeholders in content controls that `paragraph.text` silently misses. If
@@ -159,7 +178,7 @@ mission theme didn't come back specific enough to prove real research,
 leave it out entirely rather than reaching for a generic "I'm inspired by
 your mission to..." line — that's a bigger AI tell than not mentioning it.
 
-Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
+Write a JSON file `/tmp/cover_letter_$1_draft.json` with this shape:
 
 ```json
 {
@@ -183,7 +202,7 @@ Write a JSON file `/tmp/cover_letter_${JOB_ID}_draft.json` with this shape:
 
 Run the `no_ai_slop` skill in **edit** mode over the drafted prose — the
 `salutation` plus every `body[]` entry from
-`/tmp/cover_letter_${JOB_ID}_draft.json`. This is the deep pass for the
+`/tmp/cover_letter_$1_draft.json`. This is the deep pass for the
 structural AI-tells the banned-phrase linter can't catch (binary
 contrasts, colon reveals, importance puffery, summary-recap endings,
 robotic rhythm, fake-profound kickers).
@@ -208,12 +227,13 @@ is **no exemption** here, same as outreach. Lint
 they're not generated prose).
 
 ```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
 uv run python <<PYEOF
 import json
 from pathlib import Path
 from src.lint import fix_mechanical, find_phrase_violations, load_de_ai_rules
 
-draft_path = Path('/tmp/cover_letter_${JOB_ID}_draft.json')
+draft_path = Path('/tmp/cover_letter_$1_draft.json')
 content = json.loads(draft_path.read_text())
 rules = load_de_ai_rules()
 
@@ -261,11 +281,12 @@ When `violations` is empty, proceed to Step 6.
 ## Step 6 — render the docx
 
 ```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
 uv run python -c "
 import json
 from pathlib import Path
 from src.docx_cover_letter import render_cover_letter
-content = json.loads(Path('/tmp/cover_letter_${JOB_ID}_draft.json').read_text())
+content = json.loads(Path('/tmp/cover_letter_$1_draft.json').read_text())
 render_cover_letter(content, Path('profile/cover_letter_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx'))
 print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx')
 "
@@ -280,7 +301,8 @@ Then convert to PDF: set the variables and follow
 `.claude/shared/render_pdf.md` verbatim.
 
 ```bash
-BASENAME=Cover_Letter   # OUT_DIR and FILE_SLUG are already set
+cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
+BASENAME=Cover_Letter
 ```
 
 Read that file now and run its block. Do not reconstruct the AppleScript from
@@ -293,10 +315,11 @@ This is the side-list mutation `/cover-letter` is allowed
 `/track`'s sole job (R10).
 
 ```bash
+cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
 uv run python -c "
 from pathlib import Path
 from src.state_io import state_path_for, append_cover_letter
-p = state_path_for(Path('pipeline'), '$JOB_ID')
+p = state_path_for(Path('pipeline'), '$1')
 data = append_cover_letter(p, '$LATEST_DIR')
 print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 "
@@ -308,13 +331,13 @@ Before reporting success, verify on disk:
 - [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx` exists and is non-empty
 - [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf` exists and is non-empty (warn but don't fail if osascript errored)
 - [ ] One final lint pass returns zero violations. Step 5's Python reads
-      `/tmp/cover_letter_${JOB_ID}_draft.json`, so re-running it verbatim
+      `/tmp/cover_letter_$1_draft.json`, so re-running it verbatim
       re-checks the draft JSON, not the rendered docx — which is the intent
       here, since the docx is generated FROM that JSON. Do not "fix" the path
       to the output dir; there is no .md there to lint.
 - [ ] Body word count is within 250-400 (count the `body` entries' words; /outreach
       asserts its channel limit, and this letter has to fit one page the same way)
-- [ ] `pipeline/${JOB_ID}/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
+- [ ] `pipeline/$1/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
 If any check fails, do NOT report success — diagnose and fix.
 
