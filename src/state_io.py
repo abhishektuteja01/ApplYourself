@@ -53,7 +53,7 @@ def load_state(state_path: Path) -> dict | None:
     if not state_path.exists():
         return None
     try:
-        data = yaml.safe_load(state_path.read_text()) or {}
+        data = yaml.safe_load(state_path.read_text(encoding="utf-8")) or {}
     except (yaml.YAMLError, OSError) as e:
         raise ValueError(f"failed to read {state_path}: {e}") from e
     if not isinstance(data, dict):
@@ -66,7 +66,10 @@ def _write_state(state_path: Path, data: dict) -> None:
     the canonical state.yaml."""
     state_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = state_path.with_suffix(state_path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
+    tmp.write_text(
+        yaml.safe_dump(data, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+    )
     tmp.replace(state_path)
 
 

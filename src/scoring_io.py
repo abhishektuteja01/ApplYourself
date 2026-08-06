@@ -96,7 +96,7 @@ HARD_INELIGIBLE_REASONING = (
 def load_hard_ineligible(path: Path = SPONSORSHIP_RULES_PATH) -> tuple[str, ...]:
     """Lowercased `hard_ineligible` phrases from sponsorship_rules.yaml.
     Missing key -> () (the pre-label is opt-in); missing file fails loud."""
-    data = yaml.safe_load(path.read_text()) or {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     phrases = data.get("hard_ineligible") or []
     if not isinstance(phrases, list) or not all(isinstance(p, str) and p for p in phrases):
         raise ValueError(f"{path}: hard_ineligible must be a list of nonempty strings")
@@ -304,14 +304,14 @@ def dump_unscored(
     n_ineligible = 0
     n_skip_by_vertical = dict.fromkeys(cfg.names, 0)
     with contextlib.ExitStack() as stack:
-        f_judge = stack.enter_context(out_path.open("w"))
-        f_skip = stack.enter_context(auto_skip_path.open("w"))
+        f_judge = stack.enter_context(out_path.open("w", encoding="utf-8"))
+        f_skip = stack.enter_context(auto_skip_path.open("w", encoding="utf-8"))
         f_inel = stack.enter_context(
-            (out_path.parent / "auto_skip_ineligible.jsonl").open("w")
+            (out_path.parent / "auto_skip_ineligible.jsonl").open("w", encoding="utf-8")
         )
         skip_files = {
             name: stack.enter_context(
-                (out_path.parent / f"auto_skip_{name}.jsonl").open("w")
+                (out_path.parent / f"auto_skip_{name}.jsonl").open("w", encoding="utf-8")
             )
             for name in cfg.names
         }
@@ -361,7 +361,7 @@ def auto_score_ineligible(
     if not skip_path.exists():
         return 0
     new_scores: list[dict] = []
-    with skip_path.open() as f:
+    with skip_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -400,7 +400,7 @@ def auto_score_out_of_lane(
         return 0
     reasoning = verticals.get_config().out_of_lane_reasoning
     new_scores: list[dict] = []
-    with auto_skip_path.open() as f:
+    with auto_skip_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -447,7 +447,7 @@ def auto_score_disqualified(
         "years": vertical.reasoning_years,
     }
     new_scores: list[dict] = []
-    with skip_path.open() as f:
+    with skip_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -647,7 +647,7 @@ def merge_scores_from_dir(
     skipped: list[Path] = []
     for f in sorted(staging_dir.glob("batch_*.json")):
         try:
-            batch = json.loads(f.read_text())
+            batch = json.loads(f.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             log.error("Skipping malformed %s: %s", f, e)
             skipped.append(f)
@@ -700,7 +700,7 @@ def _load_state_metadata(pipeline_dir: Path) -> dict[str, dict]:
         return out
     for f in pipeline_dir.glob("*/state.yaml"):
         try:
-            data = yaml.safe_load(f.read_text()) or {}
+            data = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError) as e:
             log.warning("Skipping unreadable %s: %s", f, e)
             continue

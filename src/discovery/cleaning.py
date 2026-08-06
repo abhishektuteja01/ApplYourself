@@ -367,7 +367,7 @@ def apply_state_yaml(df: pd.DataFrame, pipeline_dir: Path) -> pd.DataFrame:
     state_map: dict[str, str] = {}
     for state_file in pipeline_dir.glob("*/state.yaml"):
         try:
-            data = yaml.safe_load(state_file.read_text()) or {}
+            data = yaml.safe_load(state_file.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError) as e:
             log.warning("Skipping unreadable state file %s: %s", state_file, e)
             continue
@@ -687,7 +687,7 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
     else:
         lines.append("(no rows)")
     lines.append("")
-    with report_path.open("a") as f:
+    with report_path.open("a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
 
@@ -703,7 +703,7 @@ def write_outputs(
     df.to_parquet(clean_dir / "clean.parquet", index=False)
     preview_path = clean_dir / "clean.preview.jsonl"
     preview_cols = [c for c in PREVIEW_COLUMNS if c in df.columns]
-    with preview_path.open("w") as f:
+    with preview_path.open("w", encoding="utf-8") as f:
         for _, row in df[preview_cols].iterrows():
             d = row.to_dict()
             for k, v in list(d.items()):

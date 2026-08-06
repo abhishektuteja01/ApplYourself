@@ -67,10 +67,10 @@ def split_by_vertical(unscored_path: Path) -> dict[str, int]:
     judge-mode --range line numbers stay stable. Returns per-vertical counts."""
     names = verticals.get_config().names
     counts = dict.fromkeys(names, 0)
-    outs = {v: (unscored_path.parent / f"unscored_{v}.jsonl").open("w")
+    outs = {v: (unscored_path.parent / f"unscored_{v}.jsonl").open("w", encoding="utf-8")
             for v in names}
     try:
-        with unscored_path.open() as f:
+        with unscored_path.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -97,7 +97,7 @@ def coverage(staging: Path) -> dict:
         # An unreadable batch must be REPORTED, not raised on — a traceback
         # here tells the operator nothing about which rows are at risk.
         try:
-            batch = json.loads(f.read_text())
+            batch = json.loads(f.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             unreadable.append(f.name)
             continue
@@ -106,7 +106,7 @@ def coverage(staging: Path) -> dict:
             continue
         staged += [r["job_id"] for r in batch
                    if isinstance(r, dict) and "job_id" in r]
-    with (staging / "unscored.jsonl").open() as f:
+    with (staging / "unscored.jsonl").open(encoding="utf-8") as f:
         expected = [json.loads(line)["job_id"] for line in f if line.strip()]
     return {
         "staged": len(staged),
@@ -152,7 +152,7 @@ def _cmd_ranges(args: argparse.Namespace) -> int:
     counts = {}
     for v in verticals.get_config().names:
         p = STAGING / f"unscored_{v}.jsonl"
-        counts[v] = (sum(1 for line in p.read_text().splitlines() if line.strip())
+        counts[v] = (sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
                      if p.exists() else 0)
     print(" ".join(f"{v}={n}" for v, n in counts.items()))
     for v, a, b in judge_ranges(counts):
@@ -288,7 +288,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
     out_dir = Path("shortlist")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{date_str}.md"
-    out_path.write_text(md)
+    out_path.write_text(md, encoding="utf-8")
 
     keepers = sum(len(rows) for rows in result["main"].values())
     print(f"shortlist={out_path} keepers={keepers} scored={n_scored}/{n_clean}")

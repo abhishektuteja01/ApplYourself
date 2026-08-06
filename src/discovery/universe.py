@@ -81,7 +81,7 @@ def load(ats: str) -> list[UniverseCompany]:
     # 2. Load Watchlist
     if DEFAULT_COMPANIES_PATH.exists():
         try:
-            data = yaml.safe_load(DEFAULT_COMPANIES_PATH.read_text())
+            data = yaml.safe_load(DEFAULT_COMPANIES_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict) and data.get("schema_version") == _SCHEMA_VERSION:
                 raw = data.get("companies")
                 if isinstance(raw, list):

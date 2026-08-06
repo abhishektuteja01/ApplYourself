@@ -51,7 +51,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         return DiscoveryConfig()
     
     try:
-        data = yaml.safe_load(p.read_text())
+        data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
         raise ValueError(f"Malformed YAML in {p}: {e}") from e
 

@@ -187,7 +187,7 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
             f"profile/verticals/example_* dirs to profile/verticals/<name>/) "
             f"and edit."
         )
-    data = yaml.safe_load(p.read_text())
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise _fail(p, "top level must be a mapping")
     if data.get("schema_version") != _SCHEMA_VERSION:

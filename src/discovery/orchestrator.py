@@ -163,9 +163,12 @@ def main(args=None):
         
         # Read existing report and append if resuming
         if parsed.resume and report_path.exists():
-            report_path.write_text(report_path.read_text() + "\n" + "\n".join(report_lines[6:]) + "\n")
+            report_path.write_text(
+                report_path.read_text(encoding="utf-8") + "\n" + "\n".join(report_lines[6:]) + "\n",
+                encoding="utf-8",
+            )
         else:
-            report_path.write_text("\n".join(report_lines) + "\n")
+            report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
             
         cleaning.run(
             run_id=run_id,

@@ -91,7 +91,7 @@ def resume_display_name(resume_path: Path) -> str:
     since every downstream artifact is named after it."""
     if not resume_path.is_file():
         raise _die(f"{resume_path} missing — the vertical's resume_file must exist.")
-    for line in resume_path.read_text().splitlines():
+    for line in resume_path.read_text(encoding="utf-8").splitlines():
         m = _NAME_RE.match(line)
         if m and m.group(1).strip():
             return m.group(1).strip()
@@ -140,7 +140,7 @@ def _dump_row_json(job_id: str, row: dict) -> Path:
         k: (v.isoformat() if hasattr(v, "isoformat") else v)
         for k, v in row.items()
     }
-    p.write_text(json.dumps(serializable, default=str, indent=2))
+    p.write_text(json.dumps(serializable, default=str, indent=2), encoding="utf-8")
     return p
 
 
@@ -193,7 +193,7 @@ def _cmd_prep(args: argparse.Namespace) -> int:
     row = _load_row(job_id)
     row_json = _dump_row_json(job_id, row)
 
-    diction = (PROFILE / "de_ai_rules.yaml").read_text()
+    diction = (PROFILE / "de_ai_rules.yaml").read_text(encoding="utf-8")
     diction_pass = "true" if "bullets_diction_pass_completed: true" in diction else "false"
 
     vertical = _resolve_vertical(row)
@@ -214,7 +214,7 @@ def _cmd_prep(args: argparse.Namespace) -> int:
     # STDERR: human status + the full row (kept out of stdout so the eval below
     # stays clean; the command's Step 2 also reads the row.json file).
     print(f"tailoring to: {out_dir}  (vertical={vertical})", file=sys.stderr)
-    print(row_json.read_text(), file=sys.stderr)
+    print(row_json.read_text(encoding="utf-8"), file=sys.stderr)
 
     # STDOUT: quoted assignments for `eval "$(uv run tailor-prep ...)"`.
     # APPLICANT_NAME comes from a user-authored file and may contain an
@@ -247,7 +247,7 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
     row_json = _row_json_path(job_id)
     if not row_json.is_file():
         raise _die(f"{row_json} missing — run `tailor-prep {job_id}` first.")
-    row = json.loads(row_json.read_text())
+    row = json.loads(row_json.read_text(encoding="utf-8"))
 
     jd_text = row.get("jd_text") or ""
     snap = (
@@ -261,7 +261,7 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
         "---\n\n"
         f"{jd_text}\n"
     )
-    (out_dir / "jd_snapshot.md").write_text(snap)
+    (out_dir / "jd_snapshot.md").write_text(snap, encoding="utf-8")
     print(f"jd_snapshot.md written: {len(jd_text)} chars of JD body")
     return 0
 

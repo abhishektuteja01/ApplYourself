@@ -66,7 +66,7 @@ def load_de_ai_rules(path: Path | None = None) -> dict:
     p = path or _DEFAULT_RULES_PATH
     if not p.exists():
         return {}
-    return yaml.safe_load(p.read_text()) or {}
+    return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
 
 def bullets_diction_pass_completed(rules: dict) -> bool:
@@ -383,7 +383,7 @@ def lint_bullets_md(
     mechanical_subs_count is informational only."""
     if rules is None:
         rules = load_de_ai_rules()
-    text = bullets_md_path.read_text()
+    text = bullets_md_path.read_text(encoding="utf-8")
     bullets = parse_bullets_md(text)
     total_subs = 0
     violations: list[dict] = []
