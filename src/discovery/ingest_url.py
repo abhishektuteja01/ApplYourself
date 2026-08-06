@@ -3,16 +3,16 @@ and rebuild jobs/clean.parquet (same cleaning path as discovery).
 
 Deterministic plumbing: no LLM calls (R7), no browser automation
 — one or two unauthenticated GETs. Recognized ATS posting URLs (Greenhouse /
-Lever / Ashby) are fetched via their public JSON APIs and parsed by the
-existing careers.py parsers, so company/title/JD are structured, not scraped.
-Any other URL falls back to a raw HTML fetch stripped to text, and REQUIRES
-explicit --company/--title (the job_id hash depends on them — never guessed).
+Lever / Ashby) are fetched via their public JSON APIs and parsed by the same
+row parsers discovery uses (sources/ats/), so company/title/JD are structured,
+not scraped. Any other URL falls back to a raw HTML fetch stripped to text, and
+REQUIRES explicit --company/--title (the job_id hash depends on them — never
+guessed).
 
-    uv run python -m src.discovery.ingest_url <url> [--vertical NAME]
-        [--company "..."] [--title "..."]
+    uv run ingest-url <url> [--vertical NAME] [--company "..."] [--title "..."]
 
-Prints the resulting job_id. tailor_cli invokes ingest() directly for the
-one-command `<vertical> <url>` tailoring flow.
+Prints the resulting job_id. Reached only through that console script: nothing
+in src/ calls ingest() directly.
 """
 from __future__ import annotations
 
@@ -53,9 +53,9 @@ class IngestError(Exception):
     """Actionable failure; the CLI prints the message verbatim and exits 1."""
 
 
-# careers.html_to_text strips tags but keeps their text content — right for
+# htmlutil.html_to_text strips tags but keeps their text content — right for
 # ATS API fragments (pure prose), wrong for full pages where <script>/<style>
-# bodies would leak in as "JD text" and defeat the 200-char floor.
+# bodies would leak in as "JD text" and defeat cleaning's MIN_JD_CHARS floor.
 _DROP_BLOCKS_RE = re.compile(
     r"<(script|style|noscript|template|svg)\b.*?</\1\s*>",
     re.I | re.S,
@@ -106,7 +106,7 @@ def parse_ats_url(url: str) -> tuple[str, str, str] | None:
 
 
 # ---------------------------------------------------------------------
-# Per-ATS single-posting fetch -> JobSpy-shaped row (careers.py parsers)
+# Per-ATS single-posting fetch -> JobSpy-shaped row (sources/ats/ parsers)
 # ---------------------------------------------------------------------
 
 def _fetch_greenhouse(slug: str, posting_id: str) -> dict:
@@ -242,10 +242,10 @@ def ingest(
     row = fetch_row(url, company=company, title=title)
 
     jd = (row.get("description") or "").strip()
-    if len(jd) < 200:
+    if len(jd) < cleaning.MIN_JD_CHARS:
         raise IngestError(
             f"ERROR: JD text extracted from {url} is {len(jd)} chars — below "
-            f"the 200-char cleaning floor. The page may be "
+            f"the {cleaning.MIN_JD_CHARS}-char cleaning floor. The page may be "
             f"JS-rendered or the posting closed. Paste the JD into inbox/ "
             f"as a manual clip instead."
         )

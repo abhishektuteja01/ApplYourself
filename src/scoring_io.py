@@ -51,6 +51,11 @@ UNSCORED_FIELDS: list[str] = [
     "employment_type", "seniority_raw", "vertical",
 ]
 
+# Shortlist caps. compute_shortlist's defaults, the assertion that guards them,
+# and the header line a human reads must all be the same two numbers.
+SHORTLIST_TOP_N = 25
+SHORTLIST_MIN_FIT = 50
+
 VALID_LABELS = {"sponsors", "opt_ok", "ineligible", "unknown"}
 VALID_ACTIONS = {"tailor", "skip", "manual-review"}
 SUBSCORE_AXES = ("title", "skills", "seniority", "domain")
@@ -68,23 +73,15 @@ _APPLIED_STATES = frozenset({
 })
 
 
-# Out-of-lane pre-screen for /score: rows whose `vertical` matches no
-# configured vertical (vertical="") are auto-skipped with fit_score=0 — this
-# is a deterministic outcome anyway, so
-# paying an LLM call to confirm it is waste. dump_unscored gates on the
-# precomputed clean.parquet `vertical` column; the stamp below is the generic
-# mechanism, the
-# human-facing reasoning text lives in profile/verticals.yaml
+# Out-of-lane pre-screen: rows with vertical="" are auto-skipped at
+# fit_score=0 without an LLM call. The human-facing text is the config's
 # `out_of_lane.reasoning`.
 AUTO_SKIP_SCORED_BY = "rubric:title-out-of-lane"
 
-# Hard-ineligible pre-label (carve-out, added 2026-07-14):
-# rows whose JD contains an unambiguous clearance/citizenship phrase from
-# `sponsorship_rules.yaml: hard_ineligible` are labeled ineligible before
-# any judge runs — identical shortlist-exclusion routing to a judge-assigned
-# label (never a `skip`; a suppressed row is not an ineligible row).
-# Judgment-free substring
-# match only; every nuanced sponsorship case stays with the LLM judge.
+# Hard-ineligible pre-label: a JD containing a `hard_ineligible` phrase is
+# labeled ineligible before any judge runs, routed exactly like a judge-assigned
+# label — never as a `skip`, which is a different thing. Substring match only;
+# every nuanced sponsorship case stays with the judge.
 SPONSORSHIP_RULES_PATH = Path("profile/sponsorship_rules.yaml")
 HARD_INELIGIBLE_SCORED_BY = "rubric:hard-ineligible-pre-screen"
 HARD_INELIGIBLE_REASONING = (
@@ -130,18 +127,10 @@ def _normalize_jd(jd_text: Any) -> str:
     return text
 
 
-# Explicit minimum-years-of-experience disqualifier (locked 2026-06-17).
-# Scoped to phrases that pair a year-count with the word "experience"
-# within a few words ("5+ years of experience", "2+ years of direct
-# experience") so generic year mentions elsewhere in the JD (e.g. "150-year
-# legacy") never false-positive. Takes the highest N found anywhere in the
-# JD; >=5 years stated anywhere disqualifies outright — folds the
-# "5+ yrs -> cap 4 / 6+ yrs -> cap 0+skip" seniority overrides into a single
-# hard pre-screen instead of relying on the LLM judge to apply the cap.
-# The optional "-M"/"–M" group handles ranges ("3-6 years of experience")
-# by capturing the LOWER bound (the actual minimum) instead of matching the
-# upper bound as its own standalone number — without it, "3-6 years" would
-# wrongly read as a flat 6-year requirement.
+# Minimum-years disqualifier. Requires a year-count within a few words of
+# "experience", so an unrelated year mention ("150-year legacy") cannot
+# false-positive. The optional "-M" group captures the LOWER bound of a range,
+# without which "3-6 years" reads as a flat 6-year requirement.
 EXPERIENCE_YEARS_RE = re.compile(
     r"(\d+)\s*(?:\+|[-–—]\s*\d+\+?)?\s*years?\s+(?:of\s+)?(?:[a-z][\w/&,-]*\s+){0,4}experience",
 )
@@ -166,13 +155,10 @@ def disqualify_reason(
     block in profile/verticals.yaml. All lists are optional —
     a vertical with empty lists gets the years check only.
 
-    Semantic degree-requirement cases (e.g. a closed quant-only degree list
-    with no CS path) deliberately do NOT live here — distinguishing one from
-    an ordinary "or related field" listing is a judgment call a keyword
-    regex over-triggers on (tested against a full 14-day vertical window:
-    flagged ~70 generic business-degree JDs alongside the few genuine
-    closed-list ones). Those cases are hard rubric rules for the LLM judge
-    in the vertical's rubric.md instead (locked 2026-06-17)."""
+    Semantic degree-requirement cases stay out: telling a genuinely closed
+    degree list from an ordinary "or related field" listing is a judgment call
+    a keyword regex over-triggers on. Those belong in the vertical's rubric.md,
+    for the judge."""
     if isinstance(title, str) and title:
         title_lowered = title.lower()
         if any(p in title_lowered for p in vertical.disqualifier_title_phrases):
@@ -664,7 +650,7 @@ def merge_scores_from_dir(
     because each one holds ~100 judged rows. The caller must refuse to clear
     staging while that list is non-empty, or those rows are destroyed while a
     healthy `merged=` count prints. /score writes batches to scored.staging/
-    so partial-batch failures survive for debugging (user Q5 call: not /tmp).
+    so partial-batch failures survive for debugging.
 
     validate_scores errors name their source file, so the operator can repair
     the named row in the named batch and re-run merge (idempotent: rows
@@ -736,8 +722,8 @@ def compute_shortlist(
     scored_path: Path,
     clean_path: Path,
     pipeline_dir: Path,
-    top_n: int = 25,
-    min_fit: int = 50,
+    top_n: int = SHORTLIST_TOP_N,
+    min_fit: int = SHORTLIST_MIN_FIT,
     write_ranks: bool = True,
 ) -> dict:
     """Deterministic sort + cap + exclusion split.
@@ -747,9 +733,8 @@ def compute_shortlist(
         "main": {<vertical>: [row, ...] for each configured vertical,
                  in profile/verticals.yaml config order}
             # top_n per vertical, each section sorted/capped independently;
-            # excludes ineligible/suppressed (locked 2026-06-16:
-            # independently-ranked sections, not one blended list — a
-            # vertical's fit_score is never compared against another's)
+            # excludes ineligible/suppressed. Sections rank independently:
+            # one vertical's fit_score is never compared against another's.
         "excluded":   [row, ...]   # sponsorship_label == 'ineligible' (sponsorship is the only exclusion gate)
         "suppressed": [row, ...]   # state_history skip count >= 1 (a skip is not an ineligible)
       }
@@ -830,7 +815,8 @@ def render_shortlist_markdown(
     total_keepers = 0
     for v in cfg.names:
         rows = shortlist["main"].get(v, [])
-        assert len(rows) <= 25, f"{v}: {len(rows)} rows exceeds cap 25"
+        assert len(rows) <= SHORTLIST_TOP_N, (
+            f"{v}: {len(rows)} rows exceeds cap {SHORTLIST_TOP_N}")
         lines = [f"## {cfg.verticals[v].display_name} ({len(rows)})", ""]
         if not rows:
             lines.append("No keepers today in this vertical.")
@@ -862,7 +848,8 @@ def render_shortlist_markdown(
         total_keepers += len(rows)
 
     header = (f"# Shortlist — {date_str}\n\n"
-              f"({n_scored} of {n_clean} scored, top 25 per vertical with fit >= 50)\n")
+              f"({n_scored} of {n_clean} scored, top {SHORTLIST_TOP_N} "
+              f"per vertical with fit >= {SHORTLIST_MIN_FIT})\n")
     if total_keepers == 0:
         return header + "\nNo keepers today in this vertical.\n"
     return header + "\n" + "\n".join(sections)

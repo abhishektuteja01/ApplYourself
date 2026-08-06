@@ -160,7 +160,7 @@ def parse_resume_md(md: str) -> list[Block]:
             body = line[2:].strip()
             blocks.append({
                 "type": "bullet", "text": body,
-                "runs": _split_inline_bold(body),
+                "runs": _split_inline_runs(body),
             })
             continue
         # Section header: a line that is entirely **ALL CAPS WORDS**
@@ -178,7 +178,7 @@ def parse_resume_md(md: str) -> list[Block]:
             if bold_prefix.endswith(":"):
                 blocks.append({
                     "type": "body", "text": line,
-                    "runs": _split_inline_bold(line),
+                    "runs": _split_inline_runs(line),
                 })
                 continue
             runs: list[Run] = [
@@ -186,13 +186,13 @@ def parse_resume_md(md: str) -> list[Block]:
             ]
             tail = m.group(2)
             if tail:
-                runs.extend(_split_inline_bold(tail))
+                runs.extend(_split_inline_runs(tail))
             blocks.append({"type": "job_header", "text": line, "runs": runs})
             continue
         # Plain body (may contain inline bold)
         blocks.append({
             "type": "body", "text": line,
-            "runs": _split_inline_bold(line),
+            "runs": _split_inline_runs(line),
         })
     return blocks
 
@@ -464,7 +464,7 @@ _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def _split_inline_bold(text: str) -> list[Run]:
+def _split_inline_runs(text: str) -> list[Run]:
     """Split text into runs at **bold** AND [text](url) boundaries.
 
     Name is historical -- handles bold and links now. Plain text becomes

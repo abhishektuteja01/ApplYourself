@@ -68,15 +68,21 @@ CAREER_SOURCES: tuple[str, ...] = tuple(ATS_SOURCE_NAMES)
 # drops a still-live posting first published more than 14 days ago.
 STALENESS_EXEMPT_SOURCES: tuple[str, ...] = CAREER_SOURCES + ("manual",)
 
-# Seen-ledger retention policy (locked 2026-07-15). Visibility is
-# measured from first_seen (time in MY system, not posting age), tiered by
-# the latest fit_score; RESURFACE_AFTER_DAYS past expiry the ledger forgets,
-# so a still-live posting re-enters as new and is re-judged. Rows with a
-# pipeline/<job_id>/state.yaml never expire.
+# Seen-ledger retention. Visibility is measured from first_seen (time in the
+# system, not posting age) and tiered by the latest fit_score;
+# RESURFACE_AFTER_DAYS past expiry the ledger forgets, so a still-live posting
+# re-enters as new and is re-judged. A row with a state.yaml never expires.
 SCORE_HIGH_THRESHOLD = 80.0
 RETENTION_HIGH_DAYS = 60
 RETENTION_LOW_DAYS = 15
 RESURFACE_AFTER_DAYS = 60
+
+# The 14-day discovery window. drop_stale and prune_raw_files are the same
+# window seen from two ends; separate literals let them drift apart.
+MAX_AGE_DAYS = 14
+# Shorter than this is a JS shell or a truncated fetch, not a JD. ingest_url
+# quotes this in its error message.
+MIN_JD_CHARS = 200
 
 PREVIEW_COLUMNS = [
     "job_id", "source", "company", "title", "location",
@@ -160,7 +166,7 @@ def compute_job_id(company_normalized: str, title_normalized: str) -> str:
 # Step 2 — drop short JD
 # ---------------------------------------------------------------------
 
-def drop_short_jd(df: pd.DataFrame, min_chars: int = 200) -> pd.DataFrame:
+def drop_short_jd(df: pd.DataFrame, min_chars: int = MIN_JD_CHARS) -> pd.DataFrame:
     if df.empty:
         return df.copy()
     lens = df["jd_text"].fillna("").astype(str).str.strip().str.len()
@@ -174,7 +180,7 @@ def drop_short_jd(df: pd.DataFrame, min_chars: int = 200) -> pd.DataFrame:
 def drop_stale(
     df: pd.DataFrame,
     today: pd.Timestamp | None = None,
-    max_age_days: int = 14,
+    max_age_days: int = MAX_AGE_DAYS,
     exempt_sources: tuple[str, ...] = STALENESS_EXEMPT_SOURCES,
 ) -> pd.DataFrame:
     df = df.copy()
@@ -536,8 +542,8 @@ def apply_title_exclusion(df: pd.DataFrame, cfg) -> tuple[pd.DataFrame, dict[str
     title_include_terms — i.e. the include-gate is OFF and this reduces to
     the historical exclusion-only behavior (drop rows matching
     title_exclude_terms). title_strong_keep_terms override every exclude, so
-    an unambiguous in-lane title survives even when it also trips an exclude
-    (e.g. "Model Risk Management Lead, Machine Learning"). Manual/URL-ingested
+    an unambiguous in-lane title survives even when it also trips an exclude.
+    Manual/URL-ingested
     rows are always exempt. Returns (filtered_df, drops_per_vertical)."""
     if df.empty:
         return df.copy(), {}
@@ -577,7 +583,7 @@ def apply_title_exclusion(df: pd.DataFrame, cfg) -> tuple[pd.DataFrame, dict[str
 
 def coerce_schema(df: pd.DataFrame) -> pd.DataFrame:
     """Return df with exactly the canonical columns in canonical order.
-    Raises KeyError on any missing required column — fail loud (per slice-2 rule)."""
+    Raises KeyError on any missing required column — fail loud."""
     missing = [c for c in CLEAN_COLUMNS if c not in df.columns]
     if missing:
         raise KeyError(
@@ -612,7 +618,7 @@ def _parse_run_ts_from_filename(name: str) -> pd.Timestamp | None:
 def load_raw_window(
     raw_dir: Path,
     today: pd.Timestamp | None = None,
-    max_age_days: int = 14,
+    max_age_days: int = MAX_AGE_DAYS,
 ) -> pd.DataFrame:
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     cutoff = today - pd.Timedelta(days=max_age_days)
