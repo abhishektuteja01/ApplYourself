@@ -126,24 +126,42 @@ def coverage(staging: Path) -> dict:
     }
 
 
+def _dump_and_autoscore(force_all: bool, only_vertical: str | None = None) -> dict:
+    """Dump the unscored rows, then run every deterministic pre-screen.
+
+    The one place the pre-screen set is enumerated. /score (through prepare) and
+    /rescore (through dump) both come here, so a pre-screen added to one cannot
+    go missing from the other.
+    """
+    n_judge = dump_unscored(
+        CLEAN, SCORED, STAGING / "unscored.jsonl",
+        force_all=force_all, only_vertical=only_vertical,
+    )
+    return {
+        "rows_to_score": n_judge,
+        "auto_skipped": auto_score_out_of_lane(STAGING / "auto_skip.jsonl", SCORED),
+        "auto_ineligible": auto_score_ineligible(
+            STAGING / "auto_skip_ineligible.jsonl", SCORED),
+        "per_vertical": {
+            v.name: auto_score_disqualified(
+                v, STAGING / f"auto_skip_{v.name}.jsonl", SCORED)
+            for v in verticals.get_config().verticals.values()
+        },
+    }
+
+
+def _autoscore_line(counts: dict) -> str:
+    return (f"rows_to_score={counts['rows_to_score']} "
+            f"auto_skipped={counts['auto_skipped']} "
+            f"auto_ineligible={counts['auto_ineligible']} "
+            + " ".join(f"auto_skipped_{v}={n}"
+                       for v, n in counts["per_vertical"].items()))
+
+
 def _cmd_dump(args: argparse.Namespace) -> int:
     STAGING.mkdir(parents=True, exist_ok=True)
     clear_staging(STAGING)
-    n_judge = dump_unscored(
-        CLEAN, SCORED, STAGING / "unscored.jsonl",
-        force_all=args.force_all, only_vertical=args.vertical,
-    )
-    n_skip = auto_score_out_of_lane(STAGING / "auto_skip.jsonl", SCORED)
-    n_ineligible = auto_score_ineligible(
-        STAGING / "auto_skip_ineligible.jsonl", SCORED)
-    per_vertical = {
-        v.name: auto_score_disqualified(
-            v, STAGING / f"auto_skip_{v.name}.jsonl", SCORED)
-        for v in verticals.get_config().verticals.values()
-    }
-    print(f"rows_to_score={n_judge} auto_skipped={n_skip} "
-          f"auto_ineligible={n_ineligible} "
-          + " ".join(f"auto_skipped_{v}={n}" for v, n in per_vertical.items()))
+    print(_autoscore_line(_dump_and_autoscore(args.force_all, args.vertical)))
     return 0
 
 
@@ -267,22 +285,11 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
             return 1
 
     clear_staging(STAGING)
-    n_judge = dump_unscored(CLEAN, SCORED, STAGING / "unscored.jsonl",
-                            force_all=args.force_all)
-    n_skip = auto_score_out_of_lane(STAGING / "auto_skip.jsonl", SCORED)
-    n_ineligible = auto_score_ineligible(
-        STAGING / "auto_skip_ineligible.jsonl", SCORED)
-    per_vertical = {
-        v.name: auto_score_disqualified(
-            v, STAGING / f"auto_skip_{v.name}.jsonl", SCORED)
-        for v in cfg.verticals.values()
-    }
-    counts = (split_by_vertical(STAGING / "unscored.jsonl") if n_judge
-              else dict.fromkeys(cfg.names, 0))
+    autoscored = _dump_and_autoscore(args.force_all)
+    counts = (split_by_vertical(STAGING / "unscored.jsonl")
+              if autoscored["rows_to_score"] else dict.fromkeys(cfg.names, 0))
 
-    print(f"recovered={recovered} rows_to_score={n_judge} auto_skipped={n_skip} "
-          f"auto_ineligible={n_ineligible} "
-          + " ".join(f"auto_skipped_{v}={n}" for v, n in per_vertical.items()))
+    print(f"recovered={recovered} " + _autoscore_line(autoscored))
     for v, a, b in judge_ranges(counts):
         print(f"range {v} {a}-{b}")
     return 0
