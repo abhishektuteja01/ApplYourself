@@ -109,8 +109,8 @@ def classify_vertical_from_title(title: str | None) -> str:
     vertical from the search term that found the row — see comment above."""
     if not isinstance(title, str) or not title:
         return ""
-    for vertical, pattern in verticals.get_config().classifier_rules:
-        if pattern.search(title):
+    for vertical, rule in verticals.get_config().classifier_rules:
+        if rule.matches(title):
             return vertical
     return ""
 

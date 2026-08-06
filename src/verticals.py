@@ -20,6 +20,7 @@ one-line prerequisite check.
 from __future__ import annotations
 
 import re
+from typing import Protocol
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,7 +58,7 @@ class Vertical:
 class VerticalsConfig:
     default_vertical: str
     verticals: dict[str, Vertical]  # insertion order == config order
-    classifier_rules: tuple[tuple[str, re.Pattern], ...]
+    classifier_rules: tuple[tuple[str, "ClassifierRule"], ...]
     out_of_lane_reasoning: str
 
     @property
@@ -71,7 +72,31 @@ class VerticalsConfig:
         return frozenset(self.verticals) | {""}
 
 
+class ClassifierRule(Protocol):
+    """What the title classifier needs from a rule. Both kinds answer the same
+    question, so neither has to imitate the other's return type."""
+
+    def matches(self, title: str) -> bool: ...
+
+
+class RegexRule:
+    """A plain `pattern:` string, compiled case-insensitively."""
+
+    def __init__(self, pattern: re.Pattern):
+        self.pattern = pattern
+
+    def matches(self, title: str) -> bool:
+        return self.pattern.search(title) is not None
+
+    def __repr__(self) -> str:
+        return f"RegexRule({self.pattern.pattern!r})"
+
+
 class CompoundRule:
+    """A `pattern: {match, require_any}` block: the match string must appear,
+    and so must at least one of require_any. Comparison is on a normalized form
+    so "Co-Pilot", "co pilot" and a non-breaking space all read alike."""
+
     def __init__(self, match_str: str, require_any: tuple[str, ...]):
         self.match_str = self._normalize(match_str)
         self.require_any = [self._normalize(req) for req in require_any]
@@ -80,13 +105,14 @@ class CompoundRule:
     def _normalize(text: str) -> str:
         return text.lower().replace("\xa0", " ").replace("-", " ")
 
-    def search(self, text: str):
-        text_norm = self._normalize(text)
-        if self.match_str not in text_norm:
-            return None
-        if any(req in text_norm for req in self.require_any):
-            return True  # just needs to be truthy for `if pattern.search(title):`
-        return None
+    def matches(self, title: str) -> bool:
+        title_norm = self._normalize(title)
+        if self.match_str not in title_norm:
+            return False
+        return any(req in title_norm for req in self.require_any)
+
+    def __repr__(self) -> str:
+        return f"CompoundRule({self.match_str!r}, require_any={self.require_any!r})"
 
 def _fail(path: Path, message: str) -> ValueError:
     return ValueError(f"{path}: {message}")
@@ -235,7 +261,7 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
                 compiled = re.compile(pattern, re.IGNORECASE)
             except re.error as exc:
                 raise _fail(p, f"{where}.pattern does not compile: {exc}") from exc
-            rules.append((vertical, compiled))
+            rules.append((vertical, RegexRule(compiled)))
 
     return VerticalsConfig(
         default_vertical=default_vertical,

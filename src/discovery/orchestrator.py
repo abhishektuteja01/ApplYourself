@@ -54,9 +54,12 @@ def main(args=None):
     run_id = parsed.resume or current_run_id(start_time)
     scraped_date = pd.Timestamp(start_time).normalize()
     
-    deadline_ts = 0.0
-    if config.deadline_hours > 0:
-        deadline_ts = time.time() + config.deadline_hours * 3600
+    # deadline_hours == 0 is the scrape-nothing kill switch: no source runs, and
+    # the finally below still rebuilds clean.parquet from the existing window.
+    # deadline_ts is only meaningful when it is positive, and deadline_reached()
+    # reads 0.0 as "no deadline set" for exactly the case that never scrapes.
+    scrape_enabled = config.deadline_hours > 0
+    deadline_ts = time.time() + config.deadline_hours * 3600 if scrape_enabled else 0.0
         
     ctx = Context(config=config, deadline_ts=deadline_ts)
     
@@ -96,10 +99,12 @@ def main(args=None):
                 if name in source_map:
                     enabled_sources.append(source_map[name])
 
-    try:
-        if config.deadline_hours == 0:
-            enabled_sources = []
+    if not scrape_enabled:
+        log.info("deadline_hours == 0 — skipping every source, cleaning only.")
+        report_lines.append("**deadline_hours == 0** — no source polled this run.")
+        enabled_sources = []
 
+    try:
         for source in enabled_sources:
             shard_file = JOBS_RAW / f"{run_id}_{source.name}.parquet"
             if parsed.resume and shard_file.exists():

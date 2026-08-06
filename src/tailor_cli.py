@@ -203,7 +203,9 @@ def _cmd_prep(args: argparse.Namespace) -> int:
 
     dirname = _versioned_dirname(vertical, company_slug, title_slug, job_id, today)
     out_dir = APPLICATIONS / dirname
-    # _versioned_dirname never reuses a number, so this means a bug.
+    # Invariant check, not an expected path: _versioned_dirname allocates an
+    # unused suffix, so an existing dir means that allocation is broken. Kept
+    # because what it protects is a previous run's artifacts.
     if out_dir.exists():
         raise _die(
             f"{out_dir} already exists -- refusing to overwrite a previous "

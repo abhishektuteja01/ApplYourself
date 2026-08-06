@@ -111,6 +111,18 @@ def _mech_rules(rules: dict | None) -> dict:
 # Tier 1 — mechanical auto-fix
 # =====================================================================
 
+# (category, characters) for the Tier-1 character swaps. Column numbers are
+# reported against the ORIGINAL line, so occurrences are found on `line` while
+# the replacement accumulates in `new_line`.
+_CHAR_SUBSTITUTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("smart_quote_single", ("\u2018", "\u2019")),
+    ("smart_quote_double", ("\u201c", "\u201d")),
+    ("ellipsis", ("\u2026",)),
+    ("nbsp", ("\u00a0",)),
+    ("zero_width", ("\u200b",)),
+)
+
+
 def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Substitution]]:
     """Apply mechanical substitutions; return (fixed_text, subs).
 
@@ -170,47 +182,16 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
         new_parts.append(new_line[last:])
         new_line = "".join(new_parts)
 
-        # Smart single quotes (U+2018 U+2019)
-        for ch in ("‘", "’"):
-            for match in re.finditer(re.escape(ch), line):
-                subs.append(Substitution(
-                    line=lineno, column=match.start() + 1, original=ch,
-                    replacement=m["smart_quote_single"], category="smart_quote_single",
-                ))
-            new_line = new_line.replace(ch, m["smart_quote_single"])
-
-        # Smart double quotes (U+201C U+201D)
-        for ch in ("“", "”"):
-            for match in re.finditer(re.escape(ch), line):
-                subs.append(Substitution(
-                    line=lineno, column=match.start() + 1, original=ch,
-                    replacement=m["smart_quote_double"], category="smart_quote_double",
-                ))
-            new_line = new_line.replace(ch, m["smart_quote_double"])
-
-        # Ellipsis (U+2026)
-        for match in re.finditer("…", line):
-            subs.append(Substitution(
-                line=lineno, column=match.start() + 1, original="…",
-                replacement=m["ellipsis"], category="ellipsis",
-            ))
-        new_line = new_line.replace("…", m["ellipsis"])
-
-        # NBSP (U+00A0)
-        for match in re.finditer(" ", line):
-            subs.append(Substitution(
-                line=lineno, column=match.start() + 1, original=" ",
-                replacement=m["nbsp"], category="nbsp",
-            ))
-        new_line = new_line.replace(" ", m["nbsp"])
-
-        # Zero-width space (U+200B)
-        for match in re.finditer("​", line):
-            subs.append(Substitution(
-                line=lineno, column=match.start() + 1, original="​",
-                replacement=m["zero_width"], category="zero_width",
-            ))
-        new_line = new_line.replace("​", m["zero_width"])
+        # Every remaining Tier-1 fix is "replace character X with the
+        # configured replacement, and log one Substitution per occurrence".
+        for category, chars in _CHAR_SUBSTITUTIONS:
+            for ch in chars:
+                for match in re.finditer(re.escape(ch), line):
+                    subs.append(Substitution(
+                        line=lineno, column=match.start() + 1, original=ch,
+                        replacement=m[category], category=category,
+                    ))
+                new_line = new_line.replace(ch, m[category])
 
         out_lines.append(new_line)
 

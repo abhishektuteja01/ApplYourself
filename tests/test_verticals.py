@@ -409,3 +409,36 @@ class TestMainCli:
         (tmp_path / "profile" / "verticals" / "example_primary" / "rubric.md").mkdir()
         assert verticals.main() == 1
         assert "example_primary/rubric.md" in capsys.readouterr().out
+
+
+class TestClassifierRuleProtocol:
+    """Both rule kinds answer matches(title) -> bool. CompoundRule previously
+    returned True/None purely to duck-type against re.Pattern.search, and had no
+    coverage at all while being reachable from the live config."""
+
+    def test_regex_rule_matches_are_case_insensitive(self, cfg):
+        rule = next(r for v, r in cfg.classifier_rules
+                    if isinstance(r, verticals.RegexRule))
+        assert isinstance(rule.matches("Widget Assembly Functional Consultant"), bool)
+
+    def test_compound_needs_the_match_and_one_requirement(self):
+        rule = verticals.CompoundRule("Cog Learning", ("Platform", "Agents"))
+        assert rule.matches("Cog Learning Engineer, Cog Platform") is True
+        assert rule.matches("Cog Learning Engineer, Agents") is True
+        # match string present, no requirement met
+        assert rule.matches("Cog Learning Engineer") is False
+        # requirement met, match string absent
+        assert rule.matches("Platform Engineer") is False
+
+    def test_compound_normalizes_hyphens_case_and_nbsp(self):
+        """Boards write the same title three ways; a rule must not care."""
+        rule = verticals.CompoundRule("Co-Pilot", ("Engineer",))
+        for title in ("Co-Pilot Engineer", "co pilot engineer",
+                      "CO PILOT ENGINEER", "Co-pilot Engineer"):
+            assert rule.matches(title) is True, title
+
+    def test_both_kinds_return_a_real_bool(self, cfg):
+        """The classifier does `if rule.matches(title)`, and a rule that
+        returned None would still work — until something compared the result."""
+        for _vertical, rule in cfg.classifier_rules:
+            assert isinstance(rule.matches("Some Unrelated Title"), bool), rule
