@@ -300,9 +300,16 @@ Each item is independent. Do only the one the user wants next.
    `{{CLOSING}}` or `{{SIGNOFF_NAME}}` ships verbatim in every letter — including
    tables, text boxes, headers and footers. A letterhead table here goes to every
    employer they write to.
-3. Have them style it and replace `{{SIGNOFF_NAME}}` and `{{DATE}}` with static
-   text only if they want those fixed.
-4. Same warning as B1: style the copy, never
+3. **The shipped template's letterhead is literal placeholder text**, not a
+   placeholder token: `NAME` at the top, `City, ST | Num| Email` under it, and
+   `NAME` again after `Sincerely,`. Those are preserved verbatim, so a copy left
+   unedited mails a letter headed `NAME`. Have them replace all three with their
+   real details before the first `/cover-letter` run. Confirm by eye.
+4. It ships `{{DATE}}`, `{{SALUTATION}}` and `{{BODY}}` only. `{{CLOSING}}` and
+   `{{SIGNOFF_NAME}}` are absent by design, which is why the closing and signoff
+   are static. If they would rather the renderer fill those, they can replace the
+   static lines with those two tokens.
+5. Same warning as B1: style the copy, never
    `profile/cover_letter_template.example.docx`, which is tracked and guarded.
 
 ## B3 — unlock `/outreach` (20 min)
