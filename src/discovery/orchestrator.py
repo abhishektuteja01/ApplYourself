@@ -15,6 +15,7 @@ from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
 from src.discovery.schema import validate_frame, COLUMNS
 from src import verticals
+from src.parquet_io import write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def main(args=None):
                 df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
                 df = validate_frame(df)
                 
-            df.to_parquet(shard_file, index=False)
+            write_parquet(df, shard_file)
             
             report_lines.append(f"### Source: {source.name}")
             report_lines.append(f"Time: {dur:.1f}s")

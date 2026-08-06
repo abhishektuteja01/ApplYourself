@@ -7,6 +7,7 @@ import csv
 from datetime import timedelta
 
 from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
+from src.parquet_io import write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +56,7 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
         if c >= 3:
             df.at[idx, "pruned_at"] = today
 
-    HEALTH_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(HEALTH_PATH)
+    write_parquet(df, HEALTH_PATH)
 
 def load(ats: str) -> list[UniverseCompany]:
     companies_dict = {}

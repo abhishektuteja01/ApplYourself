@@ -20,6 +20,7 @@ import pandas as pd
 import yaml
 
 from src import verticals
+from src.parquet_io import write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -638,7 +639,7 @@ def merge_scores(
     # batch, this catches any that reached the file some other way.
     combined = combined.drop_duplicates(subset="job_id", keep="last")
     scored_path.parent.mkdir(parents=True, exist_ok=True)
-    combined.to_parquet(scored_path, index=False)
+    write_parquet(combined, scored_path)
     return len(new_rows)
 
 
@@ -696,7 +697,7 @@ def prune_scored(scored_path: Path, clean_path: Path) -> int:
     keep_mask = scored["job_id"].astype(str).isin(clean_ids)
     dropped = int((~keep_mask).sum())
     if dropped:
-        scored[keep_mask].to_parquet(scored_path, index=False)
+        write_parquet(scored[keep_mask], scored_path)
     return dropped
 
 
@@ -807,7 +808,7 @@ def compute_shortlist(
         scored2["shortlist_rank"] = (
             scored2["job_id"].map(new_ranks).astype("float64")
         )
-        scored2.to_parquet(scored_path, index=False)
+        write_parquet(scored2, scored_path)
 
     return {
         "main":       main,

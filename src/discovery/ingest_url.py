@@ -31,6 +31,7 @@ from src.discovery import cleaning
 from src.discovery import htmlutil
 from src.discovery.sources.ats import http, greenhouse, lever, ashby
 from src.discovery.schema import make_row, naive_datetime
+from src.parquet_io import write_parquet
 from src.discovery.orchestrator import (
     JOBS_RAW,
     JOBS_ROOT,
@@ -278,7 +279,7 @@ def ingest(
         df = pd.concat([prior, df], ignore_index=True)
         if "date_posted" in df.columns:
             df["date_posted"] = naive_datetime(df["date_posted"])
-    df.to_parquet(raw_path, index=False)
+    write_parquet(df, raw_path)
     log.info("archived 1 row from %s to %s", url, raw_path)
 
     clean_df = cleaning.run(

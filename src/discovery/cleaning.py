@@ -36,6 +36,7 @@ from src import verticals
 from src.discovery.location import parse_location
 from src.discovery.config import load_config
 from src.discovery.schema import naive_datetime
+from src.parquet_io import write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -374,7 +375,7 @@ def update_seen_ledger(
         })
         ledger = new_rows if ledger.empty else pd.concat([ledger, new_rows], ignore_index=True)
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger.to_parquet(ledger_path, index=False)
+    write_parquet(ledger, ledger_path)
     return ledger
 
 
@@ -749,7 +750,7 @@ def write_outputs(
 ) -> None:
     clean_dir.mkdir(parents=True, exist_ok=True)
     runs_dir.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(clean_dir / "clean.parquet", index=False)
+    write_parquet(df, clean_dir / "clean.parquet")
     preview_path = clean_dir / "clean.preview.jsonl"
     preview_cols = [c for c in PREVIEW_COLUMNS if c in df.columns]
     with preview_path.open("w", encoding="utf-8") as f:
