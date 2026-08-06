@@ -5,7 +5,10 @@
 # strings to keep out is itself the thing being kept out. Format and examples:
 # profile/pii_denylist.example.txt.
 #
-# Reads the git INDEX, so it only sees tracked files: run it AFTER staging.
+# Scans INDEX content (git grep --cached), not the working tree, so what it
+# reports is what a commit would carry: run it AFTER staging. Reading the working
+# tree instead would pass a file whose PII is staged but since edited out, and
+# would abort on a tracked file deleted from disk.
 # It says nothing about history and nothing about unstaged work.
 #
 # Exit: 0 clean, 1 hits found, 2 misconfigured/grep error.
@@ -108,18 +111,18 @@ fi
 
 # Patterns are extended regexes matched case-insensitively.
 hits=""
-scan() {  # scan <pattern-file> <extra-grep-flag...>
+scan() {  # scan <pattern-file> <extra-git-grep-flag...>
   local pf=$1; shift
   [[ -s "$pf" ]] || return 0
   local out status
   set +e
-  out=$(grep -H -n -I -i -E "$@" -f "$pf" -- "${scan_files[@]}")
+  out=$(git grep --cached -I -n -i -E "$@" -f "$pf" -- "${scan_files[@]}")
   status=$?
   set -e
   case "$status" in
     0) hits+="$out"$'\n' ;;
     1) ;;
-    *) printf 'pii_scan: grep failed (exit %d) — treating as unscanned.\n' "$status" >&2
+    *) printf 'pii_scan: git grep failed (exit %d) — treating as unscanned.\n' "$status" >&2
        exit 2 ;;
   esac
 }
