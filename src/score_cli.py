@@ -162,6 +162,14 @@ def _autoscore_line(counts: dict) -> str:
 
 
 def _cmd_dump(args: argparse.Namespace) -> int:
+    try:
+        names = verticals.get_config().names
+    except (FileNotFoundError, ValueError) as e:
+        print(f"ERROR: {e}")
+        return 1
+    if args.vertical is not None and args.vertical not in names:
+        print(f"ERROR: unknown vertical {args.vertical!r} — configured: {', '.join(names)}")
+        return 1
     STAGING.mkdir(parents=True, exist_ok=True)
     clear_staging(STAGING)
     print(_autoscore_line(_dump_and_autoscore(args.force_all, args.vertical)))
@@ -265,7 +273,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
         return 1
     try:
         cfg = verticals.get_config()
-    except ValueError as e:
+    except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}")
         return 1
 
@@ -333,7 +341,10 @@ def main(argv: list[str] | None = None) -> int:
     p_render.set_defaults(func=_cmd_render)
 
     p_dump = sub.add_parser("dump", help="clear staging, dump unscored, merge auto-skips")
-    p_dump.add_argument("--vertical", choices=verticals.get_config().names, default=None)
+    # Validated in _cmd_dump, not here: resolving the config at parser-build time
+    # ran it for every subcommand, including --help, and turned a missing
+    # profile/verticals.yaml into a traceback on a fresh clone.
+    p_dump.add_argument("--vertical", metavar="V", default=None)
     p_dump.add_argument("--force-all", action="store_true",
                         help="ignore scored.parquet (used by /rescore)")
     p_dump.set_defaults(func=_cmd_dump)
@@ -353,7 +364,13 @@ def main(argv: list[str] | None = None) -> int:
     p_merge.set_defaults(func=_cmd_merge)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except FileNotFoundError as e:
+        # A missing profile/verticals.yaml is a setup problem, not a crash: every
+        # subcommand resolves the config, and /score gates on exit code 1.
+        print(f"ERROR: {e}")
+        return 1
 
 
 if __name__ == "__main__":
