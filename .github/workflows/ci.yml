@@ -1,0 +1,35 @@
+name: ci
+
+# The pre-push hook needs `git config core.hooksPath .githooks`, which is local
+# config and cannot be versioned, and `--no-verify` skips it anyway. This is the
+# copy of the gate that neither can reach.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      # Also proves the suite runs in a non-UTF-8 locale, which is how a bare
+      # container and a cron job both run it.
+      - run: uv run pytest tests -q
+        env:
+          LC_ALL: C
+          LANG: C
+          PYTHONUTF8: "0"
+
+  pii-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The real denylist is gitignored and never reaches CI, so run the gate
+      # the way a fresh clone does: with the shipped example. That keeps the
+      # documented onboarding path honest, and still catches a tracked binary.
+      - run: cp profile/pii_denylist.example.txt profile/pii_denylist.txt
+      - run: ./scripts/pii_scan.sh

@@ -1,20 +1,52 @@
 # Patterns for scripts/pii_scan.sh. Copy to profile/pii_denylist.txt (gitignored)
 # and replace these with your own.
 #
-# One extended regex per line. Matched case-insensitively against whole words, so
-# a short abbreviation will not flag every longer word that contains it. Lines
-# starting with # and blank lines are ignored. Escape regex metacharacters:
-# jane\.doe@x\.com
+# One extended regex per line. Matched case-insensitively. Blank lines are
+# ignored, and "#" starts a comment ONLY at the start of a line — a trailing
+# "Firstname  # my name" makes the comment part of the regex.
 #
-# Anything that identifies you or someone else:
-Jane
-Doe
-jane\.doe@example\.com
-555-0100
+# Matching is on whole words by default, so a short abbreviation does not flag
+# every longer word containing it. Prefix a pattern with "~" to match anywhere,
+# which is what you want when the string is a prefix of something longer:
+#   ~myhandle        also flags myhandle01, myhandle-dev
+# Escape regex metacharacters: first\.last@example\.com
+#
+# This file is allowlisted in pii_scan.sh, because every pattern in it would
+# otherwise match its own line here. Your real denylist is gitignored, so it is
+# never scanned either.
+
+# --- You ---
+Firstname
+Lastname
+first\.last@example\.com
+# Phone: separator-agnostic, or the pattern misses (555) 555-0100 and
+# +15555550100 while catching only the one spelling you wrote down.
+~\+?1?[-. (]*555[-. )]*555[-. ]*0100
+# Street address, and city+ZIP together (a city alone is a false-positive mill).
+123 Example Street
+Exampletown,? +[A-Z]{2} +00000
+# Immigration / government identifiers.
+A-?000000000
+# Local filesystem paths — these leak a username into tracebacks and configs.
+~/Users/yourshortname/
+~/home/yourshortname/
+
+# --- Your accounts, including the username, not just the URL ---
+~github\.com/yourhandle
+~linkedin\.com/in/yourhandle
+~yourportfolio\.com
+yourhandle
+
+# --- Other people ---
+# Recruiters, referrers, and anyone named in an outreach draft or a note.
+RecruiterFirstname
+ReferrerFirstname
+
+# --- Employers, clients, schools ---
+YourEmployer
+ClientCodename
 ExampleUniversity
-#
-# Employers, clients, and schools whose names you do not want in a public repo:
-AcmeCorp
-#
-# Job-search strategy you keep private — real lane names, niche search terms:
+
+# --- Job-search strategy you keep private ---
+# Real vertical directory names leak through applications/<vertical>/ paths.
 widget_engineering

@@ -1,6 +1,48 @@
 #!/usr/bin/env bash
-# Blocks a push whose tracked files contain denylisted PII.
+# Blocks a push whose tracked files, or whose pushed commits, contain
+# denylisted PII.
+#
 # Enable once per clone:  git config core.hooksPath .githooks
+#   (core.hooksPath is local config and cannot be versioned, so a fresh clone
+#    has no hook at all. The test suite covers the gate too, and CI runs it.)
 # Bypass (do not):        git push --no-verify
 set -euo pipefail
-exec "$(git rev-parse --show-toplevel)/scripts/pii_scan.sh"
+
+root="$(git rev-parse --show-toplevel)"
+
+# 1. The working tree's tracked files.
+"$root/scripts/pii_scan.sh"
+
+# 2. The commits actually being pushed. The scan above reads the index, so it
+#    says nothing about a file that was clean at HEAD but carried PII three
+#    commits ago — and pushing publishes every one of those blobs.
+denylist="$root/profile/pii_denylist.txt"
+[[ -f "$denylist" ]] || exit 0
+
+patterns=$(mktemp)
+trap 'rm -f "$patterns"' EXIT
+grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$denylist" \
+  | sed -e 's/^~//' -e 's/[[:space:]]*$//' >"$patterns" || true
+[[ -s "$patterns" ]] || exit 0
+
+status=0
+while read -r _local_ref local_oid _remote_ref remote_oid; do
+  [[ "$local_oid" =~ ^0+$ ]] && continue          # branch deletion
+  if [[ "$remote_oid" =~ ^0+$ ]]; then
+    range="$local_oid"                            # new branch: its own history
+  else
+    range="$remote_oid..$local_oid"
+  fi
+  # -G greps added/removed content across the range's diffs.
+  hits=$(git log --oneline --pickaxe-regex -i -G "$(paste -sd'|' "$patterns")" \
+           "$range" 2>/dev/null) || continue
+  if [[ -n "$hits" ]]; then
+    printf 'pre-push: FAIL — commits being pushed touch denylisted strings:\n\n%s\n\n' \
+      "$hits" >&2
+    printf 'These blobs become public on push and stay reachable by SHA.\n' >&2
+    printf 'Rewrite the history (git filter-repo) before pushing.\n' >&2
+    status=1
+  fi
+done
+
+exit "$status"
