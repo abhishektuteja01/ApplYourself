@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import logging
 import argparse
+import sys
 import time
 import traceback
 from datetime import datetime
@@ -16,10 +19,11 @@ from src.discovery.sources.ats.ashby import AshbySource
 from src.discovery.schema import validate_frame, COLUMNS
 from src import verticals
 from src.parquet_io import write_parquet
+from src import paths
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = paths.REPO_ROOT
 JOBS_RAW = REPO_ROOT / "jobs" / "raw"
 JOBS_RUNS = REPO_ROOT / "jobs" / "runs"
 JOBS_ROOT = REPO_ROOT / "jobs"
@@ -48,7 +52,12 @@ def main(args=None):
     parser.add_argument("--resume", type=str, help="Resume run ID")
     parsed = parser.parse_args(args)
     
-    config = load_config()
+    try:
+        config = load_config()
+    except (FileNotFoundError, ValueError) as e:
+        # load_config is a library function that raises; the CLI is where a bad
+        # config becomes a one-line message and a nonzero exit.
+        sys.exit(f"ERROR: {e}")
     
     start_time = datetime.now()
     run_id = parsed.resume or current_run_id(start_time)
@@ -82,8 +91,8 @@ def main(args=None):
             pruned_count = health_df["pruned_at"].notna().sum()
             report_lines.append(f"Universe Health: {pruned_count} companies pruned (3x dead board)")
             report_lines.append("")
-        except Exception as e:
-            log.warning(f"Could not read universe health for report: {e}")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+            log.warning("Could not read universe health for report: %s", e)
     
     sources = get_sources()
     fixed_order = ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby"]
@@ -108,15 +117,16 @@ def main(args=None):
         for source in enabled_sources:
             shard_file = JOBS_RAW / f"{run_id}_{source.name}.parquet"
             if parsed.resume and shard_file.exists():
-                log.info(f"Skipping {source.name}, shard exists.")
+                log.info("Skipping %s, shard exists.", source.name)
                 continue
                 
             t0 = time.time()
             try:
                 res = source.fetch(ctx)
-            except Exception:
-                # No shard is written, so --resume retries this source.
-                log.exception(f"Source {source.name} crashed; continuing.")
+            except Exception:  # noqa: BLE001 — deliberate per-source containment
+                # Broad on purpose: one source's crash must not cost the other
+                # five their shards. No shard is written, so --resume retries it.
+                log.exception("Source %s crashed; continuing.", source.name)
                 report_lines.extend([
                     f"### Source: {source.name}",
                     f"Time: {time.time() - t0:.1f}s",

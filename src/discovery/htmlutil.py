@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import html as html_mod
 import re
 

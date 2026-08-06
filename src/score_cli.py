@@ -36,6 +36,7 @@ from pathlib import Path
 import pandas as pd
 
 from src import verticals
+from src import paths
 from src.scoring_io import (
     auto_score_disqualified,
     auto_score_ineligible,
@@ -47,10 +48,11 @@ from src.scoring_io import (
     render_shortlist_markdown,
 )
 
-CLEAN = Path("jobs/clean.parquet")
-SCORED = Path("jobs/scored.parquet")
-STAGING = Path("jobs/scored.staging")
-PIPELINE = Path("pipeline")
+CLEAN = paths.CLEAN
+SCORED = paths.SCORED
+STAGING = paths.STAGING
+PIPELINE = paths.PIPELINE
+SHORTLIST = paths.SHORTLIST
 DEFAULT_MODEL = "claude-sonnet-5"
 
 _STAGING_GLOBS = ("batch_*.json", "unscored*.jsonl", "auto_skip*.jsonl")
@@ -304,7 +306,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
     date_str = args.today or date.today().isoformat()
     md = render_shortlist_markdown(result, cfg, date_str, n_scored, n_clean)
 
-    out_dir = Path("shortlist")
+    out_dir = SHORTLIST
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{date_str}.md"
     out_path.write_text(md, encoding="utf-8")

@@ -475,16 +475,19 @@ class TestCmdRender:
         monkeypatch.setattr(score_cli, "CLEAN", tmp_path / "clean.parquet")
         monkeypatch.setattr(score_cli, "SCORED", tmp_path / "scored.parquet")
         monkeypatch.setattr(score_cli, "PIPELINE", tmp_path / "pipeline")
+        # SHORTLIST is repo-relative now, so redirect the name rather than the CWD:
+        # `uv run score render` from a subdirectory must not write ./shortlist/.
+        monkeypatch.setattr(score_cli, "SHORTLIST", tmp_path / "shortlist")
         monkeypatch.chdir(tmp_path)
 
-    def test_writes_shortlist_under_the_cwd_with_the_given_date(
+    def test_writes_shortlist_at_the_repo_path_with_the_given_date(
             self, tmp_path, monkeypatch, capsys):
         self._setup(tmp_path, monkeypatch)
         assert score_cli.main(["render", "--today", "2026-08-06"]) == 0
         out = tmp_path / "shortlist" / "2026-08-06.md"
         assert out.is_file()
         assert "# Shortlist — 2026-08-06" in out.read_text(encoding="utf-8")
-        assert f"shortlist={Path('shortlist') / '2026-08-06.md'}" in capsys.readouterr().out
+        assert f"shortlist={out}" in capsys.readouterr().out
 
     def test_header_reports_the_configured_caps_not_hardcoded_ones(
             self, tmp_path, monkeypatch):

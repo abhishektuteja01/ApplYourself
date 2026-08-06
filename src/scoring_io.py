@@ -22,6 +22,7 @@ import yaml
 from src import verticals
 from src.parquet_io import write_parquet
 from src.state_io import load_state_index
+from src import paths
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ AUTO_SKIP_SCORED_BY = "rubric:title-out-of-lane"
 # labeled ineligible before any judge runs, routed exactly like a judge-assigned
 # label — never as a `skip`, which is a different thing. Substring match only;
 # every nuanced sponsorship case stays with the judge.
-SPONSORSHIP_RULES_PATH = Path("profile/sponsorship_rules.yaml")
+SPONSORSHIP_RULES_PATH = paths.PROFILE / "sponsorship_rules.yaml"
 HARD_INELIGIBLE_SCORED_BY = "rubric:hard-ineligible-pre-screen"
 HARD_INELIGIBLE_REASONING = (
     "Auto-labeled ineligible by deterministic pre-screen: JD text contains "

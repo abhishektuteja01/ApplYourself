@@ -1,13 +1,16 @@
+from __future__ import annotations
+
 import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 from src import verticals
+from src import paths
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = paths.REPO_ROOT
 DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "discovery.yaml"
 _SCHEMA_VERSION = 1
 
@@ -40,7 +43,10 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     try:
         verticals.get_config()
     except FileNotFoundError as e:
-        sys.exit(f"ERROR: profile/verticals.yaml missing: {e}")
+        # Raise, don't sys.exit: this is a library function, and a caller other
+        # than the CLI must be able to handle it. orchestrator.main turns it
+        # into the same one-line message and exit code as before.
+        raise FileNotFoundError(f"profile/verticals.yaml missing: {e}") from e
 
     p = path or DEFAULT_CONFIG_PATH
     if not p.exists():

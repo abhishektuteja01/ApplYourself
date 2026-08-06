@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.discovery.sources.ats.base import AtsBoardSource
 from src.discovery.sources.ats.http import ms_date
 from src.discovery.htmlutil import html_to_text

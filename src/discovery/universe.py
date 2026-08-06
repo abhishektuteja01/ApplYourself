@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,10 +10,11 @@ from datetime import timedelta
 
 from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
 from src.parquet_io import write_parquet
+from src import paths
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = paths.REPO_ROOT
 DEFAULT_COMPANIES_PATH = REPO_ROOT / "profile" / "companies.yaml"
 CSV_DIR = REPO_ROOT / "data" / "universe"
 HEALTH_PATH = REPO_ROOT / "jobs" / "universe_health.parquet"
@@ -79,8 +82,8 @@ def load(ats: str) -> list[UniverseCompany]:
                             log.warning("universe: empty name or slug in CSV row, skipping")
                             continue
                         companies_dict[slug] = UniverseCompany(name=name, ats=ats, slug=slug, priority=False)
-        except Exception as e:
-            log.warning(f"universe: error reading {csv_path}: {e}")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+            log.warning("universe: error reading %s: %s", csv_path, e)
 
     # 2. Load Watchlist
     if DEFAULT_COMPANIES_PATH.exists():
@@ -93,15 +96,15 @@ def load(ats: str) -> list[UniverseCompany]:
                         if not isinstance(entry, dict): continue
                         entry_ats = (entry.get("ats") or "").strip().lower()
                         if entry_ats not in ATS_SOURCE_NAMES:
-                            log.warning(f"universe: unsupported ats {entry_ats!r} in watchlist")
+                            log.warning("universe: unsupported ats %r in watchlist", entry_ats)
                             continue
                         if entry_ats == ats:
                             name = (entry.get("name") or "").strip()
                             slug = (entry.get("slug") or "").strip()
                             if name and slug:
                                 companies_dict[slug] = UniverseCompany(name=name, ats=ats, slug=slug, priority=True)
-        except Exception as e:
-            log.warning(f"universe: error reading watchlist: {e}")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+            log.warning("universe: error reading watchlist: %s", e)
 
     # 3. Filter and Sort via Health Ledger
     today = pd.Timestamp.today().normalize()
@@ -115,8 +118,8 @@ def load(ats: str) -> list[UniverseCompany]:
                     "last_yield": row["last_yield"] if pd.notna(row["last_yield"]) else 0,
                     "pruned_at": row["pruned_at"] if pd.notna(row["pruned_at"]) else None
                 }
-        except Exception as e:
-            log.warning(f"universe: error reading health ledger: {e}")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+            log.warning("universe: error reading health ledger: %s", e)
 
     valid_companies = []
     for slug, co in companies_dict.items():

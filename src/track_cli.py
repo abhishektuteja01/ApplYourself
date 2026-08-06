@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from src import paths
 
 from src.state_io import (
     VALID_STATES,
@@ -36,9 +37,9 @@ from src.state_io import (
     transition,
 )
 
-PIPELINE = Path("pipeline")
-CLEAN = Path("jobs/clean.parquet")
-SCORED = Path("jobs/scored.parquet")
+PIPELINE = paths.PIPELINE
+CLEAN = paths.CLEAN
+SCORED = paths.SCORED
 
 NEXT_ACTION = {
     "saved": "ready for `/tailor {job_id}` once you've eyeballed the JD",

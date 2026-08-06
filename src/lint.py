@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 import yaml
+from src import paths
 
 
 class Substitution(TypedDict):
@@ -41,7 +42,7 @@ class Violation(TypedDict):
     category: str
 
 
-_DEFAULT_RULES_PATH = Path("profile/de_ai_rules.yaml")
+_DEFAULT_RULES_PATH = paths.PROFILE / "de_ai_rules.yaml"
 
 # Mechanical default mappings — also serve as the fallback when
 # de_ai_rules.yaml is absent (tests, fresh checkouts).

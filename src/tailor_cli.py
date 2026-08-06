@@ -44,12 +44,13 @@ from pathlib import Path
 import pandas as pd
 
 from src import verticals
+from src import paths
 
-CLEAN = Path("jobs/clean.parquet")
-SCORED = Path("jobs/scored.parquet")
-PIPELINE = Path("pipeline")
-PROFILE = Path("profile")
-APPLICATIONS = Path("applications")
+CLEAN = paths.CLEAN
+SCORED = paths.SCORED
+PIPELINE = paths.PIPELINE
+PROFILE = paths.PROFILE
+APPLICATIONS = paths.APPLICATIONS
 TMPDIR = Path("/tmp")
 
 # profile/preferences.md is deliberately NOT required here: /tailor never reads

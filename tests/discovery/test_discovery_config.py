@@ -95,12 +95,23 @@ def test_example_config_declares_the_supported_schema_version(monkeypatch):
     cfg = load_config(Path("profile/discovery.example.yaml"))
     assert cfg.schema_version == 1
 
-def test_missing_verticals_yaml(tmp_path, monkeypatch):
+def test_missing_verticals_yaml_raises_rather_than_exiting(tmp_path, monkeypatch):
+    """load_config is a library function: it must raise so a non-CLI caller can
+    handle it. orchestrator.main is what turns this into a message and an exit."""
     from src import verticals
     def mock_get_config():
         raise FileNotFoundError("profile/verticals.yaml not found")
     monkeypatch.setattr(verticals, "get_config", mock_get_config)
-    
-    with pytest.raises(SystemExit) as e:
+
+    with pytest.raises(FileNotFoundError, match="profile/verticals.yaml missing"):
         load_config(tmp_path / "nonexistent.yaml")
-    assert "profile/verticals.yaml missing" in str(e.value)
+
+
+def test_the_cli_turns_a_bad_config_into_a_message_and_an_exit(tmp_path, monkeypatch):
+    """The UX the sys.exit used to provide, now at the boundary where it belongs."""
+    from src.discovery import orchestrator
+    monkeypatch.setattr(orchestrator, "load_config",
+                        lambda: (_ for _ in ()).throw(FileNotFoundError("boom")))
+    with pytest.raises(SystemExit) as e:
+        orchestrator.main([])
+    assert "ERROR: boom" in str(e.value)

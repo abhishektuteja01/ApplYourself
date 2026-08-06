@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 import pandas as pd
 from jobspy import scrape_jobs
@@ -50,7 +52,9 @@ class JobSpySource(Source):
                             )
                             if df is None:
                                 df = pd.DataFrame()
-                        except Exception as e:
+                        # Broad on purpose: jobspy raises anything from any
+                        # site, and one bad query must not cost the run.
+                        except Exception as e:  # noqa: BLE001
                             msg = f"{type(e).__name__}: {e}"
                             errors.append(f"{self.name} term='{term}' remote={is_remote}: {msg}")
                             df = pd.DataFrame()

@@ -1,13 +1,16 @@
+from __future__ import annotations
+
 import logging
 import yaml
 from pathlib import Path
 import pandas as pd
 from src.discovery import cleaning
 from src.discovery.sources.base import Source, SourceResult
+from src import paths
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = paths.REPO_ROOT
 INBOX = REPO_ROOT / "inbox"
 
 def parse_inbox_file(path: Path) -> dict | None:

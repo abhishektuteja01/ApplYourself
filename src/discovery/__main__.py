@@ -1,4 +1,6 @@
 """Keeps `uv run python -m src.discovery` working (LaunchAgent entry point)."""
+from __future__ import annotations
+
 import sys
 
 from src.discovery.orchestrator import main

@@ -364,7 +364,7 @@ def update_seen_ledger(
     if scored_path.exists() and len(ledger):
         try:
             scored = pd.read_parquet(scored_path, columns=["job_id", "fit_score"])
-        except Exception as e:
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
             log.warning("seen-ledger: could not read %s: %s", scored_path, e)
         else:
             score_map = scored.set_index("job_id")["fit_score"].to_dict()
@@ -634,7 +634,7 @@ def load_raw_window(
             continue
         try:
             frames.append(pd.read_parquet(path))
-        except Exception as e:
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
             log.error("Failed to read %s: %s", path, e)
     if not frames:
         return pd.DataFrame()
