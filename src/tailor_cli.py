@@ -69,8 +69,8 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 # The applicant's name is the first bold line of the vertical's resume_file —
 # the same line src/docx_render.py parses as the `name` block. Reading it here
-# keeps one source of truth for it and keeps the name out of `src/` and out of
-# the command prose (R2).
+# keeps one source of truth for it, and keeps the name out of `src/` and out of
+# the command prose: no personal data is hardcoded outside profile/.
 _NAME_RE = re.compile(r"^\s*#?\s*\*\*(.+?)\*\*\s*$")
 # Unicode-aware: an accented name keeps its letters ("José Álvarez" ->
 # "José_Álvarez", not "Jos_lvarez").

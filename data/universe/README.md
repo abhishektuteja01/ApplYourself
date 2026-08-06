@@ -14,7 +14,7 @@ Each `<ats>.csv` here is `name,slug` with a header, deduplicated on `slug`.
 ```bash
 git clone https://github.com/kalil0321/ats-scrapers.git /tmp/ats-scrapers
 for ats in greenhouse lever ashby; do
-  python3 - "$ats" <<'PY' > "data/universe/$ats.csv"
+  uv run python - "$ats" <<'PY' > "data/universe/$ats.csv"
 import csv, sys, pathlib
 ats = sys.argv[1]
 rows, seen = [], set()

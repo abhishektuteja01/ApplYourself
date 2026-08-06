@@ -152,7 +152,10 @@ The user-facing workflow is the slash commands (`/onboarding`, `/score`,
 `/tailor`, `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
 `/suggest-synonyms`, `/rescore`, `/no_ai_slop`), defined in
 `.claude/commands/*.md`. `score-judge.md` also lives there but is spawned by
-`/score`, never invoked directly. There is no
+`/score`, never invoked directly. `.claude/shared/` holds the includes several
+commands read: `no_fab.md` (defines `NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`,
+`SKILLS-SOURCE`), `lint_loop.md` (the rewrite-loop attempt cap), and
+`render_pdf.md` (the docx->pdf block). There is no
 `extract` module in `src/`, and no LLM *judging* in `src/` — but the deterministic
 plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
 `/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself

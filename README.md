@@ -26,9 +26,10 @@ inside a [Claude Code](https://claude.com/claude-code) slash-command session
 defined in `.claude/commands/*.md`, which shells out to the `src/` helpers for
 the deterministic parts.
 
-That split is why the pipeline is auditable: re-running `discover` or `score`'s
-plumbing on the same inputs gives byte-identical output, and everything a model
-decided is written down in the artifacts next to the resume it produced.
+That split is why the pipeline is auditable: no model ever decides something
+without writing it down, in an artifact stored next to the resume it produced.
+The `src/` half holds no judgment at all — given the same inputs and the same
+seen-ledger, it does the same thing every time.
 
 **The slash commands are the product.** `src/` on its own is a scraper and a
 docx renderer. You need Claude Code to run the interesting half.
@@ -49,7 +50,7 @@ docx renderer. You need Claude Code to run the interesting half.
    out-of-lane titles, per-lane disqualifiers and hard-ineligible sponsorship
    phrases before any judge sees the row.
 4. **Application material** (`/tailor`, `/cover-letter`, `/outreach`) — writes
-   docx + pdf plus audit artifacts into `applications/<lane>/<dir>/`. Nothing
+   docx + pdf plus audit artifacts into `applications/<vertical>/<dir>/`. Nothing
    is fabricated: every claim must trace to a canonical bullet you wrote.
    **The PDF step needs Microsoft Word and `osascript`, so it is macOS-only.**
    Everything else is portable; without Word you get the docx and convert it
@@ -58,8 +59,8 @@ docx renderer. You need Claude Code to run the interesting half.
    role, moving through an 11-state machine. `/track` is the only writer of
    state transitions.
 
-`job_id = sha1(company + "|" + title)[:8]`, deliberately excluding URL and
-description so it stays stable across re-scrapes.
+`job_id = sha1(company_normalized + "|" + title_normalized)[:8]`, deliberately
+excluding URL and description so it stays stable across re-scrapes.
 
 ## Setup
 
@@ -94,14 +95,22 @@ cp profile/scoring_rubric.example.md    profile/scoring_rubric.md
 cp profile/preferences.example.md       profile/preferences.md
 cp profile/bullets.example.md           profile/bullets.md
 cp profile/skills_master.example.md     profile/skills_master.md
+cp profile/voice_samples.example.md     profile/voice_samples.md
 cp profile/companies.example.yaml       profile/companies.yaml   # optional
+cp profile/contacts.example.yaml        profile/contacts.yaml    # optional
+
+# The two Word designs. /tailor refuses without the first, /cover-letter without
+# the second. Open each and make it yours — keep the placeholder paragraphs.
+cp profile/resume_template.example.docx        profile/resume_template.docx
+cp profile/cover_letter_template.example.docx  profile/cover_letter_template.docx
+
 uv run verticals-check     # validates config + per-lane files, fails loud
 ```
 
-Then set `bullets_diction_pass_completed: false` in `profile/de_ai_rules.yaml`.
-It ships `true`, which exempts verbatim bullet text from banned-phrase linting —
-right for bullets you have already read for diction, wrong for ones you have not
-written yet. Turn it back on once you have. (`/onboarding` does this for you.)
+`profile/de_ai_rules.yaml` ships `bullets_diction_pass_completed: false`, which
+holds your canonical bullet text to the same banned-phrase linting as generated
+prose. Once you have read your bullets for diction yourself, set it to `true` to
+exempt them. (`/onboarding` walks you through that pass.)
 
 To add a lane of your own, run **`/new-vertical`** — it interviews you and
 writes every piece. Copying `profile/verticals/example_primary/` by hand is not
