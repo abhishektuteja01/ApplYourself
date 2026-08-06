@@ -44,6 +44,18 @@ case "$CHANNEL" in
     *) echo "ERROR: channel must be recruiter | referral | alumni (got $CHANNEL)"; exit 1 ;;
 esac
 
+# --to is REQUIRED for referral/alumni: both address a named person. Without
+# this guard the draft goes to nobody, lands at ..._unknown.md, and carries a
+# literal to_name='<recipient name>'.
+case "$CHANNEL" in
+    referral|alumni)
+        case "$*" in
+            *--to*) ;;
+            *) echo "ERROR: --to \"<name>\" is required for channel '$CHANNEL' — a $CHANNEL message is addressed to a person."; exit 1 ;;
+        esac
+        ;;
+esac
+
 test -f "pipeline/${JOB_ID}/state.yaml" || {
     echo "ERROR: pipeline/${JOB_ID}/state.yaml missing -- run /track ${JOB_ID} saved first."
     exit 1
@@ -59,6 +71,8 @@ Parse `$ARGUMENTS` for:
   optional for recruiter on LinkedIn DM if no specific recruiter known)
 - `--via "<context>"` -- why you're reaching out (alumni connection,
   shared past project, mutual contact, etc.). Shapes the lead-in.
+  The one exception is the exact value `--via "email"`, which selects the
+  transport instead; it is not a reason and does not shape the lead-in.
 
 Read:
 - `pipeline/${JOB_ID}/state.yaml` (company, title, sponsorship_label,
@@ -87,9 +101,13 @@ Email:
 - **≤ 150 words**, short subject line (≤ 8 words)
 - OPT disclosure: **ONLY if asked**
 
-Pick LinkedIn DM unless `--via "email"` or the contacts.yaml entry has
-`channel: email`. Email if the recruiter is reachable by mail and a
-LinkedIn DM doesn't apply.
+Pick the medium by the first rule that applies:
+1. `--via "email"` was passed -> Email.
+2. The `profile/contacts.yaml` entry for this recipient has
+   `channel: email` -> Email.
+3. Otherwise -> LinkedIn DM.
+
+That is the whole rule. Reachability is not a judgment call to make here.
 
 ### referral
 

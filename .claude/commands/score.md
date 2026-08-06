@@ -34,6 +34,13 @@ internally; for a full vertical re-judge use `/rescore --vertical`.)
    - `unreadable: [...]` → a judge wrote a corrupt batch. Repair the JSON
      in place if the rows are recoverable; only if they are not, delete the
      file and re-spawn that range. Never merge with a batch unreadable.
+
+   **On deleting batches — the rule is phase-dependent, and both halves are
+   real.** BEFORE merge (here, at check-coverage): a batch may be deleted,
+   because its range can simply be re-judged and nothing is banked yet.
+   AFTER merge has started (3a below): never delete one, because merge has
+   already banked some rows and deleting discards judged work with no trace.
+   If you are unsure which phase you are in, you are past it — do not delete.
    - Row-level problems (out-of-range axis, bad label) are not a re-spawn
      trigger — they surface at merge.
 

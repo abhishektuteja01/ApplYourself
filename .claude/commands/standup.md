@@ -56,10 +56,10 @@ the reader knows what they're reading.
 
 ## Step 3 — split into Active and Closed tables
 
-- **Active**: state in {`saved`, `tailored`, `applied`,
-  `recruiter_contact`, `screen`, `interview`}
-- **Closed**: state in {`offer`, `rejected`, `withdrawn`, `ghosted`,
-  `skip`} (skip is closed-for-view but NOT terminal)
+- **Active** / **Closed**: use the `active_states` and `closed_states` lists
+  Step 1 already printed from `src.state_io`. Do not restate the membership
+  here — one source of truth, and `state_io` is it. (Note `skip` is in
+  closed_states: closed-for-view, but not terminal.)
 
 For each row, compute the columns:
 - `state`

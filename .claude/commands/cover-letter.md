@@ -1,5 +1,5 @@
 ---
-description: Generate a one-page, lint-clean cover letter for a specific job_id, reusing the latest /tailor output dir (already vertical-prefixed, e.g. <vertical>/2026-...). Maps profile/bullets.md experience onto the JD's keywords_to_mirror with the same no-fabrication discipline as /tailor. Writes <Name>_Cover_Letter.docx + .pdf (named from the vertical's resume_file) into the existing applications/<vertical>/<dir>/, then appends the same vertical-prefixed dir to pipeline/<job_id>/state.yaml.cover_letters[] (the side-list mutation /cover-letter is allowed, same pattern as /tailor's tailored_dirs[]).
+description: Generate a one-page, lint-clean cover letter for a job_id into that role's existing /tailor output dir. Same no-fabrication discipline as /tailor.
 model: sonnet
 effort: medium
 allowed-tools:
@@ -247,8 +247,11 @@ list, which doesn't apply to cover letters.)
 
 If `violations` is non-empty: rewrite the offending field's text using
 ONLY words already in the relevant bullet's canonical text + its
-`allowable_synonyms` (or, if it's not tied to a specific bullet, just
-rewrite in plain language avoiding the flagged phrase/category), update
+`allowable_synonyms`. The plain-language escape applies to exactly one case —
+prose that traces to NO bullet at all, such as the salutation, the closing, or
+a company-mission sentence from Step 2b. If the sentence carries any claim
+about your experience, it traces to a bullet and REPHRASE-LICENSE binds; the
+escape is not available. Update
 the JSON file, and re-run the lint above. Loop up to 5 attempts. If still
 failing after 5 attempts, hard-refuse: do not write any output files, tell
 the user which phrase/category kept failing.
@@ -324,7 +327,13 @@ print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 Before reporting success, verify on disk:
 - [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx` exists and is non-empty
 - [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf` exists and is non-empty (warn but don't fail if osascript errored)
-- [ ] One final lint pass (re-run Step 5's Python against the file at `/tmp/cover_letter_${JOB_ID}_draft.json`) returns zero violations
+- [ ] One final lint pass returns zero violations. Step 5's Python reads
+      `/tmp/cover_letter_${JOB_ID}_draft.json`, so re-running it verbatim
+      re-checks the draft JSON, not the rendered docx — which is the intent
+      here, since the docx is generated FROM that JSON. Do not "fix" the path
+      to the output dir; there is no .md there to lint.
+- [ ] Body word count is within 250-400 (count the `body` entries' words; /outreach
+      asserts its channel limit, and this letter has to fit one page the same way)
 - [ ] `pipeline/${JOB_ID}/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
 If any check fails, do NOT report success — diagnose and fix.

@@ -6,7 +6,6 @@ allowed-tools:
   - Bash
   - Read
   - Write
-  - Edit
 argument-hint: <job_id>
 ---
 
@@ -113,14 +112,16 @@ covering multiple is a higher-priority keep.
 
 **3c — budget & projects (VERT-DEFAULT).** The vertical's `tailoring.md` sets the
 bullet mix and section order; JD content fills the floor, never lowers it.
-- **The vertical's `tailoring.md` states the total-bullet floor, and it is
-  binding; 10 is the absolute minimum for any vertical.** Below the floor,
-  expand 1-bullet projects to 2 before proceeding. Where the vertical also
-  states a ceiling, do not exceed it.
-- Keep EVERY project named in the vertical's `tailoring.md` "Project ordering"
-  visible; pick 1–3 bullets each to hit budget. Drop a whole project ONLY when
-  genuinely off-domain for this JD, and only where that vertical's `tailoring.md`
-  sanctions the drop; default to "include with 1 bullet".
+- **Precedence, in order:** the vertical's `tailoring.md` total-bullet floor
+  wins. If it states no floor, or states one below 10, use 10. There is never a
+  case where both numbers bind at once. Below the governing floor, expand
+  1-bullet projects to 2 before proceeding. Where the vertical also states a
+  ceiling, do not exceed it.
+- Keep EVERY project named in the vertical's `tailoring.md`
+  "Project ordering" visible; pick 1–3 bullets each to hit budget. Drop a whole
+  project ONLY when its `tailoring.md` says so **in the "Project ordering" line
+  itself** — if that line does not name dropping as an option, dropping is not
+  sanctioned. Default to "include with 1 bullet"; never infer permission.
 
 **3d — summary (VERT-DEFAULT, NO-FAB).** Freely written per JD but bound by truth
 from the vertical's résumé / `bullets.md` — no new facts. Frame per `tailoring.md`.
@@ -253,14 +254,14 @@ from src.lint import (
     compute_exempt_lines, parse_bullets_md,
 )
 
-resume_md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text()
+resume_md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding="utf-8")
 rules = load_de_ai_rules()
-bullets = parse_bullets_md(Path('profile/bullets.md').read_text())
+bullets = parse_bullets_md(Path('profile/bullets.md').read_text(encoding="utf-8"))
 diction_done = bullets_diction_pass_completed(rules)
 
 # Tier 1: mechanical (always applied; no exemption)
 fixed_md, subs = fix_mechanical(resume_md, rules)
-Path('/tmp/tailor_${JOB_ID}_draft_resume.md').write_text(fixed_md)
+Path('/tmp/tailor_${JOB_ID}_draft_resume.md').write_text(fixed_md, encoding="utf-8")
 
 # Tier 2: phrase scan with conditional exemption
 exempt = compute_exempt_lines(fixed_md, bullets, diction_done)
@@ -284,7 +285,7 @@ PYEOF
 | Canonical line (matches `bullets[id].canonical` verbatim after stripping markers) | **Hard-refuse** | the `bullet_id` |
 | Frozen section (education/contact) | **Hard-refuse** | the vertical's résumé (`resume_file`) |
 | Skills line (flagged text is a `skills_master.md` `name`/`allowable_synonyms`) | **Hard-refuse** | `profile/skills_master.md` + the offending `SKILL-<ID>` |
-| Rephrased line | **Rewrite** under REPHRASE-LICENSE; re-run the lint Bash. Loop ≤5 attempts; if still failing, revert the bullet to `unchanged` (safest) or `drop` | — |
+| Rephrased line | **Rewrite** under REPHRASE-LICENSE; re-run the lint Bash. Loop ≤5 attempts; if still failing, revert to `unchanged`. If the canonical text ITSELF then trips the same phrase, that is the hard-refuse row above, not another rewrite — use `drop` only when dropping still meets the bullet floor | — |
 
 On any hard-refuse: delete `${OUT_DIR}` (`rmdir "${OUT_DIR}"`), surface the
 location + phrase + category, and print:
@@ -312,7 +313,7 @@ rephrase passes.
 uv run python -c "
 from pathlib import Path
 from src.docx_render import render_resume
-md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text()
+md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding="utf-8")
 render_resume(md, Path('profile/resume_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Resume.docx'))
 print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 "
@@ -448,7 +449,10 @@ Verify on disk; if any check fails, do NOT report success — diagnose and fix.
 - [ ] `${OUT_DIR}/trace.md` exists with one entry per non-frozen line
 - [ ] `${OUT_DIR}/jd_snapshot.md` contains the full JD body
 - [ ] `${OUT_DIR}/lint_report.md` exists; "Phrase flags resolved" shows zero unresolved flags
-- [ ] One final lint pass returns zero violations (re-run Step 5's Python against `${OUT_DIR}/resume.md`)
+- [ ] One final lint pass returns zero violations. Step 5's Python reads and
+      writes `/tmp/tailor_${JOB_ID}_draft_resume.md`, so re-running it verbatim
+      re-checks the draft, NOT the copy in `${OUT_DIR}`. Either run it before the
+      `cp`, or change both paths to `${OUT_DIR}/resume.md` when re-running.
 - [ ] `pipeline/${JOB_ID}/state.yaml.tailored_dirs[]` contains `${DIRNAME}`
 - [ ] Every rendered Skills item traces to a `skills_master.md` `name`/`allowable_synonyms` (spot-check SKILLS-SOURCE)
 

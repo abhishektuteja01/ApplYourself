@@ -7,6 +7,7 @@ allowed-tools:
   - Bash
   - Read
   - Write
+argument-hint: --range <A>-<B> --vertical <name>
 ---
 
 # /score-judge --range A-B --vertical <name>
