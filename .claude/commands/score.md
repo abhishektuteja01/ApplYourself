@@ -4,6 +4,8 @@ model: sonnet
 effort: medium
 allowed-tools:
   - Bash
+  - Read
+  - Edit
   - Agent
 ---
 

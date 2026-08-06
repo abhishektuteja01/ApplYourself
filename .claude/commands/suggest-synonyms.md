@@ -60,7 +60,9 @@ not in this file.
 ## Step 1 — load profile and today's scored shortlist
 
 ```bash
-# Get today's shortlist file
+# Every path below is repo-relative, and src/ resolves its own paths from the
+# repo root — so anchor the shell there too.
+cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 SHORTLIST=$(ls -t shortlist/*.md 2>/dev/null | head -1)
 echo "shortlist: $SHORTLIST"
 
@@ -111,7 +113,7 @@ for item in sorted(all_kw, key=lambda x: -x['fit']):
 top.sort(key=lambda x: -x['frequency'])
 print(json.dumps(top, indent=2, default=str))
 " > /tmp/shortlist_keywords.json
-echo "keywords dumped: $(python3 -c "import json; d=json.load(open('/tmp/shortlist_keywords.json')); print(len(d))")"
+echo "keywords dumped: $(uv run python -c "import json; d=json.load(open('/tmp/shortlist_keywords.json')); print(len(d))")"
 ```
 
 Then `Read` these files:
@@ -303,7 +305,7 @@ handled by Track 1 — those belong to bullets, not skills), check:
    `SKILL-*` entry's `name` or `allowable_synonyms`? If yes → no action.
 2. **Honest anchor in an existing skill?** If the keyword is just a different
    display name for a skill already listed (e.g. JD says "LLM orchestration"
-   and `SKILL-MULTIAGENT-LLM` already covers this underlying capability), propose
+   and `SKILL-<ID>` already covers this underlying capability), propose
    it as a new `allowable_synonyms` entry on that skill.
 3. **No anchor at all?** Do NOT propose a brand-new `SKILL-*` entry from a JD
    keyword alone — a skill entry asserts the user has used something; the
@@ -331,7 +333,7 @@ New `allowable_synonyms` aliases mapping a JD keyword onto an EXISTING skill
 entry. Copy the patch into the corresponding `SKILL-*` block in
 `profile/skills_master.md` after review.
 
-### SKILL-MULTIAGENT-LLM (Multi-Agent LLM Systems)
+### SKILL-<ID> (<skill name>)
 **Add to `allowable_synonyms`:**
 - "phrase" — maps from JD keyword "X" (seen N times across shortlist)
 

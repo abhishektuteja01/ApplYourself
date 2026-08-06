@@ -222,7 +222,8 @@ data = append_outreach_draft(
     channel='<channel>',
     to_name='<recipient name>',
     draft_file='<date>_<channel>_<recipient-slug>.md',
-    medium='<linkedin | email>',   # omit the kwarg if no medium applies
+    contact_id='<id from contacts.yaml>',   # omit the kwarg if the recipient has no entry
+    medium='<linkedin | email>',            # omit the kwarg if no medium applies
 )
 print(f'OK: outreach[] now has {len(data[\"outreach\"])} entry/entries')
 "
@@ -233,7 +234,8 @@ print(f'OK: outreach[] now has {len(data[\"outreach\"])} entry/entries')
 - [ ] Draft file exists at DRAFT_PATH (defined in Step 3)
 - [ ] Final lint pass returns zero violations in outreach context
 - [ ] Word count is within the channel limit
-- [ ] state.yaml.outreach[] has a new `{channel, to, status: draft, draft_file}` entry
+- [ ] state.yaml.outreach[] has a new `{channel, to, status: draft, draft_file}` entry,
+      carrying `contact_id` when the recipient came from `contacts.yaml`
 - [ ] If channel is `recruiter`, the draft does NOT volunteer OPT status
 - [ ] If channel is `referral` or `alumni`, the draft DOES surface OPT
       lightly and upfront

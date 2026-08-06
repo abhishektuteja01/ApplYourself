@@ -95,8 +95,9 @@ is the single source of truth loader.
 `/score` takes no arguments. It runs the deterministic `src.score_cli`
 subcommands in order — `prepare` → judges → `check-coverage` → `merge` →
 `render` — and fans out parallel Sonnet judge agents over per-vertical row
-ranges. It never judges a row itself and never reads JD/batch content; its
-context stays counts-only.
+ranges. It never judges a row itself, and its context stays counts-only — the one
+exception is the recovery path, where it reads and repairs the specific batch rows
+a corrupt-JSON or merge-validation error names.
 
 Judging is a **separate command file**, `score-judge.md`, spawned per range
 (`--range A-B --vertical V`). A judge reads lines A–B of

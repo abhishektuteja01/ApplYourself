@@ -74,7 +74,7 @@ For each row, compute the columns:
 - `fit`             (`fit_score` int, or `?` if null)
 - `spons`           (sponsorship_label)
 - `last_touch`      (date only -- `YYYY-MM-DD` slice of the ISO timestamp)
-- `dir_link`        (**last** entry of `tailored_dirs[]`, or empty string --
+- `dir`             (**last** entry of `tailored_dirs[]`, or empty string --
                      the newest version, matching /cover-letter and /outreach;
                      a `_v2` re-tailor supersedes the earlier dir)
 - `note`            (the latest `state_history[].note`, or empty)

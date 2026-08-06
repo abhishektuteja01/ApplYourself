@@ -13,8 +13,9 @@ allowed-tools:
 # /rescore — full re-judge
 
 This is `/score` with prior judgments discarded and its own dump (no
-`prepare`). Read `.claude/commands/score.md` in full — steps 2-5 (judge
-fan-out, completeness check, merge, render) apply unchanged.
+`prepare`). Read `.claude/commands/score.md` in full — its steps 3-5
+(completeness check, merge, render, report) apply unchanged. The judge fan-out is
+restated below because `/rescore` gets its ranges from `ranges`, not `prepare`.
 
 All deterministic pre-screens (title-out-of-lane, plus every configured
 vertical's title/JD disqualifier from `profile/verticals.yaml`) still
@@ -74,7 +75,8 @@ prompt. Never chunk the counts by hand — `ranges` is the same printer
 
 ## Steps 3-5 — identical to /score
 
-Completeness check, merge, render — same as `/score` steps 3-4.
+Completeness check (`/score` step 3), merge (3a), render (4), report (5) —
+unchanged.
 
 In the final report, note "full rescore" (or "<vertical> rescore — other
 vertical's scores untouched").
