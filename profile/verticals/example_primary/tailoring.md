@@ -15,8 +15,18 @@ with it.
 **Summary framing:** lead with the production employer experience; personal
 projects are the secondary strength.
 
-**Skills category order:** Domain & Enterprise, Programming, AI & Machine
-Learning, Databases & Tools.
+**Skills layout (4 lines):** render these category lines in this order. For
+each line, `/tailor` selects + orders the listed SKILLs per the ranking in
+tailor.md (`vertical_lean` + `keywords_to_mirror`), rendering each entry's
+`name` or an `allowable_synonyms` alias. A SKILL not listed on any line never
+appears for this vertical. JD content fine-tunes ordering WITHIN a line and
+never adds/drops a line or moves a SKILL to another line. Replace these
+category names and `SKILL-<ID>`s with your own from `profile/skills_master.md`.
+
+1. **Domain & Enterprise:** SKILL-WIDGET-ASSEMBLY, SKILL-WIDGET-CONFIG, SKILL-GIZMO-LEDGER
+2. **Programming:** SKILL-PYTHON, SKILL-SQL
+3. **AI & Machine Learning:** SKILL-LLM-APPS, SKILL-RAG
+4. **Databases & Tools:** SKILL-POSTGRES, SKILL-DOCKER, SKILL-GIT
 
 **Section order:** SUMMARY → WORK EXPERIENCE → PROJECTS → EDUCATION →
 TECHNICAL SKILLS.

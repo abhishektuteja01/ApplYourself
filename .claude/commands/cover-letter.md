@@ -253,7 +253,7 @@ the JSON file, and re-run the lint above. Loop up to 5 attempts. If still
 failing after 5 attempts, hard-refuse: do not write any output files, tell
 the user which phrase/category kept failing.
 
-When `violations` is empty, proceed to Step 5.
+When `violations` is empty, proceed to Step 6.
 
 ## Step 6 — render the docx
 

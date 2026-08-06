@@ -201,7 +201,7 @@ print(f'OK: outreach[] now has {len(data[\"outreach\"])} entry/entries')
 
 ## Step 6 — runtime assertions
 
-- [ ] Draft file exists at DRAFT_PATH (the Step 4 path)
+- [ ] Draft file exists at DRAFT_PATH (defined in Step 3)
 - [ ] Final lint pass returns zero violations in outreach context
 - [ ] Word count is within the channel limit
 - [ ] state.yaml.outreach[] has a new `{channel, to, status: draft, draft_file}` entry

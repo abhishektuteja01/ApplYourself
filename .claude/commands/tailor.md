@@ -39,7 +39,8 @@ lint loop).
 
 ## Step 1 — prerequisites + row load + output dir (one block, fail loud)
 
-`src.tailor_cli prep` is the deterministic front-matter: it runs every prereq
+`uv run tailor-prep <job_id>` (the bash block below) is the deterministic
+front-matter: it runs every prereq
 check, merges the clean+scored row to `/tmp/tailor_<job_id>_row.json`, resolves
 the vertical, and creates the versioned output dir — all in one process, exiting
 nonzero at the FIRST bad check. If it exits nonzero, **stop — no partial work.**
@@ -59,7 +60,7 @@ JOB_ID="$1"
 test -n "$JOB_ID" || { echo "ERROR: /tailor requires a job_id argument."; exit 1; }
 # Validate the verticals config + per-vertical prose/resume files (owns its own
 # actionable message); prep then consumes the loaded config.
-uv run python -m src.verticals || { echo "ERROR: verticals config invalid or per-vertical prose files missing — see message above."; exit 1; }
+uv run verticals-check || { echo "ERROR: verticals config invalid or per-vertical prose files missing — see message above."; exit 1; }
 uv run python -m src.track_cli ensure "$JOB_ID" || exit 1
 # prep prints VERTICAL / DIRNAME / OUT_DIR / DICTION_PASS / ROW_JSON /
 # APPLICANT_NAME / FILE_SLUG on stdout
@@ -85,8 +86,9 @@ already printed its full contents into your context, reading the file again is
 unnecessary.
 
 - `/tmp/tailor_${JOB_ID}_row.json` — the JD + score row
-- the vertical's résumé — its `resume_file` in `profile/verticals.yaml`
-  (`profile/verticals/${VERTICAL}/resume_<vertical>.md`): the attested resume for
+- the vertical's résumé — read the block's `resume_file` in
+  `profile/verticals.yaml` **verbatim; never construct the path**, the filename
+  does not track the vertical name: the attested resume for
   this lane. Education/contact/dates come verbatim from here. Its Skills block is
   baseline-only — do NOT use it (see SKILLS-SOURCE).
 - `profile/bullets.md` — canonical bullets + per-bullet `allowable_synonyms`

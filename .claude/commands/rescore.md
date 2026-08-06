@@ -26,7 +26,7 @@ never reclassified.
 ```bash
 test -f jobs/clean.parquet || { echo "ERROR: jobs/clean.parquet missing — run discovery first"; exit 1; }
 test -f profile/sponsorship_rules.yaml || { echo "ERROR: profile/sponsorship_rules.yaml missing"; exit 1; }
-uv run python -m src.verticals || { echo "ERROR: verticals config invalid or per-vertical rubric files missing"; exit 1; }
+uv run verticals-check || { echo "ERROR: verticals config invalid or per-vertical rubric files missing"; exit 1; }
 mkdir -p jobs/scored.staging shortlist
 ```
 

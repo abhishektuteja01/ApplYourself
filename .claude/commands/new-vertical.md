@@ -61,7 +61,7 @@ No file edits.
    whatever is missing.
 2. Checks:
    ```bash
-   uv run python -m src.verticals   # current config must be valid before touching it
+   uv run verticals-check   # current config must be valid before touching it
    grep -rn "<name>" profile/verticals.yaml || echo "name unused"
    ```
    If the name already appears, stop and ask (resume vs rename).
@@ -84,8 +84,9 @@ position in the `verticals:` mapping):
   `profile/verticals/<name>/resume_<name>.md`. Stage 3 creates the file; the
   block won't load until it exists.
 - `search_terms` — full discovery query list; `linkedin_terms` — the
-  reduced LinkedIn set (429 mitigation; may equal `search_terms`). Mirror
-  the existing blocks' comment style (spine vs adjacent/tail tiers, rationale).
+  reduced LinkedIn set (429 mitigation; may equal `search_terms`). Mirror the
+  comment style of another block in `profile/verticals.yaml` if the user has
+  one, else `profile/verticals.example.yaml` (spine vs adjacent/tail tiers).
 - `skill_weights` — 0-10 integer blocks anchored ONLY to attested
   bullets/skills; name the evidence in inline comments like the
   existing blocks do.
@@ -104,7 +105,7 @@ Verify:
 uv run python -c "from src.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, len(v.search_terms), len(v.linkedin_terms), v.disqualifier_scored_by)"
 ```
 
-(`python -m src.verticals` will still fail until Stage 3 creates the prose
+(`verticals-check` will still fail until Stage 3 creates the prose
 files — expected; don't chase it yet.)
 
 ## Stage 2 — classifier rules
@@ -167,14 +168,19 @@ Create `profile/verticals/<name>/`:
 - **`tailoring.md`** — same reference pattern: page-budget hard floor
   (bullet mix summing to ≥10 non-frozen bullets), project ordering default
   + JD fine-tune allowances, summary framing (what leads, what supports),
-  skills category-line order, WORK EXPERIENCE vs PROJECTS section order.
+  WORK EXPERIENCE vs PROJECTS section order.
+  It MUST carry a heading spelled **`Skills layout (<n> lines):`** followed by a
+  numbered category line per skills row, each naming the eligible
+  `SKILL-<ID>`s — `/tailor` Step 3e reads that heading by name and improvises
+  the whole Skills section if it is absent. The committed
+  `profile/verticals/example_*/tailoring.md` show the shape.
   All under the binding meta-rule: vertical sets the default, JD fine-tunes,
   never the reverse.
 
 Verify:
 
 ```bash
-uv run python -m src.verticals   # must now pass fully
+uv run verticals-check   # must now pass fully
 ```
 
 ## Stage 4 — verify against the tests
@@ -195,7 +201,7 @@ needs more — never a literal real term; that file is committed.
 Verify:
 
 ```bash
-uv run python -m pytest -q
+uv run pytest tests -q
 ```
 
 Full suite green is a hard gate.
@@ -209,16 +215,17 @@ set. Verify: `grep -c "vertical_lean:.*<name>" profile/skills_master.md`.
 
 ## Stage 6 — doc pointers + final audit
 
-1. `CLAUDE.md` — extend the "Currently configured" sentence.
-2. Final audit + report:
+1. Final audit + report:
    ```bash
-   uv run python -m src.verticals && uv run python -m pytest -q
-   uv run python -m pytest tests/test_real_config_drift.py -q  # must not skip
+   uv run verticals-check && uv run pytest tests -q
+   uv run pytest tests/test_real_config_drift.py -q  # must not skip
    ```
-5. Completion summary: every file touched, every locked decision (terms,
+2. Completion summary: every file touched, every locked decision (terms,
    rule position + collision rulings, disqualifier, rubric anchors, budget),
-   anything skipped, and the user's remaining steps —
-   `uv run python -m src.discovery` (their call; hits the network) to start
-   filling the vertical, then `/score`. Existing rows are never
-   reclassified; `/rescore --vertical <name>` only matters once the vertical
-   has rows.
+   anything skipped, and the user's remaining steps — `uv run discover`
+   (their call; hits the network) to start filling the vertical, then
+   `/score`. Existing rows are never reclassified;
+   `/rescore --vertical <name>` only matters once the vertical has rows.
+
+`CLAUDE.md` needs no edit: its "Verticals: the config spine" section describes
+the mechanism, never the list of configured lanes.
