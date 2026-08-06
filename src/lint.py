@@ -136,29 +136,22 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
     for lineno, line in enumerate(text.split("\n"), start=1):
         new_line = line
 
-        # Em-dash (U+2014). Collapse any surrounding whitespace so " — " -> ", "
-        # rather than ",  " (preserves resume typography).
-        for match in re.finditer("—", line):
-            subs.append(Substitution(
-                line=lineno, column=match.start() + 1,
-                original="—", replacement=m["em_dash"], category="em_dash",
-            ))
-        new_line = re.sub(r"\s*—\s*", m["em_dash"], new_line)
-
         # En-dash (U+2013): range vs parenthetical. "Range" = digit content
         # within 8 chars on BOTH sides across whitespace, which covers both
         # "2022-2024" (no spaces) and "May 2022 - Jul 2024" (spacious date
         # ranges -- the common form in resumes).
-        # Walk new_line en-dashes once; decision + substitution + reporting
-        # in lockstep so they can't disagree.
+        # This runs before the em-dash pass so both the range decision and the
+        # reported column read the original line: collapsing " — " to ", " first
+        # would shift the columns and pull digits into the 8-char window, which
+        # flips "1 — aaaa – 2024" from parenthetical to range.
         new_parts: list[str] = []
         last = 0
-        for endash_match in re.finditer("–", new_line):
+        for endash_match in re.finditer("–", line):
             i = endash_match.start()
-            is_range = _endash_is_date_range(new_line, i)
+            is_range = _endash_is_date_range(line, i)
             if is_range:
                 # Preserve surrounding whitespace; just swap the char.
-                new_parts.append(new_line[last:i])
+                new_parts.append(line[last:i])
                 new_parts.append(m["en_dash_in_range"])
                 last = i + 1
                 subs.append(Substitution(
@@ -167,12 +160,12 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
                 ))
             else:
                 # Parenthetical: collapse surrounding whitespace.
-                prefix = new_line[last:i].rstrip()
+                prefix = line[last:i].rstrip()
                 new_parts.append(prefix)
                 new_parts.append(m["en_dash_parenthetical"])
                 # Advance past trailing whitespace following the en-dash.
                 j = i + 1
-                while j < len(new_line) and new_line[j].isspace():
+                while j < len(line) and line[j].isspace():
                     j += 1
                 last = j
                 subs.append(Substitution(
@@ -180,8 +173,17 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
                     replacement=m["en_dash_parenthetical"],
                     category="en_dash_parenthetical",
                 ))
-        new_parts.append(new_line[last:])
+        new_parts.append(line[last:])
         new_line = "".join(new_parts)
+
+        # Em-dash (U+2014). Collapse any surrounding whitespace so " — " -> ", "
+        # rather than ",  " (preserves resume typography).
+        for match in re.finditer("—", line):
+            subs.append(Substitution(
+                line=lineno, column=match.start() + 1,
+                original="—", replacement=m["em_dash"], category="em_dash",
+            ))
+        new_line = re.sub(r"\s*—\s*", m["em_dash"], new_line)
 
         # Every remaining Tier-1 fix is "replace character X with the
         # configured replacement, and log one Substitution per occurrence".

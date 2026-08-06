@@ -78,6 +78,29 @@ def test_fix_mechanical_en_dash_range_vs_paren():
     assert "en_dash_parenthetical" in cats
 
 
+def test_em_dash_pass_does_not_shift_reported_columns():
+    """Columns reference the ORIGINAL line, per fix_mechanical's contract. The
+    em-dash pass shortens the line, so running it first drifted every later
+    column left."""
+    text = "Role — Company 2022–2024 done"
+    _, subs = fix_mechanical(text, _rules())
+    reported = sorted(s["column"] for s in subs)
+    true_cols = sorted(i + 1 for i, ch in enumerate(text) if ch in "—–")
+    assert reported == true_cols
+
+
+def test_em_dash_does_not_flip_en_dash_classification():
+    """An em-dash earlier in the line must not change how a later en-dash is
+    classified: collapsing " — " to ", " used to pull a digit inside
+    _endash_is_date_range's window and turn a parenthetical into a range."""
+    bare = fix_mechanical("aaaa – 2024", _rules())
+    with_em = fix_mechanical("1 — aaaa – 2024", _rules())
+    en_cat = lambda subs: {s["category"] for s in subs if s["category"].startswith("en_dash")}
+    assert en_cat(bare[1]) == {"en_dash_parenthetical"}
+    assert en_cat(with_em[1]) == {"en_dash_parenthetical"}
+    assert with_em[0] == "1, aaaa, 2024"
+
+
 def test_fix_mechanical_en_dash_spacious_date_range():
     """Resume date ranges like 'May 2022 – Jul 2024' must be recognised as
     range (digits on both sides across whitespace) -- not silently
