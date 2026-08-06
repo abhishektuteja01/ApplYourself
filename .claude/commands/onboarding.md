@@ -84,8 +84,7 @@ Then print a checklist mapping each result to the stage that fixes it, name the
 resume point, and ask whether to start there. If everything is present and
 `verticals-check` passes, report that and stop — that is the audit.
 
-Run the audit first regardless of `$ARGUMENTS`; it is read-only and decides what
-is safe to skip. Then `stage <n>` (Track A), `B<n>`, or `C` jumps to that item
+`$ARGUMENTS` of `stage <n>` (Track A), `B1`–`B4`, or `C` then jumps to that item
 instead of the first incomplete one.
 
 ---
@@ -211,10 +210,14 @@ A skill with no bullet behind it does not go in the file.
 
 Unlocks: discovery, classification and scoring.
 
-1. `cp profile/verticals.example.yaml profile/verticals.yaml`
+1. `cp profile/verticals.example.yaml profile/verticals.yaml`. This order is
+   forced: `/new-vertical`'s preflight runs `verticals-check` and refuses to work
+   on an invalid config, so the file must already exist and load. Do not strip
+   the example lanes before step 3 — an empty `verticals:` mapping does not load
+   either.
 2. Run **`/new-vertical <name>`** and let it drive. It interviews for the block,
-   classifier rules, `rubric.md`, `tailoring.md` and the scoring resume. Do not
-   duplicate its work here.
+   classifier rules, `rubric.md`, `tailoring.md`, the scoring resume, and the
+   `vertical_lean` tagging in `skills_master.md`. Do not duplicate any of it here.
 3. When it finishes, strip the example scaffolding from `verticals.yaml`. All
    four edits are required — the loader rejects the file if any is missed:
    - remove the `example_primary` and `example_secondary` blocks
@@ -226,8 +229,7 @@ Unlocks: discovery, classification and scoring.
 
    Leave the `profile/verticals/example_*` directories alone — they are
    committed templates, not the user's config.
-4. Fill the `vertical_lean` values in `skills_master.md` for the new lane.
-5. Verify: `uv run verticals-check`
+4. Verify: `uv run verticals-check`
 
 Offer to repeat this stage for a second lane, or move on.
 
@@ -333,7 +335,7 @@ Offer this only after Track A works end to end. Skip on non-macOS: it depends on
 1. Show the wrapper: `scripts/nightly_discovery.sh`. It derives the repo from its
    own location and needs no editing.
 2. Show the user's current wake schedule before touching anything —
-   `pmset -g sched` — because step 4 **replaces** it wholesale.
+   `pmset -g sched` — because the block below **replaces** it wholesale.
 3. Print this whole block for the user to run themselves. Do not run any of it:
    it writes outside the repo, needs `sudo`, and calls `launchctl`.
 
