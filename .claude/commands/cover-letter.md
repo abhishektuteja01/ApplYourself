@@ -80,12 +80,10 @@ echo "reusing tailor dir: ${OUT_DIR}"
 
 If ANY check fails, exit immediately. **No partial work.**
 
-The placeholder check uses the shared helper, NOT a hand-rolled
-`paragraph.text` scan — Word's built-in templates wrap placeholders in
-content controls that plain `paragraph.text` silently misses. If
-`{{SALUTATION}}` or `{{BODY}}` is missing from the printed list,
-hard-refuse and tell the user to add it to
-`profile/cover_letter_template.docx`.
+Use the helper above, never a hand-rolled `paragraph.text` scan: Word wraps
+placeholders in content controls that `paragraph.text` silently misses. If
+`{{SALUTATION}}` or `{{BODY}}` is absent from the printed list, hard-refuse and
+tell the user to add it to `profile/cover_letter_template.docx`.
 
 ## Step 2 — load context
 
@@ -94,12 +92,9 @@ hard-refuse and tell the user to add it to
 - `${OUT_DIR}/keywords_to_mirror.md` — the 2-3 keywords the resume already mirrors; mirror the same ones here for consistency
 - `profile/bullets.md` — canonical bullets + `allowable_synonyms` per bullet (the ONLY source of factual claims)
 
-Skip-reread rule: if `profile/bullets.md` was already read in full earlier
-THIS session (e.g. by the `/tailor` run this command reuses) and you have
-no signal it changed (no edit this session, no system reminder saying it
-was modified), do not re-read it. The two `${OUT_DIR}` files are per-job;
-always read them. When in doubt whether a file changed, re-read —
-correctness beats the token saving.
+Skip re-reading `profile/bullets.md` if it was already read in full this session
+with no change signal. The two `${OUT_DIR}` files are per-job — always read them.
+When in doubt, re-read.
 
 ## Step 2b — company mission research (always attempt, never blocking)
 
@@ -116,12 +111,10 @@ with unrelated companies on a bare-name search. If the ATS slug in
 `boards.greenhouse.io/<slug>` → try `<slug>.com`), prefer fetching that
 company's own About/Mission page directly over a generic web search.
 
-Pull at most 1-2 concrete themes (what they actually build, who they
-serve, a stated focus tied to the JD's actual work) — not their homepage
-tagline verbatim. If the search returns nothing specific, returns an
-unrelated company, or only turns up generic marketing copy, drop this
-entirely and draft without it. This step never hard-refuses or blocks
-Step 3 — it's enrichment, not a prerequisite.
+Pull at most 1-2 concrete themes — what they build, who they serve, a stated
+focus tied to this JD's work — never the homepage tagline verbatim. If the search
+returns nothing specific, the wrong company, or only marketing copy, drop this
+step and draft without it. It never blocks Step 3.
 
 ## Step 3 — draft the letter content
 

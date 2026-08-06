@@ -12,16 +12,12 @@ argument-hint: <job_id>
 # /tailor — generate a tailored, audited resume
 
 Tailor the real-bullets-only resume for one role. `$1` = the 8-hex `job_id`.
-Exists to enforce no fabrication (NO-FAB below) and de-AI'd writing (Step 5's
-lint loop).
 
 ## Invariants (govern every step; stated once here)
 
 - **VERT-DEFAULT** — the vertical's `tailoring.md` sets the default for bullet
   budget, project/section ordering, summary framing, and skills layout. JD text
-  only fine-tunes *within* that default; it never adds/removes a section or line,
-  and never overrides absent a strong JD-specific reason. Vertical sets the
-  starting point, JD fine-tunes — never the reverse.
+  fine-tunes *within* that default; it never adds or removes a section or line.
 - **NO-FAB**, **NO-DRIFT**, **REPHRASE-LICENSE**, **SKILLS-SOURCE** — defined in
   `.claude/shared/no_fab.md`. **Read that file now**; the rest of this command
   cites all four by name and Step 5's hard-refuse table depends on them.
@@ -30,21 +26,17 @@ lint loop).
 
 ## Step 1 — prerequisites + row load + output dir (one block, fail loud)
 
-`uv run tailor-prep <job_id>` (the bash block below) is the deterministic
-front-matter: it runs every prereq
-check, merges the clean+scored row to `/tmp/tailor_<job_id>_row.json`, resolves
-the vertical, and creates the versioned output dir — all in one process, exiting
-nonzero at the FIRST bad check. If it exits nonzero, **stop — no partial work.**
+`uv run tailor-prep <job_id>` (the bash block below) runs every prereq check,
+merges the clean+scored row to `/tmp/tailor_<job_id>_row.json`, resolves the
+vertical, and creates the versioned output dir — exiting nonzero at the FIRST bad
+check. If it exits nonzero, **stop — no partial work.**
 
-`vertical` is read from the row (precomputed at discovery, stable per `job_id`) —
-never re-derived from JD text. Versioning is `max(existing _vN) + 1` across the
-role's lifetime (first re-tailor → `_v2`, even on another day); the leading date
-is always TODAY's. Version numbers are never reused.
-
-`track_cli ensure` registers the role if it has no `state.yaml`, no-ops if it
-does. It is **not** a transition: re-tailoring never changes `state`, so a `_v2`
-on an `applied` or terminal role is allowed. Transitions remain `/track`'s sole
-job (R10).
+- `vertical` comes from the row, never re-derived from JD text.
+- Versioning is `max(existing _vN) + 1` across the role's lifetime; the leading
+  date is always TODAY's. Numbers are never reused.
+- `track_cli ensure` registers the role if it has no `state.yaml` and no-ops if
+  it does. It is **not** a transition, so a `_v2` on an `applied` or terminal
+  role is allowed. Transitions stay `/track`'s alone (R10).
 
 ```bash
 JOB_ID="$1"
@@ -65,23 +57,19 @@ test -n "$FILE_SLUG" || { echo "ERROR: tailor-prep produced no FILE_SLUG -- the 
 After this block `$VERTICAL`, `$DIRNAME`, `$OUT_DIR`, `$DICTION_PASS`,
 `$ROW_JSON` (= `/tmp/tailor_${JOB_ID}_row.json`), `$APPLICANT_NAME` and
 `$FILE_SLUG` are set for every later step. The last two come from the first bold
-line of the vertical's `resume_file`, so every output file is named after
-whoever that résumé belongs to -- no name is hardcoded here.
+line of the vertical's `resume_file` — no name is hardcoded here.
 
 ## Step 2 — read the JD row + profile
 
-Read each file below in full. Skip re-reading a profile file already read in full
-this session with no change signal (no edit this session, no system reminder of a
-change); when in doubt, re-read. The row JSON is always fresh — but if Step 1
-already printed its full contents into your context, reading the file again is
-unnecessary.
+Read each file below in full. Skip one already read in full this session with no
+change signal; when in doubt, re-read. Step 1 already printed the row JSON, so
+re-reading that file is optional.
 
 - `/tmp/tailor_${JOB_ID}_row.json` — the JD + score row
 - the vertical's résumé — read the block's `resume_file` in
-  `profile/verticals.yaml` **verbatim; never construct the path**, the filename
-  does not track the vertical name: the attested resume for
-  this lane. Education/contact/dates come verbatim from here. Its Skills block is
-  baseline-only — do NOT use it (see SKILLS-SOURCE).
+  `profile/verticals.yaml` **verbatim; never construct the path** (the filename
+  does not track the vertical name). Education/contact/dates come verbatim from
+  here. Its Skills block is baseline-only — do NOT use it (SKILLS-SOURCE).
 - `profile/bullets.md` — canonical bullets + per-bullet `allowable_synonyms`
 - `profile/skills_master.md` — master skills inventory + per-skill
   `allowable_synonyms`
@@ -90,11 +78,10 @@ unnecessary.
 
 ## Step 3 — plan the resume
 
-**3a — anchor to JD keywords first.** Print the `keywords_to_mirror` list from
-`scored.parquet` for this job_id. Build a keyword→bullet map: for each keyword,
-which bullet surfaces it and whether a rephrase is needed. Drive every selection
-below from this map — a bullet covering zero keywords is a drop candidate; one
-covering multiple is a higher-priority keep.
+**3a — anchor to JD keywords first.** Print `keywords_to_mirror` from
+`scored.parquet` for this job_id and build a keyword→bullet map: which bullet
+surfaces each keyword, and whether a rephrase is needed. Drive every selection
+below from it — zero keywords is a drop candidate, several is a priority keep.
 
 **3b — decide each bullet.** For each bullet in `bullets.md`, choose:
 - **`unchanged`** — include verbatim canonical text
@@ -156,12 +143,10 @@ never silently absorb the difference.
 Write the draft to `/tmp/tailor_${JOB_ID}_draft_resume.md` now — before lint. Use
 this shape exactly so the docx renderer's parser handles it:
 
-Every frozen line below — the name, the contact line, each role/degree header
-with its employer, location and dates — is **copied verbatim from the vertical's
-`resume_file`**, which you read in Step 1. Never retype, reformat or update one
-from memory: `resume_file` is the only source for them (see the frozen-section
-row in Step 6). You generate only the SUMMARY, the bullet selection, the project
-titles/order, and the SKILLS lines.
+Every frozen line — the name, the contact line, each role/degree header with its
+employer, location and dates — is **copied verbatim from the vertical's
+`resume_file`**. Never retype or reformat one from memory. You generate only the
+SUMMARY, the bullet selection, the project titles/order, and the SKILLS lines.
 
 ```markdown
 **<name line, verbatim from resume_file>**
@@ -170,11 +155,8 @@ titles/order, and the SKILLS lines.
 
 **SUMMARY**
 
-<one-line summary tailored to JD; bound by truth from the vertical's résumé.
-This is the one freeform sentence in the whole resume — don't stuff it into
-a tricolon ("X, Y, and Z" skills list) or a "not only X but also Y"
-construction; both are classic AI-tell rhythms and stand out precisely
-because everything else on the page is a terse bullet.>
+<one-line summary tailored to JD, bound by truth from the vertical's résumé.
+No tricolon ("X, Y, and Z") and no "not only X but also Y" — both are AI tells.>
 
 **WORK EXPERIENCE**
 
@@ -209,9 +191,9 @@ because everything else on the page is a terse bullet.>
 
 **Renderer parser contract (hard rules):**
 
-- Header lines use a literal **TAB (`\t`)** between LEFT and RIGHT-aligned content
-  — the only structural signal the renderer recognises for right-alignment (right
-  tab stop at 19.05 cm). Never substitute `|` or spaces for the tab.
+- Header lines use a literal **TAB (`\t`)** between LEFT and RIGHT content — the
+  only signal the renderer recognises for right-alignment. Never substitute `|`
+  or spaces.
 
   | Entry type | LEFT | RIGHT (after TAB) |
   |---|---|---|
@@ -222,19 +204,18 @@ because everything else on the page is a terse bullet.>
 - **Section order:** per VERT-DEFAULT / Step 3c. The template shows one ordering;
   if the vertical defaults PROJECTS before WORK EXPERIENCE, swap those two sections
   (same internal rules). SUMMARY always first; EDUCATION/TECHNICAL SKILLS last.
-- **Contact line** (right after the name block): rendered centered automatically —
-  no markup; the renderer forces center on the first body block after the name.
-- **Skills lines** (`**Programming:** ...`): detected by the trailing `:` on the
-  bold prefix → `Resume Body` style with inline bold prefix. No tab here; the colon
-  is the signal.
+- **Contact line** (right after the name block): no markup — the renderer
+  centers the first body block after the name.
+- **Skills lines** (`**Programming:** ...`): the trailing `:` on the bold prefix
+  is the signal. No tab.
 - **Frozen sections (education, contact):** VERBATIM from the vertical's résumé.
   Skills is NOT copied from the résumé (SKILLS-SOURCE) — build per Step 3e.
 
 ## Step 5 — lint loop (the enforcement chain)
 
-Run mechanical fix + phrase scan. **Loop until phrase violations are zero** —
-never silently let a banned phrase ship. The Python reads the Step 4 draft and
-re-saves the mechanical-fixed version over it.
+Run mechanical fix + phrase scan, then loop per `.claude/shared/lint_loop.md`.
+The Python reads the Step 4 draft and re-saves the mechanical-fixed version over
+it.
 
 ```bash
 uv run python <<PYEOF
@@ -246,14 +227,14 @@ from src.lint import (
     compute_exempt_lines, parse_bullets_md,
 )
 
-resume_md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding="utf-8")
+resume_md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding='utf-8')
 rules = load_de_ai_rules()
-bullets = parse_bullets_md(Path('profile/bullets.md').read_text(encoding="utf-8"))
+bullets = parse_bullets_md(Path('profile/bullets.md').read_text(encoding='utf-8'))
 diction_done = bullets_diction_pass_completed(rules)
 
 # Tier 1: mechanical (always applied; no exemption)
 fixed_md, subs = fix_mechanical(resume_md, rules)
-Path('/tmp/tailor_${JOB_ID}_draft_resume.md').write_text(fixed_md, encoding="utf-8")
+Path('/tmp/tailor_${JOB_ID}_draft_resume.md').write_text(fixed_md, encoding='utf-8')
 
 # Tier 2: phrase scan with conditional exemption
 exempt = compute_exempt_lines(fixed_md, bullets, diction_done)
@@ -305,25 +286,17 @@ rephrase passes.
 uv run python -c "
 from pathlib import Path
 from src.docx_render import render_resume
-md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding="utf-8")
+md = Path('/tmp/tailor_${JOB_ID}_draft_resume.md').read_text(encoding='utf-8')
 render_resume(md, Path('profile/resume_template.docx'), Path('${OUT_DIR}/${FILE_SLUG}_Resume.docx'))
 print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 "
 ```
 
-`TemplateMissingError`/`TemplateError` messages are already actionable (they
-enforce structural constraints Step 1 can't: missing styles, tables, inline
-shapes) — surface verbatim and stop.
+On `TemplateMissingError`/`TemplateError`: surface the message verbatim and stop.
 
-Then convert to PDF: set the variables and follow
-`.claude/shared/render_pdf.md` verbatim.
-
-```bash
-BASENAME=Resume   # OUT_DIR and FILE_SLUG are already set from Step 1
-```
-
-Read that file now and run its block. Do not reconstruct the AppleScript from
-memory — the fixed staging dir it uses is what keeps Word's sandbox grant valid.
+Then convert to PDF — set `BASENAME=Resume` (`OUT_DIR` and `FILE_SLUG` are
+already set) and run `.claude/shared/render_pdf.md` verbatim. Read that file;
+do not reconstruct the AppleScript from memory.
 
 ## Step 7 — write the audit artifacts
 
@@ -346,28 +319,24 @@ For `transformation=rephrase`, append:
   synonyms: ["<exact allowable_synonyms entries that license this rewrite>", ...]
 ```
 
-The `synonyms:` line is the authorization cite (REPHRASE-LICENSE): a rephrase you
-cannot cite synonyms for is illegal — catch it here, not in the user's review. The
-`before:`/`after:` pair is what the user eyeballs for NO-DRIFT slippage. Frozen
-lines (education/contact) → `transformation=frozen`. Skills lines →
-`transformation=reweight`, `source` = the `SKILL-<ID>` entry (not a `B-` id).
+A rephrase you cannot cite `synonyms:` for is illegal (REPHRASE-LICENSE) — catch
+it here. Frozen lines (education/contact) → `transformation=frozen`. Skills lines
+→ `transformation=reweight`, `source` = the `SKILL-<ID>` entry, not a `B-` id.
 
 Header:
 ```markdown
 # trace.md — per-line audit for ${OUT_DIR}
 
 Tailored for job_id `${JOB_ID}` on $(date +%Y-%m-%d).
-Rule: every rephrase records before→after so NO-DRIFT (a specialized workflow
-relabeled as the generic one it resembles) is eyeball-catchable.
+Every rephrase records before→after so NO-DRIFT is eyeball-catchable.
 ```
 
 **`${OUT_DIR}/keywords_to_mirror.md`** — the 2–3 keywords from
 `scored.parquet.keywords_to_mirror` and where each landed (which resume line, or
 "not landed — kept verbatim canonical to preserve attestation").
 
-**`${OUT_DIR}/jd_snapshot.md`** — the full JD body (frozen snapshot; written
-deterministically from the row.json already on disk, never retyped, no second
-`clean.parquet` read):
+**`${OUT_DIR}/jd_snapshot.md`** — the full JD body, written from the row.json
+already on disk. Never retyped:
 
 ```bash
 uv run tailor-prep snapshot "$JOB_ID" "$OUT_DIR"

@@ -216,19 +216,15 @@ Independently of the JD keyword list, reason about the user's specific role cont
 and generate a list of tools/interfaces/processes they **probably encountered** but
 haven't documented in any bullet's canonical text or `allowable_synonyms`.
 
-**Build the inference base yourself from `profile/bullets.md`** — do not work from
-a remembered description of the user's background. Group the bullets by their
-`source:` field: each distinct value is one context (an employment, a teaching
-role, a personal project). For each context, read across its bullets' `canonical`
-text, `tags` and `evidence` to establish the domain, the platform or stack, the
-scale, the seniority, and the period. That grouping IS the inference base, and it
-stays correct as bullets are added or reworded.
+**Build the inference base from `profile/bullets.md`, not from memory.** Group
+the bullets by `source:` — each distinct value is one context. Per context, read
+across its bullets' `canonical`, `tags` and `evidence` for the domain, stack,
+scale, seniority and period.
 
-Then, per context, think through: what tools, interfaces, commands and adjacent
-processes does someone in this *exact* environment almost certainly encounter,
-even if no bullet mentions them? Reason from the specifics you just read — a
-platform implies its own tooling, an ops cadence implies ticketing, a rollout
-implies methodology artifacts.
+Then ask, per context: what tools, interfaces, commands and adjacent processes
+does someone in this *exact* environment almost certainly encounter, even if no
+bullet names them? Reason from the specifics — a platform implies its tooling, an
+ops cadence implies ticketing, a rollout implies methodology artifacts.
 
 Reason along these axes, which apply to most contexts (not exhaustive, and not
 every axis fits every context):
@@ -250,10 +246,9 @@ every axis fits every context):
   each claim, data ingestion and validation, the testing approach, deployment
   target, and observability
 
-For each candidate, rate your confidence: `likely` (would be surprising if not
-used given the context) vs `possible` (plausible but not universal). Only include
-`likely` items in the output — omit `possible` unless it appears in the shortlist
-keywords, in which case note it as lower-confidence.
+Rate each candidate `likely` (surprising if unused in this context) or
+`possible`. Output `likely` only — include a `possible` just when it appears in
+the shortlist keywords, flagged as lower-confidence.
 
 Apply the same `likely`/`possible` discipline to every context, employment and
 project alike — a project's dependency choices are as unlogged as an employer's
