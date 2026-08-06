@@ -5,7 +5,9 @@ from datetime import date
 from src.discovery.htmlutil import html_to_text
 from src.discovery import universe
 from src.discovery.universe import UniverseCompany
-from src.discovery.sources.ats import greenhouse, lever, ashby
+# fetch_json and the pacing sleep now live in the shared base, so that is where
+# the seam is patched.
+from src.discovery.sources.ats import base
 from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
@@ -46,7 +48,7 @@ def test_greenhouse_rows_shape(monkeypatch):
         "location": {"name": "New York, NY"},
         "first_published": "2026-07-01T12:00:00-04:00",
     }]}
-    monkeypatch.setattr(greenhouse, "fetch_json", lambda url, **kw: payload)
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: payload)
     
     res = GreenhouseSource().fetch(MockContext())
     assert len(res.rows) == 1
@@ -64,7 +66,7 @@ def test_greenhouse_rows_skips_incomplete_items(monkeypatch):
     monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
     payload = {"jobs": [{"title": "", "absolute_url": "https://x"},
                         {"title": "Widget Assembly Consultant"}]}
-    monkeypatch.setattr(greenhouse, "fetch_json", lambda url, **kw: payload)
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: payload)
     assert len(GreenhouseSource().fetch(MockContext()).rows) == 0
 
 def test_lever_rows_assembles_lists_and_maps_salary(monkeypatch):
@@ -80,7 +82,7 @@ def test_lever_rows_assembles_lists_and_maps_salary(monkeypatch):
         "workplaceType": "remote",
         "createdAt": 1780300800000,
     }]
-    monkeypatch.setattr(lever, "fetch_json", lambda url, **kw: payload)
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: payload)
     rows = LeverSource().fetch(MockContext()).rows
     assert len(rows) == 1
     r = rows[0]
@@ -103,7 +105,7 @@ def test_lever_rows_falls_back_to_description_plain(monkeypatch):
         "hostedUrl": "https://jobs.lever.co/acme/1",
         "descriptionPlain": "plain body",
     }]
-    monkeypatch.setattr(lever, "fetch_json", lambda url, **kw: payload)
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: payload)
     assert LeverSource().fetch(MockContext()).rows[0]["description"] == "plain body"
 
 def test_ashby_rows_salary_from_compensation_tiers(monkeypatch):
@@ -122,7 +124,7 @@ def test_ashby_rows_salary_from_compensation_tiers(monkeypatch):
              "currencyCode": "USD", "interval": "1 YEAR"},
         ]}]},
     }]}
-    monkeypatch.setattr(ashby, "fetch_json", lambda url, **kw: payload)
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: payload)
     rows = AshbySource().fetch(MockContext()).rows
     assert len(rows) == 1
     r = rows[0]
@@ -136,7 +138,7 @@ def test_ashby_rows_salary_from_compensation_tiers(monkeypatch):
 
 
 def test_scrape_boards_isolates_per_company_failures(monkeypatch):
-    monkeypatch.setattr(greenhouse.time, "sleep", lambda _: None)
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "load", lambda ats: [
         UniverseCompany("Broken Co", "greenhouse", "badslug"),
         UniverseCompany("Acme AI", "greenhouse", "acmeai"),
@@ -146,15 +148,71 @@ def test_scrape_boards_isolates_per_company_failures(monkeypatch):
             raise http.CareersError("board not found (404)", status=404, permanent=True)
         return {"jobs": [{"title": "Widget Assembly Consultant", "absolute_url": "https://x/1",
                           "content": "a" * 250}]}
-    monkeypatch.setattr(greenhouse, "fetch_json", fake_fetch)
+    monkeypatch.setattr(base, "fetch_json", fake_fetch)
     res = GreenhouseSource().fetch(MockContext())
     assert len(res.errors) == 1
     assert "Broken Co" in res.errors[0]
     assert len(res.rows) == 1
 
+class TestMalformedPayloadStaysPerCompany:
+    """fetch_json returns whatever a 200 decodes to. Before the row parse moved
+    inside the try, a list or a non-dict item raised AttributeError out of the
+    company loop; the orchestrator caught it at *source* level and wrote no
+    shard at all, discarding every company polled before the bad one."""
+
+    GOOD = {"jobs": [{"title": "Widget Assembly Consultant",
+                      "absolute_url": "https://x/1", "content": "a" * 250}]}
+
+    @pytest.mark.parametrize("bad", [
+        [],                              # a bare list
+        [{"title": "x"}],                # a list of dicts
+        "not json at all",               # a JSON string
+        {"error": "unauthorized"},       # right type, no jobs key
+        {"jobs": "not a list"},
+        {"jobs": [None, 42, "str"]},     # non-dict items
+        123,
+    ], ids=["empty_list", "list_of_dicts", "json_string", "error_object",
+            "jobs_not_list", "non_dict_items", "int"])
+    def test_bad_payload_does_not_lose_the_other_companies(self, monkeypatch, bad):
+        monkeypatch.setattr(base.time, "sleep", lambda _: None)
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("Broken Co", "greenhouse", "badslug"),
+            UniverseCompany("Acme AI", "greenhouse", "acmeai"),
+        ])
+        monkeypatch.setattr(base, "fetch_json",
+                            lambda url, **kw: bad if "badslug" in url else self.GOOD)
+        res = GreenhouseSource().fetch(MockContext())
+        # The healthy company's rows survive no matter what the bad one returned.
+        assert len(res.rows) == 1
+        assert res.rows[0]["company"] == "Acme AI"
+
+    def test_lever_survives_a_dict_payload(self, monkeypatch):
+        monkeypatch.setattr(base.time, "sleep", lambda _: None)
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("Broken Co", "lever", "badslug"),
+            UniverseCompany("Acme AI", "lever", "acmeai"),
+        ])
+        good = [{"text": "Widget Assembly Consultant",
+                 "hostedUrl": "https://x/1", "descriptionPlain": "a" * 250}]
+        monkeypatch.setattr(base, "fetch_json", lambda url, **kw:
+                            {"error": "nope"} if "badslug" in url else good)
+        res = LeverSource().fetch(MockContext())
+        assert len(res.rows) == 1
+
+    def test_a_shape_error_is_reported_as_a_named_company_error(self, monkeypatch):
+        monkeypatch.setattr(base.time, "sleep", lambda _: None)
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("Broken Co", "greenhouse", "badslug")])
+        monkeypatch.setattr(base, "fetch_json", lambda url, **kw: object())
+        res = GreenhouseSource().fetch(MockContext())
+        assert len(res.errors) == 1
+        assert "Broken Co" in res.errors[0]
+        assert "malformed board payload" in res.errors[0]
+
+
 def test_scrape_boards_isolates_non_json_body(monkeypatch):
     """An HTML 200 must stay a per-company error, not escape the company loop."""
-    monkeypatch.setattr(greenhouse.time, "sleep", lambda _: None)
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
     monkeypatch.setattr(http.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "load", lambda ats: [
         UniverseCompany("Wall Co", "greenhouse", "wallslug"),

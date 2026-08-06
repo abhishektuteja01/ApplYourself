@@ -40,7 +40,11 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
             "ats": ats, "slug": slug, "consecutive_404s": 0,
             "last_ok": pd.NaT, "last_yield": 0, "pruned_at": pd.NaT
         }
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        # Concatenating onto an all-empty frame is deprecated in pandas and
+        # errors under filterwarnings; on the first-ever call there is nothing
+        # to concatenate to.
+        new = pd.DataFrame([row])
+        df = new if df.empty else pd.concat([df, new], ignore_index=True)
         mask = (df["ats"] == ats) & (df["slug"] == slug)
     
     idx = df.index[mask][0]
