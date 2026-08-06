@@ -193,6 +193,11 @@ patterns from gitignored `profile/pii_denylist.txt`. `.githooks/pre-push` runs i
 real pattern in a committed file. `LICENSE` and `data/universe/*.csv` are
 allowlisted in-script.
 
+The hook also scans what `pii_scan.sh` structurally cannot: the pushed commits'
+**messages, author and committer fields**, plus `user.email` itself. That
+metadata lives in no file, so the index scan is blind to it — and GitHub renders
+an author email on every commit page.
+
 ## Gotchas
 
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).

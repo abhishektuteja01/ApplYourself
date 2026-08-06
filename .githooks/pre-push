@@ -19,6 +19,10 @@ root="$(git rev-parse --show-toplevel)"
 #    guard is this test file. CI runs it too, but CI runs after the push, by
 #    which point the blob is public and reachable by SHA forever.
 #    Fails closed: no uv means the check did not run, which is not a pass.
+#    Skipped only when the templates themselves are absent — there is then
+#    nothing for the guard to protect.
+if [[ -f "$root/profile/resume_template.example.docx" \
+   || -f "$root/profile/cover_letter_template.example.docx" ]]; then
 if ! command -v uv >/dev/null 2>&1; then
   printf 'pre-push: FAIL — uv not found, so the .docx template guard could not run.\n' >&2
   printf 'Those two files are allowlisted in pii_scan.sh; nothing else checks them.\n' >&2
@@ -30,6 +34,7 @@ if ! (cd "$root" && uv run pytest tests/test_example_templates.py -q >/dev/null 
   printf '\nDid you re-save one in Word? That stamps your name into the metadata.\n' >&2
   printf 'Fix: uv run python scripts/scrub_example_templates.py\n' >&2
   exit 1
+fi
 fi
 
 # 3. The commits actually being pushed. The scan above reads the index, so it
@@ -44,24 +49,68 @@ grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$denylist" \
   | sed -e 's/^~//' -e 's/[[:space:]]*$//' >"$patterns" || true
 [[ -s "$patterns" ]] || exit 0
 
+alt="$(paste -sd'|' "$patterns")"
+
+# 3a. The identity every commit is stamped with. This is the one leak path that
+#     lives in no file, so neither the scan above nor the pickaxe below can see
+#     it: an author email reaches GitHub's UI on every commit page. A global
+#     user.email that differs from the repo-local one is how it happens —
+#     the local override only applies to clones that have it set.
+for scope in "--local" "--global"; do
+  who=$(git config $scope user.email 2>/dev/null) || continue
+  [[ -n "$who" ]] || continue
+  if printf '%s' "$who" | grep -qiE "$alt"; then
+    printf 'pre-push: FAIL — git config %s user.email is denylisted.\n' "$scope" >&2
+    printf 'Every commit you make is stamped with it, in no file the scan reads.\n' >&2
+    printf 'Fix: git config %s user.email <you>@users.noreply.github.com\n' "$scope" >&2
+    exit 1
+  fi
+done
+
 status=0
-while read -r _local_ref local_oid _remote_ref remote_oid; do
+# stdin is readable exactly once, so collect the ref lines before scanning.
+push_lines=()
+while read -r line; do
+  [[ -n "$line" ]] && push_lines+=("$line")
+done
+((${#push_lines[@]})) || exit 0
+
+for line in "${push_lines[@]}"; do
+  read -r _local_ref local_oid _remote_ref remote_oid <<<"$line"
   [[ "$local_oid" =~ ^0+$ ]] && continue          # branch deletion
   if [[ "$remote_oid" =~ ^0+$ ]]; then
     range="$local_oid"                            # new branch: its own history
   else
     range="$remote_oid..$local_oid"
   fi
+
   # -G greps added/removed content across the range's diffs.
-  hits=$(git log --oneline --pickaxe-regex -i -G "$(paste -sd'|' "$patterns")" \
-           "$range" 2>/dev/null) || continue
-  if [[ -n "$hits" ]]; then
+  if hits=$(git log --oneline --pickaxe-regex -i -G "$alt" "$range" 2>/dev/null) \
+     && [[ -n "$hits" ]]; then
     printf 'pre-push: FAIL — commits being pushed touch denylisted strings:\n\n%s\n\n' \
       "$hits" >&2
     printf 'These blobs become public on push and stay reachable by SHA.\n' >&2
     printf 'Rewrite the history (git filter-repo) before pushing.\n' >&2
     status=1
   fi
+
+  # Commit messages and per-commit identity. -G reads diffs only, so a
+  # denylisted string in a message or an author/committer field passes it
+  # untouched. Author NAME is deliberately public here (LICENSE names it), so
+  # this does not false-positive on every commit.
+  for field in grep author committer; do
+    hits=$(git log --oneline -i -E "--$field=$alt" "$range" 2>/dev/null) || continue
+    [[ -n "$hits" ]] || continue
+    case "$field" in
+      grep)      what="commit message(s)" ;;
+      author)    what="author name/email" ;;
+      committer) what="committer name/email" ;;
+    esac
+    printf 'pre-push: FAIL — %s carries a denylisted string:\n\n%s\n\n' "$what" "$hits" >&2
+    printf 'Commit metadata is public on GitHub and lives in no file the scan reads.\n' >&2
+    printf 'Rewrite before pushing (git filter-repo --mailmap for identity).\n' >&2
+    status=1
+  done
 done
 
 exit "$status"
