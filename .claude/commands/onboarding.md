@@ -340,15 +340,18 @@ Offer this only after Track A works end to end. Skip on non-macOS: it depends on
    it writes outside the repo, needs `sudo`, and calls `launchctl`.
 
 ```bash
+LABEL=com.$USER.applyourself.discovery
 mkdir -p logs ~/Library/LaunchAgents
-sed -e "s|__LABEL__|com.$USER.applyourself.discovery|g" \
-    -e "s|__REPO__|$PWD|g" \
-    scripts/launchagent.example.plist \
-    > ~/Library/LaunchAgents/com.$USER.applyourself.discovery.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.$USER.applyourself.discovery.plist
+sed -e "s|__LABEL__|$LABEL|g" -e "s|__REPO__|$PWD|g" \
+    scripts/launchagent.example.plist > ~/Library/LaunchAgents/$LABEL.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/$LABEL.plist
 sudo pmset repeat wakeorpoweron MTWRFSU 01:55:00
-launchctl print gui/$(id -u)/com.$USER.applyourself.discovery | head -20
+launchctl print gui/$(id -u)/$LABEL | head -20
 ```
+
+Replacing an existing agent rather than installing a first one: run `launchctl
+bootout gui/$(id -u)/$LABEL` before the bootstrap. Copying the plist alone
+changes nothing — launchd runs the configuration it loaded, not the file on disk.
 
 `mkdir -p logs` is not optional: `launchd` will not create the intermediate
 directory for `StandardOutPath`, and a missing `logs/` means the job fails to
