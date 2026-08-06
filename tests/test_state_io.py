@@ -19,7 +19,6 @@ from src.state_io import (
     load_all_states,
     load_state,
     mark_outreach_sent,
-    skip_count,
     state_path_for,
     transition,
 )
@@ -339,22 +338,6 @@ def test_load_all_states_skips_empty_files(tmp_path):
 
 def test_load_all_states_empty_when_no_pipeline_dir(tmp_path):
     assert load_all_states(tmp_path / "nope") == []
-
-
-def test_skip_count(tmp_path):
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial(),
-                now=datetime(2026, 6, 1))
-    transition(p, "skip", now=datetime(2026, 6, 2))
-    transition(p, "saved", now=datetime(2026, 6, 3))
-    transition(p, "skip", now=datetime(2026, 6, 4))
-    data = load_state(p)
-    assert skip_count(data) == 2
-
-
-def test_skip_count_handles_missing_history():
-    assert skip_count({}) == 0
-    assert skip_count({"state_history": None}) == 0
 
 
 # ---------- atomicity ----------

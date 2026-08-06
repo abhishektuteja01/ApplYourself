@@ -123,18 +123,6 @@ _PUNCT_RE = re.compile(r"[^\w\s]")
 # Step 1 — normalization
 # ---------------------------------------------------------------------
 
-def legacy_normalize_company(s: str | None) -> str:
-    if not isinstance(s, str) or not s:
-        return ""
-    x = s.lower()
-    x = _VIA_RE.sub("", x)
-    prev = None
-    while prev != x:
-        prev = x
-        x = _LEGACY_SUFFIX_RE.sub("", x)
-    x = _LEADING_THE_RE.sub("", x)
-    return _WS_RE.sub(" ", x).strip()
-
 
 def normalize_company(s: str | None) -> str:
     if not isinstance(s, str) or not s:
@@ -703,7 +691,6 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"(dropped {stats.get('dropped_exact', 0)})",
         f"- after near dedupe (WRatio>=90): {stats.get('after_near_dedupe', 0)} "
         f"(dropped {stats.get('dropped_near', 0)})",
-        f"- changed job_ids vs seen ledger: {stats.get('changed_seen', 0)}",
         f"- after seen-ledger expiry: {stats.get('after_expiry', 0)} "
         f"(dropped {stats.get('dropped_expired', 0)})",
         f"- final rows: {stats.get('final_rows', 0)}",
@@ -834,23 +821,6 @@ def run(
     today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     ledger_path = clean_dir / "seen.parquet"
     
-    if ledger_path.exists():
-        try:
-            old_ledger_ids = set(pd.read_parquet(ledger_path)["job_id"])
-            old_job_ids = [
-                compute_job_id(legacy_normalize_company(c), t)
-                for c, t in zip(df["company"], df["title_normalized"])
-            ]
-            changed_seen = len({
-                old_id for old_id, new_id in zip(old_job_ids, df["job_id"])
-                if old_id != new_id and old_id in old_ledger_ids
-            })
-        except Exception as e:
-            log.warning("Could not read seen.parquet for diff: %s", e)
-            changed_seen = 0
-    else:
-        changed_seen = 0
-
     ledger = update_seen_ledger(
         df["job_id"].tolist(),
         ledger_path,
@@ -892,7 +862,6 @@ def run(
         "near_dropped": near_dropped,
         "after_expiry": after_expiry,
         "dropped_expired": after_near - after_expiry,
-        "changed_seen": changed_seen,
         "final_rows": len(df),
         "per_source": per_source,
     }

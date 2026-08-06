@@ -30,9 +30,6 @@ class DiscoveryConfig:
     sources: dict[str, SourceConfig] = field(default_factory=lambda: {
         "linkedin": SourceConfig(True, 3.0),
         "indeed": SourceConfig(True, 2.0),
-        # Dead upstream; off by default so an omitted key can't enable them.
-        "zip_recruiter": SourceConfig(False, 2.0),
-        "google": SourceConfig(False, 2.0),
         "greenhouse": SourceConfig(True, 1.0),
         "lever": SourceConfig(True, 1.0),
         "ashby": SourceConfig(True, 2.0),
@@ -66,7 +63,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     cfg.schema_version = _SCHEMA_VERSION
 
     if "sources" in data:
-        allowed_sources = {"linkedin", "indeed", "zip_recruiter", "google", "greenhouse", "lever", "ashby"}
+        allowed_sources = {"linkedin", "indeed", "greenhouse", "lever", "ashby"}
         for k, v in data["sources"].items():
             if k not in allowed_sources:
                 raise ValueError(f"Unknown source key: {k}")

@@ -78,13 +78,6 @@ class TestFixtureHappyPath:
                 assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
             assert (REPO_ROOT / v.resume_file).is_file(), v.resume_file
 
-    def test_skill_weights_blocks(self, cfg):
-        assert set(cfg.verticals["example_primary"].skill_weights) == {"widgets", "domain"}
-        assert set(cfg.verticals["example_secondary"].skill_weights) == {
-            "sprocket_risk", "sprocket_quant"
-        }
-        assert cfg.verticals["example_primary"].skill_weights["widgets"]["widget_assembly"] == 10
-
 
 class TestByteParityAnchors:
     """Config strings must reach the dataclass verbatim — these land in

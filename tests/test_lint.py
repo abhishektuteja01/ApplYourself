@@ -11,7 +11,6 @@ from src.lint import (
     compute_exempt_lines,
     find_phrase_violations,
     fix_mechanical,
-    lint_bullets_md,
     load_de_ai_rules,
     parse_bullets_md,
 )
@@ -336,66 +335,3 @@ def test_bullets_diction_pass_default_false_when_missing_key():
 # ===========================================================
 # Diction pass — must lint canonical only, never metadata
 # ===========================================================
-
-def _write_rules(tmp_path: Path) -> Path:
-    p = tmp_path / "rules.yaml"
-    p.write_text(yaml.safe_dump(_rules()), encoding="utf-8")
-    return p
-
-
-def test_lint_bullets_md_ignores_source_metadata_dates(tmp_path):
-    """Date strings inside `source:` metadata (e.g. 'May 2022') must NOT
-    false-flag the hedge 'may'. Those lines never reach a resume so they
-    must never be linted. This is the bug from slice 5 follow-up."""
-    bullets = tmp_path / "bullets.md"
-    bullets.write_text(
-        "## B-DEL-01\n"
-        "source: Acme Corp (Springfield, May 2022 - Jul 2024)\n"
-        "canonical: Owned the daily Stock Mark-to-Market risk report.\n"
-        "tags: [a]\n"
-        "evidence: production system\n"
-        "allowable_synonyms: []\n",
-        encoding="utf-8",
-    )
-    rules_path = _write_rules(tmp_path)
-    rules = load_de_ai_rules(rules_path)
-    _, violations = lint_bullets_md(bullets, rules=rules)
-    assert violations == [], f"expected zero violations, got {violations}"
-
-
-def test_lint_bullets_md_flags_real_hedge_in_canonical(tmp_path):
-    """A genuine hedge in the canonical text IS still flagged — scoping
-    is to canonical only, not 'don't flag anything ever'."""
-    bullets = tmp_path / "bullets.md"
-    bullets.write_text(
-        "## B-X-01\n"
-        "source: Foo\n"
-        "canonical: This may have improved outcomes for the team.\n"
-        "tags: [a]\n"
-        "evidence: x\n"
-        "allowable_synonyms: []\n",
-        encoding="utf-8",
-    )
-    rules_path = _write_rules(tmp_path)
-    rules = load_de_ai_rules(rules_path)
-    _, violations = lint_bullets_md(bullets, rules=rules)
-    hedge_hits = [v for v in violations
-                  if v["bullet_id"] == "B-X-01" and v["phrase"] == "may"]
-    assert len(hedge_hits) == 1, f"expected 1 hedge flag, got {violations}"
-
-
-def test_lint_bullets_md_reports_by_bullet_id_not_file_line(tmp_path):
-    """Violations are keyed by bullet_id so the user knows which bullet
-    to fix; column is the position within the canonical text."""
-    bullets = tmp_path / "bullets.md"
-    bullets.write_text(
-        "## B-DEL-01\nsource: foo\ncanonical: clean text here.\nallowable_synonyms: []\n\n"
-        "## B-DEL-02\nsource: bar\ncanonical: Was responsible for breaking things.\nallowable_synonyms: []\n",
-        encoding="utf-8",
-    )
-    rules_path = _write_rules(tmp_path)
-    rules = load_de_ai_rules(rules_path)
-    _, violations = lint_bullets_md(bullets, rules=rules)
-    # Only B-DEL-02 has a violation (resume_cliche "responsible for")
-    assert all(v["bullet_id"] == "B-DEL-02" for v in violations)
-    assert any(v["phrase"] == "responsible for" for v in violations)

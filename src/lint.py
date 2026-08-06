@@ -374,50 +374,6 @@ def parse_bullets_md(text: str) -> dict[str, dict]:
     return bullets
 
 
-def lint_bullets_md(
-    bullets_md_path: Path,
-    rules: dict | None = None,
-) -> tuple[int, list[dict]]:
-    """The one-time diction pass over profile/bullets.md.
-
-    Lints ONLY each bullet's `canonical:` text -- the metadata fields
-    (`source:`, `tags:`, `evidence:`, `allowable_synonyms:`) are NEVER
-    shipped to a resume, so they must NEVER be linted. If you let them
-    through, date strings inside `source:` (e.g. "May 2022 - Jul 2024")
-    false-flag the hedge "may" against every work-history entry.
-
-    Returns (mechanical_subs_count, violations) where each violation is
-    {bullet_id, column, phrase, category}. Bullets are keyed by id so the
-    report tells you which bullet to fix, not a raw bullets.md line number.
-
-    Does NOT modify bullets_md_path -- bullets.md is user-authored.
-    mechanical_subs_count is informational only."""
-    if rules is None:
-        rules = load_de_ai_rules()
-    text = bullets_md_path.read_text(encoding="utf-8")
-    bullets = parse_bullets_md(text)
-    total_subs = 0
-    violations: list[dict] = []
-    for bullet_id, b in bullets.items():
-        canonical = b.get("canonical")
-        if not isinstance(canonical, str) or not canonical.strip():
-            continue
-        # Mechanical: count would-be substitutions; don't write back.
-        _, subs = fix_mechanical(canonical, rules)
-        total_subs += len(subs)
-        # Phrase: no exemption -- this IS the pass that establishes the
-        # canonical-text baseline that future exemptions rely on.
-        for v in find_phrase_violations(canonical, context="resume",
-                                         exempt_lines=None, rules=rules):
-            violations.append({
-                "bullet_id": bullet_id,
-                "column": v["column"],
-                "phrase": v["phrase"],
-                "category": v["category"],
-            })
-    return total_subs, violations
-
-
 def compute_exempt_lines(
     rendered_text: str,
     bullets: dict[str, dict],

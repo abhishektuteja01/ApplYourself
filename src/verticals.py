@@ -40,7 +40,6 @@ class Vertical:
     display_name: str
     search_terms: tuple[str, ...]
     linkedin_terms: tuple[str, ...]
-    skill_weights: dict  # opaque to src/ — consumed only by LLM judges
     disqualifier_max_years: int
     disqualifier_phrases: tuple[str, ...]
     disqualifier_title_phrases: tuple[str, ...]
@@ -164,7 +163,6 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         display_name=str(_require(raw, "display_name", path, where)),
         search_terms=search_terms,
         linkedin_terms=linkedin_terms,
-        skill_weights=raw.get("skill_weights") or {},
         disqualifier_max_years=max_years,
         disqualifier_phrases=phrases,
         disqualifier_title_phrases=title_phrases,

@@ -9,7 +9,7 @@ import pandas as pd
 from src.discovery.config import load_config
 from src.discovery import cleaning
 from src.discovery.inbox import InboxSource
-from src.discovery.sources.jobspy_source import LinkedinSource, IndeedSource, ZipRecruiterSource, GoogleSource
+from src.discovery.sources.jobspy_source import LinkedinSource, IndeedSource
 from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
@@ -40,7 +40,7 @@ class Context:
         return time.time() > self.deadline_ts
 
 def get_sources():
-    return [InboxSource(), LinkedinSource(), IndeedSource(), ZipRecruiterSource(), GoogleSource(), GreenhouseSource(), LeverSource(), AshbySource()]
+    return [InboxSource(), LinkedinSource(), IndeedSource(), GreenhouseSource(), LeverSource(), AshbySource()]
 
 def main(args=None):
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -83,7 +83,7 @@ def main(args=None):
             log.warning(f"Could not read universe health for report: {e}")
     
     sources = get_sources()
-    fixed_order = ["manual", "linkedin", "indeed", "zip_recruiter", "google", "greenhouse", "lever", "ashby"]
+    fixed_order = ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby"]
     
     enabled_sources = []
     source_map = {s.name: s for s in sources}

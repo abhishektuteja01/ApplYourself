@@ -12,17 +12,27 @@ def test_missing_file(tmp_path, monkeypatch):
     assert config.deadline_hours == 6.0
     assert "linkedin" in config.sources
 
-def test_dead_sources_default_disabled(tmp_path, monkeypatch):
-    """load_config only overrides keys present in the YAML, so a config that
-    omits these dead sources must not enable them."""
+def test_every_default_source_is_live_and_enabled(tmp_path, monkeypatch):
+    """zip_recruiter and google were removed, so there is no longer such a
+    thing as a configured-but-dead source: every default is enabled, and a
+    config naming one of the removed keys is an unknown-source error."""
     from src import verticals
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     config = load_config(tmp_path / "nonexistent.yaml")
-    assert config.sources["zip_recruiter"].enabled is False
-    assert config.sources["google"].enabled is False
-    for live in ("linkedin", "indeed", "greenhouse", "lever", "ashby"):
-        assert config.sources[live].enabled is True
+    assert set(config.sources) == {"linkedin", "indeed", "greenhouse", "lever", "ashby"}
+    assert all(s.enabled for s in config.sources.values())
+
+
+@pytest.mark.parametrize("removed", ["zip_recruiter", "google"])
+def test_a_removed_source_key_is_rejected(tmp_path, monkeypatch, removed):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+
+    p = tmp_path / "old.yaml"
+    p.write_text(yaml.dump({"sources": {removed: {"enabled": False}}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Unknown source key"):
+        load_config(p)
 
 
 def test_example_config_covers_every_allowed_source(monkeypatch):
@@ -34,7 +44,7 @@ def test_example_config_covers_every_allowed_source(monkeypatch):
     listed = set(yaml.safe_load(example.read_text(encoding="utf-8"))["sources"])
     assert listed == set(DiscoveryConfig().sources)
     # And it must parse under the real loader, not just as YAML.
-    assert load_config(example).sources["google"].enabled is False
+    assert all(s.enabled for s in load_config(example).sources.values())
 
 
 def test_malformed_yaml(tmp_path, monkeypatch):

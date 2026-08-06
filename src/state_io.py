@@ -326,14 +326,3 @@ def load_all_states(pipeline_dir: Path) -> list[dict]:
         if data:
             out.append(data)
     return out
-
-
-def skip_count(state_data: dict) -> int:
-    """Count of skip entries in state_history. Used by /score's skip
-    suppression (rows with >=1 skip entries are suppressed from the
-    shortlist)."""
-    history = state_data.get("state_history") or []
-    return sum(
-        1 for h in history
-        if isinstance(h, dict) and h.get("state") == "skip"
-    )
