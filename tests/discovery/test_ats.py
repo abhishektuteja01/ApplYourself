@@ -49,7 +49,7 @@ def test_greenhouse_rows_shape(monkeypatch):
         "first_published": "2026-07-01T12:00:00-04:00",
     }]}
     monkeypatch.setattr(base, "fetch_json", lambda url, **kw: payload)
-    
+
     res = GreenhouseSource().fetch(MockContext())
     assert len(res.rows) == 1
     r = res.rows[0]

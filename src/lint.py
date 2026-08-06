@@ -205,8 +205,8 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
 # Tier 2 — phrase flag-and-rewrite
 # =====================================================================
 
-# A loose emoji range cover — good enough for v1; we only need to flag, not
-# normalize. If a real emoji slips through, the lint loop catches it.
+# A loose emoji range cover: this is the only emoji check, and it flags rather
+# than normalizes. Ranges are deliberately partial — add to them as needed.
 _EMOJI_RANGES = (
     (0x1F300, 0x1F9FF),
     (0x1FA00, 0x1FAFF),

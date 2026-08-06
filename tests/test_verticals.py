@@ -413,7 +413,10 @@ class TestClassifierRuleProtocol:
     def test_regex_rule_matches_are_case_insensitive(self, cfg):
         rule = next(r for v, r in cfg.classifier_rules
                     if isinstance(r, verticals.RegexRule))
-        assert isinstance(rule.matches("Widget Assembly Functional Consultant"), bool)
+        title = "Widget Assembly Functional Consultant"
+        assert rule.matches(title) is True
+        assert rule.matches(title.upper()) is True
+        assert rule.matches(title.lower()) is True
 
     def test_compound_needs_the_match_and_one_requirement(self):
         rule = verticals.CompoundRule("Cog Learning", ("Platform", "Agents"))

@@ -15,9 +15,8 @@ argument-hint: <job_id> [--to "Hiring Manager Name"]
 
 # /cover-letter — generate a tailored, audited cover letter
 
-You are writing a real cover letter for a specific role, reusing the most
-recent `/tailor` output for that `job_id`. **This slice exists to enforce
-no fabrication and de-AI'd writing for fresh-generated prose**.
+Write a cover letter for one role, reusing the most recent `/tailor` output for
+that `job_id`.
 
 Arguments: `$1` is the 8-hex `job_id`. Parse `$ARGUMENTS` for an optional
 `--to "Name"` flag (same convention as `/outreach`'s `--to`/`--via`): if
@@ -32,10 +31,8 @@ not in this file.
 
 ## Step 1 — prerequisites + tailor dir + template placeholders (one block, fail loud)
 
-`LATEST_DIR` already carries the vertical prefix /tailor wrote into
-`tailored_dirs[]` (e.g. `<vertical>/2026-06-17_acme_..._a1b2c3d4`)
-— no separate vertical lookup needed here, `OUT_DIR` resolves correctly
-as-is. Run everything below as ONE bash block:
+`tailored_dirs[]` entries are vertical-prefixed, so `OUT_DIR=applications/${LATEST_DIR}`
+resolves as-is. Run everything below as ONE bash block:
 
 ```bash
 # Every path below is repo-relative, and src/ resolves its own paths from
@@ -120,9 +117,8 @@ When in doubt, re-read.
 
 ## Step 2b — company mission research (always attempt, never blocking)
 
-The company's real mission/focus (not marketing tagline) is a legitimate
-thing to speak to in a cover letter — but only if it's specific enough to
-prove you actually looked, not generic enough to paste into any letter.
+Find the company's actual focus, not its marketing tagline — specific enough to
+show you looked.
 
 Search for it using the company name **plus a disambiguating detail
 pulled from `jd_snapshot.md`** (industry/domain phrase from the JD body,
@@ -172,11 +168,6 @@ also Y", uniform rhythm, formulaic "I am writing to express my
 interest..." / "I look forward to hearing from you" openers and closers)
 — Step 4's no_ai_slop pass owns that cleanup. Just draft in plain, varied
 prose and move on.
-
-One cover-letter-specific call stays yours at draft time: if a Step 2b
-mission theme didn't come back specific enough to prove real research,
-leave it out entirely rather than reaching for a generic "I'm inspired by
-your mission to..." line — that's a bigger AI tell than not mentioning it.
 
 Write a JSON file `/tmp/cover_letter_$1_draft.json` with this shape:
 

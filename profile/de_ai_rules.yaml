@@ -172,7 +172,7 @@ outreach_only:
   - "I wanted to reach out"
   - "I'm reaching out because"
   - "<greeting>!"  # any greeting line ending in an exclamation mark
-  # Newer 2026 "punchy blog / LinkedIn" hooks and unsolicited-validation tells
+  # Punchy blog / LinkedIn hooks and unsolicited-validation tells
   - "Here's the kicker"
   - "Here's the thing"
   - "But here's the thing"

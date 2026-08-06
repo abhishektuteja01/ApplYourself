@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 import yaml
 import pandas as pd
 import csv
@@ -34,10 +33,10 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
         df = pd.read_parquet(HEALTH_PATH)
     else:
         df = pd.DataFrame(columns=["ats", "slug", "consecutive_404s", "last_ok", "last_yield", "pruned_at"])
-    
+
     mask = (df["ats"] == ats) & (df["slug"] == slug)
     today = pd.Timestamp.today().normalize()
-    
+
     if not mask.any():
         row = {
             "ats": ats, "slug": slug, "consecutive_404s": 0,
@@ -49,9 +48,9 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
         new = pd.DataFrame([row])
         df = new if df.empty else pd.concat([df, new], ignore_index=True)
         mask = (df["ats"] == ats) & (df["slug"] == slug)
-    
+
     idx = df.index[mask][0]
-    
+
     if success:
         df.at[idx, "consecutive_404s"] = 0
         df.at[idx, "pruned_at"] = pd.NaT
@@ -67,7 +66,7 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
 
 def load(ats: str) -> list[UniverseCompany]:
     companies_dict = {}
-    
+
     # 1. Load CSV
     csv_path = CSV_DIR / f"{ats}.csv"
     if csv_path.exists():
@@ -125,7 +124,7 @@ def load(ats: str) -> list[UniverseCompany]:
     for slug, co in companies_dict.items():
         h = health_dict.get(slug, {})
         pruned_at = h.get("pruned_at")
-        if pd.notna(pruned_at) and pruned_at is not None:
+        if pd.notna(pruned_at):
             if (today - pruned_at) < timedelta(days=14):
                 continue  # skip, it's pruned and not old enough to retry
         valid_companies.append(co)

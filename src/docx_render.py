@@ -299,7 +299,7 @@ def _split_inline_runs(text: str) -> list[Run]:
 
     Name is historical -- handles bold and links now. Plain text becomes
     plain runs; **x** becomes a bold run; [t](u) becomes a link run (bold
-    inside a link or a link inside bold are NOT supported in v1 -- if a
+    inside a link or a link inside bold are NOT supported -- if a
     bold span and a link span overlap, whichever started earlier wins and
     the later overlapping match is dropped)."""
     matches: list[tuple[int, int, Run]] = []

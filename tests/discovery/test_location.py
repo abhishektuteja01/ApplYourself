@@ -84,7 +84,7 @@ def test_location_remote_austin():
 # allowlist drops it, instead of parsing to nothing and being kept.
 # ---------------------------------------------------------------------
 
-# The exact strings that leaked onto the 2026-07-24 shortlist.
+# The exact strings that leaked onto a real shortlist.
 @pytest.mark.parametrize("raw,country", [
     ("London", "United Kingdom"),
     ("Stockholm", "Sweden"),

@@ -1,8 +1,5 @@
-"""Shared paced pass over one ATS's company universe.
-
-greenhouse/lever/ashby had byte-identical fetch() bodies differing only in the
-board URL and the row parser, so every fix had to be made three times.
-Subclasses now supply just those two things.
+"""Shared paced pass over one ATS's company universe. Subclasses supply the board
+URL and the row parser; everything else is here.
 """
 from __future__ import annotations
 

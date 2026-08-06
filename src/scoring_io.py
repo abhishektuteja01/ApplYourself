@@ -131,7 +131,7 @@ def dump_unscored(
     count of LLM-judge rows (those written to out_path).
 
     Gates purely on the precomputed clean.parquet `vertical` column — set by
-    discovery.py (scraped rows, tagged by search term) / cleaning.py (manual
+    sources/ (scraped rows, tagged by search term) / cleaning.py (manual
     clips + legacy-row title fallback). This function does NOT reclassify
     titles itself.
 
@@ -581,7 +581,3 @@ def prune_scored(scored_path: Path, clean_path: Path) -> int:
         write_parquet(scored[keep_mask], scored_path)
     return dropped
 
-
-# =====================================================================
-# Shortlist computation (deterministic — sort / cap / exclusion split)
-# =====================================================================

@@ -27,9 +27,9 @@ def ashby_rows(payload, company: str) -> list[dict]:
         job_url = item.get("jobUrl") or item.get("applyUrl") or ""
         if not title or not job_url:
             continue
-            
+
         salary_min, salary_max, currency = _ashby_salary(item.get("compensation"))
-        
+
         rows.append(make_row(
             site="ashby",
             company=company,

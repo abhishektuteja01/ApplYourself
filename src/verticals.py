@@ -158,7 +158,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     reasoning_title = dq.get("reasoning_title")
     if title_phrases and not reasoning_title:
         raise _fail(path, f"{where}.disqualifier.reasoning_title is required when title_phrases is nonempty")
-    
+
     # Title include-gate: opt-in per vertical. When title_include_terms is
     # empty the gate is OFF and apply_title_exclusion falls back to
     # exclusion-only. See cleaning.py.

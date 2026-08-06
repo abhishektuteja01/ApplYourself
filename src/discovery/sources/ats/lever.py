@@ -18,10 +18,10 @@ def lever_rows(payload, company: str) -> list[dict]:
         job_url = item.get("hostedUrl") or ""
         if not title or not job_url:
             continue
-            
+
         categories = item.get("categories") or {}
         salary = item.get("salaryRange") or {}
-        
+
         parts = []
         intro = item.get("description")
         if isinstance(intro, str) and intro.strip():
@@ -39,7 +39,7 @@ def lever_rows(payload, company: str) -> list[dict]:
             if parts
             else html_to_text(item.get("descriptionPlain"))
         )
-        
+
         rows.append(make_row(
             site="lever",
             company=company,

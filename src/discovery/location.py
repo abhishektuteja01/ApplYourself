@@ -26,7 +26,6 @@ US_STATES = gc.get_us_states()
 COUNTRIES = gc.get_countries()
 CITIES = gc.get_cities()
 
-# Build lookups
 STATE_CODES = {v['code']: v['name'] for v in US_STATES.values()}
 STATE_NAMES = {v['name'].lower(): v['code'] for v in US_STATES.values()}
 
@@ -89,7 +88,7 @@ for city in sorted(CITIES.values(), key=lambda x: x.get('population', 0), revers
 def parse_location(raw: str) -> LocationParse:
     if not raw:
         return LocationParse("", "", "", False)
-        
+
     remote = "remote" in raw.lower()
 
     # Collect every signal in the string first, then reconcile. A multi-region
@@ -98,10 +97,10 @@ def parse_location(raw: str) -> LocationParse:
     # bails out on conflicting signals instead.
     found_countries = set()
     found_city_names = set()
-    
+
     text = raw
     text_lower = text.lower()
-    
+
     # 1. Countries, on word boundaries. Names are stripped: an upstream entry
     # with a trailing space makes the closing \b unsatisfiable, so the name
     # matches nothing.
@@ -135,7 +134,7 @@ def parse_location(raw: str) -> LocationParse:
             ngrams.append(f"{words[i].lower()} {words[i+1].lower()}")
         if i < len(words) - 2:
             ngrams.append(f"{words[i].lower()} {words[i+1].lower()} {words[i+2].lower()}")
-            
+
     for ngram in ngrams:
         if ngram in US_CITIES:
             # An n-gram hit anywhere counts, so "San Francisco Bay Area" resolves
@@ -169,7 +168,7 @@ def parse_location(raw: str) -> LocationParse:
     country = list(found_countries)[0] if found_countries else ""
     state = ""
     city = ""
-    
+
     # Exactly one state is a usable signal; several means a multi-site listing,
     # which resolves to nothing (the caller keeps it).
     if len(found_states) == 1:

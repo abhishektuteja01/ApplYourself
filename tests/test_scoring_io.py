@@ -448,7 +448,7 @@ def test_auto_score_disqualified_noop_on_missing_file(tmp_path, cfg):
     assert not scored_p.exists()
 
 
-# ---------- example_primary vertical: explicit 5+ years experience disqualifier (extended 2026-06-17) ----------
+# ---------- example_primary vertical: explicit 5+ years experience disqualifier ----------
 
 def test_primary_disqualify_reason_years_over_threshold(cfg):
     example_primary = cfg.verticals["example_primary"]
@@ -504,7 +504,7 @@ def test_auto_score_disqualified_materializes_primary_skip_rows(tmp_path, cfg):
     assert df.iloc[0]["reasoning"] == cfg.verticals["example_primary"].reasoning_years
 
 
-# ---------- hard-ineligible pre-label (added 2026-07-14, carve-out) ----------
+# ---------- hard-ineligible pre-label (carve-out) ----------
 
 def test_load_hard_ineligible_reads_and_lowercases(tmp_path):
     p = tmp_path / "rules.yaml"
@@ -589,7 +589,7 @@ def test_auto_score_ineligible_noop_on_missing_file(tmp_path):
     assert not scored_p.exists()
 
 
-# ---------- title-level disqualifier (added 2026-07-14) ----------
+# ---------- title-level disqualifier ----------
 
 def test_disqualify_reason_title_phrase_trips(cfg):
     example_primary = cfg.verticals["example_primary"]
@@ -1134,7 +1134,7 @@ def test_render_shortlist_row_fields(cfg):
     assert "- **sponsorship:** opt_ok — \"no visa sponsorship language\"" in md
     assert "- **why:** strong widget assembly overlap" in md
     assert "- **suggested:** tailor" in md
-    assert "- **verify E-Verify** before submitting (manual v1 step)" in md
+    assert "- **verify E-Verify** before submitting (manual step)" in md
     assert "- https://x/1" in md
 
 

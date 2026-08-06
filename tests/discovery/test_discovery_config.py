@@ -7,7 +7,7 @@ def test_missing_file(tmp_path, monkeypatch):
     # Mock verticals.get_config so it doesn't fail
     from src import verticals
     monkeypatch.setattr(verticals, "get_config", lambda: None)
-    
+
     config = load_config(tmp_path / "nonexistent.yaml")
     assert config.deadline_hours == 6.0
     assert "linkedin" in config.sources
@@ -92,7 +92,9 @@ def test_example_config_declares_the_supported_schema_version(monkeypatch):
     from src import verticals
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
-    cfg = load_config(Path("profile/discovery.example.yaml"))
+    example = Path(__file__).resolve().parents[2] / "profile" / "discovery.example.yaml"
+    assert example.exists(), "the template this test is about is missing"
+    cfg = load_config(example)
     assert cfg.schema_version == 1
 
 def test_missing_verticals_yaml_raises_rather_than_exiting(tmp_path, monkeypatch):

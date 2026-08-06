@@ -1,9 +1,7 @@
 """Deterministic pre-screens: the judgments that need no judge.
 
-Split out of scoring_io, which was three modules in one file. Everything here is
-a pure predicate over a JD or a title, decided from config — no parquet, no LLM
-(R7). /score applies these before any judge sees a row, because paying for a
-call to confirm a keyword match is waste.
+Every function here is a pure predicate over a JD or a title, decided from config
+— no parquet, no LLM (R7). /score applies these before any judge sees a row.
 """
 from __future__ import annotations
 
@@ -77,8 +75,8 @@ def _normalize_jd(jd_text: Any) -> str:
 
 # Minimum-years disqualifier. Requires a year-count within a few words of
 # "experience", so an unrelated year mention ("150-year legacy") cannot
-# false-positive. The optional "-M" group captures the LOWER bound of a range,
-# without which "3-6 years" reads as a flat 6-year requirement.
+# false-positive. Group 1 captures the LOWER bound; the optional non-capturing
+# group consumes the upper one, so "3-6 years" reads as 3, not 6.
 EXPERIENCE_YEARS_RE = re.compile(
     r"(\d+)\s*(?:\+|[-–—]\s*\d+\+?)?\s*years?\s+(?:of\s+)?(?:[a-z][\w/&,-]*\s+){0,4}experience",
 )

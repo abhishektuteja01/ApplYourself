@@ -105,11 +105,9 @@ below from it — zero keywords is a drop candidate, several is a priority keep.
 
 **3c — budget & projects (VERT-DEFAULT).** The vertical's `tailoring.md` sets the
 bullet mix and section order; JD content fills the floor, never lowers it.
-- **Precedence, in order:** the vertical's `tailoring.md` total-bullet floor
-  wins. If it states no floor, or states one below 10, use 10. There is never a
-  case where both numbers bind at once. Below the governing floor, expand
-  1-bullet projects to 2 before proceeding. Where the vertical also states a
-  ceiling, do not exceed it.
+- **Floor** = `max(tailoring.md`'s total-bullet floor`, 10)`. Below it, expand
+  1-bullet projects to 2 before proceeding. Respect any ceiling the vertical
+  states.
 - Keep EVERY project named in the vertical's `tailoring.md`
   "Project ordering" visible; pick 1–3 bullets each to hit budget. Drop a whole
   project ONLY when its `tailoring.md` says so **in the "Project ordering" line
@@ -437,5 +435,5 @@ Next:
   1. Open resume.docx and trace.md — confirm no analogy-as-equivalence drift.
   2. Submit manually on the company's site.
   3. Run /track $1 applied  (records the transition + sets applied_at).
-  4. Verify the employer is E-Verify-enrolled (manual v1 step).
+  4. Verify the employer is E-Verify-enrolled (manual step).
 ```

@@ -7,7 +7,6 @@ import sys
 import time
 import traceback
 from datetime import datetime
-from pathlib import Path
 import pandas as pd
 
 from src.discovery.config import load_config
@@ -45,7 +44,7 @@ class Context:
         self.config = config
         self.deadline_ts = deadline_ts
         self.verticals = verticals.get_config()
-        
+
     def deadline_reached(self) -> bool:
         if self.deadline_ts == 0.0:
             return False
@@ -71,23 +70,23 @@ def main(args=None):
         # load_config is a library function that raises; the CLI is where a bad
         # config becomes a one-line message and a nonzero exit.
         sys.exit(f"ERROR: {e}")
-    
+
     start_time = datetime.now()
     run_id = parsed.resume or current_run_id(start_time)
     scraped_date = pd.Timestamp(start_time).normalize()
-    
+
     # deadline_hours == 0 is the scrape-nothing kill switch: no source runs, and
     # the finally below still rebuilds clean.parquet from the existing window.
     # deadline_ts is only meaningful when it is positive, and deadline_reached()
     # reads 0.0 as "no deadline set" for exactly the case that never scrapes.
     scrape_enabled = config.deadline_hours > 0
     deadline_ts = time.time() + config.deadline_hours * 3600 if scrape_enabled else 0.0
-        
+
     ctx = Context(config=config, deadline_ts=deadline_ts)
-    
+
     JOBS_RAW.mkdir(parents=True, exist_ok=True)
     JOBS_RUNS.mkdir(parents=True, exist_ok=True)
-    
+
     report_lines = [
         f"# Run {run_id}",
         "",
@@ -96,7 +95,7 @@ def main(args=None):
         f"Raw archive: `{JOBS_RAW.relative_to(REPO_ROOT) if JOBS_RAW.is_relative_to(REPO_ROOT) else JOBS_RAW}`",
         "",
     ]
-    
+
     health_path = JOBS_ROOT / "universe_health.parquet"
     if health_path.exists():
         try:
@@ -106,10 +105,13 @@ def main(args=None):
             report_lines.append("")
         except (OSError, ValueError, KeyError) as e:
             log.warning("Could not read universe health for report: %s", e)
-    
+
+    # Everything above is the run preamble; a resume appends only what follows.
+    preamble_len = len(report_lines)
+
     sources = get_sources()
     fixed_order = ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby"]
-    
+
     enabled_sources = []
     source_map = {s.name: s for s in sources}
     for name in fixed_order:
@@ -132,7 +134,7 @@ def main(args=None):
             if parsed.resume and shard_file.exists():
                 log.info("Skipping %s, shard exists.", source.name)
                 continue
-                
+
             t0 = time.time()
             try:
                 res = source.fetch(ctx)
@@ -163,9 +165,9 @@ def main(args=None):
             else:
                 df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
                 df = validate_frame(df)
-                
+
             write_parquet(df, shard_file)
-            
+
             report_lines.append(f"### Source: {source.name}")
             report_lines.append(f"Time: {dur:.1f}s")
             if df.empty:
@@ -182,23 +184,22 @@ def main(args=None):
             if res.report_lines:
                 report_lines.extend(res.report_lines)
             report_lines.append("")
-            
+
             if ctx.deadline_reached():
                 report_lines.append(f"**DEADLINE REACHED** after {source.name}.")
                 break
-                
+
     finally:
         report_path = JOBS_RUNS / f"{run_id}.md"
-        
-        # Read existing report and append if resuming
+
         if parsed.resume and report_path.exists():
             report_path.write_text(
-                report_path.read_text(encoding="utf-8") + "\n" + "\n".join(report_lines[6:]) + "\n",
+                report_path.read_text(encoding="utf-8") + "\n" + "\n".join(report_lines[preamble_len:]) + "\n",
                 encoding="utf-8",
             )
         else:
             report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
-            
+
         cleaning.run(
             run_id=run_id,
             raw_dir=JOBS_RAW,
@@ -206,5 +207,5 @@ def main(args=None):
             runs_dir=JOBS_RUNS,
             pipeline_dir=PIPELINE,
         )
-    
+
     return 0

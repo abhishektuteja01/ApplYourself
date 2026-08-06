@@ -1,7 +1,7 @@
 # Deny by default, re-include deliberately.
 #
 # The previous version enumerated the private files it knew about, so anything
-# new — profile/contacts.yml, pipeline/<id>/notes.md, inbox/*.txt, a stray
+# new — profile/contacts.yaml, pipeline/<id>/notes.md, inbox/*.txt, a stray
 # profile/*.docx — was staged by `git add -A` without a word. Every directory
 # that holds user data now excludes its own contents, and the committed
 # templates are re-included one line at a time.
@@ -56,7 +56,6 @@ jobs/*
 applications/
 shortlist/
 pipeline.md
-profile/resume.docx
 # Nightly discovery logs (scheduler job). The directory itself is committed via
 # .gitkeep: launchd will not create the intermediate directory for
 # StandardOutPath, so a fresh clone without logs/ means the agent fails to spawn

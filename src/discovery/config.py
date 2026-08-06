@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
@@ -43,16 +42,15 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     try:
         verticals.get_config()
     except FileNotFoundError as e:
-        # Raise, don't sys.exit: this is a library function, and a caller other
-        # than the CLI must be able to handle it. orchestrator.main turns it
-        # into the same one-line message and exit code as before.
+        # Raise, don't sys.exit: a library function must let a non-CLI caller
+        # handle this. orchestrator.main turns it into the one-line CLI message.
         raise FileNotFoundError(f"profile/verticals.yaml missing: {e}") from e
 
     p = path or DEFAULT_CONFIG_PATH
     if not p.exists():
         log.info("profile/discovery.yaml not found, using defaults")
         return DiscoveryConfig()
-    
+
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
@@ -77,7 +75,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 enabled=bool(v.get("enabled", True)),
                 pacing_seconds=float(v.get("pacing_seconds", 1.0))
             )
-            
+
     if "location_allowlist" in data:
         loc = data["location_allowlist"]
         cfg.location_allowlist = LocationAllowlist(
@@ -85,7 +83,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
             states=loc.get("states", []),
             cities=loc.get("cities", []),
         )
-        
+
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
     cfg.raw_retention_days = int(data.get("raw_retention_days", cfg.raw_retention_days))
 

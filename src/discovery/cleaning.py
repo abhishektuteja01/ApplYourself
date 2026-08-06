@@ -2,10 +2,12 @@
 
 No LLM calls (R7). Reads pipeline/*/state.yaml but never writes there.
 Operations execute in this exact step order:
+  0. Per-vertical title gate (apply_title_exclusion), before everything else
   1. Normalize company / title fields (seniority preserved)
   2. Drop rows where jd_text < 200 chars
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
      career-board sources exempt — board presence is the liveness signal
+  3b. Drop rows outside the location allowlist
   4. Exact dedupe on (company_normalized, title_normalized), longest jd_text wins
   5. Near dedupe within company via rapidfuzz.WRatio >= 90, longest jd_text wins
   6. job_id = sha1(company_normalized|title_normalized)[:8]
@@ -51,7 +53,7 @@ CLEAN_COLUMNS: list[str] = [
     "url", "jd_text",
     "salary_min", "salary_max", "salary_currency",
     "employment_type", "seniority_raw", "ingested_run_id",
-    "vertical",  # a profile/verticals.yaml name | "" — Python-owned, set by discovery.py
+    "vertical",  # a profile/verticals.yaml name | "" — Python-owned, set at fetch time
     "already_seen", "application_status",
     "fit_score", "fit_subscores",
     "sponsorship_label", "sponsorship_evidence", "shortlist_rank",
@@ -78,8 +80,7 @@ RETENTION_HIGH_DAYS = 60
 RETENTION_LOW_DAYS = 15
 RESURFACE_AFTER_DAYS = 60
 
-# The 14-day discovery window. drop_stale and prune_raw_files are the same
-# window seen from two ends; separate literals let them drift apart.
+# The discovery window: drop_stale and load_raw_window both read it.
 MAX_AGE_DAYS = 14
 # Shorter than this is a JS shell or a truncated fetch, not a JD. ingest_url
 # quotes this in its error message.
@@ -91,11 +92,11 @@ PREVIEW_COLUMNS = [
 ]
 
 # Vertical classification fallback (`vertical` column). Scraped
-# JobSpy rows are tagged by discovery.py at scrape time (which term list
+# JobSpy rows are tagged by sources/jobspy_source.py at scrape time (which term list
 # found them — the authoritative signal). This classifier exists only for
 # two fallback cases, both handled here so there is one source of truth:
 #   1. Manual inbox/*.md clips (no search term to key off) — called directly
-#      from discovery.parse_inbox_file.
+#      from inbox.parse_inbox_file.
 #   2. Legacy raw rows from before this column existed, or any row that
 #      otherwise reaches project_raw with vertical="" — backfilled below so
 #      a stale empty-vertical row never wins exact_dedupe over a freshly
@@ -106,7 +107,7 @@ PREVIEW_COLUMNS = [
 # classifies as "" rather than guessed.
 def classify_vertical_from_title(title: str | None) -> str:
     """Title-keyword fallback classifier. Returns a configured vertical name
-    or "" (unclassified). Never called when discovery.py already set a
+    or "" (unclassified). Never called when the scrape already set a
     vertical from the search term that found the row — see comment above."""
     if not isinstance(title, str) or not title:
         return ""
@@ -120,7 +121,6 @@ _VIA_SOURCES = ("linkedin", "indeed", "glassdoor", "google", "ziprecruiter", "zi
 _VIA_RE = re.compile(
     r"\s+via\s+(?:" + "|".join(re.escape(v) for v in _VIA_SOURCES) + r")\s*$"
 )
-_LEGACY_SUFFIX_RE = re.compile(r"[,\s]+(?:inc|llc|ltd|corp)\.?\s*$")
 _SUFFIX_RE = re.compile(r"\s+(?:inc|llc|corp|corporation|ltd|limited|co|gmbh|plc|sa)\s*$")
 _LEADING_THE_RE = re.compile(r"^the\s+")
 _WS_RE = re.compile(r"\s+")
@@ -211,18 +211,18 @@ def drop_stale(
 def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     if df.empty:
         return df.copy()
-        
+
     allow_countries = {c.lower() for c in cfg.location_allowlist.countries}
     allow_states = {s.lower() for s in cfg.location_allowlist.states}
     allow_cities = {c.lower() for c in cfg.location_allowlist.cities}
-    
+
     keep_indices = []
     new_locations = []
-    
+
     for idx, raw_loc in zip(df.index, df["location"]):
         raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
         parsed = parse_location(raw_loc_str)
-        
+
         # 1. Nothing parsed, or remote-only -> KEEP
         if not parsed.country and not parsed.state and not parsed.city:
             keep_indices.append(idx)
@@ -231,7 +231,7 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
             else:
                 new_locations.append(raw_loc_str)
             continue
-            
+
         # 2. Parsed to a place positively OUTSIDE the allowlist -> DROP
         # 3. Parsed country/state/city all within location_allowlist (hierarchical) -> KEEP
         drop = False
@@ -241,7 +241,7 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
             drop = True
         elif allow_cities and parsed.city and parsed.city.lower() not in allow_cities:
             drop = True
-            
+
         if not drop:
             keep_indices.append(idx)
             canon = ""
@@ -251,13 +251,13 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
                 canon = parsed.state
             elif parsed.country:
                 canon = parsed.country
-                
+
             if parsed.remote:
                 # Remote plus a parsed place keeps both: "Remote - Austin, TX".
                 canon = f"Remote - {canon}" if canon else "Remote"
-            
+
             new_locations.append(canon)
-            
+
     filtered = df.loc[keep_indices].copy()
     filtered["location"] = new_locations
     return filtered
@@ -497,7 +497,7 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].fillna(default).astype(str)
     # Backfill empty vertical from title (legacy raw rows predating this
     # column, or any row that otherwise reached here unclassified). Never
-    # overrides a vertical discovery.py already set from the search term.
+    # overrides a vertical the scrape already set from the search term.
     needs_fallback = df["vertical"] == ""
     if needs_fallback.any():
         df.loc[needs_fallback, "vertical"] = (
@@ -696,9 +696,9 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"(dropped {stats.get('dropped_exclusion', 0)})",
         f"- after blank-company drop: {stats.get('after_blank_company', 0)} "
         f"(dropped {stats.get('dropped_blank_company', 0)})",
-        f"- after short-JD drop (<200 chars): {stats.get('after_short_jd', 0)} "
+        f"- after short-JD drop (<{MIN_JD_CHARS} chars): {stats.get('after_short_jd', 0)} "
         f"(dropped {stats.get('dropped_short', 0)})",
-        f"- after stale drop (>14d): {stats.get('after_stale', 0)} "
+        f"- after stale drop (>{MAX_AGE_DAYS}d): {stats.get('after_stale', 0)} "
         f"(dropped {stats.get('dropped_stale', 0)})",
         f"- after location filter: {stats.get('after_location', 0)} "
         f"(dropped {stats.get('dropped_location', 0)})",
@@ -714,12 +714,12 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         "### Per-source counts (raw -> final)",
         "",
     ]
-    
+
     drops_per_vertical = stats.get("drops_per_vertical", {})
     if drops_per_vertical:
         for vertical, count in sorted(drops_per_vertical.items()):
             lines.insert(-2, f"- {vertical}: title-excluded {count} rows")
-    
+
     src_counts = stats.get("per_source", {})
     if src_counts:
         lines.append("| source | raw | final |")
@@ -759,8 +759,8 @@ def write_outputs(
         for _, row in df[preview_cols].iterrows():
             d = row.to_dict()
             for k, v in list(d.items()):
-                # pd.NaT is NaTType, not Timestamp or float, so it matched
-                # neither branch and json's default=str wrote the string "NaT".
+                # NaT is neither Timestamp nor float; null it explicitly, or
+                # json's default=str writes the string "NaT".
                 if v is pd.NaT or (isinstance(v, float) and pd.isna(v)):
                     d[k] = None
                 elif isinstance(v, pd.Timestamp):
@@ -839,7 +839,7 @@ def run(
     # step 7 — seen-ledger
     today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     ledger_path = clean_dir / "seen.parquet"
-    
+
     ledger = update_seen_ledger(
         df["job_id"].tolist(),
         ledger_path,

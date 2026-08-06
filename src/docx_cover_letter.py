@@ -1,15 +1,13 @@
 """Cover-letter rendering: fill placeholders in the user's own .docx design.
 
-Split out of docx_render, which was two unrelated renderers in one file. This
-one mutates an existing template in place and must leave every paragraph, style,
-header, footer and image it does not own byte-for-byte untouched. The resume
-renderer next door does the opposite — it clears the body and writes fresh
-blocks — so the two share nothing but the template-contract exceptions.
+This renderer mutates an existing template in place and must leave every
+paragraph, style, header, footer and image it does not own byte-for-byte
+untouched. The resume renderer next door does the opposite — it clears the body
+and writes fresh blocks — so the two share nothing but the template contract.
 """
 from __future__ import annotations
 
 import copy
-import re
 from pathlib import Path
 
 from docx import Document

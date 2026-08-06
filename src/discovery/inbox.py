@@ -103,7 +103,7 @@ class InboxSource(Source):
             rows = df.to_dict("records")
         else:
             rows = []
-            
+
         lines = [
             f"Inbox: processed={counts.get('processed', 0)}, malformed={counts.get('malformed', 0)}"
         ]

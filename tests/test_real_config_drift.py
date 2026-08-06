@@ -88,3 +88,16 @@ def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
             assert not exclude_rx.search(term), (
                 f"{vertical.name}: a search term trips its own title_exclude_terms"
             )
+
+
+def test_disqualifier_title_phrases_do_not_match_the_lanes_own_search_terms(real_cfg):
+    """A title disqualifier that fires on the lane's own search term auto-skips
+    every row that term finds, before any judge sees it."""
+    for vertical in real_cfg.verticals.values():
+        phrases = vertical.disqualifier_title_phrases or ()
+        for phrase in phrases:
+            for term in vertical.search_terms:
+                assert phrase.lower() not in term.lower(), (
+                    f"{vertical.name}: title disqualifier {phrase!r} matches its "
+                    f"own search term {term!r}"
+                )

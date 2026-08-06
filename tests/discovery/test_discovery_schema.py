@@ -15,7 +15,7 @@ def test_make_row_job_url_direct_fallback():
     row = make_row(job_url="http://example.com")
     assert row["job_url"] == "http://example.com"
     assert row["job_url_direct"] == "http://example.com"
-    
+
     row2 = make_row(job_url="http://example.com", job_url_direct="http://direct.com")
     assert row2["job_url"] == "http://example.com"
     assert row2["job_url_direct"] == "http://direct.com"
@@ -82,7 +82,7 @@ def test_validate_frame_coerces_amounts():
     row["ingested_run_id"] = "1"
     row["scraped_date"] = pd.Timestamp.now()
     df = pd.DataFrame([row])
-    
+
     validated = validate_frame(df)
     assert pd.isna(validated["min_amount"].iloc[0])
     assert pd.isna(validated["max_amount"].iloc[0])

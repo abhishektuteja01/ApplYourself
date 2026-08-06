@@ -727,7 +727,7 @@ def test_apply_expiry_tiers_and_tracked_exemption():
 def test_load_raw_window_shards(tmp_path):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    
+
     # legacy file
     pd.DataFrame([{"id": 1, "source": "jobspy"}]).to_parquet(raw_dir / "2026-07-15_1200.parquet")
     # new shards
@@ -735,7 +735,7 @@ def test_load_raw_window_shards(tmp_path):
     pd.DataFrame([{"id": 3, "source": "lever"}]).to_parquet(raw_dir / "2026-07-15_1200_lever.parquet")
     # stale file (should be ignored)
     pd.DataFrame([{"id": 4, "source": "old"}]).to_parquet(raw_dir / "2026-05-01_1200.parquet")
-    
+
     df = load_raw_window(raw_dir, today=pd.Timestamp("2026-07-16"))
     assert len(df) == 3
     assert set(df["source"]) == {"jobspy", "greenhouse", "lever"}
@@ -849,7 +849,7 @@ def test_apply_expiry_boundary_day_still_visible():
 def test_location_filter():
     from src.discovery.config import DiscoveryConfig, LocationAllowlist
     from src.discovery.cleaning import filter_and_canonicalize_location
-    
+
     cfg = DiscoveryConfig(
         location_allowlist=LocationAllowlist(countries=["United States"])
     )
@@ -857,7 +857,7 @@ def test_location_filter():
         "job_id": ["1", "2", "3", "4", "5", "6"],
         "location": ["Austin, Texas", "Berlin, Germany", "", "Remote", "San Francisco, CA", "London, UK"]
     })
-    
+
     out = filter_and_canonicalize_location(df, cfg)
     assert len(out) == 4
 
@@ -974,28 +974,28 @@ def test_dedupe_survivor_chosen_among_in_allowlist_rows(tmp_path, monkeypatch):
 def test_prune_raw_files(tmp_path):
     from src.discovery.config import DiscoveryConfig
     from src.discovery.cleaning import prune_raw_files
-    
+
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    
+
     # recent kept
     recent_path = raw_dir / "2026-07-10_1200.parquet"
     recent_path.write_text("dummy", encoding="utf-8")
-    
+
     # old file deleted
     old_path = raw_dir / "2026-06-01_1200.parquet"
     old_path.write_text("dummy", encoding="utf-8")
-    
+
     # unparseable name kept
     unparse_path = raw_dir / "not_a_date.parquet"
     unparse_path.write_text("dummy", encoding="utf-8")
-    
+
     cfg = DiscoveryConfig(raw_retention_days=30)
     today = pd.Timestamp("2026-07-15")
-    
+
     pruned = prune_raw_files(raw_dir, cfg, today)
     assert pruned == 1
-    
+
     assert recent_path.exists()
     assert unparse_path.exists()
     assert not old_path.exists()
@@ -1029,7 +1029,7 @@ def test_term_pattern_matches_terms_ending_in_punctuation(term, title, expected)
 def test_title_exclusion(cfg):
     from src.discovery.cleaning import apply_title_exclusion
     import pandas as pd
-    
+
     df = pd.DataFrame([
         {"title": "Senior Software Engineer (Cog Agents)", "vertical": "example_tertiary", "source": "linkedin"},
         {"title": "Sr. Cog Engineering Lead", "vertical": "example_tertiary", "source": "linkedin"},
@@ -1173,3 +1173,28 @@ def test_clean_preview_jsonl_is_written_and_json_safe(tmp_path):
     assert missing["fit_score"] is None
     dated = next(r for r in rows if r["posted_date"] is not None)
     assert dated["posted_date"].startswith("2026-06-01")
+
+
+def test_compound_classified_titles_survive_the_title_gate(cfg):
+    """The fixture's CompoundRule admits "Cog Learning" only with a
+    platform/agents qualifier — but `cog learning` is also a title_exclude_term,
+    so without a matching title_strong_keep_terms entry every title that rule
+    classified was then dropped, leaving the compound branch dead end to end."""
+    from src.discovery.cleaning import apply_title_exclusion
+    import pandas as pd
+
+    for title in ("Cog Learning Platform Engineer", "Cog Learning Engineer, Agents"):
+        assert classify_vertical_from_title(title) == "example_tertiary"
+
+    df = pd.DataFrame([
+        {"title": "Cog Learning Platform Engineer", "vertical": "example_tertiary",
+         "source": "linkedin"},
+        {"title": "Cog Learning Engineer", "vertical": "example_tertiary",
+         "source": "linkedin"},
+    ])
+    out, _ = apply_title_exclusion(df, cfg)
+    titles = out["title"].tolist()
+    # strong-keep overrides the exclude term...
+    assert "Cog Learning Platform Engineer" in titles
+    # ...but a bare "Cog Learning" title is still out-of-lane by charter.
+    assert "Cog Learning Engineer" not in titles

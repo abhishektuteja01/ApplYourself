@@ -163,6 +163,9 @@ verticals:
       - distinguished
       - research scientist
       - cog learning
+    title_strong_keep_terms:
+      - cog learning platform
+      - cog learning agents
     skill_weights:
       cog_stack:
         cog_agents: 9

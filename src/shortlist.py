@@ -1,8 +1,5 @@
-"""Shortlist computation and rendering.
-
-Split out of scoring_io: deciding which rows make the cut, and rendering the
-markdown a human reads, are neither of them parquet I/O — rendering markdown
-had no business in a file named _io.
+"""Shortlist computation and rendering: which rows make the cut, and the markdown
+a human reads.
 
 Deterministic (R7): a sort, a cap, an exclusion split, and a template. The
 invariants are asserted inline rather than trusted, because a silently dropped
@@ -166,7 +163,8 @@ def render_shortlist_markdown(
             lines.append("No keepers today in this vertical.")
         for i, row in enumerate(rows, 1):
             assert row["vertical"] == v, f"{row['job_id']} leaked into {v} section"
-            assert row["fit_score"] >= 50, f"{row['job_id']}: fit {row['fit_score']} < 50"
+            assert row["fit_score"] >= SHORTLIST_MIN_FIT, \
+                f"{row['job_id']}: fit {row['fit_score']} < {SHORTLIST_MIN_FIT}"
             sub = subscores(row)
             assert sum(sub[a] for a in SUBSCORE_AXES) == row["fit_score"], \
                 f"{row['job_id']}: subscores {sub} != fit_score {row['fit_score']}"
@@ -185,7 +183,7 @@ def render_shortlist_markdown(
                 f"- **mirror in tailoring:** {kws}\n"
                 f"- **status:** {status}\n"
                 f"- **suggested:** {row['suggested_action']}\n"
-                f"- **verify E-Verify** before submitting (manual v1 step)\n"
+                f"- **verify E-Verify** before submitting (manual step)\n"
                 f"- {row['url']}\n"
             )
         sections.append("\n".join(lines))

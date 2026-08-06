@@ -11,7 +11,7 @@ argument-hint: <job_id> <channel> [--to "..."] [--via "..."]
 
 # /outreach — draft message in the user's voice
 
-Three channels in v1: `recruiter`, `referral`, `alumni`.
+Three channels: `recruiter`, `referral`, `alumni`.
 **NO cold-DM hiring managers.** NO drip campaigns. NO auto-send.
 Draft only -- the user sends.
 

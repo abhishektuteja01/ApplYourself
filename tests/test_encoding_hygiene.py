@@ -100,3 +100,23 @@ def test_every_text_io_call_names_utf8(path):
         + ", ".join(f"line {n}: {call}()" for n, call in offenders)
         + " — pass encoding=\"utf-8\"."
     )
+
+
+# ---------------------------------------------------------------------
+# Whitespace hygiene. Not encoding, but the same argument: invisible on a dev
+# box, and a scan is the only thing that catches a regression.
+# ---------------------------------------------------------------------
+
+def test_no_trailing_whitespace_in_python_files():
+    """No line ends in whitespace — including indented blank lines, which are
+    invisible in an editor and show up as diff noise for the next reader."""
+    offenders = []
+    for path in _source_files():
+        for lineno, line in enumerate(
+            path.read_text(encoding="utf-8").split("\n"), start=1
+        ):
+            if line != line.rstrip():
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno}")
+    assert not offenders, (
+        f"{len(offenders)} line(s) end in whitespace: {offenders[:10]}"
+    )

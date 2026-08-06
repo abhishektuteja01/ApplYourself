@@ -16,12 +16,12 @@ class JobSpySource(Source):
         rows = []
         errors = []
         report_lines = []
-        
+
         pacing = ctx.config.sources[self.name].pacing_seconds
         pacing = max(0.5, pacing)
-        
+
         locations = ctx.config.location_allowlist.countries or ["United States"]
-        
+
         total_queries = 0
 
         for v in ctx.verticals.verticals.values():
@@ -31,12 +31,12 @@ class JobSpySource(Source):
                     for is_remote in (False, True):
                         if ctx.deadline_reached():
                             return SourceResult(rows, report_lines, errors)
-                            
+
                         if total_queries > 0:
                             time.sleep(pacing)
-                            
+
                         total_queries += 1
-                        
+
                         try:
                             df = scrape_jobs(
                                 site_name=self.name,
@@ -58,7 +58,7 @@ class JobSpySource(Source):
                             msg = f"{type(e).__name__}: {e}"
                             errors.append(f"{self.name} term='{term}' remote={is_remote}: {msg}")
                             df = pd.DataFrame()
-                            
+
                         if not df.empty:
                             df = df.where(pd.notnull(df), None)
                             records = df.to_dict("records")

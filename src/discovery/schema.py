@@ -49,32 +49,32 @@ def make_row(**kwargs) -> dict:
         "job_level": "",
         "vertical": "",
     }
-    
+
     for k, v in kwargs.items():
         if k in row:
             row[k] = v
-            
+
     if "job_url_direct" not in kwargs or not kwargs["job_url_direct"]:
         row["job_url_direct"] = row["job_url"]
-        
+
     return row
 
 def validate_frame(df: pd.DataFrame) -> pd.DataFrame:
     required_cols = set(COLUMNS + ["ingested_run_id", "scraped_date"])
     actual_cols = set(df.columns)
-    
+
     if required_cols != actual_cols:
         raise ValueError(
             f"Frame validation failed. "
             f"Missing: {required_cols - actual_cols}, "
             f"Extra: {actual_cols - required_cols}"
         )
-        
+
     df = df.copy()
-    
+
     for col in ("min_amount", "max_amount"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
-        
+
     # shards must be naive before they are concatenated
     df["date_posted"] = naive_datetime(df["date_posted"])
     return df
