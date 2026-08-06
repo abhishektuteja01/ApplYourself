@@ -77,11 +77,12 @@ uv run pytest tests -q     # should be fully green
 
 ### Configuration
 
-Run **`/onboarding`** in Claude Code. It interviews you through the whole
-install — the PII gate, every `profile/` file, your first lane, discovery
-config — one question at a time, and you can stop after any stage and re-run to
-continue. Reaching a first scored shortlist takes about 2.5–3.5 hours, most of
-it spent deciding which of your own bullets you will stand behind.
+Run **`/onboarding`** in Claude Code. It reads your resume, drafts every
+`profile/` file for you, and asks only what it cannot infer — your constraints,
+your first lane, where you will work. About half an hour end to end, and you can
+stop after any stage and re-run to continue. The one part that needs your
+attention is the bullet review: you strike anything you would not defend on a
+call.
 
 It also runs as a setup audit: `/onboarding audit` on an existing install
 reports what is missing or invalid without changing anything.
@@ -110,7 +111,7 @@ uv run verticals-check     # validates config + per-lane files, fails loud
 `profile/de_ai_rules.yaml` ships `bullets_diction_pass_completed: false`, which
 holds your canonical bullet text to the same banned-phrase linting as generated
 prose. Once you have read your bullets for diction yourself, set it to `true` to
-exempt them. (`/onboarding` walks you through that pass.)
+exempt them. (`/onboarding` offers to flip it once you have reviewed them.)
 
 To add a lane of your own, run **`/new-vertical`** — it interviews you and
 writes every piece. Copying `profile/verticals/example_primary/` by hand is not
@@ -195,8 +196,8 @@ Slash commands (in Claude Code): `/onboarding`, `/score`, `/rescore`, `/tailor`,
 the scrape at 02:00, wrapped in `caffeinate` so sleep does not kill it mid-run. A
 `launchd` job whose start time falls while the Mac is asleep is skipped rather
 than deferred, so it needs a `pmset` wake a few minutes earlier. `/onboarding`
-Track C walks through it; scoring stays a morning decision, since it needs a
-Claude Code session.
+prints the install block for you at the end; scoring stays a morning decision,
+since it needs a Claude Code session.
 
 Read a command's `.md` before running it — the real orchestration logic lives
 there, not in `src/`.
@@ -223,8 +224,11 @@ git config core.hooksPath .githooks                            # once per clone
 git add -A && ./scripts/pii_scan.sh                            # or run it by hand
 ```
 
-`/onboarding` Stage 2 does this as an interview, one category at a time, which is
-the easier way to get a denylist that is actually complete.
+This is opt-in and off the setup path: `/onboarding` does not touch it, because
+a fork you never push anywhere public does not need it. Set it up before your
+first push if you do publish, and work through the categories deliberately —
+name, email, phone, address, government identifiers, local filesystem paths,
+handles, other people's names, employers and schools.
 
 Your denylist is gitignored — the list of strings to keep out is itself the thing
 being kept out. Patterns match whole words by default, so a short abbreviation in
