@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import argparse
+import re
 import sys
 import time
 import traceback
@@ -29,8 +30,15 @@ JOBS_RUNS = paths.JOBS_RUNS
 JOBS_ROOT = paths.JOBS
 PIPELINE = paths.PIPELINE
 
+RUN_ID_FMT = "%Y-%m-%d_%H%M"
+# Shards are named "<run_id>_<source>.parquet" and cleaning only reads back the
+# ones whose name parses as this shape, so a malformed --resume id scrapes into
+# files nothing will ever load.
+_RUN_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{4}$")
+
+
 def current_run_id(now: datetime | None = None) -> str:
-    return (now or datetime.now()).strftime("%Y-%m-%d_%H%M")
+    return (now or datetime.now()).strftime(RUN_ID_FMT)
 
 class Context:
     def __init__(self, config, deadline_ts: float):
@@ -49,9 +57,14 @@ def get_sources():
 def main(args=None):
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--resume", type=str, help="Resume run ID")
+    parser.add_argument("--resume", type=str, metavar="YYYY-MM-DD_HHMM",
+                        help="Resume run ID")
     parsed = parser.parse_args(args)
-    
+
+    if parsed.resume is not None and not _RUN_ID_RE.match(parsed.resume):
+        sys.exit(f"ERROR: --resume {parsed.resume!r} is not a run id. "
+                 "Expected YYYY-MM-DD_HHMM, as printed by the run being resumed.")
+
     try:
         config = load_config()
     except (FileNotFoundError, ValueError) as e:
@@ -91,7 +104,7 @@ def main(args=None):
             pruned_count = health_df["pruned_at"].notna().sum()
             report_lines.append(f"Universe Health: {pruned_count} companies pruned (3x dead board)")
             report_lines.append("")
-        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+        except (OSError, ValueError, KeyError) as e:
             log.warning("Could not read universe health for report: %s", e)
     
     sources = get_sources()
