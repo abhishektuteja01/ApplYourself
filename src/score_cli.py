@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from datetime import date
 import sys
 from pathlib import Path
 
@@ -296,13 +297,11 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
 
 
 def _cmd_render(args: argparse.Namespace) -> int:
-    from datetime import date
-
     cfg = verticals.get_config()
-    result = compute_shortlist(SCORED, CLEAN, PIPELINE, top_n=25, min_fit=50)
+    result = compute_shortlist(SCORED, CLEAN, PIPELINE)
     n_scored = len(pd.read_parquet(SCORED)) if SCORED.exists() else 0
     n_clean = len(pd.read_parquet(CLEAN))
-    date_str = date.today().isoformat()
+    date_str = args.today or date.today().isoformat()
     md = render_shortlist_markdown(result, cfg, date_str, n_scored, n_clean)
 
     out_dir = Path("shortlist")
@@ -327,6 +326,8 @@ def main(argv: list[str] | None = None) -> int:
     p_prep.set_defaults(func=_cmd_prepare)
 
     p_render = sub.add_parser("render", help="write shortlist/<date>.md")
+    p_render.add_argument("--today", default=None, metavar="YYYY-MM-DD",
+                          help="override the filename date (testing)")
     p_render.set_defaults(func=_cmd_render)
 
     p_dump = sub.add_parser("dump", help="clear staging, dump unscored, merge auto-skips")

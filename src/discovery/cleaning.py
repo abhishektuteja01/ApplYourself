@@ -758,10 +758,12 @@ def write_outputs(
         for _, row in df[preview_cols].iterrows():
             d = row.to_dict()
             for k, v in list(d.items()):
-                if isinstance(v, pd.Timestamp):
-                    d[k] = None if pd.isna(v) else v.isoformat()
-                elif isinstance(v, float) and pd.isna(v):
+                # pd.NaT is NaTType, not Timestamp or float, so it matched
+                # neither branch and json's default=str wrote the string "NaT".
+                if v is pd.NaT or (isinstance(v, float) and pd.isna(v)):
                     d[k] = None
+                elif isinstance(v, pd.Timestamp):
+                    d[k] = v.isoformat()
             f.write(json.dumps(d, default=str) + "\n")
     _append_cleaning_section(runs_dir / f"{run_id}.md", run_id, stats)
 

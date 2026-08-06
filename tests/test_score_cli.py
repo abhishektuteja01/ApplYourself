@@ -1,10 +1,11 @@
 import argparse
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from src import score_cli
+from src import score_cli, scoring_io
 from src.discovery.cleaning import CLEAN_COLUMNS
 from src.score_cli import coverage, judge_ranges, split_by_vertical
 
@@ -462,3 +463,71 @@ class TestRangesCommand:
         assert score_cli.main(["ranges"]) == 0
         out = capsys.readouterr().out
         assert "range example_primary 1-12" in out
+
+
+class TestCmdRender:
+    """_cmd_render writes to a CWD-relative Path("shortlist") and stamps the
+    filename from today's date — both untested, and both things a wrong CWD
+    turns into a file written somewhere nobody looks."""
+
+    def _setup(self, tmp_path, monkeypatch):
+        _make_clean(tmp_path, job_ids=("aaaaaaaa",))
+        monkeypatch.setattr(score_cli, "CLEAN", tmp_path / "clean.parquet")
+        monkeypatch.setattr(score_cli, "SCORED", tmp_path / "scored.parquet")
+        monkeypatch.setattr(score_cli, "PIPELINE", tmp_path / "pipeline")
+        monkeypatch.chdir(tmp_path)
+
+    def test_writes_shortlist_under_the_cwd_with_the_given_date(
+            self, tmp_path, monkeypatch, capsys):
+        self._setup(tmp_path, monkeypatch)
+        assert score_cli.main(["render", "--today", "2026-08-06"]) == 0
+        out = tmp_path / "shortlist" / "2026-08-06.md"
+        assert out.is_file()
+        assert "# Shortlist — 2026-08-06" in out.read_text(encoding="utf-8")
+        assert f"shortlist={Path('shortlist') / '2026-08-06.md'}" in capsys.readouterr().out
+
+    def test_header_reports_the_configured_caps_not_hardcoded_ones(
+            self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch)
+        score_cli.main(["render", "--today", "2026-08-06"])
+        body = (tmp_path / "shortlist" / "2026-08-06.md").read_text(encoding="utf-8")
+        assert (f"top {scoring_io.SHORTLIST_TOP_N} per vertical "
+                f"with fit >= {scoring_io.SHORTLIST_MIN_FIT}") in body
+
+    def test_creates_the_shortlist_dir_when_absent(self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch)
+        assert not (tmp_path / "shortlist").exists()
+        score_cli.main(["render", "--today", "2026-08-06"])
+        assert (tmp_path / "shortlist").is_dir()
+
+
+class TestCheckCoverageExitCode:
+    """/score gates on this exit code, so it is a contract, not a detail."""
+
+    def _staging(self, tmp_path, monkeypatch):
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        monkeypatch.setattr(score_cli, "STAGING", staging)
+        return staging
+
+    def test_rc_1_when_a_row_is_missing(self, tmp_path, monkeypatch, capsys):
+        staging = self._staging(tmp_path, monkeypatch)
+        _write_jsonl(staging / "unscored.jsonl",
+                     [{"job_id": "aaaaaaaa"}, {"job_id": "bbbbbbbb"}])
+        (staging / "batch_example_primary_001.json").write_text(
+            json.dumps([{"job_id": "aaaaaaaa"}]), encoding="utf-8")
+        assert score_cli.main(["check-coverage"]) == 1
+        assert "bbbbbbbb" in capsys.readouterr().out
+
+    def test_rc_0_when_coverage_is_exact(self, tmp_path, monkeypatch):
+        staging = self._staging(tmp_path, monkeypatch)
+        _write_jsonl(staging / "unscored.jsonl", [{"job_id": "aaaaaaaa"}])
+        (staging / "batch_example_primary_001.json").write_text(
+            json.dumps([{"job_id": "aaaaaaaa"}]), encoding="utf-8")
+        assert score_cli.main(["check-coverage"]) == 0
+
+    def test_rc_1_and_no_traceback_when_the_dump_is_gone(
+            self, tmp_path, monkeypatch, capsys):
+        self._staging(tmp_path, monkeypatch)
+        assert score_cli.main(["check-coverage"]) == 1
+        assert "between dump and merge" in capsys.readouterr().out

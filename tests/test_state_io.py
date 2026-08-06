@@ -480,3 +480,37 @@ def test_append_cover_letter_returns_the_written_state(tmp_path):
     transition(p, "saved", initial_fields=_initial())
     returned = append_cover_letter(p, "c1")
     assert returned == load_state(p)
+
+
+class TestEnsureState:
+    """ensure_state is the R10 boundary: /tailor uses it to register a role
+    without becoming a transition writer. Untested until now, so nothing
+    stopped it from quietly appending history on an existing role."""
+
+    def test_creates_at_saved_when_absent(self, tmp_path):
+        p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+        data, created = ensure_state(p, _initial(), now=datetime(2026, 6, 1))
+        assert created is True
+        assert data["state"] == "saved"
+        assert len(data["state_history"]) == 1
+
+    def test_is_a_no_op_that_appends_no_history_on_an_existing_role(self, tmp_path):
+        p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+        transition(p, "saved", initial_fields=_initial(), now=datetime(2026, 6, 1))
+        transition(p, "applied", now=datetime(2026, 6, 2))
+        before = _yaml_load(p)
+
+        data, created = ensure_state(p, _initial(), now=datetime(2026, 6, 3))
+        assert created is False
+        assert data["state"] == "applied"
+        assert _yaml_load(p) == before, "ensure_state must not write anything"
+
+    def test_leaves_a_terminal_state_untouched(self, tmp_path):
+        """A re-tailor of a rejected role must not resurrect it, and must not
+        trip the terminal-state guard either."""
+        p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+        transition(p, "saved", initial_fields=_initial(), now=datetime(2026, 6, 1))
+        transition(p, "rejected", now=datetime(2026, 6, 2))
+        data, created = ensure_state(p, _initial(), now=datetime(2026, 6, 3))
+        assert created is False
+        assert data["state"] == "rejected"

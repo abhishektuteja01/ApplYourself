@@ -7,6 +7,7 @@ and break pipeline/<job_id>/state.yaml + applications/<dir> keys."""
 from __future__ import annotations
 
 import inspect
+import json
 import re
 import warnings
 from pathlib import Path
@@ -1148,3 +1149,39 @@ def test_title_inclusion_gate_tertiary(cfg):
         assert t not in titles, f"{t} should be dropped by the example_tertiary gate"
     assert "Totally Off-Lane Widget Maker" in titles
     assert drops["example_tertiary"] == len(drop)
+
+
+def test_clean_preview_jsonl_is_written_and_json_safe(tmp_path):
+    """The second documented cleaning output, and nothing asserted on it. It is
+    the file a human greps when clean.parquet looks wrong, so a NaN or a
+    Timestamp leaking through as a non-JSON value makes it unreadable."""
+    raw_dir = _make_raw_parquet(tmp_path, [
+        {"company": "Acme Inc", "title": "Widget Functional Consultant",
+         "description": "x" * 300, "date_posted": pd.Timestamp("2026-06-01")},
+        # No date at all: posted_date is NaT and salary is NaN downstream.
+        {"company": "Beta LLC", "title": "Gizmo Business Analyst",
+         "description": "y" * 300, "date_posted": None},
+    ])
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    preview = tmp_path / "jobs" / "clean.preview.jsonl"
+    lines = [l for l in preview.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(lines) == len(out)
+
+    rows = [json.loads(l) for l in lines]
+    # Exactly the preview columns, in order — not the whole 28-column schema.
+    for row in rows:
+        assert list(row) == cleaning.PREVIEW_COLUMNS
+    # job_id joins the preview back to clean.parquet.
+    assert {r["job_id"] for r in rows} == set(out["job_id"])
+    # NaT/NaN become null, and timestamps become ISO strings, not repr junk.
+    missing = next(r for r in rows if r["posted_date"] is None)
+    assert missing["fit_score"] is None
+    dated = next(r for r in rows if r["posted_date"] is not None)
+    assert dated["posted_date"].startswith("2026-06-01")
