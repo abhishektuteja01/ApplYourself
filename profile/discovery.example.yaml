@@ -4,8 +4,8 @@ location_allowlist:
   countries: ["United States"]
   # states: ["TX", "NY"]      # optional narrowing; empty/absent = all states
   # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
-# All 7 keys the loader accepts. An omitted key falls back to the code default
-# in src/discovery/config.py, so list every source here to stay explicit.
+# Every source the loader accepts. An omitted key falls back to the code default
+# in src/discovery/config.py, so list them all to stay explicit.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3}
   indeed:        {enabled: true,  pacing_seconds: 2}

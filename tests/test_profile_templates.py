@@ -348,3 +348,12 @@ class TestExampleEntrySchemas:
             assert re.fullmatch(r"B-[A-Z]+-\d{2}", entry_id), (
                 f"bullet id {entry_id!r} does not match B-<CTX>-NN"
             )
+
+
+def test_committed_de_ai_rules_ships_the_diction_gate_off():
+    """de_ai_rules.yaml is a committed default, so a fresh clone runs with
+    whatever it says. src/lint.py defaults the gate to False when the key is
+    absent; the shipped file must not override that to True, or a new user's
+    canonical bullets skip Tier-2 diction linting before they have read them."""
+    rules = yaml.safe_load((PROFILE / "de_ai_rules.yaml").read_text(encoding="utf-8"))
+    assert rules["bullets_diction_pass_completed"] is False

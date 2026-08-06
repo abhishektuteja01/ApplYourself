@@ -186,4 +186,4 @@ outreach_only:
 # CONDITIONAL EXEMPTION GATE.
 # Flip to true ONLY after the one-time onboarding diction pass over bullets.md.
 # Until true, bullets.md text is fully linted in tailored docx context.
-bullets_diction_pass_completed: true
+bullets_diction_pass_completed: false

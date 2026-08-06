@@ -169,24 +169,20 @@ This is the longest stage and the one that matters most. Say so up front.
    - `.pdf` or `.md` → read it directly
 2. `cp profile/bullets.example.md profile/bullets.md`, then delete the example
    entries, keeping the header comment.
-3. Set `bullets_diction_pass_completed: false` in `profile/de_ai_rules.yaml`. It
-   ships `true`, which exempts verbatim canonical text from banned-phrase
-   linting — an exemption that makes no sense for bullets that do not exist yet.
-   Step 8 offers to turn it back on.
-4. Group their experience into contexts (one per employer, project, or degree)
+3. Group their experience into contexts (one per employer, project, or degree)
    and agree a short `<CTX>` tag for each. Bullet ids are `B-<CTX>-NN` with a
    zero-padded two-digit sequence (`B-WID-01`), because `skills_master.md`'s
    `evidence:` references point at them.
-5. **Per bullet, one at a time:** draft `canonical` from what their resume
+4. **Per bullet, one at a time:** draft `canonical` from what their resume
    actually says, then show it and ask a single question — "can you defend this
    sentence on a call?" Accept, reword, or drop. Fill `source`, `tags`,
    `evidence` from their answer.
-6. Leave `allowable_synonyms: []` for now. Track B fills it from real job
+5. Leave `allowable_synonyms: []` for now. Track B fills it from real job
    postings via `/suggest-synonyms`; guessing synonyms before seeing a posting
    wastes the pass.
-7. Every 3–4 bullets, report progress and offer to pause. This stage is
+6. Every 3–4 bullets, report progress and offer to pause. This stage is
    resumable mid-way: bullets already written stay written.
-8. When every bullet is written, offer to read them back for diction and, if the
+7. When every bullet is written, offer to read them back for diction and, if the
    user accepts and is satisfied, set `bullets_diction_pass_completed: true`.
    Leave it `false` otherwise — it only claims the pass happened.
 

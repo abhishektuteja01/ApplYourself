@@ -27,7 +27,6 @@ hard_ineligible:
   - "public trust clearance"
 
 ineligible:
-  - "US citizen"
   - "US citizenship required"
   - "must be a US citizen"
   - "green card required"

@@ -24,7 +24,7 @@
   "vertical": "example_primary",
   "sponsorship_label": "opt_ok",
   "sponsorship_evidence": "no visa sponsorship",
-  "reasoning": "strong widget-assembly fit; senior stretch",
+  "reasoning": "strong widget-assembly fit; thin gizmo-domain signal",
   "keywords_to_mirror": ["widget assembly", "gizmo calibration"],
   "suggested_action": "tailor"
 }
