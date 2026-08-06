@@ -57,6 +57,11 @@ APPROVED_COVER_TEXT = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(
 # "manager" are app.xml properties, not core properties -- asserting them here
 # would raise AttributeError, and assigning them in the generator would silently
 # scrub nothing. They are checked against app.xml instead.
+# The run-text element, and ONLY it. A bare <w:t[^>]*> also matches <w:tbl>,
+# <w:tc>, <w:tr> and <w:tab/>, which swallows table markup into the "text" and
+# makes both the failure messages and the comparison unreliable.
+_W_T_RE = re.compile(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", re.S)
+
 CORE_PROPERTIES_MUST_BE_EMPTY = (
     "author",
     "last_modified_by",
@@ -68,6 +73,30 @@ CORE_PROPERTIES_MUST_BE_EMPTY = (
 )
 APP_PROPERTIES_MUST_BE_EMPTY = ("Company", "Manager", "HyperlinkBase")
 
+# Exact part list both templates must have. An allowlist, not a denylist: the
+# parts that carry identity (docProps/custom.xml, word/comments.xml,
+# word/people.xml, word/footnotes.xml, word/embeddings/*) are exactly the ones
+# nobody thinks to check for. customXml/item1.xml is python-docx's inherited
+# empty bibliography.
+EXPECTED_PARTS = {
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "customXml/_rels/item1.xml.rels",
+    "customXml/item1.xml",
+    "customXml/itemProps1.xml",
+    "docProps/app.xml",
+    "docProps/core.xml",
+    "word/_rels/document.xml.rels",
+    "word/document.xml",
+    "word/fontTable.xml",
+    "word/numbering.xml",
+    "word/settings.xml",
+    "word/styles.xml",
+    "word/stylesWithEffects.xml",
+    "word/theme/theme1.xml",
+    "word/webSettings.xml",
+}
+
 
 def _load_generator():
     spec = importlib.util.spec_from_file_location("make_example_templates", GENERATOR)
@@ -77,13 +106,37 @@ def _load_generator():
 
 
 def _document_text(path: Path) -> set[str]:
-    """Every non-empty body paragraph string in the file.
+    """Every non-empty body paragraph string, as python-docx sees it.
 
-    Paragraph.text concatenates a paragraph's runs, so text Word split across
-    several runs still surfaces as one string.
+    Used for the contract tests, which care about what the RENDERERS read.
+    Never use it as the PII guard: see _all_package_text.
     """
     doc = Document(str(path))
     return {p.text.strip() for p in doc.paragraphs if p.text.strip()}
+
+
+def _all_package_text(path: Path) -> set[str]:
+    """Every <w:t> string in every XML part of the archive.
+
+    The PII guard has to be closed by construction, and Document.paragraphs is
+    not: it reads direct w:r/w:hyperlink children of top-level w:p elements in
+    word/document.xml only. Text in a table cell, a content control (w:sdt), a
+    tracked insertion (w:ins), a smart tag, a text box (w:txbxContent), a
+    footnote, or a comment is invisible to it — and render_cover_letter
+    preserves all of those verbatim into a generated letter.
+    """
+    found: set[str] = set()
+    with zipfile.ZipFile(path) as zf:
+        for name in zf.namelist():
+            if not name.endswith(".xml"):
+                continue
+            xml = zf.read(name).decode("utf-8")
+            found |= {
+                text.strip()
+                for text in _W_T_RE.findall(xml)
+                if text.strip()
+            }
+    return found
 
 
 class TestFilesExist:
@@ -148,6 +201,18 @@ class TestCoverLetterTemplateContract:
         extra = _document_text(COVER_TEMPLATE) - APPROVED_COVER_TEXT
         assert not extra, f"template carries non-placeholder text: {sorted(extra)}"
 
+    def test_has_no_tables_shapes_or_headers(self):
+        """render_cover_letter preserves everything that is not a placeholder
+        paragraph. A letterhead table is the classic way identity text reaches
+        every letter while staying invisible to a paragraph-level scan."""
+        doc = Document(str(COVER_TEMPLATE))
+        assert not doc.tables, "a table here ships verbatim in every letter"
+        assert not doc.inline_shapes, "a shape here ships verbatim in every letter"
+        for i, section in enumerate(doc.sections):
+            for label, part in (("header", section.header), ("footer", section.footer)):
+                text = " ".join(p.text for p in part.paragraphs).strip()
+                assert not text, f"section {i + 1} {label} carries text: {text!r}"
+
     def test_renders_a_real_cover_letter(self, tmp_path):
         out = tmp_path / "cl.docx"
         render_cover_letter(
@@ -188,11 +253,41 @@ class TestNoPIILeak:
         ids=["resume", "cover_letter"],
     )
     def test_text_is_confined_to_the_approved_set(self, path, approved):
-        extra = _document_text(path) - approved
+        """Scans every XML part, not just body paragraphs — a letterhead table or
+        a tracked-change run would otherwise pass this and still ship."""
+        extra = _all_package_text(path) - approved
         assert not extra, (
             f"{path.name} gained text outside its approved set: {sorted(extra)}. "
             f"If this is intentional, update the approved set AND confirm the new "
             f"text carries no personal information."
+        )
+
+    @pytest.mark.parametrize(
+        "path", [RESUME_TEMPLATE, COVER_TEMPLATE], ids=["resume", "cover_letter"]
+    )
+    def test_carries_no_authored_revisions_or_comments(self, path):
+        """w:author appears on tracked changes and comments and carries a real
+        name. It is not text, so the scan above cannot see it."""
+        with zipfile.ZipFile(path) as zf:
+            for name in zf.namelist():
+                if not name.endswith(".xml"):
+                    continue
+                xml = zf.read(name).decode("utf-8")
+                assert "w:author" not in xml, f"{path.name}:{name} carries w:author"
+
+    @pytest.mark.parametrize(
+        "path", [RESUME_TEMPLATE, COVER_TEMPLATE], ids=["resume", "cover_letter"]
+    )
+    def test_package_parts_are_an_exact_allowlist(self, path):
+        """A denylist of known-bad parts cannot hold a file whose only other
+        guard is disabled. Any new part — docProps/custom.xml, word/comments.xml,
+        word/people.xml, word/embeddings/* — must be reviewed deliberately."""
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+        assert names == EXPECTED_PARTS, (
+            f"{path.name} part list changed.\n"
+            f"  added:   {sorted(names - EXPECTED_PARTS)}\n"
+            f"  removed: {sorted(EXPECTED_PARTS - names)}"
         )
 
     @pytest.mark.parametrize(

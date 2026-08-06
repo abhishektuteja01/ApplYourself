@@ -13,7 +13,26 @@ root="$(git rev-parse --show-toplevel)"
 # 1. The working tree's tracked files.
 "$root/scripts/pii_scan.sh"
 
-# 2. The commits actually being pushed. The scan above reads the index, so it
+# 2. The two tracked .docx templates. pii_scan.sh allowlists them by name, so
+#    neither its binary check nor its text scan reads them, and the -G pickaxe
+#    below is text-only — git emits no diff lines for a .docx. Their entire
+#    guard is this test file. CI runs it too, but CI runs after the push, by
+#    which point the blob is public and reachable by SHA forever.
+#    Fails closed: no uv means the check did not run, which is not a pass.
+if ! command -v uv >/dev/null 2>&1; then
+  printf 'pre-push: FAIL — uv not found, so the .docx template guard could not run.\n' >&2
+  printf 'Those two files are allowlisted in pii_scan.sh; nothing else checks them.\n' >&2
+  exit 1
+fi
+if ! (cd "$root" && uv run pytest tests/test_example_templates.py -q >/dev/null 2>&1); then
+  printf 'pre-push: FAIL — profile/*.example.docx failed their guard.\n\n' >&2
+  (cd "$root" && uv run pytest tests/test_example_templates.py -q 2>&1 | tail -20) >&2
+  printf '\nDid you re-save one in Word? That stamps your name into the metadata.\n' >&2
+  printf 'Regenerate: uv run python scripts/make_example_templates.py\n' >&2
+  exit 1
+fi
+
+# 3. The commits actually being pushed. The scan above reads the index, so it
 #    says nothing about a file that was clean at HEAD but carried PII three
 #    commits ago — and pushing publishes every one of those blobs.
 denylist="$root/profile/pii_denylist.txt"
