@@ -28,16 +28,13 @@ hardcode a vertical name, search term, or company. Those come only from
 `profile/*.yaml` and `data/universe/*.csv`.
 
 **R7 and R10 are the only rule codes in this repo.** Every other rule is stated
-inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words. An
-`R<n>` anywhere else is local to `plans/discovery_plan.md`, whose numbering is
-its own and does not match this file's.
+inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 
 ## Pipeline stages (data flow)
 
 1. **Discovery** (`src/discovery/`, CLI `discover`) — deterministic, LLM-free
    overnight scrape. Sources in order: manual `inbox/*.md` clips → JobSpy
-   (LinkedIn + Indeed; ZipRecruiter and Google are wired but `enabled: false` —
-   dead upstream) → Greenhouse/Lever/Ashby JSON boards over
+   (LinkedIn + Indeed) → Greenhouse/Lever/Ashby JSON boards over
    `data/universe/*.csv` + `profile/companies.yaml`. Board/inbox rows are
    title-classified into a vertical at fetch time; unclassified rows dropped.
    Always ends by running cleaning (try/finally), even after a crash/deadline.
@@ -81,7 +78,8 @@ is the single source of truth loader.
 - Consumers must call `verticals.get_config()` **inside function bodies**, never at
   module level, so test injection via `set_config()` always wins.
 - Templates for onboarding a new vertical: `profile/*.example.yaml` and
-  `profile/verticals/example_{primary,secondary}/`. Use `/new-vertical`.
+  `profile/verticals/example_*/` (three: primary, secondary, tertiary — the
+  fixtures' `default_vertical` is tertiary). Use `/new-vertical`.
 
 > The two `tests/**/fixtures/verticals.yaml` files are **synthetic** — three
 > fictional verticals (`example_primary/secondary/tertiary`), no real search
@@ -92,13 +90,16 @@ is the single source of truth loader.
 
 ## Scoring architecture (`/score`)
 
-`/score` runs in **two modes** dispatched on `$ARGUMENTS`:
-- **Orchestrator mode** (no `--range`): runs deterministic `src.score_cli` plumbing
-  (dump → split → spawn judges → check-coverage → merge → shortlist), and fans out
-  parallel Sonnet **judge agents** over per-vertical row ranges. It never judges a
-  row itself and never reads JD/batch content — its context stays counts-only.
-- **Judge mode** (`--range A-B --vertical V`): a spawned agent judges lines A–B of
-  `jobs/scored.staging/unscored_<vertical>.jsonl`, writes batch files, never merges.
+`/score` takes no arguments. It runs the deterministic `src.score_cli`
+subcommands in order — `prepare` → judges → `check-coverage` → `merge` →
+`render` — and fans out parallel Sonnet judge agents over per-vertical row
+ranges. It never judges a row itself and never reads JD/batch content; its
+context stays counts-only.
+
+Judging is a **separate command file**, `score-judge.md`, spawned per range
+(`--range A-B --vertical V`). A judge reads lines A–B of
+`jobs/scored.staging/unscored_<vertical>.jsonl`, writes batch files, and never
+merges.
 
 A judge only picks rows from its assigned range — gaps/collisions are impossible by
 construction. Deterministic pre-screens (out-of-lane titles, per-vertical
@@ -167,10 +168,6 @@ allowlisted in-script.
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).
 - Read the relevant command `.md` before running its slash command — the real
   orchestration logic lives there, not in `src/`.
-- `HANDOFF.md` (live breakage/fixes) and `publish.md` (publish backlog) are
+- `HANDOFF.md` (live breakage/fixes) and `publish.md` (live backlog) are
   gitignored working notes. Read them if they exist locally; on a fresh clone
   they won't.
-- `plans/*.md` are reference, not instructions: `discovery_plan.md` is the
-  completed v2 discovery build, `discovery_next.md` its downstream handoff, and
-  `ats_application_forms_research.md` un-built research. Nothing there is a live
-  checklist to resume.

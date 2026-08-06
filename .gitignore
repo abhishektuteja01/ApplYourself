@@ -16,7 +16,7 @@ profile/*.docx.bak
 profile/pii_denylist.txt
 
 # =============================================================================
-# Job-search strategy — mine, not for a public repo (PRD §7.15).
+# Job-search strategy — mine, not for a public repo.
 # Committed templates: profile/verticals.example.yaml + profile/verticals/example_*/
 # (`profile/verticals/*` not `.../`: git cannot re-include children of an
 # excluded directory, only of an excluded glob.)
@@ -26,7 +26,7 @@ profile/verticals/*
 !profile/verticals/example_primary/
 !profile/verticals/example_secondary/
 !profile/verticals/example_tertiary/
-# Career-board watchlist (PRD §7.19); committed template: profile/companies.example.yaml
+# Career-board watchlist; committed template: profile/companies.example.yaml
 profile/companies.yaml
 # Discovery settings; committed template: profile/discovery.example.yaml
 profile/discovery.yaml
@@ -40,7 +40,7 @@ profile/*.md
 # =============================================================================
 jobs/raw/
 jobs/clean.parquet
-# Seen-ledger retention memory (PRD §7.20) — losing it only resets expiry clocks
+# Seen-ledger retention memory — losing it only resets expiry clocks
 jobs/seen.parquet
 jobs/clean.preview.jsonl
 jobs/scored.parquet

@@ -1,7 +1,8 @@
 # Career-board watchlist template. Copy to profile/companies.yaml
 # (gitignored — this is job-search strategy) and replace with real companies.
 #
-# Discovery polls each company's public ATS JSON board directly (src/careers.py):
+# Discovery polls each company's public ATS JSON board directly
+# (src/discovery/sources/ats/):
 #   greenhouse -> https://boards-api.greenhouse.io/v1/boards/<slug>/jobs?content=true
 #   lever      -> https://api.lever.co/v0/postings/<slug>?mode=json
 #   ashby      -> https://api.ashbyhq.com/posting-api/job-board/<slug>?includeCompensation=true
