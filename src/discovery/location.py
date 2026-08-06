@@ -40,12 +40,22 @@ COUNTRY_NAMES.update({
 })
 
 US_CITIES = {}
-# Sort by population descending so we get the biggest city for a name
 for city in sorted(CITIES.values(), key=lambda x: x.get('population', 0), reverse=True):
     if city['countrycode'] == 'US':
         name = city['name'].lower()
         if name not in US_CITIES:
             US_CITIES[name] = city
+
+# geonames names NYC "New York City"; postings write "New York".
+if 'new york city' in US_CITIES:
+    US_CITIES.setdefault('new york', US_CITIES['new york city'])
+
+# A country name that is also a US state or US city name is a namesake, not a
+# country signal: "Atlanta, Georgia" is US, and "Lebanon"/"Jamaica" read as their
+# US cities. Same "US wins the namesake" rule FOREIGN_CITIES applies below; each
+# of these countries stays reachable through its own major cities.
+for _namesake in set(STATE_NAMES) | set(US_CITIES):
+    COUNTRY_NAMES.pop(_namesake, None)
 
 # ISO2 country code -> canonical country name, for turning a foreign city's
 # `countrycode` into the same country string the country-name matcher emits.
@@ -87,7 +97,6 @@ def parse_location(raw: str) -> LocationParse:
     # separators are never used to pick one part — the reconcile step below
     # bails out on conflicting signals instead.
     found_countries = set()
-    found_states = set()
     found_city_names = set()
     
     text = raw
@@ -96,21 +105,25 @@ def parse_location(raw: str) -> LocationParse:
     # 1. Countries, on word boundaries. Names are stripped: an upstream entry
     # with a trailing space makes the closing \b unsatisfiable, so the name
     # matches nothing.
+    country_match_name: dict[str, str] = {}
     for c_name, c_canon in COUNTRY_NAMES.items():
         if re.search(r'\b' + re.escape(c_name.strip()) + r'\b', text_lower):
             found_countries.add(c_canon)
+            country_match_name[c_canon] = c_name.strip()
 
-    # 2. States, full names first.
-    for s_name, s_code in STATE_NAMES.items():
-        if re.search(r'\b' + re.escape(s_name.strip()) + r'\b', text_lower):
-            found_states.add(s_code)
-            
-    # two-letter abbreviations ONLY when preceded by a comma+space token boundary ("Austin, TX")
-    state_code_matches = re.findall(r',\s+([A-Z]{2})\b', text)
-    for code in state_code_matches:
-        if code in STATE_CODES:
-            found_states.add(code)
-            
+    # 2. States. A two-letter code counts ONLY after a comma+space token boundary
+    # ("Austin, TX"). An explicit code wins outright over a full state name,
+    # because the name is often part of the city ("Washington, DC" is not also
+    # Washington state, "Kansas City, MO" is not also Kansas).
+    named_states = {
+        s_code for s_name, s_code in STATE_NAMES.items()
+        if re.search(r'\b' + re.escape(s_name.strip()) + r'\b', text_lower)
+    }
+    coded_states = {
+        code for code in re.findall(r',\s+([A-Z]{2})\b', text) if code in STATE_CODES
+    }
+    found_states = coded_states or named_states
+
     # 3. Cities, matched over 1-3 word n-grams rather than substrings, since city
     # names are often ordinary tokens. Unicode letters (not just a-z) so accented
     # spellings like "Zürich"/"São Paulo" tokenize as one word and fold to ASCII.
@@ -131,6 +144,13 @@ def parse_location(raw: str) -> LocationParse:
         foreign_country = FOREIGN_CITIES.get(_fold(ngram))
         if foreign_country:
             found_countries.add(foreign_country)
+
+    # A one-word country name sitting inside a matched US city name is part of that
+    # city, not a second region ("Jersey City, NJ", "Panama City, FL").
+    city_words = {w for name in found_city_names for w in name.split()}
+    for canon, name in country_match_name.items():
+        if ' ' not in name and name in city_words:
+            found_countries.discard(canon)
 
     # Reconcile. A US state or city implies the country.
     if found_states or found_city_names:

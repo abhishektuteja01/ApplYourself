@@ -210,3 +210,59 @@ def test_foreign_city_with_remote_is_still_foreign():
 @pytest.mark.parametrize("raw", ["", "   ", "Anywhere", "Multiple Locations"])
 def test_unrecognized_strings_kept_unresolved(raw):
     assert _is_kept_unresolved(raw)
+
+
+# ---------------------------------------------------------------------
+# Namesake collisions. A country name that is also a US state or city, a full
+# state name embedded in a city name, and a country name nested inside a city
+# name all used to produce a second, phantom region signal — which collapsed
+# the parse to empty and sent the row down the "nothing parsed -> keep" branch,
+# silently bypassing the location allowlist.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,state,city", [
+    ("Washington, DC", "DC", "Washington"),        # state name inside the city
+    ("Kansas City, MO", "MO", "Kansas City"),
+    ("Oklahoma City, OK", "OK", "Oklahoma City"),
+    ("New York, NY", "NY", "New York City"),       # geonames spells it "New York City"
+    ("Atlanta, Georgia", "GA", "Atlanta"),         # state name that is also a country
+    ("Jamaica, NY", "NY", "Jamaica"),              # city name that is also a country
+    ("Jersey City, NJ", "NJ", "Jersey City"),      # country name nested in the city
+    ("Panama City, FL", "FL", "Panama City"),
+])
+def test_us_namesake_resolves_to_its_us_place(raw, state, city):
+    res = parse_location(raw)
+    assert res.country == "United States"
+    assert res.state == state
+    assert res.city == city
+
+
+@pytest.mark.parametrize("raw,state,city", [
+    ("Boston, MA", "MA", "Boston"),
+    ("Boston, Massachusetts", "MA", "Boston"),
+    ("Austin, TX", "TX", "Austin"),
+    ("San Francisco Bay Area", "CA", "San Francisco"),
+])
+def test_unambiguous_us_locations_are_unchanged(raw, state, city):
+    res = parse_location(raw)
+    assert res.country == "United States"
+    assert res.state == state
+    assert res.city == city
+
+
+@pytest.mark.parametrize("raw,country", [
+    ("Toronto, Canada", "Canada"),
+    ("Berlin, Germany", "Germany"),
+    ("Hyderabad, India", "India"),
+    ("London, United Kingdom", "United Kingdom"),
+])
+def test_foreign_locations_still_resolve_after_the_namesake_rule(raw, country):
+    assert parse_location(raw).country == country
+    assert _is_foreign(raw)
+
+
+@pytest.mark.parametrize("raw", ["Beirut, Lebanon", "Tbilisi, Georgia"])
+def test_genuine_us_foreign_namesake_stays_unresolved(raw):
+    # "Lebanon"/"Georgia" name both a US place and a country, so the signals
+    # genuinely conflict. Unresolved -> kept for manual review, never auto-dropped.
+    assert _is_kept_unresolved(raw)
