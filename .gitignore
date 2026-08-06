@@ -1,63 +1,71 @@
-# =============================================================================
-# PII — CRITICAL. NEVER commit. Verify these patterns BEFORE any push to remote.
-# Contains other people's names, emails, conversation content.
-# =============================================================================
-profile/contacts.yaml
-profile/voice_samples.md
-pipeline/*/outreach/
-# Application history — companies, scores, dates (strategy, not for a public repo).
-pipeline/*/state.yaml
-# Resume/cover-letter templates embed real name, email, phone.
-# Globbed: a .bak sibling is still the same PII.
-profile/resume_template.docx*
-profile/cover_letter_template.docx*
-profile/*.docx.bak
-# The PII denylist is itself PII; committed template: profile/pii_denylist.example.txt
-profile/pii_denylist.txt
+# Deny by default, re-include deliberately.
+#
+# The previous version enumerated the private files it knew about, so anything
+# new — profile/contacts.yml, pipeline/<id>/notes.md, inbox/*.txt, a stray
+# profile/*.docx — was staged by `git add -A` without a word. Every directory
+# that holds user data now excludes its own contents, and the committed
+# templates are re-included one line at a time.
+#
+# `dir/*` and not `dir/**`: git cannot re-include a file whose parent directory
+# is excluded, so each level is excluded separately and re-included by name.
 
 # =============================================================================
-# Job-search strategy — mine, not for a public repo.
-# Committed templates: profile/verticals.example.yaml + profile/verticals/example_*/
-# (`profile/verticals/*` not `.../`: git cannot re-include children of an
-# excluded directory, only of an excluded glob.)
+# profile/ — real experience, contacts, strategy, and the PII denylist itself.
+# Committed: the *.example.* templates, the two rule files, and the three
+# example_* vertical directories.
 # =============================================================================
-profile/verticals.yaml
+profile/*
+!profile/*.example.yaml
+!profile/*.example.txt
+!profile/*.example.md
+!profile/de_ai_rules.yaml
+!profile/sponsorship_rules.yaml
+!profile/verticals/
 profile/verticals/*
 !profile/verticals/example_primary/
 !profile/verticals/example_secondary/
 !profile/verticals/example_tertiary/
-# Career-board watchlist; committed template: profile/companies.example.yaml
-profile/companies.yaml
-# Discovery settings; committed template: profile/discovery.example.yaml
-profile/discovery.yaml
-# Personal profile prose — real experience, bullets, skills, scoring guidance.
-# Direct children of profile/ only; example templates in profile/verticals/* are
-# re-included above and unaffected.
-profile/*.md
 
 # =============================================================================
-# Regeneratable artifacts (re-created by discovery / scoring / tailoring runs)
+# pipeline/ — application history: companies, scores, dates, and other people's
+# names in outreach drafts. Strategy and PII both.
 # =============================================================================
-jobs/raw/
-jobs/clean.parquet
-# Seen-ledger retention memory — losing it only resets expiry clocks
-jobs/seen.parquet
-jobs/clean.preview.jsonl
-jobs/scored.parquet
-jobs/scored.staging/
-jobs/runs/
-jobs/universe_health.parquet
+pipeline/*
+!pipeline/.gitkeep
+
+# =============================================================================
+# inbox/ — raw JD clips; may carry confidential recruiter or company text.
+# =============================================================================
+inbox/*
+!inbox/.gitkeep
+
+# =============================================================================
+# jobs/ — every parquet, shard and run report discovery/scoring regenerate.
+# =============================================================================
+jobs/*
+!jobs/.gitkeep
+
+# =============================================================================
+# Other generated output
+# =============================================================================
+applications/
 shortlist/
 pipeline.md
-applications/
 profile/resume.docx
+# Morning discovery automation logs (scheduler job)
+/logs/
+# Fixed staging dir for Word/osascript PDF conversion (see /tailor, /cover-letter).
+# Word's sandbox grant doesn't reliably persist across new per-job output dirs;
+# converting through one unchanging folder keeps a single one-time grant valid.
+.pdf_staging/
 
 # =============================================================================
-# Inbox — raw JD clips (may contain confidential recruiter / company text)
+# Private working notes — live breakage tracker and backlog. They carry measured
+# funnel counts, real lane names and local paths; versioned in the private bare
+# repo, not here.
 # =============================================================================
-inbox/*.md
-inbox/.processed/
-inbox/.malformed/
+/HANDOFF.md
+/publish.md
 
 # =============================================================================
 # Python / uv / tooling
@@ -72,8 +80,10 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
+# NOTE: uv.lock is intentionally NOT ignored — committed for reproducibility.
+
 # =============================================================================
-# IDE / OS
+# Editor / OS / agent-local
 # =============================================================================
 .vscode/
 .idea/
@@ -82,19 +92,6 @@ __pycache__/
 .DS_Store
 # Microsoft Word lock files (created when a docx is open in Word)
 ~$*
-
-# NOTE: uv.lock is intentionally NOT ignored — committed for reproducibility.
-
-# Private working notes — live breakage tracker, publish backlog. They carry
-# measured funnel counts, real lane names and local paths; versioned in the
-# private bare repo, not here.
-/HANDOFF.md
-/publish.md
-
-# Morning discovery automation logs (scheduler job)
-/logs/
-
-# Fixed staging dir for Word/osascript PDF conversion (see /tailor, /cover-letter).
-# Word's sandbox grant doesn't reliably persist across new per-job output dirs;
-# converting through one unchanging folder keeps a single one-time grant valid.
-.pdf_staging/
+# Machine-local Claude Code permissions — was covered only by the user's global
+# gitignore, so it was exposed on any fresh clone.
+.claude/settings.local.json

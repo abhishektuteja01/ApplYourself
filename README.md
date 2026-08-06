@@ -1,4 +1,4 @@
-# job-search-pipeline
+# ApplYourself
 
 A personal, human-gated job-search pipeline. It scrapes job postings, scores
 them against a profile you write, and drafts tailored resumes, cover letters
@@ -51,6 +51,9 @@ docx renderer. You need Claude Code to run the interesting half.
 4. **Application material** (`/tailor`, `/cover-letter`, `/outreach`) — writes
    docx + pdf plus audit artifacts into `applications/<lane>/<dir>/`. Nothing
    is fabricated: every claim must trace to a canonical bullet you wrote.
+   **The PDF step needs Microsoft Word and `osascript`, so it is macOS-only.**
+   Everything else is portable; without Word you get the docx and convert it
+   yourself.
 5. **Tracking** (`/track`, `/standup`) — one `pipeline/<job_id>/state.yaml` per
    role, moving through an 11-state machine. `/track` is the only writer of
    state transitions.
@@ -61,7 +64,9 @@ description so it stays stable across re-scrapes.
 ## Setup
 
 Requires **Python 3.12** (pinned `>=3.12,<3.13`), [uv](https://docs.astral.sh/uv/),
-and Claude Code for the slash commands.
+and Claude Code for the slash commands. PDF output additionally needs
+**Microsoft Word on macOS** (it is driven by `osascript`); every other stage runs
+anywhere Python does.
 
 ```bash
 git clone <this repo> && cd <this repo>
@@ -77,9 +82,16 @@ Copy the templates and edit:
 cp profile/verticals.example.yaml  profile/verticals.yaml
 cp profile/discovery.example.yaml  profile/discovery.yaml
 cp profile/companies.example.yaml  profile/companies.yaml
-cp -r profile/verticals/example_primary   profile/verticals/<your_lane>
 uv run verticals-check     # validates config + per-lane files, fails loud
 ```
+
+To add a lane of your own, run **`/new-vertical`** — it interviews you and
+writes every piece. Copying `profile/verticals/example_primary/` by hand is not
+enough on its own: the copied directory is unreferenced until you also rename
+the block key in `profile/verticals.yaml`, its `display_name`, its
+`resume_file` (which still points at the original), and the `vertical:` values
+in `classifier_rules`. Miss any of those and `verticals-check` still passes
+while your lane does nothing.
 
 Everything under `profile/` is gitignored user data. Nothing you write there
 is ever committed.
@@ -158,8 +170,11 @@ git config core.hooksPath .githooks                            # once per clone
 ```
 
 Your denylist is gitignored — the list of strings to keep out is itself the thing
-being kept out. Patterns match whole words, so a short abbreviation in your list
-will not flag every longer word that happens to contain it.
+being kept out. Patterns match whole words by default, so a short abbreviation in
+your list will not flag every longer word that happens to contain it; prefix a
+pattern with `~` when you *do* want it to match inside longer words (a handle,
+for instance). A missing denylist is an error, not a pass — the gate refuses to
+report a scan it never ran.
 `LICENSE` and `data/universe/*.csv` are allowlisted inside the script: MIT
 attribution and vendored company names are supposed to be there.
 
