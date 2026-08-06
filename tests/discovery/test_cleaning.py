@@ -397,7 +397,7 @@ def test_already_seen_from_state_yaml(tmp_path):
         "company": "Acme",
         "title": "Widget Functional Consultant",
         "state": "tailored",
-    }))
+    }), encoding="utf-8")
 
     out = apply_state_yaml(df, pipeline_dir)
     matched = out[out["job_id"] == matched_id].iloc[0]
@@ -459,7 +459,7 @@ def test_report_dropped_stats_chain_off_predecessor(tmp_path):
         pipeline_dir=tmp_path / "pipeline",
         today=pd.Timestamp("2026-06-06"),
     )
-    report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text()
+    report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
 
     def stage(label: str) -> tuple[int, int]:
         """Return (after, dropped) for a report line."""
@@ -847,15 +847,15 @@ def test_prune_raw_files(tmp_path):
     
     # recent kept
     recent_path = raw_dir / "2026-07-10_1200.parquet"
-    recent_path.write_text("dummy")
+    recent_path.write_text("dummy", encoding="utf-8")
     
     # old file deleted
     old_path = raw_dir / "2026-06-01_1200.parquet"
-    old_path.write_text("dummy")
+    old_path.write_text("dummy", encoding="utf-8")
     
     # unparseable name kept
     unparse_path = raw_dir / "not_a_date.parquet"
-    unparse_path.write_text("dummy")
+    unparse_path.write_text("dummy", encoding="utf-8")
     
     cfg = DiscoveryConfig(raw_retention_days=30)
     today = pd.Timestamp("2026-07-15")

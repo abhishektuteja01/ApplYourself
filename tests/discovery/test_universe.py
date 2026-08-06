@@ -10,7 +10,7 @@ def test_universe_priority_ordering(tmp_path, monkeypatch):
     monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "health.parquet")
     
     (tmp_path / "csv").mkdir()
-    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\nCsv Only,csv-only,\nYielding Co,yielding,\n")
+    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\nCsv Only,csv-only,\nYielding Co,yielding,\n", encoding="utf-8")
     
     # Write health
     health_df = pd.DataFrame([
@@ -26,7 +26,7 @@ companies:
   - name: Watchlist Co
     ats: greenhouse
     slug: watchlist
-""")
+""", encoding="utf-8")
     
     res = universe.load("greenhouse")
     assert len(res) == 3
@@ -43,7 +43,7 @@ def test_universe_dedupe_watchlist_wins(tmp_path, monkeypatch):
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
     monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "health.parquet")
     (tmp_path / "csv").mkdir()
-    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\nCsv Co,acme,\n")
+    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\nCsv Co,acme,\n", encoding="utf-8")
     
     (tmp_path / "companies.yaml").write_text("""\
 schema_version: 1
@@ -51,7 +51,7 @@ companies:
   - name: Watchlist Co
     ats: greenhouse
     slug: acme
-""")
+""", encoding="utf-8")
     res = universe.load("greenhouse")
     assert len(res) == 1
     assert res[0].name == "Watchlist Co"
@@ -94,7 +94,7 @@ def test_universe_load_skips_pruned_unless_14_days(tmp_path, monkeypatch):
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
     monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "health.parquet")
     (tmp_path / "csv").mkdir()
-    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\nA,recent-pruned,\nB,old-pruned,\n")
+    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\nA,recent-pruned,\nB,old-pruned,\n", encoding="utf-8")
     
     today = pd.Timestamp.today().normalize()
     health_df = pd.DataFrame([
@@ -120,7 +120,7 @@ companies:
   - name: Watchlist Co
     ats: workday
     slug: acme
-""")
+""", encoding="utf-8")
     res = universe.load("workday")
     assert len(res) == 0
     assert "unsupported ats" in caplog.text.lower()
@@ -130,7 +130,7 @@ def test_universe_empty_csv_falls_back_to_watchlist(tmp_path, monkeypatch):
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
     monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "health.parquet")
     (tmp_path / "csv").mkdir()
-    (tmp_path / "csv" / "greenhouse.csv").write_text("")  # Empty
+    (tmp_path / "csv" / "greenhouse.csv").write_text("", encoding="utf-8")  # Empty
     
     (tmp_path / "companies.yaml").write_text("""\
 schema_version: 1
@@ -138,7 +138,7 @@ companies:
   - name: Watchlist Co
     ats: greenhouse
     slug: acme
-""")
+""", encoding="utf-8")
     res = universe.load("greenhouse")
     assert len(res) == 1
 
@@ -147,7 +147,7 @@ def test_universe_empty_name_or_slug_skipped(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
     monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "health.parquet")
     (tmp_path / "csv").mkdir()
-    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\n,slug1,\nName2,,\nName3,slug3,\n")
+    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug,extra\n,slug1,\nName2,,\nName3,slug3,\n", encoding="utf-8")
     
     res = universe.load("greenhouse")
     assert len(res) == 1

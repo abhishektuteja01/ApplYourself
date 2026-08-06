@@ -10,7 +10,7 @@ from src.score_cli import coverage, judge_ranges, split_by_vertical
 
 
 def _write_jsonl(path, rows):
-    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
 
 
 def _score(job_id: str) -> dict:
@@ -61,19 +61,19 @@ class TestSplitByVertical:
         counts = split_by_vertical(unscored)
         assert counts == {"example_primary": 2, "example_tertiary": 0, "example_secondary": 1}
         sap_ids = [json.loads(l)["job_id"]
-                   for l in (tmp_path / "unscored_example_primary.jsonl").open()]
+                   for l in (tmp_path / "unscored_example_primary.jsonl").open(encoding="utf-8")]
         assert sap_ids == ["a", "c"]
         risk_ids = [json.loads(l)["job_id"]
-                    for l in (tmp_path / "unscored_example_secondary.jsonl").open()]
+                    for l in (tmp_path / "unscored_example_secondary.jsonl").open(encoding="utf-8")]
         assert risk_ids == ["b"]
 
     def test_empty_dump_writes_empty_files(self, tmp_path):
         unscored = tmp_path / "unscored.jsonl"
-        unscored.write_text("")
+        unscored.write_text("", encoding="utf-8")
         counts = split_by_vertical(unscored)
         assert counts == {"example_primary": 0, "example_tertiary": 0, "example_secondary": 0}
-        assert (tmp_path / "unscored_example_primary.jsonl").read_text() == ""
-        assert (tmp_path / "unscored_example_secondary.jsonl").read_text() == ""
+        assert (tmp_path / "unscored_example_primary.jsonl").read_text(encoding="utf-8") == ""
+        assert (tmp_path / "unscored_example_secondary.jsonl").read_text(encoding="utf-8") == ""
 
     def test_unexpected_vertical_raises(self, tmp_path):
         unscored = tmp_path / "unscored.jsonl"
@@ -88,7 +88,7 @@ class TestCoverage:
                      [{"job_id": j} for j in dumped_ids])
         for name, ids in batches.items():
             (tmp_path / name).write_text(
-                json.dumps([{"job_id": j} for j in ids]))
+                json.dumps([{"job_id": j} for j in ids]), encoding="utf-8")
 
     def test_all_clear(self, tmp_path):
         self._stage(tmp_path, ["a", "b", "c"],
@@ -115,7 +115,7 @@ class TestCoverage:
 
     def test_unreadable_batch_is_reported_not_raised(self, tmp_path):
         self._stage(tmp_path, ["a", "b"], {"batch_example_primary_001.json": ["a"]})
-        (tmp_path / "batch_example_primary_002.json").write_text('[{"job_id": "b"')
+        (tmp_path / "batch_example_primary_002.json").write_text('[{"job_id": "b"', encoding="utf-8")
         r = coverage(tmp_path)
         assert r["unreadable"] == ["batch_example_primary_002.json"]
         assert r["missing"] == ["b"]  # still diagnosable
@@ -123,7 +123,7 @@ class TestCoverage:
 
     def test_non_array_batch_is_reported_not_raised(self, tmp_path):
         self._stage(tmp_path, ["a"], {})
-        (tmp_path / "batch_example_primary_001.json").write_text('{"job_id": "a"}')
+        (tmp_path / "batch_example_primary_001.json").write_text('{"job_id": "a"}', encoding="utf-8")
         r = coverage(tmp_path)
         assert r["unreadable"] == ["batch_example_primary_001.json"]
         assert r["staged"] == 0
@@ -138,7 +138,7 @@ class TestMergeRefusesToClearStaging:
         staging = tmp_path / "staging"
         staging.mkdir()
         for name, body in batches.items():
-            (staging / name).write_text(body)
+            (staging / name).write_text(body, encoding="utf-8")
         monkeypatch.setattr(score_cli, "STAGING", staging)
         monkeypatch.setattr(score_cli, "SCORED", tmp_path / "scored.parquet")
         monkeypatch.setattr(score_cli, "CLEAN", _make_clean(tmp_path))
@@ -172,7 +172,7 @@ class TestMergeRefusesToClearStaging:
             "batch_example_primary_002.json": '[{"job_id": "bbbbbbbb"',
         })
         assert score_cli._cmd_merge(argparse.Namespace(model="t")) == 1
-        (staging / "batch_example_primary_002.json").write_text(json.dumps([_score("bbbbbbbb")]))
+        (staging / "batch_example_primary_002.json").write_text(json.dumps([_score("bbbbbbbb")]), encoding="utf-8")
         capsys.readouterr()
         rc = score_cli._cmd_merge(argparse.Namespace(model="t"))
         assert rc == 0
@@ -325,14 +325,14 @@ class TestClearStaging:
                      "unscored.jsonl", "unscored_example_primary.jsonl",
                      "auto_skip.jsonl", "auto_skip_ineligible.jsonl",
                      "auto_skip_sap.jsonl"):
-            (staging / name).write_text("x")
+            (staging / name).write_text("x", encoding="utf-8")
         score_cli.clear_staging(staging)
         assert sorted(p.name for p in staging.iterdir()) == []
 
     def test_leaves_unrelated_files_alone(self, tmp_path):
         staging = tmp_path / "staging"
         staging.mkdir()
-        (staging / "batch_example_primary_001.json").write_text("x")
+        (staging / "batch_example_primary_001.json").write_text("x", encoding="utf-8")
         keep = {
             "notes.md": "hand notes",
             "batch_example_primary_001.json.bak": "a manual repair copy",
@@ -340,7 +340,7 @@ class TestClearStaging:
             "unscored.jsonl.tmp": "partial write",
         }
         for name, body in keep.items():
-            (staging / name).write_text(body)
+            (staging / name).write_text(body, encoding="utf-8")
         score_cli.clear_staging(staging)
         assert sorted(p.name for p in staging.iterdir()) == sorted(keep)
 
@@ -358,7 +358,7 @@ class TestClearStaging:
     def test_does_not_recurse_into_subdirs(self, tmp_path):
         staging = tmp_path / "staging"
         (staging / "archive").mkdir(parents=True)
-        (staging / "archive" / "batch_example_primary_001.json").write_text("x")
+        (staging / "archive" / "batch_example_primary_001.json").write_text("x", encoding="utf-8")
         score_cli.clear_staging(staging)
         assert (staging / "archive" / "batch_example_primary_001.json").exists()
 
@@ -421,7 +421,7 @@ class TestRangesCommand:
 
     def test_empty_file_emits_no_range(self, tmp_path, monkeypatch, capsys, cfg):
         staging = self._staging(tmp_path, monkeypatch, {})
-        (staging / "unscored_example_primary.jsonl").write_text("")
+        (staging / "unscored_example_primary.jsonl").write_text("", encoding="utf-8")
         rc, lines = self._run(capsys)
         assert rc == 0
         assert len(lines) == 1  # counts only, no range lines
@@ -431,7 +431,7 @@ class TestRangesCommand:
         must not create a phantom row."""
         staging = self._staging(tmp_path, monkeypatch, {"example_primary": 3})
         (staging / "unscored_example_primary.jsonl").write_text(
-            (staging / "unscored_example_primary.jsonl").read_text() + "\n\n")
+            (staging / "unscored_example_primary.jsonl").read_text(encoding="utf-8") + "\n\n", encoding="utf-8")
         _, lines = self._run(capsys)
         assert lines[0].startswith("example_primary=3 ")
         assert lines[1] == "range example_primary 1-3"

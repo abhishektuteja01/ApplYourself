@@ -99,7 +99,7 @@ def test_crashing_source_does_not_stop_later_sources(tmp_path, monkeypatch):
     assert len(linkedin_shards) == 1
     assert len(pd.read_parquet(linkedin_shards[0])) == 1
 
-    report = next((tmp_path / "jobs" / "runs").glob("*.md")).read_text()
+    report = next((tmp_path / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**CRASHED**" in report
     assert "ValueError" in report          # full traceback, not just the message
     assert "in fetch" in report
@@ -209,7 +209,7 @@ def test_cleaning_runs_even_when_the_loop_raises(paths, monkeypatch):
         main([])
 
     assert len(calls) == 1
-    report = next((paths / "jobs" / "runs").glob("*.md")).read_text()
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "# Run " in report
 
 
@@ -282,7 +282,7 @@ def test_deadline_reached_breaks_before_the_next_source(paths, monkeypatch):
 
     assert first.calls == 1
     assert second.calls == 0
-    report = next((paths / "jobs" / "runs").glob("*.md")).read_text()
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**DEADLINE REACHED** after manual." in report
     # source 1's shard is still banked
     assert len(list((paths / "jobs" / "raw").glob("*_manual.parquet"))) == 1
@@ -303,7 +303,7 @@ def test_deadline_reached_breaks_on_the_crash_path_too(paths, monkeypatch):
 
     assert first.calls == 1
     assert second.calls == 0
-    report = next((paths / "jobs" / "runs").glob("*.md")).read_text()
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**CRASHED**" in report
     assert "**DEADLINE REACHED** after manual." in report
 
@@ -318,7 +318,7 @@ def test_no_deadline_line_when_the_budget_holds(paths, monkeypatch):
     main([])
 
     assert (first.calls, second.calls) == (1, 1)
-    report = next((paths / "jobs" / "runs").glob("*.md")).read_text()
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "DEADLINE REACHED" not in report
     assert "manual: ok" in report and "linkedin: ok" in report
 
@@ -333,10 +333,10 @@ def test_resume_appends_to_an_existing_report(paths, monkeypatch):
 
     main([])
     run_id = next((paths / "jobs" / "runs").glob("*.md")).stem
-    first_text = (paths / "jobs" / "runs" / f"{run_id}.md").read_text()
+    first_text = (paths / "jobs" / "runs" / f"{run_id}.md").read_text(encoding="utf-8")
 
     # Second pass: the manual shard exists, so resume skips it.
     main(["--resume", run_id])
-    text = (paths / "jobs" / "runs" / f"{run_id}.md").read_text()
+    text = (paths / "jobs" / "runs" / f"{run_id}.md").read_text(encoding="utf-8")
     assert text.startswith(first_text)
     assert text.count("# Run ") == 1  # header not duplicated

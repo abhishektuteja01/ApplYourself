@@ -25,7 +25,7 @@ def isolate_resume_files(tmp_path, monkeypatch, cfg):
     for v in cfg.verticals.values():
         p = tmp_path / v.resume_file
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("**Ada Lovelace**\n\nLondon | ada@example.com\n")
+        p.write_text("**Ada Lovelace**\n\nLondon | ada@example.com\n", encoding="utf-8")
     return tmp_path
 
 
@@ -65,7 +65,7 @@ def _write_profile(tmp_path, *, diction=True, skip=()):
     for name, body in files.items():
         if name in skip:
             continue
-        (prof / name).write_text(body)
+        (prof / name).write_text(body, encoding="utf-8")
 
 
 def _write_parquets(tmp_path, clean_rows, scored_rows):
@@ -76,7 +76,7 @@ def _write_parquets(tmp_path, clean_rows, scored_rows):
 def _register(tmp_path, job_id):
     d = tmp_path / "pipeline" / job_id
     d.mkdir(parents=True)
-    (d / "state.yaml").write_text(yaml.safe_dump({"job_id": job_id, "state": "saved"}))
+    (d / "state.yaml").write_text(yaml.safe_dump({"job_id": job_id, "state": "saved"}), encoding="utf-8")
 
 
 def _setup(tmp_path, *, job_id="aaaaaaaa", company="Acme Corp.", title="Widget Functional Consultant",
@@ -111,7 +111,7 @@ def test_prep_creates_dir_row_json_and_prints_eval_vars(tmp_path, capsys):
     # side effects
     row_json = tmp_path / "tmp" / "tailor_aaaaaaaa_row.json"
     assert row_json.is_file()
-    row = json.loads(row_json.read_text())
+    row = json.loads(row_json.read_text(encoding="utf-8"))
     assert row["fit_score"] == 80 and row["company"] == "Acme Corp."
     assert (tmp_path / "applications" / ev["DIRNAME"]).is_dir()
 
@@ -210,7 +210,7 @@ def test_snapshot_writes_from_row_json_without_reading_parquet(tmp_path, capsys)
     (tmp_path / "clean.parquet").unlink()
     rc = tailor_cli.main(["snapshot", "aaaaaaaa", str(out_dir), "--today", "2026-07-24"])
     assert rc == 0
-    snap = (out_dir / "jd_snapshot.md").read_text()
+    snap = (out_dir / "jd_snapshot.md").read_text(encoding="utf-8")
     assert snap.startswith("---\njob_id: aaaaaaaa\n")
     assert "company: Acme Corp." in snap
     assert "title: Widget Functional Consultant" in snap
@@ -279,13 +279,13 @@ def test_resume_display_name_accepts_the_docx_render_name_shapes(tmp_path, line)
     """Must match what src/docx_render.py parses as the `name` block:
     `**Name**` or `# **Name**`, first such line only."""
     p = tmp_path / "r.md"
-    p.write_text(f"{line}\n\nLondon | ada@example.com\n\n**SUMMARY**\n")
+    p.write_text(f"{line}\n\nLondon | ada@example.com\n\n**SUMMARY**\n", encoding="utf-8")
     assert tailor_cli.resume_display_name(p) == "Ada Lovelace"
 
 
 def test_resume_display_name_takes_the_first_bold_line_only(tmp_path):
     p = tmp_path / "r.md"
-    p.write_text("**Ada Lovelace**\n\n**SUMMARY**\n\n**WORK EXPERIENCE**\n")
+    p.write_text("**Ada Lovelace**\n\n**SUMMARY**\n\n**WORK EXPERIENCE**\n", encoding="utf-8")
     assert tailor_cli.resume_display_name(p) == "Ada Lovelace"
 
 
@@ -297,7 +297,7 @@ def test_resume_display_name_missing_file_errors(tmp_path):
 @pytest.mark.parametrize("body", ["", "\n\n", "Ada Lovelace\n", "**  **\n"])
 def test_resume_display_name_without_a_name_line_errors(tmp_path, body):
     p = tmp_path / "r.md"
-    p.write_text(body)
+    p.write_text(body, encoding="utf-8")
     with pytest.raises(SystemExit, match="no name line"):
         tailor_cli.resume_display_name(p)
 
@@ -346,13 +346,13 @@ def test_prep_eval_output_survives_an_apostrophe_in_the_name(tmp_path, capsys, c
     break on O'Brien -- the reason every value goes through shlex.quote."""
     import subprocess
     for v in cfg.verticals.values():
-        (tmp_path / v.resume_file).write_text("**Grace O'Brien**\n")
+        (tmp_path / v.resume_file).write_text("**Grace O'Brien**\n", encoding="utf-8")
     _setup(tmp_path)
     tailor_cli.main(["aaaaaaaa", "--today", "2026-07-24"])
     out = capsys.readouterr().out
     got = subprocess.run(
         ["bash", "-c", f'eval "$(cat <<\'EOF\'\n{out}\nEOF\n)"; printf "%s|%s" "$APPLICANT_NAME" "$FILE_SLUG"'],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, check=True, encoding="utf-8",
     ).stdout
     assert got == "Grace O'Brien|Grace_O_Brien"
 

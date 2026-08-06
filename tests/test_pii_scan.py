@@ -24,17 +24,18 @@ def _repo(tmp_path, tracked, denylist="Quimby\n"):
     for name, text in tracked.items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         subprocess.run(["git", "add", "-f", name], cwd=tmp_path, check=True)
     if denylist is not None:
         (tmp_path / "profile").mkdir(exist_ok=True)
-        (tmp_path / "profile" / "pii_denylist.txt").write_text(denylist)
+        (tmp_path / "profile" / "pii_denylist.txt").write_text(denylist, encoding="utf-8")
     return tmp_path
 
 
 def _scan(repo):
     return subprocess.run(
-        ["bash", str(SCRIPT)], cwd=repo, capture_output=True, text=True
+        ["bash", str(SCRIPT)], cwd=repo, capture_output=True, text=True,
+        encoding="utf-8",
     )
 
 
@@ -63,7 +64,7 @@ def test_vendored_universe_csv_is_allowlisted(tmp_path):
 
 def test_untracked_file_is_not_scanned(tmp_path):
     repo = _repo(tmp_path, {"README.md": "clean\n"})
-    (repo / "scratch.md").write_text("Quimby\n")
+    (repo / "scratch.md").write_text("Quimby\n", encoding="utf-8")
     assert _scan(repo).returncode == 0
 
 

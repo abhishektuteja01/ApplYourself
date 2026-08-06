@@ -36,7 +36,7 @@ def _initial(**overrides) -> dict:
 
 
 def _yaml_load(path: Path) -> dict:
-    return yaml.safe_load(path.read_text())
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 # ---------- state-set constants ----------
@@ -233,7 +233,7 @@ def test_load_all_states_skips_malformed(tmp_path):
                 initial_fields=_initial())
     bad = pdir / "bbbbbbbb"
     bad.mkdir()
-    (bad / "state.yaml").write_text("this is: not\n  - valid: yaml: :\n")
+    (bad / "state.yaml").write_text("this is: not\n  - valid: yaml: :\n", encoding="utf-8")
     states = load_all_states(pdir)
     # Good one survives, bad is skipped (not raised)
     assert {s["job_id"] for s in states} == {"aaaaaaaa"}
@@ -301,13 +301,13 @@ def test_ensure_state_never_mutates_an_existing_role(tmp_path, existing_state):
     """A re-tailor must not touch state, terminal states included."""
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, existing_state, initial_fields=_initial())
-    before = p.read_text()
+    before = p.read_text(encoding="utf-8")
 
     data, created = ensure_state(p, initial_fields=_initial())
 
     assert created is False
     assert data["state"] == existing_state
-    assert p.read_text() == before, "ensure_state rewrote the file"
+    assert p.read_text(encoding="utf-8") == before, "ensure_state rewrote the file"
 
 
 def test_ensure_state_preserves_applied_at_and_history(tmp_path):
@@ -389,7 +389,7 @@ def test_append_cover_letter_over_a_preexisting_null(tmp_path):
     transition(p, "saved", initial_fields=_initial())
     data = load_state(p)
     data["cover_letters"] = None
-    p.write_text(yaml.safe_dump(data, sort_keys=False))
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     append_cover_letter(p, "c1")
     assert load_state(p)["cover_letters"] == ["c1"]
 

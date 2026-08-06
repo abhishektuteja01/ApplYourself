@@ -125,7 +125,7 @@ def test_dump_unscored_writes_jsonl(tmp_path):
     out_path = tmp_path / "unscored.jsonl"
     n = dump_unscored(clean_p, scored_p, out_path)
     assert n == 1
-    line = out_path.read_text().strip()
+    line = out_path.read_text(encoding="utf-8").strip()
     obj = json.loads(line)
     assert obj["job_id"] == "aaaaaaaa"
     assert obj["company"] == "Acme"
@@ -253,11 +253,11 @@ def test_dump_unscored_splits_in_lane_vs_out_of_lane(tmp_path):
     out_path = tmp_path / "unscored.jsonl"
     n_judge = dump_unscored(clean_p, scored_p, out_path)
     assert n_judge == 2
-    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
+    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert judge_ids == {"aaaaaaaa", "cccccccc"}
     skip_path = tmp_path / "auto_skip.jsonl"
     assert skip_path.exists()
-    skip_ids = {json.loads(l)["job_id"] for l in skip_path.read_text().splitlines() if l.strip()}
+    skip_ids = {json.loads(l)["job_id"] for l in skip_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert skip_ids == {"bbbbbbbb", "dddddddd"}
 
 
@@ -271,11 +271,11 @@ def test_dump_unscored_only_vertical_filters_to_one_vertical(tmp_path):
     out_path = tmp_path / "unscored.jsonl"
     n_judge = dump_unscored(clean_p, scored_p, out_path, only_vertical="example_secondary")
     assert n_judge == 1
-    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
+    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert judge_ids == {"bbbbbbbb"}
     # example_primary and out-of-lane rows are left entirely untouched (not even auto-skipped)
     skip_path = tmp_path / "auto_skip.jsonl"
-    skip_ids = {json.loads(l)["job_id"] for l in skip_path.read_text().splitlines() if l.strip()} if skip_path.exists() else set()
+    skip_ids = {json.loads(l)["job_id"] for l in skip_path.read_text(encoding="utf-8").splitlines() if l.strip()} if skip_path.exists() else set()
     assert skip_ids == set()
 
 
@@ -384,16 +384,16 @@ def test_dump_unscored_routes_secondary_disqualified_to_separate_skip_file(tmp_p
     out_path = tmp_path / "unscored.jsonl"
     n_judge = dump_unscored(clean_p, scored_p, out_path)
     assert n_judge == 2  # bbbbbbbb (example_secondary, clean JD) + cccccccc (example_primary)
-    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
+    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert judge_ids == {"bbbbbbbb", "cccccccc"}
     # judged example_secondary rows carry their vertical through for the LLM's rubric choice
     judged = {json.loads(l)["job_id"]: json.loads(l)["vertical"]
-              for l in out_path.read_text().splitlines() if l.strip()}
+              for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert judged["bbbbbbbb"] == "example_secondary"
     assert judged["cccccccc"] == "example_primary"
     secondary_skip_path = tmp_path / "auto_skip_example_secondary.jsonl"
     assert secondary_skip_path.exists()
-    skip_ids = {json.loads(l)["job_id"] for l in secondary_skip_path.read_text().splitlines() if l.strip()}
+    skip_ids = {json.loads(l)["job_id"] for l in secondary_skip_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert skip_ids == {"aaaaaaaa"}
     # the plain (title-out-of-lane) auto_skip.jsonl exists but is empty here
     assert (tmp_path / "auto_skip.jsonl").exists()
@@ -402,7 +402,8 @@ def test_dump_unscored_routes_secondary_disqualified_to_separate_skip_file(tmp_p
 def test_auto_score_disqualified_materializes_secondary_skip_rows(tmp_path, cfg):
     skip_path = tmp_path / "auto_skip_example_secondary.jsonl"
     skip_path.write_text(
-        json.dumps({"job_id": "aaaaaaaa", "title": "Sprocket Risk Analyst"}) + "\n"
+        json.dumps({"job_id": "aaaaaaaa", "title": "Sprocket Risk Analyst"}) + "\n",
+        encoding="utf-8",
     )
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_disqualified(cfg.verticals["example_secondary"], skip_path, scored_p)
@@ -449,11 +450,11 @@ def test_dump_unscored_routes_primary_disqualified_to_separate_skip_file(tmp_pat
     out_path = tmp_path / "unscored.jsonl"
     n_judge = dump_unscored(clean_p, scored_p, out_path)
     assert n_judge == 2  # bbbbbbbb (example_primary, under threshold) + cccccccc (example_secondary)
-    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text().splitlines() if l.strip()}
+    judge_ids = {json.loads(l)["job_id"] for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert judge_ids == {"bbbbbbbb", "cccccccc"}
     primary_skip_path = tmp_path / "auto_skip_example_primary.jsonl"
     assert primary_skip_path.exists()
-    skip_ids = {json.loads(l)["job_id"] for l in primary_skip_path.read_text().splitlines() if l.strip()}
+    skip_ids = {json.loads(l)["job_id"] for l in primary_skip_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert skip_ids == {"aaaaaaaa"}
 
 
@@ -461,7 +462,8 @@ def test_auto_score_disqualified_materializes_primary_skip_rows(tmp_path, cfg):
     skip_path = tmp_path / "auto_skip_example_primary.jsonl"
     skip_path.write_text(
         json.dumps({"job_id": "aaaaaaaa", "title": "Widget Functional Analyst",
-                    "_disqualify_reason": "years"}) + "\n"
+                    "_disqualify_reason": "years"}) + "\n",
+        encoding="utf-8",
     )
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_disqualified(cfg.verticals["example_primary"], skip_path, scored_p)
@@ -480,13 +482,13 @@ def test_auto_score_disqualified_materializes_primary_skip_rows(tmp_path, cfg):
 
 def test_load_hard_ineligible_reads_and_lowercases(tmp_path):
     p = tmp_path / "rules.yaml"
-    p.write_text("hard_ineligible:\n  - 'Active Security Clearance'\n  - 'green card required'\n")
+    p.write_text("hard_ineligible:\n  - 'Active Security Clearance'\n  - 'green card required'\n", encoding="utf-8")
     assert load_hard_ineligible(p) == ("active security clearance", "green card required")
 
 
 def test_load_hard_ineligible_missing_key_is_empty(tmp_path):
     p = tmp_path / "rules.yaml"
-    p.write_text("ineligible:\n  - 'US citizen'\n")
+    p.write_text("ineligible:\n  - 'US citizen'\n", encoding="utf-8")
     assert load_hard_ineligible(p) == ()
 
 
@@ -525,14 +527,14 @@ def test_dump_unscored_routes_hard_ineligible_before_disqualifiers(tmp_path):
                             hard_ineligible=("active security clearance",))
     assert n_judge == 1
     inel_rows = [json.loads(l) for l in
-                 (tmp_path / "auto_skip_ineligible.jsonl").read_text().splitlines() if l.strip()]
+                 (tmp_path / "auto_skip_ineligible.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     assert [r["job_id"] for r in inel_rows] == ["aaaaaaaa"]
     assert inel_rows[0]["_ineligible_phrase"] == "active security clearance"
     # the years disqualifier never saw the row
-    assert (tmp_path / "auto_skip_example_primary.jsonl").read_text().strip() == ""
+    assert (tmp_path / "auto_skip_example_primary.jsonl").read_text(encoding="utf-8").strip() == ""
     # out-of-lane row stayed in auto_skip.jsonl
     ool = [json.loads(l)["job_id"] for l in
-           (tmp_path / "auto_skip.jsonl").read_text().splitlines() if l.strip()]
+           (tmp_path / "auto_skip.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     assert ool == ["cccccccc"]
 
 
@@ -541,7 +543,7 @@ def test_auto_score_ineligible_materializes_labeled_rows(tmp_path):
     skip_path.write_text(json.dumps({
         "job_id": "aaaaaaaa", "title": "Widget Functional Analyst",
         "vertical": "example_primary", "_ineligible_phrase": "active security clearance",
-    }) + "\n")
+    }) + "\n", encoding="utf-8")
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_ineligible(skip_path, scored_p)
     assert n == 1
@@ -604,7 +606,7 @@ def test_dump_unscored_routes_title_disqualified_to_skip_file(tmp_path):
     n_judge = dump_unscored(clean_p, scored_p, out_path)
     assert n_judge == 1
     skip_rows = [json.loads(l) for l in
-                 (tmp_path / "auto_skip_example_primary.jsonl").read_text().splitlines() if l.strip()]
+                 (tmp_path / "auto_skip_example_primary.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     assert [r["job_id"] for r in skip_rows] == ["aaaaaaaa"]
     assert skip_rows[0]["_disqualify_reason"] == "title"
 
@@ -614,7 +616,7 @@ def test_auto_score_disqualified_uses_title_reasoning(tmp_path, cfg):
     skip_path.write_text(json.dumps({
         "job_id": "aaaaaaaa", "title": "Widget Solution Architect",
         "_disqualify_reason": "title",
-    }) + "\n")
+    }) + "\n", encoding="utf-8")
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_disqualified(cfg.verticals["example_primary"], skip_path, scored_p)
     assert n == 1
@@ -628,7 +630,8 @@ def test_auto_score_out_of_lane_materializes_skip_rows(tmp_path):
     skip_path = tmp_path / "auto_skip.jsonl"
     skip_path.write_text(
         json.dumps({"job_id": "aaaaaaaa", "title": "Plumber"}) + "\n"
-        + json.dumps({"job_id": "bbbbbbbb", "title": "Chef"}) + "\n"
+        + json.dumps({"job_id": "bbbbbbbb", "title": "Chef"}) + "\n",
+        encoding="utf-8",
     )
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_out_of_lane(skip_path, scored_p)
@@ -649,7 +652,7 @@ def test_auto_score_out_of_lane_noop_on_missing_file(tmp_path):
 
 def test_auto_score_out_of_lane_noop_on_empty_file(tmp_path):
     skip_path = tmp_path / "auto_skip.jsonl"
-    skip_path.write_text("")
+    skip_path.write_text("", encoding="utf-8")
     scored_p = tmp_path / "scored.parquet"
     assert auto_score_out_of_lane(skip_path, scored_p) == 0
 
@@ -727,10 +730,10 @@ def test_merge_scores_from_dir_aggregates_batches(tmp_path):
     (staging / "batch_001.json").write_text(json.dumps([
         _valid_score(job_id="aaaaaaaa"),
         _valid_score(job_id="bbbbbbbb"),
-    ]))
+    ]), encoding="utf-8")
     (staging / "batch_002.json").write_text(json.dumps([
         _valid_score(job_id="cccccccc"),
-    ]))
+    ]), encoding="utf-8")
     n, skipped = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
     assert n == 3
     assert skipped == []
@@ -750,8 +753,8 @@ def test_merge_scores_from_dir_reports_unreadable_batches(tmp_path, bad_body):
     staging.mkdir()
     (staging / "batch_001.json").write_text(json.dumps([
         _valid_score(job_id="aaaaaaaa"),
-    ]))
-    (staging / "batch_002.json").write_text(bad_body)
+    ]), encoding="utf-8")
+    (staging / "batch_002.json").write_text(bad_body, encoding="utf-8")
     n, skipped = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
     assert n == 1  # the good batch still merges
     assert [f.name for f in skipped] == ["batch_002.json"]
@@ -763,7 +766,7 @@ def test_merge_scores_from_dir_reports_unreadable_when_nothing_merges(tmp_path):
     scored_p = tmp_path / "scored.parquet"
     staging = tmp_path / "staging"
     staging.mkdir()
-    (staging / "batch_001.json").write_text("[{")
+    (staging / "batch_001.json").write_text("[{", encoding="utf-8")
     n, skipped = merge_scores_from_dir(scored_p, staging, scored_by_model="t")
     assert n == 0
     assert [f.name for f in skipped] == ["batch_001.json"]
@@ -777,10 +780,10 @@ def test_merge_scores_from_dir_error_names_source_batch(tmp_path):
     staging.mkdir()
     (staging / "batch_001.json").write_text(json.dumps([
         _valid_score(job_id="aaaaaaaa"),
-    ]))
+    ]), encoding="utf-8")
     bad = _valid_score(job_id="bbbbbbbb", fit_score=70)
     bad["fit_subscores"] = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
-    (staging / "batch_002.json").write_text(json.dumps([bad]))
+    (staging / "batch_002.json").write_text(json.dumps([bad]), encoding="utf-8")
     with pytest.raises(ValueError) as exc:
         merge_scores_from_dir(scored_p, staging, scored_by_model="t")
     assert "batch_002.json[0]" in str(exc.value)
@@ -857,7 +860,7 @@ def test_auto_skipped_rows_still_land_fit_score_zero(tmp_path):
     """The three auto-skip paths no longer hand-write fit_score: 0 — it has to
     fall out of their all-zero subscores."""
     skip_p = tmp_path / "auto_skip.jsonl"
-    skip_p.write_text(json.dumps({"job_id": "aaaaaaaa", "vertical": ""}) + "\n")
+    skip_p.write_text(json.dumps({"job_id": "aaaaaaaa", "vertical": ""}) + "\n", encoding="utf-8")
     scored_p = tmp_path / "scored.parquet"
     n = auto_score_out_of_lane(skip_p, scored_p)
     assert n == 1
@@ -919,7 +922,7 @@ def _setup_shortlist(tmp_path, rows: list[dict], scores: list[dict],
             (pipeline_dir / jid).mkdir(parents=True)
             (pipeline_dir / jid / "state.yaml").write_text(yaml.safe_dump({
                 "job_id": jid, **state_data,
-            }))
+            }), encoding="utf-8")
     return clean_p, scored_p, pipeline_dir
 
 

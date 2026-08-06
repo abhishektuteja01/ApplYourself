@@ -31,7 +31,7 @@ def test_first_transition_creates_state_from_clean_parquet(tmp_path, capsys):
     }])
     rc = track_cli.main(["aaaaaaaa", "saved"])
     assert rc == 0
-    state = yaml.safe_load((tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text())
+    state = yaml.safe_load((tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text(encoding="utf-8"))
     assert state["state"] == "saved"
     assert state["company"] == "Acme"
     out = capsys.readouterr().out
@@ -69,10 +69,10 @@ def test_outreach_sent_flips_latest_draft(tmp_path, capsys):
         "state": "saved", "state_history": [], "outreach": [
             {"channel": "recruiter", "to": "Jane", "status": "draft"},
         ],
-    }))
+    }), encoding="utf-8")
     rc = track_cli.main(["outreach-sent", "aaaaaaaa", "--channel", "recruiter", "--to", "Jane"])
     assert rc == 0
-    state = yaml.safe_load((state_dir / "state.yaml").read_text())
+    state = yaml.safe_load((state_dir / "state.yaml").read_text(encoding="utf-8"))
     assert state["outreach"][0]["status"] == "sent"
     assert "OK: outreach[] entry flipped to sent" in capsys.readouterr().out
 
@@ -93,16 +93,16 @@ def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
     p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
-    assert yaml.safe_load(p.read_text())["state"] == "saved"
+    assert yaml.safe_load(p.read_text(encoding="utf-8"))["state"] == "saved"
     assert "registered" in capsys.readouterr().out
 
     assert track_cli.main(["aaaaaaaa", "applied"]) == 0
-    before = p.read_text()
+    before = p.read_text(encoding="utf-8")
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
     out = capsys.readouterr().out
     assert "already registered" in out and "applied" in out
-    assert p.read_text() == before
+    assert p.read_text(encoding="utf-8") == before
 
 
 def test_ensure_does_not_raise_on_terminal_state(tmp_path):
@@ -113,7 +113,7 @@ def test_ensure_does_not_raise_on_terminal_state(tmp_path):
     }])
     track_cli.main(["aaaaaaaa", "rejected"])
     p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
-    before = p.read_text()
+    before = p.read_text(encoding="utf-8")
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
-    assert p.read_text() == before
+    assert p.read_text(encoding="utf-8") == before

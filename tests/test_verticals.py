@@ -16,12 +16,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_raw() -> dict:
-    return yaml.safe_load(FIXTURE_PATH.read_text())
+    return yaml.safe_load(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def _write_and_load(tmp_path: Path, data: dict) -> verticals.VerticalsConfig:
     p = tmp_path / "verticals.yaml"
-    p.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    p.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return verticals.load_verticals(p)
 
 
@@ -274,7 +274,7 @@ class TestFixtureMirrors:
     )
 
     def test_mirrors_are_identical(self):
-        a, b = (p.read_text() for p in self.FIXTURES)
+        a, b = (p.read_text(encoding="utf-8") for p in self.FIXTURES)
         assert a == b, "tests/fixtures and tests/discovery/fixtures have diverged"
 
     def test_fixture_is_synthetic(self):
@@ -283,9 +283,9 @@ class TestFixtureMirrors:
         real = REPO_ROOT / "profile" / "verticals.yaml"
         if not real.is_file():
             pytest.skip("profile/verticals.yaml is gitignored user data")
-        expected = yaml.safe_load(real.read_text())
+        expected = yaml.safe_load(real.read_text(encoding="utf-8"))
         for p in self.FIXTURES:
-            assert yaml.safe_load(p.read_text()) != expected, (
+            assert yaml.safe_load(p.read_text(encoding="utf-8")) != expected, (
                 f"{p.relative_to(REPO_ROOT)} is a copy of profile/verticals.yaml"
             )
 
@@ -304,18 +304,18 @@ class TestMainCli:
         monkeypatch.setattr(verticals, "VERTICALS_DIR",
                             tmp_path / "profile" / "verticals")
         (tmp_path / "profile").mkdir()
-        (tmp_path / "profile" / "verticals.yaml").write_text(FIXTURE_PATH.read_text())
+        (tmp_path / "profile" / "verticals.yaml").write_text(FIXTURE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
         cfg = verticals.load_verticals(FIXTURE_PATH)
         for name, v in cfg.verticals.items():
             d = tmp_path / "profile" / "verticals" / name
             d.mkdir(parents=True)
             for fname in ("rubric.md", "tailoring.md"):
                 if (name, fname) not in drop_prose:
-                    (d / fname).write_text("# prose")
+                    (d / fname).write_text("# prose", encoding="utf-8")
             if name not in drop_resume:
                 r = tmp_path / v.resume_file
                 r.parent.mkdir(parents=True, exist_ok=True)
-                r.write_text("# resume")
+                r.write_text("# resume", encoding="utf-8")
         return cfg
 
     def test_success_prints_names_and_default(self, tmp_path, monkeypatch, capsys):
@@ -338,9 +338,9 @@ class TestMainCli:
 
     def test_malformed_config_reports_instead_of_raising(self, tmp_path, monkeypatch, capsys):
         self._setup(tmp_path, monkeypatch)
-        data = yaml.safe_load((tmp_path / "profile" / "verticals.yaml").read_text())
+        data = yaml.safe_load((tmp_path / "profile" / "verticals.yaml").read_text(encoding="utf-8"))
         data["schema_version"] = 2
-        (tmp_path / "profile" / "verticals.yaml").write_text(yaml.safe_dump(data))
+        (tmp_path / "profile" / "verticals.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
         assert verticals.main() == 1
         assert "schema_version must be 1" in capsys.readouterr().out
 

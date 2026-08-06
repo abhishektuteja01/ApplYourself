@@ -292,7 +292,7 @@ allowable_synonyms: []
 
 def test_load_de_ai_rules_and_flag(tmp_path):
     p = tmp_path / "rules.yaml"
-    p.write_text("bullets_diction_pass_completed: true\n")
+    p.write_text("bullets_diction_pass_completed: true\n", encoding="utf-8")
     rules = load_de_ai_rules(p)
     assert bullets_diction_pass_completed(rules) is True
 
@@ -307,7 +307,7 @@ def test_bullets_diction_pass_default_false_when_missing_key():
 
 def _write_rules(tmp_path: Path) -> Path:
     p = tmp_path / "rules.yaml"
-    p.write_text(yaml.safe_dump(_rules()))
+    p.write_text(yaml.safe_dump(_rules()), encoding="utf-8")
     return p
 
 
@@ -322,7 +322,8 @@ def test_lint_bullets_md_ignores_source_metadata_dates(tmp_path):
         "canonical: Owned the daily Stock Mark-to-Market risk report.\n"
         "tags: [a]\n"
         "evidence: production system\n"
-        "allowable_synonyms: []\n"
+        "allowable_synonyms: []\n",
+        encoding="utf-8",
     )
     rules_path = _write_rules(tmp_path)
     rules = load_de_ai_rules(rules_path)
@@ -340,7 +341,8 @@ def test_lint_bullets_md_flags_real_hedge_in_canonical(tmp_path):
         "canonical: This may have improved outcomes for the team.\n"
         "tags: [a]\n"
         "evidence: x\n"
-        "allowable_synonyms: []\n"
+        "allowable_synonyms: []\n",
+        encoding="utf-8",
     )
     rules_path = _write_rules(tmp_path)
     rules = load_de_ai_rules(rules_path)
@@ -356,7 +358,8 @@ def test_lint_bullets_md_reports_by_bullet_id_not_file_line(tmp_path):
     bullets = tmp_path / "bullets.md"
     bullets.write_text(
         "## B-DEL-01\nsource: foo\ncanonical: clean text here.\nallowable_synonyms: []\n\n"
-        "## B-DEL-02\nsource: bar\ncanonical: Was responsible for breaking things.\nallowable_synonyms: []\n"
+        "## B-DEL-02\nsource: bar\ncanonical: Was responsible for breaking things.\nallowable_synonyms: []\n",
+        encoding="utf-8",
     )
     rules_path = _write_rules(tmp_path)
     rules = load_de_ai_rules(rules_path)

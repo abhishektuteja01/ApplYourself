@@ -31,7 +31,7 @@ def test_example_config_covers_every_allowed_source(monkeypatch):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     example = Path(__file__).resolve().parents[2] / "profile" / "discovery.example.yaml"
-    listed = set(yaml.safe_load(example.read_text())["sources"])
+    listed = set(yaml.safe_load(example.read_text(encoding="utf-8"))["sources"])
     assert listed == set(DiscoveryConfig().sources)
     # And it must parse under the real loader, not just as YAML.
     assert load_config(example).sources["google"].enabled is False
@@ -42,7 +42,7 @@ def test_malformed_yaml(tmp_path, monkeypatch):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     p = tmp_path / "bad.yaml"
-    p.write_text("unbalanced: [")
+    p.write_text("unbalanced: [", encoding="utf-8")
     with pytest.raises(ValueError):
         load_config(p)
 
@@ -51,7 +51,7 @@ def test_unknown_source_key(tmp_path, monkeypatch):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     p = tmp_path / "bad_source.yaml"
-    p.write_text(yaml.dump({"sources": {"bad_site": {"enabled": True}}}))
+    p.write_text(yaml.dump({"sources": {"bad_site": {"enabled": True}}}), encoding="utf-8")
     with pytest.raises(ValueError):
         load_config(p)
 
@@ -61,7 +61,7 @@ def test_unsupported_schema_version_rejected(tmp_path, monkeypatch, version):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     p = tmp_path / "v2.yaml"
-    p.write_text(yaml.dump({"schema_version": version, "deadline_hours": 3}))
+    p.write_text(yaml.dump({"schema_version": version, "deadline_hours": 3}), encoding="utf-8")
     with pytest.raises(ValueError, match="schema_version must be 1"):
         load_config(p)
 
@@ -70,9 +70,9 @@ def test_schema_version_1_and_absent_both_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     explicit = tmp_path / "v1.yaml"
-    explicit.write_text(yaml.dump({"schema_version": 1, "deadline_hours": 3}))
+    explicit.write_text(yaml.dump({"schema_version": 1, "deadline_hours": 3}), encoding="utf-8")
     absent = tmp_path / "no_version.yaml"
-    absent.write_text(yaml.dump({"deadline_hours": 3}))
+    absent.write_text(yaml.dump({"deadline_hours": 3}), encoding="utf-8")
     for p in (explicit, absent):
         cfg = load_config(p)
         assert cfg.schema_version == 1
