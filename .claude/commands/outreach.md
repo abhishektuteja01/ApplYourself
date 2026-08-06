@@ -86,8 +86,14 @@ Read:
   last entry (already vertical-prefixed, e.g. `<vertical>/2026-06-17_acme_..._a1b2c3d4`)
   IF that list is non-empty (so the outreach knows which bullets your
   resume leads with)
-- `profile/contacts.yaml` (filter by company name OR tags overlap; PII;
-  gitignored). If the file doesn't exist, treat as empty and proceed.
+- `profile/contacts.yaml` (schema in `profile/contacts.example.yaml`; PII;
+  gitignored). If the file doesn't exist, treat as empty and proceed. Select
+  entries whose `company` matches the row's company OR whose `tags` overlap the
+  row's vertical/domain. From the selected entry use: `id` (recorded as
+  `contact_id`), `name`, `role`, `relationship` (which channel rubric applies),
+  `channel` (`email` overrides the LinkedIn-DM default), `email`/`linkedin`,
+  `shared_affiliation` (what an alumni message leads with), and `notes` (shapes
+  the opening; never quoted into the draft).
 - `profile/voice_samples.md` -- the voice baseline (NOT templates; fresh
   generation in the user's voice)
 - `profile/de_ai_rules.yaml` -- both `banned_phrases` and `outreach_only`
@@ -124,8 +130,9 @@ That is the whole rule. Reachability is not a judgment call to make here.
 
 - **≤ 100 words**
 - **LEAD with the shared affiliation** -- a school or employer the recipient
-  and the user have in common, taken from `profile/contacts.yaml`, the `--via`
-  context, or a `source:` field in `profile/bullets.md`
+  and the user have in common, taken from the entry's `shared_affiliation` in
+  `profile/contacts.yaml`, the `--via` context, or a `source:` field in
+  `profile/bullets.md`
 - **Ask for a 15-minute call -- NOT a referral up front**
 - **OPT disclosure: light, honest, upfront mention**
 

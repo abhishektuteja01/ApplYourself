@@ -1,0 +1,61 @@
+# TEMPLATE — copy to profile/contacts.yaml and edit. Optional: /outreach treats
+# a missing file as empty and proceeds.
+#
+# Read by /outreach, which selects entries whose `company` matches the role's
+# company OR whose `tags` overlap the role, and uses `shared_affiliation` to
+# open an alumni message. Real names and addresses — gitignored, and every name
+# here belongs in profile/pii_denylist.txt.
+#
+# Fields per entry:
+#   id                 required. Stable slug. /outreach records it as
+#                      `contact_id` in the draft's front matter, so do not
+#                      renumber existing entries.
+#   name               required. Display name, as you would address them.
+#   company            required for company matching. As job boards spell it,
+#                      so it matches the row's company.
+#   role               their title, for the lead-in.
+#   relationship       recruiter | referral | alumni | other. Drives which
+#                      /outreach channel rubric applies.
+#   channel            linkedin | email. /outreach defaults to a LinkedIn DM
+#                      unless this says email or --via says otherwise.
+#   email              omit unless channel is email.
+#   linkedin           profile URL or handle.
+#   shared_affiliation what you actually have in common — a school, a former
+#                      employer, a project. Alumni messages LEAD with this, so
+#                      leave it out rather than stretching it.
+#   tags               free-form list used for matching when company does not
+#                      match: verticals, domains, technologies.
+#   notes              anything that changes how you open. Kept out of drafts.
+
+schema_version: 1
+contacts:
+  - id: acme-recruiter-01
+    name: Dana Reyes
+    company: Acme AI
+    role: Technical Recruiter
+    relationship: recruiter
+    channel: linkedin
+    linkedin: https://www.linkedin.com/in/example-dana-reyes
+    tags: [example_primary, widgets]
+    notes: Messaged about a different req last quarter; keep it short.
+
+  - id: widgets-referral-01
+    name: Sam Okafor
+    company: Widgets R Us
+    role: Staff Widget Engineer
+    relationship: referral
+    channel: email
+    email: sam.okafor@example.com
+    shared_affiliation: worked together on the gizmo calibration rollout
+    tags: [example_primary]
+    notes: Offered to refer if something opened on their team.
+
+  - id: sprocket-alumni-01
+    name: Priya Raman
+    company: Sprocket Labs
+    role: Sprocket Operations Lead
+    relationship: alumni
+    channel: linkedin
+    linkedin: https://www.linkedin.com/in/example-priya-raman
+    shared_affiliation: Example University, same program
+    tags: [example_secondary, sprockets]
