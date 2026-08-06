@@ -10,7 +10,7 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
-argument-hint: "[audit | stage <n>]"
+argument-hint: "[audit | stage <n> | B1..B4 | C]"
 ---
 
 # /onboarding — set up your own copy
@@ -56,7 +56,7 @@ echo "--- toolchain ---"
 echo "pinned python: $(cat .python-version 2>/dev/null || echo '.python-version MISSING')"
 uv --version || echo "MISSING: uv"
 echo "--- required (pipeline cannot run without these) ---"
-for f in profile/verticals.yaml profile/discovery.yaml profile/preferences.md \
+for f in profile/verticals.yaml profile/preferences.md \
          profile/scoring_rubric.md profile/bullets.md profile/skills_master.md \
          profile/pii_denylist.txt; do
   test -s "$f" && echo "ok   $f" || echo "MISSING $f"
@@ -66,6 +66,12 @@ for f in profile/voice_samples.md profile/contacts.yaml \
          profile/resume_template.docx profile/cover_letter_template.docx; do
   test -s "$f" && echo "ok   $f" || echo "absent  $f"
 done
+# Absent is not fatal here: src/discovery/config.py falls back to code defaults.
+# Worth flagging anyway, because the default location_allowlist is not narrowed
+# to anywhere the user chose.
+test -s profile/discovery.yaml \
+  && echo "ok   profile/discovery.yaml" \
+  || echo "absent  profile/discovery.yaml (discovery runs on default filters)"
 echo "--- validity ---"
 uv run verticals-check 2>&1 | tail -2
 test "$(git config core.hooksPath)" = ".githooks" \
@@ -78,7 +84,9 @@ Then print a checklist mapping each result to the stage that fixes it, name the
 resume point, and ask whether to start there. If everything is present and
 `verticals-check` passes, report that and stop — that is the audit.
 
-`$ARGUMENTS` of `stage <n>` jumps straight to that stage.
+Run the audit first regardless of `$ARGUMENTS`; it is read-only and decides what
+is safe to skip. Then `stage <n>` (Track A), `B<n>`, or `C` jumps to that item
+instead of the first incomplete one.
 
 ---
 
@@ -113,8 +121,12 @@ missing denylist is an error, not a pass.
    government identifiers → local filesystem paths (`~/Users/<shortname>/`) →
    account handles → other people (recruiters, referrers) → employers, clients,
    schools → private lane names.
-3. Explain two mechanics as they come up: patterns match whole words unless
-   prefixed with `~`, and regex metacharacters need escaping.
+3. Explain two mechanics as they come up. Patterns match whole words unless
+   prefixed with `~`, which switches to matching anywhere — that is what a
+   handle needs (`~myhandle` also catches `myhandle01`), and what a path needs
+   (`~/Users/jsmith/` is the sigil plus `/Users/jsmith/`, not a home-directory
+   shortcut; the leading `~` is stripped before matching). Regex metacharacters
+   need escaping: `first\.last@example\.com`.
 4. Verify: `git add -A && ./scripts/pii_scan.sh`
 
 Their real denylist is gitignored. Never echo its contents into any other file.
@@ -133,12 +145,19 @@ Unlocks: scoring that knows your constraints.
    judge reads it, so a missing file breaks `/score`. It ships working defaults;
    the only parts worth revisiting now are the three `suggested_action`
    thresholds. Offer to tune them, and move on if the user has no opinion yet.
-5. Reconcile `false_positive_guard:` in `profile/sponsorship_rules.yaml` with
-   the authorization answer from step 2. It ships with three "must be authorized
-   to work" phrases, which are correct only for someone already authorized. If
-   the user needs sponsorship, **remove them** — left in place they suppress a
-   real signal and inflate the shortlist. Show the diff and confirm before
-   editing.
+5. Reconcile `profile/sponsorship_rules.yaml` with the authorization answer from
+   step 2. Its lists assume the user is already authorized and needs no
+   sponsorship. **If they need sponsorship, two edits are required** — show the
+   diff and confirm before applying:
+   - Move every `opt_ok:` phrase into `ineligible:`. Those phrases ("no visa
+     sponsorship", "will not sponsor") mean the employer will not sponsor.
+     Left in `opt_ok:` they label exactly the postings the user cannot accept as
+     acceptable, then shortlist and tailor them.
+   - Empty `false_positive_guard:`, whose three phrases are boilerplate only for
+     someone already authorized.
+
+   If they are a citizen or permanent resident, both lists are harmless as
+   shipped; say so and move on.
 
 ## Stage 4 — bullets from your real resume (45–75 min)
 
@@ -151,17 +170,26 @@ This is the longest stage and the one that matters most. Say so up front.
    - `.pdf` or `.md` → read it directly
 2. `cp profile/bullets.example.md profile/bullets.md`, then delete the example
    entries, keeping the header comment.
-3. Group their experience into contexts (one per employer, project, or degree)
-   and agree a short `<CTX>` tag for each.
-4. **Per bullet, one at a time:** draft `canonical` from what their resume
+3. Set `bullets_diction_pass_completed: false` in `profile/de_ai_rules.yaml`. It
+   ships `true`, which exempts verbatim canonical text from banned-phrase
+   linting — an exemption that makes no sense for bullets that do not exist yet.
+   Step 8 offers to turn it back on.
+4. Group their experience into contexts (one per employer, project, or degree)
+   and agree a short `<CTX>` tag for each. Bullet ids are `B-<CTX>-NN` with a
+   zero-padded two-digit sequence (`B-WID-01`), because `skills_master.md`'s
+   `evidence:` references point at them.
+5. **Per bullet, one at a time:** draft `canonical` from what their resume
    actually says, then show it and ask a single question — "can you defend this
    sentence on a call?" Accept, reword, or drop. Fill `source`, `tags`,
    `evidence` from their answer.
-5. Leave `allowable_synonyms: []` for now. Track B fills it from real job
+6. Leave `allowable_synonyms: []` for now. Track B fills it from real job
    postings via `/suggest-synonyms`; guessing synonyms before seeing a posting
    wastes the pass.
-6. Every 3–4 bullets, report progress and offer to pause. This stage is
+7. Every 3–4 bullets, report progress and offer to pause. This stage is
    resumable mid-way: bullets already written stay written.
+8. When every bullet is written, offer to read them back for diction and, if the
+   user accepts and is satisfied, set `bullets_diction_pass_completed: true`.
+   Leave it `false` otherwise — it only claims the pass happened.
 
 Never invent a metric. If their resume says "improved reporting" with no number,
 the canonical text says that too.
@@ -187,10 +215,17 @@ Unlocks: discovery, classification and scoring.
 2. Run **`/new-vertical <name>`** and let it drive. It interviews for the block,
    classifier rules, `rubric.md`, `tailoring.md` and the scoring resume. Do not
    duplicate its work here.
-3. When it finishes, remove the `example_primary` and `example_secondary` blocks
-   from `verticals.yaml` and point `default_vertical` at the user's lane. Leave
-   the `profile/verticals/example_*` directories alone — they are committed
-   templates, not the user's config.
+3. When it finishes, strip the example scaffolding from `verticals.yaml`. All
+   four edits are required — the loader rejects the file if any is missed:
+   - remove the `example_primary` and `example_secondary` blocks
+   - remove the three `classifier_rules` entries whose `vertical` is one of
+     those two, keeping the rules `/new-vertical` drafted. A rule naming a
+     vertical that no longer exists is a hard `ValueError`, not a warning.
+   - point `default_vertical` at the user's lane
+   - leave `out_of_lane.reasoning` in place
+
+   Leave the `profile/verticals/example_*` directories alone — they are
+   committed templates, not the user's config.
 4. Fill the `vertical_lean` values in `skills_master.md` for the new lane.
 5. Verify: `uv run verticals-check`
 
@@ -239,23 +274,34 @@ Each item is independent. Do only the one the user wants next.
 1. `cp profile/resume_template.example.docx profile/resume_template.docx`
 2. Have them restyle it in Word: fonts, sizes and spacing on the five named
    paragraph styles. Do not rename the styles — the renderer looks them up by
-   name and rejects a template that is missing one. No tables, no images.
-3. The template's sample text is placeholder only; the renderer clears the body
-   and rebuilds it from the resume markdown, so what they type there does not
-   reach a generated resume. Their name and contact line come from the lane's
-   scoring resume, not the template.
-4. Run `/suggest-synonyms` to populate `allowable_synonyms` in `bullets.md` and
-   `skills_master.md` from real shortlist postings.
+   name and rejects a template that is missing one. **No tables, no images, and
+   nothing in the header, footer or a text box.**
+3. Only the **body** is rebuilt. The renderer clears body paragraphs and writes
+   the resume markdown in their place, so the sample text there is discarded —
+   but headers, footers and text boxes are preserved untouched and appear on
+   every generated resume. Putting a name and contact line in the Word header is
+   the most common resume-template habit and the one thing to avoid here: their
+   name and contact line come from the lane's scoring resume.
+4. Tell them never to edit `profile/resume_template.example.docx` itself. It is
+   tracked, and re-saving it in Word stamps their name into the document
+   metadata; the pre-push hook will block the push. They style the copy.
+5. **Only once `/score` has produced a shortlist**, run `/suggest-synonyms` to
+   populate `allowable_synonyms` in `bullets.md` and `skills_master.md`. It reads
+   `shortlist/*.md` and `jobs/scored.parquet`; with neither present it has
+   nothing to audit. If they have not scored yet, stop here and say so.
 
 ## B2 — unlock `/cover-letter` (15 min)
 
 1. `cp profile/cover_letter_template.example.docx profile/cover_letter_template.docx`
 2. Explain the opposite contract: this template is **preserved**, not rebuilt.
    Every paragraph that is not exactly `{{SALUTATION}}`, `{{BODY}}`, `{{DATE}}`,
-   `{{CLOSING}}` or `{{SIGNOFF_NAME}}` ships verbatim in every letter. Anything
-   they add — a letterhead, an address block — goes to employers.
+   `{{CLOSING}}` or `{{SIGNOFF_NAME}}` ships verbatim in every letter — including
+   tables, text boxes, headers and footers. A letterhead table here goes to every
+   employer they write to.
 3. Have them style it and replace `{{SIGNOFF_NAME}}` and `{{DATE}}` with static
    text only if they want those fixed.
+4. Same warning as B1: style the copy, never
+   `profile/cover_letter_template.example.docx`, which is tracked and guarded.
 
 ## B3 — unlock `/outreach` (20 min)
 
@@ -265,8 +311,10 @@ Each item is independent. Do only the one the user wants next.
    without this file, and polished samples produce outreach that sounds like
    nobody.
 3. Optional: `cp profile/contacts.example.yaml profile/contacts.yaml`.
-4. Remind them every real name in either file belongs in
-   `profile/pii_denylist.txt`, then re-run the scan.
+4. Add every real name from either file to `profile/pii_denylist.txt`. Both files
+   are gitignored, so `pii_scan.sh` will never read them — the denylist entries
+   are what stops those names surfacing later in something that *is* tracked.
+   Do not present a rescan as verification of these two files; it cannot see them.
 
 ## B4 — `/track` and `/standup`
 
@@ -282,29 +330,42 @@ out-transition, and that `/track` is the only writer of state.
 Offer this only after Track A works end to end. Skip on non-macOS: it depends on
 `launchd`, `caffeinate` and `pmset`.
 
-1. Show the wrapper: `scripts/nightly_discovery.sh`. It derives the repo from
-   its own location and needs no editing.
-2. Install the agent, substituting the label and repo path:
+1. Show the wrapper: `scripts/nightly_discovery.sh`. It derives the repo from its
+   own location and needs no editing.
+2. Show the user's current wake schedule before touching anything —
+   `pmset -g sched` — because step 4 **replaces** it wholesale.
+3. Print this whole block for the user to run themselves. Do not run any of it:
+   it writes outside the repo, needs `sudo`, and calls `launchctl`.
 
 ```bash
+mkdir -p logs ~/Library/LaunchAgents
 sed -e "s|__LABEL__|com.$USER.applyourself.discovery|g" \
     -e "s|__REPO__|$PWD|g" \
     scripts/launchagent.example.plist \
     > ~/Library/LaunchAgents/com.$USER.applyourself.discovery.plist
-```
-
-3. Print these for the user to run themselves — never run them:
-
-```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.$USER.applyourself.discovery.plist
 sudo pmset repeat wakeorpoweron MTWRFSU 01:55:00
+launchctl print gui/$(id -u)/com.$USER.applyourself.discovery | head -20
 ```
 
-Explain why the wake matters: a LaunchAgent whose start time falls while the Mac
-is asleep is skipped, not deferred. The wake is five minutes before the job.
+`mkdir -p logs` is not optional: `launchd` will not create the intermediate
+directory for `StandardOutPath`, and a missing `logs/` means the job fails to
+spawn with no log to explain why.
 
-4. Verify: `launchctl print gui/$(id -u)/com.$USER.applyourself.discovery`,
-   and after the first night, `ls logs/`.
+4. State the four ways this silently does not run, so an empty morning is
+   diagnosable:
+   - The Mac was asleep at 02:00 and no wake was scheduled — a `launchd` job
+     whose time falls during sleep is skipped, not deferred.
+   - The wake fired at 01:55 but the idle-sleep timer put the Mac back to sleep
+     before 02:00. If their `pmset sleep` is under 5 minutes, move the wake to
+     01:59. `caffeinate` is inside the job and cannot help before it starts.
+   - The Mac was fully shut down, or on battery. `wakeorpoweron` boots to the
+     login window, where the `gui/` domain holding the agent is not loaded. This
+     works from sleep on AC power, not from a cold shutdown.
+   - `sudo pmset repeat` silently replaced an existing repeating schedule (hence
+     step 2).
+5. After the first night: `ls logs/` and read the newest
+   `discovery_<timestamp>.log`.
 
 ---
 
@@ -316,10 +377,16 @@ only — anything inferable from the filesystem belongs to Stage 0's audit.
 ```markdown
 # onboarding progress
 
-stage_completed: 4
-track: A
+track_a_stage_completed: 4      # 0-8; 8 means Track A is done
+track_b_done: [B3]              # any of B1 B2 B3 B4
+track_c: declined               # done | declined | not_offered
 notes:
   - contexts agreed: WID (Widget Corp), SPR (side project), EDU (degree)
   - user declined a compensation floor
   - deferred: second vertical
+  - needs sponsorship, so opt_ok phrases were moved to ineligible
 ```
+
+Track B items are also inferable from which files exist, so Stage 0's audit is
+the authority when the two disagree. Record judgment calls here, not file
+presence.

@@ -11,11 +11,15 @@ what is a bullet.
 natively by the Read tool, so this refuses it with a pointer rather than pulling
 in a PDF dependency the rest of the pipeline does not need.
 
-Extraction covers three places resumes hide text:
+Extraction covers the three places resumes usually hide text:
   - body paragraphs, in document order
   - table cells, in document order with the paragraphs (many resume templates
     are a single invisible table, and a paragraph-only walk returns nothing)
   - headers and footers, where contact details often live
+
+Not covered: text boxes (w:txbxContent), nested tables inside a cell, footnotes.
+A resume built entirely of text boxes extracts to little or nothing, which is
+why an empty result is reported as an error rather than returned silently.
 """
 from __future__ import annotations
 
@@ -109,7 +113,16 @@ def extract(path: Path) -> str:
     if suffix in UNSUPPORTED:
         raise ValueError(f"{path.name}: {UNSUPPORTED[suffix]}")
     if suffix in PASSTHROUGH_SUFFIXES:
-        return path.read_text(encoding="utf-8")
+        try:
+            return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            # A resume exported from an older editor is often latin-1. Without
+            # this, main()'s `except ValueError` misses it and the user gets a
+            # traceback instead of a one-line explanation.
+            raise ValueError(
+                f"{path.name} is not valid UTF-8 ({exc.reason} at byte "
+                f"{exc.start}). Re-save it as UTF-8, or export to .docx."
+            ) from exc
     if suffix in DOCX_SUFFIXES:
         return extract_docx(path)
     raise ValueError(

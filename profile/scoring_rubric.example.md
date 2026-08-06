@@ -4,10 +4,18 @@
 # alongside the assigned vertical's rubric.md. Per-vertical tiers and caps live
 # in profile/verticals/<vertical>/rubric.md — never here.
 #
-# Everything below is enforced by src.scoring_io.validate_scores except the
-# thresholds in "suggested_action", which are yours to tune.
+# What `src.scoring_io.validate_scores` actually rejects: a missing required
+# field, a duplicate job_id, a job_id that is not 8 characters, an unknown
+# vertical / sponsorship_label / suggested_action, a subscore outside its axis
+# maximum, a `fit_score` that disagrees with the subscore sum, and an
+# `ineligible` row with empty evidence.
+#
+# Everything else below — the word limits, the 2-3 keyword count, emitting no
+# extra fields, zeroing subscores on ineligible rows — is prompt discipline, not
+# validation. A judge that drifts on those produces a shortlist nobody rejects,
+# so they are stated as hard requirements even though nothing enforces them.
 
-### Per-row JSON schema (validated — output is REJECTED if any of these fail)
+### Per-row JSON schema
 
 ```json
 {
@@ -25,7 +33,8 @@
 Hard requirements:
 - Do NOT emit `fit_score`. The total is derived from the four subscores by
   `fit_score_from_subscores`. Score each axis on its own merits; never pick a
-  total first and distribute it across the axes.
+  total first and distribute it across the axes. (Emitting it is accepted only
+  when it equals the sum — the disagreement is the signal, not the key.)
 - Axis maxima (locked): title ≤ 30, skills ≤ 30, seniority ≤ 20, domain ≤ 20
   (they sum to 100).
 - `job_id` is the row's 8-character id, copied verbatim.

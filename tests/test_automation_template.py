@@ -58,6 +58,31 @@ class TestPlist:
         for key in ("StandardOutPath", "StandardErrorPath"):
             assert d[key].startswith(PLACEHOLDERS["__REPO__"] + "/logs/")
 
+    def test_the_log_directory_is_committed(self):
+        """launchd does not create the intermediate directory for
+        StandardOutPath. Without a committed logs/, the agent fails to spawn on a
+        fresh clone and produces no log explaining why."""
+        gitkeep = REPO_ROOT / "logs" / ".gitkeep"
+        assert gitkeep.exists(), "logs/.gitkeep missing"
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "logs/.gitkeep"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            encoding="utf-8",
+        )
+        assert tracked.returncode == 0, "logs/.gitkeep exists but is not tracked"
+
+    def test_actual_log_files_stay_ignored(self):
+        """The directory ships; its contents must not. A discovery log names
+        companies and search terms."""
+        check = subprocess.run(
+            ["git", "check-ignore", "logs/discovery_2026-01-01_000000.log"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            encoding="utf-8",
+        )
+        assert check.returncode == 0, "log files are no longer gitignored"
+
 
 class TestWrapper:
     def test_is_executable(self):

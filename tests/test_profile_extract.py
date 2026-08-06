@@ -112,6 +112,13 @@ class TestPassthroughAndErrors:
         with pytest.raises(ValueError, match="does not exist"):
             extract(tmp_path / "nope.docx")
 
+    def test_non_utf8_text_is_a_clean_error_not_a_traceback(self, tmp_path):
+        """A latin-1 export is common; main() only catches ValueError."""
+        p = tmp_path / "resume.md"
+        p.write_bytes(b"Jos\xe9 Garc\xeda\n")
+        with pytest.raises(ValueError, match="not valid UTF-8"):
+            extract(p)
+
 
 class TestCLI:
     def test_prints_text_and_exits_zero(self, tmp_path, monkeypatch, capsys):

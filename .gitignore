@@ -57,8 +57,13 @@ applications/
 shortlist/
 pipeline.md
 profile/resume.docx
-# Morning discovery automation logs (scheduler job)
-/logs/
+# Nightly discovery logs (scheduler job). The directory itself is committed via
+# .gitkeep: launchd will not create the intermediate directory for
+# StandardOutPath, so a fresh clone without logs/ means the agent fails to spawn
+# with no log to say why. `/logs/*` rather than `/logs/`, or the re-include below
+# cannot apply — git will not re-include a file whose parent is excluded.
+/logs/*
+!/logs/.gitkeep
 # Fixed staging dir for Word/osascript PDF conversion (see /tailor, /cover-letter).
 # Word's sandbox grant doesn't reliably persist across new per-job output dirs;
 # converting through one unchanging folder keeps a single one-time grant valid.
