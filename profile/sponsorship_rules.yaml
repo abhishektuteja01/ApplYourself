@@ -1,6 +1,9 @@
 # JD-text-only sponsorship labeling. Read by /score BEFORE fit-scoring.
 # Precedence: ineligible wins outright -> opt_ok -> sponsors -> unknown.
-# false_positive_guard phrases alone are NEVER blockers (I am authorized on OPT).
+# false_positive_guard phrases alone are NEVER blockers. The three shipped there
+# are boilerplate only for someone already authorized to work — if you need
+# sponsorship, remove them (see profile/preferences.md, the source of truth for
+# your status).
 # Labels: sponsors | opt_ok | ineligible | unknown.
 
 # Deterministic pre-label (src/scoring_io.py carve-out): unambiguous

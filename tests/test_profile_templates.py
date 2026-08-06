@@ -78,6 +78,8 @@ class TestTemplateCoverage:
                 continue
             if "/verticals/example_" in rel_path:
                 continue  # committed example lane files
+            if Path(rel_path).name.startswith("."):
+                continue  # runtime state a command writes, not a user input
             template = _template_for(rel_path)
             if template is None:
                 continue
