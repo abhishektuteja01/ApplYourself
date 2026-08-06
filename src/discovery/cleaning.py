@@ -35,6 +35,7 @@ from rapidfuzz import fuzz
 from src import verticals
 from src.discovery.location import parse_location
 from src.discovery.config import load_config
+from src.discovery.schema import naive_datetime
 
 log = logging.getLogger(__name__)
 
@@ -183,12 +184,10 @@ def drop_stale(
     df = df.copy()
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     cutoff = today - pd.Timedelta(days=max_age_days)
-    posted = pd.to_datetime(df.get("posted_date"), errors="coerce")
-    try:
-        if posted.dt.tz is not None:
-            posted = posted.dt.tz_localize(None)
-    except (AttributeError, TypeError):
-        pass
+    posted = naive_datetime(
+        df["posted_date"] if "posted_date" in df.columns
+        else pd.Series(pd.NaT, index=df.index)
+    )
     df["posted_date"] = posted
     df["posted_date_missing"] = posted.isna()
     if df.empty:
@@ -485,7 +484,7 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
         df["remote_flag"] = flag.where(flag.notna(), False).astype(bool)
     if "scraped_date" not in df.columns:
         df["scraped_date"] = pd.Timestamp.today().normalize()
-    df["scraped_date"] = pd.to_datetime(df["scraped_date"], errors="coerce")
+    df["scraped_date"] = naive_datetime(df["scraped_date"])
     if "posted_date" not in df.columns:
         df["posted_date"] = pd.NaT
     for col in ("salary_min", "salary_max"):

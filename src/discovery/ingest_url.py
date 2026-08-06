@@ -30,7 +30,7 @@ from src import verticals
 from src.discovery import cleaning
 from src.discovery import htmlutil
 from src.discovery.sources.ats import http, greenhouse, lever, ashby
-from src.discovery.schema import make_row
+from src.discovery.schema import make_row, naive_datetime
 from src.discovery.orchestrator import (
     JOBS_RAW,
     JOBS_ROOT,
@@ -268,7 +268,7 @@ def ingest(
     df = pd.DataFrame([row])
     df["ingested_run_id"] = run_id
     df["scraped_date"] = now
-    df["date_posted"] = pd.to_datetime(df["date_posted"], errors="coerce")
+    df["date_posted"] = naive_datetime(df["date_posted"])
 
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_path = raw_dir / f"{run_id}.parquet"
@@ -277,7 +277,7 @@ def ingest(
         prior = pd.read_parquet(raw_path)
         df = pd.concat([prior, df], ignore_index=True)
         if "date_posted" in df.columns:
-            df["date_posted"] = pd.to_datetime(df["date_posted"], errors="coerce")
+            df["date_posted"] = naive_datetime(df["date_posted"])
     df.to_parquet(raw_path, index=False)
     log.info("archived 1 row from %s to %s", url, raw_path)
 

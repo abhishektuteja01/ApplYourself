@@ -252,6 +252,33 @@ def test_drop_stale():
     assert bool(t2["posted_date_missing"]) is False
 
 
+def test_drop_stale_survives_one_tz_aware_posted_date():
+    """One tz-aware value makes the column object dtype; a non-utc parse would
+    coerce every naive value to NaT and keep the whole frame."""
+    today = pd.Timestamp("2026-08-06")
+    df = _clean_df([
+        {"title_normalized": "aware_fresh", "posted_date": pd.Timestamp("2026-08-01T10:00:00Z")},
+        {"title_normalized": "naive_fresh", "posted_date": pd.Timestamp("2026-08-04")},
+        {"title_normalized": "naive_stale", "posted_date": pd.Timestamp("2026-01-01")},
+    ])
+    assert df["posted_date"].dtype == object  # the trigger condition
+    out = drop_stale(df, today=today)
+    assert set(out["title_normalized"]) == {"aware_fresh", "naive_fresh"}
+    assert out["posted_date"].dtype == "datetime64[ns]"
+    assert not out["posted_date_missing"].any()
+
+
+def test_drop_stale_survives_mixed_offset_strings():
+    today = pd.Timestamp("2026-08-06")
+    df = _clean_df([
+        {"title_normalized": "utc", "posted_date": "2026-08-01T10:00:00+00:00"},
+        {"title_normalized": "est", "posted_date": "2026-08-01T10:00:00-05:00"},
+        {"title_normalized": "stale", "posted_date": "2026-01-01"},
+    ])
+    out = drop_stale(df, today=today)
+    assert set(out["title_normalized"]) == {"utc", "est"}
+
+
 # ---------- T8: exact_dedupe keeps longest jd_text ----------
 
 def test_exact_dedupe_keeps_longest_jd():

@@ -18,6 +18,17 @@ COLUMNS: list[str] = [
     "vertical",
 ]
 
+def naive_datetime(values) -> pd.Series:
+    """Parse to tz-naive UTC. Both keywords are load-bearing on a column that
+    concatenated shards have left as object dtype: without utc=True a single
+    tz-aware value coerces every naive one to NaT, and without format="mixed"
+    the format inferred from the first element does the same to every element
+    that doesn't share it."""
+    return pd.to_datetime(
+        values, errors="coerce", utc=True, format="mixed"
+    ).dt.tz_localize(None)
+
+
 def make_row(**kwargs) -> dict:
     row = {
         "site": "",
@@ -62,5 +73,6 @@ def validate_frame(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("min_amount", "max_amount"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
         
-    df["date_posted"] = pd.to_datetime(df["date_posted"], errors="coerce")
+    # shards must be naive before they are concatenated
+    df["date_posted"] = naive_datetime(df["date_posted"])
     return df
