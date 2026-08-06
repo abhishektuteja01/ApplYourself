@@ -1,4 +1,4 @@
-"""Pure parquet plumbing for /score and /rescore.
+"""Parquet plumbing for /score and /rescore: read, dump, merge, prune.
 
 Determinism boundary: no LLM calls in this module. /score and
 /rescore invoke these helpers via Bash; the LLM judging happens inside the
@@ -11,18 +11,22 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 
 from src import verticals
 from src.parquet_io import write_parquet
-from src.state_io import load_state_index
-from src import paths
+from src.prescreen import (
+    AUTO_SKIP_SCORED_BY,
+    HARD_INELIGIBLE_REASONING,
+    HARD_INELIGIBLE_SCORED_BY,
+    disqualify_reason,
+    hard_ineligible_phrase,
+    load_hard_ineligible,
+)
 
 log = logging.getLogger(__name__)
 
@@ -52,127 +56,10 @@ UNSCORED_FIELDS: list[str] = [
     "employment_type", "seniority_raw", "vertical",
 ]
 
-# Shortlist caps. compute_shortlist's defaults, the assertion that guards them,
-# and the header line a human reads must all be the same two numbers.
-SHORTLIST_TOP_N = 25
-SHORTLIST_MIN_FIT = 50
-
 VALID_LABELS = {"sponsors", "opt_ok", "ineligible", "unknown"}
 VALID_ACTIONS = {"tailor", "skip", "manual-review"}
 SUBSCORE_AXES = ("title", "skills", "seniority", "domain")
 AXIS_MAXIMA = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
-
-# Higher = preferred. ineligible never reaches the main list, but included
-# for completeness so the sort key never sees a missing label.
-SPONSORSHIP_PREF = {"sponsors": 3, "opt_ok": 2, "unknown": 1, "ineligible": 0}
-
-# Pipeline states at or past the point of application — exclude from the
-# shortlist main list because the user has already acted on these roles.
-_APPLIED_STATES = frozenset({
-    "applied", "recruiter_contact", "screen", "interview",
-    "offer", "rejected", "withdrawn", "ghosted",
-})
-
-
-# Out-of-lane pre-screen: rows with vertical="" are auto-skipped at
-# fit_score=0 without an LLM call. The human-facing text is the config's
-# `out_of_lane.reasoning`.
-AUTO_SKIP_SCORED_BY = "rubric:title-out-of-lane"
-
-# Hard-ineligible pre-label: a JD containing a `hard_ineligible` phrase is
-# labeled ineligible before any judge runs, routed exactly like a judge-assigned
-# label — never as a `skip`, which is a different thing. Substring match only;
-# every nuanced sponsorship case stays with the judge.
-SPONSORSHIP_RULES_PATH = paths.PROFILE / "sponsorship_rules.yaml"
-HARD_INELIGIBLE_SCORED_BY = "rubric:hard-ineligible-pre-screen"
-HARD_INELIGIBLE_REASONING = (
-    "Auto-labeled ineligible by deterministic pre-screen: JD text contains "
-    "a hard_ineligible phrase (citizenship/clearance bar) from "
-    "profile/sponsorship_rules.yaml. Excluded from the shortlist and "
-    "never fit-scored."
-)
-
-
-def load_hard_ineligible(path: Path = SPONSORSHIP_RULES_PATH) -> tuple[str, ...]:
-    """Lowercased `hard_ineligible` phrases from sponsorship_rules.yaml.
-    Missing key -> () (the pre-label is opt-in); missing file fails loud."""
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    phrases = data.get("hard_ineligible") or []
-    if not isinstance(phrases, list) or not all(isinstance(p, str) and p for p in phrases):
-        raise ValueError(f"{path}: hard_ineligible must be a list of nonempty strings")
-    return tuple(p.lower() for p in phrases)
-
-
-def hard_ineligible_phrase(phrases: tuple[str, ...], jd_text: Any) -> str | None:
-    """First matching hard_ineligible phrase in jd_text (case-insensitive
-    substring), else None."""
-    if not isinstance(jd_text, str) or not jd_text:
-        return None
-    lowered = jd_text.lower()
-    for p in phrases:
-        if p in lowered:
-            return p
-    return None
-
-
-def _normalize_jd(jd_text: Any) -> str:
-    """Lowercase jd_text and strip markdown noise (backslash-escaped
-    punctuation like "5\\+ years", "\\-", "\\&"; "**" bold markers) that
-    would otherwise break a "number directly followed by years/experience"
-    or "degree clause" regex match. Returns "" for non-string/empty input."""
-    if not isinstance(jd_text, str) or not jd_text:
-        return ""
-    text = jd_text.lower()
-    text = re.sub(r"\\([+\-&])", r"\1", text)
-    text = text.replace("**", "")
-    return text
-
-
-# Minimum-years disqualifier. Requires a year-count within a few words of
-# "experience", so an unrelated year mention ("150-year legacy") cannot
-# false-positive. The optional "-M" group captures the LOWER bound of a range,
-# without which "3-6 years" reads as a flat 6-year requirement.
-EXPERIENCE_YEARS_RE = re.compile(
-    r"(\d+)\s*(?:\+|[-–—]\s*\d+\+?)?\s*years?\s+(?:of\s+)?(?:[a-z][\w/&,-]*\s+){0,4}experience",
-)
-
-
-def max_years_required(jd_text: Any) -> int:
-    """Return the highest N found in an explicit "N+ years ... experience"
-    phrase in jd_text (0 if none found)."""
-    normalized = _normalize_jd(jd_text)
-    if not normalized:
-        return 0
-    return max((int(n) for n in EXPERIENCE_YEARS_RE.findall(normalized)), default=0)
-
-
-def disqualify_reason(
-    vertical: verticals.Vertical, jd_text: Any, title: Any = None
-) -> str | None:
-    """Return 'title', 'phrase' or 'years' if the row trips one of the
-    vertical's configured disqualifier checks (in that priority order),
-    else None. `title_phrases` match the job title, `phrases` and
-    `max_years` match jd_text; all come from the vertical's `disqualifier`
-    block in profile/verticals.yaml. All lists are optional —
-    a vertical with empty lists gets the years check only.
-
-    Semantic degree-requirement cases stay out: telling a genuinely closed
-    degree list from an ordinary "or related field" listing is a judgment call
-    a keyword regex over-triggers on. Those belong in the vertical's rubric.md,
-    for the judge."""
-    if isinstance(title, str) and title:
-        title_lowered = title.lower()
-        if any(p in title_lowered for p in vertical.disqualifier_title_phrases):
-            return "title"
-    if not isinstance(jd_text, str) or not jd_text:
-        return None
-    lowered = jd_text.lower()
-    if any(phrase in lowered for phrase in vertical.disqualifier_phrases):
-        return "phrase"
-    if max_years_required(jd_text) > vertical.disqualifier_max_years:
-        return "years"
-    return None
-
 
 # =====================================================================
 # Internal helpers
@@ -196,7 +83,7 @@ def _read_scored(scored_path: Path) -> pd.DataFrame:
     return df[SCORED_COLUMNS]
 
 
-def _to_jsonable(v: Any) -> Any:
+def to_jsonable(v: Any) -> Any:
     if v is None:
         return None
     if isinstance(v, (str, bool, int)):
@@ -206,13 +93,13 @@ def _to_jsonable(v: Any) -> Any:
     if isinstance(v, pd.Timestamp):
         return None if pd.isna(v) else v.isoformat()
     if isinstance(v, dict):
-        return {k: _to_jsonable(vv) for k, vv in v.items()}
+        return {k: to_jsonable(vv) for k, vv in v.items()}
     # list / tuple / numpy.ndarray etc. (numpy arrays come out of pyarrow-
     # backed parquet for list-typed columns; do NOT fall through to str(v),
     # which would render them as the array's repr and break consumers).
     if isinstance(v, (list, tuple)) or (hasattr(v, "__iter__")
                                          and not isinstance(v, (str, bytes))):
-        return [_to_jsonable(x) for x in v]
+        return [to_jsonable(x) for x in v]
     return str(v)
 
 
@@ -305,7 +192,7 @@ def dump_unscored(
             for name in cfg.names
         }
         for _, row in df[available].iterrows():
-            d = {k: _to_jsonable(v) for k, v in row.to_dict().items()}
+            d = {k: to_jsonable(v) for k, v in row.to_dict().items()}
             vertical = d.get("vertical") or ""
             if vertical not in cfg.verticals:
                 f_skip.write(json.dumps(d, default=str) + "\n")
@@ -698,161 +585,3 @@ def prune_scored(scored_path: Path, clean_path: Path) -> int:
 # =====================================================================
 # Shortlist computation (deterministic — sort / cap / exclusion split)
 # =====================================================================
-
-def _count_skips(state_history: Any) -> int:
-    if not isinstance(state_history, list):
-        return 0
-    return sum(
-        1 for h in state_history
-        if isinstance(h, dict) and h.get("state") == "skip"
-    )
-
-
-def _load_state_metadata(pipeline_dir: Path) -> dict[str, dict]:
-    """{job_id: {state, skip_count}} from pipeline/*/state.yaml."""
-    return {
-        jid: {
-            "state": data.get("state", ""),
-            "skip_count": _count_skips(data.get("state_history")),
-        }
-        for jid, data in load_state_index(pipeline_dir).items()
-    }
-
-
-def compute_shortlist(
-    scored_path: Path,
-    clean_path: Path,
-    pipeline_dir: Path,
-    top_n: int = SHORTLIST_TOP_N,
-    min_fit: int = SHORTLIST_MIN_FIT,
-    write_ranks: bool = True,
-) -> dict:
-    """Deterministic sort + cap + exclusion split.
-
-    Returns:
-      {
-        "main": {<vertical>: [row, ...] for each configured vertical,
-                 in profile/verticals.yaml config order}
-            # top_n per vertical, each section sorted/capped independently;
-            # excludes ineligible/suppressed. Sections rank independently:
-            # one vertical's fit_score is never compared against another's.
-        "excluded":   [row, ...]   # sponsorship_label == 'ineligible' (sponsorship is the only exclusion gate)
-        "suppressed": [row, ...]   # state_history skip count >= 1 (a skip is not an ineligible)
-      }
-
-    Sort key within each vertical's section (locked):
-      fit_score DESC,
-      sponsorship_pref DESC (sponsors > opt_ok > unknown),
-      posted_date DESC.
-
-    Side effect (write_ranks=True): writes shortlist_rank back to scored.parquet
-    (1..N within each vertical's section for main rows, NaN otherwise)."""
-    cfg = verticals.get_config()
-    if not scored_path.exists():
-        return {"main": {v: [] for v in cfg.names}, "excluded": [], "suppressed": []}
-    scored = pd.read_parquet(scored_path)
-    clean = pd.read_parquet(clean_path)
-    state_meta = _load_state_metadata(pipeline_dir)
-
-    df = scored.merge(clean, on="job_id", how="left", suffixes=("", "_clean"))
-    df["skip_count"] = df["job_id"].map(
-        lambda j: state_meta.get(j, {}).get("skip_count", 0)
-    )
-    df["current_state"] = df["job_id"].map(
-        lambda j: state_meta.get(j, {}).get("state", "")
-    )
-    df["sponsorship_pref"] = (
-        df["sponsorship_label"].map(SPONSORSHIP_PREF).fillna(0).astype(int)
-    )
-    excluded = df[df["sponsorship_label"] == "ineligible"].copy()
-    suppressed = df[df["skip_count"] >= 1].copy()
-
-    main_pool = df[
-        (df["sponsorship_label"] != "ineligible")
-        & (df["skip_count"] < 1)
-        & (df["fit_score"] >= min_fit)
-        & (~df["current_state"].isin(_APPLIED_STATES))
-    ].copy()
-
-    new_ranks: dict[str, int] = {}
-    main: dict[str, list[dict]] = {}
-    for vertical in cfg.names:
-        section = main_pool[main_pool["vertical"] == vertical].sort_values(
-            by=["fit_score", "sponsorship_pref", "posted_date"],
-            ascending=[False, False, False],
-            kind="stable",
-        ).head(top_n)
-        for rank, jid in enumerate(section["job_id"]):
-            new_ranks[jid] = rank + 1
-        main[vertical] = [{k: _to_jsonable(v) for k, v in r.items()} for r in section.to_dict("records")]
-
-    if write_ranks:
-        scored2 = scored.copy()
-        scored2["shortlist_rank"] = (
-            scored2["job_id"].map(new_ranks).astype("float64")
-        )
-        write_parquet(scored2, scored_path)
-
-    return {
-        "main":       main,
-        "excluded":   [{k: _to_jsonable(v) for k, v in r.items()} for r in excluded.to_dict("records")],
-        "suppressed": [{k: _to_jsonable(v) for k, v in r.items()} for r in suppressed.to_dict("records")],
-    }
-
-
-def render_shortlist_markdown(
-    shortlist: dict, cfg: "verticals.VerticalsConfig",
-    date_str: str, n_scored: int, n_clean: int,
-) -> str:
-    """Render shortlist/<date>.md from compute_shortlist()'s output.
-    Asserts invariants inline (fit>=50, subscore sum, no ineligible/skip
-    leakage, no cross-vertical leakage) — raises AssertionError, never
-    silently drops a row."""
-    def subscores(row):
-        s = row["fit_subscores"]
-        return json.loads(s) if isinstance(s, str) else s
-
-    sections = []
-    total_keepers = 0
-    for v in cfg.names:
-        rows = shortlist["main"].get(v, [])
-        assert len(rows) <= SHORTLIST_TOP_N, (
-            f"{v}: {len(rows)} rows exceeds cap {SHORTLIST_TOP_N}")
-        lines = [f"## {cfg.verticals[v].display_name} ({len(rows)})", ""]
-        if not rows:
-            lines.append("No keepers today in this vertical.")
-        for i, row in enumerate(rows, 1):
-            assert row["vertical"] == v, f"{row['job_id']} leaked into {v} section"
-            assert row["fit_score"] >= 50, f"{row['job_id']}: fit {row['fit_score']} < 50"
-            sub = subscores(row)
-            assert sum(sub[a] for a in SUBSCORE_AXES) == row["fit_score"], \
-                f"{row['job_id']}: subscores {sub} != fit_score {row['fit_score']}"
-            assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
-            status = row["application_status"] if row.get("already_seen") else "new"
-            kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
-            lines.append(
-                f"### {i}. {row['fit_score']} — {row['company']} — {row['title']}\n"
-                f"- **job_id:** `{row['job_id']}`\n"
-                f"- **location:** {row['location']} · **source:** {row['source']} "
-                f"· **posted:** {row['posted_date']}\n"
-                f"- **fit:** {row['fit_score']} (title {sub['title']} / skills {sub['skills']} "
-                f"/ seniority {sub['seniority']} / domain {sub['domain']})\n"
-                f"- **sponsorship:** {row['sponsorship_label']} — \"{row['sponsorship_evidence']}\"\n"
-                f"- **why:** {row['reasoning']}\n"
-                f"- **mirror in tailoring:** {kws}\n"
-                f"- **status:** {status}\n"
-                f"- **suggested:** {row['suggested_action']}\n"
-                f"- **verify E-Verify** before submitting (manual v1 step)\n"
-                f"- {row['url']}\n"
-            )
-        sections.append("\n".join(lines))
-        total_keepers += len(rows)
-
-    header = (f"# Shortlist — {date_str}\n\n"
-              f"({n_scored} of {n_clean} scored, top {SHORTLIST_TOP_N} "
-              f"per vertical with fit >= {SHORTLIST_MIN_FIT})\n")
-    if total_keepers == 0:
-        return header + "\nNo keepers today in this vertical.\n"
-    return header + "\n" + "\n".join(sections)
-
-

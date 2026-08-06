@@ -1,8 +1,8 @@
-"""Tests for src/scoring_io.py — deterministic parquet plumbing for /score.
+"""Tests for the /score plumbing: src/prescreen.py, src/scoring_io.py and
+src/shortlist.py (one file, since they are one pipeline and share fixtures).
 
-Per the slice-4 plan: scoring_io is in src/ and a bug here could silently drop
-or duplicate scored rows, so it gets pytest coverage even though the scoring
-prompt itself doesn't (deterministic src/ logic gets tested)."""
+A bug in any of them silently drops or duplicates scored rows, so they carry
+coverage even though the scoring prompt itself does not."""
 from __future__ import annotations
 
 import json
@@ -15,27 +15,28 @@ import yaml
 
 from src import verticals
 from src.discovery.cleaning import CLEAN_COLUMNS
-from src.scoring_io import (
+from src.prescreen import (
     AUTO_SKIP_SCORED_BY,
+    disqualify_reason,
+    hard_ineligible_phrase,
+    load_hard_ineligible,
+    max_years_required,
+)
+from src.scoring_io import (
     AXIS_MAXIMA,
     SCORED_COLUMNS,
     auto_score_disqualified,
     auto_score_ineligible,
     auto_score_out_of_lane,
-    compute_shortlist,
-    disqualify_reason,
-    fit_score_from_subscores,
     dump_unscored,
-    hard_ineligible_phrase,
-    load_hard_ineligible,
-    max_years_required,
+    fit_score_from_subscores,
     merge_scores,
     merge_scores_from_dir,
     prune_scored,
-    render_shortlist_markdown,
     select_unscored,
     validate_scores,
 )
+from src.shortlist import compute_shortlist, render_shortlist_markdown
 
 
 # ---------- helpers ----------

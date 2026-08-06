@@ -41,12 +41,11 @@ from src.scoring_io import (
     auto_score_disqualified,
     auto_score_ineligible,
     auto_score_out_of_lane,
-    compute_shortlist,
     dump_unscored,
     merge_scores_from_dir,
     prune_scored,
-    render_shortlist_markdown,
 )
+from src.shortlist import compute_shortlist, render_shortlist_markdown
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED

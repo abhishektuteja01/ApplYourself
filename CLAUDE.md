@@ -42,8 +42,9 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    drop rows outside the location allowlist, dedupe (exact then rapidfuzz
    WRatio ≥ 90), assign `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery
    output downstream reads) + `clean.preview.jsonl`.
-3. **Scoring** (`/score`, `/rescore`; plumbing in `src/scoring_io.py`,
-   `src/score_cli.py`) — LLM judges rows and writes `jobs/scored.parquet` +
+3. **Scoring** (`/score`, `/rescore`; plumbing in `src/prescreen.py` for the
+   deterministic pre-screens, `src/scoring_io.py` for parquet read/dump/merge/
+   prune, `src/shortlist.py` for compute+render, and `src/score_cli.py`) — LLM judges rows and writes `jobs/scored.parquet` +
    `shortlist/<date>.md`. See below.
 4. **Application material** (`/tailor`, `/cover-letter`, `/outreach`) — generate
    docx/pdf into `applications/<vertical>/<dir>/`; docx rendering via

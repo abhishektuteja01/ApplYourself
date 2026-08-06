@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src import score_cli, scoring_io
+from src import score_cli, shortlist
 from src.discovery.cleaning import CLEAN_COLUMNS
 from src.score_cli import coverage, judge_ranges, split_by_vertical
 
@@ -494,8 +494,8 @@ class TestCmdRender:
         self._setup(tmp_path, monkeypatch)
         score_cli.main(["render", "--today", "2026-08-06"])
         body = (tmp_path / "shortlist" / "2026-08-06.md").read_text(encoding="utf-8")
-        assert (f"top {scoring_io.SHORTLIST_TOP_N} per vertical "
-                f"with fit >= {scoring_io.SHORTLIST_MIN_FIT}") in body
+        assert (f"top {shortlist.SHORTLIST_TOP_N} per vertical "
+                f"with fit >= {shortlist.SHORTLIST_MIN_FIT}") in body
 
     def test_creates_the_shortlist_dir_when_absent(self, tmp_path, monkeypatch):
         self._setup(tmp_path, monkeypatch)
