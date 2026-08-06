@@ -106,8 +106,16 @@ def coverage(staging: Path) -> dict:
             continue
         staged += [r["job_id"] for r in batch
                    if isinstance(r, dict) and "job_id" in r]
-    with (staging / "unscored.jsonl").open(encoding="utf-8") as f:
-        expected = [json.loads(line)["job_id"] for line in f if line.strip()]
+    unscored_path = staging / "unscored.jsonl"
+    if not unscored_path.exists():
+        raise FileNotFoundError(
+            f"{unscored_path} is missing — check-coverage runs between dump and "
+            "merge. Run `score prepare` (or `score dump`) first; if merge has "
+            "already cleared staging, coverage for that run is gone."
+        )
+    expected = [json.loads(line)["job_id"]
+                for line in unscored_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
     return {
         "staged": len(staged),
         "expected": len(expected),
@@ -161,7 +169,12 @@ def _cmd_ranges(args: argparse.Namespace) -> int:
 
 
 def _cmd_check_coverage(args: argparse.Namespace) -> int:
-    report = coverage(STAGING)
+    try:
+        report = coverage(STAGING)
+    except FileNotFoundError as e:
+        # /score gates on this exit code, so it must be 1 and not a traceback.
+        print(f"ERROR: {e}")
+        return 1
     print(f"staged={report['staged']} expected={report['expected']}")
     print(f"missing: {report['missing']}")
     print(f"unexpected: {report['unexpected']}")

@@ -100,6 +100,11 @@ class TestCoverage:
         assert r == {"staged": 3, "expected": 3, "missing": [],
                      "unexpected": [], "dupes": 0, "unreadable": []}
 
+    def test_absent_unscored_file_is_actionable_not_a_traceback(self, tmp_path):
+        """check-coverage run before dump, or after merge cleared staging."""
+        with pytest.raises(FileNotFoundError, match="between dump and merge"):
+            coverage(tmp_path)
+
     def test_missing_rows(self, tmp_path):
         self._stage(tmp_path, ["a", "b", "c"],
                     {"batch_example_primary_001.json": ["a"]})

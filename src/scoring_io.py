@@ -491,6 +491,23 @@ def fit_score_from_subscores(subs: dict) -> int:
 def validate_scores(scores: list[dict]) -> list[str]:
     """Return a list of error strings (one per problem). Empty = all valid."""
     errors: list[str] = []
+    # Two records for one job_id put two rows in scored.parquet, after which
+    # scored.loc[job_id] returns a DataFrame: track_cli raises "truth value of
+    # a Series is ambiguous", tailor_cli falls through to default_vertical, and
+    # the row eats two shortlist slots. The interrupted-run recovery merge has
+    # no coverage check at all, which is exactly when two judges overlap.
+    seen: dict[str, str] = {}
+    for i, s in enumerate(scores):
+        if not isinstance(s, dict) or not isinstance(s.get("job_id"), str):
+            continue
+        where = s.get("_source", f"row {i}")
+        if s["job_id"] in seen:
+            errors.append(
+                f"{where} (job_id={s['job_id']!r}): duplicate job_id, "
+                f"already scored by {seen[s['job_id']]}"
+            )
+        else:
+            seen[s["job_id"]] = where
     for i, s in enumerate(scores):
         if not isinstance(s, dict):
             errors.append(f"row {i}: expected an object, got {type(s).__name__}")
@@ -617,6 +634,9 @@ def merge_scores(
         pd.concat([kept, new_df], ignore_index=True)
         if not kept.empty else new_df
     )
+    # Belt and braces: validate_scores rejects duplicates in the incoming
+    # batch, this catches any that reached the file some other way.
+    combined = combined.drop_duplicates(subset="job_id", keep="last")
     scored_path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_parquet(scored_path, index=False)
     return len(new_rows)

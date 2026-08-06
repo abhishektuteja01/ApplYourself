@@ -824,6 +824,29 @@ def test_validate_scores_clean():
     assert validate_scores([_valid_score()]) == []
 
 
+def test_validate_scores_rejects_duplicate_job_id():
+    """Two records for one job_id make scored.loc[job_id] a DataFrame, which
+    breaks track_cli and tailor_cli downstream."""
+    a = _valid_score(job_id="aaaaaaaa")
+    a["_source"] = "batch_example_primary_001.json[0]"
+    b = _valid_score(job_id="aaaaaaaa")
+    b["_source"] = "batch_example_primary_002.json[3]"
+    errors = validate_scores([a, b])
+    assert len(errors) == 1
+    assert "duplicate job_id" in errors[0]
+    # Both batches must be named, or the operator cannot find the overlap.
+    assert "batch_example_primary_001.json[0]" in errors[0]
+    assert "batch_example_primary_002.json[3]" in errors[0]
+
+
+def test_merge_scores_never_writes_two_rows_for_one_job_id(tmp_path):
+    scored_p = tmp_path / "scored.parquet"
+    merge_scores(scored_p, [_valid_score(job_id="aaaaaaaa")], scored_by_model="m")
+    merge_scores(scored_p, [_valid_score(job_id="aaaaaaaa")], scored_by_model="m")
+    out = pd.read_parquet(scored_p)
+    assert list(out["job_id"]) == ["aaaaaaaa"]
+
+
 # ---------- fit_score is derived, never authored ----------
 
 def test_fit_score_from_subscores_sums_the_four_axes():
