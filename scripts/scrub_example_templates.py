@@ -22,8 +22,8 @@ What it removes:
                  cp:keywords re-syncs its text from a field this script empties
                  -- silently blanking a placeholder the renderer requires.
 
---check exits 1 without writing if either file still needs scrubbing, so CI and
-the pre-push hook can gate on it.
+--check exits 1 without writing if either file still needs scrubbing. The gate CI
+and the pre-push hook actually run is tests/test_example_templates.py.
 """
 from __future__ import annotations
 
@@ -113,8 +113,12 @@ def _scrub_bytes(name: str, data: bytes) -> bytes:
     return data
 
 
-def scrub(path: Path) -> bool:
-    """Rewrite `path` scrubbed. Returns True if anything changed."""
+def scrub(path: Path, *, write: bool = True) -> bool:
+    """Rewrite `path` scrubbed. Returns True if anything changed.
+
+    write=False reports what would change without touching `path` — a --check
+    that rewrote the file and restored it from a backup left the repo altered if
+    it was interrupted."""
     with zipfile.ZipFile(path) as zf:
         entries = [(info, zf.read(info.filename)) for info in zf.infolist()]
 
@@ -133,7 +137,7 @@ def scrub(path: Path) -> bool:
                 if scrubbed != data:
                     changed = True
                 out.writestr(info, scrubbed)
-        if changed:
+        if changed and write:
             shutil.move(str(tmp_path), str(path))
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -155,12 +159,8 @@ def main() -> int:
             print(f"missing: {path}", file=sys.stderr)
             return 2
         if args.check:
-            backup = path.read_bytes()
-            try:
-                if scrub(path):
-                    dirty.append(path)
-            finally:
-                path.write_bytes(backup)
+            if scrub(path, write=False):
+                dirty.append(path)
         elif scrub(path):
             dirty.append(path)
             print(f"scrubbed {path.relative_to(paths.REPO_ROOT)}")
