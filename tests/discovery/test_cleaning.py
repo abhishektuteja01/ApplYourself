@@ -712,16 +712,19 @@ def test_apply_expiry_tiers_and_tracked_exemption():
         {"job_id": "low11111", "first_seen": "2026-06-01"},                    # 44d, low tier -> expired
         {"job_id": "high1111", "first_seen": "2026-06-01", "last_score": 85.0},  # 44d, high tier -> visible
         {"job_id": "trak1111", "first_seen": "2026-06-01"},                    # expired but tracked
+        {"job_id": "manu1111", "first_seen": "2026-06-01"},                    # expired but re-added by hand
         {"job_id": "new11111", "first_seen": "2026-07-10"},                    # 5d -> visible
     ])
     df = _clean_df([
-        {"job_id": "low11111", "title_normalized": "a"},
-        {"job_id": "high1111", "title_normalized": "b"},
-        {"job_id": "trak1111", "title_normalized": "c", "already_seen": True},
-        {"job_id": "new11111", "title_normalized": "d"},
+        {"job_id": "low11111", "title_normalized": "a", "source": "linkedin"},
+        {"job_id": "high1111", "title_normalized": "b", "source": "linkedin"},
+        {"job_id": "trak1111", "title_normalized": "c", "source": "linkedin",
+         "already_seen": True},
+        {"job_id": "manu1111", "title_normalized": "e", "source": "manual"},
+        {"job_id": "new11111", "title_normalized": "d", "source": "linkedin"},
     ])
     out = cleaning.apply_expiry(df, ledger, today)
-    assert sorted(out["job_id"]) == ["high1111", "new11111", "trak1111"]
+    assert sorted(out["job_id"]) == ["high1111", "manu1111", "new11111", "trak1111"]
 
 
 def test_load_raw_window_shards(tmp_path):
@@ -839,7 +842,7 @@ def test_project_raw_remote_flag_no_future_warning():
 def test_apply_expiry_boundary_day_still_visible():
     # visible THROUGH first_seen + 15d; dropped strictly after
     ledger = _ledger([{"job_id": "edge1111", "first_seen": "2026-07-01"}])
-    df = _clean_df([{"job_id": "edge1111"}])
+    df = _clean_df([{"job_id": "edge1111", "source": "linkedin"}])
     assert len(cleaning.apply_expiry(df, ledger, pd.Timestamp("2026-07-16"))) == 1
     assert len(cleaning.apply_expiry(df, ledger, pd.Timestamp("2026-07-17"))) == 0
 

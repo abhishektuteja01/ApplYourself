@@ -422,7 +422,12 @@ def apply_expiry(
     """Drop rows past their retention window: visible for
     RETENTION_HIGH_DAYS from first_seen when last_score >= threshold, else
     RETENTION_LOW_DAYS. Rows with already_seen=True (a state.yaml exists,
-    including skip) never expire — state.yaml is the permanent memory."""
+    including skip) never expire — state.yaml is the permanent memory.
+
+    source="manual" is exempt for the same reason it is exempt from
+    drop_stale: an inbox clip or a URL ingest is a deliberate user add, and
+    expiry is keyed on ledger first_seen, so re-adding a role last seen past
+    its retention window would drop the row the user just asked for."""
     if df.empty or ledger is None or not len(ledger):
         return df.copy()
     today = pd.Timestamp(today).normalize()
@@ -432,6 +437,8 @@ def apply_expiry(
     if not expired_ids:
         return df.copy()
     drop = df["job_id"].isin(expired_ids) & ~df["already_seen"]
+    if "source" in df.columns:
+        drop &= df["source"] != "manual"
     return df[~drop].copy()
 
 
