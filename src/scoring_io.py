@@ -125,6 +125,8 @@ def dump_unscored(
     *,
     force_all: bool = False,
     only_vertical: str | None = None,
+    only_job_id: str | None = None,
+    skip_prescreens: bool = False,
     hard_ineligible: tuple[str, ...] | None = None,
 ) -> int:
     """Write a JSONL of in-lane rows the LLM needs to judge. Returns the
@@ -162,6 +164,15 @@ def dump_unscored(
     unchanged; brand-new rows of the excluded verticals stay unscored until
     a future run without this filter.
 
+    only_job_id=<id> restricts to that one row (used by /ingest). Composes
+    with only_vertical; an id absent from the selection yields 0.
+
+    skip_prescreens=True suppresses the hard_ineligible and disqualifier
+    branches so a deliberately ingested row reaches a judge and gets real
+    subscores + keywords_to_mirror instead of a pre-filled skip. The
+    out-of-lane branch still applies: split_by_vertical raises on a vertical
+    it does not know, so an unconfigured row must never reach out_path.
+
     force_all=True ignores scored.parquet (used by /rescore)."""
     cfg = verticals.get_config()
     if hard_ineligible is None:
@@ -172,6 +183,8 @@ def dump_unscored(
         df = select_unscored(clean_path, scored_path)
     if only_vertical is not None:
         df = df[df["vertical"] == only_vertical]
+    if only_job_id is not None:
+        df = df[df["job_id"].astype(str) == only_job_id]
     available = [c for c in UNSCORED_FIELDS if c in df.columns]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     auto_skip_path = out_path.parent / "auto_skip.jsonl"
@@ -198,22 +211,23 @@ def dump_unscored(
                 f_skip.write(json.dumps(d, default=str) + "\n")
                 n_skip += 1
                 continue
-            matched = hard_ineligible_phrase(hard_ineligible, d.get("jd_text", ""))
-            if matched is not None:
-                d["_ineligible_phrase"] = matched
-                f_inel.write(json.dumps(d, default=str) + "\n")
-                n_ineligible += 1
-                continue
-            reason = disqualify_reason(
-                cfg.verticals[vertical], d.get("jd_text", ""), d.get("title", "")
-            )
-            if reason is not None:
-                d["_disqualify_reason"] = reason
-                skip_files[vertical].write(json.dumps(d, default=str) + "\n")
-                n_skip_by_vertical[vertical] += 1
-            else:
-                f_judge.write(json.dumps(d, default=str) + "\n")
-                n_judge += 1
+            if not skip_prescreens:
+                matched = hard_ineligible_phrase(hard_ineligible, d.get("jd_text", ""))
+                if matched is not None:
+                    d["_ineligible_phrase"] = matched
+                    f_inel.write(json.dumps(d, default=str) + "\n")
+                    n_ineligible += 1
+                    continue
+                reason = disqualify_reason(
+                    cfg.verticals[vertical], d.get("jd_text", ""), d.get("title", "")
+                )
+                if reason is not None:
+                    d["_disqualify_reason"] = reason
+                    skip_files[vertical].write(json.dumps(d, default=str) + "\n")
+                    n_skip_by_vertical[vertical] += 1
+                    continue
+            f_judge.write(json.dumps(d, default=str) + "\n")
+            n_judge += 1
     log.info(
         "dump_unscored: to_judge=%d auto_skip=%d auto_ineligible=%d %s",
         n_judge, n_skip, n_ineligible,

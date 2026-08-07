@@ -139,7 +139,7 @@ uv run pytest tests/test_verticals.py::<name>     # single test
 # Deterministic CLIs (entry points in pyproject [project.scripts]).
 uv run discover [--resume <run_id>]   # overnight scrape -> jobs/clean.parquet
 uv run verticals-check                # validate config + rubric/tailoring dirs
-uv run ingest-url <url>               # pull one JD into inbox/
+uv run ingest-url <url> [--dry-run]   # one JD -> jobs/raw + clean rebuild (--dry-run: print text only)
 uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...)
 uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
@@ -150,9 +150,13 @@ uv run python scripts/scrub_example_templates.py  # strip Word metadata from the
 
 The user-facing workflow is the slash commands (`/onboarding`, `/score`,
 `/tailor`, `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
-`/suggest-synonyms`, `/rescore`, `/no_ai_slop`), defined in
+`/suggest-synonyms`, `/rescore`, `/no_ai_slop`, `/ingest`), defined in
 `.claude/commands/*.md`. `score-judge.md` also lives there but is spawned by
-`/score`, never invoked directly. `.claude/shared/` holds the includes several
+`/score`, never invoked directly. `/ingest <url> <vertical> [resume]
+[cover-letter]` is the single-URL fast path: it chains `ingest-url` → a
+one-row `score dump --job-id --no-prescreen` + one judge → `/tailor` →
+`/cover-letter`, spawning the existing commands rather than reimplementing
+them, and stops at `saved` because `/track` alone writes transitions. `.claude/shared/` holds the includes several
 commands read: `no_fab.md` (defines `NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`,
 `SKILLS-SOURCE`), `lint_loop.md` (the rewrite-loop attempt cap), and
 `render_pdf.md` (the docx->pdf block). There is no

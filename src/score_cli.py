@@ -9,8 +9,8 @@ thin sequence of one-liners. Judging is never done here.
                                      100-row judge chunk
   render                             compute + write shortlist/<date>.md,
                                      asserting invariants inline
-  dump [--vertical V] [--force-all]  clear staging, dump unscored rows,
-                                     merge the auto-skip categories (out-of-
+  dump [--vertical V] [--job-id ID]  clear staging, dump unscored rows,
+       [--no-prescreen] [--force-all] merge the auto-skip categories (out-of-
                                      lane + hard-ineligible + one per
                                      configured vertical)
   split                              route unscored.jsonl into per-vertical
@@ -21,7 +21,7 @@ thin sequence of one-liners. Judging is never done here.
                                      fan-out; /score gets these from prepare)
   check-coverage                     compare staged batch job_ids against the
                                      dump (exit 1 if gaps/dupes/strays)
-  merge [--model M]                  merge staged batches + prune, delete
+  merge [--model M] [--no-prune]     merge staged batches + prune, delete
                                      consumed staging files on success
 """
 from __future__ import annotations
@@ -129,16 +129,22 @@ def coverage(staging: Path) -> dict:
     }
 
 
-def _dump_and_autoscore(force_all: bool, only_vertical: str | None = None) -> dict:
+def _dump_and_autoscore(force_all: bool, only_vertical: str | None = None,
+                        only_job_id: str | None = None,
+                        skip_prescreens: bool = False) -> dict:
     """Dump the unscored rows, then run every deterministic pre-screen.
 
     The one place the pre-screen set is enumerated. /score (through prepare) and
     /rescore (through dump) both come here, so a pre-screen added to one cannot
     go missing from the other.
+
+    skip_prescreens still runs the auto_score_* merges below: dump_unscored
+    truncates every auto_skip file, so each one is empty and merges 0 rows.
     """
     n_judge = dump_unscored(
         CLEAN, SCORED, STAGING / "unscored.jsonl",
         force_all=force_all, only_vertical=only_vertical,
+        only_job_id=only_job_id, skip_prescreens=skip_prescreens,
     )
     return {
         "rows_to_score": n_judge,
@@ -172,7 +178,9 @@ def _cmd_dump(args: argparse.Namespace) -> int:
         return 1
     STAGING.mkdir(parents=True, exist_ok=True)
     clear_staging(STAGING)
-    print(_autoscore_line(_dump_and_autoscore(args.force_all, args.vertical)))
+    print(_autoscore_line(_dump_and_autoscore(
+        args.force_all, args.vertical,
+        only_job_id=args.job_id, skip_prescreens=args.no_prescreen)))
     return 0
 
 
@@ -218,8 +226,14 @@ def _cmd_check_coverage(args: argparse.Namespace) -> int:
 def _cmd_merge(args: argparse.Namespace) -> int:
     n_merged, skipped = merge_scores_from_dir(
         SCORED, STAGING, scored_by_model=args.model)
-    n_pruned = prune_scored(SCORED, CLEAN)
-    print(f"merged={n_merged} pruned={n_pruned}")
+    # Pruning drops scored rows absent from clean.parquet. Safe after a full
+    # dump; destructive after a single-row one (/ingest), because clean.parquet
+    # was rebuilt over the 14-day raw window and every aged-out job_id would be
+    # deleted from scored.parquet as collateral.
+    if args.no_prune:
+        print(f"merged={n_merged} pruned=skipped")
+    else:
+        print(f"merged={n_merged} pruned={prune_scored(SCORED, CLEAN)}")
     if skipped:
         # Each unreadable batch holds ~100 judged rows. Clearing staging here
         # would destroy them behind the healthy merged= count above.
@@ -345,6 +359,11 @@ def main(argv: list[str] | None = None) -> int:
     # ran it for every subcommand, including --help, and turned a missing
     # profile/verticals.yaml into a traceback on a fresh clone.
     p_dump.add_argument("--vertical", metavar="V", default=None)
+    p_dump.add_argument("--job-id", metavar="ID", default=None,
+                        help="restrict to one row (used by /ingest)")
+    p_dump.add_argument("--no-prescreen", action="store_true",
+                        help="skip the ineligible/disqualifier pre-screens so "
+                             "the row reaches a judge (used by /ingest)")
     p_dump.add_argument("--force-all", action="store_true",
                         help="ignore scored.parquet (used by /rescore)")
     p_dump.set_defaults(func=_cmd_dump)
@@ -361,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
     p_merge = sub.add_parser("merge", help="merge staged batches, prune, clean staging")
     p_merge.add_argument("--model", default=DEFAULT_MODEL,
                          help="scored_by_model stamp (default: %(default)s)")
+    p_merge.add_argument("--no-prune", action="store_true",
+                         help="do not drop scored rows absent from "
+                              "clean.parquet (required after a --job-id dump)")
     p_merge.set_defaults(func=_cmd_merge)
 
     args = parser.parse_args(argv)

@@ -147,6 +147,85 @@ def test_dump_unscored_force_all_ignores_scored(tmp_path):
     assert n == 2  # both, despite aaaaaaaa already scored
 
 
+# ---------- dump_unscored: only_job_id / skip_prescreens (/ingest) ----------
+
+def test_dump_unscored_only_job_id_selects_one_row(tmp_path):
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Consultant",
+         "vertical": "example_primary"},
+        {"job_id": "bbbbbbbb", "title": "Widget Platform Analyst",
+         "vertical": "example_primary"},
+    ])
+    out_path = tmp_path / "unscored.jsonl"
+    n = dump_unscored(clean_p, tmp_path / "scored.parquet", out_path,
+                      only_job_id="bbbbbbbb")
+    assert n == 1
+    assert json.loads(out_path.read_text(encoding="utf-8").strip())["job_id"] == "bbbbbbbb"
+
+
+def test_dump_unscored_only_job_id_already_scored_yields_zero(tmp_path):
+    """The /ingest re-run path: an already-scored id dumps nothing, so the
+    command skips the judge instead of spawning one on an empty range."""
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Consultant",
+         "vertical": "example_primary"},
+    ])
+    scored_p = tmp_path / "scored.parquet"
+    merge_scores(scored_p, [_valid_score(job_id="aaaaaaaa")], scored_by_model="t")
+    out_path = tmp_path / "unscored.jsonl"
+    assert dump_unscored(clean_p, scored_p, out_path, only_job_id="aaaaaaaa") == 0
+    assert out_path.read_text(encoding="utf-8").strip() == ""
+
+
+def test_dump_unscored_skip_prescreens_sends_ineligible_row_to_judge(tmp_path):
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Consultant",
+         "jd_text": "US citizenship required for this role.",
+         "vertical": "example_primary"},
+    ])
+    out_path = tmp_path / "unscored.jsonl"
+    phrases = ("us citizenship required",)
+    assert dump_unscored(clean_p, tmp_path / "s.parquet", out_path,
+                         hard_ineligible=phrases) == 0
+    assert (out_path.parent / "auto_skip_ineligible.jsonl").read_text(encoding="utf-8").strip()
+
+    n = dump_unscored(clean_p, tmp_path / "s.parquet", out_path,
+                      hard_ineligible=phrases, skip_prescreens=True)
+    assert n == 1
+    assert (out_path.parent / "auto_skip_ineligible.jsonl").read_text(encoding="utf-8").strip() == ""
+
+
+def test_dump_unscored_skip_prescreens_sends_disqualified_row_to_judge(tmp_path):
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "Widget Functional Consultant",
+         "jd_text": "You will act as a solution architect for the team.",
+         "vertical": "example_primary"},
+    ])
+    out_path = tmp_path / "unscored.jsonl"
+    assert dump_unscored(clean_p, tmp_path / "s.parquet", out_path,
+                         hard_ineligible=()) == 0
+    assert (out_path.parent / "auto_skip_example_primary.jsonl").read_text(encoding="utf-8").strip()
+
+    n = dump_unscored(clean_p, tmp_path / "s.parquet", out_path,
+                      hard_ineligible=(), skip_prescreens=True)
+    assert n == 1
+    assert (out_path.parent / "auto_skip_example_primary.jsonl").read_text(encoding="utf-8").strip() == ""
+
+
+def test_dump_unscored_skip_prescreens_still_routes_out_of_lane(tmp_path):
+    """split_by_vertical raises on a vertical it does not know, so the
+    out-of-lane branch must survive skip_prescreens."""
+    clean_p = _make_clean(tmp_path, [
+        {"job_id": "aaaaaaaa", "title": "Sous Chef", "vertical": ""},
+    ])
+    out_path = tmp_path / "unscored.jsonl"
+    n = dump_unscored(clean_p, tmp_path / "s.parquet", out_path,
+                      hard_ineligible=(), skip_prescreens=True)
+    assert n == 0
+    assert out_path.read_text(encoding="utf-8").strip() == ""
+    assert (out_path.parent / "auto_skip.jsonl").read_text(encoding="utf-8").strip()
+
+
 # ---------- dump_unscored file-handle safety ----------
 
 def _patch_failing_open(monkeypatch, fail_on: int):

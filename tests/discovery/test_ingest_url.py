@@ -22,9 +22,9 @@ _JD = ("Responsibilities include widget assembly contract settlement support and
 
 
 def _row(company="Acme Corp", title="Widget Assembly Analyst", jd=_JD,
-         url="https://boards.greenhouse.io/acme/jobs/123"):
+         url="https://boards.greenhouse.io/acme/jobs/123", location=""):
     return make_row(site="greenhouse", company=company, title=title, job_url=url,
-                    description=jd)
+                    description=jd, location=location)
 
 
 def _dirs(tmp_path):
@@ -216,6 +216,10 @@ class TestIngest:
         with pytest.raises(IngestError, match=winner):
             ingest("https://y", vertical="example_primary", **dirs)
 
+    def test_generic_error_points_at_dry_run(self):
+        with pytest.raises(IngestError, match="--dry-run"):
+            fetch_row("https://careers.example.com/job/42")
+
     def test_generic_strips_script_and_style_bodies(self, monkeypatch):
         # SPA shells (e.g. Oracle HCM) are mostly <script>/<style>; their
         # contents must not count as JD text or they defeat the 200-char floor
@@ -229,3 +233,63 @@ class TestIngest:
         row = fetch_row("https://careers.example.com/spa",
                         company="Acme", title="X")
         assert row["description"] == "Short shell."
+
+
+# ---------- fetch_text_only / --dry-run ----------
+
+class TestDryRun:
+    def test_generic_returns_empty_company_and_title(self, monkeypatch):
+        class Resp:
+            status_code = 200
+            text = f"<html><body><p>{_JD}</p></body></html>"
+        monkeypatch.setattr(ingest_url.requests, "get", lambda *a, **k: Resp())
+        info = ingest_url.fetch_text_only("https://careers.example.com/job/42")
+        # "" not a guess: company/title define the job_id hash.
+        assert info["company"] == ""
+        assert info["title"] == ""
+        assert "contract settlement" in info["text"]
+
+    def test_ats_url_returns_structured_company_and_title(self, monkeypatch):
+        monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
+        info = ingest_url.fetch_text_only(
+            "https://boards.greenhouse.io/acme/jobs/123")
+        assert info["company"] == "Acme Corp"
+        assert info["title"] == "Widget Assembly Analyst"
+        assert info["text"] == _JD
+
+    def test_cli_dry_run_writes_nothing(self, tmp_path, monkeypatch, capsys):
+        class Resp:
+            status_code = 200
+            text = f"<html><body><p>{_JD}</p></body></html>"
+        monkeypatch.setattr(ingest_url.requests, "get", lambda *a, **k: Resp())
+        monkeypatch.setattr(ingest_url, "ingest",
+                            lambda *a, **k: pytest.fail("dry-run must not ingest"))
+        monkeypatch.chdir(tmp_path)
+
+        rc = ingest_url.main(["https://careers.example.com/job/42", "--dry-run"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "company: \n" in out and "title: \n" in out
+        assert "contract settlement" in out
+        assert not (tmp_path / "jobs").exists()
+
+
+# ---------- location-allowlist drop hint ----------
+
+class TestLocationDropHint:
+    def test_out_of_allowlist_location_names_the_filter(self, tmp_path, monkeypatch):
+        from src.discovery.config import DiscoveryConfig
+        # Pin the allowlist so a local profile/discovery.yaml cannot change it.
+        monkeypatch.setattr(ingest_url, "load_config", lambda *a, **k: DiscoveryConfig())
+        monkeypatch.setattr(ingest_url, "fetch_row",
+                            lambda *a, **k: _row(location="Berlin, Germany"))
+        with pytest.raises(IngestError, match="location_allowlist"):
+            ingest("https://x", vertical="example_primary", **_dirs(tmp_path))
+
+    def test_in_allowlist_location_gets_no_location_hint(self, tmp_path, monkeypatch):
+        from src.discovery.config import DiscoveryConfig
+        monkeypatch.setattr(ingest_url, "load_config", lambda *a, **k: DiscoveryConfig())
+        monkeypatch.setattr(ingest_url, "fetch_row",
+                            lambda *a, **k: _row(location="Austin, TX"))
+        info = ingest("https://x", vertical="example_primary", **_dirs(tmp_path))
+        assert info["job_id"]

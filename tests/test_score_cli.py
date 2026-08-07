@@ -157,7 +157,7 @@ class TestMergeRefusesToClearStaging:
             "batch_example_primary_001.json": json.dumps([_score("aaaaaaaa")]),
             "batch_example_primary_002.json": '[{"job_id": "bbbbbbbb"',
         })
-        rc = score_cli._cmd_merge(argparse.Namespace(model="t"))
+        rc = score_cli._cmd_merge(argparse.Namespace(model="t", no_prune=False))
         out = capsys.readouterr().out
         assert rc == 1
         assert "merged=1" in out
@@ -169,7 +169,7 @@ class TestMergeRefusesToClearStaging:
         staging = self._staging(tmp_path, monkeypatch, {
             "batch_example_primary_001.json": json.dumps([_score("aaaaaaaa")]),
         })
-        rc = score_cli._cmd_merge(argparse.Namespace(model="t"))
+        rc = score_cli._cmd_merge(argparse.Namespace(model="t", no_prune=False))
         assert rc == 0
         assert "merged=1" in capsys.readouterr().out
         assert not list(staging.glob("batch_*.json"))
@@ -179,16 +179,43 @@ class TestMergeRefusesToClearStaging:
             "batch_example_primary_001.json": json.dumps([_score("aaaaaaaa")]),
             "batch_example_primary_002.json": '[{"job_id": "bbbbbbbb"',
         })
-        assert score_cli._cmd_merge(argparse.Namespace(model="t")) == 1
+        assert score_cli._cmd_merge(argparse.Namespace(model="t", no_prune=False)) == 1
         (staging / "batch_example_primary_002.json").write_text(json.dumps([_score("bbbbbbbb")]), encoding="utf-8")
         capsys.readouterr()
-        rc = score_cli._cmd_merge(argparse.Namespace(model="t"))
+        rc = score_cli._cmd_merge(argparse.Namespace(model="t", no_prune=False))
         assert rc == 0
         # batch_001 re-merges without duplicating: rows overwrite by job_id
         assert "merged=2" in capsys.readouterr().out
         df = pd.read_parquet(tmp_path / "scored.parquet")
         assert sorted(df["job_id"]) == ["aaaaaaaa", "bbbbbbbb"]
         assert not list(staging.glob("batch_*.json"))
+
+    def test_merge_no_prune_keeps_rows_absent_from_clean(self, tmp_path, monkeypatch, capsys):
+        """/ingest rebuilds clean.parquet over the 14-day raw window, so pruning
+        after a single-row merge would delete every aged-out scored row."""
+        staging = self._staging(tmp_path, monkeypatch, {
+            "batch_example_primary_001.json": json.dumps([_score("aaaaaaaa")]),
+        })
+        monkeypatch.setattr(score_cli, "CLEAN",
+                            _make_clean(tmp_path, job_ids=("cccccccc",)))
+
+        rc = score_cli._cmd_merge(argparse.Namespace(model="t", no_prune=True))
+        assert rc == 0
+        assert "pruned=skipped" in capsys.readouterr().out
+        df = pd.read_parquet(tmp_path / "scored.parquet")
+        assert list(df["job_id"]) == ["aaaaaaaa"]
+        assert not list(staging.glob("batch_*.json"))
+
+    def test_merge_prunes_by_default(self, tmp_path, monkeypatch, capsys):
+        self._staging(tmp_path, monkeypatch, {
+            "batch_example_primary_001.json": json.dumps([_score("aaaaaaaa")]),
+        })
+        monkeypatch.setattr(score_cli, "CLEAN",
+                            _make_clean(tmp_path, job_ids=("cccccccc",)))
+
+        assert score_cli._cmd_merge(argparse.Namespace(model="t", no_prune=False)) == 0
+        assert "pruned=1" in capsys.readouterr().out
+        assert pd.read_parquet(tmp_path / "scored.parquet").empty
 
     def test_prepare_aborts_instead_of_clearing_leftovers(self, tmp_path, monkeypatch, capsys):
         """prepare is the worse call site: it clears staging then re-dumps, so
@@ -534,3 +561,37 @@ class TestCheckCoverageExitCode:
         self._staging(tmp_path, monkeypatch)
         assert score_cli.main(["check-coverage"]) == 1
         assert "between dump and merge" in capsys.readouterr().out
+
+
+class TestDumpFlagWiring:
+    """A typo'd argparse dest makes --job-id/--no-prescreen silently no-op,
+    which /ingest would report as a successful full-backlog score."""
+
+    def _capture(self, tmp_path, monkeypatch):
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        monkeypatch.setattr(score_cli, "STAGING", staging)
+        seen = {}
+
+        def fake(force_all, only_vertical=None, only_job_id=None,
+                 skip_prescreens=False):
+            seen.update(force_all=force_all, only_vertical=only_vertical,
+                        only_job_id=only_job_id, skip_prescreens=skip_prescreens)
+            return {"rows_to_score": 1, "auto_skipped": 0,
+                    "auto_ineligible": 0, "per_vertical": {}}
+
+        monkeypatch.setattr(score_cli, "_dump_and_autoscore", fake)
+        return seen
+
+    def test_job_id_and_no_prescreen_reach_the_dump(self, tmp_path, monkeypatch):
+        seen = self._capture(tmp_path, monkeypatch)
+        assert score_cli.main(["dump", "--job-id", "abc12345",
+                               "--no-prescreen"]) == 0
+        assert seen["only_job_id"] == "abc12345"
+        assert seen["skip_prescreens"] is True
+
+    def test_defaults_are_off(self, tmp_path, monkeypatch):
+        seen = self._capture(tmp_path, monkeypatch)
+        assert score_cli.main(["dump"]) == 0
+        assert seen["only_job_id"] is None
+        assert seen["skip_prescreens"] is False
