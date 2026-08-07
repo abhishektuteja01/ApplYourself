@@ -10,9 +10,13 @@ REQUIRES explicit --company/--title (the job_id hash depends on them — never
 guessed).
 
     uv run ingest-url <url> [--vertical NAME] [--company "..."] [--title "..."]
+    uv run ingest-url <url> --dry-run
 
 Prints the resulting job_id. Reached only through that console script: nothing
 in src/ calls ingest() directly.
+
+--dry-run fetches and prints the extracted text without writing anything, so a
+caller can read company/title off a non-ATS page and pass them back explicitly.
 """
 from __future__ import annotations
 
@@ -29,6 +33,7 @@ import requests
 from src import verticals
 from src.discovery import cleaning
 from src.discovery import htmlutil
+from src.discovery.config import load_config
 from src.discovery.sources.ats import http, greenhouse, lever, ashby
 from src.discovery.schema import make_row, naive_datetime
 from src.parquet_io import write_parquet
@@ -174,14 +179,7 @@ def _fetch_ashby(slug: str, posting_id: str) -> dict:
     return rows[0]
 
 
-def _fetch_generic(url: str, company: str | None, title: str | None) -> dict:
-    if not company or not title:
-        raise IngestError(
-            "ERROR: this URL is not a recognized ATS posting (Greenhouse / "
-            "Lever / Ashby), so company and title cannot be extracted "
-            "reliably — they define the job_id hash and are never guessed. "
-            "Re-run with --company \"...\" --title \"...\"."
-        )
+def _fetch_page(url: str) -> str:
     try:
         resp = requests.get(url, timeout=http.REQUEST_TIMEOUT,
                             headers=http._HEADERS)
@@ -190,9 +188,20 @@ def _fetch_generic(url: str, company: str | None, title: str | None) -> dict:
     if resp.status_code != 200:
         raise IngestError(f"ERROR: HTTP {resp.status_code} fetching {url} — "
                           f"the posting may be gone or behind a login.")
-    text = _page_to_text(resp.text)
+    return _page_to_text(resp.text)
+
+
+def _fetch_generic(url: str, company: str | None, title: str | None) -> dict:
+    if not company or not title:
+        raise IngestError(
+            "ERROR: this URL is not a recognized ATS posting (Greenhouse / "
+            "Lever / Ashby), so company and title cannot be extracted "
+            "reliably — they define the job_id hash and are never guessed. "
+            "Re-run with --company \"...\" --title \"...\", or --dry-run to "
+            "print the page text first."
+        )
     return make_row(site="manual", company=company, title=title, job_url=url,
-                    description=text)
+                    description=_fetch_page(url))
 
 
 def fetch_row(url: str, *, company: str | None = None,
@@ -218,6 +227,18 @@ def fetch_row(url: str, *, company: str | None = None,
     if title:
         row["title"] = title
     return row
+
+
+def fetch_text_only(url: str) -> dict:
+    """URL -> {company, title, text}, writing nothing anywhere. company/title
+    come back "" for a non-ATS URL: the caller reads them off the text and
+    passes them back via --company/--title, because they define the job_id
+    hash and this function will not guess them."""
+    if parse_ats_url(url) is None:
+        return {"company": "", "title": "", "text": _fetch_page(url)}
+    row = fetch_row(url)
+    return {"company": row["company"], "title": row["title"],
+            "text": (row.get("description") or "")}
 
 
 # ---------------------------------------------------------------------
@@ -300,6 +321,10 @@ def ingest(
             hint = (f"\nA near-duplicate title at the same company already "
                     f"exists and won dedupe — tailor that job_id instead: "
                     f"{listing}")
+        elif _dropped_by_location(row):
+            hint = (f"\nLocation {(row.get('location') or '')!r} is outside "
+                    f"location_allowlist in profile/discovery.yaml — widen it "
+                    f"there, or this row cannot enter clean.parquet.")
         raise IngestError(
             f"ERROR: row for {row['company']!r} / {row['title']!r} did not "
             f"survive cleaning (job_id {job_id} absent from "
@@ -316,6 +341,18 @@ def ingest(
         "location": str(kept["location"]),
         "jd_text": str(kept["jd_text"]),
     }
+
+
+def _dropped_by_location(row: dict) -> bool:
+    """Ask the real cleaning filter, on a one-row frame, whether this row's
+    location is what killed it. Reuses the function rather than re-deriving the
+    allowlist test, so the two cannot drift."""
+    probe = pd.DataFrame({"location": [row.get("location") or ""]})
+    try:
+        kept = cleaning.filter_and_canonicalize_location(probe, load_config())
+    except (FileNotFoundError, ValueError):
+        return False
+    return kept.empty
 
 
 def _bad_vertical(requested: str | None, configured: list[str]):
@@ -339,7 +376,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="explicit company (required for non-ATS URLs)")
     parser.add_argument("--title", default=None,
                         help="explicit title (required for non-ATS URLs)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print company/title/text and exit; writes nothing")
     args = parser.parse_args(argv)
+    if args.dry_run:
+        try:
+            info = fetch_text_only(args.url)
+        except IngestError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"company: {info['company']}")
+        print(f"title: {info['title']}")
+        print(f"chars: {len(info['text'])}")
+        print("--- text ---")
+        print(info["text"])
+        return 0
     try:
         info = ingest(args.url, vertical=args.vertical,
                       company=args.company, title=args.title)
