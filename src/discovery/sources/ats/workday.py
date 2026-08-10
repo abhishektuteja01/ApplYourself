@@ -13,6 +13,26 @@ one-call-per-company shape. Title classification runs against the cheap
 paginated list first; the per-job **detail** fetch, the only place a JD comes
 from, only ever fires for the survivors (empirically ~3% of postings).
 
+**Search-scoped, not exhaustive.** The list endpoint's `searchText` genuinely
+filters server-side (confirmed live: NVIDIA's ~2,000 open reqs narrow to a
+few dozen under `searchText="AI Engineer"`, at every offset, not just page
+0) — so each tenant is crawled once per distinct `search_terms` string
+across every configured vertical (`profile/verticals.yaml`, never
+hardcoded — R7's company/vertical-agnostic rule extends to search terms
+too), instead of paginating every posting a tenant has. This trades recall
+(a role Workday's search does not surface under any configured term is never
+seen, even if its title would classify) for a page count small enough to be
+affordable across 50+ tenants; `classify_vertical_from_title` still runs on
+every result as the authoritative filter, since search hits are not
+assumed relevant.
+
+**`total` cannot be trusted past page 0.** Confirmed live: NVIDIA's `total`
+reads 2000 at `offset=0`, then 0 at every later offset checked, including
+one *past* the page-0 total, while `jobPostings` keeps returning full pages
+regardless. Pagination here stops only on a short page
+(`len(jobPostings) < LIST_LIMIT`) or an empty one — never by comparing
+`offset` against `total`.
+
 `postedOn` is a relative string ("Posted Today", "Posted 19 Days Ago",
 "Posted 30+ Days Ago") at both the list and detail level, never an absolute
 timestamp — `relative_posted_date` converts it to an approximate date, or
@@ -40,13 +60,13 @@ from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_
 from src.discovery.sources.base import Source, SourceResult
 
 LIST_LIMIT = 50
-# A per-company ceiling: NVIDIA alone reports total=2000, i.e. 40 pages at
-# LIST_LIMIT — one tenant that size can eat several minutes of paced list
-# calls before a single detail fetch fires. Capped well under the largest
-# real tenant seen so one oversized board cannot consume a whole run's
-# deadline; the tail of a 55-tenant list still gets polled. A truncated
-# tenant is not a failure — it is read again, from page 0, next run.
-MAX_PAGES_PER_COMPANY = 20
+# A ceiling per (company, search term) pair, not per company: search-scoping
+# already cuts page count far below an exhaustive crawl, so 6 * LIST_LIMIT =
+# 300 matches for one term at one tenant is generous headroom rather than a
+# binding constraint in practice. Still there so one term that somehow
+# matches broadly cannot consume a whole run's deadline; a page never reached
+# is not a failure — it is read again, from page 0, next run.
+MAX_PAGES_PER_TERM = 6
 
 _POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)
 _POSTED_YESTERDAY = re.compile(r"posted\s+yesterday", re.IGNORECASE)
@@ -100,11 +120,11 @@ def _public_url(company: str, wd: str, site_id: str, path: str) -> str:
     return f"https://{company}.{wd}.myworkdayjobs.com/{site_id}{path}"
 
 
-def list_page(company: str, wd: str, site_id: str, offset: int,
+def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str = "",
               deadline_ts: float | None = None) -> dict:
     payload = fetch_json_post(
         _list_url(company, wd, site_id),
-        {"appliedFacets": {}, "limit": LIST_LIMIT, "offset": offset, "searchText": ""},
+        {"appliedFacets": {}, "limit": LIST_LIMIT, "offset": offset, "searchText": search_text},
         deadline_ts=deadline_ts,
     )
     if not isinstance(payload, dict):
@@ -113,6 +133,20 @@ def list_page(company: str, wd: str, site_id: str, offset: int,
     if not isinstance(postings, list):
         raise TypeError(f"expected a list under 'jobPostings', got {type(postings).__name__}")
     return payload
+
+
+def search_terms(verticals_config) -> tuple[str, ...]:
+    """Every distinct search_terms string across every configured vertical —
+    the only source of a Workday search term (R7: never hardcoded here)."""
+    seen: set[str] = set()
+    terms: list[str] = []
+    for v in verticals_config.verticals.values():
+        for term in v.search_terms:
+            key = term.strip().casefold()
+            if key and key not in seen:
+                seen.add(key)
+                terms.append(term)
+    return tuple(terms)
 
 
 def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
@@ -143,6 +177,7 @@ class WorkdaySource(Source):
     def fetch(self, ctx) -> SourceResult:
         pacing = max(1.0, ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
+        terms = search_terms(ctx.verticals)
 
         rows: list[dict] = []
         errors: list[str] = []
@@ -171,29 +206,37 @@ class WorkdaySource(Source):
             ticker.tick(polled, ok=ok, err=err_other)
 
             c_fetched = 0
-            survivors: list[tuple[str, str, dict]] = []
+            # Keyed by externalPath: the same posting can surface under more
+            # than one search term, and must be detail-fetched only once.
+            survivors: dict[str, tuple[str, dict]] = {}
             try:
-                offset = 0
-                for _ in range(MAX_PAGES_PER_COMPANY):
+                for term in terms:
+                    offset = 0
+                    for _ in range(MAX_PAGES_PER_TERM):
+                        if ctx.deadline_reached():
+                            break
+                        if not first_request:
+                            time.sleep(pacing)
+                        first_request = False
+                        payload = list_page(company, wd, site_id, offset, term,
+                                             deadline_ts=ctx.deadline_ts)
+                        postings = [p for p in payload["jobPostings"] if isinstance(p, dict)]
+                        for item in postings:
+                            c_fetched += 1
+                            title = item.get("title") or ""
+                            path = item.get("externalPath") or ""
+                            if not title or not path or path in survivors:
+                                continue
+                            vertical = cleaning.classify_vertical_from_title(title)
+                            if vertical:
+                                survivors[path] = (vertical, item)
+                        offset += LIST_LIMIT
+                        # `total` cannot be trusted past page 0 (module
+                        # docstring) — a short or empty page is the only
+                        # reliable "no more results" signal.
+                        if len(postings) < LIST_LIMIT:
+                            break
                     if ctx.deadline_reached():
-                        break
-                    if not first_request:
-                        time.sleep(pacing)
-                    first_request = False
-                    payload = list_page(company, wd, site_id, offset, deadline_ts=ctx.deadline_ts)
-                    postings = [p for p in payload["jobPostings"] if isinstance(p, dict)]
-                    for item in postings:
-                        c_fetched += 1
-                        title = item.get("title") or ""
-                        path = item.get("externalPath") or ""
-                        if not title or not path:
-                            continue
-                        vertical = cleaning.classify_vertical_from_title(title)
-                        if vertical:
-                            survivors.append((vertical, path, item))
-                    total = payload.get("total")
-                    offset += LIST_LIMIT
-                    if not postings or not isinstance(total, int) or offset >= total:
                         break
             except CareersError as e:
                 err_other += 1
@@ -215,7 +258,7 @@ class WorkdaySource(Source):
                 continue
 
             c_kept = 0
-            for vertical, path, item in survivors:
+            for path, (vertical, item) in survivors.items():
                 if ctx.deadline_reached():
                     break
                 time.sleep(pacing)

@@ -7,6 +7,7 @@ from datetime import date
 
 import pytest
 
+from src import verticals as verticals_module
 from src.discovery import universe
 from src.discovery.universe import UniverseCompany
 from src.discovery.sources.ats import workday
@@ -15,6 +16,7 @@ from src.discovery.sources.ats.workday import (
     WorkdaySource,
     parse_slug,
     relative_posted_date,
+    search_terms,
 )
 
 
@@ -23,10 +25,17 @@ class MockConfigSources:
 
 
 class MockContext:
+    """Mirrors orchestrator.Context, including `.verticals` — the injected
+    synthetic fixture (tests/conftest.py's autouse fixture) is the only
+    source of Workday search terms in these tests, same as production."""
     class Config:
         sources = {"workday": MockConfigSources}
     config = Config
     deadline_ts = 0.0
+
+    @property
+    def verticals(self):
+        return verticals_module.get_config()
 
     def deadline_reached(self):
         return False
@@ -90,6 +99,22 @@ class TestRelativePostedDate:
         assert relative_posted_date("") is None
 
 
+class TestSearchTerms:
+    def test_deduplicates_case_insensitively_across_verticals(self):
+        terms = search_terms(verticals_module.get_config())
+        assert len(terms) == len({t.strip().casefold() for t in terms})
+        assert all(isinstance(t, str) and t for t in terms)
+
+    def test_every_term_comes_from_a_configured_vertical(self):
+        cfg = verticals_module.get_config()
+        all_configured = {
+            t.strip().casefold()
+            for v in cfg.verticals.values()
+            for t in v.search_terms
+        }
+        assert set(t.casefold() for t in search_terms(cfg)) <= all_configured
+
+
 class TestWorkdaySourceFetch:
     def test_one_survivor_becomes_one_row(self, monkeypatch):
         monkeypatch.setattr(
@@ -132,27 +157,80 @@ class TestWorkdaySourceFetch:
         res = WorkdaySource().fetch(MockContext())
         assert res.rows == []
 
-    def test_pagination_stops_once_offset_reaches_total(self, monkeypatch):
+    def test_pagination_stops_on_a_short_page_never_on_total(self, monkeypatch):
+        """`total` is unreliable past page 0 (module docstring, confirmed
+        live) — a full page of length LIST_LIMIT keeps paginating regardless
+        of what `total` claims, and only a short page ends it."""
         monkeypatch.setattr(
             universe, "load",
             lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
         )
         calls = []
+        full_page = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
 
-        def fake_list_page(company, wd, site_id, offset, deadline_ts=None):
-            calls.append(offset)
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            calls.append((search_text, offset))
             if offset == 0:
-                return {"total": 2 * workday.LIST_LIMIT, "jobPostings": [LIST_ITEM]}
-            return {"total": 2 * workday.LIST_LIMIT, "jobPostings": []}
+                # `total` says there is nothing more, but the page is full —
+                # must not be trusted.
+                return {"total": 0, "jobPostings": full_page}
+            return {"total": 0, "jobPostings": [LIST_ITEM]}
 
         monkeypatch.setattr(workday, "list_page", fake_list_page)
         monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
         monkeypatch.setattr(workday.time, "sleep", lambda _: None)
 
         WorkdaySource().fetch(MockContext())
-        # An empty second page ends the loop even though total says there is
-        # room for a third — a page with nothing on it will never fill.
-        assert calls == [0, workday.LIST_LIMIT]
+        # Every term's own first page was full, so every term paged at least
+        # once past offset 0.
+        offsets_by_term = {}
+        for term, offset in calls:
+            offsets_by_term.setdefault(term, []).append(offset)
+        assert offsets_by_term
+        for offsets in offsets_by_term.values():
+            assert offsets == [0, workday.LIST_LIMIT]
+
+    def test_a_full_page_does_not_loop_forever(self, monkeypatch):
+        """Every page returned is exactly LIST_LIMIT long — MAX_PAGES_PER_TERM
+        must still cap the crawl for a single term."""
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
+        )
+        full_page = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
+        calls = {"n": 0}
+
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            calls["n"] += 1
+            return {"total": 0, "jobPostings": full_page}
+
+        monkeypatch.setattr(workday, "list_page", fake_list_page)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        WorkdaySource().fetch(MockContext())
+        n_terms = len(search_terms(verticals_module.get_config()))
+        assert calls["n"] == n_terms * workday.MAX_PAGES_PER_TERM
+
+    def test_the_same_posting_under_two_terms_is_detail_fetched_once(self, monkeypatch):
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
+        )
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM],
+        })
+        detail_calls = []
+
+        def fake_detail(url, **kw):
+            detail_calls.append(url)
+            return DETAIL_PAYLOAD
+        monkeypatch.setattr(workday, "fetch_json", fake_detail)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert len(res.rows) == 1
+        assert len(detail_calls) == 1
 
     def test_a_malformed_slug_is_a_per_company_error_not_a_crash(self, monkeypatch):
         monkeypatch.setattr(universe, "load", lambda ats: [
@@ -219,7 +297,7 @@ class TestWorkdaySourceFetch:
             UniverseCompany("Acme AI", "workday", "acme|wd3|Site"),
         ])
 
-        def fake_list_page(company, wd, site_id, offset, deadline_ts=None):
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
             if company == "badco":
                 raise CareersError("board not found (404)", status=404, permanent=True)
             return {"total": 1, "jobPostings": [LIST_ITEM]}
