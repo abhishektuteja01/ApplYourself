@@ -34,7 +34,6 @@ import pandas as pd
 
 from src import paths, state_io, track_cli
 from src.apply import ashby, lever
-from src.apply.ashby import AshbyClientRendered
 from src.apply.answers import Answers, AnswersError, load_answers
 from src.apply.fill import (SubmitGuardError, blocking_questions, fill, has_driver,
                              run_one)
@@ -470,9 +469,7 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
         plan, answers = build(job_id, answers_path=answers_path)
     except PostingExpired as exc:
         return RunOutcome(job_id, category="expired", detail=str(exc))
-    except (ManualApplyOnly, AshbyClientRendered) as exc:
-        # AshbyClientRendered is a manual-apply fact, not breakage: the form
-        # only exists after JS runs, so there is no plan to build.
+    except ManualApplyOnly as exc:
         return RunOutcome(job_id, category="manual", detail=str(exc))
     except BUILD_ERRORS as exc:
         return RunOutcome(job_id, category="failed", detail=str(exc))

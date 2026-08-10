@@ -136,12 +136,15 @@ class TestBuildDispatchesToLever:
 
 
 class TestBuildDispatchesToAshby:
+    def _stub_api(self, monkeypatch):
+        from .conftest import load_api
+        monkeypatch.setattr("src.apply.ashby.fetch_json_post",
+                            lambda *a, **k: load_api("api_ashby_form"))
+
     def test_an_ashby_url_builds_an_ashby_plan(self, repo, monkeypatch, tailor_dir):
         repo.write_clean(**{JOB_ID: ASHBY_URL})
         repo.write_state(url=ASHBY_URL)
-        from .conftest import load_html
-        monkeypatch.setattr("src.apply.ashby.fetch_text",
-                            lambda *a, **k: load_html("form_ashby_minimal"))
+        self._stub_api(monkeypatch)
 
         plan, _ = apply_cli.build(JOB_ID)
         assert plan.ats == "ashby"
@@ -152,14 +155,27 @@ class TestBuildDispatchesToAshby:
         pretend to submit through a driver that does not exist."""
         repo.write_clean(**{JOB_ID: ASHBY_URL})
         repo.write_state(url=ASHBY_URL)
-        from .conftest import load_html
-        monkeypatch.setattr("src.apply.ashby.fetch_text",
-                            lambda *a, **k: load_html("form_ashby_minimal"))
+        self._stub_api(monkeypatch)
 
         plan, answers = apply_cli.build(JOB_ID)
         from src.apply.fill import FillError, fill
         with pytest.raises(FillError, match="no browser driver for ats='ashby'"):
             fill(plan, answers)
+
+    def test_run_reports_ashby_as_manual_apply_without_opening_a_browser(
+            self, repo, monkeypatch, tailor_dir):
+        """The plan now succeeds for Ashby, so the queue reaches the driver
+        check rather than the build guard — and must still not launch Chrome
+        for a board it cannot fill."""
+        repo.write_clean(**{JOB_ID: ASHBY_URL})
+        repo.write_state(url=ASHBY_URL)
+        self._stub_api(monkeypatch)
+        monkeypatch.setattr("src.apply_cli.run_one",
+                            lambda *a, **k: pytest.fail("opened a browser for Ashby"))
+
+        outcome = apply_cli._run_role(JOB_ID, submit=True, headless=False)
+        assert outcome.category == "manual"
+        assert "no browser driver" in outcome.detail
 
 
 class TestResolveUrl:

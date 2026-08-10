@@ -14,6 +14,14 @@ def load_html(name: str) -> str:
     return (FIXTURES / f"{name}.html").read_text(encoding="utf-8")
 
 
+def load_api(name: str) -> dict:
+    """A captured JSON API response. Ashby's application form arrives this way
+    — the page itself is client-rendered and serves no form at all."""
+    import json
+
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
 # The five boards captured as DOM + API pairs from the same posting.
 FORM_FIXTURES = (
     "form_minimal",

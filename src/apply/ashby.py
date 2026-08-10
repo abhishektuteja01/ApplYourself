@@ -1,18 +1,39 @@
-"""Ashby application form: read the rendered DOM into a merged field set.
+"""Ashby application form: read the question API into a merged field set.
 
-Same reason as Lever (`lever.py`) for skipping `schema.py`/`reconcile.py`
-entirely: no public question API, so the rendered form is the only source of
-truth and `MergedField`s are emitted straight from the scan.
+**The form is client-rendered, so there is no HTML to scan.** Measured over 6
+orgs: a static GET of a live posting returns the same ~32 KB shell with zero
+`<form>` elements and zero `data-field-path` attributes, and `<url>` and
+`<url>/application` are byte-identical. The committed `form_ashby_*.html`
+fixtures are browser-DOM snapshots — they carry computed inline styles and
+hashed CSS-module class names that only exist post-render — which is why the
+DOM scanner below passed its tests while failing on every real URL.
 
-**Scan only — no fill driver (§12a).** Three of Ashby's control shapes cannot
-be verified from a static fixture: the open-state markup of the `role`
-`combobox` (location), the post-click state of the yes/no toggle, and the
-checkbox-group selector path via a fieldset one level below its own
-`data-field-path`. Building `fill.py` support for these against guesses
-rather than an observed live form would be the exact kind of speculative work
-this repo's plan (§12a) tries to avoid. `_DRIVER_NAMES` in `fill.py` has no
-"ashby" entry, so `apply plan` works fully for an Ashby posting and
-`apply fill`/`apply run` refuse loudly (`FillError`) until a driver exists.
+`load_board` therefore reads Ashby's own anonymous GraphQL endpoint instead:
+
+    POST https://jobs.ashbyhq.com/api/non-user-graphql?op=ApplicationForm
+
+The collection is `fieldEntries` and `field` is a **JSON scalar**, so the
+whole definition (`type`, `path`, `title`, `selectableValues`) arrives in one
+blob rather than as a selectable sub-object — which is why probing GraphQL
+field names never found it. Recovered from the compiled query AST in the
+frontend bundle (search `FormRenderParts` in
+`cdn.ashbyprd.com/frontend_non_user/<hash>/assets/index-*.js`); the hash
+changes on deploy, so re-read the bundle if the query stops resolving.
+
+`field.path` is exactly the id space this module already keyed on
+(`_systemfield_*`, a UUID for employer-authored questions), so nothing
+downstream had to change.
+
+`scan_ashby_form` is kept: it is the only reader for a *rendered* Ashby form,
+which is what a future fill driver will hold, and the fixtures still exercise
+it. It is simply no longer on the `load_board` path.
+
+**Plan only — no fill driver (§12a).** Three of Ashby's control shapes cannot
+be verified without an observed live form: the open-state markup of the
+location combobox, the post-click state of the yes/no toggle, and the
+checkbox-group selector path. `_DRIVER_NAMES` in `fill.py` has no "ashby"
+entry, so `apply plan` works for an Ashby posting and `apply run` reports it
+as manual-apply rather than opening a browser it cannot drive.
 
 Three things Ashby needed that neither Greenhouse nor Lever did:
 
@@ -44,16 +65,62 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from lxml import html as lxml_html
 
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
-from src.discovery.sources.ats.http import CareersError, fetch_text
+from src.discovery.sources.ats.http import CareersError, fetch_json_post, fetch_text
 
 ROOT_ID = "form"
+
+API_URL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApplicationForm"
+
+# `field` is a JSON scalar — the whole field definition comes back in it, and
+# asking for sub-selections on it is a GraphQL error. Keep it bare.
+APPLICATION_FORM_QUERY = (
+    "query ApplicationForm($organizationHostedJobsPageName: String!, "
+    "$jobPostingId: String!) { jobPosting("
+    "organizationHostedJobsPageName: $organizationHostedJobsPageName, "
+    "jobPostingId: $jobPostingId) { id title applicationForm { id sections "
+    "{ title descriptionHtml fieldEntries { id isRequired field } } } } }"
+)
+
+# Ashby `field.type` -> the `MergedField.kind` the rest of /apply speaks.
+# Measured over 150 live boards; every type below was observed. `isMany` — not
+# the type name — carries cardinality: `MultiValueSelect` means "choose among
+# several values", not "choose several", and came back `isMany: false` on all
+# 39 occurrences. No board in the sample had `isMany: true` at all.
+_TYPE_KINDS = {
+    "String": "text",
+    "Email": "text",
+    "Phone": "text",
+    "Url": "text",
+    "Number": "text",
+    "Date": "text",
+    "LongText": "textarea",
+    "File": "file",
+    # Two buttons and a hidden checkbox in the DOM; a bare true/false here.
+    # Kept as `yesno` with a fixed option pair so the existing A2/B0 opt-out
+    # and work-authorization logic (which reads `field.options`) works
+    # unchanged.
+    "Boolean": "yesno",
+    "ValueSelect": "select",
+    "MultiValueSelect": "select",
+    # A remote place-name taxonomy with no option list of its own.
+    "Location": "combobox",
+}
+
+# Ashby names the resume with a systemfield; the cover letter has no
+# systemfield at all. Over 112 boards it arrives as an employer-authored UUID
+# titled some spelling of "Cover Letter" (and, on 4 boards, the literal path
+# `cover_letter`), so it has to be recognized by title. Both alias to the ids
+# `answers.FILE_IDS` and `plan.find_artifact` already defer to /tailor for.
+_RESUME_PATHS = frozenset({"_systemfield_resume"})
+_COVER_LETTER_PATHS = frozenset({"cover_letter", "_systemfield_coverletter"})
+_COVER_LETTER_TITLE = re.compile(r"cover\s*letter", re.IGNORECASE)
 
 _URL = re.compile(
     r"^https?://jobs\.ashbyhq\.com/(?P<slug>[^/?#]+)/(?P<job_id>[0-9a-f-]+)",
@@ -80,25 +147,6 @@ _FILE_FIELD_IDS = {
 
 class AshbyScanError(DomScanError):
     """The rendered Ashby form is not shaped the way this scanner can read."""
-
-
-class AshbyClientRendered(AshbyScanError):
-    """Ashby served the page shell but no form — it is assembled by JS.
-
-    Measured over 6 orgs: a static GET of a live posting returns the same
-    ~32 KB shell with zero `<form>` elements and zero `data-field-path`
-    attributes, and `<url>` and `<url>/application` are byte-identical. There
-    is no embedded JSON payload to parse either.
-
-    So `scan_ashby_form` only ever runs against a **browser-DOM snapshot**,
-    which is what the committed fixtures are (they carry computed inline
-    styles and hashed CSS-module class names that exist only post-render).
-    The scanner is correct; it just has nothing to read without a browser.
-
-    Raised separately from a parse failure so `apply_cli` can report the role
-    as manual-apply — which it already is, Ashby having no fill driver —
-    instead of as breakage.
-    """
 
 
 @dataclass(frozen=True)
@@ -361,27 +409,141 @@ def fetch_form(posting: Posting, timeout: int = 30) -> str:
         raise
 
 
-def load_board(url: str, timeout: int = 30) -> AshbyBoard:
-    """Posting URL -> an Ashby board, `plan_for_board`-shaped. One GET."""
-    posting = parse_posting(url)
-    html = fetch_form(posting, timeout=timeout)
-    doc = lxml_html.fromstring(html)
-    roots = doc.xpath(f'//*[@id="{ROOT_ID}"]')
-    if not roots:
-        raise AshbyClientRendered(
-            f"{url}: Ashby renders its application form client-side, so a static "
-            f"fetch returns a page with no form in it (no id={ROOT_ID!r}, no "
-            f"<form>). There is no plan path for Ashby without a browser — "
-            f"apply by hand."
+def fetch_application_form(posting: Posting, timeout: int = 30) -> dict:
+    """The posting's `jobPosting` node, questions included.
+
+    A null `jobPosting` is Ashby's shape for "no such posting" — the API
+    answers 200 either way — so it maps to `PostingExpired`, the same ordinary
+    outcome as a stale Greenhouse token. 5 of the first 40 live URLs tried
+    came back this way.
+    """
+    body = {
+        "operationName": "ApplicationForm",
+        "variables": {
+            # The org segment of the URL is percent-encoded for orgs whose
+            # page name has a space in it ("Hippocratic%20AI"); the API wants
+            # the decoded name.
+            "organizationHostedJobsPageName": unquote(posting.slug),
+            "jobPostingId": posting.job_id,
+        },
+        "query": APPLICATION_FORM_QUERY,
+    }
+    payload = fetch_json_post(API_URL, body, timeout=timeout)
+    if not isinstance(payload, dict):
+        raise AshbyScanError(f"{posting.form_url}: API returned {type(payload).__name__}")
+    if payload.get("errors"):
+        messages = "; ".join(
+            str(e.get("message", e)) for e in payload["errors"] if isinstance(e, dict)
         )
-    scan = _submit_scan(roots[0])
-    reconciled = scan_ashby_form(html)
+        raise AshbyScanError(f"{posting.form_url}: API errors: {messages}")
+
+    job_posting = (payload.get("data") or {}).get("jobPosting")
+    if not job_posting:
+        raise PostingExpired(
+            f"posting {posting.job_id} is gone: {posting.form_url}"
+        )
+    if not job_posting.get("applicationForm"):
+        raise AshbyScanError(
+            f"{posting.form_url}: the posting exists but carries no applicationForm"
+        )
+    return job_posting
+
+
+def _api_file_id(path: str, title: str) -> str:
+    if path in _RESUME_PATHS:
+        return "resume"
+    if path in _COVER_LETTER_PATHS or _COVER_LETTER_TITLE.search(title or ""):
+        return "cover_letter"
+    # "Additional Attachments", a portfolio screenshot: a real optional upload
+    # with no /tailor artifact behind it. Left under its own id so it resolves
+    # normally — skipped when optional, parked when required.
+    return path
+
+
+def _api_field(entry: dict) -> MergedField:
+    field = entry.get("field")
+    if not isinstance(field, dict):
+        raise AshbyScanError(f"fieldEntry {entry.get('id')!r} carries no field object")
+
+    path = field.get("path") or ""
+    if not path:
+        raise AshbyScanError(f"fieldEntry {entry.get('id')!r} has no field.path")
+    raw_type = field.get("type") or ""
+    kind = _TYPE_KINDS.get(raw_type)
+    if kind is None:
+        # Loud rather than guessed, matching the DOM scanner's unknown-input
+        # behaviour. `EducationHistory` (a repeating sub-form) is the one type
+        # seen in the wild that lands here — 1 board in 115.
+        raise AshbyScanError(
+            f"unknown Ashby field type {raw_type!r} on path={path!r} "
+            f"({field.get('title')!r})"
+        )
+
+    field_id = _api_file_id(path, field.get("title") or "") if kind == "file" else path
+
+    if kind == "yesno":
+        options = (MergedOption(label="Yes", value="yes"),
+                   MergedOption(label="No", value="no"))
+    else:
+        options = tuple(
+            MergedOption(label=str(v.get("label", "")), value=str(v.get("value", "")))
+            for v in (field.get("selectableValues") or [])
+            if isinstance(v, dict)
+        )
+
+    return MergedField(
+        id=field_id,
+        name=field_id,
+        label=field.get("title") or "",
+        required=bool(entry.get("isRequired")),
+        kind=kind,
+        # Ashby's demographic questionnaire is a separate form this query does
+        # not return — no section across 150 boards was one — so everything
+        # here is an ordinary application question.
+        section="questions",
+        multi=bool(field.get("isMany")),
+        options=options,
+    )
+
+
+def fields_from_application_form(job_posting: dict) -> Reconciled:
+    """The API's `applicationForm` as the same `Reconciled` the DOM scan
+    produces. Deduped by id, in the order the form presents them."""
+    seen: set[str] = set()
+    fields: list[MergedField] = []
+    for section in job_posting["applicationForm"].get("sections") or []:
+        for entry in section.get("fieldEntries") or []:
+            if not isinstance(entry, dict):
+                continue
+            merged = _api_field(entry)
+            if merged.id in seen:
+                continue
+            seen.add(merged.id)
+            fields.append(merged)
+
+    if not fields:
+        raise AshbyScanError("the application form declares no fields")
+    return Reconciled(fields=tuple(fields), api_only=())
+
+
+def load_board(url: str, timeout: int = 30) -> AshbyBoard:
+    """Posting URL -> an Ashby board, `plan_for_board`-shaped. One POST.
+
+    `submit_selector` stays None on purpose. There is no fill driver, and the
+    guard in `fill.submit` refuses without a selector — so the one thing that
+    could turn a plan into a real click is absent by construction rather than
+    by a DOM claim this path cannot verify.
+    """
+    posting = parse_posting(url)
+    job_posting = fetch_application_form(posting, timeout=timeout)
+    reconciled = fields_from_application_form(job_posting)
     return AshbyBoard(
         posting=posting,
         slug=posting.slug,
-        scan=scan,
-        schema=_Schema(company_name="", title=""),
+        scan=_Scan(submit_selector=None, submit_disabled=False),
+        schema=_Schema(company_name=unquote(posting.slug),
+                       title=job_posting.get("title") or ""),
         reconciled=reconciled,
-        html=html,
+        html="",
         requires_captcha=False,
     )

@@ -75,6 +75,10 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    Ashby is plan-only (no fill driver yet — its combobox/toggle DOM was never
    observed live); Workday is discovered but never submitted to, always
    manual-apply (see `submit_plan.md`, gitignored, for the phase detail).
+   Ashby is also the one board read through a **JSON API rather than HTML**:
+   its form is client-rendered, so `ashby.load_board` POSTs the
+   `ApplicationForm` GraphQL query and `scan_ashby_form` is kept only for the
+   rendered DOM a future fill driver will hold.
 
 ### `job_id` is a content hash — treat it as load-bearing
 

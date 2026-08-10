@@ -1,0 +1,222 @@
+{
+  "_comment": [
+    "Ashby's ApplicationForm GraphQL response, synthetic but structurally",
+    "faithful to a live capture (TRM Labs, 2026-08-10) and covering every",
+    "field.type observed across 150 live boards. Company, title and question",
+    "wording are from the fictional widget/gizmo world; the shapes are not:",
+    "  - `field` is a JSON scalar, so the whole definition arrives inline",
+    "  - `_systemfield_name` is one combined name field, present and required",
+    "    on 112 of 112 boards",
+    "  - the cover letter has NO systemfield: it is an employer-authored UUID",
+    "    titled some spelling of 'Cover Letter', so it is recognized by title",
+    "  - `isMany` carries cardinality, not the `MultiValueSelect` type name",
+    "  - a File field that is neither resume nor cover letter is ordinary"
+  ],
+  "data": {
+    "jobPosting": {
+      "id": "00000001-0000-0000-0000-000000000001",
+      "title": "Widget Engineer",
+      "applicationForm": {
+        "id": "aaaaaaaa-0000-0000-0000-00000000ffff",
+        "sections": [
+          {
+            "title": null,
+            "descriptionHtml": null,
+            "fieldEntries": [
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff__systemfield_name",
+                "isRequired": true,
+                "field": {
+                  "id": "10000000-0000-0000-0000-000000000001",
+                  "path": "_systemfield_name",
+                  "humanReadablePath": "Name",
+                  "title": "Full Name",
+                  "isMany": false,
+                  "type": "String"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff__systemfield_email",
+                "isRequired": true,
+                "field": {
+                  "id": "10000000-0000-0000-0000-000000000002",
+                  "path": "_systemfield_email",
+                  "humanReadablePath": "Email",
+                  "title": "Email",
+                  "isMany": false,
+                  "type": "Email"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff__systemfield_resume",
+                "isRequired": true,
+                "field": {
+                  "id": "10000000-0000-0000-0000-000000000003",
+                  "path": "_systemfield_resume",
+                  "humanReadablePath": "Resume",
+                  "title": "Resume",
+                  "isMany": false,
+                  "type": "File"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000001",
+                "isRequired": false,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000001",
+                  "path": "20000000-0000-0000-0000-000000000001",
+                  "humanReadablePath": "",
+                  "title": "Cover Letter (Optional)",
+                  "isMany": false,
+                  "type": "File"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000002",
+                "isRequired": false,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000002",
+                  "path": "20000000-0000-0000-0000-000000000002",
+                  "humanReadablePath": "",
+                  "title": "Additional Attachments",
+                  "isMany": false,
+                  "type": "File"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff__systemfield_location",
+                "isRequired": false,
+                "field": {
+                  "id": "10000000-0000-0000-0000-000000000004",
+                  "path": "_systemfield_location",
+                  "humanReadablePath": "Location",
+                  "title": "Location",
+                  "isMany": false,
+                  "type": "Location"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000003",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000003",
+                  "path": "20000000-0000-0000-0000-000000000003",
+                  "humanReadablePath": "",
+                  "title": "Phone",
+                  "isMany": false,
+                  "type": "Phone"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000004",
+                "isRequired": false,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000004",
+                  "path": "20000000-0000-0000-0000-000000000004",
+                  "humanReadablePath": "",
+                  "title": "LinkedIn Profile",
+                  "isMany": false,
+                  "type": "Url"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000005",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000005",
+                  "path": "20000000-0000-0000-0000-000000000005",
+                  "humanReadablePath": "",
+                  "title": "Are you legally authorized to work in the United States?",
+                  "isMany": false,
+                  "type": "Boolean"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000006",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000006",
+                  "path": "20000000-0000-0000-0000-000000000006",
+                  "humanReadablePath": "",
+                  "title": "Will you now or in the future require visa sponsorship?",
+                  "isMany": false,
+                  "type": "Boolean"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000007",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000007",
+                  "path": "20000000-0000-0000-0000-000000000007",
+                  "humanReadablePath": "",
+                  "title": "Describe a widget calibration you shipped end to end.",
+                  "isMany": false,
+                  "type": "LongText"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000008",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000008",
+                  "path": "20000000-0000-0000-0000-000000000008",
+                  "humanReadablePath": "",
+                  "title": "Base compensation expectations in USD:",
+                  "isMany": false,
+                  "type": "Number"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-000000000009",
+                "isRequired": false,
+                "field": {
+                  "id": "20000000-0000-0000-0000-000000000009",
+                  "path": "20000000-0000-0000-0000-000000000009",
+                  "humanReadablePath": "",
+                  "title": "When can you start a new role?",
+                  "isMany": false,
+                  "type": "Date"
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-00000000000a",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-00000000000a",
+                  "path": "20000000-0000-0000-0000-00000000000a",
+                  "humanReadablePath": "",
+                  "title": "How did you hear about Gasket Works?",
+                  "isMany": false,
+                  "type": "ValueSelect",
+                  "selectableValues": [
+                    {"label": "Job board", "value": "1001"},
+                    {"label": "Referral", "value": "1002"},
+                    {"label": "Company website", "value": "1003"}
+                  ]
+                }
+              },
+              {
+                "id": "aaaaaaaa-0000-0000-0000-00000000ffff_20000000-0000-0000-0000-00000000000b",
+                "isRequired": true,
+                "field": {
+                  "id": "20000000-0000-0000-0000-00000000000b",
+                  "path": "20000000-0000-0000-0000-00000000000b",
+                  "humanReadablePath": "",
+                  "title": "How many years of gizmo tuning experience do you have?",
+                  "isMany": false,
+                  "type": "MultiValueSelect",
+                  "selectableValues": [
+                    {"label": "0 - 2 years", "value": "2001"},
+                    {"label": "2 - 5 years", "value": "2002"},
+                    {"label": "5+ years", "value": "2003"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

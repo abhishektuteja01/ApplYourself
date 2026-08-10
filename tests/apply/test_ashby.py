@@ -1,10 +1,14 @@
-"""Ashby's rendered form -> a merged field set, with no API to reconcile
-against — the scan output is the merge, straight from the DOM (§12a).
+"""Ashby's application form -> a merged field set.
 
-Scan-only: this module has no fill driver (see ashby.py's module docstring),
+Two readers, two roles. `load_board` reads the GraphQL API, because a live
+Ashby posting serves no form in its HTML at all; `scan_ashby_form` reads a
+*rendered* form and is exercised here against browser-DOM snapshots, since
+that is what a future fill driver will hold.
+
+Plan-only: this module has no fill driver (see ashby.py's module docstring),
 so there is no submit/captcha/driver coverage here, unlike test_lever.py.
 
-No network: fetch_text is stubbed everywhere.
+No network: fetch_text and fetch_json_post are stubbed everywhere.
 """
 from __future__ import annotations
 
@@ -17,13 +21,14 @@ from src.apply.ashby import (
     ApplyUrlError,
     PostingExpired,
     fetch_form,
+    fields_from_application_form,
     load_board,
     parse_posting,
     scan_ashby_form,
 )
 from src.apply.plan import build_plan, plan_for_board
 
-from .conftest import load_html
+from .conftest import load_api, load_html
 
 
 class TestParsePosting:
@@ -157,29 +162,172 @@ class TestFetchForm:
                 fetch_form(posting)
 
 
+ASHBY_URL = "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
+
+
 class TestLoadBoard:
-    def test_submit_selector_and_no_captcha(self):
-        html = load_html("form_ashby_minimal")
-        with patch("src.apply.ashby.fetch_text", return_value=html):
-            board = load_board(
-                "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
-            )
-        assert board.scan.submit_selector == '#form .ashby-application-form-submit-button'
-        assert board.scan.submit_disabled is False
+    """`load_board` reads the GraphQL API, not the page. A static GET of a live
+    Ashby posting returns a ~32 KB shell with zero `<form>` elements — measured
+    over 6 orgs — so the DOM path it used to take could never work outside the
+    fixtures."""
+
+    def _board(self, payload=None):
+        with patch("src.apply.ashby.fetch_json_post",
+                   return_value=payload or load_api("api_ashby_form")):
+            return load_board(ASHBY_URL)
+
+    def test_no_submit_selector_since_there_is_no_driver(self):
+        """Absent by construction, not by omission: `fill.submit`'s guard
+        refuses without a selector, so nothing can turn an Ashby plan into a
+        real click while the driver does not exist."""
+        board = self._board()
+        assert board.scan.submit_selector is None
         assert board.requires_captcha is False
         assert board.slug == "widgetco"
 
+    def test_the_title_comes_from_the_api(self):
+        board = self._board()
+        assert board.schema.title == "Widget Engineer"
+        assert board.schema.company_name == "widgetco"
+
     def test_plan_for_board_carries_ats_through(self, answers, tailor_dir):
-        html = load_html("form_ashby_minimal")
-        with patch("src.apply.ashby.fetch_text", return_value=html):
-            board = load_board(
-                "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
-            )
+        board = self._board()
         plan = plan_for_board(board, answers, tailor_dir, job_id="deadbeef", ats="ashby")
         assert plan.ats == "ashby"
         assert plan.requires_captcha is False
         assert plan.job_id == "deadbeef"
         assert plan.board == "widgetco"
+
+    def test_a_percent_encoded_org_is_decoded_for_the_api(self):
+        """Orgs whose page name has a space in it appear as `Hippocratic%20AI`
+        in the URL; the API wants the decoded name."""
+        seen = {}
+
+        def capture(url, body, **kw):
+            seen.update(body["variables"])
+            return load_api("api_ashby_form")
+
+        with patch("src.apply.ashby.fetch_json_post", side_effect=capture):
+            load_board("https://jobs.ashbyhq.com/Gasket%20Works/"
+                       "00000001-0000-0000-0000-000000000001")
+        assert seen["organizationHostedJobsPageName"] == "Gasket Works"
+
+    def test_a_null_job_posting_is_an_expired_posting(self):
+        """The API answers 200 with a null node rather than 404. 5 of the first
+        40 live URLs came back this way — ordinary, not breakage."""
+        with pytest.raises(PostingExpired):
+            self._board({"data": {"jobPosting": None}})
+
+    def test_graphql_errors_are_reported_not_swallowed(self):
+        with pytest.raises(AshbyScanError, match="Cannot query field"):
+            self._board({"errors": [{"message": "Cannot query field 'nope'"}],
+                         "data": None})
+
+
+class TestApiFieldMapping:
+    """`field.type` -> `MergedField.kind`, over the fixture that carries every
+    type observed across 150 live boards."""
+
+    def _fields(self):
+        board_fields = fields_from_application_form(
+            load_api("api_ashby_form")["data"]["jobPosting"])
+        return {f.id: f for f in board_fields.fields}
+
+    def test_every_scalar_type_maps_to_a_kind_the_planner_speaks(self):
+        by_id = self._fields()
+        kinds = {f.id: f.kind for f in by_id.values()}
+        assert kinds["_systemfield_name"] == "text"          # String
+        assert kinds["_systemfield_email"] == "text"         # Email
+        assert kinds["_systemfield_location"] == "combobox"  # Location
+        assert kinds["resume"] == "file"                     # File
+        assert kinds["20000000-0000-0000-0000-000000000003"] == "text"      # Phone
+        assert kinds["20000000-0000-0000-0000-000000000004"] == "text"      # Url
+        assert kinds["20000000-0000-0000-0000-000000000005"] == "yesno"     # Boolean
+        assert kinds["20000000-0000-0000-0000-000000000007"] == "textarea"  # LongText
+        assert kinds["20000000-0000-0000-0000-000000000008"] == "text"      # Number
+        assert kinds["20000000-0000-0000-0000-000000000009"] == "text"      # Date
+        assert kinds["20000000-0000-0000-0000-00000000000a"] == "select"    # ValueSelect
+        assert kinds["20000000-0000-0000-0000-00000000000b"] == "select"    # MultiValueSelect
+
+    def test_a_boolean_gets_the_yes_no_pair_the_resolvers_read(self):
+        """`answers.py`'s work-authorization and opt-out logic reads
+        `field.options`; the API sends a bare true/false type with none."""
+        field = self._fields()["20000000-0000-0000-0000-000000000005"]
+        assert [o.label for o in field.options] == ["Yes", "No"]
+
+    def test_selectable_values_become_options(self):
+        field = self._fields()["20000000-0000-0000-0000-00000000000a"]
+        assert [o.label for o in field.options] == [
+            "Job board", "Referral", "Company website"]
+        assert [o.value for o in field.options] == ["1001", "1002", "1003"]
+
+    def test_multi_comes_from_is_many_not_from_the_type_name(self):
+        """`MultiValueSelect` means "choose among several values", not "choose
+        several" — `isMany` was false on all 39 occurrences across 150 boards,
+        and no board in the sample had `isMany: true` at all."""
+        assert self._fields()["20000000-0000-0000-0000-00000000000b"].multi is False
+
+    def test_the_resume_aliases_to_the_id_tailor_defers_to(self):
+        assert "resume" in self._fields()
+        assert "_systemfield_resume" not in self._fields()
+
+    def test_the_cover_letter_is_recognized_by_title_not_by_path(self):
+        """Ashby has no cover-letter systemfield. Across 112 boards it arrives
+        as an employer-authored UUID titled some spelling of "Cover Letter"."""
+        assert "cover_letter" in self._fields()
+
+    def test_another_file_field_keeps_its_own_id(self):
+        """"Additional Attachments" is a real optional upload with no /tailor
+        artifact behind it — aliasing it to a known id would attach the wrong
+        document."""
+        other = self._fields()["20000000-0000-0000-0000-000000000002"]
+        assert other.kind == "file"
+        assert other.required is False
+
+    def test_required_comes_from_the_entry_not_the_field(self):
+        by_id = self._fields()
+        assert by_id["_systemfield_name"].required is True
+        assert by_id["20000000-0000-0000-0000-000000000004"].required is False
+
+    def test_an_unknown_type_raises_rather_than_guessing(self):
+        """`EducationHistory` — a repeating sub-form, 1 board in 115 — lands
+        here. Loud, matching the DOM scanner's unknown-input behaviour."""
+        payload = load_api("api_ashby_form")
+        entry = payload["data"]["jobPosting"]["applicationForm"]["sections"][0][
+            "fieldEntries"][0]
+        entry["field"]["type"] = "EducationHistory"
+        with pytest.raises(AshbyScanError, match="unknown Ashby field type"):
+            fields_from_application_form(payload["data"]["jobPosting"])
+
+    def test_a_form_with_no_fields_raises(self):
+        payload = load_api("api_ashby_form")
+        payload["data"]["jobPosting"]["applicationForm"]["sections"] = []
+        with pytest.raises(AshbyScanError, match="declares no fields"):
+            fields_from_application_form(payload["data"]["jobPosting"])
+
+
+class TestApiEndToEndResolution:
+    def test_the_real_shaped_form_resolves_identity_and_defers_the_resume(
+            self, answers, tailor_dir):
+        board_fields = fields_from_application_form(
+            load_api("api_ashby_form")["data"]["jobPosting"])
+        plan = build_plan(board_fields, answers, tailor_dir, ats="ashby")
+        assert [f.id for f in plan.files] == ["resume", "cover_letter"]
+        by_id = {f.id: f.value for f in plan.fields}
+        # The combined name field every Ashby board asks for, composed from
+        # identity.first_name/last_name.
+        assert by_id["_systemfield_name"] == "Alex Example"
+        assert by_id["_systemfield_email"] == answers.identity["email"]
+
+    def test_the_work_authorization_pair_resolves_from_status(
+            self, answers, tailor_dir):
+        board_fields = fields_from_application_form(
+            load_api("api_ashby_form")["data"]["jobPosting"])
+        plan = build_plan(board_fields, answers, tailor_dir, ats="ashby")
+        by_id = {f.id: f.value for f in plan.fields}
+        # time_limited: authorized today, will need sponsorship later.
+        assert by_id["20000000-0000-0000-0000-000000000005"] == "Yes"
+        assert by_id["20000000-0000-0000-0000-000000000006"] == "Yes"
 
 
 class TestEndToEndResolution:
