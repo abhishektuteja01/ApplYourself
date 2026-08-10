@@ -13,6 +13,7 @@ never submits anything.
 ## Instructions
 
 1. No dated references if not needed, no extra verbose paragraphs explaining why the decision was made. If absolutely needed (in case of A/B tests and similar), a concise one liner is enough.
+2. Explain code changes and tests before updating or implementing. Start post confirmation.
 
 ## The one rule that shapes everything: the determinism boundary (R7)
 

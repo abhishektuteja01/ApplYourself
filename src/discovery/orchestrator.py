@@ -6,6 +6,7 @@ import re
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import pandas as pd
 
@@ -16,6 +17,9 @@ from src.discovery.sources.jobspy_source import LinkedinSource, IndeedSource
 from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
+from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
+from src.discovery import trace
+from src.discovery import universe
 from src.discovery.schema import validate_frame, COLUMNS
 from src import verticals
 from src.parquet_io import write_parquet
@@ -53,8 +57,83 @@ class Context:
 def get_sources():
     return [InboxSource(), LinkedinSource(), IndeedSource(), GreenhouseSource(), LeverSource(), AshbySource()]
 
+
+def _run_source(source, ctx, run_id, scraped_date, shard_file) -> dict:
+    """One source, start to shard. Runs on its own thread for everything but
+    the inbox.
+
+    A fetch failure is *contained* and returned as data, so one lane's crash
+    costs the others nothing. Anything raised past the fetch — validate_frame,
+    write_parquet — is deliberately **not** caught: it propagates out of the
+    future, aborts the run, and the caller's finally still guarantees cleaning.
+    """
+    t0 = time.time()
+    trace.trace(f"{source.name} lane start")
+    try:
+        res = source.fetch(ctx)
+    except Exception:  # noqa: BLE001 — deliberate per-source containment
+        log.exception("Source %s crashed; continuing.", source.name)
+        trace.trace(f"{source.name} lane CRASHED after {time.time() - t0:.1f}s")
+        return {"duration": time.time() - t0, "crash": traceback.format_exc().rstrip()}
+
+    outcome = {
+        "duration": time.time() - t0,
+        "crash": None,
+        "result": res,
+        # Read at this lane's own finish, not after the join: a lane that
+        # completed inside the budget must not be labelled by a later one.
+        "truncated": ctx.deadline_reached(),
+    }
+
+    df = pd.DataFrame(res.rows) if res.rows else pd.DataFrame()
+    if not df.empty:
+        df["ingested_run_id"] = run_id
+        df["scraped_date"] = scraped_date
+        df = validate_frame(df)
+    else:
+        df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
+        df = validate_frame(df)
+
+    write_parquet(df, shard_file)
+    outcome["rows"] = 0 if df.empty else len(df)
+    trace.trace(f"{source.name} lane done in {outcome['duration']:.1f}s "
+                f"rows={outcome['rows']} truncated={outcome['truncated']}")
+    return outcome
+
+
+def _render_source(name: str, outcome: dict) -> list[str]:
+    """One `### Source:` section. Lanes finish out of order, so sections are
+    rendered from the collected outcomes in fixed_order, never as they land."""
+    lines = [f"### Source: {name}", f"Time: {outcome['duration']:.1f}s"]
+
+    if outcome["crash"] is not None:
+        lines += ["**CRASHED** — no shard written, source skipped this run",
+                  "```", outcome["crash"], "```", ""]
+        return lines
+
+    if not outcome["rows"]:
+        lines.append("ZERO rows (inbox empty)" if name == "manual"
+                     else "ZERO rows (likely rate-limited or no results)")
+    else:
+        lines.append(f"Rows: {outcome['rows']}")
+
+    res = outcome["result"]
+    if res.errors:
+        lines.append("Errors:")
+        lines.extend(f"- {e}" for e in res.errors)
+    if res.report_lines:
+        lines.extend(res.report_lines)
+    if outcome["truncated"]:
+        lines.append("**DEADLINE REACHED** — partial shard, this source was cut short")
+    lines.append("")
+    return lines
+
 def main(args=None):
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # asctime is load-bearing: urllib3's retry warnings propagate to root, and
+    # without a timestamp on them a slow night cannot be reconstructed after
+    # the fact — which is exactly what happened on 2026-08-08.
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", type=str, metavar="YYYY-MM-DD_HHMM",
                         help="Resume run ID")
@@ -96,15 +175,23 @@ def main(args=None):
         "",
     ]
 
-    health_path = JOBS_ROOT / "universe_health.parquet"
-    if health_path.exists():
+    # One ledger per ATS since the sources run concurrently, so the prune count
+    # is a sum. Via universe.health_path so the test fixture's HEALTH_DIR patch
+    # covers this read too.
+    pruned_count = 0
+    found_ledger = False
+    for ats in ATS_SOURCE_NAMES:
+        path = universe.health_path(ats)
+        if not path.exists():
+            continue
         try:
-            health_df = pd.read_parquet(health_path)
-            pruned_count = health_df["pruned_at"].notna().sum()
-            report_lines.append(f"Universe Health: {pruned_count} companies pruned (3x dead board)")
-            report_lines.append("")
+            pruned_count += int(pd.read_parquet(path)["pruned_at"].notna().sum())
+            found_ledger = True
         except (OSError, ValueError, KeyError) as e:
-            log.warning("Could not read universe health for report: %s", e)
+            log.warning("Could not read %s universe health for report: %s", ats, e)
+    if found_ledger:
+        report_lines.append(f"Universe Health: {pruned_count} companies pruned (3x dead board)")
+        report_lines.append("")
 
     # Everything above is the run preamble; a resume appends only what follows.
     preamble_len = len(report_lines)
@@ -128,68 +215,65 @@ def main(args=None):
         report_lines.append("**deadline_hours == 0** — no source polled this run.")
         enabled_sources = []
 
+    def pending(source) -> bool:
+        shard_file = JOBS_RAW / f"{run_id}_{source.name}.parquet"
+        if parsed.resume and shard_file.exists():
+            log.info("Skipping %s, shard exists.", source.name)
+            return False
+        return True
+
+    def lane_args(source):
+        return (source, ctx, run_id, scraped_date,
+                JOBS_RAW / f"{run_id}_{source.name}.parquet")
+
+    outcomes: dict[str, dict] = {}
+    not_started: list[str] = []
+    run_t0 = time.time()
+
     try:
-        for source in enabled_sources:
-            shard_file = JOBS_RAW / f"{run_id}_{source.name}.parquet"
-            if parsed.resume and shard_file.exists():
-                log.info("Skipping %s, shard exists.", source.name)
-                continue
+        # The inbox *moves* what it reads into .processed/, so it stays serial
+        # and first — it is the one source doing local filesystem mutation, and
+        # it costs no measurable time anyway.
+        for source in [s for s in enabled_sources if s.name == "manual"]:
+            if pending(source):
+                outcomes[source.name] = _run_source(*lane_args(source))
 
-            t0 = time.time()
-            try:
-                res = source.fetch(ctx)
-            except Exception:  # noqa: BLE001 — deliberate per-source containment
-                # Broad on purpose: one source's crash must not cost the other
-                # five their shards. No shard is written, so --resume retries it.
-                log.exception("Source %s crashed; continuing.", source.name)
-                report_lines.extend([
-                    f"### Source: {source.name}",
-                    f"Time: {time.time() - t0:.1f}s",
-                    "**CRASHED** — no shard written, source skipped this run",
-                    "```",
-                    traceback.format_exc().rstrip(),
-                    "```",
-                    "",
-                ])
-                if ctx.deadline_reached():
-                    report_lines.append(f"**DEADLINE REACHED** after {source.name}.")
-                    break
-                continue
-            dur = time.time() - t0
-
-            df = pd.DataFrame(res.rows) if res.rows else pd.DataFrame()
-            if not df.empty:
-                df["ingested_run_id"] = run_id
-                df["scraped_date"] = scraped_date
-                df = validate_frame(df)
-            else:
-                df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
-                df = validate_frame(df)
-
-            write_parquet(df, shard_file)
-
-            report_lines.append(f"### Source: {source.name}")
-            report_lines.append(f"Time: {dur:.1f}s")
-            if df.empty:
-                if source.name == "manual":
-                    report_lines.append("ZERO rows (inbox empty)")
-                else:
-                    report_lines.append("ZERO rows (likely rate-limited or no results)")
-            else:
-                report_lines.append(f"Rows: {len(df)}")
-            if res.errors:
-                report_lines.append("Errors:")
-                for e in res.errors:
-                    report_lines.append(f"- {e}")
-            if res.report_lines:
-                report_lines.extend(res.report_lines)
-            report_lines.append("")
-
-            if ctx.deadline_reached():
-                report_lines.append(f"**DEADLINE REACHED** after {source.name}.")
-                break
+        # Rate limits are per-host and these five hit unrelated services, so
+        # nothing is gained by serializing them. One thread each: the work is
+        # entirely I/O-bound.
+        lanes = [s for s in enabled_sources if s.name != "manual" and pending(s)]
+        if lanes and ctx.deadline_reached():
+            # Budget already spent, so starting a lane would only write an
+            # empty shard that --resume would then skip.
+            not_started = [s.name for s in lanes]
+        elif lanes:
+            with ThreadPoolExecutor(max_workers=len(lanes)) as pool:
+                futures = {pool.submit(_run_source, *lane_args(s)): s for s in lanes}
+                # A raise here is a write/validate failure, not a fetch failure
+                # (_run_source contains those). Let it out: the pool's __exit__
+                # joins the other lanes so their shards land, then the finally
+                # still writes the report and runs cleaning.
+                for future, source in futures.items():
+                    outcomes[source.name] = future.result()
 
     finally:
+        if outcomes:
+            # The per-source Time: values overlap now, so they no longer sum to
+            # the run. This is the number that says whether the lanes helped.
+            serial = sum(o["duration"] for o in outcomes.values())
+            report_lines.append(
+                f"Wall time: {time.time() - run_t0:.1f}s "
+                f"(sources ran concurrently; {serial:.1f}s if summed serially)")
+            report_lines.append("")
+
+        for name in fixed_order:
+            if name in outcomes:
+                report_lines.extend(_render_source(name, outcomes[name]))
+        if not_started:
+            report_lines.append(
+                f"**DEADLINE REACHED** before {', '.join(not_started)} started — "
+                "no shard written, --resume will retry them.")
+
         report_path = JOBS_RUNS / f"{run_id}.md"
 
         if parsed.resume and report_path.exists():

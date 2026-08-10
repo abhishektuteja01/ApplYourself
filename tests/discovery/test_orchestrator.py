@@ -269,9 +269,10 @@ def test_a_raising_cleaning_run_propagates(paths, monkeypatch):
         main([])
 
 
-def test_deadline_reached_breaks_before_the_next_source(paths, monkeypatch):
-    """The mid-loop break: source 1 runs to completion, then the budget is
-    spent, so source 2 is never fetched."""
+def test_deadline_spent_before_the_lanes_start_skips_them(paths, monkeypatch):
+    """Concurrency removes the between-sources break, but not this guard: with
+    the budget already gone, starting a lane would only bank an empty shard
+    that --resume would then skip. The serial inbox still runs."""
     monkeypatch.setattr("src.discovery.orchestrator.load_config",
                         lambda: _mock_config(deadline_hours=1e-9, linkedin=1))
     first, second = _NamedSource("manual"), _NamedSource("linkedin")
@@ -283,15 +284,15 @@ def test_deadline_reached_breaks_before_the_next_source(paths, monkeypatch):
     assert first.calls == 1
     assert second.calls == 0
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
-    assert "**DEADLINE REACHED** after manual." in report
-    # source 1's shard is still banked
+    assert "**DEADLINE REACHED** before linkedin started" in report
+    # the inbox's shard is still banked; the lane's is not, so --resume retries it
     assert len(list((paths / "jobs" / "raw").glob("*_manual.parquet"))) == 1
     assert list((paths / "jobs" / "raw").glob("*_linkedin.parquet")) == []
 
 
-def test_deadline_reached_breaks_on_the_crash_path_too(paths, monkeypatch):
-    """A crashing source must not outrun the budget: the deadline check is
-    repeated inside the except handler."""
+def test_deadline_spent_by_a_crashing_inbox_still_skips_the_lanes(paths, monkeypatch):
+    """The guard reads the clock, not the outcome: a crashed inbox that burned
+    the budget must not let the lanes start either."""
     monkeypatch.setattr("src.discovery.orchestrator.load_config",
                         lambda: _mock_config(deadline_hours=1e-9, linkedin=1))
     first = _NamedSource("manual", raises=ValueError("kaboom"))
@@ -305,7 +306,7 @@ def test_deadline_reached_breaks_on_the_crash_path_too(paths, monkeypatch):
     assert second.calls == 0
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**CRASHED**" in report
-    assert "**DEADLINE REACHED** after manual." in report
+    assert "**DEADLINE REACHED** before linkedin started" in report
 
 
 def test_no_deadline_line_when_the_budget_holds(paths, monkeypatch):
@@ -340,3 +341,173 @@ def test_resume_appends_to_an_existing_report(paths, monkeypatch):
     text = (paths / "jobs" / "runs" / f"{run_id}.md").read_text(encoding="utf-8")
     assert text.startswith(first_text)
     assert text.count("# Run ") == 1  # header not duplicated
+
+
+# ---------------------------------------------------------------------
+# Concurrent lanes
+# ---------------------------------------------------------------------
+
+class _BlockingSource(_NamedSource):
+    """Blocks in fetch() until `release` is set, recording entry order.
+
+    Two of these deadlock a serial loop and complete under concurrent lanes,
+    so the test fails loud if the pool is ever unwired back to a for loop.
+    """
+
+    def __init__(self, name, gate, entered, release):
+        super().__init__(name)
+        self.gate = gate
+        self.entered = entered
+        self.release = release
+
+    def fetch(self, ctx):
+        self.entered.append(self.name)
+        self.gate.wait(timeout=5)
+        # Only released once *both* lanes are inside fetch.
+        if not self.release.is_set():
+            raise AssertionError(f"{self.name} ran before the other lane started")
+        return super().fetch(ctx)
+
+
+def test_lanes_actually_overlap(paths, monkeypatch):
+    """Serial execution cannot satisfy this: each source waits for the other
+    to enter fetch() before either may return."""
+    import threading
+
+    gate, release = threading.Barrier(2), threading.Event()
+    entered = []
+
+    class _Gate:
+        def wait(self, timeout=None):
+            gate.wait(timeout=timeout)
+            release.set()
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1, indeed=1))
+    a = _BlockingSource("linkedin", _Gate(), entered, release)
+    b = _BlockingSource("indeed", _Gate(), entered, release)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [a, b])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    assert sorted(entered) == ["indeed", "linkedin"]
+    assert (a.calls, b.calls) == (1, 1)
+    assert len(list((paths / "jobs" / "raw").glob("*.parquet"))) == 2
+
+
+def test_one_lane_crashing_does_not_cost_the_others_their_shards(paths, monkeypatch):
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1, indeed=1, greenhouse=1))
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [
+        _NamedSource("linkedin", raises=ValueError("kaboom")),
+        _NamedSource("indeed"),
+        _NamedSource("greenhouse"),
+    ])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    raw = paths / "jobs" / "raw"
+    assert list(raw.glob("*_linkedin.parquet")) == []      # crashed, --resume retries
+    assert len(list(raw.glob("*_indeed.parquet"))) == 1
+    assert len(list(raw.glob("*_greenhouse.parquet"))) == 1
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "**CRASHED**" in report and "kaboom" in report
+
+
+def test_report_sections_follow_fixed_order_not_finish_order(paths, monkeypatch):
+    """Lanes land out of order; the report must stay diffable run to run."""
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1, indeed=1, greenhouse=1,
+                                             lever=1, ashby=1))
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [
+        _NamedSource(n) for n in
+        ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby"]
+    ])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    seen = [ln.removeprefix("### Source: ") for ln in report.splitlines()
+            if ln.startswith("### Source: ")]
+    assert seen == ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby"]
+
+
+def test_a_truncated_lane_keeps_its_shard_and_is_marked_partial(paths, monkeypatch):
+    """A lane cut short by the deadline banks the rows it did gather — those
+    rows are real — and says so, since --resume will not re-run it."""
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(deadline_hours=1e-9, linkedin=1))
+
+    class _SlowLane(_NamedSource):
+        def fetch(self, ctx):
+            # Deadline already blown, but this lane was submitted before the
+            # guard could see it, so it returns partial rows.
+            return super().fetch(ctx)
+
+    # Only the lane is enabled, so the pre-submit guard is bypassed by
+    # starting the clock after submission.
+    started = {"v": False}
+    real = orchestrator.Context.deadline_reached
+
+    def fake(self):
+        if not started["v"]:
+            started["v"] = True
+            return False
+        return real(self)
+
+    monkeypatch.setattr(orchestrator.Context, "deadline_reached", fake)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_SlowLane("linkedin")])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    assert len(list((paths / "jobs" / "raw").glob("*_linkedin.parquet"))) == 1
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "**DEADLINE REACHED** — partial shard" in report
+
+
+def test_a_lane_write_failure_propagates_and_still_cleans(paths, monkeypatch):
+    """Write/validate failures are outside the per-lane containment: they abort
+    the run rather than being reported as a crashed source, and the finally
+    still runs cleaning. Same contract as the serial path had."""
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1))
+    monkeypatch.setattr(orchestrator, "get_sources",
+                        lambda: [_NamedSource("linkedin")])
+    monkeypatch.setattr(orchestrator, "validate_frame",
+                        lambda df: (_ for _ in ()).throw(RuntimeError("boom")))
+    calls = _spy_cleaning(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        main([])
+
+    assert len(calls) == 1
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "# Run " in report
+
+
+def test_inbox_runs_to_completion_before_any_lane_starts(paths, monkeypatch):
+    """InboxSource *moves* files into .processed/; it must never race a lane."""
+    import time
+
+    order = []
+
+    class _Ordered(_NamedSource):
+        def fetch(self, ctx):
+            order.append(f"{self.name}-start")
+            time.sleep(0.02)
+            order.append(f"{self.name}-end")
+            return super().fetch(ctx)
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1, indeed=1))
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [
+        _Ordered("manual"), _Ordered("linkedin"), _Ordered("indeed")])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    assert order[:2] == ["manual-start", "manual-end"]

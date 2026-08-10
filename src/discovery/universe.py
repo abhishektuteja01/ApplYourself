@@ -16,8 +16,18 @@ log = logging.getLogger(__name__)
 REPO_ROOT = paths.REPO_ROOT
 DEFAULT_COMPANIES_PATH = REPO_ROOT / "profile" / "companies.yaml"
 CSV_DIR = REPO_ROOT / "data" / "universe"
-HEALTH_PATH = REPO_ROOT / "jobs" / "universe_health.parquet"
+# One ledger per ATS, not one shared file: update_health does a full
+# read-modify-write per company, and the three ATS sources run concurrently.
+# A single file would race into lost updates. Derived from HEALTH_DIR rather
+# than fixed per-ATS constants so tests redirect all three with one patch.
+HEALTH_DIR = REPO_ROOT / "jobs"
 _SCHEMA_VERSION = 1
+
+HEALTH_COLUMNS = ["ats", "slug", "consecutive_404s", "last_ok", "last_yield", "pruned_at"]
+
+
+def health_path(ats: str):
+    return HEALTH_DIR / f"universe_health_{ats}.parquet"
 
 @dataclass(frozen=True)
 class UniverseCompany:
@@ -29,10 +39,11 @@ class UniverseCompany:
 def update_health(ats: str, slug: str, success: bool, rows: int = 0):
     """success=False counts a strike toward pruning; call it only for a board
     that is permanently dead, never for a transient fetch failure."""
-    if HEALTH_PATH.exists():
-        df = pd.read_parquet(HEALTH_PATH)
+    path = health_path(ats)
+    if path.exists():
+        df = pd.read_parquet(path)
     else:
-        df = pd.DataFrame(columns=["ats", "slug", "consecutive_404s", "last_ok", "last_yield", "pruned_at"])
+        df = pd.DataFrame(columns=HEALTH_COLUMNS)
 
     mask = (df["ats"] == ats) & (df["slug"] == slug)
     today = pd.Timestamp.today().normalize()
@@ -62,7 +73,7 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
         if c >= 3:
             df.at[idx, "pruned_at"] = today
 
-    write_parquet(df, HEALTH_PATH)
+    write_parquet(df, path)
 
 def load(ats: str) -> list[UniverseCompany]:
     companies_dict = {}
@@ -108,9 +119,11 @@ def load(ats: str) -> list[UniverseCompany]:
     # 3. Filter and Sort via Health Ledger
     today = pd.Timestamp.today().normalize()
     health_dict = {}
-    if HEALTH_PATH.exists():
+    if health_path(ats).exists():
         try:
-            df = pd.read_parquet(HEALTH_PATH)
+            df = pd.read_parquet(health_path(ats))
+            # Redundant now that the file is per-ATS, kept as a guard against a
+            # mis-split migration writing foreign rows into a lane's ledger.
             df_ats = df[df["ats"] == ats]
             for _, row in df_ats.iterrows():
                 health_dict[row["slug"]] = {

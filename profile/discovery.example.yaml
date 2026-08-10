@@ -1,5 +1,7 @@
 schema_version: 1
-deadline_hours: 6
+# Sources run concurrently, so this caps each lane independently rather than
+# being shared across them.
+deadline_hours: 4
 location_allowlist:
   countries: ["United States"]
   # states: ["TX", "NY"]      # optional narrowing; empty/absent = all states

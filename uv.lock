@@ -45,7 +45,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=15.0" },
     { name = "python-docx", specifier = ">=1.1" },
-    { name = "python-jobspy", specifier = ">=1.1.80" },
+    { name = "python-jobspy", specifier = ">=1.1.80,<1.2" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapidfuzz", specifier = ">=3.6" },
     { name = "requests", specifier = ">=2.32" },

@@ -20,7 +20,8 @@ classifiers = [
     "Private :: Do Not Upload",
 ]
 dependencies = [
-    "python-jobspy>=1.1.80",
+    # Upper bound: jobspy_source calls LinkedIn._get_job_details, a private API.
+    "python-jobspy>=1.1.80,<1.2",
     "pandas>=2.2",
     "pyarrow>=15.0",  # parquet engine for pandas — no direct imports
     "rapidfuzz>=3.6",

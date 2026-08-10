@@ -271,9 +271,9 @@ class TestHealthLedgerOnlyCountsDeadBoards:
             monkeypatch.setattr(http.requests, "get",
                                 lambda url, timeout=None, headers=None: response_factory())
             res = GreenhouseSource().fetch(MockContext())
-            if not universe.HEALTH_PATH.exists():
+            if not universe.health_path("greenhouse").exists():
                 return res, None
-            df = pd.read_parquet(universe.HEALTH_PATH)
+            df = pd.read_parquet(universe.health_path("greenhouse"))
             return res, df.iloc[0]
 
         return run
@@ -308,7 +308,7 @@ class TestHealthLedgerOnlyCountsDeadBoards:
         monkeypatch.setattr(http.requests, "get",
                             lambda url, timeout=None, headers=None: _StatusResponse(500))
         res = GreenhouseSource().fetch(MockContext())
-        assert not universe.HEALTH_PATH.exists()
+        assert not universe.health_path("greenhouse").exists()
         assert "404: 0 | Err: 1" in res.report_lines[0]
 
 class _JsonResponse:

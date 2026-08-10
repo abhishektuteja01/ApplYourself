@@ -25,11 +25,14 @@ def cfg():
 def isolate_universe_paths(monkeypatch, tmp_path):
     """universe.py resolves its ledger/CSV/watchlist paths from module-level
     absolutes under the repo root, so any test reaching update_health() writes
-    into the real jobs/universe_health.parquet — a fake slug there inflates the
-    run report's pruned count, and a fixture slug colliding with a real one
+    into the real jobs/universe_health_<ats>.parquet — a fake slug there inflates
+    the run report's pruned count, and a fixture slug colliding with a real one
     would bench a live board for 14 days. Redirect all three for every test;
-    tests that patch them explicitly still win."""
-    monkeypatch.setattr(universe, "HEALTH_PATH", tmp_path / "universe_health.parquet")
+    tests that patch them explicitly still win.
+
+    HEALTH_DIR, not the per-ATS paths: health_path() derives from it, so one
+    patch covers all three ledgers."""
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "universe_csv")
     monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
 
