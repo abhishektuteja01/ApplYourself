@@ -51,6 +51,13 @@ jobs/*
 !jobs/.gitkeep
 
 # =============================================================================
+# data/universe/*.local.csv — bulk ATS slug lists from a CC BY-NC source. The
+# repo is MIT, so they stay local; only self-verified slugs go in the tracked
+# <ats>.csv beside them. See data/universe/README.md.
+# =============================================================================
+data/universe/*.local.csv
+
+# =============================================================================
 # Other generated output
 # =============================================================================
 applications/

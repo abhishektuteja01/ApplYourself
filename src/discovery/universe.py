@@ -75,25 +75,33 @@ def update_health(ats: str, slug: str, success: bool, rows: int = 0):
 
     write_parquet(df, path)
 
+def _load_csv(csv_path, ats: str, out: dict) -> None:
+    """Merge a name,slug CSV into out, keyed by slug. An absent file is not an
+    error: <ats>.local.csv is gitignored and never exists on a fresh clone."""
+    if not csv_path.exists():
+        return
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames:
+                for row in reader:
+                    name = (row.get("name") or "").strip()
+                    slug = (row.get("slug") or "").strip()
+                    if not name or not slug:
+                        log.warning("universe: empty name or slug in CSV row, skipping")
+                        continue
+                    out[slug] = UniverseCompany(name=name, ats=ats, slug=slug, priority=False)
+    except (OSError, ValueError, KeyError) as e:
+        log.warning("universe: error reading %s: %s", csv_path, e)
+
+
 def load(ats: str) -> list[UniverseCompany]:
     companies_dict = {}
 
-    # 1. Load CSV
-    csv_path = CSV_DIR / f"{ats}.csv"
-    if csv_path.exists():
-        try:
-            with open(csv_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                if reader.fieldnames:
-                    for row in reader:
-                        name = (row.get("name") or "").strip()
-                        slug = (row.get("slug") or "").strip()
-                        if not name or not slug:
-                            log.warning("universe: empty name or slug in CSV row, skipping")
-                            continue
-                        companies_dict[slug] = UniverseCompany(name=name, ats=ats, slug=slug, priority=False)
-        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
-            log.warning("universe: error reading %s: %s", csv_path, e)
+    # 1. Load CSVs, least authoritative first: on a slug in both files the
+    #    curated name wins over the bulk one.
+    _load_csv(CSV_DIR / f"{ats}.local.csv", ats, companies_dict)
+    _load_csv(CSV_DIR / f"{ats}.csv", ats, companies_dict)
 
     # 2. Load Watchlist
     if DEFAULT_COMPANIES_PATH.exists():

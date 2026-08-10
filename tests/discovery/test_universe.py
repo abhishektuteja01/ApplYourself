@@ -38,6 +38,36 @@ companies:
 
     assert res[2].slug == "csv-only"
 
+def test_universe_local_csv_merges_with_tracked(tmp_path, monkeypatch):
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    (tmp_path / "csv").mkdir()
+    (tmp_path / "csv" / "greenhouse.csv").write_text(
+        "name,slug\nTracked Co,tracked\nCurated Name,shared\n", encoding="utf-8")
+    (tmp_path / "csv" / "greenhouse.local.csv").write_text(
+        "name,slug\nLocal Co,local\nBulk Name,shared\n", encoding="utf-8")
+
+    res = {c.slug: c for c in universe.load("greenhouse")}
+    assert set(res) == {"tracked", "local", "shared"}
+    # Tracked loads second, so its name wins on the overlapping slug.
+    assert res["shared"].name == "Curated Name"
+    assert all(c.priority is False for c in res.values())
+
+
+def test_universe_local_csv_absent_is_fine(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    (tmp_path / "csv").mkdir()
+    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug\nTracked Co,tracked\n", encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        res = universe.load("greenhouse")
+    assert [c.slug for c in res] == ["tracked"]
+    assert "local.csv" not in caplog.text
+
+
 def test_universe_dedupe_watchlist_wins(tmp_path, monkeypatch):
     monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
     monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
