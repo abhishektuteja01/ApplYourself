@@ -39,6 +39,9 @@ USER_DATA_DIR = paths.REPO_ROOT / ".apply_profile"
 FORM_SELECTOR = "#application-form"
 # Attribute form, not "#id": a checkbox group's id carries a literal "[]".
 FIELD = '{form} [id="{id}"]'
+# Lever fields carry no id at all — MergedField.id IS the DOM `name` (lever.py
+# never aliases the two apart, exactly so this selector keeps working).
+FIELD_BY_NAME = '{form} [name="{id}"]'
 
 # react-select's rendered parts, as they appear on every board sampled.
 SELECT_CONTAINER = ".select__container"
@@ -217,6 +220,43 @@ class BrowserDriver:
         nodes = self.page.locator(SELECT_OPTION)
         return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
 
+    def select_native(self, field_id: str, label: str) -> None:
+        """A real `<select>` — no typing, no listbox, `select_option()` just
+        works. Lever's fields carry no react-select at all (§12a)."""
+        self._locator(field_id).first.select_option(label=label)
+
+    def selected_option_label(self, field_id: str) -> str:
+        """The visible text of the chosen `<option>` — `input_value()` would
+        return its `value` attribute instead, which Lever's own options don't
+        always match (the veteran options are full sentences with short
+        internal values)."""
+        checked = self._locator(field_id).first.locator("option:checked")
+        return checked.first.inner_text().strip() if checked.count() else ""
+
+    def check_radio_group(self, field_id: str, label: str) -> None:
+        """One radio in a same-named group, matched on its visible label —
+        Lever's EEOC race question (§12a)."""
+        group = self.page.locator(f'input[type="radio"][name="{field_id}"]')
+        for i in range(group.count()):
+            radio = group.nth(i)
+            text = radio.locator(
+                'xpath=following-sibling::span[contains(@class,"eeo-option-text")][1]'
+            )
+            if text.count() and text.first.inner_text().strip().casefold() == label.casefold():
+                radio.check()
+                return
+        raise FillError(f"{field_id}: no radio labelled {label!r}")
+
+    def wait_for_captcha(self, timeout_ms: int = 600_000) -> None:
+        """Block until a human solves the hCaptcha challenge Lever's own JS
+        just opened — proxied by the hidden response token going non-empty.
+        Unattended submission is not possible on a board that renders one
+        (§12a, §12c): this is the wait, not a bypass."""
+        self.page.wait_for_function(
+            "document.getElementById('hcaptchaResponseInput')?.value?.length > 0",
+            timeout=timeout_ms,
+        )
+
     def check_group_option(self, field_id: str, label: str) -> None:
         """Tick one box in a checkbox fieldset, matched on its visible label."""
         fieldset = self._locator(field_id).first
@@ -258,6 +298,28 @@ class BrowserDriver:
 
     def click_submit(self, selector: str) -> None:
         self.page.locator(selector).first.click()
+
+
+class LeverBrowserDriver(BrowserDriver):
+    """Same sequence, different selector: Lever's fields carry no `id`
+    attribute at all, so every lookup is by `name` instead (§12a)."""
+
+    def _locator(self, field_id: str):
+        return self.page.locator(FIELD_BY_NAME.format(form=FORM_SELECTOR, id=field_id))
+
+
+_DRIVER_NAMES = {"greenhouse": "BrowserDriver", "lever": "LeverBrowserDriver"}
+
+
+def _driver_for(ats: str, page) -> BrowserDriver:
+    """Looks the class up by name in this module's globals at call time, not
+    a dict of class objects bound at import time — so
+    `monkeypatch.setattr(fill, "BrowserDriver", Fake)` in a test still reaches
+    here, the same convention `apply_cli.py` uses for its own stubs."""
+    name = _DRIVER_NAMES.get(ats)
+    if name is None:
+        raise FillError(f"no browser driver for ats={ats!r}")
+    return globals()[name](page)
 
 
 def _merged_from(field: FieldPlan, options: tuple[str, ...]) -> MergedField:
@@ -342,6 +404,19 @@ def _apply_field(driver, field: FieldPlan, result: FillResult,
         for label in labels:
             shown = _select(driver, field, label, result, answers)
         return FieldOutcome(field.id, "filled", before, shown)
+
+    if field.kind == "select":
+        driver.select_native(field.id, str(field.value))
+        shown = driver.selected_option_label(field.id)
+        if shown.strip() != str(field.value).strip():
+            raise FillError(f"{field.id}: selected {field.value!r} but reads {shown!r}")
+        return FieldOutcome(field.id, "filled", before, shown)
+
+    if field.kind == "radio_group":
+        labels = field.value if isinstance(field.value, tuple) else (field.value,)
+        for label in labels:
+            driver.check_radio_group(field.id, label)
+        return FieldOutcome(field.id, "filled", before, ", ".join(labels))
 
     driver.fill_text(field.id, str(field.value))
     after = driver.value_of(field.id)
@@ -471,6 +546,11 @@ def submit(plan: Plan, result: FillResult, driver) -> None:
     if driver.submit_disabled_now(plan.submit_selector):
         raise SubmitGuardError("submit button is disabled")
     driver.click_submit(plan.submit_selector)
+    if plan.requires_captcha:
+        # Lever renders hCaptcha on every form (§12a) — the click above only
+        # opened the challenge. Block for a human to solve it; there is no
+        # bypass and none is in scope (§12c).
+        driver.wait_for_captcha()
 
 
 def run_one(plan: Plan, answers: Answers | None = None, *,
@@ -493,7 +573,7 @@ def run_one(plan: Plan, answers: Answers | None = None, *,
         context = _launch(p, headless=headless)
         page = context.pages[0] if context.pages else context.new_page()
         try:
-            driver = BrowserDriver(page)
+            driver = _driver_for(plan.ats, page)
             result = fill_plan(plan, driver, answers)
             if submit_after:
                 try:

@@ -1,0 +1,230 @@
+<form id="application-form" enctype="multipart/form-data" method="POST">
+<div class="section page-centered application-form">
+<h4>Submit your application</h4>
+<ul>
+<li class="application-question resume">
+<label><div class="application-label">Resume/CV </div>
+<div class="application-field">
+<a href="#" class="postings-btn template-btn-utility visible-resume-upload"><svg class=" icon icon-paperclip" width="16" height="16" viewbox="0 0 16 16"><path id="Vector" d="M4 3.375C4 1.5125 5.5125 0 7.375 0C9.2375 0 10.75 1.5125 10.75 3.375V10.75C10.75 11.9937 9.74375 13 8.5 13C7.25625 13 6.25 11.9937 6.25 10.75V4.75C6.25 4.33437 6.58437 4 7 4C7.41563 4 7.75 4.33437 7.75 4.75V10.75C7.75 11.1656 8.08437 11.5 8.5 11.5C8.91563 11.5 9.25 11.1656 9.25 10.75V3.375C9.25 2.34063 8.40937 1.5 7.375 1.5C6.34063 1.5 5.5 2.34063 5.5 3.375V11.5C5.5 13.1562 6.84375 14.5 8.5 14.5C10.1562 14.5 11.5 13.1562 11.5 11.5V4.75C11.5 4.33437 11.8344 4 12.25 4C12.6656 4 13 4.33437 13 4.75V11.5C13 13.9844 10.9844 16 8.5 16C6.01562 16 4 13.9844 4 11.5V3.375Z"></path></svg><span class="filename"></span><span class="default-label">ATTACH RESUME/CV</span><input class="application-file-input invisible-resume-upload" data-qa="input-resume" id="resume-upload-input" name="resume" tabindex="-1" type="file"></a><span class="resume-upload-failure"><div class="resume-upload-label">Couldn't auto-read resume.</div></span><span class="resume-upload-working"><div class="loading-indicator"></div>
+<div class="resume-upload-label">Analyzing resume...</div></span><span class="resume-upload-success"><div class="loading-indicator completed"><svg class=" icon icon-check" width="16" height="16" viewbox="0 0 16 16"><path d="M15.6652 3.32222C16.1116 3.75184 16.1116 4.44954 15.6652 4.87916L6.52338 13.6778C6.077 14.1074 5.35208 14.1074 4.9057 13.6778L0.334784 9.27847C-0.111595 8.84885 -0.111595 8.15115 0.334784 7.72153C0.781163 7.29191 1.50608 7.29191 1.95246 7.72153L5.71633 11.3407L14.0511 3.32222C14.4975 2.89259 15.2224 2.89259 15.6688 3.32222H15.6652Z"></path></svg></div>
+<div class="resume-upload-label">Success!</div></span>
+</div></label><span class="resume-upload-oversize"><p class="error-message">File exceeds the maximum upload size of <b>100MB</b>. Please try a smaller size.</p></span>
+</li>
+<li class="application-question"><label><div class="application-label">Full name<span class="required">✱</span>
+</div>
+<div class="application-field"><input type="text" data-qa="name-input" name="name" required></div></label></li>
+<li class="application-question"><label><div class="application-label">Email<span class="required">✱</span>
+</div>
+<div class="application-field"><input name="email" data-qa="email-input" type="email" pattern="[a-zA-Z0-9.#$%&amp;'*+\/=?^_`{|}~][a-zA-Z0-9.!#$%&amp;'*+\/=?^_`{|}~-]*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*" required></div></label></li>
+<li class="application-question"><label><div class="application-label">Phone <span class="required">✱</span>
+</div>
+<div class="application-field"><input type="text" data-qa="phone-input" name="phone" required></div></label></li>
+<li class="application-question" data-qa="structured-contact-location-question"><label><div class="application-label">Current location </div>
+<div class="application-field">
+<input class="location-input" data-qa="location-input" id="location-input" type="text" maxlength="100" name="location"><input id="selected-location" type="hidden" name="selectedLocation"><div class="momentum-body flex flex-column items-start width-full height-auto bg-gray-800 text-gray-200 rounded dropdown-container">
+<div class="dropdown-results width-full cursor-pointer"></div>
+<div class="dropdown-no-results width-full break-word py1 px2 pointer-events-none">No location found. Try entering a different location</div>
+<div class="dropdown-loading-results width-full break-word height-full py1 px2 pointer-events-none"><div class="theme-inverse items-center">
+<svg class=" icon icon-loading-spinner animation-rotate-infinite animation-linear animation-duration-500ms" width="16px" height="16px" viewbox="0 0 16 16"><path opacity="0.2" d="M16 8C16 12.4183 12.4183 16 8 16C3.58172 16 0 12.4183 0 8C0 3.58172 3.58172 0 8 0C12.4183 0 16 3.58172 16 8ZM3.99687 8C3.99687 10.2109 5.78914 12.0031 8 12.0031C10.2109 12.0031 12.0031 10.2109 12.0031 8C12.0031 5.78914 10.2109 3.99687 8 3.99687C5.78914 3.99687 3.99687 5.78914 3.99687 8Z"></path><path d="M8 0C9.58225 1.88681e-08 11.129 0.469192 12.4446 1.34824C13.7602 2.22729 14.7855 3.47672 15.391 4.93853C15.9965 6.40034 16.155 8.00887 15.8463 9.56072C15.5376 11.1126 14.7757 12.538 13.6569 13.6569L10.8306 10.8306C11.3905 10.2708 11.7717 9.5575 11.9262 8.78097C12.0807 8.00444 12.0014 7.19955 11.6984 6.46807C11.3954 5.73659 10.8823 5.11139 10.224 4.67152C9.56571 4.23165 8.79174 3.99687 8 3.99687L8 0Z"></path></svg><span>Loading</span>
+</div></div>
+</div>
+</div></label></li>
+<li class="application-question"><label><div class="application-label">Current company </div>
+<div class="application-field"><input type="text" data-qa="org-input" name="org"></div></label></li>
+</ul>
+</div>
+<div class="section page-centered application-form">
+<h4>Links</h4>
+<ul>
+<li class="application-question"><label><div class="application-label">LinkedIn URL</div>
+<div class="application-field"><input type="text" name="urls[LinkedIn]"></div></label></li>
+<li class="application-question"><label><div class="application-label">Other website</div>
+<div class="application-field"><input type="text" name="urls[Other]"></div></label></li>
+</ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Age</h4>
+<input type="hidden" value='{"createdAt":1672422561347,"updatedAt":1672422561347,"text":"(?) Age","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"dropdown","text":"Are you under the age of 18?","description":"","required":false,"id":"00000002-0000-0000-0000-000000000002","prompt":"","options":[{"text":"Yes","optionId":"00000003-0000-0000-0000-000000000003"},{"text":"No","optionId":"00000004-0000-0000-0000-000000000004"}]}],"id":"00000005-0000-0000-0000-000000000005"}' name="cards[00000005-0000-0000-0000-000000000005][baseTemplate]"><ul><li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">Are you under the age of 18?</div></div>
+<div class="application-field full-width"><div class="application-dropdown"><select name="cards[00000005-0000-0000-0000-000000000005][field0]"><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option></select></div></div>
+</div></li></ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Compensation</h4>
+<input type="hidden" value='{"createdAt":1672422764280,"updatedAt":1672422764280,"text":"(?) Compensation","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"textarea","text":"What is your requested salary or hourly compensation?","description":"","required":false,"id":"00000006-0000-0000-0000-000000000006"}],"id":"00000007-0000-0000-0000-000000000007"}' name="cards[00000007-0000-0000-0000-000000000007][baseTemplate]"><ul><li class="application-question custom-question"><div>
+<div class="application-label full-width textarea"><div class="text">What is your requested salary or hourly compensation?</div></div>
+<div class="application-field full-width"><textarea class="card-field-input" name="cards[00000007-0000-0000-0000-000000000007][field0]"></textarea></div>
+</div></li></ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Previous Employee</h4>
+<input type="hidden" value='{"createdAt":1675869856057,"updatedAt":1675869856057,"text":"(?) Previous Employee","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"dropdown","text":"Are you a previous employee of any of the Cog & Gear Co family of companies?","description":"","required":true,"id":"00000008-0000-0000-0000-000000000008","prompt":"","options":[{"text":"Yes","optionId":"00000009-0000-0000-0000-000000000009"},{"text":"No","optionId":"0000000a-0000-0000-0000-00000000000a"}]}],"id":"0000000b-0000-0000-0000-00000000000b"}' name="cards[0000000b-0000-0000-0000-00000000000b][baseTemplate]"><ul><li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">Are you a previous employee of any of the Cog & Gear Co family of companies?<span class="required">✱</span>
+</div></div>
+<div class="application-field full-width required-field"><div class="application-dropdown"><select name="cards[0000000b-0000-0000-0000-00000000000b][field0]" required><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option></select></div></div>
+</div></li></ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Employment</h4>
+<input type="hidden" value='{"createdAt":1672422425540,"updatedAt":1672422425540,"text":"(?) Employment","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"dropdown","text":"If you are currently employed, may we contact your employer?","description":"","required":true,"id":"0000000c-0000-0000-0000-00000000000c","prompt":"","options":[{"text":"Yes","optionId":"0000000d-0000-0000-0000-00000000000d"},{"text":"No","optionId":"0000000e-0000-0000-0000-00000000000e"}]}],"id":"0000000f-0000-0000-0000-00000000000f"}' name="cards[0000000f-0000-0000-0000-00000000000f][baseTemplate]"><ul><li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">If you are currently employed, may we contact your employer?<span class="required">✱</span>
+</div></div>
+<div class="application-field full-width required-field"><div class="application-dropdown"><select name="cards[0000000f-0000-0000-0000-00000000000f][field0]" required><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option></select></div></div>
+</div></li></ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Referral</h4>
+<input type="hidden" value='{"createdAt":1675899485887,"updatedAt":1675899485887,"text":"(?) Referral","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"dropdown","text":"Were you referred by a current employee of the Cog & Gear Co Family of Companies?","description":"","required":false,"id":"00000010-0000-0000-0000-000000000010","prompt":"","options":[{"text":"Yes","optionId":"00000011-0000-0000-0000-000000000011"},{"text":"No","optionId":"00000012-0000-0000-0000-000000000012"}]},{"type":"text","text":"If yes, who?  If no, enter \"na\".","description":"","required":false,"id":"00000013-0000-0000-0000-000000000013"}],"id":"00000014-0000-0000-0000-000000000014"}' name="cards[00000014-0000-0000-0000-000000000014][baseTemplate]"><ul>
+<li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">Were you referred by a current employee of the Cog & Gear Co Family of Companies?</div></div>
+<div class="application-field full-width"><div class="application-dropdown"><select name="cards[00000014-0000-0000-0000-000000000014][field0]"><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option></select></div></div>
+</div></li>
+<li class="application-question custom-question"><div>
+<div class="application-label full-width text"><div class="text">If yes, who?  If no, enter "na".</div></div>
+<div class="application-field full-width"><input class="card-field-input" type="text" placeholder="Type your response" value="" name="cards[00000014-0000-0000-0000-000000000014][field1]"></div>
+</div></li>
+</ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) References</h4>
+<input type="hidden" value='{"createdAt":1672422320729,"updatedAt":1672422320729,"text":"(?) References","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"textarea","text":"Enter three professional references with name, company, position, phone number, and email address.","description":"","required":true,"id":"00000015-0000-0000-0000-000000000015"}],"id":"00000016-0000-0000-0000-000000000016"}' name="cards[00000016-0000-0000-0000-000000000016][baseTemplate]"><ul><li class="application-question custom-question"><div>
+<div class="application-label full-width textarea"><div class="text">Enter three professional references with name, company, position, phone number, and email address.<span class="required">✱</span>
+</div></div>
+<div class="application-field full-width required-field"><textarea class="card-field-input" name="cards[00000016-0000-0000-0000-000000000016][field0]" required="required"></textarea></div>
+</div></li></ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Address</h4>
+<input type="hidden" value='{"createdAt":1677011544821,"updatedAt":1677011544821,"text":"(?) Address","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"textarea","text":"What is your street address?  Please also include your city, state, and zip code.","description":"","required":true,"id":"00000017-0000-0000-0000-000000000017"}],"id":"00000018-0000-0000-0000-000000000018"}' name="cards[00000018-0000-0000-0000-000000000018][baseTemplate]"><ul><li class="application-question custom-question"><div>
+<div class="application-label full-width textarea"><div class="text">What is your street address?  Please also include your city, state, and zip code.<span class="required">✱</span>
+</div></div>
+<div class="application-field full-width required-field"><textarea class="card-field-input" name="cards[00000018-0000-0000-0000-000000000018][field0]" required="required"></textarea></div>
+</div></li></ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Work Authorization</h4>
+<input type="hidden" value='{"createdAt":1672422495083,"updatedAt":1672422495083,"text":"(?) Work Authorization","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"dropdown","text":"Are you permanently authorized to work for any employer in the United States?","description":"","required":false,"id":"00000019-0000-0000-0000-000000000019","prompt":"","options":[{"text":"Yes","optionId":"0000001a-0000-0000-0000-00000000001a"},{"text":"No","optionId":"0000001b-0000-0000-0000-00000000001b"}]},{"type":"dropdown","text":"If not, do you now or will you in the future need sponsorship for a work card, visa, or permanent resident status in the United States?","description":"","required":false,"id":"0000001c-0000-0000-0000-00000000001c","prompt":"","options":[{"text":"Yes","optionId":"0000001d-0000-0000-0000-00000000001d"},{"text":"No","optionId":"0000001e-0000-0000-0000-00000000001e"},{"text":"Not applicable","optionId":"0000001f-0000-0000-0000-00000000001f"}]}],"id":"00000020-0000-0000-0000-000000000020"}' name="cards[00000020-0000-0000-0000-000000000020][baseTemplate]"><ul>
+<li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">Are you permanently authorized to work for any employer in the United States?</div></div>
+<div class="application-field full-width"><div class="application-dropdown"><select name="cards[00000020-0000-0000-0000-000000000020][field0]"><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option></select></div></div>
+</div></li>
+<li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">If not, do you now or will you in the future need sponsorship for a work card, visa, or permanent resident status in the United States?</div></div>
+<div class="application-field full-width"><div class="application-dropdown"><select name="cards[00000020-0000-0000-0000-000000000020][field1]"><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option>
+<option value="Not applicable">Not applicable</option></select></div></div>
+</div></li>
+</ul>
+</div>
+<div class="section page-centered application-form" data-qa="additional-cards">
+<h4 data-qa="card-name">(?) Conviction Status</h4>
+<input type="hidden" value='{"createdAt":1672422609123,"updatedAt":1672422609123,"text":"(?) Conviction Status","instructions":"","type":"posting","accountId":"00000001-0000-0000-0000-000000000001","fields":[{"type":"dropdown","text":"Have you ever been convicted of a felony?  (A conviction record will not necessarily be a bar to employment.)","description":"","required":false,"id":"00000021-0000-0000-0000-000000000021","prompt":"","options":[{"text":"Yes","optionId":"00000022-0000-0000-0000-000000000022"},{"text":"No","optionId":"00000023-0000-0000-0000-000000000023"}]},{"type":"textarea","text":"If yes, please explain.","description":"","required":false,"id":"00000024-0000-0000-0000-000000000024"}],"id":"00000025-0000-0000-0000-000000000025"}' name="cards[00000025-0000-0000-0000-000000000025][baseTemplate]"><ul>
+<li class="application-question custom-question"><div>
+<div class="application-label full-width dropdown"><div class="text">Have you ever been convicted of a felony?  (A conviction record will not necessarily be a bar to employment.)</div></div>
+<div class="application-field full-width"><div class="application-dropdown"><select name="cards[00000025-0000-0000-0000-000000000025][field0]"><option value="">Select...</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option></select></div></div>
+</div></li>
+<li class="application-question custom-question"><div>
+<div class="application-label full-width textarea"><div class="text">If yes, please explain.</div></div>
+<div class="application-field full-width"><textarea class="card-field-input" name="cards[00000025-0000-0000-0000-000000000025][field1]"></textarea></div>
+</div></li>
+</ul>
+</div>
+<div class="section eeo-section page-centered application-form" id="eeoSurvey_00000026-0000-0000-0000-000000000026" data-qa="eeo-section">
+<hr>
+<h4>U.S. Equal Employment Opportunity information   <span class="eeo-light-text">(Completion is voluntary and will not subject you to adverse treatment)</span>
+</h4>
+<p>Cog & Gear Co provides equal employment opportunities to applicants and employees without regard to race, color, religion, sex, sexual orientation, gender identity, national origin, protected veteran status, or disability.</p>
+<p>Cog & Gear Co is a federal contractor or subcontractor subject to certain governmental recordkeeping and reporting requirements for the administration of civil right laws and regulations. Employment decisions are made on the basis of job-related criteria without regard to race, ethnicity, color, religion, sex, sexual orientation, gender identity, marital status, age, genetic information, national origin, disability, military, or veteran status, or any other classification protected by applicable law.</p>
+<p>We invite all applicants to voluntarily self-identify their race, ethnicity, and/or gender. Submission of the information on this form is strictly voluntary and refusal to provide it will not subject you to any adverse treatment. Information obtained will be retained in a confidential file and separate from personnel records. This information may only be used in accordance with the provision of applicable federal laws, executive orders, and regulations. If you want more information about any of the sections, please check with a company representative.</p>
+<div class="application-question"><label><div class="application-label">Gender</div>
+<div class="application-field"><div class="application-dropdown"><select name="eeo[gender]"><option value="">Select ...</option>
+<option value="Male">Male</option>
+<option value="Female">Female</option>
+<option value="Decline to self-identify">Decline to self-identify</option></select></div></div></label></div>
+<div class="application-question"><label><div class="application-label multiple-choice">Race</div>
+<div class="application-field">  <ul data-qa="multiple-choice">
+<li><label><input type="radio" name="eeo[race]" value="Hispanic or Latino"><span class="eeo-option-text application-answer-alternative">Hispanic or Latino</span><div class="eeo-option-description">A person of Cuban, Mexican, Puerto Rican, South or Central American, or other Spanish culture or origin regardless of race.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="White (Not Hispanic or Latino)"><span class="eeo-option-text application-answer-alternative">White (Not Hispanic or Latino)</span><div class="eeo-option-description">A person having origins in any of the original peoples of Europe, the Middle East, or North Africa.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="Black or African American (Not Hispanic or Latino)"><span class="eeo-option-text application-answer-alternative">Black or African American (Not Hispanic or Latino)</span><div class="eeo-option-description">A person having origins in any of the black racial groups of Africa.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino)"><span class="eeo-option-text application-answer-alternative">Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino)</span><div class="eeo-option-description">A person having origins in any of the peoples of Hawaii, Guam, Samoa, or other Pacific Islands.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="Asian (Not Hispanic or Latino)"><span class="eeo-option-text application-answer-alternative">Asian (Not Hispanic or Latino)</span><div class="eeo-option-description">A person having origins in any of the original peoples of the Far East, Southeast Asia, or the Indian Subcontinent, including, for example, Cambodia, China, India, Japan, Korea, Malaysia, Pakistan, the Philippine Islands, Thailand, and Vietnam.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="American Indian or Alaska Native (Not Hispanic or Latino)"><span class="eeo-option-text application-answer-alternative">American Indian or Alaska Native (Not Hispanic or Latino)</span><div class="eeo-option-description">A person having origins in any of the original peoples of North and South America (including Central America), and who maintain tribal affiliation or community attachment.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="Two or More Races (Not Hispanic or Latino)"><span class="eeo-option-text application-answer-alternative">Two or More Races (Not Hispanic or Latino)</span><div class="eeo-option-description">All persons who identify with more than one of the above five races.</div></label></li>
+<li><label><input type="radio" name="eeo[race]" value="Decline to self-identify"><span class="eeo-option-text application-answer-alternative">Decline to self-identify</span></label></li>
+</ul>
+</div></label></div>
+<hr>
+<h4>Self-identification of veteran status   <span class="eeo-light-text">(Completion is voluntary and will not subject you to adverse treatment)</span>
+</h4>
+<p>Cog & Gear Co is a Government contractor subject to the Section 4212 of the Vietnam Era Veterans’ Readjustment Assistance Act of 1974, as amended by the Jobs for Veterans Act of 2002, which requires Government contractors to take affirmative action to employ and advance in employment: (1) Disabled veterans – A veteran who served on active duty in the U.S. military and is entitled to disability compensation (or who but for the receipt of military retired pay would be entitled to disability compensation) under laws administered by the Secretary of Veterans Affairs, or was discharged or released from active duty because of a service-connected disability; (2) Recently separated veteran – A veteran separated during the three-year period beginning on the date of the veteran's discharge or release from active duty in the U.S military, ground, naval, or air service; (3) Active duty wartime or campaign badge veteran – A veteran who served on active duty in the U.S. military during a war, or in a campaign or expedition for which a campaign badge was authorized under the laws administered by the Department of Defense; (4) Armed forces service medal veteran – A veteran who, while serving on active duty in the U.S. military ground, naval, or air service, participated in a United States military operation for which an Armed Forces service medal was awarded pursuant to Executive Order 12985 (61 Fed. Reg. 1209).  If you believe that you belong to any of the categories of protected veterans, please indicate by making the appropriate selection.</p>
+<div class="application-question"><label><div class="application-label">Veteran status</div>
+<div class="application-field"><div class="application-dropdown"><select name="eeo[veteran]"><option value="">Select ...</option>
+<option value="I am a Protected Veteran">I identify as one or more of the classifications of protected veteran listed above</option>
+<option value="I am not a Protected Veteran">I am not a protected veteran</option>
+<option value="Decline to self-identify">I decline to self-identify for protected veteran status</option></select></div></div></label></div>
+<hr>
+<h4>Voluntary self-identification of disability</h4>
+<p class="eeo-light-text">Form CC-305 / OMB Control Number 1250-0005 / Expires 04/30/2026</p>
+<h5 class="eeo-paragraph-heading">Why are you being asked to complete this form?</h5>
+<p>We are a federal contractor or subcontractor. The law requires us to provide equal employment opportunity to qualified people with disabilities. We have a goal of having at least 7% of our workers as people with disabilities. The law says we must measure our progress towards this goal. To do this, we must ask applicants and employees if they have a disability or have ever had one. People can become disabled, so we need to ask this question at least every five years.</p>
+<p>Completing this form is voluntary, and we hope that you will choose to do so. Your answer is confidential. No one who makes hiring decisions will see it. Your decision to complete the form and your answer will not harm you in any way. If you want to learn more about the law or this form, visit the U.S. Department of Labor’s Office of Federal Contract Compliance Programs (OFCCP) website at <a href="https://example.com" target="_blank">www.dol.gov/ofccp</a>.</p>
+<h5 class="eeo-paragraph-heading">How do you know if you have a disability?</h5>
+<p>A disability is a condition that substantially limits one or more of your “major life activities.” If you have or have ever had such a condition, you are a person with a disability. <b>Disabilities include, but are not limited to:</b></p>
+<ul class="eeo-three-col-list">
+<li>Alcohol or other substance use disorder (not currently using drugs illegally)</li>
+<li>Autoimmune disorder, for example, lupus, fibromyalgia, rheumatoid arthritis, HIV/AIDS</li>
+<li>Blind or low vision</li>
+<li>Cancer (past or present)</li>
+<li>Cardiovascular or heart disease</li>
+<li>Celiac disease</li>
+<li>Cerebral palsy</li>
+<li>Deaf or serious difficulty hearing</li>
+<li>Diabetes</li>
+<li>Disfigurement, for example, disfigurement caused by burns, wounds, accidents, or congenital disorders</li>
+<li>Epilepsy or other seizure disorder</li>
+<li>Gastrointestinal disorders, for example, Crohn's Disease, irritable bowel syndrome</li>
+<li>Intellectual or developmental disability</li>
+<li>Mental health conditions, for example, depression, bipolar disorder, anxiety disorder, schizophrenia, PTSD</li>
+<li>Missing limbs or partially missing limbs</li>
+<li>Mobility impairment, benefiting from the use of a wheelchair, scooter, walker, leg brace(s) and/or other supports</li>
+<li>Nervous system condition, for example, migraine headaches, Parkinson’s disease, multiple sclerosis (MS)</li>
+<li>Neurodivergence, for example, attention-deficit/hyperactivity disorder (ADHD), autism spectrum disorder, dyslexia, dyspraxia, other learning disabilities</li>
+<li>Partial or complete paralysis (any cause)</li>
+<li>Pulmonary or respiratory conditions, for example, tuberculosis, asthma, emphysema</li>
+<li>Short stature (dwarfism)</li>
+<li>Traumatic brain injury</li>
+</ul>
+<div class="application-question"><label><div class="application-label">Disability status</div>
+<div class="application-field"><div class="application-dropdown"><select id="disabilitySelectElement" name="eeo[disability]"><option value="">Select ...</option>
+<option value="Yes, I have a disability, or have had one in the past">Yes, I have a disability, or have had one in the past</option>
+<option value="No, I do not have a disability and have not had one in the past">No, I do not have a disability and have not had one in the past</option>
+<option value="I do not want to answer ">I do not want to answer</option></select></div></div></label></div>
+<p>PUBLIC BURDEN STATEMENT: According to the Paperwork Reduction Act of 1995 no persons are required to respond to a collection of information unless such collection displays a valid OMB control number. This survey should take about 5 minutes to complete.</p>
+<div id="disabilitySignatureSection">
+<div class="application-question"><label><div class="application-label">Name</div>
+<div class="application-field"><input type="text" name="eeo[disabilitySignature]" placeholder="Enter your full name"></div></label></div>
+<div class="application-question"><label><div class="application-label">Date</div>
+<div class="application-field"><input type="text" name="eeo[disabilitySignatureDate]" placeholder="MM/DD/YYYY"></div></label></div>
+<p>Note: Name and date are only required if you filled out Disability status.</p>
+</div>
+</div>
+<input type="hidden" name="accountId" value="00000001-0000-0000-0000-000000000001"><input type="hidden" name="linkedInData"><input type="hidden" name="origin"><input type="hidden" name="referer"><input type="hidden" name="timezone" id="applicant-timezone" value=""><input type="hidden" name="socialReferralKey"><input type="hidden" name="socialSource"><input type="hidden" name="resumeStorageId" value=""><input id="hcaptchaResponseInput" type="hidden" name="h-captcha-response" value=""><button id="hcaptchaSubmitBtn" type="submit" class="hidden"></button><script>(function () {var tzInput = document.getElementById('applicant-timezone');if (tzInput && typeof Intl !== 'undefined') {try { tzInput.value = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}}})();</script><input type="hidden" name="source"><div class="section page-centered application-form" data-qa="consent-section">
+<hr>
+<ul><li class="application-question"><div class="application-field full-width"><p data-qa="legitimate-interest-copy"></p></div></li></ul>
+</div>
+<div id="h-captcha" class="h-captcha" data-sitekey="00000027-0000-0000-0000-000000000027"></div>
+<div class="section page-centered application-form last-section-apply"><button id="btn-submit" type="button" class="postings-btn template-btn-submit hex-color" data-qa="btn-submit" href="#">Submit application</button></div>
+</form>

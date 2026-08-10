@@ -80,6 +80,7 @@ _IDENTITY_IDS = {
     "email": "email",
     "phone": "phone",
     "candidate-location": "location",
+    "location": "location",     # Lever's raw DOM name for the same concept
     "country": "country",
 }
 
@@ -111,12 +112,19 @@ _EDUCATION_SUFFIX = re.compile(r"^(?P<base>[a-z-]+)--(?P<n>\d+)$")
 _EMPLOYMENT_SUFFIX = re.compile(r"^(?P<base>[a-z-]+)-(?P<n>\d+)(?:_\d+)?$")
 
 # EEOC opt-out, per DOM id, matched against the options the form actually
-# renders. Every board observed offers exactly these strings.
+# renders. Every board observed offers exactly these strings. The eeo[...]
+# keys are Lever's raw DOM names for the same four concepts — Lever's scan
+# does not alias id away from name (fill.py needs name intact as the real
+# selector), so both spellings have to resolve.
 _EEOC_OPT_OUT = {
     "gender": ("Decline To Self Identify",),
+    "eeo[gender]": ("Decline To Self Identify",),
     "race": ("Decline To Self Identify",),
+    "eeo[race]": ("Decline To Self Identify",),
     "veteran_status": ("I don't wish to answer",),
+    "eeo[veteran]": ("I don't wish to answer",),
     "disability_status": ("I do not want to answer",),
+    "eeo[disability]": ("I do not want to answer",),
 }
 # hispanic_ethnicity is DOM-only: no API question, so nothing here has an option
 # list to match against and it parks. That is not a policy of leaving it blank —
@@ -132,8 +140,10 @@ _OPT_OUT_FALLBACKS = (
     "I do not want to answer",
     "Decline To Self Identify",
     "Decline to self identify",
+    "Decline to self-identify",
     "I prefer not to answer",
     "Prefer not to say",
+    "I decline to self-identify for protected veteran status",
 )
 
 # Anything work-authorization shaped. A rules[] keyword that lands in here is a
@@ -523,6 +533,13 @@ def _pick_country(field: MergedField, value: str) -> str | None:
 def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None:
     if field.id in FILE_IDS:
         return Resolution("defer", tier="A", reason=field.id)
+    if field.id in ("full_name", "name"):
+        # A board-shape difference, not a Greenhouse concept: Lever asks one
+        # combined "Full name" field (DOM name="name") where Greenhouse asks
+        # first/last separately. Composed here rather than aliased through
+        # _IDENTITY_IDS, since there is no single identity.* key to alias to.
+        first, last = answers.identity["first_name"], answers.identity["last_name"]
+        return _fill(f"{first} {last}".strip(), "A")
     key = _IDENTITY_IDS.get(field.id)
     if key is None:
         return None

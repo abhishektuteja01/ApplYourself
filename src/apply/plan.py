@@ -135,6 +135,14 @@ class Plan:
     submit_selector: str | None
     submit_disabled: bool
     api_only: tuple[str, ...] = ()
+    ats: str = "greenhouse"
+    """Which board this came from — Greenhouse fields select by `id`, Lever's
+    by `name`; `fill.py` picks its driver off this, not off `board` (a slug,
+    not an ATS name)."""
+    requires_captcha: bool = False
+    """Lever renders hCaptcha on every form (§12a). Unattended submission is
+    not possible on one of these — `submit()` blocks for a human to solve it
+    rather than clicking blind."""
 
     @property
     def parked(self) -> bool:
@@ -251,6 +259,8 @@ def build_plan(
     submit_selector: str | None = None,
     submit_disabled: bool = False,
     overrides: dict[str, tuple[str | tuple[str, ...], str]] | None = None,
+    ats: str = "greenhouse",
+    requires_captcha: bool = False,
 ) -> Plan:
     """Resolve every reconciled field into a fill, an attachment or a park.
 
@@ -376,6 +386,8 @@ def build_plan(
         submit_selector=submit_selector,
         submit_disabled=submit_disabled,
         api_only=reconciled.api_only,
+        ats=ats,
+        requires_captcha=requires_captcha,
     )
     _assert_accounted_for(reconciled, plan)
     return plan
@@ -416,13 +428,20 @@ def _assert_accounted_for(reconciled: Reconciled, plan: Plan) -> None:
 
 
 def plan_for_board(
-    board_form: BoardForm,
+    board_form,
     answers: Answers,
     out_dir: Path,
     job_id: str = "",
     overrides: dict[str, tuple[str | tuple[str, ...], str]] | None = None,
+    ats: str = "greenhouse",
+    requires_captcha: bool = False,
 ) -> Plan:
-    """build_plan over a fetched board, carrying its identifiers into the plan."""
+    """build_plan over a fetched board, carrying its identifiers into the plan.
+
+    `board_form` is `greenhouse.BoardForm` or a same-shaped stand-in
+    (`lever.LeverBoard`, `ashby.AshbyBoard`) — duck-typed on purpose, so each
+    board module can produce one without this function knowing it exists.
+    """
     return build_plan(
         board_form.reconciled,
         answers,
@@ -436,4 +455,6 @@ def plan_for_board(
         submit_selector=board_form.scan.submit_selector,
         submit_disabled=board_form.scan.submit_disabled,
         overrides=overrides,
+        ats=ats,
+        requires_captcha=requires_captcha,
     )

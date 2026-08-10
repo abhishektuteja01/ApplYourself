@@ -99,6 +99,32 @@ class FakeDriver:
     def close(self):
         self.calls.append(("close",))
 
+    def select_native(self, field_id, label):
+        self.calls.append(("select_native", field_id, label))
+        offered = self.options.get(field_id)
+        if offered is not None and label not in offered:
+            return  # left unselected, same as a real <select> rejecting the label
+        self._selected[field_id] = label
+
+    def selected_option_label(self, field_id):
+        return self._selected.get(field_id, "")
+
+    def check_radio_group(self, field_id, label):
+        offered = self.options.get(field_id)
+        if offered is not None and label not in offered:
+            raise FillError(f"{field_id}: no radio labelled {label!r}")
+        self.calls.append(("check_radio", field_id, label))
+        self._selected[field_id] = label
+
+    def submit_disabled_now(self, selector):
+        return False
+
+    def click_submit(self, selector):
+        self.calls.append(("click_submit", selector))
+
+    def wait_for_captcha(self):
+        self.calls.append(("wait_for_captcha",))
+
 
 @pytest.fixture
 def resume(tmp_path):
@@ -398,6 +424,83 @@ class TestOtherWidgets:
         ]), d)
         assert ("check_group", "question_1[]", "Alpha") in d.calls
         assert ("check_group", "question_1[]", "Beta") in d.calls
+
+
+class TestNativeSelect:
+    """Lever's `<select>` — no react-select, no listbox, no typing (§12a)."""
+
+    def test_selecting_a_real_option_is_a_fill(self):
+        d = FakeDriver(options={"eeo[gender]": ("Male", "Female")})
+        result = fill_plan(plan(fields=[
+            field(id="eeo[gender]", kind="select", value="Female"),
+        ]), d)
+        assert result.ok
+        assert ("select_native", "eeo[gender]", "Female") in d.calls
+        assert result.outcomes[0].after == "Female"
+
+    def test_a_value_the_select_does_not_offer_fails(self):
+        d = FakeDriver(options={"eeo[gender]": ("Male", "Female")})
+        result = fill_plan(plan(fields=[
+            field(id="eeo[gender]", kind="select", value="Nonbinary"),
+        ]), d)
+        assert result.ok is False
+        assert "eeo[gender]" in result.failures[0]
+
+    def test_never_typed_into_unlike_a_react_select(self):
+        d = FakeDriver(options={"eeo[gender]": ("Male", "Female")})
+        fill_plan(plan(fields=[field(id="eeo[gender]", kind="select", value="Female")]), d)
+        assert not any(c[0] == "type" for c in d.calls)
+
+
+class TestRadioGroup:
+    def test_checking_a_real_option_is_a_fill(self):
+        d = FakeDriver(options={"eeo[race]": ("Decline to self-identify", "Asian")})
+        result = fill_plan(plan(fields=[
+            field(id="eeo[race]", kind="radio_group", value="Decline to self-identify"),
+        ]), d)
+        assert result.ok
+        assert ("check_radio", "eeo[race]", "Decline to self-identify") in d.calls
+
+    def test_no_matching_radio_fails(self):
+        d = FakeDriver(options={"eeo[race]": ("Asian",)})
+        result = fill_plan(plan(fields=[
+            field(id="eeo[race]", kind="radio_group", value="Decline to self-identify"),
+        ]), d)
+        assert result.ok is False
+        assert "eeo[race]" in result.failures[0]
+
+
+class TestLeverBrowserDriverSelectorBoundary:
+    def test_locates_by_name_attribute_not_id(self):
+        calls = []
+
+        class FakePage:
+            def locator(self, selector):
+                calls.append(selector)
+                class L:
+                    def click(self_inner):
+                        pass
+                return L()
+
+        driver = F.LeverBrowserDriver(FakePage())
+        driver._locator("name")
+        assert calls == ['#application-form [name="name"]']
+
+
+class TestCaptchaWait:
+    def test_submit_waits_for_captcha_when_the_plan_requires_it(self):
+        d = FakeDriver()
+        p = plan(fields=[])
+        from dataclasses import replace
+        captcha_plan = replace(p, requires_captcha=True)
+        F.submit(captcha_plan, FillResult(form_url="x"), d)
+        assert ("click_submit", captcha_plan.submit_selector) in d.calls
+        assert ("wait_for_captcha",) in d.calls
+
+    def test_submit_does_not_wait_when_the_plan_does_not_require_it(self):
+        d = FakeDriver()
+        F.submit(plan(fields=[]), FillResult(form_url="x"), d)
+        assert ("wait_for_captcha",) not in d.calls
 
 
 class TestAttachments:

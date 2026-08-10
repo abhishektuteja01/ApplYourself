@@ -33,6 +33,7 @@ from pathlib import Path
 import pandas as pd
 
 from src import paths, state_io, track_cli
+from src.apply import lever
 from src.apply.answers import Answers, AnswersError, load_answers
 from src.apply.fill import SubmitGuardError, blocking_questions, fill, run_one
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
@@ -41,6 +42,20 @@ from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError
 from src.apply.domscan import DomScanError
 from src.discovery.sources.ats.http import CareersError
+
+# One posting URL parser per ATS this module can submit to. `detect_ats` tries
+# each in turn — cheap, since they're pure regex matches, no network.
+_ATS_PARSERS = {"greenhouse": parse_posting, "lever": lever.parse_posting}
+
+
+def detect_ats(url: str) -> str | None:
+    for ats, parser in _ATS_PARSERS.items():
+        try:
+            parser(url)
+        except ApplyUrlError:
+            continue
+        return ats
+    return None
 
 CLEAN = paths.CLEAN
 PIPELINE = paths.PIPELINE
@@ -76,16 +91,13 @@ def resolve_url(job_id: str, state: dict | None) -> str:
             f"{job_id} is in neither clean.parquet nor pipeline/{job_id}/state.yaml"
         )
     for _, url in candidates:
-        try:
-            parse_posting(url)
-        except ApplyUrlError:
-            continue
-        return url
+        if detect_ats(url) is not None:
+            return url
 
     seen = "; ".join(f"{where}: {url or '(empty)'}" for where, url in candidates)
     raise ApplyCliError(
-        f"{job_id} has no Greenhouse posting URL to apply through ({seen}). "
-        "Phase 1 submits to Greenhouse only — apply to this one by hand."
+        f"{job_id} has no Greenhouse or Lever posting URL to apply through "
+        f"({seen}). Not one of the boards /apply submits to — apply by hand."
     )
 
 
@@ -141,8 +153,16 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     posting_url = url or resolve_url(job_id, state)
     target = Path(out_dir) if out_dir else resolve_out_dir(job_id, state)
     answers = load_answers()
-    board = load_board(posting_url)
     overrides = load_overrides(Path(answers_path)) if answers_path else None
+
+    ats = detect_ats(posting_url)
+    if ats is None:
+        raise ApplyCliError(f"{posting_url}: not a Greenhouse or Lever posting URL")
+    if ats == "lever":
+        board = lever.load_board(posting_url)
+        return plan_for_board(board, answers, target, job_id=job_id, overrides=overrides,
+                              ats="lever", requires_captcha=board.requires_captcha), answers
+    board = load_board(posting_url)
     return plan_for_board(board, answers, target, job_id=job_id, overrides=overrides), answers
 
 

@@ -103,6 +103,34 @@ def stub_answers(monkeypatch):
     monkeypatch.setattr(apply_cli, "load_answers", lambda *a, **k: loaded)
 
 
+LEVER_URL = "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+
+
+class TestDetectAts:
+    def test_greenhouse(self):
+        assert apply_cli.detect_ats(GH_URL) == "greenhouse"
+
+    def test_lever(self):
+        assert apply_cli.detect_ats(LEVER_URL) == "lever"
+
+    def test_neither(self):
+        assert apply_cli.detect_ats(LINKEDIN_URL) is None
+
+
+class TestBuildDispatchesToLever:
+    def test_a_lever_url_builds_a_lever_plan(self, repo, monkeypatch, tailor_dir):
+        repo.write_clean(**{JOB_ID: LEVER_URL})
+        repo.write_state(url=LEVER_URL)
+        from .conftest import load_html
+        monkeypatch.setattr("src.apply.lever.fetch_text",
+                            lambda *a, **k: load_html("form_lever_minimal"))
+
+        plan, _ = apply_cli.build(JOB_ID)
+        assert plan.ats == "lever"
+        assert plan.requires_captcha is True
+        assert plan.board == "widgetco"
+
+
 class TestResolveUrl:
     def test_clean_parquet_wins_when_it_holds_a_board_url(self, repo, stub_board):
         repo.write_clean(**{JOB_ID: GH_URL})

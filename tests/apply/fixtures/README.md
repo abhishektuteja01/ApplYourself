@@ -52,3 +52,15 @@ it.
 Do not re-capture into these filenames without re-running the scrub. A raw
 Greenhouse form names the employer in its EEOC text, its question labels, its
 logo URL and its form action.
+
+**`form_lever_*.html` / `form_ashby_*.html`** — phase 2 (§12a). Same scrub
+rule, same fictional widget world. No `.json` twin — neither board exposes a
+public question API, so the HTML alone is the fixture; `lever.py`/`ashby.py`
+emit `MergedField`s straight from the scan (`reconcile.py` is Greenhouse-only).
+
+| fixture | covers |
+|---|---|
+| `form_lever_minimal` | core identity + links, resume and location both required |
+| `form_lever_full` | employer-authored "cards" (select/textarea), EEOC block including the `race` radio group and the disability signature/date pair, work-authorization dropdowns, hCaptcha |
+| `form_ashby_minimal` | yes/no toggle widgets, SMS-consent radio group, no diversity block |
+| `form_ashby_diversity` | yes/no toggles, a `role=combobox` location field, the diversity survey block |
