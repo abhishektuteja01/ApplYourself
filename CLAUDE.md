@@ -8,11 +8,14 @@ A personal, human-gated job-search pipeline, sponsorship-aware throughout (the
 scoring pre-screen and the outreach disclosure rules both know about it). It scrapes
 jobs, scores them against a profile, and generates tailored application material.
 Outreach is always gated on the user. Application submission is automatable via
-`/apply`, which submits only when every required field resolves from config;
-anything unresolved parks the role for review.
+`/apply`, which submits only when every required field resolves — from config,
+or from a per-run Tier C answers file the command session drafts under NO-FAB
+(generic answers from `bullets.md`, company-specific ones from that role's
+`company_answers.md`). Anything still unresolved parks the role for review.
 
 ## Instructions
 
+0. Always answer in simple english, too coded or big outputs will drain, summarize your thinking and then provide each output.
 1. No dated references if not needed, no extra verbose paragraphs explaining why the decision was made. If absolutely needed (in case of A/B tests and similar), a concise one liner is enough.
 2. Explain code changes and tests before updating or implementing. Start post confirmation.
 
@@ -42,8 +45,11 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    vertical at fetch time; unclassified rows dropped. Always ends by running
    cleaning (try/finally), even after a crash/deadline. Workday roles are
    discovered and scored like any other row but are **manual-apply only** —
-   `src/apply/` never submits to one; the shortlist and `/apply run`'s report
-   both flag them so the gap is never silent.
+   `src/apply/` never submits to one. Workday is not alone in that: the
+   shortlist and `/apply run`'s report both derive the flag from
+   `apply.detect.is_auto_submittable`, so LinkedIn, Indeed, company careers
+   pages and Ashby (planned, no fill driver) all carry it too, and the run
+   report gives them their own `manual` category rather than `failed`.
 2. **Cleaning** (`src/discovery/cleaning.py`) — normalize, drop short/stale rows,
    drop rows outside the location allowlist, dedupe (exact then rapidfuzz
    WRatio ≥ 90), assign `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery

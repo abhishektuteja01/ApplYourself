@@ -196,6 +196,8 @@ content. Across the letter, cover:
   honest and specific, no invented scope
 - a close
 
+Just start — no filler opener announcing that this is an application.
+
 Don't hand-police structural AI-tells here (tricolons, "not only X but
 also Y", uniform rhythm, formulaic "I am writing to express my
 interest..." / "I look forward to hearing from you" openers and closers)

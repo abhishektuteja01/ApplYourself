@@ -78,13 +78,23 @@ test -n "$COVER_DIR" || {
     exit 1
 }
 COMPANY_ANSWERS="applications/${COVER_DIR}/company_answers.md"
+# NOT a hard prerequisite. Most boards ask no "why us" question at all, and
+# every role tailored before §7b shipped predates the file — 20 of 20 on this
+# machine. Requiring it up front refused roles the deterministic queue
+# (`apply_cli.eligible_queue`) happily submits, so the two gates disagreed
+# about what was eligible. Step 5 re-checks it, by which point the plan says
+# whether any Tier C2 question actually exists.
 test -f "$COMPANY_ANSWERS" || {
-    echo "ERROR: ${COMPANY_ANSWERS} missing. Re-run /cover-letter -- it should have written this alongside the letter (§7b)."
-    exit 1
+    echo "NOTE: ${COMPANY_ANSWERS} missing. Fine unless this board asks a"
+    echo "      company-specific question -- Step 5 parks the role if it does."
+    COMPANY_ANSWERS=""
 }
 
 OVERRIDES_FILE="/tmp/apply_${JOB_ID}_answers.json"
-echo '{}' > "$OVERRIDES_FILE"
+# The job_id key binds this file to this role. Tier C2 answers are
+# company-specific, so `apply --answers` refuses a file drafted for another
+# role — but only if the key is here.
+printf '{"job_id": "%s"}\n' "$JOB_ID" > "$OVERRIDES_FILE"
 
 echo "job_id=$JOB_ID"
 echo "company_answers=$COMPANY_ANSWERS"
@@ -133,6 +143,14 @@ Classify each conservatively:
 
 ## Step 4 — resolve C2 from `company_answers.md`
 
+**If the plan has no C2 question, skip this step entirely** — most boards ask
+none, and the file is only needed by the ones that do.
+
+If there IS a C2 question and `$COMPANY_ANSWERS` is empty (Step 1 said the
+file is missing), stop and tell the user to run `/cover-letter` for this role
+first. Do not draft the answer here: a "why us" written without the Step 2b
+research is exactly the fabrication §7b exists to prevent.
+
 `Read` `$COMPANY_ANSWERS` (printed in Step 1). It has exactly three sections:
 `why_company`, `why_role`, `what_interests_you_about_product`.
 
@@ -165,7 +183,7 @@ specific `profile/bullets.md` bullet's canonical text or its
 short — these are form fields, not letter paragraphs; 1-3 sentences.
 
 Add `"<field_id>": {"value": "<drafted text>", "tier": "C1"}` to
-`$OVERRIDES_FILE` for every one, regardless of what happens next.
+`$OVERRIDES_FILE` for every one, keeping the existing `job_id` key, regardless of what happens next.
 
 **Then, separately, decide whether the question itself — not the drafted
 prose — is a reusable fact worth a permanent Tier B rule.** This is a much
