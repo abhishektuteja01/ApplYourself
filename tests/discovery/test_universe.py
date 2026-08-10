@@ -148,10 +148,10 @@ def test_universe_unsupported_ats_skipped(tmp_path, monkeypatch, caplog):
 schema_version: 1
 companies:
   - name: Watchlist Co
-    ats: workday
+    ats: icims
     slug: acme
 """, encoding="utf-8")
-    res = universe.load("workday")
+    res = universe.load("icims")
     assert len(res) == 0
     assert "unsupported ats" in caplog.text.lower()
 

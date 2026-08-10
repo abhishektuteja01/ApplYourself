@@ -37,15 +37,21 @@ def _fetch(
     read,
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
+    json_body: dict | None = None,
 ):
-    """GET url, retrying 429/5xx, and hand the 200 response to `read`.
+    """GET (or, with `json_body`, POST) url, retrying 429/5xx, and hand the 200
+    response to `read`.
 
     `read` owns what a 200 body means: a body it cannot use is a wall or a wrong
     slug rather than a blip, so it raises instead of retrying.
     """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            resp = requests.get(url, timeout=timeout, headers=_HEADERS)
+            resp = (
+                requests.post(url, json=json_body, timeout=timeout, headers=_HEADERS)
+                if json_body is not None
+                else requests.get(url, timeout=timeout, headers=_HEADERS)
+            )
         except requests.RequestException as exc:
             if attempt == MAX_RETRIES:
                 raise CareersError(f"fetch failed: {url}: {exc}") from exc
@@ -93,6 +99,29 @@ def fetch_json(
             ) from exc
 
     return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts)
+
+
+def fetch_json_post(
+    url: str,
+    json_body: dict,
+    timeout: int = REQUEST_TIMEOUT,
+    deadline_ts: float | None = None,
+):
+    """POST json_body to url -> parsed JSON, same retry policy as fetch_json.
+
+    Workday's list/search endpoint takes its query as a POST body rather than
+    query parameters — everything else about the response (200/404/429/5xx)
+    behaves the same as every other board API here.
+    """
+    def read(resp):
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise CareersError(
+                f"invalid JSON body: {url}: {exc}", status=200, permanent=True
+            ) from exc
+
+    return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts, json_body=json_body)
 
 
 def fetch_text(

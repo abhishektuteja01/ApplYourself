@@ -35,6 +35,7 @@ class DiscoveryConfig:
         "greenhouse": SourceConfig(True, 1.0),
         "lever": SourceConfig(True, 1.0),
         "ashby": SourceConfig(True, 2.0),
+        "workday": SourceConfig(True, 2.0),
     })
     raw_retention_days: int = 30
 
@@ -67,7 +68,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     cfg.schema_version = _SCHEMA_VERSION
 
     if "sources" in data:
-        allowed_sources = {"linkedin", "indeed", "greenhouse", "lever", "ashby"}
+        allowed_sources = {"linkedin", "indeed", "greenhouse", "lever", "ashby", "workday"}
         for k, v in data["sources"].items():
             if k not in allowed_sources:
                 raise ValueError(f"Unknown source key: {k}")

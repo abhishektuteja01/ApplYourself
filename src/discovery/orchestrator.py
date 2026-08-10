@@ -17,6 +17,7 @@ from src.discovery.sources.jobspy_source import LinkedinSource, IndeedSource
 from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
+from src.discovery.sources.ats.workday import WorkdaySource
 from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
 from src.discovery import trace
 from src.discovery import universe
@@ -55,7 +56,8 @@ class Context:
         return time.time() > self.deadline_ts
 
 def get_sources():
-    return [InboxSource(), LinkedinSource(), IndeedSource(), GreenhouseSource(), LeverSource(), AshbySource()]
+    return [InboxSource(), LinkedinSource(), IndeedSource(), GreenhouseSource(), LeverSource(),
+            AshbySource(), WorkdaySource()]
 
 
 def _run_source(source, ctx, run_id, scraped_date, shard_file) -> dict:
@@ -197,7 +199,7 @@ def main(args=None):
     preamble_len = len(report_lines)
 
     sources = get_sources()
-    fixed_order = ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby"]
+    fixed_order = ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby", "workday"]
 
     enabled_sources = []
     source_map = {s.name: s for s in sources}

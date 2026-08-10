@@ -171,10 +171,13 @@ def render_shortlist_markdown(
             assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
             status = row["application_status"] if row.get("already_seen") else "new"
             kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
+            # Workday is discovery-only (§12b): the queue /apply reads from
+            # never picks these up, so the gap must never be silent here.
+            manual_apply = " — **manual-apply, not auto-submittable**" if row["source"] == "workday" else ""
             lines.append(
                 f"### {i}. {row['fit_score']} — {row['company']} — {row['title']}\n"
                 f"- **job_id:** `{row['job_id']}`\n"
-                f"- **location:** {row['location']} · **source:** {row['source']} "
+                f"- **location:** {row['location']} · **source:** {row['source']}{manual_apply} "
                 f"· **posted:** {row['posted_date']}\n"
                 f"- **fit:** {row['fit_score']} (title {sub['title']} / skills {sub['skills']} "
                 f"/ seniority {sub['seniority']} / domain {sub['domain']})\n"

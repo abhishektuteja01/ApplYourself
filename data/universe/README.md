@@ -11,6 +11,11 @@ MIT License.
 Slugs added since the seed clone were verified individually against the live
 board API before being committed.
 
+`workday.csv` has no ats-scrapers seed at all (§12b) — Workday's tri-part
+slug (`company|wd#|site_id`) is not a shape that source publishes, so every
+row was hand-verified against the live CXS API, one tenant at a time,
+before being committed.
+
 ## `<ats>.local.csv` — untracked overlay
 
 `universe.load()` reads `<ats>.local.csv` before `<ats>.csv` and merges both on
