@@ -290,14 +290,96 @@ class TestApiFieldMapping:
         assert by_id["20000000-0000-0000-0000-000000000004"].required is False
 
     def test_an_unknown_type_raises_rather_than_guessing(self):
-        """`EducationHistory` — a repeating sub-form, 1 board in 115 — lands
-        here. Loud, matching the DOM scanner's unknown-input behaviour."""
+        """Loud, matching the DOM scanner's unknown-input behaviour — a guessed
+        mapping on a legal or compensation question is worse than a failure."""
         payload = load_api("api_ashby_form")
         entry = payload["data"]["jobPosting"]["applicationForm"]["sections"][0][
             "fieldEntries"][0]
-        entry["field"]["type"] = "EducationHistory"
+        entry["field"]["type"] = "SomeTypeAshbyAddedLater"
         with pytest.raises(AshbyScanError, match="unknown Ashby field type"):
             fields_from_application_form(payload["data"]["jobPosting"])
+
+
+class TestEducationHistoryIsExpandedNotRejected:
+    """`EducationHistory` is one field entry carrying a whole repeating
+    sub-form, with each sub-field's requirement declared inline. Greenhouse
+    sends the same block as separate controls that `answers.py` already
+    resolves, so the entry is expanded into those ids rather than raising."""
+
+    FIELD = {
+        "id": "9420a915-0000-0000-0000-000000000001",
+        "path": "_systemfield_education_history",
+        "title": "Education History",
+        "type": "EducationHistory",
+        "schoolName": "required",
+        "degree": "optional",
+        "major": "optional",
+        "startDate": "optional",
+        "endDate": "optional",
+        "isRepeatable": True,
+        "minRepeat": 1,
+    }
+
+    def _payload(self, field=None):
+        payload = load_api("api_ashby_form")
+        payload["data"]["jobPosting"]["applicationForm"]["sections"][0][
+            "fieldEntries"].append({"id": "e1", "isRequired": True,
+                                    "field": field or dict(self.FIELD)})
+        return payload["data"]["jobPosting"]
+
+    def _fields(self, field=None):
+        return {f.id: f for f in fields_from_application_form(
+            self._payload(field)).fields}
+
+    def test_the_three_answerable_subfields_get_greenhouse_ids(self):
+        by_id = self._fields()
+        assert "school--0" in by_id
+        assert "degree--0" in by_id
+        assert "discipline--0" in by_id
+
+    def test_requirement_comes_from_the_inline_declaration(self):
+        by_id = self._fields()
+        assert by_id["school--0"].required is True
+        assert by_id["degree--0"].required is False
+
+    def test_optional_dates_are_dropped_rather_than_emitted_unmapped(self):
+        """`education.start_year` is a year and these want a date, so mapping
+        them would write a wrong value. They cannot simply be emitted unmapped
+        either: `_resolve_repeating` parks an unrecognized id even when it is
+        optional, so that would park every board rendering them."""
+        by_id = self._fields()
+        assert "start-year--0" not in by_id
+        assert not [i for i in by_id if i.endswith("startDate")]
+        assert not [i for i in by_id if i.endswith("endDate")]
+
+    def test_a_required_date_is_emitted_and_parks_loudly(self, answers, tailor_dir):
+        field = dict(self.FIELD, startDate="required")
+        plan = build_plan(fields_from_application_form(self._payload(field)),
+                          answers, tailor_dir, ats="ashby")
+        parked = [u.id for u in plan.unmapped]
+        assert any(i.endswith("startDate") for i in parked)
+
+    def test_the_observed_board_yields_exactly_the_three_mapped_subfields(self):
+        """All five sub-fields declared, dates optional — the shape actually
+        captured live. It must plan cleanly, not park."""
+        ids = {i for i in self._fields() if "--0" in i}
+        assert ids == {"school--0", "degree--0", "discipline--0"}
+
+    def test_a_subfield_the_board_does_not_collect_is_absent(self):
+        field = {k: v for k, v in self.FIELD.items() if k != "degree"}
+        assert "degree--0" not in self._fields(field)
+
+    def test_the_required_school_resolves_from_config(self, answers, tailor_dir):
+        plan = build_plan(fields_from_application_form(self._payload()),
+                          answers, tailor_dir, ats="ashby")
+        by_id = {f.id: f.value for f in plan.fields}
+        assert by_id["school--0"] == answers.education["school"]
+
+    def test_a_block_declaring_no_subfields_raises(self):
+        field = {"path": "_systemfield_education_history", "title": "Education",
+                 "type": "EducationHistory"}
+        with pytest.raises(AshbyScanError, match="declaring no sub-fields"):
+            fields_from_application_form(self._payload(field))
 
     def test_a_form_with_no_fields_raises(self):
         payload = load_api("api_ashby_form")

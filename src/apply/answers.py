@@ -192,10 +192,14 @@ _AUTHORIZED_QUALIFIED = re.compile(
     r"|unrestricted"
     r"|without\s+(?:\w+\s+){0,3}(?:sponsor|restrict)"
     r"|now\s+or\s+in\s+the\s+future"
-    r"|for\s+any\s+employer"
     r"|no\s+(?:\w+\s+){0,2}restrict",
     re.IGNORECASE,
 )
+# NB: "for any employer" is deliberately NOT a qualifier. It reads like one,
+# but it asks about employer-tying, and OPT is not employer-tied the way an
+# H-1B is — the honest answer is Yes. Questions that pair it with a real
+# qualifier ("Are you *permanently* authorized to work for any employer?")
+# still park on that qualifier, which is the correct outcome.
 # ...except where the qualifier is offered as one *alternative* rather than as
 # the requirement. "Are you authorized to work in the US on a permanent or
 # temporary basis?" trips `_AUTHORIZED_QUALIFIED` on "permanent", but the
@@ -227,6 +231,35 @@ _NAMES_THE_US = re.compile(
     r"united\s+states|u\.s\.a?\.|\bu\.s\b|\busa\b|america", re.IGNORECASE
 )
 _NAMES_US_ABBREV = re.compile(r"\bUS\b")  # case-sensitive: "us" is a pronoun
+# A country that is NOT the US, named outright. This is the only case that has
+# to park: an unnamed country is the *job's* country, and the queue only ever
+# holds roles that passed discovery's US location allowlist, so "authorized to
+# work in the country where this role is located" is a US question. Requiring
+# an explicit "United States" parked 14 of 21 required work-auth questions on
+# live Ashby boards for no gain.
+#
+# Checked only after the US test, so "the US or Canada" resolves rather than
+# parking. Derived from the harvested corpus, where exactly one label of 77
+# names a foreign country ("...authorised to work in the UK without employer
+# sponsorship?"); the rest of this list is the ordinary set a US-based search
+# can expect to meet. A country not listed here reads as unnamed and is
+# answered as the US — the same assumption the location allowlist already
+# makes.
+_NAMES_OTHER_COUNTRY = re.compile(
+    r"\bcanada\b|\bcanadian\b|united\s+kingdom|\bu\.?k\.?\b|\bengland\b"
+    r"|\bscotland\b|\bireland\b|\bindia\b|\bgermany\b|\bfrance\b|\bspain\b"
+    r"|\bitaly\b|\bportugal\b|\bpoland\b|\bswitzerland\b|\bnetherlands\b"
+    r"|\bbelgium\b|\bsweden\b|\bnorway\b|\bdenmark\b|\bfinland\b|\baustria\b"
+    r"|\bczech\b|\bromania\b|\bukraine\b|\bturkey\b|\bisrael\b|\begypt\b"
+    r"|south\s+africa|\bnigeria\b|\bkenya\b|\bghana\b|\bmorocco\b"
+    r"|\baustralia\b|new\s+zealand|\bsingapore\b|\bjapan\b|\bchina\b"
+    r"|hong\s+kong|\btaiwan\b|south\s+korea|\bvietnam\b|\bthailand\b"
+    r"|\bphilippines\b|\bindonesia\b|\bmalaysia\b|\bpakistan\b"
+    r"|\bmexico\b|\bbrazil\b|\bargentina\b|\bcolombia\b|\bchile\b|\bperu\b"
+    r"|\buae\b|united\s+arab\s+emirates|\bsaudi\b|\bqatar\b"
+    r"|european\s+union|\bemea\b|\bapac\b|\blatam\b",
+    re.IGNORECASE,
+)
 
 _YES_NO = {True: "Yes", False: "No"}
 
@@ -788,8 +821,13 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
     if authorized and sponsorship:
         return _park("work authorization: label reads as both families", "B0")
     if authorized:
-        if not (_NAMES_THE_US.search(label) or _NAMES_US_ABBREV.search(label)):
-            return _park("work authorization: the question names no country", "B0")
+        names_us = bool(_NAMES_THE_US.search(label) or _NAMES_US_ABBREV.search(label))
+        if not names_us and _NAMES_OTHER_COUNTRY.search(label):
+            return _park(
+                "work authorization: the question names a country other than "
+                "the US, which this status does not answer",
+                "B0",
+            )
         # Only a time-limited status makes these unanswerable. For a citizen
         # or permanent resident, "permanent basis", "any employer" and
         # "without sponsorship" are all knowable and all Yes — parking them

@@ -122,6 +122,31 @@ _RESUME_PATHS = frozenset({"_systemfield_resume"})
 _COVER_LETTER_PATHS = frozenset({"cover_letter", "_systemfield_coverletter"})
 _COVER_LETTER_TITLE = re.compile(r"cover\s*letter", re.IGNORECASE)
 
+# `EducationHistory` is not a question — it is a repeating sub-form delivered
+# as ONE field entry, with each sub-field's requirement declared inline:
+#
+#   {"type": "EducationHistory", "schoolName": "required", "degree": "optional",
+#    "major": "optional", "startDate": "optional", "endDate": "optional",
+#    "isRepeatable": true, "minRepeat": 1}
+#
+# Greenhouse sends the same block as separate `school--0`/`degree--0` controls,
+# which `answers.py` already resolves, so the entry is expanded into those ids
+# rather than given a composite kind of its own. Aliasing to Greenhouse's id
+# space is the same trade the two file fields make: a real Ashby DOM selector
+# is a driver-side problem, and there is no driver.
+#
+# The two dates are deliberately unmapped. `education.start_year`/`end_year`
+# are years and these fields want dates, so a mapping would write a wrong
+# value. An unmapped sub-field is dropped while optional (the only shape
+# observed) and emitted when required, where it parks loudly.
+EDUCATION_HISTORY_TYPE = "EducationHistory"
+_EDUCATION_SUBFIELDS = {
+    "schoolName": "school--0",
+    "degree": "degree--0",
+    "major": "discipline--0",
+}
+_EDUCATION_SUBFIELD_ORDER = ("schoolName", "degree", "major", "startDate", "endDate")
+
 _URL = re.compile(
     r"^https?://jobs\.ashbyhq\.com/(?P<slug>[^/?#]+)/(?P<job_id>[0-9a-f-]+)",
     re.IGNORECASE,
@@ -460,7 +485,49 @@ def _api_file_id(path: str, title: str) -> str:
     return path
 
 
-def _api_field(entry: dict) -> MergedField:
+def _education_history_fields(field: dict, path: str) -> list[MergedField]:
+    """The composite education block as the scalar fields the planner answers.
+
+    Only the first entry, matching `answers.py`'s existing "entry 0 only"
+    convention for Greenhouse's repeating blocks. `minRepeat` is 1 on the one
+    board observed; a board demanding more would still fill the first and park
+    nothing, which is the same exposure Greenhouse already carries.
+    """
+    fields = []
+    for sub in _EDUCATION_SUBFIELD_ORDER:
+        declared = field.get(sub)
+        if declared is None:
+            continue      # this board does not collect that sub-field
+        required = str(declared).lower() == "required"
+        if sub not in _EDUCATION_SUBFIELDS and not required:
+            # An unmapped sub-field is dropped while optional rather than
+            # emitted: `_resolve_repeating` parks an id it does not recognize
+            # whether or not it is required, so emitting the optional dates
+            # would park every board that renders them — the opposite of
+            # leaving them alone. Required ones are still emitted, and park
+            # loudly, which is the outcome that deserves attention.
+            continue
+        fields.append(MergedField(
+            id=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
+            name=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
+            label=f"{field.get('title') or 'Education'}: {sub}",
+            required=required,
+            kind="text",
+            # `resolve` dispatches the repeating blocks on section, not on id,
+            # so this is what routes these to `answers.education` rather than
+            # leaving them to the keyword rules.
+            section="education",
+            multi=False,
+            options=(),
+        ))
+    if not fields:
+        raise AshbyScanError(
+            f"{path}: an EducationHistory field declaring no sub-fields"
+        )
+    return fields
+
+
+def _api_field(entry: dict) -> list[MergedField]:
     field = entry.get("field")
     if not isinstance(field, dict):
         raise AshbyScanError(f"fieldEntry {entry.get('id')!r} carries no field object")
@@ -469,11 +536,12 @@ def _api_field(entry: dict) -> MergedField:
     if not path:
         raise AshbyScanError(f"fieldEntry {entry.get('id')!r} has no field.path")
     raw_type = field.get("type") or ""
+    if raw_type == EDUCATION_HISTORY_TYPE:
+        return _education_history_fields(field, path)
     kind = _TYPE_KINDS.get(raw_type)
     if kind is None:
         # Loud rather than guessed, matching the DOM scanner's unknown-input
-        # behaviour. `EducationHistory` (a repeating sub-form) is the one type
-        # seen in the wild that lands here — 1 board in 115.
+        # behaviour.
         raise AshbyScanError(
             f"unknown Ashby field type {raw_type!r} on path={path!r} "
             f"({field.get('title')!r})"
@@ -491,7 +559,7 @@ def _api_field(entry: dict) -> MergedField:
             if isinstance(v, dict)
         )
 
-    return MergedField(
+    return [MergedField(
         id=field_id,
         name=field_id,
         label=field.get("title") or "",
@@ -503,7 +571,7 @@ def _api_field(entry: dict) -> MergedField:
         section="questions",
         multi=bool(field.get("isMany")),
         options=options,
-    )
+    )]
 
 
 def fields_from_application_form(job_posting: dict) -> Reconciled:
@@ -515,11 +583,11 @@ def fields_from_application_form(job_posting: dict) -> Reconciled:
         for entry in section.get("fieldEntries") or []:
             if not isinstance(entry, dict):
                 continue
-            merged = _api_field(entry)
-            if merged.id in seen:
-                continue
-            seen.add(merged.id)
-            fields.append(merged)
+            for merged in _api_field(entry):
+                if merged.id in seen:
+                    continue
+                seen.add(merged.id)
+                fields.append(merged)
 
     if not fields:
         raise AshbyScanError("the application form declares no fields")

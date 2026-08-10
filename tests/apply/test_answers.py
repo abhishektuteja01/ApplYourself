@@ -619,6 +619,75 @@ class TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion:
         assert r.value == "Yes"          # time_limited will need it later
 
 
+class TestEmployerBreadthIsNotAScopeQualifier:
+    """"for any employer" reads like a qualifier and is not one. It asks about
+    employer-tying, and a time-limited status is not employer-tied the way an
+    H-1B is — the honest answer is Yes."""
+
+    def test_for_any_employer_alone_resolves_from_the_status(self, answers):
+        r = resolve(_yes_no_field(
+            "Are you legally authorized to work in the United States for any "
+            "employer?"), answers)
+        assert r.action == "fill"
+        assert r.value == "Yes"
+
+    def test_paired_with_a_real_qualifier_it_still_parks(self, answers):
+        """The permanence claim is the thing that cannot be answered; dropping
+        "for any employer" from the qualifier set must not take this with it."""
+        r = resolve(_yes_no_field(
+            "Are you permanently authorized to work for any employer in the "
+            "United States?"), answers)
+        assert r.action == "park"
+
+
+class TestAnUnnamedCountryIsTheJobsCountry:
+    """The queue only ever holds roles that passed discovery's US location
+    allowlist, so "the country where this role is located" is a US question.
+    Demanding an explicit "United States" parked 14 of 21 required work-auth
+    questions across 53 live Ashby boards for no gain."""
+
+    COUNTRY_RELATIVE = [
+        "Are you authorized to work in the country where the job is located?",
+        "Are you legally authorized to work in the country this position is in?",
+        "Are you authorized to work in the stated location of this role?",
+        "Are you legally authorized to work in your current country of employment?",
+    ]
+    # NB not covered here: "Do you have the legal **right** to work in ...".
+    # That parks for an unrelated reason — `_AUTHORIZED_FAMILY` matches
+    # "authorized to work", not "right to work", so it never reaches the
+    # country check at all. A phrasing gap for the corpus pass, not a country
+    # one; fixing it here would hide it.
+
+    @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
+    def test_a_country_relative_question_resolves(self, answers, label):
+        r = resolve(_yes_no_field(label), answers)
+        assert r.action == "fill"
+        assert r.value == "Yes"          # time_limited is authorized today
+
+    NAMES_ELSEWHERE = [
+        "Are you legally authorised to work in the UK without employer sponsorship?",
+        "Are you authorized to work in Canada?",
+        "Are you legally authourized to work in South Africa?",
+        "Are you authorized to work in Germany?",
+    ]
+
+    @pytest.mark.parametrize("label", NAMES_ELSEWHERE)
+    def test_a_question_naming_another_country_still_parks(self, answers, label):
+        """US authorization says nothing about these, and the location
+        allowlist gives no cover for a country the question names outright."""
+        r = resolve(_yes_no_field(label), answers)
+        assert r.action == "park"
+        assert r.tier == "B0"
+
+    def test_the_us_named_alongside_another_country_resolves(self, answers):
+        """Checked after the US test on purpose, so an either/or question is
+        answered rather than parked."""
+        r = resolve(_yes_no_field(
+            "Are you legally authorized to work in the US or Canada?"), answers)
+        assert r.action == "fill"
+        assert r.value == "Yes"
+
+
 class TestScopeQualifiedAnswerIsConfiguredNotInferred:
     """The park above is the *default*, not a policy. Whether "permanently
     authorized for any employer" is Yes or No is a fact about the user, so it
