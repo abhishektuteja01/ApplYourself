@@ -1,0 +1,99 @@
+# TEMPLATE — copy to profile/application_answers.yaml and replace every value.
+#
+# What /apply fills a board's application form with. Read by src/apply/answers.py.
+#
+# DO NOT COMMIT YOUR FILLED COPY. profile/* is gitignored by default, and this
+# file holds your email and phone — the exact strings profile/pii_denylist.txt
+# should already carry.
+#
+# Everything submitted under your name comes from here. There is no fallback
+# and no guess: a field this file cannot answer parks the role for you to
+# handle by hand.
+
+schema_version: 1
+
+identity:
+  first_name: "Alex"
+  last_name: "Example"
+  preferred_name: "Alex"        # repeat first_name if you have no other
+  email: "alex@example.com"
+  phone: "+1 555 0100"
+  location: "Exampletown, Massachusetts, United States"
+  country: "United States"
+
+# Answers the two questions almost every board asks, and nothing else.
+#   citizen_or_pr         authorized now, will never need sponsorship
+#   needs_sponsorship_now not authorized yet, needs sponsorship from day one
+#   time_limited          authorized now (F-1 OPT, STEM extension, ...),
+#                         will need sponsorship later
+#
+# The loader cross-checks this against the "## Work authorization" section of
+# profile/preferences.md and refuses to run if the two disagree, or if that
+# section states no status. This is a legal claim sent under your name, so it
+# is not a keyword rule and cannot be overridden by one.
+work_authorization:
+  status: time_limited
+
+# Greenhouse renders an education block that appears in no question array. It
+# fills school--0 / degree--0 / discipline--0 / start-year--0 / end-year--0,
+# and start-month--0 / end-month--0 where the board asks for them. Everything
+# except the years is a react-select over a large remote taxonomy, so the
+# strings have to match an option it offers — /apply asserts the selection
+# stuck and parks the role if it did not.
+education:
+  school: "Example University"
+  degree: "Master's Degree"
+  discipline: "Computer Science"
+  start_year: 2019
+  end_year: 2021
+  # start_month: "September"
+  # end_month: "May"
+
+# Rare (1 in 60 boards) but required wherever it renders. Your current or most
+# recent role, one entry. Delete the block if you would rather park those roles
+# than answer them.
+employment:
+  company_name: "Widget Corp"
+  title: "Widget Operations Analyst"
+  start_month: "January"
+  start_year: 2023
+  end_month: "June"
+  end_year: 2025
+  current_role: false
+
+# Everything the employer wrote themselves. Matching is: normalize the question
+# label (casefold, drop punctuation), then test each keyword as a substring.
+# First rule wins, so the file order is the precedence.
+#
+# `answer` may be one string or a list tried in order. Use a list for anything
+# the board renders as a dropdown: the option labels are written per employer
+# and no single string hits them all. "How did you hear about this job" came
+# back with eight disjoint option sets across eight sampled boards.
+#
+# A rule that answers nothing the board offers parks the role rather than
+# picking something close.
+rules:
+  - match: [linkedin]
+    answer: "https://linkedin.com/in/example"
+  - match: [github]
+    answer: "https://github.com/example"
+  - match: [website, portfolio, personal site]
+    answer: "https://example.com"
+  - match: [salary, compensation, desired rate of pay, pay expectation]
+    answer: "Open — targeting market rate for the level."
+  - match: [start date, when can you start, earliest availability, notice period]
+    answer: "Two weeks from offer."
+  # Keep these narrow. A keyword like "referred by" also matches "If referred
+  # by a current employee, please list their name", which is free text.
+  - match: [how did you hear, how did you learn, become aware]
+    answer: ["Careers Page", "Company Website", "Other Job Board", "Other"]
+  - match: [relocate]
+    answer: ["Yes"]
+  - match: [pronouns]
+    answer: ["They/Them"]
+
+# No rules for gender, race, veteran or disability status: those are the EEOC
+# and demographic blocks, and /apply opts out of every one of them structurally.
+#
+# No rules for sponsorship, visas or work authorization either — the loader
+# rejects those keywords. See work_authorization above.

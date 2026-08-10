@@ -1,0 +1,46 @@
+# Synthetic answer config for tests. Widget world, no real person.
+schema_version: 1
+
+identity:
+  first_name: "Alex"
+  last_name: "Example"
+  preferred_name: "Alex"
+  email: "alex@example.com"
+  phone: "+1 555 0100"
+  location: "Exampletown, Massachusetts, United States"
+  country: "United States"
+
+work_authorization:
+  status: time_limited
+
+education:
+  school: "Example University"
+  degree: "Master's Degree"
+  discipline: "Computer Science"
+  start_year: 2019
+  end_year: 2021
+  start_month: "September"
+  end_month: "May"
+
+employment:
+  company_name: "Widget Corp"
+  title: "Widget Operations Analyst"
+  start_month: "January"
+  start_year: 2023
+  end_month: "June"
+  end_year: 2025
+  current_role: false
+
+rules:
+  - match: [linkedin]
+    answer: "https://linkedin.com/in/example"
+  - match: [website, portfolio]
+    answer: "https://example.com"
+  - match: [salary, desired rate of pay, compensation]
+    answer: "Open — targeting market rate for the level."
+  - match: [when can you start, notice period]
+    answer: "Two weeks from offer."
+  - match: [how did you hear, how did you learn]
+    answer: ["Careers Page", "Other Job Board", "Other"]
+  - match: [pronouns]
+    answer: ["They/Them"]

@@ -216,6 +216,7 @@ class TestTemplateCoverage:
             "contacts.example.yaml",
             "companies.example.yaml",
             "discovery.example.yaml",
+            "application_answers.example.yaml",
             "verticals.example.yaml",
             "pii_denylist.example.txt",
             "resume_template.example.docx",

@@ -1,0 +1,448 @@
+{
+  "absolute_url": "https://example.com",
+  "data_compliance": [
+    {
+      "type": "gdpr",
+      "requires_consent": true,
+      "requires_processing_consent": false,
+      "requires_retention_consent": true,
+      "retention_period": 365,
+      "demographic_data_consent_applies": false
+    }
+  ],
+  "internal_job_id": 3498849,
+  "location": {
+    "name": "Mexico (Remote)"
+  },
+  "metadata": [
+    {
+      "id": 85707,
+      "name": "Headcount #",
+      "value": null,
+      "value_type": "short_text"
+    }
+  ],
+  "id": 1000001,
+  "updated_at": "2026-08-06T09:34:49-04:00",
+  "requisition_id": "P-5152",
+  "title": " Customer Service Specialist ",
+  "company_name": "Gasket Works",
+  "first_published": "2026-07-20T17:21:59-04:00",
+  "language": "en",
+  "application_deadline": null,
+  "departments": [
+    {
+      "id": 44621,
+      "name": "7010 Commercial Admin",
+      "child_ids": [],
+      "parent_id": 42022
+    }
+  ],
+  "offices": [
+    {
+      "id": 266562,
+      "name": "Mexico (Remote)",
+      "location": null,
+      "child_ids": [],
+      "parent_id": null
+    }
+  ],
+  "ai_disclaimer": null,
+  "include_ai_disclaimer": null,
+  "ai_opt_out_request_url": null,
+  "compliance": [
+    {
+      "type": "eeoc",
+      "questions": [],
+      "description": "&lt;p&gt;PUBLIC BURDEN STATEMENT: According to the Paperwork Reduction Act of 1995 no persons are required to respond to a collection of information unless such collection displays a valid OMB control number. This survey should take about 5 minutes to complete.&lt;/p&gt;\n"
+    },
+    {
+      "type": "eeoc",
+      "questions": [
+        {
+          "required": false,
+          "label": "DisabilityStatus",
+          "fields": [
+            {
+              "name": "disability_status",
+              "type": "multi_value_single_select",
+              "values": [
+                {
+                  "label": "I do not want to answer",
+                  "value": "3"
+                },
+                {
+                  "label": "No, I do not have a disability and have not had one in the past",
+                  "value": "2"
+                },
+                {
+                  "label": "Yes, I have a disability, or have had one in the past",
+                  "value": "1"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "&lt;h3&gt;&lt;strong&gt;Voluntary Self-Identification of Disability&lt;/strong&gt;&lt;/h3&gt;\n&lt;div style=&quot;display:flex; justify-content:space-between;&quot;&gt;\n  &lt;div&gt;\n    &lt;div&gt;Form CC-305&lt;/div&gt;\n    &lt;div&gt;Page 1 of 1&lt;/div&gt;\n  &lt;/div&gt;\n  &lt;div&gt;\n    &lt;div&gt;OMB Control Number 1250-0005&lt;/div&gt;\n    &lt;div&gt;Expires 04/30/2026&lt;/div&gt;\n  &lt;/div&gt;\n&lt;/div&gt;\n&lt;br&gt;\n&lt;strong&gt;Why are you being asked to complete this form?&lt;/strong&gt;\n&lt;p&gt;We are a federal contractor or subcontractor. The law requires us to provide equal employment opportunity to qualified people with disabilities. We have a goal of having at least 7% of our workers as people with disabilities. The law says we must measure our progress towards this goal. To do this, we must ask applicants and employees if they have a disability or have ever had one. People can become disabled, so we need to ask this question at least every five years.&lt;/p&gt;\n&lt;p&gt;Completing this form is voluntary, and we hope that you will choose to do so. Your answer is confidential. No one who makes hiring decisions will see it. Your decision to complete the form and your answer will not harm you in any way. If you want to learn more about the law or this form, visit the U.S. Department of Labor\u2019s Office of Federal Contract Compliance Programs (OFCCP) website at &lt;a href=&quot;https://www.dol.gov/ofccp&quot; target=&quot;_blank&quot;&gt;www.dol.gov/ofccp&lt;/a&gt;.&lt;/p&gt;\n&lt;strong&gt;How do you know if you have a disability?&lt;/strong&gt;\n&lt;p&gt;A disability is a condition that substantially limits one or more of your \u201cmajor life activities.\u201d If you have or have ever had such a condition, you are a person with a disability. &lt;strong&gt;Disabilities include, but are not limited to:&lt;/strong&gt;&lt;/p&gt;\n&lt;ul&gt;\n  &lt;li&gt;Alcohol or other substance use disorder (not currently using drugs illegally)&lt;/li&gt;\n  &lt;li&gt;Autoimmune disorder, for example, lupus, fibromyalgia, rheumatoid arthritis, HIV/AIDS&lt;/li&gt;\n  &lt;li&gt;Blind or low vision&lt;/li&gt;\n  &lt;li&gt;Cancer (past or present)&lt;/li&gt;\n  &lt;li&gt;Cardiovascular or heart disease&lt;/li&gt;\n  &lt;li&gt;Celiac disease&lt;/li&gt;\n  &lt;li&gt;Cerebral palsy&lt;/li&gt;\n  &lt;li&gt;Deaf or serious difficulty hearing&lt;/li&gt;\n  &lt;li&gt;Diabetes&lt;/li&gt;\n  &lt;li&gt;Disfigurement, for example, disfigurement caused by burns, wounds, accidents, or congenital disorders&lt;/li&gt;\n  &lt;li&gt;Epilepsy or other seizure disorder&lt;/li&gt;\n  &lt;li&gt;Gastrointestinal disorders, for example, Crohn&#39;s Disease, irritable bowel syndrome&lt;/li&gt;\n  &lt;li&gt;Intellectual or developmental disability&lt;/li&gt;\n  &lt;li&gt;Mental health conditions, for example, depression, bipolar disorder, anxiety disorder, schizophrenia, PTSD&lt;/li&gt;\n  &lt;li&gt;Missing limbs or partially missing limbs&lt;/li&gt;\n  &lt;li&gt;Mobility impairment, benefiting from the use of a wheelchair, scooter, walker, leg brace(s) and/or other supports&lt;/li&gt;\n  &lt;li&gt;Nervous system condition, for example, migraine headaches, Parkinson\u2019s disease, multiple sclerosis (MS)&lt;/li&gt;\n  &lt;li&gt;Neurodivergence, for example, attention-deficit/hyperactivity disorder (ADHD), autism spectrum disorder, dyslexia, dyspraxia, other learning disabilities&lt;/li&gt;\n  &lt;li&gt;Partial or complete paralysis (any cause)&lt;/li&gt;\n  &lt;li&gt;Pulmonary or respiratory conditions, for example, tuberculosis, asthma, emphysema&lt;/li&gt;\n  &lt;li&gt;Short stature (dwarfism)&lt;/li&gt;\n  &lt;li&gt;Traumatic brain injury&lt;/li&gt;\n&lt;/ul&gt;\n"
+    },
+    {
+      "type": "eeoc",
+      "questions": [
+        {
+          "required": false,
+          "label": "VeteranStatus",
+          "fields": [
+            {
+              "name": "veteran_status",
+              "type": "multi_value_single_select",
+              "values": [
+                {
+                  "label": "I don't wish to answer",
+                  "value": "3"
+                },
+                {
+                  "label": "I identify as one or more of the classifications of a protected veteran",
+                  "value": "2"
+                },
+                {
+                  "label": "I am not a protected veteran",
+                  "value": "1"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "&lt;p&gt;\n  If you believe you belong to any of the categories of protected veterans listed below, please indicate by making the appropriate selection.\n  As a government contractor subject to the Vietnam Era Veterans&#39; Readjustment Assistance Act (VEVRAA), we request this information in order to measure\n  the effectiveness of the outreach and positive recruitment efforts we undertake pursuant to VEVRAA. Classification of protected categories\n  is as follows:\n&lt;/p&gt;\n&lt;p&gt;A &quot;disabled veteran&quot; is one of the following: a veteran of the U.S. military, ground, naval or air service who is entitled to compensation (or who but for the receipt of military retired pay would be entitled to compensation) under laws administered by the Secretary of Veterans Affairs; or a person who was discharged or released from active duty because of a service-connected disability.&lt;/p&gt;\n&lt;p&gt;A &quot;recently separated veteran&quot; means any veteran during the three-year period beginning on the date of such veteran&#39;s discharge or release from active duty in the U.S. military, ground, naval, or air service.&lt;/p&gt;\n&lt;p&gt;An &quot;active duty wartime or campaign badge veteran&quot; means a veteran who served on active duty in the U.S. military, ground, naval or air service during a war, or in a campaign or expedition for which a campaign badge has been authorized under the laws administered by the Department of Defense.&lt;/p&gt;\n&lt;p&gt;An &quot;Armed forces service medal veteran&quot; means a veteran who, while serving on active duty in the U.S. military, ground, naval or air service, participated in a United States military operation for which an Armed Forces service medal was awarded pursuant to Executive Order 12985.&lt;/p&gt;\n"
+    },
+    {
+      "type": "eeoc",
+      "questions": [
+        {
+          "required": false,
+          "label": "Race",
+          "fields": [
+            {
+              "name": "race",
+              "type": "multi_value_single_select",
+              "values": [
+                {
+                  "label": "Decline To Self Identify",
+                  "value": "8"
+                },
+                {
+                  "label": "Two or More Races",
+                  "value": "7"
+                },
+                {
+                  "label": "Native Hawaiian or Other Pacific Islander",
+                  "value": "6"
+                },
+                {
+                  "label": "White",
+                  "value": "5"
+                },
+                {
+                  "label": "Hispanic or Latino",
+                  "value": "4"
+                },
+                {
+                  "label": "Black or African American",
+                  "value": "3"
+                },
+                {
+                  "label": "Asian",
+                  "value": "2"
+                },
+                {
+                  "label": "American Indian or Alaskan Native",
+                  "value": "1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "required": false,
+          "label": "Gender",
+          "fields": [
+            {
+              "name": "gender",
+              "type": "multi_value_single_select",
+              "values": [
+                {
+                  "label": "Decline To Self Identify",
+                  "value": "3"
+                },
+                {
+                  "label": "Female",
+                  "value": "2"
+                },
+                {
+                  "label": "Male",
+                  "value": "1"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "&lt;h3&gt;&lt;strong&gt;Voluntary Self-Identification&lt;/strong&gt;&lt;/h3&gt;&lt;br/&gt;&lt;p&gt;For government reporting purposes, we ask candidates to respond to the below self-identification survey.\nCompletion of the form is entirely voluntary. Whatever your decision, it will not be considered in the hiring\nprocess or thereafter. Any information that you do provide will be recorded and maintained in a\nconfidential file.&lt;/p&gt;\n\n&lt;p&gt;As set forth in Gasket Works\u2019s Equal Employment Opportunity policy,\nwe do not discriminate on the basis of any protected group status under any applicable law.&lt;/p&gt;\n"
+    }
+  ],
+  "demographic_questions": null,
+  "questions": [
+    {
+      "description": null,
+      "label": "First Name",
+      "required": true,
+      "fields": [
+        {
+          "name": "first_name",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Last Name",
+      "required": true,
+      "fields": [
+        {
+          "name": "last_name",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Email",
+      "required": true,
+      "fields": [
+        {
+          "name": "email",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Phone",
+      "required": true,
+      "fields": [
+        {
+          "name": "phone",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Resume/CV",
+      "required": true,
+      "fields": [
+        {
+          "name": "resume",
+          "type": "input_file",
+          "values": []
+        },
+        {
+          "name": "resume_text",
+          "type": "textarea",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Cover Letter",
+      "required": false,
+      "fields": [
+        {
+          "name": "cover_letter",
+          "type": "input_file",
+          "values": []
+        },
+        {
+          "name": "cover_letter_text",
+          "type": "textarea",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Do you now or will you in the future require visa sponsorship to work in the country where this position is based?",
+      "required": true,
+      "fields": [
+        {
+          "name": "question_68166152",
+          "type": "multi_value_single_select",
+          "values": [
+            {
+              "label": "Yes",
+              "value": 1
+            },
+            {
+              "label": "No",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Were you previously employed by Gasket Works?",
+      "required": true,
+      "fields": [
+        {
+          "name": "question_68166153",
+          "type": "multi_value_single_select",
+          "values": [
+            {
+              "label": "Yes",
+              "value": 1
+            },
+            {
+              "label": "No",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "How did you hear about this job?",
+      "required": true,
+      "fields": [
+        {
+          "name": "question_68166154",
+          "type": "multi_value_single_select",
+          "values": [
+            {
+              "label": "Gasket Works Careers Page",
+              "value": 732298819
+            },
+            {
+              "label": "Google",
+              "value": 732298820
+            },
+            {
+              "label": "Twitter",
+              "value": 732298821
+            },
+            {
+              "label": "Facebook",
+              "value": 732298822
+            },
+            {
+              "label": "LinkedIn",
+              "value": 732298823
+            },
+            {
+              "label": "Glassdoor",
+              "value": 732298824
+            },
+            {
+              "label": "Indeed",
+              "value": 732298825
+            },
+            {
+              "label": "A Current Gasket Works Employee",
+              "value": 732298826
+            },
+            {
+              "label": "Career Fair/Conference/Trade Show/Other Event",
+              "value": 732298827
+            },
+            {
+              "label": "Other",
+              "value": 732298828
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "If you\u2019ve selected \u201cOther\u201d, please specify.",
+      "required": false,
+      "fields": [
+        {
+          "name": "question_68166155",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "LinkedIn Profile",
+      "required": false,
+      "fields": [
+        {
+          "name": "question_68166156",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Website",
+      "required": false,
+      "fields": [
+        {
+          "name": "question_68166157",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    }
+  ],
+  "location_questions": [
+    {
+      "description": null,
+      "label": "Longitude",
+      "required": true,
+      "fields": [
+        {
+          "name": "longitude",
+          "type": "input_hidden",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Latitude",
+      "required": true,
+      "fields": [
+        {
+          "name": "latitude",
+          "type": "input_hidden",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Location",
+      "required": true,
+      "fields": [
+        {
+          "name": "location",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    }
+  ]
+}

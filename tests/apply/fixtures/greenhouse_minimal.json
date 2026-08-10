@@ -1,0 +1,162 @@
+{
+ "absolute_url": "https://job-boards.greenhouse.io/widgetcorp/jobs/4298509009",
+ "data_compliance": [
+  {
+   "type": "gdpr",
+   "requires_consent": false,
+   "requires_processing_consent": false,
+   "requires_retention_consent": false,
+   "retention_period": null,
+   "demographic_data_consent_applies": false
+  }
+ ],
+ "internal_job_id": 4174088009,
+ "location": {
+  "name": "Sparks, Nevada, United States"
+ },
+ "metadata": [
+  {
+   "id": 5664603009,
+   "name": "Employment Type",
+   "value": "Other",
+   "value_type": "single_select"
+  },
+  {
+   "id": 6373862009,
+   "name": "Estimated Income Range",
+   "value": {
+    "unit": "USD",
+    "max_value": "100000.0",
+    "min_value": "65000.0"
+   },
+   "value_type": "currency_range"
+  }
+ ],
+ "id": 4298509009,
+ "updated_at": "2026-07-29T13:18:10-04:00",
+ "requisition_id": "8",
+ "title": "Widget Engineer",
+ "company_name": "Widget Corp",
+ "first_published": "2026-06-25T15:07:15-04:00",
+ "language": "en",
+ "application_deadline": null,
+ "departments": [
+  {
+   "id": 4035371009,
+   "name": "Sales Field Expansion",
+   "child_ids": [],
+   "parent_id": null
+  }
+ ],
+ "offices": [
+  {
+   "id": 4042158009,
+   "name": "West",
+   "location": null,
+   "child_ids": [],
+   "parent_id": null
+  }
+ ],
+ "ai_disclaimer": null,
+ "include_ai_disclaimer": null,
+ "ai_opt_out_request_url": null,
+ "compliance": null,
+ "demographic_questions": null,
+ "questions": [
+  {
+   "description": null,
+   "label": "First Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "first_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Last Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "last_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Preferred First Name",
+   "required": false,
+   "fields": [
+    {
+     "name": "preferred_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Email",
+   "required": true,
+   "fields": [
+    {
+     "name": "email",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Phone",
+   "required": true,
+   "fields": [
+    {
+     "name": "phone",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Resume/CV",
+   "required": false,
+   "fields": [
+    {
+     "name": "resume",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "resume_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Cover Letter",
+   "required": false,
+   "fields": [
+    {
+     "name": "cover_letter",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "cover_letter_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  }
+ ],
+ "location_questions": []
+}

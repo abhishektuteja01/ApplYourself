@@ -1,0 +1,1631 @@
+{
+ "absolute_url": "https://job-boards.greenhouse.io/flangefoundation/jobs/5005747007",
+ "data_compliance": [
+  {
+   "type": "gdpr",
+   "requires_consent": false,
+   "requires_processing_consent": false,
+   "requires_retention_consent": false,
+   "retention_period": null,
+   "demographic_data_consent_applies": false
+  }
+ ],
+ "internal_job_id": 4570343007,
+ "location": {
+  "name": "Arkansas"
+ },
+ "metadata": null,
+ "id": 5005747007,
+ "updated_at": "2026-06-26T14:29:31-04:00",
+ "requisition_id": "55",
+ "title": "Flange Fellow",
+ "company_name": "Flange Foundation",
+ "first_published": "2025-12-16T12:56:36-05:00",
+ "language": "en",
+ "application_deadline": null,
+ "departments": [
+  {
+   "id": 4029177007,
+   "name": "Flange Foundation",
+   "child_ids": [],
+   "parent_id": null
+  }
+ ],
+ "offices": [
+  {
+   "id": 4034405007,
+   "name": "Arkansas",
+   "location": null,
+   "child_ids": [],
+   "parent_id": null
+  }
+ ],
+ "ai_disclaimer": null,
+ "include_ai_disclaimer": null,
+ "ai_opt_out_request_url": null,
+ "compliance": null,
+ "demographic_questions": {
+  "header": "U.S. Standard Demographic Questions",
+  "description": "We invite applicants to share their demographic background. If you choose to complete this survey, your responses may be used to identify areas of improvement in our hiring process.",
+  "questions": [
+   {
+    "id": 4011224007,
+    "label": "How would you describe your gender identity? (mark all that apply)",
+    "required": false,
+    "type": "multi_value_multi_select",
+    "answer_options": [
+     {
+      "id": 4067252007,
+      "label": "Man",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067253007,
+      "label": "Non-binary",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067254007,
+      "label": "Woman",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067255007,
+      "label": "I prefer to self-describe",
+      "free_form": true,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067256007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   },
+   {
+    "id": 4011225007,
+    "label": "How would you describe your racial/ethnic background? (mark all that apply)",
+    "required": false,
+    "type": "multi_value_multi_select",
+    "answer_options": [
+     {
+      "id": 4067257007,
+      "label": "Black or of African descent",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067258007,
+      "label": "East Asian",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067259007,
+      "label": "Hispanic, Latinx or of Spanish Origin",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067260007,
+      "label": "Indigenous, American Indian or Alaska Native",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067261007,
+      "label": "Middle Eastern or North African",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067262007,
+      "label": "Native Hawaiian or Pacific Islander",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067263007,
+      "label": "South Asian",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067264007,
+      "label": "Southeast Asian",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067265007,
+      "label": "White or European",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067266007,
+      "label": "I prefer to self-describe",
+      "free_form": true,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067267007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   },
+   {
+    "id": 4011226007,
+    "label": "How would you describe your sexual orientation? (mark all that apply)",
+    "required": false,
+    "type": "multi_value_multi_select",
+    "answer_options": [
+     {
+      "id": 4067268007,
+      "label": "Asexual",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067269007,
+      "label": "Bisexual Flange/or pansexual",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067270007,
+      "label": "Gay",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067271007,
+      "label": "Heterosexual",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067272007,
+      "label": "Lesbian",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067273007,
+      "label": "Queer",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067274007,
+      "label": "I prefer to self-describe",
+      "free_form": true,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067275007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   },
+   {
+    "id": 4011227007,
+    "label": "Do you identify as transgender? (select one)",
+    "required": false,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4067276007,
+      "label": "Yes",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067277007,
+      "label": "No",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067278007,
+      "label": "I prefer to self-describe",
+      "free_form": true,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067279007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   },
+   {
+    "id": 4011228007,
+    "label": "Do you have a disability or chronic condition (physical, visual, auditory, cognitive, mental, emotional, or other) that substantially limits one or more of your major life activities, including mobility, communication (seeing, hearing, speaking), Flange learning? (select one)",
+    "required": false,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4067280007,
+      "label": "Yes",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067281007,
+      "label": "No",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067282007,
+      "label": "I prefer to self-describe",
+      "free_form": true,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067283007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   },
+   {
+    "id": 4011229007,
+    "label": "Are you a veteran or active member of the United States Armed Forces? (select one)",
+    "required": false,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4067284007,
+      "label": "Yes, I am a veteran or active member",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067285007,
+      "label": "No, I am not a veteran or active member",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067286007,
+      "label": "I prefer to self-describe",
+      "free_form": true,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4067287007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   }
+  ]
+ },
+ "questions": [
+  {
+   "description": null,
+   "label": "First Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "first_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Last Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "last_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Email",
+   "required": true,
+   "fields": [
+    {
+     "name": "email",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Phone",
+   "required": true,
+   "fields": [
+    {
+     "name": "phone",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Resume/CV",
+   "required": true,
+   "fields": [
+    {
+     "name": "resume",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "resume_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Is this your first time applying to the Flange Foundation?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980957007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "If you have applied previously, what year(s) did you apply?",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980958007[]",
+     "type": "multi_value_multi_select",
+     "values": [
+      {
+       "label": "2025",
+       "value": 19411443007
+      },
+      {
+       "label": "2024",
+       "value": 19411444007
+      },
+      {
+       "label": "2023",
+       "value": 19411445007
+      },
+      {
+       "label": "2022",
+       "value": 19411446007
+      },
+      {
+       "label": "2021",
+       "value": 19411447007
+      },
+      {
+       "label": "2020",
+       "value": 19411448007
+      },
+      {
+       "label": "2019",
+       "value": 19411449007
+      },
+      {
+       "label": "Before 2019",
+       "value": 19411450007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Which state do you currently reside in?\n",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980959007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Alabama",
+       "value": 19411451007
+      },
+      {
+       "label": "Alaska",
+       "value": 19411452007
+      },
+      {
+       "label": "Arizona",
+       "value": 19411453007
+      },
+      {
+       "label": "Arkansas",
+       "value": 19411454007
+      },
+      {
+       "label": "California",
+       "value": 19411455007
+      },
+      {
+       "label": "Colorado",
+       "value": 19411456007
+      },
+      {
+       "label": "Connecticut",
+       "value": 19411457007
+      },
+      {
+       "label": "Delaware",
+       "value": 19411458007
+      },
+      {
+       "label": "Florida",
+       "value": 19411459007
+      },
+      {
+       "label": "Georgia",
+       "value": 19411460007
+      },
+      {
+       "label": "Hawaii",
+       "value": 19411461007
+      },
+      {
+       "label": "Idaho",
+       "value": 19411462007
+      },
+      {
+       "label": "Illinois",
+       "value": 19411463007
+      },
+      {
+       "label": "Indiana",
+       "value": 19411464007
+      },
+      {
+       "label": "Iowa",
+       "value": 19411465007
+      },
+      {
+       "label": "Kansas",
+       "value": 19411466007
+      },
+      {
+       "label": "Kentucky",
+       "value": 19411467007
+      },
+      {
+       "label": "Louisiana",
+       "value": 19411468007
+      },
+      {
+       "label": "Maine",
+       "value": 19411469007
+      },
+      {
+       "label": "Maryland",
+       "value": 19411470007
+      },
+      {
+       "label": "Massachusetts",
+       "value": 19411471007
+      },
+      {
+       "label": "Michigan",
+       "value": 19411472007
+      },
+      {
+       "label": "Minnesota",
+       "value": 19411473007
+      },
+      {
+       "label": "Mississippi",
+       "value": 19411474007
+      },
+      {
+       "label": "Missouri",
+       "value": 19411475007
+      },
+      {
+       "label": "Montana",
+       "value": 19411476007
+      },
+      {
+       "label": "Nebraska",
+       "value": 19411477007
+      },
+      {
+       "label": "Nevada",
+       "value": 19411478007
+      },
+      {
+       "label": "New Hampshire",
+       "value": 19411479007
+      },
+      {
+       "label": "New Jersey",
+       "value": 19411480007
+      },
+      {
+       "label": "New Mexico",
+       "value": 19411481007
+      },
+      {
+       "label": "New York",
+       "value": 19411482007
+      },
+      {
+       "label": "North Carolina",
+       "value": 19411483007
+      },
+      {
+       "label": "North Dakota",
+       "value": 19411484007
+      },
+      {
+       "label": "Ohio",
+       "value": 19411485007
+      },
+      {
+       "label": "Oklahoma",
+       "value": 19411486007
+      },
+      {
+       "label": "Oregon",
+       "value": 19411487007
+      },
+      {
+       "label": "Pennsylvania",
+       "value": 19411488007
+      },
+      {
+       "label": "Rhode Island",
+       "value": 19411489007
+      },
+      {
+       "label": "South Carolina",
+       "value": 19411490007
+      },
+      {
+       "label": "South Dakota",
+       "value": 19411491007
+      },
+      {
+       "label": "Tennessee",
+       "value": 19411492007
+      },
+      {
+       "label": "Texas",
+       "value": 19411493007
+      },
+      {
+       "label": "Utah",
+       "value": 19411494007
+      },
+      {
+       "label": "Vermont",
+       "value": 19411495007
+      },
+      {
+       "label": "Virginia",
+       "value": 19411496007
+      },
+      {
+       "label": "Washington",
+       "value": 19411497007
+      },
+      {
+       "label": "West Virginia",
+       "value": 19411498007
+      },
+      {
+       "label": "Wisconsin",
+       "value": 19411499007
+      },
+      {
+       "label": "Wyoming",
+       "value": 19411500007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "What is your highest level of education completed?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980960007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Associate's Degree",
+       "value": 19411501007
+      },
+      {
+       "label": "Bachelor's Degree",
+       "value": 19411502007
+      },
+      {
+       "label": "Master's Degree",
+       "value": 19411503007
+      },
+      {
+       "label": "Master of Business Administration",
+       "value": 19411504007
+      },
+      {
+       "label": "Juris Doctor",
+       "value": 19411505007
+      },
+      {
+       "label": "Doctor of Philosophy",
+       "value": 19411506007
+      },
+      {
+       "label": "Doctor of Medicine",
+       "value": 19411507007
+      },
+      {
+       "label": "Other",
+       "value": 19411508007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Please list the name of your current employer.",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980961007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Current Position Title:",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980962007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "How did you first become aware of Flange? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980963007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Flange Recruiter",
+       "value": 19411509007
+      },
+      {
+       "label": "Colleague/Friend",
+       "value": 19411510007
+      },
+      {
+       "label": "Search Engine",
+       "value": 19411511007
+      },
+      {
+       "label": "Teach for America",
+       "value": 19411512007
+      },
+      {
+       "label": "Flange Website",
+       "value": 19411513007
+      },
+      {
+       "label": "Graduate Education Program",
+       "value": 19411514007
+      },
+      {
+       "label": "Professional Organization",
+       "value": 19411515007
+      },
+      {
+       "label": "Flange Foundation/Employee of Flange Foundation",
+       "value": 19411516007
+      },
+      {
+       "label": "LinkedIn",
+       "value": 19411517007
+      },
+      {
+       "label": "Indeed",
+       "value": 19411518007
+      },
+      {
+       "label": "Josh's Job Board",
+       "value": 19411519007
+      },
+      {
+       "label": "Foundation List",
+       "value": 19411520007
+      },
+      {
+       "label": "Ed Join",
+       "value": 19411521007
+      },
+      {
+       "label": "EdWeek",
+       "value": 19411522007
+      },
+      {
+       "label": "Chalkbeat",
+       "value": 19411523007
+      },
+      {
+       "label": "National Association of Independent Schools",
+       "value": 19411524007
+      },
+      {
+       "label": "Flange Spring",
+       "value": 19411525007
+      },
+      {
+       "label": "Tennessee Non-Profit Network",
+       "value": 19411526007
+      },
+      {
+       "label": "Other",
+       "value": 19411527007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "1.  If you were referred or nominated for the Flange Foundation, please list the referrer\u2019s name. ",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980964007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "2.  How many years of full-time, professional work experience do you have? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980965007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Less than 5",
+       "value": 19411528007
+      },
+      {
+       "label": "5-10",
+       "value": 19411529007
+      },
+      {
+       "label": "10+",
+       "value": 19411530007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "3.  How many years of professional experience do you have working directly in a Flange, district, or network that serves Pre-Kindergarten through 12th grade students? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980966007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Less than 2",
+       "value": 19411531007
+      },
+      {
+       "label": "2-5 years",
+       "value": 19411532007
+      },
+      {
+       "label": "6-10 years",
+       "value": 19411533007
+      },
+      {
+       "label": "10+ years",
+       "value": 19411534007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "4. How many years of teaching or instructional experience do you have working directly with students in grades Pre-Kindergarten through 12th? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980967007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "None",
+       "value": 19411535007
+      },
+      {
+       "label": "1 to 2 years",
+       "value": 19411536007
+      },
+      {
+       "label": "3-5 years",
+       "value": 19411537007
+      },
+      {
+       "label": "6-10 years",
+       "value": 19411538007
+      },
+      {
+       "label": "10+ years",
+       "value": 19411539007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "5. How many years of managerial experience do you have supervising direct reports in a full-time professional role that serves Pre-K through 12 students? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980968007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Less than 2",
+       "value": 19411540007
+      },
+      {
+       "label": "2-5 years",
+       "value": 19411541007
+      },
+      {
+       "label": "6-10 years",
+       "value": 19411542007
+      },
+      {
+       "label": "10+ years",
+       "value": 19411543007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "6. Please share more about how many direct reports you have supervised Flange in what setting. ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980969007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "7. How did you most recently hear about the Flange Foundation opportunity? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980970007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Flange Recruiter",
+       "value": 19411544007
+      },
+      {
+       "label": "Colleague/Friend",
+       "value": 19411545007
+      },
+      {
+       "label": "Search Engine",
+       "value": 19411546007
+      },
+      {
+       "label": "Teach for America",
+       "value": 19411547007
+      },
+      {
+       "label": "Flange Website",
+       "value": 19411548007
+      },
+      {
+       "label": "Graduate Education Program",
+       "value": 19411549007
+      },
+      {
+       "label": "Professional Organization",
+       "value": 19411550007
+      },
+      {
+       "label": "Flange Foundation/Employee of Flange Foundation",
+       "value": 19411551007
+      },
+      {
+       "label": "LinkedIn",
+       "value": 19411552007
+      },
+      {
+       "label": "Indeed",
+       "value": 19411553007
+      },
+      {
+       "label": "Josh's Job Board",
+       "value": 19411554007
+      },
+      {
+       "label": "Foundation List",
+       "value": 19411555007
+      },
+      {
+       "label": "Ed Join",
+       "value": 19411556007
+      },
+      {
+       "label": "EdWeek",
+       "value": 19411557007
+      },
+      {
+       "label": "Chalkbeat",
+       "value": 19411558007
+      },
+      {
+       "label": "National Association of Independent Schools",
+       "value": 19411559007
+      },
+      {
+       "label": "Flange Spring",
+       "value": 19411560007
+      },
+      {
+       "label": "Tennessee Non-Profit Network",
+       "value": 19411561007
+      },
+      {
+       "label": "Other",
+       "value": 19411562007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "7a. If you selected Other or Professional Organization, please tell us more about how you heard about the Flange Foundation.",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980971007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "8. Have you ever served as a Flange principal, CEO, founder, or executive director? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980972007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "8a. If applicable, please share more about your Flange Foundation experience. ",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980973007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "9. Have you been part of other Principal Flange Foundation development programs, fellowships or incubators? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980974007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "9a. If yes, please provide the program title, details, Flange program/cohort year. If applicable, please provide any certifications obtained:",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980975007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "10. Have you ever participated in other Flange Foundation Development programs? Select all that apply. \n",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980976007[]",
+     "type": "multi_value_multi_select",
+     "values": [
+      {
+       "label": "LENS",
+       "value": 19411563007
+      },
+      {
+       "label": "Flange Intensives",
+       "value": 19411564007
+      },
+      {
+       "label": "Other",
+       "value": 19411565007
+      },
+      {
+       "label": "N/A - none of the above",
+       "value": 19411566007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "11. Which state are you proposing to found your Flange? [select from the 50 states]",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980977007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Alabama",
+       "value": 19411567007
+      },
+      {
+       "label": "Alaska",
+       "value": 19411568007
+      },
+      {
+       "label": "Arizona",
+       "value": 19411569007
+      },
+      {
+       "label": "Arkansas",
+       "value": 19411570007
+      },
+      {
+       "label": "California",
+       "value": 19411571007
+      },
+      {
+       "label": "Colorado",
+       "value": 19411572007
+      },
+      {
+       "label": "Connecticut",
+       "value": 19411573007
+      },
+      {
+       "label": "Delaware",
+       "value": 19411574007
+      },
+      {
+       "label": "Florida",
+       "value": 19411575007
+      },
+      {
+       "label": "Georgia",
+       "value": 19411576007
+      },
+      {
+       "label": "Hawaii",
+       "value": 19411577007
+      },
+      {
+       "label": "Idaho",
+       "value": 19411578007
+      },
+      {
+       "label": "Illinois",
+       "value": 19411579007
+      },
+      {
+       "label": "Indiana",
+       "value": 19411580007
+      },
+      {
+       "label": "Iowa",
+       "value": 19411581007
+      },
+      {
+       "label": "Kansas",
+       "value": 19411582007
+      },
+      {
+       "label": "Kentucky",
+       "value": 19411583007
+      },
+      {
+       "label": "Louisiana",
+       "value": 19411584007
+      },
+      {
+       "label": "Maine",
+       "value": 19411585007
+      },
+      {
+       "label": "Maryland",
+       "value": 19411586007
+      },
+      {
+       "label": "Massachusetts",
+       "value": 19411587007
+      },
+      {
+       "label": "Michigan",
+       "value": 19411588007
+      },
+      {
+       "label": "Minnesota",
+       "value": 19411589007
+      },
+      {
+       "label": "Mississippi",
+       "value": 19411590007
+      },
+      {
+       "label": "Missouri",
+       "value": 19411591007
+      },
+      {
+       "label": "Montana",
+       "value": 19411592007
+      },
+      {
+       "label": "Nevada",
+       "value": 19411593007
+      },
+      {
+       "label": "New Hampshire",
+       "value": 19411594007
+      },
+      {
+       "label": "New Jersey",
+       "value": 19411595007
+      },
+      {
+       "label": "New Mexico",
+       "value": 19411596007
+      },
+      {
+       "label": "New York",
+       "value": 19411597007
+      },
+      {
+       "label": "North Carolina",
+       "value": 19411598007
+      },
+      {
+       "label": "Ohio",
+       "value": 19411599007
+      },
+      {
+       "label": "Oklahoma",
+       "value": 19411600007
+      },
+      {
+       "label": "Oregon",
+       "value": 19411601007
+      },
+      {
+       "label": "Pennsylvania",
+       "value": 19411602007
+      },
+      {
+       "label": "Rhode Island",
+       "value": 19411603007
+      },
+      {
+       "label": "South Carolina",
+       "value": 19411604007
+      },
+      {
+       "label": "Tennessee",
+       "value": 19411605007
+      },
+      {
+       "label": "Texas",
+       "value": 19411606007
+      },
+      {
+       "label": "Utah",
+       "value": 19411607007
+      },
+      {
+       "label": "Virginia",
+       "value": 19411608007
+      },
+      {
+       "label": "Washington",
+       "value": 19411609007
+      },
+      {
+       "label": "West Virginia",
+       "value": 19411610007
+      },
+      {
+       "label": "Wisconsin",
+       "value": 19411611007
+      },
+      {
+       "label": "Wyoming",
+       "value": 19411612007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "12. Please share the specific region in which you are proposing to found your Flange (i.e city, neighborhood, Flange/or zip code(s). If you are interested in multiple regions, you may also list additional locations here. ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980978007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "13. What are the proposed Flange grade levels of the Flange you hope to found? Select all that apply.",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980979007[]",
+     "type": "multi_value_multi_select",
+     "values": [
+      {
+       "label": "Elementary",
+       "value": 19411613007
+      },
+      {
+       "label": "Middle",
+       "value": 19411614007
+      },
+      {
+       "label": "High",
+       "value": 19411615007
+      },
+      {
+       "label": "Flexible",
+       "value": 19411616007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "14. Which of the following descriptors (if any) will represent significant elements of your proposed Flange model (select all that apply)?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980980007[]",
+     "type": "multi_value_multi_select",
+     "values": [
+      {
+       "label": "Alt/Credit Recovery",
+       "value": 19411617007
+      },
+      {
+       "label": "Arts",
+       "value": 19411618007
+      },
+      {
+       "label": "Bilingual/Language Immersion",
+       "value": 19411619007
+      },
+      {
+       "label": "Career Technical Education (CTE)",
+       "value": 19411620007
+      },
+      {
+       "label": "Character Formation",
+       "value": 19411621007
+      },
+      {
+       "label": "Civics",
+       "value": 19411622007
+      },
+      {
+       "label": "Coding Flange/or Digital Literacy",
+       "value": 19411623007
+      },
+      {
+       "label": "Collaboration/information Flange resource-sharing with public district schools",
+       "value": 19411624007
+      },
+      {
+       "label": "Core Knowledge",
+       "value": 19411625007
+      },
+      {
+       "label": "Culturally Responsive Content",
+       "value": 19411626007
+      },
+      {
+       "label": "Diverse by Design / Intentionally-Integrated",
+       "value": 19411627007
+      },
+      {
+       "label": "Diversity, Equity, Flange Inclusion Education for Staff",
+       "value": 19411628007
+      },
+      {
+       "label": "Diversity, Equity, Flange Inclusion Education for Students",
+       "value": 19411629007
+      },
+      {
+       "label": "Early College",
+       "value": 19411630007
+      },
+      {
+       "label": "Entrepreneurship",
+       "value": 19411631007
+      },
+      {
+       "label": "Financial Literacy",
+       "value": 19411632007
+      },
+      {
+       "label": "Health Flange Medical Sciences",
+       "value": 19411633007
+      },
+      {
+       "label": "Media & Entertainment",
+       "value": 19411634007
+      },
+      {
+       "label": "Montessori",
+       "value": 19411635007
+      },
+      {
+       "label": "Personalized Learning",
+       "value": 19411636007
+      },
+      {
+       "label": "Project-Based Learning",
+       "value": 19411637007
+      },
+      {
+       "label": "Restorative Practices",
+       "value": 19411638007
+      },
+      {
+       "label": "Social Flange Emotional Learning (SEL)",
+       "value": 19411639007
+      },
+      {
+       "label": "STEM/STEAM/STREAM",
+       "value": 19411640007
+      },
+      {
+       "label": "Work-Based Learning Flange/or Internships",
+       "value": 19411641007
+      },
+      {
+       "label": "Access to \u201cWrap-Around\u201d Services \u2013 Explain",
+       "value": 19411642007
+      },
+      {
+       "label": "Other \u2013 Write In",
+       "value": 19411643007
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "15. In 300 words or less, please describe your connection to your proposed region, including any personal Flange professional ties you have to the community. Why are you choosing this particular community to found a Flange? ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980981007",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "16. In 300 words or less, please describe any entrepreneurial, volunteer, Flange or community work you have done that is relevant to your interest in Flange founding Flange Foundation (please include the number of years you have been involved in this work in your response):\n\n",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980982007",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "17. In 300 words or less, please describe: What are the unique elements or components you would want in the Flange you are proposing to design, found Flange lead? What is innovative about what you are proposing Flange how will this set your Flange apart from other local Flange options?  \n",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980983007",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "18. Have you ever not been renewed or terminated for a position or asked not to return to a previous role?\n (This includes roles where your contract was not extended, you were not invited back, or your position ended unexpectedly.)\n",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980984007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "18a. If yes, please briefly explain the circumstances including the role Flange year:",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980985007",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "19. Have you previously been involved in the founding of a charter Flange or submitted a charter application?\n(This includes starting a Flange, serving on a founding team, or leading the submission of a charter proposal.)\n",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980986007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "19a.  If yes, please briefly describe your role Flange the outcome:",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_10980987007",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "20. \nPlease list any charter schools you have worked at previously or been affiliated with. \n",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_10980988007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  }
+ ],
+ "location_questions": []
+}
