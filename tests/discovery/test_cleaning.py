@@ -374,6 +374,74 @@ def test_exact_dedupe_keeps_longest_jd():
     assert out["url"].iloc[0] == "https://example.com/long"
 
 
+def test_exact_dedupe_prefers_applyable_url_over_longer_jd():
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator copy with boilerplate " * 60,
+         "url": "https://www.linkedin.com/jobs/view/123"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board copy " * 50,
+         "url": "https://job-boards.greenhouse.io/acme/jobs/456"},
+    ])
+    out = exact_dedupe(df)
+    assert len(out) == 1
+    assert out["url"].iloc[0] == "https://job-boards.greenhouse.io/acme/jobs/456"
+
+
+def test_exact_dedupe_applyable_preference_does_not_change_job_id():
+    rows = [
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator " * 80, "url": "https://www.linkedin.com/jobs/view/123"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board " * 10, "url": "https://jobs.lever.co/acme/789"},
+    ]
+    out = exact_dedupe(_clean_df(rows))
+    assert compute_job_id("acme", "widget functional consultant") == compute_job_id(
+        out["company_normalized"].iloc[0], out["title_normalized"].iloc[0])
+
+
+@pytest.mark.parametrize("applyable", [
+    "https://job-boards.greenhouse.io/acme/jobs/1",
+    "https://boards.greenhouse.io/embed/job_app?for=acme&token=1",
+    "https://jobs.lever.co/acme/abc",
+    "https://jobs.ashbyhq.com/acme/abc",
+])
+def test_exact_dedupe_recognises_each_board_host(applyable):
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator " * 80, "url": "https://www.indeed.com/viewjob?jk=1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board " * 5, "url": applyable},
+    ])
+    assert exact_dedupe(df)["url"].iloc[0] == applyable
+
+
+def test_exact_dedupe_falls_back_to_jd_len_when_neither_is_applyable():
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "short " * 10, "url": "https://www.linkedin.com/jobs/view/1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "much longer body " * 60, "url": "https://www.indeed.com/viewjob?jk=2"},
+    ])
+    out = exact_dedupe(df)
+    assert out["url"].iloc[0] == "https://www.indeed.com/viewjob?jk=2"
+
+
+def test_exact_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
+    # An indeed-sourced row whose job_url_direct resolved to a board: url is
+    # what is ranked, not source.
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "linkedin copy " * 80, "url": "https://www.linkedin.com/jobs/view/1",
+         "source": "linkedin"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "indeed copy " * 5, "url": "https://job-boards.greenhouse.io/acme/jobs/9",
+         "source": "indeed"},
+    ])
+    out = exact_dedupe(df)
+    assert out["source"].iloc[0] == "indeed"
+
+
 def test_blank_company_rows_are_dropped_not_collapsed(tmp_path):
     """A null company from JobSpy normalizes to "", so job_id becomes a function
     of the title alone and two rows from different employers collide — one is

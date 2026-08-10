@@ -62,7 +62,7 @@ CLEAN_COLUMNS: list[str] = [
 # Career-board sources: presence on the company's own board
 # this run IS the liveness signal, so the posted_date staleness cutoff does
 # not apply; a board row's pipeline lifetime is governed by the seen-ledger.
-from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
+from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES, ATS_URL_MARKERS
 CAREER_SOURCES: tuple[str, ...] = tuple(ATS_SOURCE_NAMES)
 
 # "manual" joins them for a different reason: an inbox clip or a URL ingest is
@@ -267,14 +267,26 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 # Step 4 — exact dedupe
 # ---------------------------------------------------------------------
 
+def _not_applyable(df: pd.DataFrame) -> pd.Series:
+    """False for rows whose url leads to a board application form. Sorted
+    ascending, so those rows win their group."""
+    url = df["url"].fillna("").astype(str) if "url" in df.columns else pd.Series("", index=df.index)
+    return ~url.str.contains("|".join(re.escape(m) for m in ATS_URL_MARKERS), case=False, regex=True)
+
+
 def exact_dedupe(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df.copy()
     df = df.copy()
     df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
-    df = df.sort_values("_jd_len", ascending=False, kind="stable")
+    # Applyability outranks jd_text length: an aggregator repost wins on
+    # appended boilerplate by a percent or two and costs the only url that can
+    # be submitted to. Both rows share company_normalized and title_normalized,
+    # so job_id is identical either way and no tracked role is orphaned.
+    df["_not_applyable"] = _not_applyable(df)
+    df = df.sort_values(["_not_applyable", "_jd_len"], ascending=[True, False], kind="stable")
     df = df.drop_duplicates(subset=["company_normalized", "title_normalized"], keep="first")
-    return df.drop(columns="_jd_len")
+    return df.drop(columns=["_jd_len", "_not_applyable"])
 
 
 # ---------------------------------------------------------------------
