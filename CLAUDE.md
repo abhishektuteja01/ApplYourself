@@ -36,10 +36,14 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 
 1. **Discovery** (`src/discovery/`, CLI `discover`) — deterministic, LLM-free
    overnight scrape. Sources in order: manual `inbox/*.md` clips → JobSpy
-   (LinkedIn + Indeed) → Greenhouse/Lever/Ashby JSON boards over
-   `data/universe/*.csv` + `profile/companies.yaml`. Board/inbox rows are
-   title-classified into a vertical at fetch time; unclassified rows dropped.
-   Always ends by running cleaning (try/finally), even after a crash/deadline.
+   (LinkedIn + Indeed) → Greenhouse/Lever/Ashby JSON boards and Workday
+   (list → title-classify → detail) over `data/universe/*.csv` +
+   `profile/companies.yaml`. Board/inbox rows are title-classified into a
+   vertical at fetch time; unclassified rows dropped. Always ends by running
+   cleaning (try/finally), even after a crash/deadline. Workday roles are
+   discovered and scored like any other row but are **manual-apply only** —
+   `src/apply/` never submits to one; the shortlist and `/apply run`'s report
+   both flag them so the gap is never silent.
 2. **Cleaning** (`src/discovery/cleaning.py`) — normalize, drop short/stale rows,
    drop rows outside the location allowlist, dedupe (exact then rapidfuzz
    WRatio ≥ 90), assign `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery
@@ -57,12 +61,14 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    through an 11-state machine.
 6. **Submission** (`/apply`; plumbing in `src/apply/` — `schema.py`,
    `domscan.py`, `reconcile.py`, `answers.py`, `plan.py`, `greenhouse.py`,
-   `fill.py` — and `src/apply_cli.py`) — consumes roles sitting at `tailored`
-   with both a resume and a cover letter on file, fills the board's
-   application form from `profile/application_answers.yaml`, and either
-   submits (transitioning to `applied` through `/track`) or parks the role
-   on whatever it could not resolve. Greenhouse only for now (see
-   `submit_plan.md` for the Ashby/Lever/Workday phases).
+   `lever.py`, `ashby.py`, `fill.py` — and `src/apply_cli.py`) — consumes
+   roles sitting at `tailored` with both a resume and a cover letter on file,
+   fills the board's application form from `profile/application_answers.yaml`,
+   and either submits (transitioning to `applied` through `/track`) or parks
+   the role on whatever it could not resolve. Greenhouse and Lever submit;
+   Ashby is plan-only (no fill driver yet — its combobox/toggle DOM was never
+   observed live); Workday is discovered but never submitted to, always
+   manual-apply (see `submit_plan.md`, gitignored, for the phase detail).
 
 ### `job_id` is a content hash — treat it as load-bearing
 
