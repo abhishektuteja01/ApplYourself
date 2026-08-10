@@ -360,13 +360,21 @@ _FOLLOWUP = re.compile(
 _STATUS_DISCLOSURE = re.compile(
     r"^\s*work\s+(?:status|eligibility|authori[sz]\w*\s+status)"
     r"|(?:confirm|indicate|update|select)\s+(?:\S+\s+){0,6}authori[sz]\w*\s+status"
-    r"|(?:what|which)\s+is\s+your\s+(?:nationalit|citizenship|visa|status)"
-    r"|\bnationalit\w*\s*[?:]?\s*$"
+    r"|(?:what|which)\s+is\s+your\s+(?:visa|status)"
     r"|(?:update|confirm|indicate|select)\s+(?:\w+\s+){0,3}employ\w*\s+status"
-    r"|citizenship\s+in|hold\s+citizenship"
-    r"|are\s+you\s+(?:currently\s+)?an?\s+\w+\s+citizen"
-    r"|citizen\s+of\s+a\s+country"
     r"|currently\s+in\s+a\s+period\s+of",
+    re.IGNORECASE,
+)
+# Nationality and citizenship are a COUNTRY, and `status_label` states a visa
+# status. Answering "What is your nationality?" with "F-1 STEM OPT" is not a
+# false legal claim but it is a nonsense answer in front of an employer, so these
+# park. Checked before `_STATUS_DISCLOSURE`, which would otherwise claim them.
+_NATIONALITY = re.compile(
+    r"nationalit"
+    r"|citizenship\s+in|hold\s+citizenship|citizenship\s+of"
+    r"|(?:what|which)\s+is\s+your\s+citizenship"
+    r"|are\s+you\s+(?:currently\s+)?an?\s+\w+\s+citizen"
+    r"|citizen\s+of\s+a\s+country",
     re.IGNORECASE,
 )
 
@@ -379,7 +387,8 @@ _YES_NO_VARIANTS = {True: ("Yes", "Yes."), False: ("No", "No.")}
 
 WORK_AUTH_CATEGORIES = (
     "plain", "qualified", "alternation", "sponsorship", "compound_option",
-    "names_other_country", "status_disclosure", "export_control", "proof",
+    "names_other_country", "status_disclosure", "nationality", "export_control",
+    "proof",
     "followup", "not_work_auth",
 )
 
@@ -413,6 +422,8 @@ def classify_work_authorization(label: str, options: tuple[str, ...] = ()) -> st
         return "export_control"
     if _FOLLOWUP.search(text):
         return "followup"
+    if _NATIONALITY.search(text):
+        return "nationality"
     if _STATUS_DISCLOSURE.search(text):
         return "status_disclosure"
     if _PROOF_FAMILY.search(text):
@@ -1039,6 +1050,12 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
             "work authorization: this asks whether you are a \"U.S. person\" as "
             "the export-control rules define it, which is a different question "
             "from work authorization and is yours to answer",
+            "B0",
+        )
+    if category == "nationality":
+        return _park(
+            "work authorization: asks your nationality or citizenship, which is a "
+            "country rather than the visa status `status_label` states",
             "B0",
         )
     if category == "followup":

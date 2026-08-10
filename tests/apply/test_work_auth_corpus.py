@@ -50,7 +50,8 @@ CORPUS = [
 # Categories whose answer is a statement only the user can make.
 STATUS_CLAIM = ("status_disclosure", "compound_option")
 # Categories that park no matter how the config is set.
-ALWAYS_PARK = ("export_control", "followup", "names_other_country", "alternation")
+ALWAYS_PARK = ("export_control", "followup", "names_other_country", "nationality",
+               "alternation")
 
 
 def ids(rows):
@@ -156,7 +157,11 @@ class TestNotWorkAuthStaysOutOfTheResolver:
     @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
     def test_it_resolves_at_tier_c_not_b0(self, row, configured):
         r = resolve(field_of(row), configured)
-        assert r.tier == "C", f"{r.tier} park would make this role manual-apply"
+        # "not B0" rather than "== C": with a fuller rules[] set some of these are
+        # legitimately answered by a Tier B rule, which is fine. What must never
+        # happen is landing in the work-auth resolver, whose parks are B0 and
+        # therefore unreachable from the /apply session.
+        assert r.tier != "B0", "a B0 park would make this role manual-apply"
 
 
 class TestCategoriesThatParkWhateverTheConfigSays:
@@ -290,8 +295,16 @@ class TestNoRowEverStatesSomethingFalse:
 
     @pytest.mark.parametrize("row", CORPUS, ids=ids(CORPUS))
     @pytest.mark.parametrize("scope", ["park", "no"])
-    def test_no_permanence_claim_is_ever_asserted(self, row, scope, answers):
-        a = dc_replace(answers, scope_qualified_answer=scope)
+    @pytest.mark.parametrize("claims", ["unset", "configured"])
+    def test_no_permanence_claim_is_ever_asserted(self, row, scope, claims,
+                                                  answers, configured):
+        """Runs with `status_option_candidates` populated as well as empty. That
+        path is the only one that can emit a long claim-bearing string, so it is
+        the one that can violate this — the day someone pastes "Yes, and I will
+        not require employer support..." into the list because a board offered
+        it, this is what catches it."""
+        base = configured if claims == "configured" else answers
+        a = dc_replace(base, scope_qualified_answer=scope)
         r = resolve(field_of(row), a)
         if r.action != "fill":
             return
