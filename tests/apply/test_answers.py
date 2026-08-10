@@ -457,10 +457,18 @@ class TestWorkAuthorization:
                   required=True, kind="react_select", options=["Yes", "No"])
         assert resolve(f, answers).parked
 
-    def test_a_work_authorization_question_rendered_as_free_text_parks(self, answers):
+    def test_a_work_authorization_question_rendered_as_free_text_is_written_out(
+        self, answers
+    ):
+        """A yes/no question in a text box is still a yes/no question, and
+        writing the word is the same answer as picking the option. This used to
+        park; 11 groups in the 237-board harvest are exactly this shape, every
+        one of them an ordinary sponsorship or authorization question."""
         f = field(label="Will you now or in the future require sponsorship?",
                   required=True, kind="text")
-        assert resolve(f, answers).parked
+        r = resolve(f, answers)
+        assert r.action == "fill"
+        assert r.value == "Yes"          # time_limited requires it
 
 
 class TestRules:
@@ -652,11 +660,10 @@ class TestAnUnnamedCountryIsTheJobsCountry:
         "Are you authorized to work in the stated location of this role?",
         "Are you legally authorized to work in your current country of employment?",
     ]
-    # NB not covered here: "Do you have the legal **right** to work in ...".
-    # That parks for an unrelated reason — `_AUTHORIZED_FAMILY` matches
-    # "authorized to work", not "right to work", so it never reaches the
-    # country check at all. A phrasing gap for the corpus pass, not a country
-    # one; fixing it here would hide it.
+    # "Do you have the legal **right** to work in..." reaches the country check
+    # too now — `_AUTHORIZED_FAMILY` learned that spelling, along with "eligible
+    # to work" and "have valid work authorization", in the corpus pass. Every
+    # real phrasing of all three lives in test_work_auth_corpus.py.
 
     @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
     def test_a_country_relative_question_resolves(self, answers, label):

@@ -163,18 +163,79 @@ _OPT_OUT_FALLBACKS = (
 # load error; a question label that lands in here is answered by exactly one of
 # the two families below, or parked.
 WORK_AUTHORIZATION_DOMAIN = re.compile(
-    r"sponsor|visa|work\s+authoriz|authou?riz\w*\s+to\s+work|citizenship|right\s+to\s+work",
+    r"sponsor|visa|work\s+authori[sz]|authou?ri[sz]\w*\s+to\s+work|citizenship|right\s+to\s+work"
+    # Widened from the 237-board harvest, where a whole family of ordinary
+    # phrasings sat outside the domain entirely and fell through to tier C:
+    # "Are you currently eligible to work in the United States?", "Work
+    # Eligibility Status", "Work Status", "What is your nationality?".
+    r"|eligib\w*\s+to\s+(?:work|live)|work\s+eligib|employment\s+eligib"
+    r"|work\s+status|nationalit|\bcitizen\b|optional\s+practical\s+training"
+    # "Please confirm you are authorized a to work in USA or Canada" — a typo on
+    # a live board that the strict "authorized to work" form missed.
+    r"|authou?ri[sz]\w*\s+\w{0,3}\s*to\s+work",
+    re.IGNORECASE,
+)
+# Caught by the widened domain above but NOT work authorization. Checked FIRST,
+# because these must keep falling through to tier C where the /apply session
+# answers them as ordinary questions — pulling them into the work-auth resolver
+# parks them at B0, and a B0 park makes the whole role manual-apply.
+#
+# Positive shape match, not keyword-absence: the relocation-cities checkbox
+# names "visa sponsorship" in its own preamble ("we offer relocation support
+# including visa sponsorship, housing assistance and more") and would stay
+# in-domain however the domain regex were written.
+_NOT_WORK_AUTH = re.compile(
+    r"relocation\s+support"                       # relocation-city checkbox
+    r"|at\s+least\s+18\s+years"                   # age eligibility
+    r"|security\s+clearance|clearance\s+eligib"    # clearance, not work auth
+    r"|notetaker|ai\s+interview\s+tool"            # interview-process consent
+    r"|privacy\s+notice|privacy\s+policy"          # policy acknowledgement
+    r"|hereby\s+certify|knowingly\s+withheld",     # application certification
     re.IGNORECASE,
 )
 _AUTHORIZED_FAMILY = re.compile(
-    r"authou?riz\w*\s+to\s+work|legally\s+authou?riz", re.IGNORECASE
+    r"authou?ri[sz]\w*\s+to\s+work|legally\s+authou?ri[sz]"
+    # Same question, three more spellings, all live: "Do you have the legal
+    # right to work in...", "Are you legally eligible to work in the US?", "Do
+    # you have valid U.S. work authorization?". Each used to fall past every
+    # family and park with "matches no answerable family".
+    r"|right\s+to\s+work|eligib\w*\s+to\s+(?:work|live)"
+    r"|(?:have|hold)\s+(?:\S+\s+){0,3}work\s+authori[sz]"
+    r"|authou?ri[sz]\w*\s+\w{0,3}\s*to\s+work",
+    re.IGNORECASE,
+)
+# "Can you provide proof of your authorization?" is answerable by anyone who is
+# authorized at all — it asks about documentation, not about scope.
+_PROOF_FAMILY = re.compile(
+    r"(?:proof|evidence|documentation)\s+of\s+(?:\w+\s+){0,3}"
+    r"(?:authoriz|eligib|right\s+to\s+work)"
+    r"|able\s+to\s+provide\s+(?:\w+\s+){0,3}(?:proof|documentation)",
+    re.IGNORECASE,
 )
 _SPONSORSHIP_FAMILY = re.compile(
-    r"(?:requir|need)\w*[^?]*sponsor|sponsor\w*[^?]*(?:requir|need)", re.IGNORECASE
+    r"(?:requir|need)\w*[^?]*sponsor|sponsor\w*[^?]*(?:requir|need)"
+    # The family assumed the word "sponsor". Two live labels ask exactly the same
+    # thing without it: "Do you need a work visa?", "Do you require work
+    # authorization?" — both used to match no family at all.
+    r"|(?:requir|need)\w*\s+(?:\S+\s+){0,3}(?:work\s+)?visa"
+    r"|(?:requir|need)\w*\s+(?:\S+\s+){0,3}work\s+authori[sz]",
+    re.IGNORECASE,
 )
 # "Are you able to work without sponsorship?" inverts the answer. Never guess it.
 _SPONSORSHIP_NEGATED = re.compile(
     r"without\s+(?:\w+\s+){0,2}sponsor|not\s+(?:\w+\s+){0,2}requir\w*[^?]*sponsor",
+    re.IGNORECASE,
+)
+# When a label reads as both families, which one is actually being asked. These
+# all open with the sponsorship verb and mention authorization only as the thing
+# the sponsorship would maintain: "Will you require sponsorship ... to maintain
+# authorization to work in the United States?". Four observed shapes; five labels
+# used to park here as "reads as both families".
+_SPONSORSHIP_GOVERNS = re.compile(
+    r"^\s*(?:will|do|would)\s+you\s+(?:\S+\s+){0,8}"
+    r"(?:requir|need)\w*\s+(?:\S+\s+){0,4}sponsor"
+    r"|(?:requir|need)\w*\s+(?:\w+\s+){0,3}sponsor\w*\s+(?:\w+\s+){0,4}"
+    r"(?:to|for)\s+(?:maintain|retain|extend|continue|obtain|remain|commence)",
     re.IGNORECASE,
 )
 # The same never-guess policy, for the authorization family. `authorized_now`
@@ -190,7 +251,9 @@ _AUTHORIZED_QUALIFIED = re.compile(
     r"|ongoing"
     r"|indefinite\w*"
     r"|unrestricted"
-    r"|without\s+(?:\w+\s+){0,3}(?:sponsor|restrict)"
+    # "...without the need for current or future employer sponsorship?" puts
+    # seven words between the two, so a narrow gap read it as the plain question.
+    r"|without\s+(?:\S+\s+){0,8}(?:sponsor|restrict)"
     r"|now\s+or\s+in\s+the\s+future"
     r"|no\s+(?:\w+\s+){0,2}restrict",
     re.IGNORECASE,
@@ -223,7 +286,8 @@ _QUALIFIER_OFFERED_AS_ALTERNATIVE = re.compile(
 # not derivable: it is a statement about the user's own circumstances that only
 # they can make. `park` is the default and hands the question back to them.
 SCOPE_QUALIFIED_ANSWERS = ("park", "yes", "no")
-WORK_AUTHORIZATION_KEYS = ("status", "scope_qualified_answer")
+WORK_AUTHORIZATION_KEYS = ("status", "scope_qualified_answer", "status_label",
+                           "status_option_candidates")
 # The authorization question is country-scoped; the sponsorship one is not, and
 # names a country on only 2 of the 5 captured boards. The queue only ever holds
 # roles that passed discovery's US location allowlist.
@@ -261,7 +325,127 @@ _NAMES_OTHER_COUNTRY = re.compile(
     re.IGNORECASE,
 )
 
+# "U.S. person" as ITAR/EAR defines it (citizen, permanent resident, refugee or
+# asylee). Not the same question as work authorization — a time-limited status
+# is authorized to work and is *not* a U.S. person — and a wrong answer has
+# consequences past this application. Always parks, whatever the config says.
+_EXPORT_CONTROL = re.compile(
+    r"u\.?s\.?\s+person|export\s+control|itar\b|\bear\b\s+regulat", re.IGNORECASE
+)
+# A request to ELABORATE, not a question that can be answered yes/no. Asks which
+# sponsorship you would need, not which status you hold, so `status_label` does
+# not answer it either — these park.
+#
+# Deliberately not keyed on a leading "If": "If not, do you now or will you in
+# the future need sponsorship...?" is a live Lever label and an ordinary,
+# answerable sponsorship question. The elaboration request is what distinguishes
+# these, not the conditional.
+_FOLLOWUP = re.compile(
+    r"if\s+you\s+(?:answered|selected)"
+    r"|please\s+(?:share|provide|specify|elaborate|explain)"
+    r"|(?:what|which)\s+(?:\w+\s+){0,2}(?:sponsorship|visa|permit)\s+"
+    r"(?:would|do|will)"
+    # Asks you to ENUMERATE, so a Yes/No is not an answer to it at all: "In what
+    # countries do you have the unrestricted right to work?" is free text, and
+    # letting the qualified branch write "No" into it put a nonsense answer in
+    # front of an employer. Narrow on purpose — "What is your nationality?" is a
+    # status question and is classified as one.
+    r"|(?:what|which)\s+(?:\S+\s+){0,2}countr",
+    re.IGNORECASE,
+)
+# Asks WHICH status or nationality you hold, rather than yes/no. Answered from
+# `status_label` (free text) or `status_option_candidates` (a picker), never
+# derived — `status: time_limited` covers OPT, H-1B and TN alike and cannot say
+# which one applies.
+_STATUS_DISCLOSURE = re.compile(
+    r"^\s*work\s+(?:status|eligibility|authori[sz]\w*\s+status)"
+    r"|(?:confirm|indicate|update|select)\s+(?:\S+\s+){0,6}authori[sz]\w*\s+status"
+    r"|(?:what|which)\s+is\s+your\s+(?:nationalit|citizenship|visa|status)"
+    r"|\bnationalit\w*\s*[?:]?\s*$"
+    r"|(?:update|confirm|indicate|select)\s+(?:\w+\s+){0,3}employ\w*\s+status"
+    r"|citizenship\s+in|hold\s+citizenship"
+    r"|are\s+you\s+(?:currently\s+)?an?\s+\w+\s+citizen"
+    r"|citizen\s+of\s+a\s+country"
+    r"|currently\s+in\s+a\s+period\s+of",
+    re.IGNORECASE,
+)
+
 _YES_NO = {True: "Yes", False: "No"}
+# A board that renders "Yes." / "No." rather than "Yes" / "No" — two of them do.
+# A punctuation variant is safe to try because `_pick_option` matches whole
+# normalized labels; it can never reach a longer option that merely starts with
+# the same word.
+_YES_NO_VARIANTS = {True: ("Yes", "Yes."), False: ("No", "No.")}
+
+WORK_AUTH_CATEGORIES = (
+    "plain", "qualified", "alternation", "sponsorship", "compound_option",
+    "names_other_country", "status_disclosure", "export_control", "proof",
+    "followup", "not_work_auth",
+)
+
+
+def _offers_bare_yes_no(options: tuple[str, ...]) -> bool:
+    """Whether a bare "Yes"/"No" is on offer at all.
+
+    When it is not, every option carries a claim past the polarity — group after
+    group in the harvest offers three different sentences all starting "Yes,",
+    meaning three different things. Answering one from a Yes/No would state
+    whichever the board listed first.
+    """
+    bare = {"yes", "no"}
+    return any(_norm_option(o).rstrip(".") in bare for o in options)
+
+
+def classify_work_authorization(label: str, options: tuple[str, ...] = ()) -> str | None:
+    """Which kind of work-authorization question this is, or None if the label
+    is in the domain but matches no category.
+
+    Classification only — it reads no config and picks no answer, so the same
+    label always lands in the same category whatever the user's status is
+    (R7: `src/` classifies and looks up; the clustering behind these categories
+    was judgment, done once in a command session against the 237-board harvest
+    and recorded in `tests/apply/fixtures/work_auth_labels.jsonl`).
+    """
+    text = label or ""
+    if _NOT_WORK_AUTH.search(text):
+        return "not_work_auth"
+    if _EXPORT_CONTROL.search(text):
+        return "export_control"
+    if _FOLLOWUP.search(text):
+        return "followup"
+    if _STATUS_DISCLOSURE.search(text):
+        return "status_disclosure"
+    if _PROOF_FAMILY.search(text):
+        return "proof"
+
+    authorized = bool(_AUTHORIZED_FAMILY.search(text))
+    sponsorship = (bool(_SPONSORSHIP_FAMILY.search(text))
+                   and not _SPONSORSHIP_NEGATED.search(text))
+    if authorized and sponsorship:
+        # Both families read in the label. The governing verb settles it: "will
+        # you require sponsorship to maintain your work authorization" is a
+        # sponsorship question that happens to name authorization. Deliberately
+        # narrow — four observed shapes, not an attempt to parse grammar.
+        if _SPONSORSHIP_GOVERNS.search(text):
+            authorized = False
+        else:
+            sponsorship = False
+    if not (authorized or sponsorship):
+        return None
+
+    if authorized and not _NAMES_THE_US.search(text) and not _NAMES_US_ABBREV.search(text) \
+            and _NAMES_OTHER_COUNTRY.search(text):
+        # Only the authorization question is country-scoped. Needing sponsorship
+        # is true wherever you are not already authorized, so "will you require
+        # sponsorship to work in the UK?" is answerable and stays `sponsorship`.
+        return "names_other_country"
+    if options and not _offers_bare_yes_no(options):
+        return "compound_option"
+    if authorized and _AUTHORIZED_QUALIFIED.search(text):
+        if _QUALIFIER_OFFERED_AS_ALTERNATIVE.search(text):
+            return "alternation"
+        return "qualified"
+    return "sponsorship" if sponsorship else "plain"
 
 # preferences.md is prose, so the check is non-contradiction rather than a
 # parse: derive whatever statuses the Work authorization section states, and
@@ -281,7 +465,7 @@ _PREFERENCES_MARKERS = {
     # perfectly ordinary lowercase bullet derived nothing and hard-failed
     # every submission.
     "time_limited": re.compile(
-        r"(?i:\bF-1\b|STEM\s+extension|time[- ]limited\s+work\s+authorization)"
+        r"(?i:\bF-1\b|STEM\s+extension|time[- ]limited\s+work\s+authori[sz]ation)"
         r"|\bOPT\b"
     ),
 }
@@ -316,7 +500,7 @@ def _negated(line: str, marker_start: int) -> bool:
             head = head[cut + len(boundary):]
     return bool(_NEGATION.search(head[-_NEGATION_WINDOW:]))
 _PREFERENCES_SECTION = re.compile(
-    r"^##\s+work\s+authorization\s*$(?P<body>.*?)(?=^##\s|\Z)",
+    r"^##\s+work\s+authori[sz]ation\s*$(?P<body>.*?)(?=^##\s|\Z)",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 
@@ -369,6 +553,17 @@ class Answers:
     """How to answer an authorization question that narrows the scope —
     permanence, employer-independence, freedom from sponsorship. `park` (the
     default) hands it to the user. See `SCOPE_QUALIFIED_ANSWERS`."""
+    status_label: str = ""
+    """What to answer when a form asks WHICH status you hold rather than yes/no
+    ("Work Authorization status (US Citizen, Green Card Holder, etc.)"). Not
+    derivable: `status` groups OPT, H-1B and TN together and cannot say which
+    applies. Empty (the default) parks the question."""
+    status_option_candidates: tuple[str, ...] = ()
+    """Option spellings that are true of you, in preference order, for a picker
+    whose choices carry a claim past yes/no ("Yes, and I am currently in F-1
+    status", "STEM OPT"). Matched by exact normalized label like every other
+    candidate list, so an entry that no board offers simply never fires and the
+    question parks. Consulted only by the work-authorization resolver."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -655,6 +850,19 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
             f"not one of {list(SCOPE_QUALIFIED_ANSWERS)} — quote it, since YAML "
             f"reads a bare yes/no as a boolean"
         )
+    status_label = work_auth.get("status_label", "")
+    if not isinstance(status_label, str):
+        raise AnswersError(
+            f"work_authorization.status_label: must be a string, got "
+            f"{type(status_label).__name__}"
+        )
+    raw_candidates = work_auth.get("status_option_candidates", []) or []
+    if not isinstance(raw_candidates, list) or not all(
+            isinstance(c, str) and c.strip() for c in raw_candidates):
+        raise AnswersError(
+            "work_authorization.status_option_candidates: must be a list of "
+            "non-empty strings, each the exact option text a board offers"
+        )
     _check_preferences(
         status, Path(preferences_path) if preferences_path is not None else PREFERENCES_PATH
     )
@@ -666,6 +874,8 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
         status=status,
         rules=_parse_rules(data),
         scope_qualified_answer=scope_qualified,
+        status_label=status_label.strip(),
+        status_option_candidates=tuple(c.strip() for c in raw_candidates),
     )
 
 
@@ -815,57 +1025,111 @@ def _resolve_demographic(field: MergedField) -> Resolution:
 
 def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolution:
     label = field.label or ""
-    authorized = bool(_AUTHORIZED_FAMILY.search(label))
-    sponsorship = bool(_SPONSORSHIP_FAMILY.search(label)) and not _SPONSORSHIP_NEGATED.search(label)
+    options = tuple(o.label for o in field.options)
+    category = classify_work_authorization(label, options)
 
-    if authorized and sponsorship:
-        return _park("work authorization: label reads as both families", "B0")
-    if authorized:
-        names_us = bool(_NAMES_THE_US.search(label) or _NAMES_US_ABBREV.search(label))
-        if not names_us and _NAMES_OTHER_COUNTRY.search(label):
-            return _park(
-                "work authorization: the question names a country other than "
-                "the US, which this status does not answer",
-                "B0",
-            )
+    if category == "names_other_country":
+        return _park(
+            "work authorization: the question names a country other than "
+            "the US, which this status does not answer",
+            "B0",
+        )
+    if category == "export_control":
+        return _park(
+            "work authorization: this asks whether you are a \"U.S. person\" as "
+            "the export-control rules define it, which is a different question "
+            "from work authorization and is yours to answer",
+            "B0",
+        )
+    if category == "followup":
+        return _park(
+            "work authorization: a conditional follow-up asking which "
+            "sponsorship you would need, which no configured answer states",
+            "B0",
+        )
+    if category in ("status_disclosure", "compound_option"):
+        return _resolve_status_claim(field, answers, category)
+    if category == "alternation":
+        # The qualifier is one option among several, so the narrow reading
+        # `scope_qualified_answer` settles is not the question being asked.
+        # Parked whatever the setting says.
+        return _park(
+            "work authorization: the scope qualifier is offered as an "
+            "alternative (\"permanent or temporary\", \"with or without\"), "
+            "so it does not narrow the question the way "
+            "scope_qualified_answer assumes",
+            "B0",
+        )
+    if category is None:
+        return _park("work authorization: label matches no answerable family", "B0")
+
+    if category == "qualified":
         # Only a time-limited status makes these unanswerable. For a citizen
         # or permanent resident, "permanent basis", "any employer" and
         # "without sponsorship" are all knowable and all Yes — parking them
         # blocked 7 of 89 harvested boards for the wrong user.
-        if answers.status != "citizen_or_pr" and _AUTHORIZED_QUALIFIED.search(label):
-            if _QUALIFIER_OFFERED_AS_ALTERNATIVE.search(label):
-                # The qualifier is one option among several, so the narrow
-                # reading `scope_qualified_answer` settles is not the question
-                # being asked. Parked whatever the setting says.
-                return _park(
-                    "work authorization: the scope qualifier is offered as an "
-                    "alternative (\"permanent or temporary\", \"with or without\"), "
-                    "so it does not narrow the question the way "
-                    "scope_qualified_answer assumes",
-                    "B0",
-                )
-            if answers.scope_qualified_answer == "park":
-                return _park(
-                    "work authorization: the question qualifies the scope "
-                    "(permanence / any employer / without sponsorship), which this "
-                    "status alone cannot answer. Set "
-                    "work_authorization.scope_qualified_answer to answer these "
-                    "without review",
-                    "B0",
-                )
+        if answers.status == "citizen_or_pr":
+            value = answers.authorized_now
+        elif answers.scope_qualified_answer == "park":
+            return _park(
+                "work authorization: the question qualifies the scope "
+                "(permanence / any employer / without sponsorship), which this "
+                "status alone cannot answer. Set "
+                "work_authorization.scope_qualified_answer to answer these "
+                "without review",
+                "B0",
+            )
+        else:
             # The user's own stated answer, not an inference from `status` (R7:
             # src/ reads the preference, it does not form the judgment).
             value = answers.scope_qualified_answer == "yes"
-        else:
-            value = answers.authorized_now
-    elif sponsorship:
+    elif category == "sponsorship":
         value = answers.requires_sponsorship
-    else:
-        return _park("work authorization: label matches no answerable family", "B0")
+    else:                                   # plain, proof
+        value = answers.authorized_now
 
     if not field.options:
-        return _park("work authorization: not a select, so Yes/No does not fit", "B0")
-    return _resolve_choice(field, (_YES_NO[value],), "B0", "work authorization")
+        # A yes/no question rendered as a text box — 11 groups in the harvest,
+        # every one of them ordinary. Writing the word is the same answer.
+        return _fill(_YES_NO[value], "B0")
+    picked = _pick_option(field, _YES_NO_VARIANTS[value])
+    if picked is not None:
+        return _fill((picked,) if field.multi else picked, "B0")
+    # The board offers no bare Yes/No for the polarity this resolves to — the
+    # "Yes" branch is split across several qualified sentences. Only the user's
+    # own list can say which is true of them.
+    return _resolve_status_claim(field, answers, "compound_option")
+
+
+def _resolve_status_claim(field: MergedField, answers: Answers,
+                          category: str) -> Resolution:
+    """Answer from the user's own stated facts, or park.
+
+    Two shapes, one source. `status_disclosure` asks which status you hold;
+    `compound_option` offers choices that each carry a claim past yes/no. Both
+    are statements only the user can make, so `src/` looks them up and never
+    infers them from `status` (R7).
+    """
+    if field.options:
+        picked = (_pick_option(field, answers.status_option_candidates)
+                  if answers.status_option_candidates else None)
+        if picked is not None:
+            return _fill((picked,) if field.multi else picked, "B0")
+        offered = [o.label for o in field.options]
+        return _park(
+            f"work authorization: none of the options states your status. Add "
+            f"the true one to work_authorization.status_option_candidates "
+            f"(offered: {offered})",
+            "B0",
+        )
+    if answers.status_label:
+        return _fill(answers.status_label, "B0")
+    return _park(
+        "work authorization: asks which status you hold, which `status` alone "
+        "does not say. Set work_authorization.status_label to answer these "
+        "without review",
+        "B0",
+    )
 
 
 def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
@@ -902,7 +1166,12 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
     if identity is not None:
         return identity
 
-    if WORK_AUTHORIZATION_DOMAIN.search(field.label or ""):
+    # `_NOT_WORK_AUTH` first: the widened domain regex catches an age check, a
+    # clearance question and a relocation-cities checkbox that must keep falling
+    # through to tier C, where the /apply session answers them as ordinary
+    # questions. A B0 park would make the whole role manual-apply instead.
+    if (WORK_AUTHORIZATION_DOMAIN.search(field.label or "")
+            and not _NOT_WORK_AUTH.search(field.label or "")):
         resolution = _resolve_work_authorization(field, answers)
         # Blank is never a false claim. "What visa type do you hold? (If
         # applicable)" is optional free text on the boards that ask it, and

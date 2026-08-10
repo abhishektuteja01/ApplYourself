@@ -51,9 +51,32 @@ identity:
 # as one option among several ("on a permanent or temporary basis", "with or
 # without sponsorship") stay parked whatever you set, because there the narrow
 # reading is not what is being asked.
+# `status_label` and `status_option_candidates` answer the other shape of
+# work-auth question: the ones that ask WHICH status you hold rather than yes/no.
+# "Work Authorization status (US Citizen, Green Card Holder, etc.)" as free text,
+# or a picker offering [None, US Citizen, Permanent Resident, H1, H4, F1, TN].
+# `status` cannot answer those — it groups OPT, H-1B and TN into one bucket and
+# cannot say which applies to you. Leave either one out and those questions park.
+#
+#   status_label              free text, written verbatim into a text box
+#   status_option_candidates  option spellings that are TRUE of you, in
+#                             preference order, for a picker
+#
+# Candidates are matched by exact option text, so an entry no board offers simply
+# never fires and the question parks — the failure mode is a park, never a wrong
+# claim. Add the real option text as you meet boards that ask.
+#
+# Order them narrowest-true-first. "F1" is true whether or not a STEM extension
+# has started; "STEM OPT" asserts it has. Put the one you can always stand behind
+# ahead of the more specific one.
 work_authorization:
   status: time_limited
   scope_qualified_answer: park
+  # status_label: "F-1 STEM OPT"
+  # status_option_candidates:
+  #   - "F1"
+  #   - "STEM OPT"
+  #   - "Yes, and I am currently in F-1 status (if you currently have OPT or STEM-EXT OPT or CPT, you will select this answer.)"
 
 # Greenhouse renders an education block that appears in no question array. It
 # fills school--0 / degree--0 / discipline--0 / start-year--0 / end-year--0,
