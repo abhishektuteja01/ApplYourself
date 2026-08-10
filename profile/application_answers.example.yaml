@@ -72,6 +72,11 @@ employment:
 #
 # A rule that answers nothing the board offers parks the role rather than
 # picking something close.
+#
+# Use `exact:` instead of `match:` when the label is too short to keyword
+# safely — it compares the whole normalized label. "State" is a required
+# dropdown on 3 of 39 sampled boards, and a `state` substring also matches
+# "United States" and "please state their name". A rule may carry both.
 rules:
   - match: [linkedin]
     answer: "https://linkedin.com/in/example"
@@ -91,6 +96,16 @@ rules:
     answer: ["Yes"]
   - match: [pronouns]
     answer: ["They/Them"]
+  # Recurring screeners. Read the real option strings off a live form before
+  # writing one of these — "Do you hold a security clearance?" is Yes/No, but
+  # "CLEARANCE ELIGIBILITY" offers three prose options.
+  - match: [at least 18]
+    answer: ["Yes"]
+  # Whole-label rules, for labels a substring keyword cannot target safely.
+  - exact: [state]
+    answer: ["Massachusetts"]
+  - exact: [current company, current employer]
+    answer: "Widget Corp"
 
 # No rules for gender, race, veteran or disability status: those are the EEOC
 # and demographic blocks, and /apply opts out of every one of them structurally.

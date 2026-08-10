@@ -59,6 +59,8 @@ EMPLOYMENT_KEYS = (
     "end_month",
     "end_year",
 )
+# Flags on the employment block, parsed as booleans rather than strings.
+EMPLOYMENT_FLAGS = ("current_role", "only_when_required")
 
 # status -> (authorized to work in the US now, will require sponsorship at some
 # point). The two answers are derived, never configured separately: a pair the
@@ -116,9 +118,11 @@ _EEOC_OPT_OUT = {
     "veteran_status": ("I don't wish to answer",),
     "disability_status": ("I do not want to answer",),
 }
-# hispanic_ethnicity is DOM-only: no API question, so no option list to match a
-# typed string against, and optional on every board seen. Left untouched.
-_EEOC_LEAVE_BLANK = frozenset({"hispanic_ethnicity"})
+# hispanic_ethnicity is DOM-only: no API question, so nothing here has an option
+# list to match against and it parks. That is not a policy of leaving it blank —
+# opened in a browser it offers Yes / No / Decline To Self Identify, so the
+# generic opt-out below answers it. fill.py re-resolves it once it can read the
+# widget (§4). Nothing changes for the static path: no options, still parks.
 
 # Tried in order after the per-id string above, and for demographic questions
 # whose decline option carries no flag.
@@ -205,8 +209,18 @@ def _norm_option(text: str) -> str:
 
 @dataclass(frozen=True)
 class Rule:
-    match: tuple[str, ...]      # normalized keywords
+    match: tuple[str, ...]      # normalized keywords, tested as substrings
     answers: tuple[str, ...]    # candidates, in preference order
+    exact: tuple[str, ...] = () # normalized labels, matched whole
+
+    def matches(self, label: str) -> bool:
+        """Whole-label first, then substring.
+
+        Some questions have labels too short to keyword safely: "State" is a
+        required dropdown on 3 of 39 boards, and a `state` substring also hits
+        "United States" and "please state their name". Those need `exact`.
+        """
+        return label in self.exact or any(k in label for k in self.match)
 
 
 @dataclass(frozen=True)
@@ -216,6 +230,18 @@ class Answers:
     employment: dict[str, str] | None
     status: str
     rules: tuple[Rule, ...]
+
+    @property
+    def employment_only_when_required(self) -> bool:
+        """Whether to fill the employment block only where the board demands it.
+
+        The block holds one role, and for anyone not currently employed that is
+        the most recent one rather than a current one. Volunteering it on a
+        board that left it optional implies a currency that may not hold, so
+        this is a switch rather than a fixed policy — someone whose block *is*
+        their current job wants it filled wherever it renders.
+        """
+        return bool((self.employment or {}).get("only_when_required"))
 
     @property
     def authorized_now(self) -> bool:
@@ -277,7 +303,7 @@ def _parse_block(data, key: str, required: tuple[str, ...],
     for field_key in optional:
         if block.get(field_key) is not None:
             out[field_key] = _require_str(block[field_key], f"{key}.{field_key}")
-    unknown = set(block) - set(required) - set(optional) - {"current_role"}
+    unknown = set(block) - set(required) - set(optional) - set(EMPLOYMENT_FLAGS)
     if unknown:
         raise AnswersError(f"{key}: unknown keys {sorted(unknown)}")
     return out
@@ -295,13 +321,18 @@ def _parse_rules(data) -> tuple[Rule, ...]:
         where = f"rules[{i}]"
         if not isinstance(entry, dict):
             raise AnswersError(f"{where}: not a mapping")
-        match = entry.get("match")
-        if not isinstance(match, list) or not match:
-            raise AnswersError(f"{where}.match: must be a non-empty list")
+        match = entry.get("match") or []
+        exact_raw = entry.get("exact") or []
+        for key, value in (("match", match), ("exact", exact_raw)):
+            if not isinstance(value, list):
+                raise AnswersError(f"{where}.{key}: must be a list")
+        if not match and not exact_raw:
+            raise AnswersError(f"{where}: needs a non-empty match or exact list")
         keywords = tuple(_norm(_require_str(k, f"{where}.match")) for k in match)
-        if any(not k for k in keywords):
-            raise AnswersError(f"{where}.match: a keyword normalizes to nothing")
-        for keyword in keywords:
+        exact = tuple(_norm(_require_str(k, f"{where}.exact")) for k in exact_raw)
+        if any(not k for k in keywords + exact):
+            raise AnswersError(f"{where}: a keyword normalizes to nothing")
+        for keyword in keywords + exact:
             if WORK_AUTHORIZATION_DOMAIN.search(keyword):
                 raise AnswersError(
                     f"{where}.match: {keyword!r} is a work-authorization keyword. "
@@ -314,10 +345,10 @@ def _parse_rules(data) -> tuple[Rule, ...]:
         if not candidates:
             raise AnswersError(f"{where}.answer: must not be empty")
         answers = tuple(_require_str(a, f"{where}.answer") for a in candidates)
-        unknown = set(entry) - {"match", "answer"}
+        unknown = set(entry) - {"match", "exact", "answer"}
         if unknown:
             raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
-        rules.append(Rule(match=keywords, answers=answers))
+        rules.append(Rule(match=keywords, answers=answers, exact=exact))
 
     # Matching is substring-and-first-wins, so an overlap is not a tie the file
     # order resolves — it is a rule silently shadowing another, which is how a
@@ -332,6 +363,26 @@ def _parse_rules(data) -> tuple[Rule, ...]:
                         raise AnswersError(
                             f"rules[{i}].match {a!r} overlaps rules[{j}].match {b!r}: "
                             "one rule would shadow the other"
+                        )
+            for a in rule.exact:
+                if a in other.exact:
+                    raise AnswersError(
+                        f"rules[{i}] and rules[{j}] both match the exact label {a!r}"
+                    )
+
+    # An exact rule exists because the label is too short to keyword safely, so
+    # a substring rule that also hits it defeats the point — and which one wins
+    # would depend on file order.
+    for i, rule in enumerate(rules):
+        for j, other in enumerate(rules):
+            if i == j:
+                continue
+            for label in rule.exact:
+                for keyword in other.match:
+                    if keyword in label:
+                        raise AnswersError(
+                            f"rules[{j}].match {keyword!r} also matches "
+                            f"rules[{i}].exact {label!r}: one would shadow the other"
                         )
     return tuple(rules)
 
@@ -392,7 +443,8 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
     employment = None
     if data.get("employment") is not None:
         employment = _parse_block(data, "employment", EMPLOYMENT_KEYS)
-        employment["current_role"] = bool(data["employment"].get("current_role"))
+        for flag in EMPLOYMENT_FLAGS:
+            employment[flag] = bool(data["employment"].get(flag))
 
     work_auth = data.get("work_authorization")
     if not isinstance(work_auth, dict):
@@ -445,6 +497,29 @@ def _resolve_choice(field: MergedField, candidates: tuple[str, ...], tier: str,
     return _fill((picked,) if field.multi else picked, tier)
 
 
+def _pick_country(field: MergedField, value: str) -> str | None:
+    """The country option, allowing for the dial code Greenhouse appends.
+
+    `#country` is not a country field. On 24 of 24 live boards it renders inside
+    `phone-input__country` — it is the phone number's dial-code selector, and
+    its options read "United States +1". So an exact match first, then the one
+    option that is the country followed by " +".
+
+    That second rule is exact, not fuzzy: only the dial code can follow, so
+    "United States" cannot reach "United States Minor Outlying Islands +246".
+    More than one match is still refused.
+    """
+    if not field.options:
+        return value
+    wanted = _norm_option(value)
+    for option in field.options:
+        if _norm_option(option.label) == wanted:
+            return option.label
+    hits = [o.label for o in field.options
+            if _norm_option(o.label).startswith(f"{wanted} +")]
+    return hits[0] if len(hits) == 1 else None
+
+
 def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None:
     if field.id in FILE_IDS:
         return Resolution("defer", tier="A", reason=field.id)
@@ -452,6 +527,14 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
     if key is None:
         return None
     value = answers.identity[key]
+    if field.id == "country":
+        picked = _pick_country(field, value)
+        if picked is None:
+            return _park(
+                f"identity.country: {value!r} matches none of "
+                f"{[o.label for o in field.options]}", "A"
+            )
+        return _fill(picked, "A")
     if field.kind == "react_select":
         return _resolve_choice(field, (value,), "A", f"identity.{key}")
     return _fill(value, "A")
@@ -487,9 +570,6 @@ def _resolve_repeating(field: MergedField, block: dict[str, str] | None, ids: di
 
 
 def _resolve_eeoc(field: MergedField) -> Resolution:
-    if field.id in _EEOC_LEAVE_BLANK:
-        return (_park(f"{field.id}: required, and no option list to opt out against", "A2")
-                if field.required else _skip("optional, left blank by policy", "A2"))
     preferred = _EEOC_OPT_OUT.get(field.id, ())
     candidates = preferred + tuple(o for o in _OPT_OUT_FALLBACKS if o not in preferred)
     picked = _pick_option(field, candidates) if field.options else None
@@ -538,7 +618,7 @@ def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
     if not label:
         return None
     for rule in answers.rules:
-        if any(keyword in label for keyword in rule.match):
+        if rule.matches(label):
             if field.kind == "file":
                 return _park("a rule cannot answer a file upload", "B")
             if field.options or field.kind == "react_select":

@@ -32,12 +32,17 @@ def _sleep_or_raise(delay: float, deadline_ts: float | None, url: str) -> None:
         raise CareersError(f"deadline reached before retry ({delay:.1f}s): {url}")
     time.sleep(delay)
 
-def fetch_json(
+def _fetch(
     url: str,
+    read,
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
 ):
-    """GET url -> parsed JSON. Retries 429/5xx (Retry-After capped at MAX_RETRY_AFTER)."""
+    """GET url, retrying 429/5xx, and hand the 200 response to `read`.
+
+    `read` owns what a 200 body means: a body it cannot use is a wall or a wrong
+    slug rather than a blip, so it raises instead of retrying.
+    """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = requests.get(url, timeout=timeout, headers=_HEADERS)
@@ -47,13 +52,7 @@ def fetch_json(
             _sleep_or_raise(RETRY_BASE_DELAY * attempt, deadline_ts, url)
             continue
         if resp.status_code == 200:
-            # A non-JSON 200 is a wall or a wrong slug, not a blip: no retry.
-            try:
-                return resp.json()
-            except ValueError as exc:
-                raise CareersError(
-                    f"invalid JSON body: {url}: {exc}", status=200, permanent=True
-                ) from exc
+            return read(resp)
         if resp.status_code == 404:
             raise CareersError(
                 f"board not found (404) — check the slug: {url}",
@@ -77,6 +76,43 @@ def fetch_json(
         # 401/403 walls included: a live board behind Cloudflare must not be pruned.
         raise CareersError(f"HTTP {resp.status_code}: {url}", status=resp.status_code)
     raise CareersError(f"exhausted retries: {url}")
+
+
+def fetch_json(
+    url: str,
+    timeout: int = REQUEST_TIMEOUT,
+    deadline_ts: float | None = None,
+):
+    """GET url -> parsed JSON. Retries 429/5xx (Retry-After capped at MAX_RETRY_AFTER)."""
+    def read(resp):
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise CareersError(
+                f"invalid JSON body: {url}: {exc}", status=200, permanent=True
+            ) from exc
+
+    return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts)
+
+
+def fetch_text(
+    url: str,
+    timeout: int = REQUEST_TIMEOUT,
+    deadline_ts: float | None = None,
+) -> str:
+    """GET url -> response body as text, same retry policy as fetch_json.
+
+    For the rendered application form, which is server-rendered HTML rather than
+    JSON. An empty 200 body is permanent: a board that answers with nothing is
+    not going to answer with something on a retry.
+    """
+    def read(resp) -> str:
+        text = resp.text or ""
+        if not text.strip():
+            raise CareersError(f"empty body: {url}", status=200, permanent=True)
+        return text
+
+    return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts)
 
 def iso_date(value) -> date | None:
     if not isinstance(value, str) or not value:

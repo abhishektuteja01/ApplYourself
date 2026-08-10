@@ -45,11 +45,17 @@ tailor-prep = "src.tailor_cli:main"
 profile-extract = "src.profile_extract:main"
 discover = "src.discovery.orchestrator:main"
 verticals-check = "src.verticals:main"
+apply = "src.apply_cli:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+]
+# Opt-in: `uv sync --group apply`. Discovery, scoring and tailoring must keep
+# working on a clone that never installs it.
+apply = [
+    "playwright>=1.47",
 ]
 
 [build-system]

@@ -55,6 +55,61 @@ def write_config(tmp_path, **overrides):
     return path
 
 
+class TestExactRules:
+    """Some labels are too short to keyword. "State" is a required dropdown on
+    3 of 39 live boards, and a `state` substring also hits "United States" and
+    "please state their name"."""
+
+    def _answers(self, tmp_path, rules):
+        return load_answers(write_config(tmp_path, rules=rules), PREFS)
+
+    def test_an_exact_rule_matches_the_whole_label(self, tmp_path):
+        a = self._answers(tmp_path, [{"exact": ["state"], "answer": ["California"]}])
+        assert resolve(field(label="State", options=["California"]), a).value == "California"
+
+    def test_an_exact_rule_does_not_match_a_label_containing_it(self, tmp_path):
+        a = self._answers(tmp_path, [{"exact": ["state"], "answer": ["California"]}])
+        for label in ("United States", "Please state their name", "Home state address"):
+            assert resolve(field(label=label), a).action == "skip"
+
+    def test_punctuation_and_case_do_not_break_an_exact_match(self, tmp_path):
+        a = self._answers(tmp_path, [
+            {"exact": ["current position title"], "answer": "Teaching Assistant"},
+        ])
+        assert resolve(field(label="Current Position/Title"), a).value == "Teaching Assistant"
+
+    def test_a_rule_may_carry_both_match_and_exact(self, tmp_path):
+        a = self._answers(tmp_path, [
+            {"match": ["pay expectation"], "exact": ["salary"], "answer": "Open"},
+        ])
+        assert resolve(field(label="Salary"), a).value == "Open"
+        assert resolve(field(label="What is your pay expectation?"), a).value == "Open"
+
+    def test_a_rule_with_neither_is_rejected(self, tmp_path):
+        with pytest.raises(AnswersError, match="non-empty match or exact"):
+            self._answers(tmp_path, [{"answer": "x"}])
+
+    def test_two_rules_claiming_the_same_exact_label_is_an_error(self, tmp_path):
+        with pytest.raises(AnswersError, match="both match the exact label"):
+            self._answers(tmp_path, [
+                {"exact": ["state"], "answer": "California"},
+                {"exact": ["state"], "answer": "Massachusetts"},
+            ])
+
+    def test_a_substring_rule_shadowing_an_exact_one_is_an_error(self, tmp_path):
+        # Otherwise which one wins depends on file order, and the exact rule
+        # exists precisely because that label is dangerous to keyword.
+        with pytest.raises(AnswersError, match="would shadow"):
+            self._answers(tmp_path, [
+                {"exact": ["state"], "answer": "California"},
+                {"match": ["stat"], "answer": "something else"},
+            ])
+
+    def test_a_work_authorization_keyword_is_rejected_in_exact_too(self, tmp_path):
+        with pytest.raises(AnswersError, match="work-authorization keyword"):
+            self._answers(tmp_path, [{"exact": ["citizenship"], "answer": "x"}])
+
+
 class TestLoad:
     def test_the_synthetic_fixture_loads(self, answers):
         assert answers.identity["email"] == "alex@example.com"
@@ -268,12 +323,33 @@ class TestEeoc:
     ):
         assert resolve(merged("form_minimal").by_id(field_id), answers).value == expected
 
-    def test_hispanic_ethnicity_is_left_blank(self, merged, answers):
-        """DOM-only, so no option list to opt out against, and optional on
-        every board observed."""
+    def test_hispanic_ethnicity_has_nothing_to_opt_out_against_statically(
+        self, merged, answers
+    ):
+        """DOM-only, so neither the API nor the served HTML carries its options
+        and nothing here can match an opt-out string. Optional, so it is skipped;
+        required, it parks. fill.py re-resolves it from the opened widget, which
+        does offer Decline To Self Identify."""
         f = merged("form_minimal").by_id("hispanic_ethnicity")
         assert f.dom_only and not f.options and not f.required
         assert resolve(f, answers).action == "skip"
+
+    def test_hispanic_ethnicity_opts_out_once_its_options_are_known(self, answers):
+        """The live widget offers exactly these three."""
+        resolution = resolve(field(
+            id="hispanic_ethnicity", section="eeoc", kind="react_select", required=True,
+            options=["Yes", "No", "Decline To Self Identify"],
+        ), answers)
+        assert resolution.action == "fill"
+        assert resolution.value == "Decline To Self Identify"
+
+    def test_a_required_hispanic_ethnicity_with_no_decline_option_still_parks(self, answers):
+        """Answering it substantively is a claim about the user, not a
+        content-free opt-out, so it is not guessed."""
+        assert resolve(field(
+            id="hispanic_ethnicity", section="eeoc", kind="react_select", required=True,
+            options=["Yes", "No"],
+        ), answers).action == "park"
 
     def test_the_eeoc_block_is_resolved_by_section_not_by_keyword(self, answers):
         """An employer-authored question that reads like EEOC stays in

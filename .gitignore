@@ -58,6 +58,12 @@ jobs/*
 data/universe/*.local.csv
 
 # =============================================================================
+# .apply_profile/ — the persistent Chrome profile /apply drives the browser
+# with. Holds cookies and whatever a board sets during a fill.
+# =============================================================================
+.apply_profile/
+
+# =============================================================================
 # Other generated output
 # =============================================================================
 applications/

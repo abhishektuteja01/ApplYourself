@@ -58,6 +58,18 @@ def merged():
 
 
 @pytest.fixture
+def tailor_dir(tmp_path):
+    """A /tailor output dir holding both artifacts, named the way the real ones
+    are (`<Name>_Resume.pdf`)."""
+    out = tmp_path / "example_primary" / "2026-08-09_gasket-works_widget-engineer_a1b2c3d4"
+    out.mkdir(parents=True)
+    for name in ("Alex_Example_Resume.pdf", "Alex_Example_Cover_Letter.pdf",
+                 "resume.md", "jd_snapshot.md", "trace.md"):
+        (out / name).write_bytes(b"x")
+    return out
+
+
+@pytest.fixture
 def answers():
     from src.apply.answers import load_answers
 
