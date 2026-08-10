@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 
 from src import verticals
+from src.apply.detect import is_auto_submittable
 from src.parquet_io import write_parquet
 from src.scoring_io import SUBSCORE_AXES, to_jsonable
 from src.state_io import load_state_index
@@ -171,9 +172,17 @@ def render_shortlist_markdown(
             assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
             status = row["application_status"] if row.get("already_seen") else "new"
             kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
-            # Workday is discovery-only (§12b): the queue /apply reads from
-            # never picks these up, so the gap must never be silent here.
-            manual_apply = " — **manual-apply, not auto-submittable**" if row["source"] == "workday" else ""
+            # Derived from the URL, not the source name. Keying on
+            # `source == "workday"` marked 0 rows (Workday roles arrive
+            # labelled "indeed" as often as not) while leaving every LinkedIn,
+            # Indeed and Ashby row unmarked — 146 of 286 roles at fit >= 85
+            # were silently un-submittable. §12c puts all of them in the same
+            # manual-apply category, so the same predicate the queue uses
+            # decides it here.
+            manual_apply = (
+                "" if is_auto_submittable(row.get("url"))
+                else " — **manual-apply, not auto-submittable**"
+            )
             lines.append(
                 f"### {i}. {row['fit_score']} — {row['company']} — {row['title']}\n"
                 f"- **job_id:** `{row['job_id']}`\n"
