@@ -273,11 +273,17 @@ class TestWorkdaySourceFetch:
 
     def test_every_detail_fetch_failing_the_same_way_is_raised_not_swallowed(self, monkeypatch):
         """A detail response every survivor's fetch cannot parse points at a
-        Workday schema change breaking the parser, not two dead postings —
-        raising it stops the run from reporting a healthy, empty shard."""
+        Workday schema change breaking the parser, not a few dead postings —
+        raising it stops the run from reporting a healthy, empty shard.
+
+        Needs `ESCALATE_MIN_ATTEMPTS` tenants: the check is a failure *rate*
+        over a minimum sample, not "every attempt so far". The old form was
+        order-dependent — two bad postings at the head of a run aborted the
+        whole lane, and a 98% failure rate later in the same run was silent.
+        """
         monkeypatch.setattr(universe, "load", lambda ats: [
-            UniverseCompany("A Co", "workday", "a|wd1|Site"),
-            UniverseCompany("B Co", "workday", "b|wd1|Site"),
+            UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site")
+            for i in range(workday.ESCALATE_MIN_ATTEMPTS + 2)
         ])
         monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
             "total": 1, "jobPostings": [LIST_ITEM],
@@ -286,8 +292,36 @@ class TestWorkdaySourceFetch:
         monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: {})
         monkeypatch.setattr(workday.time, "sleep", lambda _: None)
 
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError, match="unparseable"):
             WorkdaySource().fetch(MockContext())
+
+    def test_a_couple_of_dead_postings_at_the_head_do_not_abort_the_lane(
+        self, monkeypatch
+    ):
+        """The failure this replaces: two malformed payloads at the *start* of
+        a run used to raise, because errors == attempts was trivially true.
+        Two dead postings on the first tenant is an ordinary event."""
+        calls = {"n": 0}
+
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site") for i in range(6)
+        ])
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM],
+        })
+
+        def flaky(url, **kw):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                return {}                       # unparseable: no jobPostingInfo
+            return {"jobPostingInfo": dict(DETAIL_PAYLOAD["jobPostingInfo"])}
+
+        monkeypatch.setattr(workday, "fetch_json", flaky)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert res.rows, "the healthy tenants after the two bad ones must still yield"
+        assert any("malformed detail" in e for e in res.errors)
 
     def test_list_endpoint_failure_is_a_per_company_error(self, monkeypatch):
         from src.discovery.sources.ats.http import CareersError
@@ -337,3 +371,116 @@ class TestListPage:
         monkeypatch.setattr(workday, "fetch_json_post", lambda *a, **kw: {"total": 0})
         with pytest.raises(TypeError):
             workday.list_page("acme", "wd3", "Site", 0)
+
+
+class TestTheCrawlResumesAcrossRuns:
+    """55 tenants x 48 terms is 2,640 list requests before a posting is read.
+    A run cannot cover that, so it covers a slice and the next one continues.
+    """
+
+    def _companies(self, n=6):
+        return [UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site") for i in range(n)]
+
+    def _stub(self, monkeypatch, companies, seen):
+        monkeypatch.setattr(universe, "load", lambda ats: companies)
+
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            seen.append((company, search_text, offset))
+            return {"total": 0, "jobPostings": []}
+
+        monkeypatch.setattr(workday, "list_page", fake_list_page)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+    def test_a_deadline_cut_does_not_starve_the_same_tail_every_run(self, monkeypatch):
+        """Tenant order is (priority, last_yield) with no shuffle, so a run
+        that stops early used to drop the identical alphabetical tail forever
+        — those tenants were never crawled on any run."""
+        companies = self._companies()
+
+        class StopsAfterTwo(MockContext):
+            def __init__(self):
+                self.polled = 0
+
+            def deadline_reached(self):
+                self.polled += 1
+                return self.polled > 2 * len(search_terms(verticals_module.get_config()))
+
+        first: list = []
+        self._stub(monkeypatch, companies, first)
+        WorkdaySource().fetch(StopsAfterTwo())
+        first_tenants = list(dict.fromkeys(c for c, _, _ in first))
+
+        second: list = []
+        self._stub(monkeypatch, companies, second)
+        WorkdaySource().fetch(StopsAfterTwo())
+        second_tenants = list(dict.fromkeys(c for c, _, _ in second))
+
+        assert first_tenants, "the first run must crawl something"
+        assert second_tenants, "the second run must crawl something"
+        assert second_tenants[0] != first_tenants[0], (
+            "the second run restarted at the same tenant — the tail still starves"
+        )
+
+    def test_paging_reads_page_zero_every_run_then_resumes_the_deep_frontier(
+        self, monkeypatch
+    ):
+        """Both halves matter, and an earlier version got the trade backwards.
+
+        MAX_PAGES_PER_TERM caps one pair's paging, so without a persisted
+        offset pages past the cap were never read on ANY run. But resuming
+        *at* the saved offset skips page 0 — and Workday's list endpoint takes
+        no sort parameter, so its default ordering puts the newest postings
+        first. A busy pair would then go several runs blind to exactly the new
+        postings discovery exists to find.
+
+        So: page 0 every run, then continue from the frontier.
+        """
+        companies = self._companies(1)
+        full = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
+        calls: list[int] = []
+
+        def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            calls.append(offset)
+            return {"total": 0, "jobPostings": full}
+
+        monkeypatch.setattr(universe, "load", lambda ats: companies)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+        monkeypatch.setattr(workday, "list_page", always_full)
+
+        WorkdaySource().fetch(MockContext())
+        first = list(calls)
+        calls.clear()
+        WorkdaySource().fetch(MockContext())
+        second = list(calls)
+
+        cap = workday.MAX_PAGES_PER_TERM * workday.LIST_LIMIT
+        per_term = workday.MAX_PAGES_PER_TERM
+        assert first[:per_term] == [0, 50, 100, 150, 200, 250]
+        # Freshness: the head is re-read, not skipped.
+        assert second[0] == 0
+        # Depth: the run still advances past where the last one stopped.
+        assert max(second[:per_term]) > max(first[:per_term])
+        assert second[1] == cap
+
+    def test_an_exhausted_pair_starts_over_next_run(self, monkeypatch):
+        """A short page means the term is exhausted — the next run should
+        re-crawl it from the top to pick up newly posted roles, not keep
+        paging into empty space."""
+        seen: list = []
+        self._stub(monkeypatch, self._companies(1), seen)
+        WorkdaySource().fetch(MockContext())
+        seen.clear()
+        WorkdaySource().fetch(MockContext())
+        assert seen and all(offset == 0 for _, _, offset in seen)
+
+    def test_a_corrupt_cursor_file_does_not_break_the_crawl(self, monkeypatch):
+        from src.discovery import crawl_cursor as cc
+        cc.CURSOR_DIR.mkdir(parents=True, exist_ok=True)
+        cc.cursor_path("workday").write_text("{not json", encoding="utf-8")
+
+        seen: list = []
+        self._stub(monkeypatch, self._companies(2), seen)
+        WorkdaySource().fetch(MockContext())
+        assert seen, "a bad cursor must mean 'start from the top', not a crash"

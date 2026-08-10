@@ -330,9 +330,17 @@ def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
         return df.copy()
     df = df.copy()
     df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
+    # Same tie-break as exact_dedupe, for the same reason: an aggregator repost
+    # wins on boilerplate by a percent or two and costs the only url that can be
+    # submitted to. Step 4 got this and step 5 did not, so a board row could win
+    # the exact pass and then lose the fuzzy one — silently, since job_id
+    # excludes url. Measured on the 2026-08-10 run: 3 applyable rows lost to a
+    # LinkedIn survivor this way.
+    df["_not_applyable"] = _not_applyable(df)
     keep_indices: list = []
     for _, group in df.groupby("company_normalized", sort=False):
-        g = group.sort_values("_jd_len", ascending=False, kind="stable")
+        g = group.sort_values(["_not_applyable", "_jd_len"],
+                               ascending=[True, False], kind="stable")
         kept: list[tuple[str, frozenset[str]]] = []
         for idx, title in zip(g.index, g["title_normalized"]):
             levels = _level_tokens(title)
@@ -341,7 +349,7 @@ def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
                 continue
             kept.append((title, levels))
             keep_indices.append(idx)
-    return df.loc[keep_indices].drop(columns="_jd_len").copy()
+    return df.loc[keep_indices].drop(columns=["_jd_len", "_not_applyable"]).copy()
 
 
 # ---------------------------------------------------------------------

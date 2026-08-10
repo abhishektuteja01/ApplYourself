@@ -53,6 +53,7 @@ from datetime import date, timedelta
 from src.discovery import cleaning
 from src.discovery import trace
 from src.discovery import universe
+from src.discovery.crawl_cursor import load_cursor, save_cursor
 from src.discovery.htmlutil import html_to_text
 from src.discovery.schema import make_row
 from src.discovery.sources.ats.base import PAYLOAD_SHAPE_ERRORS
@@ -60,12 +61,14 @@ from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_
 from src.discovery.sources.base import Source, SourceResult
 
 LIST_LIMIT = 50
-# A ceiling per (company, search term) pair, not per company: search-scoping
-# already cuts page count far below an exhaustive crawl, so 6 * LIST_LIMIT =
-# 300 matches for one term at one tenant is generous headroom rather than a
-# binding constraint in practice. Still there so one term that somehow
-# matches broadly cannot consume a whole run's deadline; a page never reached
-# is not a failure — it is read again, from page 0, next run.
+# A ceiling per (company, search term) pair, not per company, so one broad
+# term cannot consume a whole run's deadline.
+#
+# This used to claim "a page never reached is read again, from page 0, next
+# run" — true of a deadline cut, false of this cap: every run started at
+# offset 0, so pages past 6 * LIST_LIMIT = 300 were never read on ANY run, a
+# permanent blind spot rather than work spread across runs. `crawl_cursor`
+# now persists where each pair stopped, which makes the claim true.
 MAX_PAGES_PER_TERM = 6
 
 _POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)
@@ -171,6 +174,27 @@ def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
     )
 
 
+# A systemic parse failure means the API shape changed and the whole source is
+# broken; a couple of bad postings mean two bad postings. The old check was
+# `errors > 1 and errors == attempts` — order-dependent, not rate-based: two
+# malformed payloads at the *head* of a run aborted the entire lane, while 49
+# failures out of 50 stayed silent once any one attempt had succeeded.
+ESCALATE_MIN_ATTEMPTS = 10
+ESCALATE_FAILURE_RATE = 0.9
+
+
+def _escalate_if_systemic(errors: int, attempts: int, what: str) -> None:
+    if attempts < ESCALATE_MIN_ATTEMPTS:
+        return
+    if errors / attempts < ESCALATE_FAILURE_RATE:
+        return
+    raise RuntimeError(
+        f"workday {what}: {errors}/{attempts} payloads unparseable "
+        f"(>= {ESCALATE_FAILURE_RATE:.0%}) — the API shape has almost certainly "
+        f"changed. Failing the source rather than reporting an empty crawl."
+    )
+
+
 class WorkdaySource(Source):
     name = "workday"
 
@@ -187,9 +211,28 @@ class WorkdaySource(Source):
         ok = 0
         err_other = 0
         shape_errors = 0
+        list_attempts = 0
         detail_attempts = 0
         detail_shape_errors = 0
         first_request = True
+
+        # Resume where the last run stopped. 55 tenants x 48 terms is 2,640
+        # list requests before a single posting is read, which does not fit
+        # one run's deadline — so a run covers a slice and the rotation makes
+        # the whole space cycle. Without it the deadline cut the same
+        # alphabetical tail every run and those tenants were never crawled.
+        cursor = load_cursor(self.name)
+        # Priority tenants are never rotated out. `universe.load()` sorts them
+        # first for a reason, and rotating the whole list demoted them to
+        # ~40% of runs in simulation — the priority flag became nearly inert
+        # and the priority-only report rows vanished on truncated runs. Head
+        # stays fixed; only the tail rotates.
+        companies = list(companies)
+        head = [c for c in companies if c.priority]
+        tail = cursor.rotate([c for c in companies if not c.priority],
+                              key=lambda c: c.slug)
+        companies = head + tail
+        completed = 0
 
         ticker = trace.Ticker(self.name, len(companies), every=100)
 
@@ -200,6 +243,10 @@ class WorkdaySource(Source):
                 company, wd, site_id = parse_slug(c.slug)
             except WorkdaySlugError as e:
                 errors.append(f"{c.name}: {e}")
+                # Counted: this tenant was reached and dealt with. Skipping the
+                # increment under-advances the cursor, so the next run
+                # re-crawls a tenant it already covered.
+                completed += 1
                 continue
 
             polled += 1
@@ -209,10 +256,31 @@ class WorkdaySource(Source):
             # Keyed by externalPath: the same posting can surface under more
             # than one search term, and must be detail-fetched only once.
             survivors: dict[str, tuple[str, dict]] = {}
-            try:
-                for term in terms:
-                    offset = 0
-                    for _ in range(MAX_PAGES_PER_TERM):
+            fatal: CareersError | None = None
+            # Per TERM, not per tenant. One transient 503 on term 3 of 4 used
+            # to discard every survivor terms 1-2 had already found and skip
+            # the rest, so a tenant's whole yield hung on its flakiest request.
+            for term in terms:
+                if ctx.deadline_reached():
+                    break
+                # Page 0 EVERY run, then continue from the deep frontier.
+                #
+                # Resuming straight at the saved offset looks right and is
+                # backwards for a discovery crawl: the list endpoint takes no
+                # sort parameter, so Workday's default ordering puts the
+                # newest postings at offset 0. A pair deep in its pagination
+                # would then go several runs without ever re-reading the head
+                # — blind to exactly the new postings this source exists to
+                # find, and only on the busy pairs the cap was written for.
+                # Head first, frontier second: freshness every run, depth
+                # still advancing.
+                frontier = cursor.offset_for(c.slug, term) or LIST_LIMIT
+                offsets = [0] + [frontier + k * LIST_LIMIT
+                                  for k in range(MAX_PAGES_PER_TERM - 1)]
+                next_frontier = 0
+                pages_read = 0
+                try:
+                    for offset in offsets:
                         if ctx.deadline_reached():
                             break
                         if not first_request:
@@ -220,6 +288,7 @@ class WorkdaySource(Source):
                         first_request = False
                         payload = list_page(company, wd, site_id, offset, term,
                                              deadline_ts=ctx.deadline_ts)
+                        pages_read += 1
                         postings = [p for p in payload["jobPostings"] if isinstance(p, dict)]
                         for item in postings:
                             c_fetched += 1
@@ -230,32 +299,49 @@ class WorkdaySource(Source):
                             vertical = cleaning.classify_vertical_from_title(title)
                             if vertical:
                                 survivors[path] = (vertical, item)
-                        offset += LIST_LIMIT
                         # `total` cannot be trusted past page 0 (module
                         # docstring) — a short or empty page is the only
                         # reliable "no more results" signal.
                         if len(postings) < LIST_LIMIT:
+                            next_frontier = 0   # exhausted; restart at the head
                             break
-                    if ctx.deadline_reached():
+                        next_frontier = offset + LIST_LIMIT
+                    # Where the next run resumes its DEEP reading. Page 0 is
+                    # unconditional, so a 0 here only means "start over",
+                    # never "skip the head".
+                    #
+                    # Only when a page was actually read. A deadline cut on the
+                    # first offset leaves `next_frontier` at its initial 0,
+                    # which would erase a frontier this run never looked at —
+                    # sending a deep pair back to the head on every truncated
+                    # run, the exact permanent blind spot the cursor exists to
+                    # remove.
+                    if pages_read:
+                        cursor.set_offset(c.slug, term, next_frontier)
+                except CareersError as e:
+                    err_other += 1
+                    errors.append(f"{c.name} [{term}]: {e}")
+                    if e.permanent:
+                        fatal = e
                         break
-            except CareersError as e:
-                err_other += 1
-                errors.append(f"{c.name}: {e}")
-                if e.permanent:
-                    universe.update_health(self.name, c.slug, success=False)
-                if c.priority or e.status != 404:
+                except PAYLOAD_SHAPE_ERRORS as e:
+                    err_other += 1
+                    shape_errors += 1
+                    errors.append(
+                        f"{c.name} [{term}]: malformed board payload: "
+                        f"{type(e).__name__}: {e}")
+                    break
+
+            list_attempts += 1
+            if fatal is not None:
+                universe.update_health(self.name, c.slug, success=False)
+                if c.priority or fatal.status != 404:
                     report_lines.append(
-                        f"| {c.name} | ERROR | 0 | 0 | {str(e).replace('|', '\\|')[:80]} |")
+                        f"| {c.name} | ERROR | 0 | 0 | "
+                        f"{str(fatal).replace('|', '\\|')[:80]} |")
+                completed += 1
                 continue
-            except PAYLOAD_SHAPE_ERRORS as e:
-                err_other += 1
-                shape_errors += 1
-                if shape_errors > 1 and shape_errors == polled:
-                    raise
-                msg = f"malformed board payload: {type(e).__name__}: {e}"
-                errors.append(f"{c.name}: {msg}")
-                report_lines.append(f"| {c.name} | ERROR | 0 | 0 | {msg.replace('|', '\\|')[:80]} |")
-                continue
+            _escalate_if_systemic(shape_errors, list_attempts, "list")
 
             c_kept = 0
             for path, (vertical, item) in survivors.items():
@@ -274,10 +360,9 @@ class WorkdaySource(Source):
                     # Every detail fetch failing the same way, across every
                     # tenant, points at a Workday schema change breaking the
                     # parser, not one dead posting — same reasoning as the
-                    # list-stage guard just above, scoped to detail attempts
-                    # since a survivor can come from any company.
-                    if detail_shape_errors > 1 and detail_shape_errors == detail_attempts:
-                        raise
+                    # list-stage guard, scoped to detail attempts since a
+                    # survivor can come from any company.
+                    _escalate_if_systemic(detail_shape_errors, detail_attempts, "detail")
                     errors.append(f"{c.name}: {item.get('title', '')!r}: malformed detail: {e}")
                     continue
                 if row is not None:
@@ -286,9 +371,15 @@ class WorkdaySource(Source):
 
             ok += 1
             kept += c_kept
+            completed += 1
             universe.update_health(self.name, c.slug, success=True, rows=c_fetched)
             if c.priority:
                 report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
+
+        # Persisted even on a deadline cut — that is the case it exists for.
+        # Only the rotated tail advances; the fixed head is crawled every run.
+        cursor.advance(tail, max(0, completed - len(head)), key=lambda c: c.slug)
+        save_cursor(cursor)
 
         ticker.finish(polled, ok=ok, err=err_other, kept=kept)
 
