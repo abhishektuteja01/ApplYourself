@@ -6,9 +6,14 @@
                                     profile/application_answers.yaml, and print
                                     the plan. No browser, no submission, nothing
                                     written anywhere.
-
-`run` — the queue, the rate limiter and the run report — lands with fill.py.
-Until then `plan` is the whole surface, and it is read-only by construction.
+  fill <job_id> [--force] [--headless] [--no-pause]
+                                    fill one real form and stop; never submits.
+  run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--job-id X]
+                                    walk the eligible queue (state == tailored,
+                                    tailored_dirs[] and cover_letters[] both
+                                    non-empty). Default is fill-and-stop;
+                                    --submit is required to click. Writes
+                                    applications/apply_runs/<timestamp>.md.
 
 Run directly: `uv run python -m src.apply_cli plan <job_id>` or `uv run apply
 plan <job_id>`.
@@ -17,13 +22,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
+import re
 import sys
+import time
+from dataclasses import dataclass, field as dc_field
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from src import paths, state_io
+from src import paths, state_io, track_cli
 from src.apply.answers import Answers, AnswersError, load_answers
+from src.apply.fill import SubmitGuardError, blocking_questions, fill, run_one
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
 from src.apply.plan import Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
@@ -34,6 +45,7 @@ from src.discovery.sources.ats.http import CareersError
 CLEAN = paths.CLEAN
 PIPELINE = paths.PIPELINE
 APPLICATIONS = paths.APPLICATIONS
+APPLY_RUNS = APPLICATIONS / "apply_runs"
 
 
 class ApplyCliError(Exception):
@@ -106,6 +118,13 @@ def build(job_id: str, url: str | None = None,
     answers = load_answers()
     board = load_board(posting_url)
     return plan_for_board(board, answers, target, job_id=job_id), answers
+
+
+# Every exception `build()` can raise that names a per-role problem rather
+# than a bug in this CLI. `PostingExpired` is handled separately — it is an
+# ordinary outcome (§14: 6/45 live postings), not a failure.
+BUILD_ERRORS = (ApplyCliError, ApplyUrlError, AnswersError, PlanError, CareersError,
+                 SchemaError, DomScanError, ReconcileError)
 
 
 # ------------------------------------------------------------------ rendering
@@ -227,8 +246,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     except PostingExpired as exc:
         print(f"EXPIRED: {exc}", file=sys.stderr)
         return 2
-    except (ApplyCliError, ApplyUrlError, AnswersError, PlanError, CareersError,
-            SchemaError, DomScanError, ReconcileError) as exc:
+    except BUILD_ERRORS as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
@@ -243,8 +261,7 @@ def _cmd_fill(args: argparse.Namespace) -> int:
     except PostingExpired as exc:
         print(f"EXPIRED: {exc}", file=sys.stderr)
         return 2
-    except (ApplyCliError, ApplyUrlError, AnswersError, PlanError, CareersError,
-            SchemaError, DomScanError, ReconcileError) as exc:
+    except BUILD_ERRORS as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
@@ -253,8 +270,6 @@ def _cmd_fill(args: argparse.Namespace) -> int:
         print("\nRefusing to open a browser for a parked role. --force to fill "
               "what does resolve and see the rest in the form.", file=sys.stderr)
         return 1
-
-    from src.apply.fill import fill
 
     def review(result) -> None:
         """Report while the window is still open, then hold it if someone is
@@ -291,6 +306,195 @@ def render_fill(result, plan: Plan) -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------ queue
+
+
+def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
+    """`state == tailored` with a resume and a cover letter both on file.
+
+    §8's later, reasoned statement — not just `tailored_dirs[]` — because
+    §7b puts `company_answers.md` inside the cover-letter output dir, and
+    `/apply`'s Tier C2 questions resolve from that file or park. Sorted by
+    job_id: the only ordering signal every eligible role is guaranteed to
+    carry, so the queue is reproducible run to run.
+
+    Defaults to the module-level `PIPELINE`, looked up at call time — a
+    default *parameter value* would freeze the original `paths.PIPELINE`
+    object and miss a test's `monkeypatch.setattr(apply_cli, "PIPELINE", ...)`.
+    """
+    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    return sorted(
+        job_id for job_id, st in idx.items()
+        if st.get("state") == "tailored"
+        and st.get("tailored_dirs")
+        and st.get("cover_letters")
+    )
+
+
+_DURATION = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)?$")
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, None: 1}
+
+
+def parse_duration(spec: str) -> float:
+    """'4m' / '60s' / '90' -> seconds. Bare digits are seconds."""
+    match = _DURATION.match(spec.strip())
+    if not match:
+        raise ApplyCliError(f"not a duration: {spec!r} (want e.g. '4m', '60s', '90')")
+    value, unit = match.groups()
+    return float(value) * _DURATION_UNITS[unit]
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    job_id: str
+    company: str = ""
+    title: str = ""
+    category: str = "failed"    # submitted | parked | ready | failed | expired
+    detail: str = ""
+    unmapped: tuple[str, ...] = dc_field(default_factory=tuple)
+
+
+def _run_role(job_id: str, *, submit: bool, headless: bool) -> RunOutcome:
+    """One role, start to finish. Never raises — every failure mode this CLI
+    knows about comes back as a category on the outcome, so one bad role
+    cannot stop the queue.
+
+    Calls `build`/`run_one`/`track_cli.main` as plain module-level names (not
+    default-parameter values) so a test can monkeypatch `apply_cli.build`,
+    `apply_cli.run_one` or `apply_cli.track_cli` the same way the rest of this
+    module already stubs `load_board`/`load_answers` — a default bound at def
+    time would freeze the original object and monkeypatching would silently
+    miss it.
+    """
+    try:
+        plan, answers = build(job_id)
+    except PostingExpired as exc:
+        return RunOutcome(job_id, category="expired", detail=str(exc))
+    except BUILD_ERRORS as exc:
+        return RunOutcome(job_id, category="failed", detail=str(exc))
+
+    result = run_one(plan, answers, headless=headless, submit_after=submit)
+
+    if result.submitted:
+        track_cli.main([job_id, "applied", "--note",
+                         f"auto-submitted via /apply ({plan.board})"])
+        return RunOutcome(job_id, plan.company, plan.title, "submitted")
+
+    blocking = blocking_questions(plan, result)
+    if blocking:
+        return RunOutcome(job_id, plan.company, plan.title, "parked",
+                           detail="required question(s) unresolved", unmapped=blocking)
+    if result.failures:
+        return RunOutcome(job_id, plan.company, plan.title, "failed",
+                           detail="; ".join(result.failures))
+    if result.submit_error:
+        # Not a park (nothing is unmapped) and not a fill failure — the guard
+        # refused for a form-shape reason instead (no submit button, or it
+        # stayed disabled). Distinct enough from either to say so.
+        return RunOutcome(job_id, plan.company, plan.title, "failed",
+                           detail=result.submit_error)
+
+    return RunOutcome(job_id, plan.company, plan.title, "ready",
+                       detail="every field resolved; rerun with --submit to click")
+
+
+def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
+              rate: float = 240.0, jitter: float = 60.0,
+              sleeper=time.sleep, jitter_fn=random.uniform) -> list[RunOutcome]:
+    """Walk the queue, sleeping `rate + U(0, jitter)` seconds between roles.
+
+    `sleeper`/`jitter_fn` are injectable so tests never actually sleep or
+    depend on randomness.
+    """
+    outcomes = []
+    for i, job_id in enumerate(job_ids):
+        if i > 0:
+            sleeper(rate + jitter_fn(0, jitter))
+        outcomes.append(_run_role(job_id, submit=submit, headless=headless))
+    return outcomes
+
+
+# ------------------------------------------------------------------ report
+
+
+_CATEGORY_ORDER = ("submitted", "parked", "ready", "failed", "expired")
+_CATEGORY_TITLE = {
+    "submitted": "Submitted", "parked": "Parked", "ready": "Ready (not submitted)",
+    "failed": "Failed", "expired": "Expired postings",
+}
+
+
+def render_report(outcomes: list[RunOutcome], started_at: datetime) -> str:
+    lines = [
+        f"# apply run — {started_at.isoformat(timespec='seconds')}",
+        "",
+        f"{len(outcomes)} role(s) attempted.",
+        "",
+    ]
+    for category in _CATEGORY_ORDER:
+        rows = [o for o in outcomes if o.category == category]
+        if not rows:
+            continue
+        lines.append(f"## {_CATEGORY_TITLE[category]} ({len(rows)})")
+        lines.append("")
+        for o in rows:
+            who = f"{o.company} — {o.title}".strip(" —") or o.job_id
+            lines.append(f"- `{o.job_id}` {who}")
+            if o.detail:
+                lines.append(f"  - {o.detail}")
+            if o.unmapped:
+                lines.append(f"  - unmapped: {', '.join(o.unmapped)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_report(outcomes: list[RunOutcome], started_at: datetime,
+                  out_dir: Path | None = None) -> Path:
+    out_dir = out_dir if out_dir is not None else APPLY_RUNS
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{started_at.strftime('%Y-%m-%dT%H-%M-%S')}.md"
+    path.write_text(render_report(outcomes, started_at), encoding="utf-8")
+    return path
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    if args.job_id:
+        queue = eligible_queue()
+        if args.job_id not in queue:
+            print(
+                f"ERROR: {args.job_id} is not eligible — needs state == tailored "
+                "with both tailored_dirs[] and cover_letters[] non-empty",
+                file=sys.stderr,
+            )
+            return 1
+        queue = [args.job_id]
+    else:
+        queue = eligible_queue()
+        if args.limit is not None:
+            queue = queue[:args.limit]
+
+    if not queue:
+        print("Nothing eligible: no role at state=tailored with both "
+              "tailored_dirs[] and cover_letters[] non-empty.")
+        return 0
+
+    try:
+        rate = parse_duration(args.rate)
+        jitter = parse_duration(args.jitter)
+    except ApplyCliError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    started = datetime.now()
+    outcomes = run_queue(queue, submit=args.submit, headless=args.headless,
+                          rate=rate, jitter=jitter)
+    path = write_report(outcomes, started)
+
+    print(render_report(outcomes, started))
+    print(f"Report written to {path}")
+    return 1 if any(o.category == "failed" for o in outcomes) else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
@@ -318,6 +522,16 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--no-pause", action="store_true",
                    help="close the browser without waiting for review")
     f.set_defaults(func=_cmd_fill)
+
+    r = sub.add_parser("run", help="walk the eligible queue")
+    r.add_argument("--limit", type=int, default=None)
+    r.add_argument("--rate", default="4m", help="delay between roles, e.g. '4m'")
+    r.add_argument("--jitter", default="60s", help="added on top of --rate, uniformly")
+    r.add_argument("--submit", action="store_true",
+                   help="click submit on every role that resolves; default is fill-and-stop")
+    r.add_argument("--job-id", default=None, help="run one specific role instead of the queue")
+    r.add_argument("--headless", action="store_true")
+    r.set_defaults(func=_cmd_run)
 
     args = parser.parse_args(argv)
     return args.func(args)

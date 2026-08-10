@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A personal, human-gated job-search pipeline, sponsorship-aware throughout (the
 scoring pre-screen and the outreach disclosure rules both know about it). It scrapes
 jobs, scores them against a profile, and generates tailored application material.
-Every outward action (applying, sending outreach) is gated on the user; the code
-never submits anything.
+Outreach is always gated on the user. Application submission is automatable via
+`/apply`, which submits only when every required field resolves from config;
+anything unresolved parks the role for review.
 
 ## Instructions
 
@@ -54,6 +55,14 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 5. **Tracking** (`/track`, `/standup`; plumbing in `src/state_io.py`,
    `src/track_cli.py`) — one `pipeline/<job_id>/state.yaml` per role moving
    through an 11-state machine.
+6. **Submission** (`/apply`; plumbing in `src/apply/` — `schema.py`,
+   `domscan.py`, `reconcile.py`, `answers.py`, `plan.py`, `greenhouse.py`,
+   `fill.py` — and `src/apply_cli.py`) — consumes roles sitting at `tailored`
+   with both a resume and a cover letter on file, fills the board's
+   application form from `profile/application_answers.yaml`, and either
+   submits (transitioning to `applied` through `/track`) or parks the role
+   on whatever it could not resolve. Greenhouse only for now (see
+   `submit_plan.md` for the Ashby/Lever/Workday phases).
 
 ### `job_id` is a content hash — treat it as load-bearing
 
@@ -145,13 +154,15 @@ uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...
 uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
 uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
+uv run apply plan <job_id>            # /apply: print the fill plan, no browser
+uv run apply run [--submit]           # /apply: walk the eligible queue (needs `uv sync --group apply`)
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```
 
 The user-facing workflow is the slash commands (`/onboarding`, `/score`,
-`/tailor`, `/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
-`/suggest-synonyms`, `/rescore`, `/no_ai_slop`, `/ingest`), defined in
+`/tailor`, `/cover-letter`, `/apply`, `/outreach`, `/track`, `/standup`,
+`/new-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`, `/ingest`), defined in
 `.claude/commands/*.md`. `score-judge.md` also lives there but is spawned by
 `/score`, never invoked directly. `/ingest <url> <vertical> [resume]
 [cover-letter]` is the single-URL fast path: it chains `ingest-url` → a

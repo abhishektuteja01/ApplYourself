@@ -12,6 +12,7 @@ No network: load_board is stubbed everywhere.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -54,14 +55,15 @@ def repo(tmp_path, monkeypatch, tailor_dir):
                 [{"job_id": j, "url": u} for j, u in rows.items()]
             ).to_parquet(clean)
 
-        def write_state(self, job_id=JOB_ID, url=GH_URL, tailored_dirs=None):
+        def write_state(self, job_id=JOB_ID, url=GH_URL, tailored_dirs=None,
+                        cover_letters=None, state="tailored"):
             d = pipeline / job_id
             d.mkdir(parents=True, exist_ok=True)
             (d / "state.yaml").write_text(yaml.safe_dump({
                 "job_id": job_id, "company": "Bushing Group", "title": "Widget Engineer",
-                "state": "tailored", "url": url,
+                "state": state, "url": url,
                 "tailored_dirs": [tailored] if tailored_dirs is None else tailored_dirs,
-                "cover_letters": [],
+                "cover_letters": [tailored] if cover_letters is None else cover_letters,
             }), encoding="utf-8")
 
     return Repo()
@@ -252,13 +254,245 @@ class TestCliShape:
             apply_cli.main([])
         assert exc.value.code == 2
 
-    def test_run_is_not_wired_up_yet(self):
-        with pytest.raises(SystemExit) as exc:
-            apply_cli.main(["run"])
-        assert exc.value.code == 2
-
 
 def _raise(exc):
     def raiser(*args, **kwargs):
         raise exc
     return raiser
+
+
+# ------------------------------------------------------------------ run: queue
+
+
+def _fake_plan(job_id=JOB_ID, company="Bushing Group", title="Widget Engineer",
+               unmapped=(), submit_selector="#application-form button[type=submit]"):
+    from src.apply.plan import Plan
+    return Plan(
+        job_id=job_id, board="bushinggroup", token="1", form_url=GH_URL,
+        company=company, title=title, out_dir=Path("/tmp"),
+        fields=(), files=(), unmapped=tuple(unmapped), draftable=(), skipped=(),
+        submit_selector=submit_selector, submit_disabled=False,
+    )
+
+
+def _fake_result(*, submitted=False, failures=(), recovered=(), submit_error=""):
+    from src.apply.fill import FillResult
+    return FillResult(
+        form_url=GH_URL, failures=list(failures), recovered=list(recovered),
+        submitted=submitted, submit_error=submit_error,
+    )
+
+
+class TestEligibleQueue:
+    def test_tailored_with_both_dirs_and_letters_is_eligible(self, repo):
+        repo.write_state()
+        assert apply_cli.eligible_queue(repo.pipeline) == [JOB_ID]
+
+    def test_missing_cover_letters_is_not_eligible(self, repo):
+        repo.write_state(cover_letters=[])
+        assert apply_cli.eligible_queue(repo.pipeline) == []
+
+    def test_missing_tailored_dirs_is_not_eligible(self, repo):
+        repo.write_state(tailored_dirs=[])
+        assert apply_cli.eligible_queue(repo.pipeline) == []
+
+    def test_terminal_states_are_excluded(self, repo):
+        for job_id, state in [("aaaa0001", "rejected"), ("aaaa0002", "withdrawn"),
+                               ("aaaa0003", "offer"), ("aaaa0004", "ghosted")]:
+            repo.write_state(job_id=job_id, state=state)
+        assert apply_cli.eligible_queue(repo.pipeline) == []
+
+    def test_non_tailored_active_states_are_excluded(self, repo):
+        for job_id, state in [("bbbb0001", "saved"), ("bbbb0002", "applied"),
+                               ("bbbb0003", "screen")]:
+            repo.write_state(job_id=job_id, state=state)
+        assert apply_cli.eligible_queue(repo.pipeline) == []
+
+    def test_ordering_is_deterministic_regardless_of_write_order(self, repo):
+        for job_id in ("zzzz9999", "aaaa1111", "mmmm5555"):
+            repo.write_state(job_id=job_id)
+        assert apply_cli.eligible_queue(repo.pipeline) == ["aaaa1111", "mmmm5555", "zzzz9999"]
+
+
+class TestParseDuration:
+    @pytest.mark.parametrize("spec,seconds", [
+        ("4m", 240.0), ("60s", 60.0), ("90", 90.0), ("1.5h", 5400.0), ("0m", 0.0),
+    ])
+    def test_units(self, spec, seconds):
+        assert apply_cli.parse_duration(spec) == seconds
+
+    def test_garbage_raises(self):
+        with pytest.raises(apply_cli.ApplyCliError, match="not a duration"):
+            apply_cli.parse_duration("soon")
+
+
+class TestRunQueue:
+    def test_the_rate_limiter_is_injected_and_never_sleeps(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build", _raise(apply_cli.ApplyCliError("nope")))
+        sleeps = []
+        apply_cli.run_queue(
+            ["a1", "a2", "a3"], submit=False,
+            rate=999, jitter=0, sleeper=sleeps.append, jitter_fn=lambda a, b: 0,
+        )
+        # 3 roles, 2 gaps between them — never on the first.
+        assert len(sleeps) == 2
+        assert all(s == 999 for s in sleeps)
+
+    def test_a_parked_role_does_not_stop_the_run(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result())
+        outcomes = apply_cli.run_queue(
+            ["parked1", "parked2"], submit=False, sleeper=lambda s: None,
+        )
+        assert [o.category for o in outcomes] == ["ready", "ready"]
+
+        # Now make the first one park (unmapped, nothing recovered) and confirm
+        # the second role still runs.
+        def build_with_park(job_id):
+            unmapped = () if job_id == "ok" else [
+                type("U", (), {"id": "why_us"})(),
+            ]
+            return _fake_plan(job_id, unmapped=unmapped), None
+
+        monkeypatch.setattr(apply_cli, "build", build_with_park)
+        outcomes = apply_cli.run_queue(["parked1", "ok"], submit=False, sleeper=lambda s: None)
+        assert outcomes[0].category == "parked"
+        assert outcomes[1].category == "ready"
+
+    def test_expired_postings_are_their_own_category(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build", _raise(PostingExpired("gone (404)")))
+        outcomes = apply_cli.run_queue(["x"], submit=False, sleeper=lambda s: None)
+        assert outcomes[0].category == "expired"
+
+    def test_a_successful_submit_calls_track_cli_not_state_io(self, monkeypatch):
+        track_calls = []
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result(submitted=True))
+        monkeypatch.setattr(apply_cli.track_cli, "main", track_calls.append)
+        # state_io.transition must never be reached from this path.
+        monkeypatch.setattr(apply_cli.state_io, "transition",
+                             _raise(AssertionError("state_io.transition must not be called")))
+
+        outcomes = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+
+        assert outcomes[0].category == "submitted"
+        assert track_calls == [[JOB_ID, "applied", "--note",
+                                 "auto-submitted via /apply (bushinggroup)"]]
+
+    def test_a_recovered_field_is_no_longer_blocking(self, monkeypatch):
+        u = type("U", (), {"id": "hispanic_ethnicity"})()
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id, unmapped=[u]), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: _fake_result(recovered=["hispanic_ethnicity"]),
+        )
+        outcomes = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None)
+        assert outcomes[0].category == "ready"
+
+    def test_a_fill_failure_is_a_failed_category(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: _fake_result(failures=["country: no option matching"]),
+        )
+        outcomes = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None)
+        assert outcomes[0].category == "failed"
+        assert "country" in outcomes[0].detail
+
+
+class TestRunReport:
+    def test_render_groups_by_category(self):
+        from src.apply_cli import RunOutcome
+        outcomes = [
+            RunOutcome("a1", "A Co", "Eng", "submitted"),
+            RunOutcome("a2", "B Co", "Eng", "parked", detail="required unresolved",
+                       unmapped=("why_us",)),
+            RunOutcome("a3", "C Co", "Eng", "failed", detail="boom"),
+        ]
+        text = apply_cli.render_report(outcomes, apply_cli.datetime(2026, 1, 1))
+        assert "## Submitted (1)" in text
+        assert "## Parked (1)" in text
+        assert "why_us" in text
+        assert "## Failed (1)" in text
+        assert "boom" in text
+
+    def test_write_report_creates_a_dated_file(self, tmp_path):
+        from src.apply_cli import RunOutcome
+        out_dir = tmp_path / "apply_runs"
+        path = apply_cli.write_report(
+            [RunOutcome("a1", "A Co", "Eng", "submitted")],
+            apply_cli.datetime(2026, 1, 1, 9, 30, 0), out_dir=out_dir,
+        )
+        assert path.parent == out_dir
+        assert path.read_text(encoding="utf-8").startswith("# apply run")
+
+
+class TestRunCommand:
+    def test_nothing_eligible_exits_0(self, repo, capsys):
+        assert apply_cli.main(["run"]) == 0
+        assert "Nothing eligible" in capsys.readouterr().out
+
+    def test_default_path_never_submits(self, repo, monkeypatch, tmp_path):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id), None))
+        submit_after_seen = []
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: (
+                submit_after_seen.append(kw.get("submit_after")), _fake_result()
+            )[1],
+        )
+        assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
+        assert submit_after_seen == [False]
+
+    def test_job_id_override_runs_one_role_even_off_queue_order(
+        self, repo, monkeypatch, tmp_path
+    ):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result())
+        assert apply_cli.main(["run", "--job-id", JOB_ID, "--rate", "0s"]) == 0
+
+    def test_unknown_job_id_is_an_error(self, repo, capsys):
+        assert apply_cli.main(["run", "--job-id", "nope"]) == 1
+        assert "not eligible" in capsys.readouterr().err
+
+    def test_limit_caps_the_queue(self, repo, monkeypatch, tmp_path):
+        for job_id in ("aaaa1111", "bbbb2222"):
+            repo.write_state(job_id=job_id)
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        seen = []
+
+        def build_and_record(job_id):
+            seen.append(job_id)
+            return _fake_plan(job_id), None
+
+        monkeypatch.setattr(apply_cli, "build", build_and_record)
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result())
+        assert apply_cli.main(["run", "--limit", "1", "--rate", "0s"]) == 0
+        assert len(seen) == 1
+
+    def test_a_failed_role_exits_1_and_a_report_is_written(self, repo, monkeypatch, tmp_path):
+        repo.write_state()
+        out_dir = tmp_path / "apply_runs"
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", out_dir)
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: _fake_result(failures=["boom"]),
+        )
+        assert apply_cli.main(["run", "--rate", "0s"]) == 1
+        assert list(out_dir.glob("*.md"))
