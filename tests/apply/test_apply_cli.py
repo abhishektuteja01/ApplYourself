@@ -104,6 +104,7 @@ def stub_answers(monkeypatch):
 
 
 LEVER_URL = "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+ASHBY_URL = "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
 
 
 class TestDetectAts:
@@ -112,6 +113,9 @@ class TestDetectAts:
 
     def test_lever(self):
         assert apply_cli.detect_ats(LEVER_URL) == "lever"
+
+    def test_ashby(self):
+        assert apply_cli.detect_ats(ASHBY_URL) == "ashby"
 
     def test_neither(self):
         assert apply_cli.detect_ats(LINKEDIN_URL) is None
@@ -129,6 +133,33 @@ class TestBuildDispatchesToLever:
         assert plan.ats == "lever"
         assert plan.requires_captcha is True
         assert plan.board == "widgetco"
+
+
+class TestBuildDispatchesToAshby:
+    def test_an_ashby_url_builds_an_ashby_plan(self, repo, monkeypatch, tailor_dir):
+        repo.write_clean(**{JOB_ID: ASHBY_URL})
+        repo.write_state(url=ASHBY_URL)
+        from .conftest import load_html
+        monkeypatch.setattr("src.apply.ashby.fetch_text",
+                            lambda *a, **k: load_html("form_ashby_minimal"))
+
+        plan, _ = apply_cli.build(JOB_ID)
+        assert plan.ats == "ashby"
+        assert plan.board == "widgetco"
+
+    def test_fill_refuses_loudly_since_there_is_no_ashby_driver(self, repo, monkeypatch, tailor_dir):
+        """apply plan works fully for Ashby (§12a); apply fill/run must not
+        pretend to submit through a driver that does not exist."""
+        repo.write_clean(**{JOB_ID: ASHBY_URL})
+        repo.write_state(url=ASHBY_URL)
+        from .conftest import load_html
+        monkeypatch.setattr("src.apply.ashby.fetch_text",
+                            lambda *a, **k: load_html("form_ashby_minimal"))
+
+        plan, answers = apply_cli.build(JOB_ID)
+        from src.apply.fill import FillError, fill
+        with pytest.raises(FillError, match="no browser driver for ats='ashby'"):
+            fill(plan, answers)
 
 
 class TestResolveUrl:

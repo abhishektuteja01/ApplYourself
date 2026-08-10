@@ -82,6 +82,8 @@ _IDENTITY_IDS = {
     "candidate-location": "location",
     "location": "location",     # Lever's raw DOM name for the same concept
     "country": "country",
+    "_systemfield_email": "email",       # Ashby's raw systemfield id
+    "_systemfield_location": "location",
 }
 
 # Handled by plan.py, which knows the role's /tailor output dir.
@@ -533,10 +535,10 @@ def _pick_country(field: MergedField, value: str) -> str | None:
 def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None:
     if field.id in FILE_IDS:
         return Resolution("defer", tier="A", reason=field.id)
-    if field.id in ("full_name", "name"):
-        # A board-shape difference, not a Greenhouse concept: Lever asks one
-        # combined "Full name" field (DOM name="name") where Greenhouse asks
-        # first/last separately. Composed here rather than aliased through
+    if field.id in ("full_name", "name", "_systemfield_name"):
+        # A board-shape difference, not a Greenhouse concept: Lever/Ashby ask
+        # one combined "Full name" field where Greenhouse asks first/last
+        # separately. Composed here rather than aliased through
         # _IDENTITY_IDS, since there is no single identity.* key to alias to.
         first, last = answers.identity["first_name"], answers.identity["last_name"]
         return _fill(f"{first} {last}".strip(), "A")
