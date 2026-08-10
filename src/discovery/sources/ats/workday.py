@@ -277,7 +277,15 @@ class WorkdaySource(Source):
                 frontier = cursor.offset_for(c.slug, term) or LIST_LIMIT
                 offsets = [0] + [frontier + k * LIST_LIMIT
                                   for k in range(MAX_PAGES_PER_TERM - 1)]
-                next_frontier = 0
+                # Seeded with the frontier this run inherited, so a run that
+                # reads page 0 and then stops leaves it exactly where it was.
+                # Starting at 0 walked it BACKWARDS: page 0 coming back full
+                # set it to `0 + LIST_LIMIT`, so a deadline cut right after the
+                # head rewrote a frontier of 200 as 50. Invisible on fresh
+                # pairs, where `frontier` defaults to LIST_LIMIT and the two
+                # coincide — and wrong on exactly the deep pairs the cursor
+                # exists for.
+                next_frontier = frontier
                 pages_read = 0
                 try:
                     for offset in offsets:
@@ -305,7 +313,10 @@ class WorkdaySource(Source):
                         if len(postings) < LIST_LIMIT:
                             next_frontier = 0   # exhausted; restart at the head
                             break
-                        next_frontier = offset + LIST_LIMIT
+                        if offset:
+                            # Page 0 is the freshness read, not the frontier
+                            # read. Only a deep page may advance it.
+                            next_frontier = offset + LIST_LIMIT
                     # Where the next run resumes its DEEP reading. Page 0 is
                     # unconditional, so a 0 here only means "start over",
                     # never "skip the head".

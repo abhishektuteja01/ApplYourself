@@ -464,6 +464,56 @@ class TestTheCrawlResumesAcrossRuns:
         assert max(second[:per_term]) > max(first[:per_term])
         assert second[1] == cap
 
+    def test_a_deadline_cut_after_page_zero_leaves_the_frontier_where_it_was(
+        self, monkeypatch
+    ):
+        """Page 0 is the freshness read, not the frontier read.
+
+        Letting a full page 0 write `0 + LIST_LIMIT` walked the frontier
+        *backwards*: a pair sitting at 200 that read the head and then hit the
+        deadline came back as 50, losing the depth earlier runs had bought.
+        Invisible on a fresh pair, where the frontier defaults to LIST_LIMIT
+        and the two values coincide — so it bit only the deep pairs the cursor
+        exists for.
+        """
+        from src.discovery import crawl_cursor as cc
+
+        companies = self._companies(1)
+        slug = companies[0].slug
+        terms = search_terms(verticals_module.get_config())
+        full = [dict(LIST_ITEM, externalPath=f"/job/{i}")
+                for i in range(workday.LIST_LIMIT)]
+
+        cursor = cc.CrawlCursor(ats="workday")
+        for term in terms:
+            cursor.set_offset(slug, term, 200)
+        cc.save_cursor(cursor)
+
+        reads = {"n": 0}
+
+        def one_full_page(company, wd, site_id, offset, search_text="",
+                          deadline_ts=None):
+            reads["n"] += 1
+            return {"total": 0, "jobPostings": full}
+
+        ctx = MockContext()
+        # Cut the run the moment any page has been read, so every term gets
+        # its page 0 and nothing deeper.
+        ctx.deadline_reached = lambda: reads["n"] > 0
+
+        monkeypatch.setattr(universe, "load", lambda ats: companies)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+        monkeypatch.setattr(workday, "list_page", one_full_page)
+
+        WorkdaySource().fetch(ctx)
+
+        after = cc.load_cursor("workday")
+        assert after.offset_for(slug, terms[0]) == 200, (
+            "a full page 0 followed by a deadline cut must not rewrite the "
+            "frontier"
+        )
+
     def test_an_exhausted_pair_starts_over_next_run(self, monkeypatch):
         """A short page means the term is exhausted — the next run should
         re-crawl it from the top to pick up newly posted roles, not keep
