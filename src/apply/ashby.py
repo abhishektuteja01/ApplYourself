@@ -211,6 +211,12 @@ def _grouped_field(container, field_id: str, label: str, required: bool, section
         for box in checkboxes:
             box_name = box.get("name") or ""
             labels = container.xpath(f'.//label[@for="{box.get("id")}"]')
+            # `value` and `label` are the same string here only because
+            # Ashby's markup happens to spell a checkbox's name as its own
+            # label text — answers.py's opt-out matching (_pick_option) goes
+            # by label, not value, so this coincidence is not load-bearing,
+            # but a future board where the two diverge would need value read
+            # from somewhere else.
             opt_label = _text(labels[0]) if labels else box_name
             options.append(MergedOption(label=opt_label, value=box_name))
         return MergedField(

@@ -40,10 +40,13 @@ from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_
 from src.discovery.sources.base import Source, SourceResult
 
 LIST_LIMIT = 50
-# A per-company ceiling, not a design target: 60 pages * LIST_LIMIT = 3,000
-# postings is far past what any curated (§12b: 30-60 tenant) list needs, and
-# stops one oversized tenant from consuming a whole run's deadline.
-MAX_PAGES_PER_COMPANY = 60
+# A per-company ceiling: NVIDIA alone reports total=2000, i.e. 40 pages at
+# LIST_LIMIT — one tenant that size can eat several minutes of paced list
+# calls before a single detail fetch fires. Capped well under the largest
+# real tenant seen so one oversized board cannot consume a whole run's
+# deadline; the tail of a 55-tenant list still gets polled. A truncated
+# tenant is not a failure — it is read again, from page 0, next run.
+MAX_PAGES_PER_COMPANY = 20
 
 _POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)
 _POSTED_YESTERDAY = re.compile(r"posted\s+yesterday", re.IGNORECASE)
@@ -149,6 +152,8 @@ class WorkdaySource(Source):
         ok = 0
         err_other = 0
         shape_errors = 0
+        detail_attempts = 0
+        detail_shape_errors = 0
         first_request = True
 
         ticker = trace.Ticker(self.name, len(companies), every=100)
@@ -214,6 +219,7 @@ class WorkdaySource(Source):
                 if ctx.deadline_reached():
                     break
                 time.sleep(pacing)
+                detail_attempts += 1
                 try:
                     row = _detail_row(company, c.name, wd, site_id, path, item, vertical,
                                        deadline_ts=ctx.deadline_ts)
@@ -221,6 +227,14 @@ class WorkdaySource(Source):
                     errors.append(f"{c.name}: {item.get('title', '')!r}: {e}")
                     continue
                 except PAYLOAD_SHAPE_ERRORS as e:
+                    detail_shape_errors += 1
+                    # Every detail fetch failing the same way, across every
+                    # tenant, points at a Workday schema change breaking the
+                    # parser, not one dead posting — same reasoning as the
+                    # list-stage guard just above, scoped to detail attempts
+                    # since a survivor can come from any company.
+                    if detail_shape_errors > 1 and detail_shape_errors == detail_attempts:
+                        raise
                     errors.append(f"{c.name}: {item.get('title', '')!r}: malformed detail: {e}")
                     continue
                 if row is not None:

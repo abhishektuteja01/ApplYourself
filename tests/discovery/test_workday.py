@@ -193,6 +193,24 @@ class TestWorkdaySourceFetch:
         assert len(res.rows) == 1
         assert res.errors
 
+    def test_every_detail_fetch_failing_the_same_way_is_raised_not_swallowed(self, monkeypatch):
+        """A detail response every survivor's fetch cannot parse points at a
+        Workday schema change breaking the parser, not two dead postings —
+        raising it stops the run from reporting a healthy, empty shard."""
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("A Co", "workday", "a|wd1|Site"),
+            UniverseCompany("B Co", "workday", "b|wd1|Site"),
+        ])
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM],
+        })
+        # No "jobPostingInfo" key -- _detail_row raises TypeError on every call.
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: {})
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        with pytest.raises(TypeError):
+            WorkdaySource().fetch(MockContext())
+
     def test_list_endpoint_failure_is_a_per_company_error(self, monkeypatch):
         from src.discovery.sources.ats.http import CareersError
 
