@@ -105,8 +105,33 @@ def resolve_out_dir(job_id: str, state: dict | None) -> Path:
     return out_dir
 
 
-def build(job_id: str, url: str | None = None,
-          out_dir: Path | None = None) -> tuple[Plan, "Answers"]:
+def load_overrides(path: Path) -> dict[str, tuple[str | tuple[str, ...], str]]:
+    """`/apply`'s per-run, per-field answers for Tier C questions (§15) —
+    `{"field_id": {"value": "...", "tier": "C1"}}`, `value` a string or a list
+    for a multi-select. Parsing only; no judgment lives here (R7) — the
+    command file decided every value before this ever runs.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ApplyCliError(f"{path}: not readable JSON ({exc})") from exc
+
+    overrides: dict[str, tuple[str | tuple[str, ...], str]] = {}
+    for field_id, entry in raw.items():
+        tier = entry.get("tier")
+        if tier not in ("C1", "C2"):
+            raise ApplyCliError(f"{path}: {field_id!r} has tier {tier!r}, want C1 or C2")
+        value = entry.get("value")
+        if isinstance(value, list):
+            value = tuple(value)
+        elif not isinstance(value, str):
+            raise ApplyCliError(f"{path}: {field_id!r} value must be a string or a list")
+        overrides[field_id] = (value, tier)
+    return overrides
+
+
+def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
+          answers_path: Path | None = None) -> tuple[Plan, "Answers"]:
     """Everything `plan` does, minus the printing.
 
     Returns the answer config alongside the plan: `fill` needs it to re-resolve
@@ -117,7 +142,8 @@ def build(job_id: str, url: str | None = None,
     target = Path(out_dir) if out_dir else resolve_out_dir(job_id, state)
     answers = load_answers()
     board = load_board(posting_url)
-    return plan_for_board(board, answers, target, job_id=job_id), answers
+    overrides = load_overrides(Path(answers_path)) if answers_path else None
+    return plan_for_board(board, answers, target, job_id=job_id, overrides=overrides), answers
 
 
 # Every exception `build()` can raise that names a per-role problem rather
@@ -242,7 +268,8 @@ def render(plan: Plan) -> str:
 
 def _cmd_plan(args: argparse.Namespace) -> int:
     try:
-        plan, _ = build(args.job_id, url=args.url, out_dir=args.out_dir)
+        plan, _ = build(args.job_id, url=args.url, out_dir=args.out_dir,
+                        answers_path=args.answers)
     except PostingExpired as exc:
         print(f"EXPIRED: {exc}", file=sys.stderr)
         return 2
@@ -257,7 +284,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
 def _cmd_fill(args: argparse.Namespace) -> int:
     """Fill a real form and stop. No submit path exists yet."""
     try:
-        plan, answers = build(args.job_id, url=args.url, out_dir=args.out_dir)
+        plan, answers = build(args.job_id, url=args.url, out_dir=args.out_dir,
+                              answers_path=args.answers)
     except PostingExpired as exc:
         print(f"EXPIRED: {exc}", file=sys.stderr)
         return 2
@@ -354,10 +382,15 @@ class RunOutcome:
     unmapped: tuple[str, ...] = dc_field(default_factory=tuple)
 
 
-def _run_role(job_id: str, *, submit: bool, headless: bool) -> RunOutcome:
+def _run_role(job_id: str, *, submit: bool, headless: bool,
+              answers_path: Path | None = None) -> RunOutcome:
     """One role, start to finish. Never raises — every failure mode this CLI
     knows about comes back as a category on the outcome, so one bad role
     cannot stop the queue.
+
+    `answers_path` only ever applies to a single-role run (`--job-id`, §10's
+    per-run Tier C overrides from `/apply`) — the queue path never passes one,
+    since an override answers exactly one role's questions.
 
     Calls `build`/`run_one`/`track_cli.main` as plain module-level names (not
     default-parameter values) so a test can monkeypatch `apply_cli.build`,
@@ -367,7 +400,7 @@ def _run_role(job_id: str, *, submit: bool, headless: bool) -> RunOutcome:
     miss it.
     """
     try:
-        plan, answers = build(job_id)
+        plan, answers = build(job_id, answers_path=answers_path)
     except PostingExpired as exc:
         return RunOutcome(job_id, category="expired", detail=str(exc))
     except BUILD_ERRORS as exc:
@@ -400,17 +433,20 @@ def _run_role(job_id: str, *, submit: bool, headless: bool) -> RunOutcome:
 
 def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
               rate: float = 240.0, jitter: float = 60.0,
-              sleeper=time.sleep, jitter_fn=random.uniform) -> list[RunOutcome]:
+              sleeper=time.sleep, jitter_fn=random.uniform,
+              answers_path: Path | None = None) -> list[RunOutcome]:
     """Walk the queue, sleeping `rate + U(0, jitter)` seconds between roles.
 
     `sleeper`/`jitter_fn` are injectable so tests never actually sleep or
-    depend on randomness.
+    depend on randomness. `answers_path` (see `_run_role`) is only meaningful
+    when `job_ids` names a single role.
     """
     outcomes = []
     for i, job_id in enumerate(job_ids):
         if i > 0:
             sleeper(rate + jitter_fn(0, jitter))
-        outcomes.append(_run_role(job_id, submit=submit, headless=headless))
+        outcomes.append(_run_role(job_id, submit=submit, headless=headless,
+                                   answers_path=answers_path))
     return outcomes
 
 
@@ -458,6 +494,11 @@ def write_report(outcomes: list[RunOutcome], started_at: datetime,
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if args.answers and not args.job_id:
+        print("ERROR: --answers only applies to a single role — pass --job-id",
+              file=sys.stderr)
+        return 1
+
     if args.job_id:
         queue = eligible_queue()
         if args.job_id not in queue:
@@ -487,7 +528,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     started = datetime.now()
     outcomes = run_queue(queue, submit=args.submit, headless=args.headless,
-                          rate=rate, jitter=jitter)
+                          rate=rate, jitter=jitter, answers_path=args.answers)
     path = write_report(outcomes, started)
 
     print(render_report(outcomes, started))
@@ -510,12 +551,16 @@ def main(argv: list[str] | None = None) -> int:
                    help="posting URL override, when the stored one is stale")
     p.add_argument("--out-dir", default=None, type=Path,
                    help="/tailor output dir override")
+    p.add_argument("--answers", default=None, type=Path,
+                   help="/apply's per-run Tier C overrides JSON (§15)")
     p.set_defaults(func=_cmd_plan)
 
     f = sub.add_parser("fill", help="fill one real form and stop; never submits")
     f.add_argument("job_id")
     f.add_argument("--url", default=None)
     f.add_argument("--out-dir", default=None, type=Path)
+    f.add_argument("--answers", default=None, type=Path,
+                   help="/apply's per-run Tier C overrides JSON (§15)")
     f.add_argument("--force", action="store_true",
                    help="fill even though the role parks")
     f.add_argument("--headless", action="store_true")
@@ -530,6 +575,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--submit", action="store_true",
                    help="click submit on every role that resolves; default is fill-and-stop")
     r.add_argument("--job-id", default=None, help="run one specific role instead of the queue")
+    r.add_argument("--answers", default=None, type=Path,
+                   help="/apply's per-run Tier C overrides JSON (§15); requires --job-id")
     r.add_argument("--headless", action="store_true")
     r.set_defaults(func=_cmd_run)
 

@@ -185,6 +185,90 @@ class TestUnmapped:
         assert [s.id for s in plan.skipped] == ["question_9"]
 
 
+class TestOverrides:
+    """`/apply`'s per-run Tier C overrides (§10/§15) — the only way a required
+    Tier C question can ever leave unmapped[] without judgment landing in
+    this module or a company-specific answer leaking into
+    profile/application_answers.yaml."""
+
+    def test_an_override_resolves_a_required_tier_c_park(self, answers, tailor_dir):
+        why_us = field(id="question_9", label="Why do you want to work here?",
+                        kind="textarea", required=True)
+        plan = build_plan(one([why_us]), answers, tailor_dir)
+        assert [u.id for u in plan.unmapped] == ["question_9"]
+
+        plan = build_plan(
+            one([why_us]), answers, tailor_dir,
+            overrides={"question_9": ("Drafted from bullets.md.", "C1")},
+        )
+        assert plan.unmapped == ()
+        assert plan.parked is False
+        assert plan.fields[0].value == "Drafted from bullets.md."
+        assert plan.fields[0].tier == "C1"
+
+    def test_an_override_resolves_an_optional_tier_c_draftable(self, answers, tailor_dir):
+        why_us = field(id="question_9", label="Why do you want to work here?",
+                        kind="textarea", required=False)
+        plan = build_plan(
+            one([why_us]), answers, tailor_dir,
+            overrides={"question_9": ("From company_answers.md.", "C2")},
+        )
+        assert plan.draftable == ()
+        assert plan.fields[0].value == "From company_answers.md."
+        assert plan.fields[0].tier == "C2"
+
+    def test_missing_override_still_parks(self, answers, tailor_dir):
+        why_us = field(id="question_9", label="Why do you want to work here?",
+                        kind="textarea", required=True)
+        plan = build_plan(
+            one([why_us]), answers, tailor_dir,
+            overrides={"some_other_field": ("x", "C1")},
+        )
+        assert [u.id for u in plan.unmapped] == ["question_9"]
+
+    def test_an_override_never_touches_a_non_tier_c_field(self, answers, tailor_dir):
+        # first_name is Tier A — an override keyed to it must be ignored, not
+        # silently overwrite an identity answer.
+        plan = build_plan(
+            one([field(id="first_name", label="First Name", kind="text")]),
+            answers, tailor_dir,
+            overrides={"first_name": ("Somebody Else", "C1")},
+        )
+        assert plan.fields[0].value != "Somebody Else"
+
+    def test_a_bad_override_value_raises_not_parks(self, answers, tailor_dir):
+        # A tuple into a single-valued textarea is exactly what _check_value
+        # exists to catch — a resolver bug (here, the command feeding a bad
+        # override) must not read as an unanswerable question.
+        why_us = field(id="question_9", label="Why do you want to work here?",
+                        kind="textarea", required=True)
+        with pytest.raises(PlanError):
+            build_plan(
+                one([why_us]), answers, tailor_dir,
+                overrides={"question_9": (("a", "b"), "C1")},
+            )
+
+    def test_plan_for_board_passes_overrides_through(
+        self, merged, answers, tailor_dir, scan, payload
+    ):
+        from src.apply.schema import parse_schema
+
+        name = "form_minimal"
+        board_form = BoardForm(
+            posting=Posting(token="1", url_slug=None), slug="gasketworks", html="",
+            scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
+        )
+        plan = plan_for_board(board_form, answers, tailor_dir, job_id="a1b2c3d4")
+        required_c_ids = [u.id for u in plan.unmapped]
+        assert required_c_ids  # form_minimal parks on at least one Tier C question
+
+        overridden = plan_for_board(
+            board_form, answers, tailor_dir, job_id="a1b2c3d4",
+            overrides={required_c_ids[0]: ("An answer.", "C1")},
+        )
+        assert required_c_ids[0] not in [u.id for u in overridden.unmapped]
+
+
 class TestEmploymentSwitch:
     """`employment.only_when_required` — a config switch, not a fixed policy.
     The block holds one role, which for anyone not currently employed is the

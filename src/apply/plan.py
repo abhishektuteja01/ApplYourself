@@ -250,8 +250,22 @@ def build_plan(
     title: str = "",
     submit_selector: str | None = None,
     submit_disabled: bool = False,
+    overrides: dict[str, tuple[str | tuple[str, ...], str]] | None = None,
 ) -> Plan:
-    """Resolve every reconciled field into a fill, an attachment or a park."""
+    """Resolve every reconciled field into a fill, an attachment or a park.
+
+    `overrides` is a per-run, per-field lookup — `field.id -> (value, tier)`,
+    `tier` one of `"C1"`/`"C2"` — supplied by `/apply` (`.claude/commands/
+    apply.md`) after it classifies and, for C1, drafts an answer, or resolves
+    a C2 question from that role's `company_answers.md`. It exists so a
+    required Tier C question can ever leave `unmapped[]` without either
+    judgment landing in this module (R7) or a company-specific answer leaking
+    into `profile/application_answers.yaml` (§15 forbids exactly that for C1;
+    it binds harder for C2, which is company-specific by construction). Only
+    consulted for `resolve()`'s Tier C outcomes — every other tier keeps
+    deciding itself.
+    """
+    overrides = overrides or {}
     out_dir = Path(out_dir)
     if not out_dir.is_dir():
         raise PlanError(f"{out_dir} is not a directory — run /tailor for this role first")
@@ -280,6 +294,10 @@ def build_plan(
             continue
 
         resolution = resolve(field, answers)
+
+        if resolution.tier == "C" and field.id in overrides:
+            value, override_tier = overrides[field.id]
+            resolution = Resolution("fill", value=value, tier=override_tier)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))
@@ -402,6 +420,7 @@ def plan_for_board(
     answers: Answers,
     out_dir: Path,
     job_id: str = "",
+    overrides: dict[str, tuple[str | tuple[str, ...], str]] | None = None,
 ) -> Plan:
     """build_plan over a fetched board, carrying its identifiers into the plan."""
     return build_plan(
@@ -416,4 +435,5 @@ def plan_for_board(
         title=board_form.schema.title,
         submit_selector=board_form.scan.submit_selector,
         submit_disabled=board_form.scan.submit_disabled,
+        overrides=overrides,
     )

@@ -340,7 +340,7 @@ class TestRunQueue:
 
     def test_a_parked_role_does_not_stop_the_run(self, monkeypatch):
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id), None))
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli, "run_one",
                              lambda plan, answers, **kw: _fake_result())
         outcomes = apply_cli.run_queue(
@@ -350,7 +350,7 @@ class TestRunQueue:
 
         # Now make the first one park (unmapped, nothing recovered) and confirm
         # the second role still runs.
-        def build_with_park(job_id):
+        def build_with_park(job_id, **kw):
             unmapped = () if job_id == "ok" else [
                 type("U", (), {"id": "why_us"})(),
             ]
@@ -369,7 +369,7 @@ class TestRunQueue:
     def test_a_successful_submit_calls_track_cli_not_state_io(self, monkeypatch):
         track_calls = []
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id), None))
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli, "run_one",
                              lambda plan, answers, **kw: _fake_result(submitted=True))
         monkeypatch.setattr(apply_cli.track_cli, "main", track_calls.append)
@@ -386,7 +386,7 @@ class TestRunQueue:
     def test_a_recovered_field_is_no_longer_blocking(self, monkeypatch):
         u = type("U", (), {"id": "hispanic_ethnicity"})()
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id, unmapped=[u]), None))
+                             lambda job_id, **kw: (_fake_plan(job_id, unmapped=[u]), None))
         monkeypatch.setattr(
             apply_cli, "run_one",
             lambda plan, answers, **kw: _fake_result(recovered=["hispanic_ethnicity"]),
@@ -396,7 +396,7 @@ class TestRunQueue:
 
     def test_a_fill_failure_is_a_failed_category(self, monkeypatch):
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id), None))
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(
             apply_cli, "run_one",
             lambda plan, answers, **kw: _fake_result(failures=["country: no option matching"]),
@@ -442,7 +442,7 @@ class TestRunCommand:
         repo.write_state()
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id), None))
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
         submit_after_seen = []
         monkeypatch.setattr(
             apply_cli, "run_one",
@@ -459,7 +459,7 @@ class TestRunCommand:
         repo.write_state()
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id), None))
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli, "run_one",
                              lambda plan, answers, **kw: _fake_result())
         assert apply_cli.main(["run", "--job-id", JOB_ID, "--rate", "0s"]) == 0
@@ -474,7 +474,7 @@ class TestRunCommand:
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
         seen = []
 
-        def build_and_record(job_id):
+        def build_and_record(job_id, **kw):
             seen.append(job_id)
             return _fake_plan(job_id), None
 
@@ -489,7 +489,7 @@ class TestRunCommand:
         out_dir = tmp_path / "apply_runs"
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", out_dir)
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id: (_fake_plan(job_id), None))
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(
             apply_cli, "run_one",
             lambda plan, answers, **kw: _fake_result(failures=["boom"]),
