@@ -56,6 +56,12 @@ class FillError(Exception):
     """A widget did not take the value, or the form is not what was planned."""
 
 
+class SubmitGuardError(Exception):
+    """Refused to click submit. The message names exactly what is still
+    unresolved — this is the invariant that keeps a parked or half-filled role
+    from ever going out."""
+
+
 @dataclass
 class FieldOutcome:
     id: str
@@ -84,6 +90,12 @@ class FillResult:
     """Parked fields that resolved once their real options could be read. The
     submit guard has to subtract these from the plan's unmapped[], or a role
     parks over a question that is now answered."""
+
+    submitted: bool = False
+    submit_error: str = ""
+    """Set by `run_one` when `submit=True`. Empty + `submitted=False` means
+    submission was never attempted (either `submit=False` or the fill itself
+    failed first) — check `submit_error` to tell that apart from a refusal."""
 
     @property
     def ok(self) -> bool:
@@ -238,6 +250,14 @@ class BrowserDriver:
 
     def close(self) -> None:
         self.page.keyboard.press("Escape")
+
+    def submit_disabled_now(self, selector: str) -> bool:
+        """Re-read `aria-disabled` live — `plan.submit_disabled` is a scan-time
+        snapshot and every field write since then can have changed it."""
+        return self.page.locator(selector).first.get_attribute("aria-disabled") == "true"
+
+    def click_submit(self, selector: str) -> None:
+        self.page.locator(selector).first.click()
 
 
 def _merged_from(field: FieldPlan, options: tuple[str, ...]) -> MergedField:
@@ -420,24 +440,79 @@ def _probe_parked_selects(driver, plan: Plan, result: FillResult,
         result.recovered.append(parked.id)
 
 
-def fill(plan: Plan, answers: Answers | None = None, *,
-         headless: bool = False, after=None) -> FillResult:
-    """Open a browser, fill the form, and hand the result back.
+def blocking_questions(plan: Plan, result: FillResult) -> tuple[str, ...]:
+    """Required questions still unanswered after fill-time recovery.
+
+    `plan.unmapped` is required-only by construction — `answers.resolve`
+    demotes an unmatched *optional* question to skip/draftable before it can
+    ever reach `Plan.unmapped` (see `resolve()`'s `_park`/`_skip` call sites),
+    so nothing here has to re-check `.required`; it would always be true.
+    """
+    recovered = set(result.recovered)
+    return tuple(u.id for u in plan.unmapped if u.id not in recovered)
+
+
+def submit(plan: Plan, result: FillResult, driver) -> None:
+    """Click the one submit button on an already-filled form.
+
+    The only path to a real click — `fill_plan` never reaches it, by
+    construction (`test_nothing_ever_clicks_submit`). Raises
+    `SubmitGuardError` instead of clicking when a required question is still
+    unanswered, the fill itself failed a field, or the board renders no submit
+    button at all.
+    """
+    blocking = blocking_questions(plan, result)
+    if blocking:
+        raise SubmitGuardError(f"required question(s) unresolved: {', '.join(blocking)}")
+    if result.failures:
+        raise SubmitGuardError(f"fill failure(s): {'; '.join(result.failures)}")
+    if plan.submit_selector is None:
+        raise SubmitGuardError("no submit button found on this form")
+    if driver.submit_disabled_now(plan.submit_selector):
+        raise SubmitGuardError("submit button is disabled")
+    driver.click_submit(plan.submit_selector)
+
+
+def run_one(plan: Plan, answers: Answers | None = None, *,
+            headless: bool = False, submit_after: bool = False, after=None) -> FillResult:
+    """Open a browser, fill the form, and — only when `submit_after` is set —
+    make the one guarded click, all inside the same session. A real
+    submission needs the click on the page it just filled; a fresh browser
+    would see none of that work.
 
     `after(result)` runs with the window still open, so a caller can report and
     let someone look at the form before it closes.
 
-    Never submits. There is no code path from here to a click on
-    `plan.submit_selector`; that arrives with the submit guard.
+    `submit_after` is the caller's decision made once per invocation (§13 —
+    `--submit` is never a config default); this function does not default it
+    on, and a guard refusal is recorded in `result.submit_error` rather than
+    raised, so one parked role in a queue does not kill the run.
     """
     sync_playwright = _require_playwright()
     with sync_playwright() as p:
         context = _launch(p, headless=headless)
         page = context.pages[0] if context.pages else context.new_page()
         try:
-            result = fill_plan(plan, BrowserDriver(page), answers)
+            driver = BrowserDriver(page)
+            result = fill_plan(plan, driver, answers)
+            if submit_after:
+                try:
+                    submit(plan, result, driver)
+                    result.submitted = True
+                except SubmitGuardError as exc:
+                    result.submit_error = str(exc)
             if after is not None:
                 after(result)
         finally:
             context.close()
     return result
+
+
+def fill(plan: Plan, answers: Answers | None = None, *,
+         headless: bool = False, after=None) -> FillResult:
+    """Fill only, never submit — `run_one` with `submit_after` left at its
+    default. Kept as its own name because `apply fill` (no `--submit` in
+    reach at all) is a distinct, deliberately narrower CLI surface than
+    `apply run`.
+    """
+    return run_one(plan, answers, headless=headless, after=after)
