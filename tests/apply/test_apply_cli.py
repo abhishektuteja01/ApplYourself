@@ -324,21 +324,24 @@ def _raise(exc):
 
 
 def _fake_plan(job_id=JOB_ID, company="Bushing Group", title="Widget Engineer",
-               unmapped=(), submit_selector="#application-form button[type=submit]"):
+               unmapped=(), submit_selector="#application-form button[type=submit]",
+               ats="greenhouse", requires_captcha=False):
     from src.apply.plan import Plan
     return Plan(
         job_id=job_id, board="bushinggroup", token="1", form_url=GH_URL,
         company=company, title=title, out_dir=Path("/tmp"),
         fields=(), files=(), unmapped=tuple(unmapped), draftable=(), skipped=(),
-        submit_selector=submit_selector, submit_disabled=False,
+        submit_selector=submit_selector, submit_disabled=False, ats=ats,
+        requires_captcha=requires_captcha,
     )
 
 
-def _fake_result(*, submitted=False, failures=(), recovered=(), submit_error=""):
+def _fake_result(*, submitted=False, failures=(), recovered=(), submit_error="",
+                  confirmed=False):
     from src.apply.fill import FillResult
     return FillResult(
         form_url=GH_URL, failures=list(failures), recovered=list(recovered),
-        submitted=submitted, submit_error=submit_error,
+        submitted=submitted, submit_error=submit_error, confirmed=confirmed,
     )
 
 
@@ -438,7 +441,10 @@ class TestRunQueue:
 
         outcomes = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
 
-        assert outcomes[0].category == "submitted"
+        # No confirmation marker was seen, so the submission is reported as
+        # unconfirmed — but it still transitions, because a duplicate
+        # application is worse than a state row that needs an eyeball.
+        assert outcomes[0].category == "submitted_unconfirmed"
         assert track_calls == [[JOB_ID, "applied", "--note",
                                  "auto-submitted via /apply (bushinggroup)"]]
 
@@ -555,3 +561,252 @@ class TestRunCommand:
         )
         assert apply_cli.main(["run", "--rate", "0s"]) == 1
         assert list(out_dir.glob("*.md"))
+
+
+class TestASubmissionIsNeverSilentlyLost:
+    """The three ways a run used to submit without leaving a usable trace."""
+
+    def test_a_confirmed_submit_is_plain_submitted(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result(
+                                 submitted=True, confirmed=True))
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "submitted"
+
+    def test_track_cli_returning_nonzero_is_not_reported_as_a_clean_submit(
+        self, monkeypatch
+    ):
+        # track_cli.main RETURNS 1 on a rejected transition, it does not raise.
+        # Reporting "submitted" here leaves the role at `tailored`, so the next
+        # --submit run applies to the same board a second time.
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result(submitted=True))
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 1)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "submitted_untracked"
+        assert "still says tailored" in out[0].detail
+
+    def test_track_cli_raising_does_not_abort_the_run_or_lose_the_submission(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result(submitted=True))
+        monkeypatch.setattr(apply_cli.track_cli, "main",
+                             _raise(OSError("disk full")))
+        out = apply_cli.run_queue([JOB_ID, "second"], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "submitted_untracked"
+        assert "OSError" in out[0].detail
+        assert len(out) == 2, "the second role must still run"
+
+    def test_a_driver_error_is_isolated_to_its_role(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+
+        def explode(plan, answers, **kw):
+            if plan.job_id == "boom":
+                raise TimeoutError("element not found")
+            return _fake_result()
+
+        monkeypatch.setattr(apply_cli, "run_one", explode)
+        out = apply_cli.run_queue(["boom", "fine"], submit=False, sleeper=lambda s: None)
+        assert out[0].category == "failed"
+        assert "TimeoutError" in out[0].detail
+        assert out[1].category == "ready"
+
+
+class TestManualApplyIsItsOwnCategory:
+    def test_a_board_with_no_driver_is_manual_not_failed(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id, ats="ashby"), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             _raise(AssertionError("must not open a browser")))
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "manual"
+        assert "apply by hand" in out[0].detail
+
+    def test_a_manual_apply_url_is_manual_not_failed(self, monkeypatch):
+        monkeypatch.setattr(
+            apply_cli, "build",
+            _raise(apply_cli.ManualApplyOnly("workday — apply by hand")),
+        )
+        out = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None)
+        assert out[0].category == "manual"
+
+
+class TestTheReportSurvivesACrash:
+    def test_the_report_holds_every_completed_role_when_the_walk_dies(
+        self, monkeypatch, tmp_path
+    ):
+        # The report is the only record of what went out. A crash on role 3
+        # must not erase roles 1 and 2.
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+
+        def explode(plan, answers, **kw):
+            if plan.job_id == "third":
+                raise RuntimeError("browser died")
+            return _fake_result(submitted=True, confirmed=True)
+
+        monkeypatch.setattr(apply_cli, "run_one", explode)
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
+
+        collected: list = []
+        apply_cli.run_queue(
+            ["first", "second", "third"], submit=True, sleeper=lambda s: None,
+            collect_into=collected,
+        )
+        assert [o.category for o in collected] == [
+            "submitted", "submitted", "failed",
+        ]
+        started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
+        text = apply_cli.write_report(collected, started, tmp_path).read_text(encoding="utf-8")
+        assert "first" in text and "second" in text and "third" in text
+
+
+class TestOverridesAreBoundToOneRole:
+    def test_a_file_drafted_for_another_role_is_refused(self, tmp_path):
+        # Tier C2 answers are company-specific by construction, so reusing a
+        # file sends the wrong company's "why us" under the user's name.
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({
+            "job_id": "other123",
+            "question_1": {"value": "Because I admire their work.", "tier": "C2"},
+        }), encoding="utf-8")
+        with pytest.raises(apply_cli.ApplyCliError, match="drafted for job_id"):
+            apply_cli.load_overrides(p, JOB_ID)
+
+    def test_a_matching_job_id_loads(self, tmp_path):
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({
+            "job_id": JOB_ID,
+            "question_1": {"value": "An answer.", "tier": "C1"},
+        }), encoding="utf-8")
+        assert apply_cli.load_overrides(p, JOB_ID) == {
+            "question_1": ("An answer.", "C1")}
+
+    def test_a_file_without_a_job_id_still_loads(self, tmp_path):
+        # Hand-written override files stay valid; the key is a guard, not a
+        # new required field.
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({"question_1": {"value": "x", "tier": "C1"}}),
+                      encoding="utf-8")
+        assert apply_cli.load_overrides(p, JOB_ID) == {"question_1": ("x", "C1")}
+
+
+class TestTheReportNeverOverwritesAnotherRun:
+    def test_two_runs_in_the_same_second_get_separate_files(self, tmp_path):
+        started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
+        first = apply_cli.reserve_report_path(started, tmp_path)
+        apply_cli.write_report([], started, path=first)
+        second = apply_cli.reserve_report_path(started, tmp_path)
+        assert first != second
+        assert first.exists()
+
+    def test_per_role_writes_reuse_the_reserved_path(self, tmp_path):
+        started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
+        path = apply_cli.reserve_report_path(started, tmp_path)
+        for _ in range(3):
+            apply_cli.write_report([], started, path=path)
+        assert len(list(tmp_path.glob("*.md"))) == 1
+
+
+class TestHeadlessAndCaptchaAreRefusedTogether:
+    def test_a_captcha_board_headless_with_submit_is_refused_before_the_browser(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            apply_cli, "build",
+            lambda job_id, **kw: (_fake_plan(job_id, ats="lever",
+                                              requires_captcha=True), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             _raise(AssertionError("must not open a browser")))
+        out = apply_cli.run_queue([JOB_ID], submit=True, headless=True,
+                                   sleeper=lambda s: None)
+        assert out[0].category == "failed"
+        assert "nobody to" in out[0].detail
+
+    def test_headed_is_fine(self, monkeypatch):
+        monkeypatch.setattr(
+            apply_cli, "build",
+            lambda job_id, **kw: (_fake_plan(job_id, ats="lever",
+                                              requires_captcha=True), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result())
+        out = apply_cli.run_queue([JOB_ID], submit=True, headless=False,
+                                   sleeper=lambda s: None)
+        assert out[0].category == "ready"
+
+
+class TestACrashAfterTheClickStillRecordsTheSubmission:
+    """The click is the irreversible act. `run_one` publishes its FillResult
+    into `sink` before the browser opens, so an exception anywhere after the
+    click — including in browser teardown, or a Ctrl-C — cannot erase the fact
+    that an application went out. Losing it leaves the role `tailored` and the
+    next run applies to the same board again.
+    """
+
+    def _plan_only(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
+
+    def test_teardown_blowing_up_after_a_submit_is_still_a_submission(
+        self, monkeypatch
+    ):
+        self._plan_only(monkeypatch)
+
+        def submit_then_die(plan, answers, sink=None, **kw):
+            sink.append(_fake_result(submitted=True))
+            raise RuntimeError("Target page has been closed")
+
+        monkeypatch.setattr(apply_cli, "run_one", submit_then_die)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "submitted_unconfirmed"
+        assert "SUBMITTED" in out[0].detail
+
+    def test_a_keyboard_interrupt_after_a_submit_is_recorded_then_reraised(
+        self, monkeypatch
+    ):
+        self._plan_only(monkeypatch)
+        seen: list = []
+
+        def submit_then_interrupt(plan, answers, sink=None, **kw):
+            sink.append(_fake_result(submitted=True))
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(apply_cli, "run_one", submit_then_interrupt)
+        out = apply_cli._run_role(JOB_ID, submit=True, headless=False)
+        assert out.category == "submitted_unconfirmed"
+
+    def test_a_crash_with_nothing_submitted_is_an_ordinary_failure(
+        self, monkeypatch
+    ):
+        self._plan_only(monkeypatch)
+
+        def die_early(plan, answers, sink=None, **kw):
+            sink.append(_fake_result(submitted=False))
+            raise TimeoutError("element not found")
+
+        monkeypatch.setattr(apply_cli, "run_one", die_early)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "failed"
+
+    def test_a_keyboard_interrupt_with_nothing_submitted_propagates(
+        self, monkeypatch
+    ):
+        self._plan_only(monkeypatch)
+
+        def interrupt(plan, answers, sink=None, **kw):
+            sink.append(_fake_result(submitted=False))
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(apply_cli, "run_one", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            apply_cli._run_role(JOB_ID, submit=True, headless=False)

@@ -192,30 +192,64 @@ def _required(el) -> bool:
 def _is_multi_select(el) -> bool:
     """react-select renders an identical input for single and multi; the only
     tell is the value-container class on an ancestor."""
-    for anc in _ancestors(el):
-        if "select__value-container--is-multi" in _classes(anc):
-            return True
-        if "select" in _classes(anc) or "select__container" in _classes(anc):
-            break
-    return False
+    # A native <select multiple> is the plainest possible multi widget, and
+    # reading only react-select's class names called it single — §13's "a
+    # mark-all-that-apply filled as a single select, silently submitting one
+    # option", with nothing to catch it: the education/employment/eeoc blocks
+    # are all dom_only, so reconcile's multi cross-check never runs there.
+    if el.tag == "select" and el.get("multiple") is not None:
+        return True
+    if (el.get("aria-multiselectable") or "").strip().lower() == "true":
+        return True
+    # Walk the whole way up rather than stopping at the first `select`-ish
+    # ancestor: the two classes can nest in either order, and breaking on the
+    # inner one hid an `--is-multi` sitting outside it.
+    return any(
+        "select__value-container--is-multi" in _classes(anc)
+        for anc in _ancestors(el)
+    )
 
 
 def _file_group(el):
     """The role=group wrapper that carries a file input's real label and
     required flag."""
+    # §2b's verified contract is `div[role=group][aria-labelledby]
+    # [aria-required]` — the `file-upload` class is not part of it. Requiring
+    # the class made a cosmetic rename hard-park every board, so it is now a
+    # preference between candidate wrappers rather than a precondition.
+    fallback = None
     for anc in _ancestors(el):
-        if anc.get("role") == "group" and "file-upload" in _classes(anc):
+        if anc.get("role") != "group":
+            continue
+        if "file-upload" in _classes(anc):
             return anc
-    return None
+        if fallback is not None:
+            continue
+        if not (anc.get("aria-labelledby") or anc.get("aria-label")):
+            continue
+        # Only a wrapper that owns nothing but file inputs. A section-level
+        # role=group (the EEOC block, say) also carries aria-labelledby, and
+        # adopting it hands the file field that section's label and required
+        # flag — an optional cover letter became a required
+        # "Voluntary Self-Identification".
+        controls = anc.xpath('.//input | .//select | .//textarea')
+        if all((c.get("type") or "").lower() == "file" for c in controls):
+            fallback = anc
+    return fallback
 
 
 def _scan_checkbox_group(form, fieldset) -> DomField:
     group_id = fieldset.get("id") or ""
     legends = fieldset.xpath("./legend")
     label = _text(legends[0]) if legends else ""
+    # NB: option collection below filters `aria-hidden` decoys. This was the
+    # one scan path that did not, and `reconcile` *prefers* DOM options over
+    # the API's, so a phantom blank option propagated straight into the plan.
     options = []
     name = ""
     for box in fieldset.xpath('.//input[@type="checkbox"]'):
+        if _is_hidden(box):
+            continue
         box_id = box.get("id") or ""
         name = name or (box.get("name") or "")
         opt_label = ""
@@ -242,7 +276,15 @@ def scan_form(page_html: str) -> FormScan:
     """Read every fillable control out of a rendered application form."""
     if not page_html or not page_html.strip():
         raise DomScanError("empty document")
-    doc = lxml_html.fromstring(page_html)
+    try:
+        doc = lxml_html.fromstring(page_html)
+    except Exception as exc:  # noqa: BLE001
+        # lxml raises bare ValueError on an XML declaration and its own
+        # ParserError on a bodyless doctype. Neither is a DomScanError, so
+        # neither was in `apply_cli.BUILD_ERRORS` — instead of one role
+        # failing, the whole queue walk died.
+        raise DomScanError(f"could not parse the document: "
+                            f"{type(exc).__name__}: {exc}") from exc
     forms = doc.xpath(f'//form[@id="{FORM_ID}"]')
     if not forms:
         raise DomScanError(f"no <form id={FORM_ID!r}> in the document")
@@ -253,9 +295,19 @@ def scan_form(page_html: str) -> FormScan:
     for fieldset in form.xpath('.//fieldset[@id][contains(@class, "checkbox")]'):
         grouped.update(fieldset.xpath('.//input[@type="checkbox"]'))
 
-    # One union xpath so fields come back in document order.
+    # One union xpath so fields come back in document order. `role=combobox` is
+    # in here because tag name alone is not sufficient (§6b heuristic 2): a
+    # react-select rendered on a <div role="combobox"> is a real, often
+    # required field, and selecting by tag first made it invisible — no field,
+    # no raise, and not even an `api_only` diagnostic.
+    #
+    # `role=listbox` is deliberately NOT here. It is as often the dropdown
+    # *panel* a combobox owns as it is the control itself, and scanning it
+    # would invent a second, phantom field for one widget. No captured board
+    # renders a standalone one — add it when one does.
     controls = form.xpath(
-        './/fieldset[@id][contains(@class, "checkbox")] | .//input | .//textarea | .//select'
+        './/fieldset[@id][contains(@class, "checkbox")] | .//input | .//textarea'
+        ' | .//select | .//*[@role="combobox"]'
     )
     for el in controls:
         if el in grouped or _is_hidden(el):

@@ -174,6 +174,36 @@ def _scan_question(question_el) -> MergedField | None:
             kind="radio_group", section=section, multi=False, options=tuple(options),
         )
 
+    # Checkboxes, before the generic branch — they group by shared name the
+    # same way radios do. Measured over 19 live Lever boards: 10 of them
+    # render at least one, as `pronouns`, `consent[store]` (GDPR storage
+    # consent) or a custom card field, and every one of those 10 used to die
+    # with `unknown input type 'checkbox'`. No committed fixture had one.
+    checkboxes = question_el.xpath('.//input[@type="checkbox"]')
+    if checkboxes:
+        name = checkboxes[0].get("name") or ""
+        if not name:
+            return None
+        required = required or any(c.get("required") is not None for c in checkboxes)
+        if len(checkboxes) == 1 and not (checkboxes[0].get("value") or ""):
+            # A lone valueless box is a consent tick, not a one-option group.
+            return MergedField(
+                id=name, name=name, label=label, required=required,
+                kind="checkbox", section=section, multi=False, options=(),
+            )
+        options = []
+        for box in checkboxes:
+            spans = box.xpath(
+                'following-sibling::span[contains(@class, "eeo-option-text")][1]'
+            )
+            opt_label = _text(spans[0]) if spans else (box.get("value") or "")
+            options.append(MergedOption(label=opt_label, value=box.get("value") or ""))
+        return MergedField(
+            id=name, name=name, label=label, required=required,
+            kind="checkbox_group", section=section, multi=True,
+            options=tuple(options),
+        )
+
     controls = question_el.xpath(
         './/input[@type!="hidden" and @type!="radio"] | .//select | .//textarea'
     )

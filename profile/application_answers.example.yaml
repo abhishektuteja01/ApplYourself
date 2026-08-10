@@ -31,8 +31,29 @@ identity:
 # profile/preferences.md and refuses to run if the two disagree, or if that
 # section states no status. This is a legal claim sent under your name, so it
 # is not a keyword rule and cannot be overridden by one.
+# scope_qualified_answer settles the *other* authorization question boards ask:
+# not "may you work here" but "may you work here permanently / for any employer
+# / without sponsorship". `status` cannot answer that — for time_limited it is
+# Yes to the first question and No to the second — and guessing it either way
+# sends a false statement under your name, so /apply parks these by default.
+#
+#   park  (default)  hand every such question back to you. They resolve at tier
+#                    B0, which the /apply session cannot override, so a parked
+#                    one means finishing that form by hand.
+#   "no"             the usual answer for time_limited and needs_sponsorship_now
+#   "yes"            you are unrestricted despite not being a citizen/PR
+#
+# Quote the value. Unquoted `no` is a YAML boolean and the loader refuses it
+# rather than guessing what you meant.
+#
+# This governs qualified questions only. A plain "are you authorized to work in
+# the US?" is still answered from `status`. Questions that offer the qualifier
+# as one option among several ("on a permanent or temporary basis", "with or
+# without sponsorship") stay parked whatever you set, because there the narrow
+# reading is not what is being asked.
 work_authorization:
   status: time_limited
+  scope_qualified_answer: park
 
 # Greenhouse renders an education block that appears in no question array. It
 # fills school--0 / degree--0 / discipline--0 / start-year--0 / end-year--0,

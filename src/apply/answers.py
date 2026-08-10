@@ -62,6 +62,17 @@ EMPLOYMENT_KEYS = (
 # Flags on the employment block, parsed as booleans rather than strings.
 EMPLOYMENT_FLAGS = ("current_role", "only_when_required")
 
+TOP_LEVEL_KEYS = (
+    "schema_version", "identity", "work_authorization", "education",
+    "employment", "rules",
+)
+
+# A `match:` keyword this short matches almost any label. Punctuation is
+# stripped before matching, so `C++` normalizes to the single character `c`
+# and answers "What are your salary expectations?" from a rule about C++.
+# Validation only rejected keywords that normalized to *empty*.
+MIN_KEYWORD_LENGTH = 3
+
 # status -> (authorized to work in the US now, will require sponsorship at some
 # point). The two answers are derived, never configured separately: a pair the
 # user can set independently is a pair that can contradict itself.
@@ -166,6 +177,49 @@ _SPONSORSHIP_NEGATED = re.compile(
     r"without\s+(?:\w+\s+){0,2}sponsor|not\s+(?:\w+\s+){0,2}requir\w*[^?]*sponsor",
     re.IGNORECASE,
 )
+# The same never-guess policy, for the authorization family. `authorized_now`
+# answers exactly one question: may you work in the US at all, today. Any
+# scope qualifier — permanence, employer-independence, freedom from
+# sponsorship — asks something else, and answering it from `authorized_now`
+# states a falsehood for a time_limited status. Observed on real boards:
+# "Are you permanently authorized to work for any employer in the United
+# States?" and "I am authorized to work without sponsorship or restrictions
+# for any employer in the U.S." Both used to come back Yes.
+_AUTHORIZED_QUALIFIED = re.compile(
+    r"permanent\w*"
+    r"|ongoing"
+    r"|indefinite\w*"
+    r"|unrestricted"
+    r"|without\s+(?:\w+\s+){0,3}(?:sponsor|restrict)"
+    r"|now\s+or\s+in\s+the\s+future"
+    r"|for\s+any\s+employer"
+    r"|no\s+(?:\w+\s+){0,2}restrict",
+    re.IGNORECASE,
+)
+# ...except where the qualifier is offered as one *alternative* rather than as
+# the requirement. "Are you authorized to work in the US on a permanent or
+# temporary basis?" trips `_AUTHORIZED_QUALIFIED` on "permanent", but the
+# truthful answer for a time-limited status is Yes — the question already
+# allows for temporary. Answering it from `scope_qualified_answer` would state
+# the user cannot work here at all.
+#
+# So this stays a park no matter how `scope_qualified_answer` is set: the
+# setting says what the answer is when the scope really is narrowed, and here
+# it is not. Deliberately narrow — three observed shapes, not a general
+# attempt to parse alternation.
+_QUALIFIER_OFFERED_AS_ALTERNATIVE = re.compile(
+    r"permanent\w*\s+or\s+\w+"
+    r"|\w+\s+or\s+permanent\w*"
+    r"|with\s+or\s+without",
+    re.IGNORECASE,
+)
+
+# What to answer when a question narrows the scope of "authorized to work"
+# beyond what `status` alone settles. Not derived from `status`, because it is
+# not derivable: it is a statement about the user's own circumstances that only
+# they can make. `park` is the default and hands the question back to them.
+SCOPE_QUALIFIED_ANSWERS = ("park", "yes", "no")
+WORK_AUTHORIZATION_KEYS = ("status", "scope_qualified_answer")
 # The authorization question is country-scoped; the sponsorship one is not, and
 # names a country on only 2 of the 5 captured boards. The queue only ever holds
 # roles that passed discovery's US location allowlist.
@@ -188,10 +242,46 @@ _PREFERENCES_MARKERS = {
         r"|requires?\s+(?:visa\s+)?sponsorship\s+(?:now|from\s+day\s+one)",
         re.IGNORECASE,
     ),
+    # `\bOPT\b` stays case-sensitive on purpose — lowercase "opt" is the verb,
+    # and "opt out"/"opt in" appear all over a preferences file. Everything
+    # else is case-insensitive like its two siblings; it was not, so a
+    # perfectly ordinary lowercase bullet derived nothing and hard-failed
+    # every submission.
     "time_limited": re.compile(
-        r"\bF-1\b|\bOPT\b|STEM\s+extension|time-limited\s+work\s+authorization"
+        r"(?i:\bF-1\b|STEM\s+extension|time[- ]limited\s+work\s+authorization)"
+        r"|\bOPT\b"
     ),
 }
+# A bullet that denies a status must not be read as stating it.
+#
+# Proximity-scoped, NOT whole-line. Dropping any line containing a negation
+# anywhere reads "I am on F-1 OPT with STEM extension. I am not seeking
+# relocation assistance." as stating nothing, which makes the status
+# underivable and hard-fails every submission — a total block triggered by an
+# unrelated clause. Only a negation in the run-up to the marker counts.
+_NEGATION = re.compile(
+    r"\b(?:not|never|no|neither|nor|isn'?t|aren'?t|don'?t|doesn'?t|won'?t"
+    r"|cannot|can'?t)\b",
+    re.IGNORECASE,
+)
+# How far back from the marker a negation still binds to it. Wide enough for
+# "I do not currently hold a green card", short enough that a negation in a
+# neighbouring sentence does not reach.
+_NEGATION_WINDOW = 40
+
+
+def _negated(line: str, marker_start: int) -> bool:
+    """Whether the status marker at `marker_start` is being denied.
+
+    Scoped to the marker's own clause: text after the nearest preceding
+    sentence or clause break, and at most `_NEGATION_WINDOW` characters.
+    """
+    head = line[:marker_start]
+    for boundary in (".", ";", ",", " - ", " — "):
+        cut = head.rfind(boundary)
+        if cut != -1:
+            head = head[cut + len(boundary):]
+    return bool(_NEGATION.search(head[-_NEGATION_WINDOW:]))
 _PREFERENCES_SECTION = re.compile(
     r"^##\s+work\s+authorization\s*$(?P<body>.*?)(?=^##\s|\Z)",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
@@ -242,6 +332,10 @@ class Answers:
     employment: dict[str, str] | None
     status: str
     rules: tuple[Rule, ...]
+    scope_qualified_answer: str = "park"
+    """How to answer an authorization question that narrows the scope —
+    permanence, employer-independence, freedom from sponsorship. `park` (the
+    default) hands it to the user. See `SCOPE_QUALIFIED_ANSWERS`."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -315,7 +409,15 @@ def _parse_block(data, key: str, required: tuple[str, ...],
     for field_key in optional:
         if block.get(field_key) is not None:
             out[field_key] = _require_str(block[field_key], f"{key}.{field_key}")
-    unknown = set(block) - set(required) - set(optional) - set(EMPLOYMENT_FLAGS)
+    # The two boolean flags belong to `employment` alone. Subtracting them
+    # unconditionally let `identity: {current_role: true}` and
+    # `education: {only_when_required: true}` load clean and be discarded --
+    # exactly the silently-missing-answer typo the unknown-key check exists
+    # to catch.
+    allowed = set(required) | set(optional)
+    if key == "employment":
+        allowed |= set(EMPLOYMENT_FLAGS)
+    unknown = set(block) - allowed
     if unknown:
         raise AnswersError(f"{key}: unknown keys {sorted(unknown)}")
     return out
@@ -344,6 +446,17 @@ def _parse_rules(data) -> tuple[Rule, ...]:
         exact = tuple(_norm(_require_str(k, f"{where}.exact")) for k in exact_raw)
         if any(not k for k in keywords + exact):
             raise AnswersError(f"{where}: a keyword normalizes to nothing")
+        # `exact:` compares whole labels, so a short one is harmless; `match:`
+        # is a substring test and a short keyword silently answers unrelated
+        # questions. `C++` -> `c`, `C#` -> `c`, `A/B` -> `a b`.
+        for original, keyword in zip(match, keywords):
+            if len(keyword) < MIN_KEYWORD_LENGTH:
+                raise AnswersError(
+                    f"{where}.match: {original!r} normalizes to {keyword!r}, under "
+                    f"{MIN_KEYWORD_LENGTH} characters. Matching is a substring "
+                    f"test, so this would answer questions that have nothing to "
+                    f"do with it — use `exact:` for the whole label instead."
+                )
         for keyword in keywords + exact:
             if WORK_AUTHORIZATION_DOMAIN.search(keyword):
                 raise AnswersError(
@@ -400,10 +513,26 @@ def _parse_rules(data) -> tuple[Rule, ...]:
 
 
 def preferences_statuses(text: str) -> set[str]:
-    """Every work-authorization status the Work authorization section states."""
-    section = _PREFERENCES_SECTION.search(text or "")
-    body = section.group("body") if section else ""
-    return {name for name, pattern in _PREFERENCES_MARKERS.items() if pattern.search(body)}
+    """Every work-authorization status the Work authorization section states.
+
+    Reads *every* such section, not just the first — two sections stating
+    different things must surface as the contradiction it is, rather than
+    silently resolving to whichever came first.
+
+    A line carrying a negation is ignored. "Not a permanent resident." and
+    "I do not need sponsorship now or ever." both used to derive the status
+    they deny, and this check is the only thing standing between a mistyped
+    `status:` and a false answer on a legal question. Dropping the line makes
+    it underivable, which is a hard error — the safe direction.
+    """
+    found: set[str] = set()
+    for section in _PREFERENCES_SECTION.finditer(text or ""):
+        for line in section.group("body").splitlines():
+            for name, pattern in _PREFERENCES_MARKERS.items():
+                hit = pattern.search(line)
+                if hit and not _negated(line, hit.start()):
+                    found.add(name)
+    return found
 
 
 def _check_preferences(status: str, preferences_path: Path) -> None:
@@ -449,6 +578,16 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise AnswersError(f"{p}: schema_version must be {_SCHEMA_VERSION}")
 
+    # The blocks are validated individually below, but nothing checked the top
+    # level: `rules:` mistyped as `rulez:` loaded clean with zero rules, and
+    # then every Tier B question parked with nothing saying why.
+    unknown_top = set(data) - set(TOP_LEVEL_KEYS)
+    if unknown_top:
+        raise AnswersError(
+            f"{p}: unknown top-level keys {sorted(unknown_top)} "
+            f"(expected {sorted(TOP_LEVEL_KEYS)})"
+        )
+
     identity = _parse_block(data, "identity", IDENTITY_KEYS)
     education = _parse_block(data, "education", EDUCATION_KEYS, EDUCATION_OPTIONAL_KEYS)
 
@@ -461,11 +600,27 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
     work_auth = data.get("work_authorization")
     if not isinstance(work_auth, dict):
         raise AnswersError("work_authorization: missing, or not a mapping")
+    unknown_auth = set(work_auth) - set(WORK_AUTHORIZATION_KEYS)
+    if unknown_auth:
+        raise AnswersError(
+            f"work_authorization: unknown keys {sorted(unknown_auth)} "
+            f"(expected {sorted(WORK_AUTHORIZATION_KEYS)})"
+        )
     status = _require_str(work_auth.get("status"), "work_authorization.status")
     if status not in WORK_AUTHORIZATION_STATUSES:
         raise AnswersError(
             f"work_authorization.status: {status!r} is not one of "
             f"{sorted(WORK_AUTHORIZATION_STATUSES)}"
+        )
+    # Normalized rather than coerced: PyYAML reads a bare `no` as the boolean
+    # False, and silently mapping that to "no" would let a typo'd `yes`/`no`
+    # decide a legal answer. Quoting is required and the error says so.
+    scope_qualified = work_auth.get("scope_qualified_answer", "park")
+    if scope_qualified not in SCOPE_QUALIFIED_ANSWERS:
+        raise AnswersError(
+            f"work_authorization.scope_qualified_answer: {scope_qualified!r} is "
+            f"not one of {list(SCOPE_QUALIFIED_ANSWERS)} — quote it, since YAML "
+            f"reads a bare yes/no as a boolean"
         )
     _check_preferences(
         status, Path(preferences_path) if preferences_path is not None else PREFERENCES_PATH
@@ -477,6 +632,7 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
         employment=employment,
         status=status,
         rules=_parse_rules(data),
+        scope_qualified_answer=scope_qualified,
     )
 
 
@@ -498,6 +654,19 @@ def _pick_option(field: MergedField, candidates: tuple[str, ...]) -> str | None:
         if hit is not None:
             return hit
     return None
+
+
+def match_option(field: MergedField, candidate: str) -> str | None:
+    """The widget's own spelling of `candidate`, or None if it offers no such
+    option. Public so `plan.py` can hold an `--answers` override to the same
+    standard every deterministic path already meets — matching by exact
+    normalized label, and canonicalizing to what the board actually renders.
+
+    Returns the candidate unchanged when the field carries no option list, for
+    the same reason `_pick_option` does: nothing to check against, and
+    fill.py's post-selection assert is the real check there.
+    """
+    return _pick_option(field, (candidate,))
 
 
 def _resolve_choice(field: MergedField, candidates: tuple[str, ...], tier: str,
@@ -621,7 +790,36 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
     if authorized:
         if not (_NAMES_THE_US.search(label) or _NAMES_US_ABBREV.search(label)):
             return _park("work authorization: the question names no country", "B0")
-        value = answers.authorized_now
+        # Only a time-limited status makes these unanswerable. For a citizen
+        # or permanent resident, "permanent basis", "any employer" and
+        # "without sponsorship" are all knowable and all Yes — parking them
+        # blocked 7 of 89 harvested boards for the wrong user.
+        if answers.status != "citizen_or_pr" and _AUTHORIZED_QUALIFIED.search(label):
+            if _QUALIFIER_OFFERED_AS_ALTERNATIVE.search(label):
+                # The qualifier is one option among several, so the narrow
+                # reading `scope_qualified_answer` settles is not the question
+                # being asked. Parked whatever the setting says.
+                return _park(
+                    "work authorization: the scope qualifier is offered as an "
+                    "alternative (\"permanent or temporary\", \"with or without\"), "
+                    "so it does not narrow the question the way "
+                    "scope_qualified_answer assumes",
+                    "B0",
+                )
+            if answers.scope_qualified_answer == "park":
+                return _park(
+                    "work authorization: the question qualifies the scope "
+                    "(permanence / any employer / without sponsorship), which this "
+                    "status alone cannot answer. Set "
+                    "work_authorization.scope_qualified_answer to answer these "
+                    "without review",
+                    "B0",
+                )
+            # The user's own stated answer, not an inference from `status` (R7:
+            # src/ reads the preference, it does not form the judgment).
+            value = answers.scope_qualified_answer == "yes"
+        else:
+            value = answers.authorized_now
     elif sponsorship:
         value = answers.requires_sponsorship
     else:

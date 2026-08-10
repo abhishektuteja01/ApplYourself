@@ -56,6 +56,17 @@ logo URL and its form action.
 **`form_lever_*.html` / `form_ashby_*.html`** — phase 2 (§12a). Same scrub
 rule, same fictional widget world. No `.json` twin — neither board exposes a
 public question API, so the HTML alone is the fixture; `lever.py`/`ashby.py`
+
+> **The `form_ashby_*.html` fixtures are browser-DOM snapshots, not served
+> responses.** They carry computed inline styles and hashed CSS-module class
+> names that exist only after JS runs. A static GET of a live Ashby posting
+> returns a ~32 KB shell with **no** `<form>` and no `data-field-path`
+> (measured over 6 orgs), so `scan_ashby_form` can never run against one
+> without a browser. These fixtures therefore prove the scanner's parsing is
+> correct and prove **nothing** about reachability — `load_board` raises
+> `AshbyClientRendered` on every real URL. Lever's fixtures are ordinary
+> served HTML; only Ashby's are snapshots.
+
 emit `MergedField`s straight from the scan (`reconcile.py` is Greenhouse-only).
 
 | fixture | covers |

@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.apply.answers import Answers, Resolution, resolve
+from src.apply.answers import Answers, Resolution, match_option, resolve
 from src.apply.greenhouse import BoardForm
 from src.apply.reconcile import MergedField, Reconciled
 
@@ -108,6 +108,12 @@ class Unmapped:
     """What the widget offers, for the run report and for /apply's Tier C
     classification — an unanswerable select is a different problem from an
     unanswerable free text."""
+
+    multi: bool = False
+    """Whether the widget takes several answers. Carried so fill-time recovery
+    does not have to assume: it used to hardcode `multi=False`, so a required
+    "mark all that apply" resolved to one label, got clicked once, and was
+    marked recovered — the exact hazard `_check_value` names."""
 
 
 @dataclass(frozen=True)
@@ -229,6 +235,51 @@ def _check_value(field: MergedField, value) -> str | tuple[str, ...] | bool | No
     return f"value is {type(value).__name__}, not str/tuple/bool"
 
 
+def _override_resolution(field: MergedField, value, tier: str) -> Resolution:
+    """Apply an `--answers` override, held to the same standard as every
+    deterministic answer.
+
+    An override is an LLM-drafted string. Every other path into a select goes
+    through `_pick_option`, which refuses a value the widget does not offer
+    *and* canonicalizes to the board's own spelling. The override path used to
+    bypass both, so `"yes"` against an offered `"Yes"` planned the literal
+    lowercase string: the plan read READY, `/apply`'s unmapped-diff saw
+    nothing wrong, and the role died in the browser instead — with the answer
+    unavailable to the recovery path, which re-resolves without overrides.
+
+    A value the widget does not offer parks rather than raising: the question
+    is genuinely still unanswered, which is what `unmapped[]` means, and the
+    run report then names it for the next `/apply` pass.
+    """
+    candidates = (value,) if isinstance(value, str) else tuple(value)
+    # `field.multi` alone disagrees with `_check_value` and `build_plan`, which
+    # both use `multi or kind in _MULTI_KINDS`. Using the bare flag here made a
+    # 2-item override on a single-valued select silently keep the first value
+    # and drop the second — where the old code raised. Same predicate
+    # everywhere, and a list into a single-valued widget is an error, not a
+    # truncation.
+    multi = field.multi or field.kind in _MULTI_KINDS
+    if not multi and len(candidates) > 1:
+        raise PlanError(
+            f"override for single-valued field {field.id!r} supplies "
+            f"{len(candidates)} values: {list(candidates)!r}"
+        )
+    if not field.options:
+        # DOM-only select or free text: nothing to validate against, and
+        # fill.py's post-selection assert is the real check (§9).
+        return Resolution("fill", value=value, tier=tier)
+
+    picked = tuple(p for p in (match_option(field, c) for c in candidates) if p)
+    if len(picked) != len(candidates):
+        missing = [c for c in candidates if match_option(field, c) is None]
+        return Resolution(
+            "park", tier=tier,
+            reason=f"override {missing!r} matches none of the options this widget "
+                   f"offers ({list(o.label for o in field.options)!r})",
+        )
+    return Resolution("fill", value=picked if multi else picked[0], tier=tier)
+
+
 def _unmapped(field: MergedField, resolution: Resolution, reason: str = "") -> Unmapped:
     return Unmapped(
         id=field.id,
@@ -239,6 +290,7 @@ def _unmapped(field: MergedField, resolution: Resolution, reason: str = "") -> U
         tier=resolution.tier,
         reason=reason or resolution.reason,
         options=tuple(o.label for o in field.options),
+        multi=field.multi,
     )
 
 
@@ -307,7 +359,7 @@ def build_plan(
 
         if resolution.tier == "C" and field.id in overrides:
             value, override_tier = overrides[field.id]
-            resolution = Resolution("fill", value=value, tier=override_tier)
+            resolution = _override_resolution(field, value, override_tier)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))

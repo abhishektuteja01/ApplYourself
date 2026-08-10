@@ -49,10 +49,23 @@ SELECT_OPTION = ".select__option"
 SELECT_SINGLE_VALUE = ".select__single-value"
 SELECT_MULTI_VALUE = ".select__multi-value__label"
 
+# Positive acknowledgements only. Matching none of these means "unconfirmed",
+# never "failed" — see `BrowserDriver.submission_confirmed`. Provisional until
+# a real submission is observed; extend, do not invert.
+CONFIRMATION_MARKERS = (
+    "text=/thank you for applying/i",
+    "text=/application (?:has been )?(?:submitted|received)/i",
+    "text=/your application was (?:submitted|sent)/i",
+    "text=/we(?:'ve| have) received your application/i",
+)
+
 # How long to wait for a listbox to open, in ms. Generous: these are remote
 # taxonomies on some boards.
 OPTION_TIMEOUT = 5000
 FORM_TIMEOUT = 30000
+# Short: the input is often gone by now, and waiting the default 30s per
+# upload for a node that will never come back stalls a whole queue run.
+UPLOAD_READBACK_TIMEOUT = 2000
 
 
 class FillError(Exception):
@@ -95,6 +108,18 @@ class FillResult:
     parks over a question that is now answered."""
 
     submitted: bool = False
+    """The submit button was clicked. Set the instant the click returns, before
+    anything post-click can fail — an exception after the click must not lose
+    the fact that we applied, or the role stays `tailored` and the next run
+    applies to the same board again."""
+
+    confirmed: bool = False
+    """The board positively acknowledged the application. Absence is NOT
+    evidence of failure: no confirmation page has been observed live yet, so
+    this only ever goes true on a positive match. A submitted-but-unconfirmed
+    role is reported as such and still transitions to `applied`, because a
+    duplicate application is the worse failure."""
+
     submit_error: str = ""
     """Set by `run_one` when `submit=True`. Empty + `submitted=False` means
     submission was never attempted (either `submit=False` or the fill itself
@@ -190,6 +215,51 @@ class BrowserDriver:
 
     def set_files(self, field_id: str, path: Path) -> None:
         self._locator(field_id).first.set_input_files(str(path))
+
+    def submission_confirmed(self) -> bool:
+        """Positive evidence that the board accepted the application.
+
+        Absence is deliberately NOT failure. `result.submitted` is already true
+        by the time this runs, and no live confirmation page has been observed
+        yet (phase 1's real-submission checkpoint is still deferred), so the
+        marker list is provisional. A real submission should *extend* it —
+        never invert the default, which would turn "assume submitted" into
+        "assume failed" and reintroduce the duplicate-application path.
+        """
+        for marker in CONFIRMATION_MARKERS:
+            try:
+                if self.page.locator(marker).count() > 0:
+                    return True
+            except Exception:  # noqa: BLE001 - a bad marker is not a failure
+                continue
+        return False
+
+    def attached_files(self, field_id: str) -> tuple[str, ...] | None:
+        """Filenames the input holds, or None if that cannot be determined.
+
+        `input_value()` refuses a file input, so this reads `.files` directly.
+        A read, not a write, so §2b's "setting .value will not update React
+        state" caveat does not apply.
+
+        **None and () mean different things, and conflating them blocks real
+        submissions.** Verified live on a Greenhouse board: uploading to
+        `cover_letter` detaches the input — React replaces the subtree — so
+        the node is gone a moment later even though the file landed. Only a
+        node that is present *and* readable *and* empty is evidence of a
+        failed upload; anything else is unverifiable, which is not the same
+        as failed.
+        """
+        try:
+            el = self._locator(field_id)
+            if el.count() == 0:
+                return None
+            names = el.first.evaluate(
+                "node => node.files ? Array.from(node.files, f => f.name) : []",
+                timeout=UPLOAD_READBACK_TIMEOUT,
+            )
+        except Exception:  # noqa: BLE001 - detached/re-rendered node
+            return None
+        return tuple(names or ())
 
     def fill_text(self, field_id: str, value: str) -> None:
         el = self._locator(field_id).first
@@ -307,8 +377,39 @@ class LeverBrowserDriver(BrowserDriver):
     def _locator(self, field_id: str):
         return self.page.locator(FIELD_BY_NAME.format(form=FORM_SELECTOR, id=field_id))
 
+    def check_group_option(self, field_id: str, label: str) -> None:
+        """Lever has no fieldset wrapper: the name selector already resolves to
+        the checkboxes themselves, so the base implementation's
+        `.locator('input[type=checkbox]')` searches *inside* an <input> and
+        finds nothing. Match on the option's own value/label instead.
+        """
+        boxes = self._locator(field_id)
+        for i in range(boxes.count()):
+            box = boxes.nth(i)
+            value = box.get_attribute("value") or ""
+            text = ""
+            box_id = box.get_attribute("id")
+            if box_id:
+                lab = self.page.locator(f'label[for="{box_id}"]')
+                if lab.count():
+                    text = lab.first.inner_text().strip()
+            if label.casefold() in (value.casefold(), text.casefold()):
+                box.check()
+                return
+        raise FillError(f"{field_id}: no checkbox labelled {label!r}")
+
 
 _DRIVER_NAMES = {"greenhouse": "BrowserDriver", "lever": "LeverBrowserDriver"}
+
+
+def has_driver(ats: str) -> bool:
+    """Whether a browser driver exists for this board.
+
+    `apply_cli` checks this before opening anything, so a scan-only board
+    (Ashby — planned fully, no fill driver) is reported as manual-apply
+    instead of launching Chrome and only then raising.
+    """
+    return ats in _DRIVER_NAMES
 
 
 def _driver_for(ats: str, page) -> BrowserDriver:
@@ -429,16 +530,37 @@ def _attach(driver, upload: FilePlan) -> FieldOutcome:
     if not upload.path.is_file():
         raise FillError(f"{upload.id}: {upload.path} is gone")
     driver.set_files(upload.id, upload.path)
+    # The one write that used to return success unread. An input that ends up
+    # empty leaves failures[] empty, so the submit guard passes and the
+    # application goes out with no resume attached (§9 step 4).
+    #
+    # Confirmatory, never punitive: `None` means the input could not be read
+    # back (it was detached by a re-render — observed live on a Greenhouse
+    # cover_letter field), which is not evidence the upload failed. Treating
+    # it as failure would block submissions that are perfectly fine.
+    held = driver.attached_files(upload.id)
+    if held is None:
+        return FieldOutcome(
+            upload.id, "attached", "", upload.path.name,
+            note="attached, unverified: the input was replaced after upload",
+        )
+    if not held:
+        raise FillError(f"{upload.id}: set {upload.path.name} but the input holds no file")
+    if upload.path.name not in held:
+        raise FillError(
+            f"{upload.id}: set {upload.path.name} but the input holds {', '.join(held)}"
+        )
     return FieldOutcome(upload.id, "attached", "", upload.path.name)
 
 
-def fill_plan(plan: Plan, driver, answers: Answers | None = None) -> FillResult:
+def fill_plan(plan: Plan, driver, answers: Answers | None = None,
+              result: FillResult | None = None) -> FillResult:
     """Drive one plan to a filled — never submitted — form.
 
     Attachments go first and the page is allowed to settle, because an upload
     can rewrite fields. Everything else is then written over whatever is there.
     """
-    result = FillResult(form_url=plan.form_url)
+    result = result if result is not None else FillResult(form_url=plan.form_url)
     driver.goto(plan.form_url)
 
     for upload in plan.files:
@@ -479,6 +601,12 @@ def _probe_parked_selects(driver, plan: Plan, result: FillResult,
     for parked in plan.unmapped:
         if parked.kind != "react_select":
             continue
+        if parked.multi:
+            # `resolve` returns one label for a multi field, `_apply_field`
+            # clicks it once, and this loop would then call the question
+            # answered. A "mark all that apply" needs every intended option,
+            # and nothing here can know the set — leave it parked.
+            continue
         options = result.observed_options.get(parked.id)
         if options is None:
             try:
@@ -495,14 +623,15 @@ def _probe_parked_selects(driver, plan: Plan, result: FillResult,
         field = MergedField(
             id=parked.id, name=parked.id, label=parked.label,
             required=parked.required, kind=parked.kind, section=parked.section,
-            multi=False, options=tuple(MergedOption(label=o) for o in options),
+            multi=parked.multi,
+            options=tuple(MergedOption(label=o) for o in options),
         )
         resolution = resolve(field, answers)
         if resolution.action != "fill":
             continue
         plan_field = FieldPlan(
             id=parked.id, name=parked.id, label=parked.label, kind=parked.kind,
-            section=parked.section, required=parked.required, multi=False,
+            section=parked.section, required=parked.required, multi=parked.multi,
             value=resolution.value, tier=resolution.tier,
         )
         try:
@@ -546,14 +675,19 @@ def submit(plan: Plan, result: FillResult, driver) -> None:
     if driver.submit_disabled_now(plan.submit_selector):
         raise SubmitGuardError("submit button is disabled")
     driver.click_submit(plan.submit_selector)
+    # The click is the irreversible act. Record it before anything else runs:
+    # a captcha timeout, a driver error, a navigation hiccup — none of them
+    # may erase the fact that an application went out.
+    result.submitted = True
     if plan.requires_captcha:
         # Lever renders hCaptcha on every form (§12a) — the click above only
         # opened the challenge. Block for a human to solve it; there is no
         # bypass and none is in scope (§12c).
         driver.wait_for_captcha()
+    result.confirmed = driver.submission_confirmed()
 
 
-def run_one(plan: Plan, answers: Answers | None = None, *,
+def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = None,
             headless: bool = False, submit_after: bool = False, after=None) -> FillResult:
     """Open a browser, fill the form, and — only when `submit_after` is set —
     make the one guarded click, all inside the same session. A real
@@ -568,31 +702,58 @@ def run_one(plan: Plan, answers: Answers | None = None, *,
     on, and a guard refusal is recorded in `result.submit_error` rather than
     raised, so one parked role in a queue does not kill the run.
     """
+    # Built and published BEFORE the browser opens. `submitted` is the record
+    # that an application went out, and a caller that only sees it via the
+    # return value loses it to any exception — including a BaseException like
+    # Ctrl-C, which no `except Exception` can catch. `sink` gives the caller
+    # the same object this function is about to mutate.
+    result = FillResult(form_url=plan.form_url)
+    if sink is not None:
+        sink.append(result)
+
     sync_playwright = _require_playwright()
     with sync_playwright() as p:
         context = _launch(p, headless=headless)
         page = context.pages[0] if context.pages else context.new_page()
         try:
             driver = _driver_for(plan.ats, page)
-            result = fill_plan(plan, driver, answers)
+            fill_plan(plan, driver, answers, result=result)
             if submit_after:
                 try:
                     submit(plan, result, driver)
-                    result.submitted = True
                 except SubmitGuardError as exc:
+                    # Refusal — raised before the click, so `submitted` is
+                    # still False and nothing went out.
                     result.submit_error = str(exc)
+                except Exception as exc:  # noqa: BLE001
+                    # Anything else may have fired after the click. `submit`
+                    # sets `result.submitted` the instant the click returns, so
+                    # that flag — not this handler — decides whether an
+                    # application went out.
+                    result.submit_error = f"{type(exc).__name__}: {exc}"
             if after is not None:
-                after(result)
+                try:
+                    after(result)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("after-fill callback failed: %s", exc)
         finally:
-            context.close()
+            # Teardown must never be the thing that loses a submission. A
+            # window the user closed after the click makes this raise, and
+            # that exception used to propagate out of `run_one` and discard
+            # `result` — so `submitted` was never read and the role was
+            # re-applied to on the next run.
+            try:
+                context.close()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("closing the browser context failed: %s", exc)
     return result
 
 
 def fill(plan: Plan, answers: Answers | None = None, *,
-         headless: bool = False, after=None) -> FillResult:
+         headless: bool = False, after=None, sink: list | None = None) -> FillResult:
     """Fill only, never submit — `run_one` with `submit_after` left at its
     default. Kept as its own name because `apply fill` (no `--submit` in
     reach at all) is a distinct, deliberately narrower CLI surface than
     `apply run`.
     """
-    return run_one(plan, answers, headless=headless, after=after)
+    return run_one(plan, answers, headless=headless, after=after, sink=sink)

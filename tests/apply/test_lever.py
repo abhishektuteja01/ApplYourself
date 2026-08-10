@@ -215,15 +215,59 @@ class TestEndToEndResolution:
         for u in plan.unmapped:
             assert u.id.startswith("cards[")
 
-    def test_work_authorization_resolves_both_cards(self, answers, tailor_dir):
+    def test_the_sponsorship_card_resolves_and_the_qualified_one_parks(
+        self, answers, tailor_dir
+    ):
+        """This fixture is why the qualifier guard exists.
+
+        Card 1 is the real-board label "Are you permanently authorized to work
+        for **any employer** in the United States?" — for a `time_limited`
+        status that is No, but it used to be answered Yes off
+        `authorized_now`, which answers only "may you work here today". A
+        scope-qualified authorization question is not answerable from the
+        status alone, so it parks (§5's never-guess policy, previously applied
+        to the sponsorship family only).
+
+        Card 2 is the plain sponsorship question and still resolves.
+        """
         reconciled = scan_lever_form(load_html("form_lever_full"))
         plan = build_plan(reconciled, answers, tailor_dir, ats="lever")
-        auth_fields = [
-            f for f in plan.fields
-            if f.id.startswith("cards[00000020-0000-0000-0000-000000000020]")
-        ]
-        assert len(auth_fields) == 2
-        assert all(f.tier == "B0" for f in auth_fields)
+        card = "cards[00000020-0000-0000-0000-000000000020]"
+
+        resolved = [f for f in plan.fields if f.id.startswith(card)]
+        # Optional on this board, so it is left blank rather than parked —
+        # §6's contract is unanswerable+required -> park, +optional -> skip.
+        # Either way nothing false is submitted, which is the whole point.
+        left_blank = [s for s in plan.skipped if s.id.startswith(card)]
+
+        assert [f.tier for f in resolved] == ["B0"]
+        assert "sponsorship" in resolved[0].label.casefold()
+        assert resolved[0].value == "Yes"          # time_limited requires it
+
+        assert len(left_blank) == 1
+        assert "permanently authorized" in left_blank[0].label.casefold()
+        assert "qualifies the scope" in left_blank[0].reason
+
+    def test_the_same_question_parks_the_role_when_the_board_requires_it(
+        self, answers, tailor_dir
+    ):
+        """The optional case above is only safe because the required case
+        blocks. A board that makes the qualified question mandatory must stop
+        the submission, not answer it."""
+        from src.apply.answers import resolve
+        from src.apply.domscan import DomOption
+        from src.apply.reconcile import MergedField
+
+        field = MergedField(
+            id="q", name="q", required=True, kind="select", section="questions",
+            multi=False, api_type="multi_value_single_select",
+            label="Are you permanently authorized to work for any employer in "
+                  "the United States?",
+            options=(DomOption(value="1", label="Yes"), DomOption(value="0", label="No")),
+        )
+        r = resolve(field, answers)
+        assert r.action == "park"
+        assert r.tier == "B0"
 
     def test_eeoc_block_resolves_to_opt_outs(self, answers, tailor_dir):
         reconciled = scan_lever_form(load_html("form_lever_full"))
@@ -231,3 +275,54 @@ class TestEndToEndResolution:
         eeoc_fields = {f.id: f.value for f in plan.fields if f.id.startswith("eeo[")}
         assert eeoc_fields["eeo[gender]"] == "Decline to self-identify"
         assert eeoc_fields["eeo[disability]"] == "I do not want to answer"
+
+
+class TestCheckboxes:
+    """Lever renders checkboxes for pronouns, GDPR storage consent and custom
+    card fields. `_scan_question` had no branch for them, so `scan_lever_form`
+    raised `unknown input type 'checkbox'` and the whole board failed.
+
+    Measured over 19 live Lever boards during the form harvest: **10 of them**
+    render at least one checkbox, so more than half of Lever was unplannable.
+    No committed fixture contained one, which is why the suite was green.
+    """
+
+    def _form(self, inner: str) -> str:
+        html = load_html("form_lever_full")
+        return html.replace(
+            '<li class="application-question resume">',
+            f'<li class="application-question">{inner}</li>'
+            '<li class="application-question resume">',
+            1,
+        )
+
+    def test_a_group_of_checkboxes_is_a_multi_valued_field(self):
+        inner = (
+            '<label><div class="application-label">Pronouns</div></label>'
+            '<input type="checkbox" name="pronouns" value="she/her">'
+            '<input type="checkbox" name="pronouns" value="he/him">'
+            '<input type="checkbox" name="pronouns" value="they/them">'
+        )
+        reconciled = scan_lever_form(self._form(inner))
+        f = next(f for f in reconciled.fields if f.id == "pronouns")
+        assert f.kind == "checkbox_group"
+        assert f.multi is True
+        assert [o.value for o in f.options] == ["she/her", "he/him", "they/them"]
+
+    def test_a_lone_valueless_checkbox_is_a_consent_tick_not_a_group(self):
+        inner = (
+            '<label><div class="application-label">Store my data</div></label>'
+            '<input type="checkbox" name="consent[store]" required>'
+        )
+        reconciled = scan_lever_form(self._form(inner))
+        f = next(f for f in reconciled.fields if f.id == "consent[store]")
+        assert f.kind == "checkbox"
+        assert f.multi is False
+        assert f.required is True
+
+    def test_the_rest_of_the_form_still_scans_around_it(self):
+        inner = ('<label><div class="application-label">Pronouns</div></label>'
+                 '<input type="checkbox" name="pronouns" value="they/them">')
+        before = len(scan_lever_form(load_html("form_lever_full")).fields)
+        after = len(scan_lever_form(self._form(inner)).fields)
+        assert after == before + 1

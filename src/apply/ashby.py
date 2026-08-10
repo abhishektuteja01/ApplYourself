@@ -82,6 +82,25 @@ class AshbyScanError(DomScanError):
     """The rendered Ashby form is not shaped the way this scanner can read."""
 
 
+class AshbyClientRendered(AshbyScanError):
+    """Ashby served the page shell but no form — it is assembled by JS.
+
+    Measured over 6 orgs: a static GET of a live posting returns the same
+    ~32 KB shell with zero `<form>` elements and zero `data-field-path`
+    attributes, and `<url>` and `<url>/application` are byte-identical. There
+    is no embedded JSON payload to parse either.
+
+    So `scan_ashby_form` only ever runs against a **browser-DOM snapshot**,
+    which is what the committed fixtures are (they carry computed inline
+    styles and hashed CSS-module class names that exist only post-render).
+    The scanner is correct; it just has nothing to read without a browser.
+
+    Raised separately from a parse failure so `apply_cli` can report the role
+    as manual-apply — which it already is, Ashby having no fill driver —
+    instead of as breakage.
+    """
+
+
 @dataclass(frozen=True)
 class Posting:
     slug: str
@@ -349,7 +368,12 @@ def load_board(url: str, timeout: int = 30) -> AshbyBoard:
     doc = lxml_html.fromstring(html)
     roots = doc.xpath(f'//*[@id="{ROOT_ID}"]')
     if not roots:
-        raise AshbyScanError(f'no element with id="{ROOT_ID}" in the document')
+        raise AshbyClientRendered(
+            f"{url}: Ashby renders its application form client-side, so a static "
+            f"fetch returns a page with no form in it (no id={ROOT_ID!r}, no "
+            f"<form>). There is no plan path for Ashby without a browser — "
+            f"apply by hand."
+        )
     scan = _submit_scan(roots[0])
     reconciled = scan_ashby_form(html)
     return AshbyBoard(

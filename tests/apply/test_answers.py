@@ -9,6 +9,8 @@ every board.
 """
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
+
 import pytest
 import yaml
 
@@ -553,3 +555,233 @@ class TestTheShippedTemplate:
         r = merged("form_minimal")
         assert resolve(by_label(r, "How did you hear"), loaded).action == "fill"
         assert resolve(by_label(r, "LinkedIn"), loaded).action == "fill"
+
+
+def _yes_no_field(label: str, *, required: bool = True):
+    """A required Yes/No select — the shape every work-authorization question
+    in the fixtures actually has (§5)."""
+    from src.apply.domscan import DomOption
+    return MergedField(
+        id="q", name="q", label=label, required=required, kind="select",
+        section="questions", multi=False, api_type="multi_value_single_select",
+        options=(DomOption(value="1", label="Yes"), DomOption(value="0", label="No")),
+    )
+
+
+
+class TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion:
+    """`authorized_now` answers exactly one question: may you work in the US
+    today. Any scope qualifier asks something else, and answering it from the
+    status states a falsehood for `time_limited` — a false legal claim
+    submitted under the user's real name.
+
+    Both wrong labels below are verbatim from the captured live-board
+    fixtures, not invented.
+    """
+
+    QUALIFIED = [
+        "Are you permanently authorized to work for any employer in the United States?",
+        "I am authorized to work without sponsorship or restrictions for any "
+        "employer in the U.S.",
+        "Are you authorized to work in the United States on a permanent basis?",
+        "Are you legally authorized to work in the U.S., now or in the future, "
+        "without sponsorship?",
+        "Are you legally authorized to work in the United States without sponsorship?",
+        "Do you have unrestricted authorization to work in the United States?",
+    ]
+
+    PLAIN = [
+        "Are you legally authorized to work in the United States today?",
+        "Are you legally authorized to work in the U.S.?",
+        "Are you legally authorized to work in the United States of America?",
+    ]
+
+    @pytest.mark.parametrize("label", QUALIFIED)
+    def test_a_qualified_question_is_never_answered(self, answers, label):
+        r = resolve(_yes_no_field(label), answers)
+        assert r.action == "park", f"answered {r.value!r} to a question it cannot know"
+        assert r.tier == "B0"
+
+    @pytest.mark.parametrize("label", PLAIN)
+    def test_the_plain_question_still_resolves(self, answers, label):
+        # The guard must not park everything — that would block every board.
+        r = resolve(_yes_no_field(label), answers)
+        assert r.action == "fill"
+        assert r.value == "Yes"          # time_limited is authorized today
+
+    def test_the_sponsorship_family_is_untouched_by_the_guard(self, answers):
+        # "now or in the future" is a qualifier on the authorization question
+        # but the normal phrasing of the sponsorship one.
+        r = resolve(_yes_no_field(
+            "Will you now or in the future require sponsorship for employment "
+            "visa status?"), answers)
+        assert r.action == "fill"
+        assert r.value == "Yes"          # time_limited will need it later
+
+
+class TestScopeQualifiedAnswerIsConfiguredNotInferred:
+    """The park above is the *default*, not a policy. Whether "permanently
+    authorized for any employer" is Yes or No is a fact about the user, so it
+    is theirs to state once in config; `src/` only reads it (R7).
+
+    Without this the questions are unanswerable by anything: they resolve at
+    tier B0, and B0 parks are deliberately not reachable by the command
+    session's Tier C overrides, so a parked one means applying by hand.
+    """
+
+    QUALIFIED = TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion.QUALIFIED
+    PLAIN = TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion.PLAIN
+
+    @pytest.mark.parametrize("label", QUALIFIED)
+    def test_no_answers_every_qualified_question_no(self, answers, label):
+        a = dc_replace(answers, scope_qualified_answer="no")
+        r = resolve(_yes_no_field(label), a)
+        assert r.action == "fill"
+        assert r.value == "No"
+        assert r.tier == "B0"
+
+    @pytest.mark.parametrize("label", QUALIFIED)
+    def test_yes_answers_every_qualified_question_yes(self, answers, label):
+        a = dc_replace(answers, scope_qualified_answer="yes")
+        r = resolve(_yes_no_field(label), a)
+        assert r.action == "fill"
+        assert r.value == "Yes"
+
+    @pytest.mark.parametrize("label", PLAIN)
+    @pytest.mark.parametrize("setting", ["park", "yes", "no"])
+    def test_the_plain_question_never_consults_the_setting(self, answers, label, setting):
+        """The setting governs qualified questions only. "Are you authorized to
+        work in the US today?" is answered by `status`, and a user who sets
+        `no` for the qualified family must not start telling boards they cannot
+        work here at all."""
+        a = dc_replace(answers, scope_qualified_answer=setting)
+        r = resolve(_yes_no_field(label), a)
+        assert r.action == "fill"
+        assert r.value == "Yes"
+
+    # The qualifier is one branch of an alternation, so the question is wider
+    # than the setting assumes and "No" would be a false self-disqualification.
+    OFFERED_AS_ALTERNATIVE = [
+        "Are you authorized to work in the United States on a permanent or "
+        "temporary basis?",
+        "Are you authorized to work in the U.S. on a temporary or permanent basis?",
+        "Are you legally authorized to work in the United States, with or "
+        "without sponsorship?",
+    ]
+
+    @pytest.mark.parametrize("label", OFFERED_AS_ALTERNATIVE)
+    @pytest.mark.parametrize("setting", ["park", "yes", "no"])
+    def test_an_alternation_parks_whatever_the_setting_says(self, answers, label,
+                                                            setting):
+        a = dc_replace(answers, scope_qualified_answer=setting)
+        r = resolve(_yes_no_field(label), a)
+        assert r.action == "park", f"answered {r.value!r} to a widened question"
+        assert r.tier == "B0"
+
+    def test_a_citizen_never_reaches_the_setting(self, answers):
+        """`citizen_or_pr` already answers the qualified family from `status`
+        — the switch exists for the statuses that cannot."""
+        a = dc_replace(answers, status="citizen_or_pr", scope_qualified_answer="no")
+        r = resolve(_yes_no_field(self.QUALIFIED[0]), a)
+        assert r.action == "fill"
+        assert r.value == "Yes"
+
+    def test_the_default_is_park(self, answers):
+        assert answers.scope_qualified_answer == "park"
+
+
+class TestScopeQualifiedAnswerLoading:
+    def _cfg(self, tmp_path, value):
+        base = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(
+            encoding="utf-8"))
+        base["work_authorization"]["scope_qualified_answer"] = value
+        p = tmp_path / "answers.yaml"
+        p.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
+        return p
+
+    def _load(self, path):
+        return load_answers(path, FIXTURES / "preferences_time_limited.md")
+
+    @pytest.mark.parametrize("value", ["park", "yes", "no"])
+    def test_the_three_settings_load(self, tmp_path, value):
+        assert self._load(self._cfg(tmp_path, value)).scope_qualified_answer == value
+
+    def test_an_unquoted_yaml_boolean_is_refused_not_coerced(self, tmp_path):
+        """`scope_qualified_answer: no` (unquoted) parses as the boolean False.
+        Mapping that to "no" would let YAML's own quirk decide a legal answer,
+        so it is an error and the message says to quote it."""
+        with pytest.raises(AnswersError, match="quote it"):
+            self._load(self._cfg(tmp_path, False))
+
+    def test_an_unrecognized_setting_is_refused(self, tmp_path):
+        with pytest.raises(AnswersError, match="scope_qualified_answer"):
+            self._load(self._cfg(tmp_path, "maybe"))
+
+    def test_an_unknown_key_in_the_block_is_refused(self, tmp_path):
+        """The block was the one place with no unknown-key check, so
+        `scope_qualifed_answer` (typo) would silently leave the default."""
+        base = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(
+            encoding="utf-8"))
+        base["work_authorization"]["scope_qualifed_answer"] = "no"
+        p = tmp_path / "answers.yaml"
+        p.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
+        with pytest.raises(AnswersError, match="unknown keys"):
+            self._load(p)
+
+
+class TestLoaderRejectsSilentMisconfiguration:
+    """Every case here used to load clean and then quietly do nothing."""
+
+    def _cfg(self, tmp_path, mutate):
+        base = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(
+            encoding="utf-8"))
+        mutate(base)
+        p = tmp_path / "answers.yaml"
+        p.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
+        return p
+
+    def test_a_mistyped_top_level_key_is_an_error(self, tmp_path):
+        # `rulez:` loaded with zero rules; every Tier B question then parked
+        # and nothing said why.
+        def rename(d):
+            d["rulez"] = d.pop("rules")
+        with pytest.raises(AnswersError, match="unknown top-level keys"):
+            load_answers(self._cfg(tmp_path, rename),
+                          FIXTURES / "preferences_time_limited.md")
+
+    def test_employment_flags_are_rejected_outside_the_employment_block(self, tmp_path):
+        def stray(d):
+            d["identity"]["current_role"] = True
+        with pytest.raises(AnswersError, match="unknown keys"):
+            load_answers(self._cfg(tmp_path, stray),
+                          FIXTURES / "preferences_time_limited.md")
+
+    def test_the_flags_still_work_where_they_belong(self, tmp_path):
+        def ok(d):
+            d.setdefault("employment", {
+                "company_name": "Widget Corp", "title": "Widget Engineer",
+                "start_month": "January", "start_year": "2020",
+                "end_month": "June", "end_year": "2024",
+            })
+            d["employment"]["only_when_required"] = True
+        answers = load_answers(self._cfg(tmp_path, ok),
+                                FIXTURES / "preferences_time_limited.md")
+        assert answers.employment["only_when_required"] is True
+
+    def test_a_keyword_that_collapses_to_one_character_is_refused(self, tmp_path):
+        # `C++` -> `c`, which matched "What are your salary expectations?".
+        def degenerate(d):
+            d["rules"] = [{"match": ["C++"], "answer": "5 years"}]
+        with pytest.raises(AnswersError, match="under 3 characters"):
+            load_answers(self._cfg(tmp_path, degenerate),
+                          FIXTURES / "preferences_time_limited.md")
+
+    def test_a_short_exact_label_is_still_allowed(self, tmp_path):
+        # `exact:` compares the whole label, so shortness is harmless — this is
+        # the documented escape for labels that cannot be keyworded (§4's
+        # `State` dropdown).
+        def ok(d):
+            d["rules"] = [{"exact": ["State"], "answer": "Massachusetts"}]
+        answers = load_answers(self._cfg(tmp_path, ok),
+                                FIXTURES / "preferences_time_limited.md")
+        assert answers.rules[0].exact == ("state",)

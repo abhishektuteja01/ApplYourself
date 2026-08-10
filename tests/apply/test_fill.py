@@ -7,13 +7,17 @@ filled field. The selector work is what the live run at step 6 checks.
 """
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
 
+from src import paths
 from src.apply import fill as F
 from src.apply.fill import FillError, FillResult, fill_plan
 from src.apply.plan import FieldPlan, FilePlan, Plan
+
+REPO_ROOT = paths.REPO_ROOT
 
 
 def field(**kw) -> FieldPlan:
@@ -44,6 +48,10 @@ class FakeDriver:
         self._selected: dict[str, str] = {}
         self._typed: str | None = None
         self._last_field: str | None = None
+        self._files: dict[str, tuple[str, ...]] = {}
+        self.uploads_stick = True              # does set_files actually attach
+        self.upload_readback = True            # None = input gone, unreadable
+        self.confirms = False                  # board acknowledges the submit
 
     def goto(self, url):
         self.calls.append(("goto", url))
@@ -62,6 +70,13 @@ class FakeDriver:
 
     def set_files(self, field_id, path):
         self.calls.append(("attach", field_id, Path(path).name))
+        if self.uploads_stick:
+            self._files[field_id] = (Path(path).name,)
+
+    def attached_files(self, field_id):
+        if self.upload_readback is None:
+            return None                      # detached node: cannot verify
+        return self._files.get(field_id, ())
 
     def fill_text(self, field_id, value):
         self.calls.append(("fill", field_id, value))
@@ -124,6 +139,10 @@ class FakeDriver:
 
     def wait_for_captcha(self):
         self.calls.append(("wait_for_captcha",))
+
+    def submission_confirmed(self):
+        self.calls.append(("submission_confirmed",))
+        return self.confirms
 
 
 @pytest.fixture
@@ -536,15 +555,39 @@ class TestFailureIsolation:
 
 class TestDriverGuards:
     def test_no_module_but_fill_names_the_driver(self):
-        # The patchright swap point (§9): if the driver is imported anywhere
-        # else in src/apply/, swapping it stops being a one-line change.
-        import pathlib
+        """The patchright swap point (§9): if the driver is *imported* anywhere
+        else under src/, swapping it stops being a one-line change.
+
+        Walks the AST rather than grepping the source. A substring scan both
+        false-fires on the word appearing in a comment and would miss an
+        aliased import; and it was cwd-relative, so from any directory other
+        than the repo root it scanned zero files and passed vacuously.
+        """
         offenders = []
-        for path in (pathlib.Path("src")).rglob("*.py"):
-            text = path.read_text(encoding="utf-8")
-            if "playwright" in text and path.name != "fill.py":
-                offenders.append(str(path))
+        for path in sorted((REPO_ROOT / "src").rglob("*.py")):
+            if path.name == "fill.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                if any(n.split(".")[0] in ("playwright", "patchright") for n in names):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
         assert offenders == []
+
+    def test_the_guard_would_actually_catch_an_offender(self, tmp_path):
+        """The guard above is only worth having if it fires. A scan that
+        passes vacuously looks identical to a clean tree."""
+        mod = tmp_path / "rogue.py"
+        mod.write_text("from playwright.sync_api import sync_playwright\n", encoding="utf-8")
+        found = [
+            n for n in ast.walk(ast.parse(mod.read_text(encoding="utf-8")))
+            if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("playwright")
+        ]
+        assert found, "the AST predicate must match a real offending import"
 
     def test_the_import_guard_explains_how_to_install(self, monkeypatch):
         import builtins
@@ -562,3 +605,80 @@ class TestDriverGuards:
     def test_the_profile_dir_is_not_the_users_chrome(self):
         assert F.USER_DATA_DIR.name == ".apply_profile"
         assert "Application Support" not in str(F.USER_DATA_DIR)
+
+
+class TestAnUploadIsReadBack:
+    """The file input was the one write with no read-back (§9 step 4).
+
+    An input that silently ends up empty leaves `failures` empty, so
+    `blocking_questions` is empty, the submit guard passes, and the
+    application goes out with no resume attached.
+    """
+
+    def test_an_upload_that_does_not_stick_is_a_failure_not_a_success(self, resume):
+        d = FakeDriver()
+        d.uploads_stick = False
+        with pytest.raises(FillError, match="holds no file"):
+            F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
+
+    def test_an_upload_holding_a_different_file_is_a_failure(self, resume):
+        d = FakeDriver()
+
+        def wrong(field_id, path):
+            d.calls.append(("attach", field_id, Path(path).name))
+            d._files[field_id] = ("SomeoneElses_Resume.pdf",)
+
+        d.set_files = wrong
+        with pytest.raises(FillError, match="SomeoneElses_Resume.pdf"):
+            F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
+
+    def test_a_normal_upload_still_reports_attached(self, resume):
+        d = FakeDriver()
+        out = F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
+        assert out.action == "attached"
+        assert out.after == resume.name
+
+
+class TestTheDriverSetAndTheShortlistAgree:
+    def test_submittable_ats_matches_the_drivers_that_exist(self):
+        """`shortlist.py` marks a role manual-apply from
+        `detect.SUBMITTABLE_ATS`; `apply run` refuses it from
+        `fill._DRIVER_NAMES`. If those drift, the shortlist promises a
+        submission the queue will not make — or hides one it would."""
+        from src.apply.detect import SUBMITTABLE_ATS
+        assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_ATS)
+
+
+class TestUploadVerificationIsConfirmatoryNotPunitive:
+    """`None` (could not read the input back) and `()` (read it, it is empty)
+    mean different things.
+
+    Verified on a live Greenhouse board: uploading to `cover_letter` detaches
+    the input — React replaces the subtree — so the node is unreadable a
+    moment later even though the file landed. An earlier version of this
+    check treated that as a failed upload, which put a spurious entry in
+    `failures` and would have blocked a perfectly good submission.
+    """
+
+    def test_an_unreadable_input_is_attached_but_flagged_unverified(self, resume):
+        d = FakeDriver()
+        d.upload_readback = None                     # node gone after upload
+        out = F._attach(d, FilePlan(id="cover_letter", label="Cover Letter",
+                                     required=False, path=resume))
+        assert out.action == "attached"
+        assert "unverified" in out.note
+
+    def test_an_unreadable_input_does_not_block_submission(self, resume):
+        d = FakeDriver()
+        d.upload_readback = None
+        result = fill_plan(plan(files=[FilePlan(
+            id="cover_letter", label="Cover Letter", required=True, path=resume)]), d)
+        assert result.failures == []
+
+    def test_a_readable_but_empty_input_is_still_a_failure(self, resume):
+        # The real bug this check exists for: the upload silently did nothing.
+        d = FakeDriver()
+        d.uploads_stick = False                      # readable, and empty
+        with pytest.raises(FillError, match="holds no file"):
+            F._attach(d, FilePlan(id="resume", label="Resume/CV",
+                                   required=True, path=resume))

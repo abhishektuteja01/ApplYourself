@@ -12,18 +12,23 @@ from pathlib import Path
 
 import pytest
 
+from src import paths
 from src.apply import fill as F
 from src.apply.fill import FillResult, SubmitGuardError, run_one, submit
 from src.apply.plan import Plan, Unmapped
 
+REPO_ROOT = paths.REPO_ROOT
 
-def plan(*, unmapped=(), submit_selector="#application-form button[type=submit]") -> Plan:
+
+def plan(*, unmapped=(), submit_selector="#application-form button[type=submit]",
+         requires_captcha=False) -> Plan:
     return Plan(
         job_id="a1b2c3d4", board="gasketworks", token="1",
         form_url="https://boards.greenhouse.io/embed/job_app?token=1",
         company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
         fields=(), files=(), unmapped=tuple(unmapped), draftable=(), skipped=(),
         submit_selector=submit_selector, submit_disabled=False,
+        requires_captcha=requires_captcha,
     )
 
 
@@ -33,8 +38,9 @@ def unmapped(id="why_us", required=True) -> Unmapped:
 
 
 class FakeSubmitDriver:
-    def __init__(self, *, disabled=False):
+    def __init__(self, *, disabled=False, confirms=False):
         self.disabled = disabled
+        self.confirms = confirms
         self.clicked: list[str] = []
 
     def submit_disabled_now(self, selector):
@@ -42,6 +48,9 @@ class FakeSubmitDriver:
 
     def click_submit(self, selector):
         self.clicked.append(selector)
+
+    def submission_confirmed(self):
+        return self.confirms
 
 
 class TestBlockingQuestions:
@@ -127,7 +136,7 @@ class TestRunOneNeverSubmitsByDefault:
                 return False
 
         monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
-        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers: FillResult(form_url="x"))
+        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x"))
 
         run_one(plan(), submit_after=False)
         assert called == []
@@ -148,7 +157,7 @@ class TestRunOneNeverSubmitsByDefault:
                 return False
 
         monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
-        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers: FillResult(form_url="x"))
+        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x"))
         monkeypatch.setattr(F, "BrowserDriver", lambda page: FakeSubmitDriver())
 
         result = run_one(plan(), submit_after=True)
@@ -171,11 +180,14 @@ class TestRunOneNeverSubmitsByDefault:
             def __exit__(self, *a):
                 return False
 
+        def failing_fill(plan, driver, answers, result=None):
+            # Mutates the caller's result, as the real fill_plan does — run_one
+            # holds that object so a crash cannot lose `submitted`.
+            result.failures.append("boom")
+            return result
+
         monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
-        monkeypatch.setattr(
-            F, "fill_plan",
-            lambda plan, driver, answers: FillResult(form_url="x", failures=["boom"]),
-        )
+        monkeypatch.setattr(F, "fill_plan", failing_fill)
         monkeypatch.setattr(F, "BrowserDriver", lambda page: FakeSubmitDriver())
 
         result = run_one(plan(), submit_after=True)
@@ -187,14 +199,156 @@ class TestStaticSubmitSelectorBoundary:
     def test_submit_selector_is_touched_only_by_the_guarded_path(self):
         """`submit_selector` must not be read or clicked from any function
         other than the guard itself and the one driver method it calls — that
-        is what makes `submit()` the single path to a real click."""
-        allowed = {"submit", "click_submit", "submit_disabled_now"}
-        source = Path(F.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
+        is what makes `submit()` the single path to a real click.
+
+        Scans every module under `src/apply/` plus `src/apply_cli.py`, not just
+        `fill.py`: the guard was written when `fill.py` was the only driver,
+        and `lever.py`/`ashby.py` were never examined.
+
+        Matches on *call shape*, not on a substring of the source. The old
+        form looked for the literal text `submit_selector`/`click_submit`, so
+        `page.get_by_role("button", name="Submit application").click()` walked
+        straight past it — and it only visited `ast.FunctionDef`, so an
+        `async def` driver method was not even looked at.
+        """
+        allowed = {"submit", "click_submit", "submit_disabled_now",
+                    "submission_confirmed", "wait_for_captcha"}
+        # Anything that can activate a control. `press` covers Enter-in-input,
+        # which submits a form without any click at all.
+        activating = {"click", "press", "dblclick", "tap", "check", "submit"}
+
         offenders = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name not in allowed:
-                body = ast.get_source_segment(source, node) or ""
-                if "submit_selector" in body or "click_submit" in body:
-                    offenders.append(node.name)
+        targets = sorted((REPO_ROOT / "src" / "apply").rglob("*.py"))
+        targets.append(REPO_ROOT / "src" / "apply_cli.py")
+        for path in targets:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name in allowed:
+                    continue
+                for inner in ast.walk(node):
+                    if not isinstance(inner, ast.Call):
+                        continue
+                    func = inner.func
+                    if not isinstance(func, ast.Attribute):
+                        continue
+                    if func.attr not in activating:
+                        continue
+                    seg = ast.get_source_segment(source, inner) or ""
+                    if "submit" in seg.lower():
+                        offenders.append(
+                            f"{path.relative_to(REPO_ROOT)}:{inner.lineno} "
+                            f"in {node.name}(): {seg[:60]}"
+                        )
         assert offenders == []
+
+    def test_the_guard_would_catch_a_differently_spelled_submit_click(self):
+        """A guard that cannot fail is not a guard. The old substring form
+        passed this exact line."""
+        source = (
+            "def rogue(page):\n"
+            "    page.get_by_role('button', name='Submit application').click()\n"
+        )
+        activating = {"click", "press", "dblclick", "tap", "check", "submit"}
+        hits = [
+            n for n in ast.walk(ast.parse(source))
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and n.func.attr in activating
+            and "submit" in (ast.get_source_segment(source, n) or "").lower()
+        ]
+        assert hits, "the call-shape predicate must match a real offender"
+
+    def test_the_guard_visits_async_methods(self):
+        """`ast.FunctionDef` does not match `async def`, so an async driver
+        method was invisible to the old guard."""
+        source = (
+            "async def rogue(page):\n"
+            "    await page.locator(submit_selector).click()\n"
+        )
+        seen = [n.name for n in ast.walk(ast.parse(source))
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        assert seen == ["rogue"]
+
+
+
+class TestTheClickIsRecordedBeforeAnythingElseCanFail:
+    """A submission that goes out must never read as "not submitted".
+
+    If an exception after the click leaves `submitted` False, `_run_role`
+    skips the `track_cli` transition, the role stays `tailored`, and the next
+    `--submit` run applies to the same board a second time.
+    """
+
+    def test_a_captcha_timeout_after_the_click_still_records_the_submission(self):
+        class CaptchaExplodes(FakeSubmitDriver):
+            def wait_for_captcha(self):
+                raise TimeoutError("hCaptcha never solved")
+
+        d = CaptchaExplodes()
+        result = FillResult(form_url="x")
+        p = plan(requires_captcha=True)
+
+        with pytest.raises(TimeoutError):
+            submit(p, result, d)
+
+        assert d.clicked == [p.submit_selector]
+        assert result.submitted is True, "the click landed; losing it re-applies next run"
+
+    def test_run_one_keeps_submitted_true_when_the_post_click_wait_explodes(
+        self, monkeypatch
+    ):
+        class CaptchaExplodes(FakeSubmitDriver):
+            def wait_for_captcha(self):
+                raise TimeoutError("hCaptcha never solved")
+
+        class Ctx:
+            pages = []
+            def new_page(self):
+                return object()
+            def close(self):
+                pass
+
+        class P:
+            chromium = type("C", (), {
+                "launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        p = plan(requires_captcha=True)
+        monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
+        monkeypatch.setattr(F, "fill_plan",
+                            lambda plan, driver, answers, result=None: FillResult(form_url="x"))
+        monkeypatch.setattr(F, "BrowserDriver", lambda page: CaptchaExplodes())
+
+        result = run_one(p, submit_after=True)
+
+        assert result.submitted is True
+        assert "TimeoutError" in result.submit_error
+
+    def test_a_guard_refusal_is_raised_before_the_click_so_submitted_stays_false(self):
+        d = FakeSubmitDriver()
+        result = FillResult(form_url="x")
+        with pytest.raises(SubmitGuardError):
+            submit(plan(unmapped=[unmapped()]), result, d)
+        assert d.clicked == []
+        assert result.submitted is False
+
+
+class TestConfirmationIsPositiveEvidenceOnly:
+    def test_no_confirmation_marker_is_unconfirmed_not_failed(self):
+        d = FakeSubmitDriver(confirms=False)
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert result.submitted is True
+        assert result.confirmed is False
+
+    def test_a_confirmation_marker_sets_confirmed(self):
+        d = FakeSubmitDriver(confirms=True)
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert result.submitted is True
+        assert result.confirmed is True

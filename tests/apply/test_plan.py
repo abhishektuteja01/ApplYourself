@@ -259,14 +259,68 @@ class TestOverrides:
             scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
         )
         plan = plan_for_board(board_form, answers, tailor_dir, job_id="a1b2c3d4")
-        required_c_ids = [u.id for u in plan.unmapped]
-        assert required_c_ids  # form_minimal parks on at least one Tier C question
+        parked = {u.id: u for u in plan.unmapped}
+        assert parked  # form_minimal parks on at least one Tier C question
+
+        # The parked question here is a Yes/No react-select, so the override
+        # has to name an option the widget actually offers.
+        field_id = next(iter(parked))
+        assert parked[field_id].options == ("Yes", "No")
 
         overridden = plan_for_board(
             board_form, answers, tailor_dir, job_id="a1b2c3d4",
-            overrides={required_c_ids[0]: ("An answer.", "C1")},
+            overrides={field_id: ("No", "C1")},
         )
-        assert required_c_ids[0] not in [u.id for u in overridden.unmapped]
+        assert field_id not in [u.id for u in overridden.unmapped]
+        assert [f.value for f in overridden.fields if f.id == field_id] == ["No"]
+
+    def test_an_override_the_widget_does_not_offer_parks_instead_of_planning_it(
+        self, merged, answers, tailor_dir, scan, payload
+    ):
+        """An override is LLM-drafted prose. Every deterministic path into a
+        select is checked against the offered options; this one used to skip
+        that, so the plan read READY and the role died in the browser."""
+        from src.apply.schema import parse_schema
+
+        name = "form_minimal"
+        board_form = BoardForm(
+            posting=Posting(token="1", url_slug=None), slug="gasketworks", html="",
+            scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
+        )
+        field_id = next(u.id for u in
+                        plan_for_board(board_form, answers, tailor_dir,
+                                        job_id="a1b2c3d4").unmapped)
+
+        overridden = plan_for_board(
+            board_form, answers, tailor_dir, job_id="a1b2c3d4",
+            overrides={field_id: ("An answer.", "C1")},
+        )
+        still_parked = {u.id: u for u in overridden.unmapped}
+        assert field_id in still_parked
+        assert "matches none of the options" in still_parked[field_id].reason
+
+    def test_an_override_is_canonicalized_to_the_boards_own_spelling(
+        self, merged, answers, tailor_dir, scan, payload
+    ):
+        """`"no"` is the right answer spelled wrong. react-select matches on
+        exact visible text, so planning the literal lowercase string would
+        fail at fill time for no reason."""
+        from src.apply.schema import parse_schema
+
+        name = "form_minimal"
+        board_form = BoardForm(
+            posting=Posting(token="1", url_slug=None), slug="gasketworks", html="",
+            scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
+        )
+        field_id = next(u.id for u in
+                        plan_for_board(board_form, answers, tailor_dir,
+                                        job_id="a1b2c3d4").unmapped)
+
+        overridden = plan_for_board(
+            board_form, answers, tailor_dir, job_id="a1b2c3d4",
+            overrides={field_id: ("no", "C1")},
+        )
+        assert [f.value for f in overridden.fields if f.id == field_id] == ["No"]
 
 
 class TestEmploymentSwitch:

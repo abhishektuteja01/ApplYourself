@@ -34,8 +34,10 @@ import pandas as pd
 
 from src import paths, state_io, track_cli
 from src.apply import ashby, lever
+from src.apply.ashby import AshbyClientRendered
 from src.apply.answers import Answers, AnswersError, load_answers
-from src.apply.fill import SubmitGuardError, blocking_questions, fill, run_one
+from src.apply.fill import (SubmitGuardError, blocking_questions, fill, has_driver,
+                             run_one)
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
 from src.apply.plan import Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
@@ -45,21 +47,10 @@ from src.discovery.sources.ats.http import CareersError
 
 # One posting URL parser per ATS this module can submit to. `detect_ats` tries
 # each in turn — cheap, since they're pure regex matches, no network.
-_ATS_PARSERS = {
-    "greenhouse": parse_posting,
-    "lever": lever.parse_posting,
-    "ashby": ashby.parse_posting,
-}
-
-
-def detect_ats(url: str) -> str | None:
-    for ats, parser in _ATS_PARSERS.items():
-        try:
-            parser(url)
-        except ApplyUrlError:
-            continue
-        return ats
-    return None
+# Both live in `src.apply.detect` so `shortlist.py` can ask "can /apply submit
+# to this?" without importing this CLI. Re-exported here because callers and
+# tests already reach for `apply_cli.detect_ats`.
+from src.apply.detect import _ATS_PARSERS, detect_ats, is_auto_submittable  # noqa: E402
 
 CLEAN = paths.CLEAN
 PIPELINE = paths.PIPELINE
@@ -69,6 +60,16 @@ APPLY_RUNS = APPLICATIONS / "apply_runs"
 
 class ApplyCliError(Exception):
     """A per-role failure with a message meant for the user."""
+
+
+class ManualApplyOnly(ApplyCliError):
+    """The role is real and reachable, but no submit path exists for its board
+    — Workday, LinkedIn, a company careers page, or Ashby (scanned, no driver).
+
+    Distinct from a failure on purpose. These roles have to be applied to by
+    hand, and §13 requires the run report to say so in its own category rather
+    than burying them in `failed`, where they read as breakage and drive the
+    exit code."""
 
 
 def resolve_url(job_id: str, state: dict | None) -> str:
@@ -99,7 +100,7 @@ def resolve_url(job_id: str, state: dict | None) -> str:
             return url
 
     seen = "; ".join(f"{where}: {url or '(empty)'}" for where, url in candidates)
-    raise ApplyCliError(
+    raise ManualApplyOnly(
         f"{job_id} has no Greenhouse, Lever or Ashby posting URL to apply through "
         f"({seen}). Not one of the boards /apply submits to — apply by hand."
     )
@@ -121,19 +122,39 @@ def resolve_out_dir(job_id: str, state: dict | None) -> Path:
     return out_dir
 
 
-def load_overrides(path: Path) -> dict[str, tuple[str | tuple[str, ...], str]]:
+def load_overrides(path: Path, job_id: str | None = None,
+                    ) -> dict[str, tuple[str | tuple[str, ...], str]]:
     """`/apply`'s per-run, per-field answers for Tier C questions (§15) —
-    `{"field_id": {"value": "...", "tier": "C1"}}`, `value` a string or a list
-    for a multi-select. Parsing only; no judgment lives here (R7) — the
-    command file decided every value before this ever runs.
+    `{"job_id": "...", "<field_id>": {"value": "...", "tier": "C1"}}`, `value`
+    a string or a list for a multi-select. Parsing only; no judgment lives
+    here (R7) — the command file decided every value before this ever runs.
+
+    The `job_id` key binds the file to one role. Tier C2 answers are
+    company-specific by construction ("why do you want to work at X"), so a
+    file drafted for one role and passed to another sends the wrong company's
+    prose under the user's name — silently, since nothing about the value
+    looks wrong. It stays optional so a hand-written override file still
+    works, but when present it is enforced.
     """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ApplyCliError(f"{path}: not readable JSON ({exc})") from exc
+    if not isinstance(raw, dict):
+        raise ApplyCliError(f"{path}: top level must be a JSON object")
+
+    declared = raw.pop("job_id", None)
+    if declared is not None and job_id is not None and declared != job_id:
+        raise ApplyCliError(
+            f"{path} was drafted for job_id {declared!r} but this run is "
+            f"{job_id!r}. Company-specific answers do not transfer between "
+            f"roles — re-run /apply for {job_id}."
+        )
 
     overrides: dict[str, tuple[str | tuple[str, ...], str]] = {}
     for field_id, entry in raw.items():
+        if not isinstance(entry, dict):
+            raise ApplyCliError(f"{path}: {field_id!r} must be an object")
         tier = entry.get("tier")
         if tier not in ("C1", "C2"):
             raise ApplyCliError(f"{path}: {field_id!r} has tier {tier!r}, want C1 or C2")
@@ -157,7 +178,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     posting_url = url or resolve_url(job_id, state)
     target = Path(out_dir) if out_dir else resolve_out_dir(job_id, state)
     answers = load_answers()
-    overrides = load_overrides(Path(answers_path)) if answers_path else None
+    overrides = load_overrides(Path(answers_path), job_id) if answers_path else None
 
     ats = detect_ats(posting_url)
     if ats is None:
@@ -407,9 +428,25 @@ class RunOutcome:
     job_id: str
     company: str = ""
     title: str = ""
-    category: str = "failed"    # submitted | parked | ready | failed | expired
+    category: str = "failed"
+    """submitted | submitted_unconfirmed | submitted_untracked | manual |
+    parked | ready | failed | expired"""
+
     detail: str = ""
     unmapped: tuple[str, ...] = dc_field(default_factory=tuple)
+
+
+def _track_applied(job_id: str, plan) -> tuple[int, str]:
+    """Write the `applied` transition through /track (R10). Returns
+    `(returncode, note)` — never raises, because by the time this runs the
+    application is already on the board and losing that fact is worse than
+    any state-write error."""
+    try:
+        rc = track_cli.main([job_id, "applied", "--note",
+                             f"auto-submitted via /apply ({plan.board})"])
+    except Exception as exc:  # noqa: BLE001
+        return 1, f" ({type(exc).__name__}: {exc})"
+    return int(rc or 0), ""
 
 
 def _run_role(job_id: str, *, submit: bool, headless: bool,
@@ -433,15 +470,78 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
         plan, answers = build(job_id, answers_path=answers_path)
     except PostingExpired as exc:
         return RunOutcome(job_id, category="expired", detail=str(exc))
+    except (ManualApplyOnly, AshbyClientRendered) as exc:
+        # AshbyClientRendered is a manual-apply fact, not breakage: the form
+        # only exists after JS runs, so there is no plan to build.
+        return RunOutcome(job_id, category="manual", detail=str(exc))
     except BUILD_ERRORS as exc:
         return RunOutcome(job_id, category="failed", detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - see the docstring's "never raises"
+        return RunOutcome(job_id, category="failed",
+                           detail=f"unexpected {type(exc).__name__}: {exc}")
 
-    result = run_one(plan, answers, headless=headless, submit_after=submit)
+    if submit and headless and plan.requires_captcha:
+        # Lever renders hCaptcha on every form and `submit()` blocks for a
+        # human to solve it. Headless there means the wait can only ever time
+        # out — 10 minutes per role, after the click has already landed.
+        return RunOutcome(
+            job_id, plan.company, plan.title, "failed",
+            detail=f"{plan.ats} renders a captcha and --headless leaves nobody to "
+                   f"solve it; re-run this role without --headless",
+        )
+
+    if not has_driver(plan.ats):
+        # Ashby: the form scans and plans, but no fill driver exists. Reported
+        # rather than attempted, so the browser never opens for a board that
+        # cannot be filled.
+        return RunOutcome(job_id, plan.company, plan.title, "manual",
+                           detail=f"{plan.ats}: form scanned and planned, but no "
+                                  f"browser driver exists yet — apply by hand")
+
+    # `sink` holds the FillResult from before the browser opens, so a crash
+    # anywhere after the submit click — including in browser teardown — still
+    # tells us an application went out. Reading only the return value lost
+    # that, and a lost `submitted` means the role stays `tailored` and the
+    # next run applies to the same board again.
+    sink: list = []
+    try:
+        result = run_one(plan, answers, headless=headless, submit_after=submit,
+                          sink=sink)
+    except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
+        landed = sink[0] if sink else None
+        if landed is not None and landed.submitted:
+            _track_applied(job_id, plan)
+            return RunOutcome(
+                job_id, plan.company, plan.title, "submitted_unconfirmed",
+                detail=f"SUBMITTED, then {type(exc).__name__}: {exc} — the click "
+                       f"landed; verify by hand",
+            )
+        if isinstance(exc, Exception):
+            # A playwright timeout or driver error must not escape:
+            # `run_queue` would abort mid-walk and every role already
+            # submitted would lose its only record.
+            return RunOutcome(job_id, plan.company, plan.title, "failed",
+                               detail=f"{type(exc).__name__}: {exc}")
+        raise
 
     if result.submitted:
-        track_cli.main([job_id, "applied", "--note",
-                         f"auto-submitted via /apply ({plan.board})"])
-        return RunOutcome(job_id, plan.company, plan.title, "submitted")
+        rc, exc_note = _track_applied(job_id, plan)
+        if rc:
+            # The application is on the board but the state write refused or
+            # blew up. Loudest category there is: the role still reads
+            # `tailored`, so the next run would apply to it a second time.
+            return RunOutcome(
+                job_id, plan.company, plan.title, "submitted_untracked",
+                detail=f"SUBMITTED but track_cli exited {rc}{exc_note} — state.yaml "
+                       f"still says tailored; fix by hand before the next run",
+            )
+        if result.confirmed:
+            return RunOutcome(job_id, plan.company, plan.title, "submitted")
+        return RunOutcome(
+            job_id, plan.company, plan.title, "submitted_unconfirmed",
+            detail="clicked and transitioned to applied, but the board showed no "
+                   "confirmation this code recognises — verify by hand",
+        )
 
     blocking = blocking_questions(plan, result)
     if blocking:
@@ -464,30 +564,51 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
 def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
               rate: float = 240.0, jitter: float = 60.0,
               sleeper=time.sleep, jitter_fn=random.uniform,
-              answers_path: Path | None = None) -> list[RunOutcome]:
+              answers_path: Path | None = None,
+              on_outcome=None,
+              collect_into: list | None = None) -> list[RunOutcome]:
     """Walk the queue, sleeping `rate + U(0, jitter)` seconds between roles.
 
     `sleeper`/`jitter_fn` are injectable so tests never actually sleep or
     depend on randomness. `answers_path` (see `_run_role`) is only meaningful
     when `job_ids` names a single role.
+
+    `on_outcome` is called with the accumulated list after every role, and
+    `collect_into` lets the caller own that list. Both exist for one reason:
+    the run report is the only record of what went out, so it has to survive a
+    crash mid-walk. A caller that owns the list still has every completed
+    outcome even if this function never returns.
     """
-    outcomes = []
+    outcomes = [] if collect_into is None else collect_into
     for i, job_id in enumerate(job_ids):
         if i > 0:
             sleeper(rate + jitter_fn(0, jitter))
         outcomes.append(_run_role(job_id, submit=submit, headless=headless,
                                    answers_path=answers_path))
+        if on_outcome is not None:
+            on_outcome(outcomes)
     return outcomes
 
 
 # ------------------------------------------------------------------ report
 
 
-_CATEGORY_ORDER = ("submitted", "parked", "ready", "failed", "expired")
+_CATEGORY_ORDER = ("submitted", "submitted_unconfirmed", "submitted_untracked",
+                    "parked", "ready", "manual", "failed", "expired")
 _CATEGORY_TITLE = {
-    "submitted": "Submitted", "parked": "Parked", "ready": "Ready (not submitted)",
-    "failed": "Failed", "expired": "Expired postings",
+    "submitted": "Submitted",
+    "submitted_unconfirmed": "Submitted (no confirmation seen — verify by hand)",
+    "submitted_untracked": "SUBMITTED BUT NOT TRACKED — fix state.yaml by hand",
+    "parked": "Parked",
+    "ready": "Ready (not submitted)",
+    "manual": "Manual-apply (no submit path for this board)",
+    "failed": "Failed",
+    "expired": "Expired postings",
 }
+
+# Categories that make `apply run` exit non-zero. `manual` is deliberately not
+# one: a board with no submit path is a fact about the board, not a failure.
+_EXIT_NONZERO = ("failed", "submitted_untracked")
 
 
 def render_report(outcomes: list[RunOutcome], started_at: datetime) -> str:
@@ -515,11 +636,34 @@ def render_report(outcomes: list[RunOutcome], started_at: datetime) -> str:
 
 
 def write_report(outcomes: list[RunOutcome], started_at: datetime,
-                  out_dir: Path | None = None) -> Path:
+                  out_dir: Path | None = None, path: Path | None = None) -> Path:
+    if path is not None:
+        out_dir = path.parent
+    else:
+        out_dir = out_dir if out_dir is not None else APPLY_RUNS
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = path or reserve_report_path(started_at, out_dir)
+    path.write_text(render_report(outcomes, started_at), encoding="utf-8")
+    return path
+
+
+def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Path:
+    """A report path no existing run owns.
+
+    Two runs starting in the same second used to land on the same filename and
+    the second silently overwrote the first — and this file is the only record
+    of what went out. Reserved once per run and then re-written per role, so
+    the crash-survival writes keep hitting the same file rather than racing
+    each other into new ones.
+    """
     out_dir = out_dir if out_dir is not None else APPLY_RUNS
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{started_at.strftime('%Y-%m-%dT%H-%M-%S')}.md"
-    path.write_text(render_report(outcomes, started_at), encoding="utf-8")
+    stem = started_at.strftime("%Y-%m-%dT%H-%M-%S")
+    path = out_dir / f"{stem}.md"
+    n = 2
+    while path.exists():
+        path = out_dir / f"{stem}.{n}.md"
+        n += 1
     return path
 
 
@@ -557,13 +701,23 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     started = datetime.now()
-    outcomes = run_queue(queue, submit=args.submit, headless=args.headless,
-                          rate=rate, jitter=jitter, answers_path=args.answers)
-    path = write_report(outcomes, started)
+    # The caller owns the list and the report is rewritten after every role, so
+    # a crash — or a Ctrl-C — mid-walk still leaves a complete record of every
+    # application that already went out.
+    outcomes: list[RunOutcome] = []
+    path = reserve_report_path(started)
+    write_report(outcomes, started, path=path)
+    try:
+        run_queue(queue, submit=args.submit, headless=args.headless,
+                   rate=rate, jitter=jitter, answers_path=args.answers,
+                   collect_into=outcomes,
+                   on_outcome=lambda done: write_report(done, started, path=path))
+    finally:
+        write_report(outcomes, started, path=path)
 
     print(render_report(outcomes, started))
     print(f"Report written to {path}")
-    return 1 if any(o.category == "failed" for o in outcomes) else 0
+    return 1 if any(o.category in _EXIT_NONZERO for o in outcomes) else 0
 
 
 def main(argv: list[str] | None = None) -> int:
