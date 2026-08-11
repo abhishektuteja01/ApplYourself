@@ -24,7 +24,7 @@ patchright later is a one-line change.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass, field as dc_field, replace
 from pathlib import Path
 
 from src import paths
@@ -174,6 +174,22 @@ class BrowserDriver:
 
     def _locator(self, field_id: str):
         return self.page.locator(FIELD.format(form=FORM_SELECTOR, id=field_id))
+
+    def resolve_kind(self, field_id: str, planned: str) -> str:
+        """The kind to actually drive this field as.
+
+        Greenhouse and Lever declare a widget and render it, so the planned
+        kind stands. Ashby does not: one API type renders as a radio group or a
+        combobox depending on how many options it carries, and the cutoff is
+        Ashby's own UI decision, not something the payload states. Overridden
+        there to read the live DOM instead of guessing a threshold.
+        """
+        return planned
+
+    def set_yesno(self, field_id: str, label: str) -> None:
+        """Boards that render a boolean as a two-button toggle rather than a
+        checkbox. Only Ashby does; the base has no such widget."""
+        raise FillError(f"{field_id}: this board has no yes/no toggle widget")
 
     def goto(self, url: str) -> None:
         self.page.goto(url, wait_until="domcontentloaded")
@@ -399,6 +415,196 @@ class LeverBrowserDriver(BrowserDriver):
         raise FillError(f"{field_id}: no checkbox labelled {label!r}")
 
 
+class AshbyBrowserDriver(BrowserDriver):
+    """Ashby renders none of Greenhouse's markup, so most selectors change.
+
+    Four differences drive every override here, all observed live:
+
+    1. **There is no `<form>` element** and no stable control `id` for a
+       combobox. `data-field-path` on the field-entry wrapper is the id space
+       the scanner already speaks, so every lookup starts there.
+    2. **The API type does not name the widget.** One `select` renders as a
+       radio group at 1/3/5 options and as a combobox at 11/24/194 — a UI
+       threshold Ashby owns and can change. `resolve_kind` reads the DOM.
+    3. **A combobox does not open on clicking its input** — `aria-expanded`
+       stays false. The chevron button opens it, and the panel it opens is a
+       document-level `[role=listbox]`, not a descendant of the field.
+    4. **A boolean is two buttons plus a display-only checkbox.** The hidden
+       checkbox reads false both when untouched and when No is chosen, so it
+       cannot express the answer; the chosen button's `_active_` class can.
+    """
+
+    ENTRY = '[data-field-path="{id}"]'
+    #: Controls that carry a value. Deliberately not `button` — the chevron.
+    CONTROL = "input, textarea, select"
+    #: The chevron that opens a combobox. Its class hash changes on deploy, so
+    #: it is found positionally: the only button inside a combobox's field.
+    COMBOBOX = 'input[role="combobox"]'
+    #: Floated to document level, so it is never scoped to the field entry.
+    LISTBOX = '[role="listbox"] [role="option"]'
+    #: Ashby's CSS-module hashes change on every deploy (`_active_1svni_57`),
+    #: so match the stable prefix. Absence reads as "not selected", which
+    #: parks — never as a silent success. Always tag-scoped to `button`: an
+    #: open listbox marks its highlighted option `_active_` too, and that is a
+    #: `div` the user has not chosen.
+    ACTIVE = '[class*="_active_"]'
+
+    def _entry(self, field_id: str):
+        """The field-entry wrapper — what a group or a combobox is found under."""
+        return self.page.locator(self.ENTRY.format(id=field_id)).first
+
+    def _locator(self, field_id: str):
+        """The value-carrying control inside the entry.
+
+        Text, file and textarea fields also carry `id` == the field path, but
+        going through the entry works for every kind including the combobox,
+        which carries neither `id` nor `name`.
+        """
+        return self._entry(field_id).locator(self.CONTROL)
+
+    def goto(self, url: str) -> None:
+        """No `<form>` to wait for — the base would time out on every board.
+        The first field entry is the equivalent readiness signal, and it only
+        exists once the client-side render has run."""
+        self.page.goto(url, wait_until="domcontentloaded")
+        self.page.wait_for_selector("[data-field-path]", timeout=FORM_TIMEOUT)
+
+    def resolve_kind(self, field_id: str, planned: str) -> str:
+        """What this field renders as right now, falling back to the plan.
+
+        Only widget shape is read, never labels or options — the answer is
+        still whatever the plan resolved. A field that is not on the page (a
+        conditional question, say) keeps its planned kind and fails later in
+        the ordinary way rather than being silently reinterpreted here.
+        """
+        entry = self._entry(field_id)
+        if entry.count() == 0:
+            return planned
+        if entry.locator(self.COMBOBOX).count():
+            # Both flavours — the enumerated one and the server-backed location
+            # autocomplete — are driven by typing and picking, which is exactly
+            # what the react_select path does.
+            return "react_select"
+        if entry.locator('input[type="radio"]').count():
+            return "radio_group"
+        boxes = entry.locator('input[type="checkbox"]')
+        if boxes.count() > 1:
+            return "checkbox_group"
+        if boxes.count() == 1 and entry.locator("button").count() >= 2:
+            return "yesno"
+        return planned
+
+    # --- combobox -----------------------------------------------------------
+
+    def open_options(self, field_id: str) -> tuple[str, ...]:
+        """Click the chevron, not the input.
+
+        Clicking the input leaves `aria-expanded` false and opens nothing —
+        the single reason this widget was unreadable before. The opened list
+        is complete rather than virtualised (194 countries all present), so
+        one read is the whole taxonomy.
+        """
+        self._entry(field_id).locator("button").first.click()
+        return self.visible_options()
+
+    def visible_options(self) -> tuple[str, ...]:
+        try:
+            self.page.wait_for_selector(self.LISTBOX, timeout=OPTION_TIMEOUT)
+        except Exception:  # noqa: BLE001 - an empty listbox is an answer
+            return ()
+        nodes = self.page.locator(self.LISTBOX)
+        return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
+
+    def click_option(self, label: str) -> bool:
+        options = self.page.locator(self.LISTBOX)
+        for i in range(options.count()):
+            node = options.nth(i)
+            if node.inner_text().strip().casefold() == label.casefold():
+                node.click()
+                return True
+        return False
+
+    def type_into(self, field_id: str, value: str) -> None:
+        el = self._entry(field_id).locator(self.COMBOBOX).first
+        el.click()
+        el.fill("")
+        el.type(value, delay=25)
+
+    def is_expanded(self, field_id: str) -> bool:
+        combo = self._entry(field_id).locator(self.COMBOBOX)
+        if combo.count() == 0:
+            return False
+        return combo.first.get_attribute("aria-expanded") == "true"
+
+    def selected_label(self, field_id: str) -> str:
+        """A chosen combobox holds the option text as its own value, and a
+        chosen toggle marks the button. Neither uses Greenhouse's
+        `.select__single-value` sibling, which is what the base reads."""
+        entry = self._entry(field_id)
+        if entry.count() == 0:
+            return ""
+        combo = entry.locator(self.COMBOBOX)
+        if combo.count():
+            return (combo.first.input_value() or "").strip()
+        active = entry.locator(f"button{self.ACTIVE}")
+        return active.first.inner_text().strip() if active.count() else ""
+
+    def value_of(self, field_id: str) -> str:
+        el = self._locator(field_id)
+        if el.count() == 0:
+            return ""
+        # A toggle's checkbox and a group's boxes carry no meaningful value:
+        # an unvalued checkbox reads as the HTML default "on" whether or not it
+        # is checked, which would report every untouched toggle as prefilled.
+        if (el.first.get_attribute("type") or "") in ("checkbox", "radio"):
+            return self.selected_label(field_id)
+        try:
+            value = el.first.input_value(timeout=1000)
+        except Exception:  # noqa: BLE001 - a fieldset has no value
+            value = ""
+        return value or self.selected_label(field_id)
+
+    # --- toggle and groups --------------------------------------------------
+
+    def set_yesno(self, field_id: str, label: str) -> None:
+        entry = self._entry(field_id)
+        buttons = entry.locator("button")
+        for i in range(buttons.count()):
+            button = buttons.nth(i)
+            if button.inner_text().strip().casefold() == label.casefold():
+                button.click()
+                return
+        raise FillError(f"{field_id}: no yes/no button labelled {label!r}")
+
+    def check_group_option(self, field_id: str, label: str) -> None:
+        """Each option's own `name` is its label text, and a `<label for=…>`
+        repeats it. Two independent matches, neither of them a hashed class."""
+        self._check_labelled(field_id, "checkbox", label)
+
+    def check_radio_group(self, field_id: str, label: str) -> None:
+        """Same shape as the checkbox group — `-labeled-radio-N` instead of
+        `-labeled-checkbox-N`. The base looks for Lever's `eeo-option-text`
+        sibling, which Ashby does not render."""
+        self._check_labelled(field_id, "radio", label)
+
+    def _check_labelled(self, field_id: str, input_type: str, label: str) -> None:
+        entry = self._entry(field_id)
+        boxes = entry.locator(f'input[type="{input_type}"]')
+        for i in range(boxes.count()):
+            box = boxes.nth(i)
+            name = (box.get_attribute("name") or "").strip()
+            text = ""
+            box_id = box.get_attribute("id")
+            if box_id:
+                labels = entry.locator(f'label[for="{box_id}"]')
+                if labels.count():
+                    text = labels.first.inner_text().strip()
+            if label.casefold() in (name.casefold(), text.casefold()):
+                box.check()
+                return
+        raise FillError(f"{field_id}: no {input_type} labelled {label!r}")
+
+
 _DRIVER_NAMES = {"greenhouse": "BrowserDriver", "lever": "LeverBrowserDriver"}
 
 
@@ -488,6 +694,16 @@ def _select(driver, field: FieldPlan, label: str, result: FillResult,
 def _apply_field(driver, field: FieldPlan, result: FillResult,
                  answers: Answers | None = None) -> FieldOutcome:
     before = driver.value_of(field.id)
+    kind = driver.resolve_kind(field.id, field.kind)
+    if kind != field.kind:
+        field = replace(field, kind=kind)
+
+    if field.kind == "yesno":
+        driver.set_yesno(field.id, str(field.value))
+        shown = driver.selected_label(field.id)
+        if shown.strip().casefold() != str(field.value).strip().casefold():
+            raise FillError(f"{field.id}: chose {field.value!r} but reads {shown!r}")
+        return FieldOutcome(field.id, "filled", before, shown)
 
     if field.kind == "checkbox":
         driver.set_checkbox(field.id, bool(field.value))
@@ -599,7 +815,10 @@ def _probe_parked_selects(driver, plan: Plan, result: FillResult,
     unresolved stays parked.
     """
     for parked in plan.unmapped:
-        if parked.kind != "react_select":
+        # The driver has the last word on the widget: an Ashby field planned as
+        # `select`/`combobox` renders as the same type-and-pick control this
+        # recovery pass was written for, and would otherwise never be probed.
+        if driver.resolve_kind(parked.id, parked.kind) != "react_select":
             continue
         if parked.multi:
             # `resolve` returns one label for a multi field, `_apply_field`

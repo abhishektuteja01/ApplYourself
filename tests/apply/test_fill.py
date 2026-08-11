@@ -39,8 +39,10 @@ def plan(fields=(), files=(), form_url="https://boards.greenhouse.io/embed/job_a
 class FakeDriver:
     """A page that records what was done to it, in order."""
 
-    def __init__(self, *, values=None, options=None, sticks=True, expanded_after=False):
+    def __init__(self, *, values=None, options=None, sticks=True, expanded_after=False,
+                 kinds=None):
         self.calls: list[tuple] = []
+        self.kinds = dict(kinds or {})         # id -> kind the DOM really shows
         self.values = dict(values or {})       # id -> what the field reads back
         self.options = dict(options or {})     # id -> what the listbox offers
         self.sticks = sticks                   # does a selection register
@@ -55,6 +57,15 @@ class FakeDriver:
 
     def goto(self, url):
         self.calls.append(("goto", url))
+
+    def resolve_kind(self, field_id, planned):
+        """A board that renders what it declared. `kinds` overrides one field,
+        the way Ashby's DOM read does."""
+        return self.kinds.get(field_id, planned)
+
+    def set_yesno(self, field_id, label):
+        self.calls.append(("yesno", field_id, label))
+        self._selected[field_id] = label
 
     def settle(self):
         self.calls.append(("settle",))
