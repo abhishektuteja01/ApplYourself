@@ -19,6 +19,7 @@ import pytest
 import yaml
 
 from src import apply_cli
+from src.apply import ashby
 from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
 from src.apply.plan import PlanError
@@ -150,32 +151,30 @@ class TestBuildDispatchesToAshby:
         assert plan.ats == "ashby"
         assert plan.board == "widgetco"
 
-    def test_fill_refuses_loudly_since_there_is_no_ashby_driver(self, repo, monkeypatch, tailor_dir):
-        """apply plan works fully for Ashby (§12a); apply fill/run must not
-        pretend to submit through a driver that does not exist."""
+    def test_an_ashby_plan_carries_a_submit_selector(self, repo, monkeypatch, tailor_dir):
+        """The API path states the selector without the DOM in hand: the class
+        is unhashed and resolves to one button on every live board."""
         repo.write_clean(**{JOB_ID: ASHBY_URL})
         repo.write_state(url=ASHBY_URL)
         self._stub_api(monkeypatch)
 
-        plan, answers = apply_cli.build(JOB_ID)
-        from src.apply.fill import FillError, fill
-        with pytest.raises(FillError, match="no browser driver for ats='ashby'"):
-            fill(plan, answers)
+        plan, _ = apply_cli.build(JOB_ID)
+        assert plan.submit_selector == ashby.SUBMIT_SELECTOR
 
-    def test_run_reports_ashby_as_manual_apply_without_opening_a_browser(
+    def test_ashby_now_reaches_the_browser_rather_than_the_manual_bucket(
             self, repo, monkeypatch, tailor_dir):
-        """The plan now succeeds for Ashby, so the queue reaches the driver
-        check rather than the build guard — and must still not launch Chrome
-        for a board it cannot fill."""
+        """Registering the driver is what moves these roles out of `manual`.
+        The shortlist reads the same flag, so the two cannot disagree."""
         repo.write_clean(**{JOB_ID: ASHBY_URL})
         repo.write_state(url=ASHBY_URL)
         self._stub_api(monkeypatch)
+        opened = []
         monkeypatch.setattr("src.apply_cli.run_one",
-                            lambda *a, **k: pytest.fail("opened a browser for Ashby"))
+                            lambda plan, *a, **k: opened.append(plan.ats) or _fake_result())
 
-        outcome = apply_cli._run_role(JOB_ID, submit=True, headless=False)
-        assert outcome.category == "manual"
-        assert "no browser driver" in outcome.detail
+        outcome = apply_cli._run_role(JOB_ID, submit=False, headless=False)
+        assert opened == ["ashby"]
+        assert outcome.category != "manual"
 
 
 class TestResolveUrl:
@@ -639,8 +638,11 @@ class TestASubmissionIsNeverSilentlyLost:
 
 class TestManualApplyIsItsOwnCategory:
     def test_a_board_with_no_driver_is_manual_not_failed(self, monkeypatch):
+        """Every registered board has a driver now, so this needs an ats that
+        never will — the category still has to exist for LinkedIn, Indeed and
+        company careers pages."""
         monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id, ats="ashby"), None))
+                             lambda job_id, **kw: (_fake_plan(job_id, ats="workday"), None))
         monkeypatch.setattr(apply_cli, "run_one",
                              _raise(AssertionError("must not open a browser")))
         out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)

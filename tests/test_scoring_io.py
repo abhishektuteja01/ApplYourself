@@ -1345,14 +1345,14 @@ def test_a_submittable_board_url_carries_no_manual_apply_mark(cfg):
     assert "manual-apply" not in md
 
 
-def test_ashby_is_marked_manual_apply_because_it_has_no_fill_driver(cfg):
-    """Ashby plans fully but cannot be submitted to (§12a). The shortlist must
-    say so rather than implying the queue will handle it."""
+def test_ashby_is_not_flagged_manual_now_that_it_has_a_fill_driver(cfg):
+    """The shortlist and the queue read the same flag, so a role the queue can
+    fill must not be labelled by hand here."""
     md = _render(cfg, {"example_primary": [_sl_row(
         source="ashby",
         url="https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001",
     )]})
-    assert "manual-apply, not auto-submittable" in md
+    assert "manual-apply, not auto-submittable" not in md
 
 
 def test_a_workday_url_is_marked_whatever_its_source_says(cfg):

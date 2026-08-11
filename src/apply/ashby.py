@@ -158,6 +158,11 @@ _YESNO_TOKEN = re.compile(r"_yesno_")
 _SURVEY_CLASS = "ashby-survey-form-container"
 _QUESTION_TITLE_CLASS = "ashby-application-form-question-title"
 _SUBMIT_CLASS = "ashby-application-form-submit-button"
+#: One selector for both paths — the DOM scan and the API `load_board`, which
+#: has no HTML to check. The class is unhashed and resolves to exactly one
+#: button on every live board measured, so stating it without the DOM in hand
+#: is a fact rather than a guess. Two spellings would be two guesses.
+SUBMIT_SELECTOR = f'#{ROOT_ID} .{_SUBMIT_CLASS}'
 
 _INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
 _WS = re.compile(r"\s+")
@@ -416,7 +421,7 @@ def _submit_scan(root) -> _Scan:
     submit = submits[0]
     disabled = submit.get("disabled") is not None or submit.get("aria-disabled") == "true"
     return _Scan(
-        submit_selector=f'#{ROOT_ID} .{_SUBMIT_CLASS}',
+        submit_selector=SUBMIT_SELECTOR,
         submit_disabled=disabled,
     )
 
@@ -597,10 +602,21 @@ def fields_from_application_form(job_posting: dict) -> Reconciled:
 def load_board(url: str, timeout: int = 30) -> AshbyBoard:
     """Posting URL -> an Ashby board, `plan_for_board`-shaped. One POST.
 
-    `submit_selector` stays None on purpose. There is no fill driver, and the
-    guard in `fill.submit` refuses without a selector — so the one thing that
-    could turn a plan into a real click is absent by construction rather than
-    by a DOM claim this path cannot verify.
+    The submit button is named by a stable, unhashed class, and resolves to
+    exactly one element on every live board measured — so this path can state
+    the selector without having the DOM in hand. It is only ever a click if
+    `fill.submit` is reached, which the guard gates on a fully resolved plan.
+
+    `submit_disabled` is False here because the API says nothing about it;
+    `submit_disabled_now` re-reads the live button before any click, which is
+    the check that actually matters.
+
+    `requires_captcha` is False on evidence, not by omission: Ashby loads
+    reCAPTCHA **v3** (`api.js?render=`, a `grecaptcha-badge`), which is
+    invisible and score-based, with no challenge for a human to solve. That is
+    a different thing from Lever's hCaptcha, which does block on a person. The
+    v3 score is still a bot-detection surface — a low score can have a
+    submission silently rejected — but nothing here can wait it out.
     """
     posting = parse_posting(url)
     job_posting = fetch_application_form(posting, timeout=timeout)
@@ -608,7 +624,7 @@ def load_board(url: str, timeout: int = 30) -> AshbyBoard:
     return AshbyBoard(
         posting=posting,
         slug=posting.slug,
-        scan=_Scan(submit_selector=None, submit_disabled=False),
+        scan=_Scan(submit_selector=SUBMIT_SELECTOR, submit_disabled=False),
         schema=_Schema(company_name=unquote(posting.slug),
                        title=job_posting.get("title") or ""),
         reconciled=reconciled,

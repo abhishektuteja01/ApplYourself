@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
+from src.apply import ashby
 from src.apply.ashby import (
     AshbyScanError,
     ApplyUrlError,
@@ -176,12 +177,19 @@ class TestLoadBoard:
                    return_value=payload or load_api("api_ashby_form")):
             return load_board(ASHBY_URL)
 
-    def test_no_submit_selector_since_there_is_no_driver(self):
-        """Absent by construction, not by omission: `fill.submit`'s guard
-        refuses without a selector, so nothing can turn an Ashby plan into a
-        real click while the driver does not exist."""
+    def test_the_submit_selector_matches_the_dom_scan(self):
+        """Two spellings of the same button would be two guesses, and only one
+        of them gets exercised. The API path has no HTML to check, so it takes
+        the scanner's selector rather than restating it."""
         board = self._board()
-        assert board.scan.submit_selector is None
+        assert board.scan.submit_selector == ashby.SUBMIT_SELECTOR
+        assert ashby._SUBMIT_CLASS in ashby.SUBMIT_SELECTOR
+
+    def test_no_captcha_wait_because_ashbys_recaptcha_is_invisible(self):
+        """Ashby loads reCAPTCHA v3 — score-based, with no challenge for a
+        person to solve. Lever's hCaptcha does block on a human; treating the
+        two the same would hang every unattended Ashby submit."""
+        board = self._board()
         assert board.requires_captcha is False
         assert board.slug == "widgetco"
 

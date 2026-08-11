@@ -605,7 +605,11 @@ class AshbyBrowserDriver(BrowserDriver):
         raise FillError(f"{field_id}: no {input_type} labelled {label!r}")
 
 
-_DRIVER_NAMES = {"greenhouse": "BrowserDriver", "lever": "LeverBrowserDriver"}
+_DRIVER_NAMES = {
+    "greenhouse": "BrowserDriver",
+    "lever": "LeverBrowserDriver",
+    "ashby": "AshbyBrowserDriver",
+}
 
 
 def has_driver(ats: str) -> bool:

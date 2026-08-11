@@ -408,9 +408,13 @@ class TestYesNoThroughTheFillSequence:
             F.BrowserDriver(MiniPage()).set_yesno("q1", "Yes")
 
 
-class TestAshbyStaysManualApply:
-    """Registering the driver is a separate decision with its own blast radius
-    — the shortlist and the run report both read this."""
+class TestAshbyIsRegistered:
+    def test_the_driver_is_reachable_by_ats_name(self):
+        assert F.has_driver("ashby") is True
+        assert isinstance(F._driver_for("ashby", MiniPage()), F.AshbyBrowserDriver)
 
-    def test_there_is_still_no_registered_ashby_driver(self):
-        assert F.has_driver("ashby") is False
+    def test_the_shortlist_and_the_queue_agree(self):
+        """A role the shortlist calls auto-submittable and the queue calls
+        manual-apply is the silent gap the shared flag exists to close."""
+        from src.apply import detect
+        assert detect.SUBMITTABLE_ATS == frozenset(F._DRIVER_NAMES)
