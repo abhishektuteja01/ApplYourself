@@ -63,7 +63,7 @@ class ApplyCliError(Exception):
 
 class ManualApplyOnly(ApplyCliError):
     """The role is real and reachable, but no submit path exists for its board
-    — Workday, LinkedIn, a company careers page, or Ashby (scanned, no driver).
+    — Workday, LinkedIn, or a company careers page.
 
     Distinct from a failure on purpose. These roles have to be applied to by
     hand, and §13 requires the run report to say so in its own category rather
@@ -488,9 +488,8 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
         )
 
     if not has_driver(plan.ats):
-        # Ashby: the form scans and plans, but no fill driver exists. Reported
-        # rather than attempted, so the browser never opens for a board that
-        # cannot be filled.
+        # Reported rather than attempted, so the browser never opens for a
+        # board that cannot be filled.
         return RunOutcome(job_id, plan.company, plan.title, "manual",
                            detail=f"{plan.ats}: form scanned and planned, but no "
                                   f"browser driver exists yet — apply by hand")

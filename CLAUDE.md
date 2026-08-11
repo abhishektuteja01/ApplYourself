@@ -48,8 +48,8 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    `src/apply/` never submits to one. Workday is not alone in that: the
    shortlist and `/apply run`'s report both derive the flag from
    `apply.detect.is_auto_submittable`, so LinkedIn, Indeed, company careers
-   pages and Ashby (planned, no fill driver) all carry it too, and the run
-   report gives them their own `manual` category rather than `failed`.
+   pages all carry it too, and the run report gives them their own `manual`
+   category rather than `failed`.
 2. **Cleaning** (`src/discovery/cleaning.py`) — normalize, drop short/stale rows,
    drop rows outside the location allowlist, dedupe (exact then rapidfuzz
    WRatio ≥ 90), assign `job_id`, tag seen-ledger. Writes `jobs/clean.parquet` (the **only** discovery
@@ -72,9 +72,9 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
    fills the board's application form from `profile/application_answers.yaml`,
    and either submits (transitioning to `applied` through `/track`) or parks
    the role on whatever it could not resolve. Greenhouse and Lever submit;
-   Ashby is plan-only (no fill driver yet — its combobox/toggle DOM was never
-   observed live); Workday is discovered but never submitted to, always
-   manual-apply (see `submit_plan.md`, gitignored, for the phase detail).
+   Greenhouse, Lever and Ashby all submit; Workday is discovered but never
+   submitted to, always manual-apply (see `submit_plan.md`, gitignored, for
+   the phase detail).
    Ashby is also the one board read through a **JSON API rather than HTML**:
    its form is client-rendered, so `ashby.load_board` POSTs the
    `ApplicationForm` GraphQL query and `scan_ashby_form` is kept only for the

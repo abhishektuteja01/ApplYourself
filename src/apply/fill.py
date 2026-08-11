@@ -651,9 +651,9 @@ _DRIVER_NAMES = {
 def has_driver(ats: str) -> bool:
     """Whether a browser driver exists for this board.
 
-    `apply_cli` checks this before opening anything, so a scan-only board
-    (Ashby — planned fully, no fill driver) is reported as manual-apply
-    instead of launching Chrome and only then raising.
+    `apply_cli` checks this before opening anything, so a board with no driver
+    is reported as manual-apply instead of launching Chrome and only then
+    raising.
     """
     return ats in _DRIVER_NAMES
 

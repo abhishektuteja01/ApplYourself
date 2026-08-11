@@ -24,16 +24,11 @@ changes on deploy, so re-read the bundle if the query stops resolving.
 (`_systemfield_*`, a UUID for employer-authored questions), so nothing
 downstream had to change.
 
-`scan_ashby_form` is kept: it is the only reader for a *rendered* Ashby form,
-which is what a future fill driver will hold, and the fixtures still exercise
-it. It is simply no longer on the `load_board` path.
+`scan_ashby_form` is kept as the only reader for a *rendered* Ashby form, and
+the fixtures still exercise it, but it is no longer on the `load_board` path.
 
-**Plan only — no fill driver (§12a).** Three of Ashby's control shapes cannot
-be verified without an observed live form: the open-state markup of the
-location combobox, the post-click state of the yes/no toggle, and the
-checkbox-group selector path. `_DRIVER_NAMES` in `fill.py` has no "ashby"
-entry, so `apply plan` works for an Ashby posting and `apply run` reports it
-as manual-apply rather than opening a browser it cannot drive.
+Filling is `fill.AshbyBrowserDriver` (§12a), which reads each field's widget
+off the live DOM — the API type does not name it.
 
 Three things Ashby needed that neither Greenhouse nor Lever did:
 
@@ -46,8 +41,7 @@ Three things Ashby needed that neither Greenhouse nor Lever did:
   them, so every `MergedField.id`/`.name` here is that value verbatim — except
   the two file fields, aliased to Greenhouse's "resume"/"cover_letter" so
   `answers.py`'s `FILE_IDS` and `plan.py`'s `find_artifact` still recognize
-  them (§12a; a real DOM selector for these two is a driver-side problem, not
-  a scan-side one).
+  them (§12a).
 - **Required is a CSS class, not an attribute.** Ashby's build hashes most
   class names per-deploy, but a `_required_<hash>` token survives as a
   detectable *prefix* on the question's `<label>` — matched by prefix, never
@@ -109,7 +103,9 @@ _TYPE_KINDS = {
     "Boolean": "yesno",
     "ValueSelect": "select",
     "MultiValueSelect": "select",
-    # A remote place-name taxonomy with no option list of its own.
+    # A remote place-name taxonomy with no option list of its own — and one
+    # asking a different question per board: city-level on most, country-only
+    # on some (§12a).
     "Location": "combobox",
 }
 
@@ -132,8 +128,7 @@ _COVER_LETTER_TITLE = re.compile(r"cover\s*letter", re.IGNORECASE)
 # Greenhouse sends the same block as separate `school--0`/`degree--0` controls,
 # which `answers.py` already resolves, so the entry is expanded into those ids
 # rather than given a composite kind of its own. Aliasing to Greenhouse's id
-# space is the same trade the two file fields make: a real Ashby DOM selector
-# is a driver-side problem, and there is no driver.
+# space is the same trade the two file fields make.
 #
 # The two dates are deliberately unmapped. `education.start_year`/`end_year`
 # are years and these fields want dates, so a mapping would write a wrong
