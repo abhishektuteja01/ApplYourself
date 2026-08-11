@@ -135,6 +135,66 @@ def test_zero_rows_writes_audit_parquet(tmp_path, monkeypatch):
     assert "title" in df.columns
     assert "scraped_date" in df.columns
 
+class _AllRequestsFailedSource:
+    """Mirrors what Workday looked like on 2026-08-10: every request errored,
+    zero rows kept, but universe.update_health only strikes on a *permanent*
+    failure — so nothing above trace level flagged a wholesale outage."""
+    name = "workday"
+    def fetch(self, ctx):
+        return SourceResult([], [], ["3M [AI Engineer]: HTTP 400: https://x"] * 5)
+
+def test_zero_rows_with_errors_logs_a_warning(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(orchestrator, "JOBS_RAW", tmp_path / "jobs" / "raw")
+    monkeypatch.setattr(orchestrator, "JOBS_RUNS", tmp_path / "jobs" / "runs")
+    monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
+
+    class MockSourceConfig:
+        enabled = True
+        pacing_seconds = 0
+
+    class MockConfig:
+        deadline_hours = 6.0
+        sources = {"workday": MockSourceConfig()}
+        location_allowlist = None
+        raw_retention_days = 30
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_AllRequestsFailedSource()])
+
+    with caplog.at_level("WARNING"):
+        main([])
+
+    assert any(
+        "workday" in r.message and "0 rows kept despite 5 error" in r.message
+        for r in caplog.records
+    )
+
+def test_zero_rows_with_no_errors_does_not_warn(tmp_path, monkeypatch, caplog):
+    """An empty crawl (nothing matched) must not be confused with a broken
+    one (everything errored) — no errors means no warning."""
+    monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(orchestrator, "JOBS_RAW", tmp_path / "jobs" / "raw")
+    monkeypatch.setattr(orchestrator, "JOBS_RUNS", tmp_path / "jobs" / "runs")
+    monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
+
+    monkeypatch.setattr("src.discovery.inbox.INBOX", tmp_path / "inbox")
+
+    class MockConfig:
+        deadline_hours = 6.0
+        sources = {}
+        location_allowlist = None
+        raw_retention_days = 30
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+
+    with caplog.at_level("WARNING"):
+        main([])
+
+    assert not any("0 rows kept despite" in r.message for r in caplog.records)
+
 # ---------------------------------------------------------------------
 # The finally-block cleaning guarantee + the mid-loop deadline break
 # ---------------------------------------------------------------------

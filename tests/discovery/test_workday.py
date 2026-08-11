@@ -344,6 +344,32 @@ class TestWorkdaySourceFetch:
         assert any("Broken Co" in e for e in res.errors)
 
 
+class TestRelaxedSleep:
+    def test_sleeps_at_least_pacing_and_varies_across_calls(self, monkeypatch):
+        # Deterministic pacing but random duration — a fixed interval is the
+        # bot tell this exists to avoid, so two calls at the same pacing must
+        # not sleep the identical amount.
+        slept: list[float] = []
+        monkeypatch.setattr(workday.time, "sleep", lambda s: slept.append(s))
+        monkeypatch.setattr(workday.random, "random", lambda: 1.0)  # skip the rare long pause
+
+        for _ in range(20):
+            workday._relaxed_sleep(2.0)
+
+        assert all(s >= 2.0 for s in slept)
+        assert len(set(slept)) > 1
+
+    def test_never_sleeps_below_pacing(self, monkeypatch):
+        monkeypatch.setattr(workday.random, "uniform", lambda lo, hi: lo)
+        monkeypatch.setattr(workday.random, "random", lambda: 1.0)
+        slept: list[float] = []
+        monkeypatch.setattr(workday.time, "sleep", lambda s: slept.append(s))
+
+        workday._relaxed_sleep(3.5)
+
+        assert slept == [3.5]
+
+
 class TestListPage:
     def test_posts_the_expected_body_and_url(self, monkeypatch):
         seen = {}
@@ -371,6 +397,16 @@ class TestListPage:
         monkeypatch.setattr(workday, "fetch_json_post", lambda *a, **kw: {"total": 0})
         with pytest.raises(TypeError):
             workday.list_page("acme", "wd3", "Site", 0)
+
+    def test_list_limit_does_not_exceed_workdays_confirmed_ceiling(self):
+        # Live-confirmed against 3M, Accenture, Adobe and Cisco's real
+        # Search/jobs endpoint: limit=20 returns 200 on every tenant tried,
+        # limit=21 returns 400 on every tenant tried, no variance. This is
+        # a hard server-side cap, not a tenant quirk — a future bump of
+        # LIST_LIMIT above 20 reintroduces the 2026-08-10 outage (2640/2640
+        # list POSTs failing with HTTP 400, the very first call for every
+        # tenant).
+        assert workday.LIST_LIMIT <= 20
 
 
 class TestTheCrawlResumesAcrossRuns:
@@ -457,7 +493,7 @@ class TestTheCrawlResumesAcrossRuns:
 
         cap = workday.MAX_PAGES_PER_TERM * workday.LIST_LIMIT
         per_term = workday.MAX_PAGES_PER_TERM
-        assert first[:per_term] == [0, 50, 100, 150, 200, 250]
+        assert first[:per_term] == [i * workday.LIST_LIMIT for i in range(per_term)]
         # Freshness: the head is re-read, not skipped.
         assert second[0] == 0
         # Depth: the run still advances past where the last one stopped.

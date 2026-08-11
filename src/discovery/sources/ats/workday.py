@@ -46,6 +46,7 @@ usually a conference/contractor/internal portal, not the main board.
 """
 from __future__ import annotations
 
+import random
 import re
 import time
 from datetime import date, timedelta
@@ -60,13 +61,18 @@ from src.discovery.sources.ats.base import PAYLOAD_SHAPE_ERRORS
 from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_post
 from src.discovery.sources.base import Source, SourceResult
 
-LIST_LIMIT = 50
+#
+# Confirmed live: the `Search/jobs` endpoint 400s on any `limit` above 20,
+# on every tenant tried (3M, Accenture, Adobe, Cisco) — 21 fails, 20 succeeds,
+# no variance. This is Workday's server-side page-size ceiling, not a
+# per-tenant quirk, so it is not configurable like `pacing_seconds` is.
+LIST_LIMIT = 20
 # A ceiling per (company, search term) pair, not per company, so one broad
 # term cannot consume a whole run's deadline.
 #
 # This used to claim "a page never reached is read again, from page 0, next
 # run" — true of a deadline cut, false of this cap: every run started at
-# offset 0, so pages past 6 * LIST_LIMIT = 300 were never read on ANY run, a
+# offset 0, so pages past 6 * LIST_LIMIT = 120 were never read on ANY run, a
 # permanent blind spot rather than work spread across runs. `crawl_cursor`
 # now persists where each pair stopped, which makes the claim true.
 MAX_PAGES_PER_TERM = 6
@@ -121,6 +127,20 @@ def _public_url(company: str, wd: str, site_id: str, path: str) -> str:
     """The browsable careers-page URL — a reasonable fallback when the detail
     payload's own `externalUrl` is missing."""
     return f"https://{company}.{wd}.myworkdayjobs.com/{site_id}{path}"
+
+
+def _relaxed_sleep(pacing: float) -> None:
+    """Sleep a random multiple of `pacing`, skewed slower rather than metronomic.
+
+    Workday sits behind Cloudflare (confirmed live: `cf-ray`/`__cf_bm` on every
+    response). A fixed-interval pace is a bot tell; this source also has slack
+    against the deadline the audit worried about, since `LIST_LIMIT=20` only
+    triples the request count, not the wall-clock budget's order of magnitude.
+    Occasional longer pause mimics a human reading a results page.
+    """
+    time.sleep(random.uniform(pacing, pacing * 3))
+    if random.random() < 0.05:
+        time.sleep(random.uniform(5.0, 15.0))
 
 
 def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str = "",
@@ -292,7 +312,7 @@ class WorkdaySource(Source):
                         if ctx.deadline_reached():
                             break
                         if not first_request:
-                            time.sleep(pacing)
+                            _relaxed_sleep(pacing)
                         first_request = False
                         payload = list_page(company, wd, site_id, offset, term,
                                              deadline_ts=ctx.deadline_ts)
@@ -358,7 +378,7 @@ class WorkdaySource(Source):
             for path, (vertical, item) in survivors.items():
                 if ctx.deadline_reached():
                     break
-                time.sleep(pacing)
+                _relaxed_sleep(pacing)
                 detail_attempts += 1
                 try:
                     row = _detail_row(company, c.name, wd, site_id, path, item, vertical,

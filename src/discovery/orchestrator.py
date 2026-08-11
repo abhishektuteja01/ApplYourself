@@ -98,6 +98,18 @@ def _run_source(source, ctx, run_id, scraped_date, shard_file) -> dict:
 
     write_parquet(df, shard_file)
     outcome["rows"] = 0 if df.empty else len(df)
+    # A permanent-only health strike (universe.update_health) misses this: a
+    # wholesale transient block (429/403/400 across every request) still
+    # reports success=True there. Zero rows with errors recorded is the only
+    # place that distinguishes "nothing matched" from "everything errored" —
+    # without it, a night like Workday's 2640/2640 HTTP 400s logs nothing
+    # above trace level.
+    if outcome["rows"] == 0 and res.errors:
+        log.warning(
+            "%s: 0 rows kept despite %d error(s) — likely every request "
+            "failing, not an empty crawl. First: %s",
+            source.name, len(res.errors), res.errors[0],
+        )
     trace.trace(f"{source.name} lane done in {outcome['duration']:.1f}s "
                 f"rows={outcome['rows']} truncated={outcome['truncated']}")
     return outcome
