@@ -8,6 +8,7 @@ a future `/apply run --submit` both go through.
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -42,15 +43,40 @@ class FakeSubmitDriver:
         self.disabled = disabled
         self.confirms = confirms
         self.clicked: list[str] = []
+        self._ats = None
+        self._sink: list[str] | None = None
 
     def submit_disabled_now(self, selector):
         return self.disabled
 
     def click_submit(self, selector):
         self.clicked.append(selector)
+        # Plan defaults to greenhouse, which is now a measured board (§1).
+        # This file tests the guard, not the marker feature, so a plain click
+        # simulates the real board firing its own submit request — the same
+        # way a click that actually lands behaves.
+        markers = F.SUBMIT_REQUEST_MARKERS.get(self._ats)
+        if markers and self._sink is not None:
+            self._sink.append(f"200 https://example.test/{markers[0]}")
 
     def submission_confirmed(self):
         return self.confirms
+
+    def settle(self):
+        """Uploads must finish before the click — a board that is still
+        processing one refuses it outright."""
+
+    def watch_submit_requests(self, ats, sink):
+        self._ats, self._sink = ats, sink
+
+    def wait(self, ms):
+        """The board is given time to answer before the page is judged."""
+
+    def submission_refused(self):
+        """No refusal. The default has to stay "it went out": absence of
+        evidence must never become evidence of failure, or an unrecognised
+        confirmation page turns into a duplicate application."""
+        return ""
 
 
 class TestBlockingQuestions:
@@ -340,9 +366,12 @@ class TestTheClickIsRecordedBeforeAnythingElseCanFail:
 
 class TestConfirmationIsPositiveEvidenceOnly:
     def test_no_confirmation_marker_is_unconfirmed_not_failed(self):
+        # Lever carries no measured request marker either (§1), so this is
+        # the genuine "nothing to go on but page text" case the test means to
+        # cover — greenhouse's own marker would confirm it on its own now.
         d = FakeSubmitDriver(confirms=False)
         result = FillResult(form_url="x")
-        submit(plan(), result, d)
+        submit(replace(plan(), ats="lever"), result, d)
         assert result.submitted is True
         assert result.confirmed is False
 

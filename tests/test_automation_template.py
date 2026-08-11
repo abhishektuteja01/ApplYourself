@@ -41,11 +41,26 @@ class TestPlist:
         assert args[0] == "/bin/bash"
         assert args[1].endswith("/scripts/nightly_discovery.sh")
 
-    def test_runs_before_the_workday_and_after_the_pmset_wake(self):
-        """The wake is scheduled at 01:55, so the job must be later than that
-        and still overnight."""
+    def test_runs_shortly_after_the_pmset_wake_it_documents(self):
+        """A job whose time falls during sleep is skipped, not deferred, so the
+        wake must come first — and close enough that the machine is still up.
+
+        Derived from the plist rather than pinned, so rescheduling discovery
+        means editing one file, not two. What must stay true is the ordering.
+        """
+        text = PLIST.read_text(encoding="utf-8")
+        wake = re.search(r"wakeorpoweron \w+ (\d{2}):(\d{2}):\d{2}", text)
+        assert wake, "the plist must document its pmset wake"
+        wake_min = int(wake.group(1)) * 60 + int(wake.group(2))
+
         when = _filled()["StartCalendarInterval"]
-        assert when["Hour"] == 2 and when["Minute"] == 0
+        job_min = when["Hour"] * 60 + when["Minute"]
+
+        assert 0 < job_min - wake_min <= 15, (
+            f"job at {when['Hour']:02d}:{when['Minute']:02d} vs wake at "
+            f"{wake.group(1)}:{wake.group(2)} — the wake must land first, "
+            f"and within 15 minutes"
+        )
 
     def test_documents_the_pmset_wake(self):
         """Without a scheduled wake, a job whose time falls during sleep is

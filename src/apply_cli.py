@@ -433,6 +433,10 @@ class RunOutcome:
 
     detail: str = ""
     unmapped: tuple[str, ...] = dc_field(default_factory=tuple)
+    evidence: Path | None = None
+    """The post-submit capture. Named in the report because a submission whose
+    confirmation nothing recognised is exactly the one someone has to go look
+    at by hand."""
 
 
 def _track_applied(job_id: str, plan) -> tuple[int, str]:
@@ -499,10 +503,18 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
     # tells us an application went out. Reading only the return value lost
     # that, and a lost `submitted` means the role stays `tailored` and the
     # next run applies to the same board again.
+    def review(result) -> None:
+        """No-submit run only: report while the window is still open, then
+        hold it for a human. A non-tty run (background/CI) has nobody to
+        hold for, so it closes immediately like today."""
+        print(render_fill(result, plan))
+        if not headless and sys.stdin.isatty():
+            input("\nreview the form in the browser, then press Enter to close: ")
+
     sink: list = []
     try:
         result = run_one(plan, answers, headless=headless, submit_after=submit,
-                          sink=sink)
+                          sink=sink, after=None if submit else review)
     except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
         landed = sink[0] if sink else None
         if landed is not None and landed.submitted:
@@ -532,11 +544,13 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
                        f"still says tailored; fix by hand before the next run",
             )
         if result.confirmed:
-            return RunOutcome(job_id, plan.company, plan.title, "submitted")
+            return RunOutcome(job_id, plan.company, plan.title, "submitted",
+                               evidence=result.evidence)
         return RunOutcome(
             job_id, plan.company, plan.title, "submitted_unconfirmed",
             detail="clicked and transitioned to applied, but the board showed no "
                    "confirmation this code recognises — verify by hand",
+            evidence=result.evidence,
         )
 
     blocking = blocking_questions(plan, result)
@@ -627,6 +641,9 @@ def render_report(outcomes: list[RunOutcome], started_at: datetime) -> str:
                 lines.append(f"  - {o.detail}")
             if o.unmapped:
                 lines.append(f"  - unmapped: {', '.join(o.unmapped)}")
+            if o.evidence:
+                lines.append(f"  - what the board showed after the click: "
+                             f"`{o.evidence}`")
         lines.append("")
     return "\n".join(lines)
 

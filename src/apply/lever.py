@@ -113,18 +113,24 @@ def _text(el) -> str:
 
 def _label_text(question_el) -> str:
     labels = question_el.xpath('.//*[contains(@class, "application-label")]')
-    if not labels:
-        return ""
-    label = labels[0]
-    # Strip the required-marker span's own text ("✱") — it is not part of the
-    # label a person reads, same treatment as Greenhouse's asterisk (§6).
-    parts = [label.text or ""]
-    for child in label:
-        if "required" in (child.get("class") or "").split():
-            continue
-        parts.append(_text(child))
-        parts.append(child.tail or "")
-    return _WS.sub(" ", "".join(parts)).strip()
+    if labels:
+        label = labels[0]
+        # Strip the required-marker span's own text ("✱") — it is not part of
+        # the label a person reads, same treatment as Greenhouse's asterisk (§6).
+        parts = [label.text or ""]
+        for child in label:
+            if "required" in (child.get("class") or "").split():
+                continue
+            parts.append(_text(child))
+            parts.append(child.tail or "")
+        return _WS.sub(" ", "".join(parts)).strip()
+    # Lever's consent checkboxes (`consent[store]`, `consent[marketing]`) carry
+    # no `.application-label` at all — the statement a person reads is a
+    # `<span>` sibling of the checkbox inside the same wrapping `<label>`.
+    spans = question_el.xpath('.//input[@type="checkbox"]/parent::label/span')
+    if spans:
+        return _text(spans[0])
+    return ""
 
 
 def _has_required_marker(question_el) -> bool:
@@ -185,8 +191,11 @@ def _scan_question(question_el) -> MergedField | None:
         if not name:
             return None
         required = required or any(c.get("required") is not None for c in checkboxes)
-        if len(checkboxes) == 1 and not (checkboxes[0].get("value") or ""):
-            # A lone valueless box is a consent tick, not a one-option group.
+        if len(checkboxes) == 1:
+            # A lone box is a consent tick, not a one-option group — real
+            # boards pair it with a hidden `value="0"` fallback and give the
+            # checkbox itself `value="1"`, the standard HTML checked/unchecked
+            # idiom, so a truthy `value` does not make it a group of one.
             return MergedField(
                 id=name, name=name, label=label, required=required,
                 kind="checkbox", section=section, multi=False, options=(),

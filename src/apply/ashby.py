@@ -169,6 +169,12 @@ _FILE_FIELD_IDS = {
     "_systemfield_coverletter": "cover_letter",
 }
 
+# The same aliasing, undone. The rendered form still keys these fields by their
+# systemfield path, so a driver that looks one up by the aliased id finds
+# nothing and waits out the full locator timeout on a field that is right
+# there. Only the file fields are aliased, so only they need reversing.
+DOM_FIELD_PATHS = {alias: raw for raw, alias in _FILE_FIELD_IDS.items()}
+
 
 class AshbyScanError(DomScanError):
     """The rendered Ashby form is not shaped the way this scanner can read."""

@@ -15,6 +15,8 @@ import pytest
 from src import paths
 from src.apply import fill as F
 from src.apply.fill import FillError, FillResult, fill_plan
+from dataclasses import replace
+
 from src.apply.plan import FieldPlan, FilePlan, Plan
 
 REPO_ROOT = paths.REPO_ROOT
@@ -28,12 +30,42 @@ def field(**kw) -> FieldPlan:
 
 
 def plan(fields=(), files=(), form_url="https://boards.greenhouse.io/embed/job_app?token=1") -> Plan:
+    # `ats` defaults to a board with no measured request marker — most tests
+    # here are about ordering/guard behaviour, not the marker feature, and
+    # must not silently start asserting on whichever real board picks one up
+    # next. Tests that care use `plan_ashby()` or set `ats` explicitly.
     return Plan(
         job_id="a1b2c3d4", board="gasketworks", token="1", form_url=form_url,
         company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
         fields=tuple(fields), files=tuple(files), unmapped=(), draftable=(), skipped=(),
         submit_selector="#application-form button[type=submit]", submit_disabled=False,
+        ats="lever",
     )
+
+
+def plan_ashby(**kw) -> Plan:
+    """A plan on a board whose submit request we know how to watch."""
+    return replace(plan(**kw), ats="ashby")
+
+
+class FakePage:
+    """Just enough page for the post-submit capture to read."""
+
+    def __init__(self, text="Thank you for applying to Gasket Works.",
+                 url="https://boards.greenhouse.io/confirmation"):
+        self._text, self.url = text, url
+
+    def title(self):
+        return "Application submitted"
+
+    def locator(self, selector):
+        return self
+
+    def inner_text(self, timeout=None):
+        return self._text
+
+    def screenshot(self, path=None, full_page=False):
+        Path(path).write_bytes(b"\x89PNG")
 
 
 class FakeDriver:
@@ -48,12 +80,16 @@ class FakeDriver:
         self.sticks = sticks                   # does a selection register
         self.expanded_after = expanded_after   # listbox left open after clicking
         self._selected: dict[str, str] = {}
+        self._checked_groups: dict[str, set[str]] = {}
         self._typed: str | None = None
         self._last_field: str | None = None
         self._files: dict[str, tuple[str, ...]] = {}
         self.uploads_stick = True              # does set_files actually attach
         self.upload_readback = True            # None = input gone, unreadable
+        self.upload_widget = None              # what the widget shows: T/F/None
         self.confirms = False                  # board acknowledges the submit
+        self._page = FakePage()                # what the post-submit capture reads
+        self.refusals: list[str] = []          # the board's refusal, per click
 
     def goto(self, url):
         self.calls.append(("goto", url))
@@ -89,6 +125,11 @@ class FakeDriver:
             return None                      # detached node: cannot verify
         return self._files.get(field_id, ())
 
+    def upload_shows(self, field_id, filename):
+        """The widget's own verdict. None = no widget to read, which is every
+        pre-existing test and keeps them on the `attached_files` path."""
+        return self.upload_widget
+
     def fill_text(self, field_id, value):
         self.calls.append(("fill", field_id, value))
         self.values[field_id] = value
@@ -99,6 +140,10 @@ class FakeDriver:
 
     def check_group_option(self, field_id, label):
         self.calls.append(("check_group", field_id, label))
+        self._checked_groups.setdefault(field_id, set()).add(label)
+
+    def checked_group_labels(self, field_id):
+        return tuple(self._checked_groups.get(field_id, ()))
 
     def type_into(self, field_id, value):
         self.calls.append(("type", field_id, value))
@@ -142,6 +187,9 @@ class FakeDriver:
         self.calls.append(("check_radio", field_id, label))
         self._selected[field_id] = label
 
+    def checked_radio_label(self, field_id):
+        return self._selected.get(field_id, "")
+
     def submit_disabled_now(self, selector):
         return False
 
@@ -154,6 +202,24 @@ class FakeDriver:
     def submission_confirmed(self):
         self.calls.append(("submission_confirmed",))
         return self.confirms
+
+    def watch_submit_requests(self, ats, sink):
+        """No board markers in these fakes, so nothing is recorded and
+        confirmation falls back to the page text."""
+
+    def wait(self, ms):
+        self.calls.append(("wait", ms))
+
+    def submission_refused(self):
+        self.calls.append(("submission_refused",))
+        # A list, so a test can refuse the first click and accept the retry.
+        return self.refusals.pop(0) if self.refusals else ""
+
+    @property
+    def page(self):
+        """The post-submit capture reads the page directly. `None` stands in
+        for a driver that cannot be read, which is the swallowed path."""
+        return self._page
 
 
 @pytest.fixture
@@ -173,7 +239,20 @@ class TestOrder:
             files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
         ), d)
         kinds = [c[0] for c in d.calls]
-        assert kinds.index("attach") < kinds.index("settle") < kinds.index("fill")
+        attach = kinds.index("attach")
+        after = [i for i, k in enumerate(kinds) if k == "settle" and i > attach]
+        assert after, "the upload must be allowed to land"
+        assert after[0] < kinds.index("fill")
+
+    def test_the_page_settles_before_the_first_upload_too(self, resume):
+        # The upload widget is wired by script that lands after the form
+        # element does. Clicking Attach too early is refused outright.
+        d = FakeDriver()
+        fill_plan(plan(
+            files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
+        ), d)
+        kinds = [c[0] for c in d.calls]
+        assert kinds.index("settle") < kinds.index("attach")
 
     def test_the_form_is_opened_before_anything_is_touched(self):
         d = FakeDriver()
@@ -693,3 +772,447 @@ class TestUploadVerificationIsConfirmatoryNotPunitive:
         with pytest.raises(FillError, match="holds no file"):
             F._attach(d, FilePlan(id="resume", label="Resume/CV",
                                    required=True, path=resume))
+
+
+class TestTheWidgetOutranksTheInput:
+    """Live on a Greenhouse board, `set_input_files` on the visually-hidden
+    input left the page rendering "Cannot read properties of undefined (reading
+    'uploadFile')" while `input.files` read back correct. `_attach` reported
+    `attached` with no note and `failures` stayed empty, so the submit guard
+    would have passed and sent an application with no resume on it.
+    """
+
+    def test_a_rendered_upload_error_fails_even_when_the_input_reads_back(
+            self, resume):
+        d = FakeDriver()
+        d.uploads_stick = True                       # input holds the file...
+        d.upload_widget = False                      # ...but the widget errored
+        with pytest.raises(FillError, match="rejected"):
+            F._attach(d, FilePlan(id="resume", label="Resume/CV",
+                                   required=True, path=resume))
+
+    def test_that_error_blocks_the_submission(self, resume):
+        d = FakeDriver()
+        d.upload_widget = False
+        result = fill_plan(plan(files=[FilePlan(
+            id="resume", label="Resume/CV", required=True, path=resume)]), d)
+        assert result.failures, "a refused resume must block the submit guard"
+
+    def test_a_widget_showing_the_filename_is_attached_even_if_the_input_is_gone(
+            self, resume):
+        d = FakeDriver()
+        d.upload_readback = None                     # input torn out by React
+        d.upload_widget = True                       # but the name is on screen
+        out = F._attach(d, FilePlan(id="resume", label="Resume/CV",
+                                     required=True, path=resume))
+        assert out.action == "attached"
+        assert out.note == "", "a visible filename is verification, not a caveat"
+
+    def test_an_unreadable_widget_falls_back_to_the_input(self, resume):
+        # None means "no widget to read" — every board but Greenhouse today.
+        d = FakeDriver()
+        d.upload_widget = None
+        d.uploads_stick = False
+        with pytest.raises(FillError, match="holds no file"):
+            F._attach(d, FilePlan(id="resume", label="Resume/CV",
+                                   required=True, path=resume))
+
+
+class TestThePostSubmitCapture:
+    """`CONFIRMATION_MARKERS` was written before any confirmation page had been
+    seen, and the first real submission matched none of it. The page that would
+    have settled it was on screen and closed unrecorded. This keeps it.
+    """
+
+    def test_it_records_what_the_board_rendered(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        out = F.capture_submit_evidence(d, plan())
+        assert out is not None and out.exists()
+        body = out.read_text(encoding="utf-8")
+        assert "Thank you for applying" in body, "the rendered text is the point"
+        assert "https://boards.greenhouse.io/confirmation" in body
+        assert "a1b2c3d4" in body
+
+    def test_it_saves_a_screenshot_beside_the_text(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        out = F.capture_submit_evidence(FakeDriver(), plan())
+        assert out.with_suffix(".png").exists()
+
+    def test_a_capture_failure_never_fails_the_submission(self, tmp_path,
+                                                          monkeypatch):
+        # Diagnostics must not turn an application that went out into an error.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._page = None                               # unreadable driver
+        assert F.capture_submit_evidence(d, plan()) is None
+
+    def test_the_submit_path_hangs_the_capture_off_the_result(self, tmp_path,
+                                                              monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.submitted
+        assert result.evidence is not None and result.evidence.exists()
+
+
+class TestAshbyFindsItsFileFields:
+    """`ashby.py` aliases `_systemfield_resume` to `resume` so the canonical
+    answer rules match it. The rendered form still keys the field by the
+    systemfield path, so the driver has to undo that alias — otherwise every
+    Ashby upload waits out the full locator timeout and the role fails on a
+    field that is on the page. Live on Andera's board.
+    """
+
+    def test_the_resume_alias_is_undone_for_the_dom(self):
+        page = _RecordingPage()
+        F.AshbyBrowserDriver(page)._entry("resume")
+        assert "_systemfield_resume" in page.selectors[0]
+
+    def test_the_cover_letter_alias_is_undone_for_the_dom(self):
+        page = _RecordingPage()
+        F.AshbyBrowserDriver(page)._entry("cover_letter")
+        assert "_systemfield_coverletter" in page.selectors[0]
+
+    def test_an_unaliased_field_is_looked_up_verbatim(self):
+        # Employer-authored questions are UUIDs and must pass through.
+        page = _RecordingPage()
+        F.AshbyBrowserDriver(page)._entry("f81a7cc9-0d9a-4922-800b")
+        assert "f81a7cc9-0d9a-4922-800b" in page.selectors[0]
+
+
+class _ClickPage:
+    """Records what was done to the submit button and doubles as its own
+    `keyboard`, since only the event sequence matters here."""
+
+    def __init__(self):
+        self.events: list[tuple] = []
+        self.keyboard = self
+
+    def locator(self, selector):
+        self.events.append(("locate", selector))
+        return self
+
+    @property
+    def first(self):
+        return self
+
+    def scroll_into_view_if_needed(self):
+        self.events.append(("scroll",))
+
+    def click(self):
+        self.events.append(("click",))
+
+    def focus(self):
+        self.events.append(("focus",))
+
+    def press(self, key):
+        self.events.append(("press", key))
+
+
+class TestToggleFieldsAreReverifiedBeforeTheClick:
+    """Live on Take2: a yes/no toggle read back correctly right when
+    `_apply_field` set it, then came back cleared by the time of the actual
+    submit click — a different field each retry, which pointed at something
+    external (the board's own "Autofill from resume" feature) resetting a
+    toggle after the fill already finished. `submit()` re-checks every
+    yes/no, radio-group and checkbox-group field immediately before the
+    click and re-applies any that drifted, whatever caused it. Radio and
+    checkbox groups aren't known to drift the same way — this is precaution,
+    not a repro.
+    """
+
+    def test_a_drifted_toggle_is_reapplied_before_the_click(self, tmp_path,
+                                                             monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._selected["q1"] = "No"  # drifted since fill_plan set it to "Yes"
+        p = plan(fields=[field(id="q1", kind="yesno", value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert d._selected["q1"] == "Yes"
+        assert ("yesno", "q1", "Yes") in d.calls
+
+    def test_an_already_correct_toggle_is_left_alone(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._selected["q1"] = "Yes"
+        p = plan(fields=[field(id="q1", kind="yesno", value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert ("yesno", "q1", "Yes") not in d.calls
+
+    def test_a_drifted_radio_group_is_reapplied_before_the_click(self, tmp_path,
+                                                                   monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._selected["q1"] = "No"  # drifted since fill_plan set it to "Yes"
+        p = plan(fields=[field(id="q1", kind="radio_group", value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert d._selected["q1"] == "Yes"
+        assert ("check_radio", "q1", "Yes") in d.calls
+
+    def test_an_already_correct_radio_group_is_left_alone(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._selected["q1"] = "Yes"
+        p = plan(fields=[field(id="q1", kind="radio_group", value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert ("check_radio", "q1", "Yes") not in d.calls
+
+    def test_a_dropped_checkbox_group_option_is_reapplied_before_the_click(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._checked_groups["q1"] = {"Python"}  # "Go" drifted out since fill_plan
+        p = plan(fields=[field(id="q1", kind="checkbox_group", value=("Python", "Go"))])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert d.checked_group_labels("q1") == ("Python", "Go") or set(
+            d.checked_group_labels("q1")) == {"Python", "Go"}
+        assert ("check_group", "q1", "Go") in d.calls
+        assert ("check_group", "q1", "Python") not in d.calls
+
+    def test_an_already_correct_checkbox_group_is_left_alone(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d._checked_groups["q1"] = {"Python", "Go"}
+        p = plan(fields=[field(id="q1", kind="checkbox_group", value=("Python", "Go"))])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert ("check_group", "q1", "Python") not in d.calls
+        assert ("check_group", "q1", "Go") not in d.calls
+
+
+class TestAshbySubmitClick:
+    """A plain Playwright click misses Ashby's React `onClick` handler often
+    enough that a first attempt firing no request is the normal case, not a
+    bug — see `AshbyBrowserDriver.click_submit`. The retry has to reach a
+    different code path, not just click the same button again.
+    """
+
+    def test_first_attempt_is_a_scrolled_plain_click(self):
+        page = _ClickPage()
+        F.AshbyBrowserDriver(page).click_submit("#submit")
+        assert ("scroll",) in page.events
+        assert ("click",) in page.events
+        assert not any(e[0] in ("focus", "press") for e in page.events)
+
+    def test_retry_escalates_to_focus_and_a_real_enter(self):
+        page = _ClickPage()
+        driver = F.AshbyBrowserDriver(page)
+        driver.click_submit("#submit")
+        page.events.clear()
+        driver.click_submit("#submit")
+        assert ("focus",) in page.events
+        assert ("press", "Enter") in page.events
+        assert not any(e[0] == "click" for e in page.events)
+
+
+class _RecordingPage:
+    """Records the selectors asked for, and nothing else."""
+
+    def __init__(self):
+        self.selectors: list[str] = []
+
+    def locator(self, selector):
+        self.selectors.append(selector)
+        return self
+
+    @property
+    def first(self):
+        return self
+
+
+class TestARefusedClickIsNotASubmission:
+    """Live on Ashby: the click was refused because the resume upload was still
+    in flight ("We're updating your application ... please try again when
+    they're finished"), and the form stayed on screen. `submitted` was set the
+    instant the click returned, so the role transitioned to `applied` and would
+    never have been applied to again. Nothing was sent.
+    """
+
+    def test_an_explicit_refusal_leaves_submitted_false(self, tmp_path,
+                                                        monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d.refusals = ["updating your application"] * F.SUBMIT_ATTEMPTS
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.submitted is False
+        assert "refused" in result.submit_error
+
+    def test_it_retries_because_a_refusal_proves_nothing_was_sent(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d.refusals = ["updating your application"]   # first click only
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.submitted is True, "the retry went through"
+        assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 2
+
+    def test_a_quiet_board_is_still_treated_as_submitted(self, tmp_path,
+                                                          monkeypatch):
+        # The default must not invert: absence of a refusal means it went out,
+        # or every unrecognised confirmation page becomes a duplicate.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.submitted is True
+        assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 1
+
+    def test_the_page_is_given_time_before_it_is_judged(self, tmp_path,
+                                                        monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        F.submit(plan(), FillResult(form_url="x"), d)
+        kinds = [c[0] for c in d.calls]
+        assert kinds.index("click_submit") < kinds.index("wait")
+        assert kinds.index("wait") < kinds.index("submission_confirmed")
+
+    def test_uploads_are_allowed_to_finish_before_the_click(self, tmp_path,
+                                                            monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        F.submit(plan(), FillResult(form_url="x"), d)
+        kinds = [c[0] for c in d.calls]
+        assert kinds.index("settle") < kinds.index("click_submit")
+
+    def test_a_refused_click_is_never_reported_as_confirmed(self, tmp_path,
+                                                             monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d.confirms = True                      # a stale marker still on screen
+        d.refusals = ["updating your application"] * F.SUBMIT_ATTEMPTS
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.confirmed is False
+
+
+class TestTheSubmitRequestIsTheRealConfirmation:
+    """Ashby's button rendered, enabled, clickable, with the right text — and
+    clicking it fired no request at all. The page afterwards looked exactly like
+    a form waiting to be submitted, which is also what it was. Watching for the
+    board's own submit call is the only signal that separates those.
+    """
+
+    def _driver_that_fires(self, ats="ashby"):
+        d = FakeDriver()
+        marker = F.SUBMIT_REQUEST_MARKERS[ats][0]
+
+        def watch(_ats, sink):
+            d._sink = sink
+
+        def click(selector):
+            d.calls.append(("click_submit", selector))
+            d._sink.append(f"200 https://x/api/graphql?op={marker}")
+
+        d.watch_submit_requests = watch
+        d.click_submit = click
+        return d
+
+    def test_a_recorded_submit_response_confirms_on_its_own(self, tmp_path,
+                                                            monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = self._driver_that_fires()
+        d.confirms = False                  # no marker text anywhere
+        result = FillResult(form_url="x")
+        F.submit(plan_ashby(), result, d)
+        assert result.submitted is True
+        assert result.confirmed is True, "the board accepted it; text is irrelevant"
+
+    def test_a_click_that_fires_nothing_is_not_a_submission(self, tmp_path,
+                                                             monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()                    # never records a request
+        result = FillResult(form_url="x")
+        F.submit(plan_ashby(), result, d)
+        assert result.submitted is False
+        assert "never called its submit endpoint" in result.submit_error
+
+    def test_an_unwatched_board_still_falls_back_to_page_text(self, tmp_path,
+                                                              monkeypatch):
+        # Lever has no measured marker yet. It must keep the old
+        # behaviour — assume submitted — or every Lever role breaks.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        assert "lever" not in F.SUBMIT_REQUEST_MARKERS
+        d = FakeDriver()
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.submitted is True
+
+    def test_greenhouse_is_measured_too(self, tmp_path, monkeypatch):
+        # boards.greenhouse.io/embed/<board>/jobs/<id>, measured live off
+        # observe.ai's real submit — a 200 there is the same trustworthy
+        # signal Ashby's op= name gives.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = self._driver_that_fires(ats="greenhouse")
+        result = FillResult(form_url="x")
+        F.submit(plan(), result, d)
+        assert result.submitted is True
+
+
+class TestAshbyValidationErrorIsARefusalNotASuccess:
+    """Measured live on Take2: the submit request fired (a 200 to
+    ApiSubmitSingleApplicationFormAction — GraphQL's transport-level success,
+    not the application's), but the board's own validation rejected the click
+    and re-rendered the form with this banner. A request marker alone would
+    have read this as submitted; `submission_refused()` is what catches it.
+    """
+
+    def test_the_corrections_banner_is_a_refusal(self):
+        page = FakePage(text=(
+            "Your form needs corrections\n"
+            "Missing entry for required field: Are you legally authorized "
+            "to work in the United States?"
+        ))
+        driver = F.BrowserDriver(page)
+        assert driver.submission_refused() == "your form needs corrections"
+
+
+class TestGreenhouseSubmitMarkerIgnoresItsOwnGetLoad:
+    """`job-boards.greenhouse.io/embed/job_app` — the iframe's initial GET —
+    contains the same `boards.greenhouse.io/embed/` substring as the real POST
+    submit (it's the `job-` prefix, not a different path). The method gate is
+    what tells them apart; without it every page load would read as a
+    submission.
+    """
+
+    class _FakePage:
+        def __init__(self):
+            self.handler = None
+
+        def on(self, _event, handler):
+            self.handler = handler
+
+    class _FakeResponse:
+        def __init__(self, url, status, method):
+            self.url, self.status = url, status
+
+            class _Req:
+                pass
+            self.request = _Req()
+            self.request.method = method
+
+    def test_a_get_to_the_embed_path_is_not_recorded(self):
+        page = self._FakePage()
+        driver = F.BrowserDriver(page)
+        sink: list[str] = []
+        driver.watch_submit_requests("greenhouse", sink)
+        page.handler(self._FakeResponse(
+            "https://job-boards.greenhouse.io/embed/job_app?for=acme", 200, "GET"))
+        assert sink == []
+
+    def test_a_post_to_the_embed_path_is_recorded(self):
+        page = self._FakePage()
+        driver = F.BrowserDriver(page)
+        sink: list[str] = []
+        driver.watch_submit_requests("greenhouse", sink)
+        page.handler(self._FakeResponse(
+            "https://boards.greenhouse.io/embed/acme/jobs/123", 200, "POST"))
+        assert sink == ["200 https://boards.greenhouse.io/embed/acme/jobs/123"]

@@ -320,6 +320,27 @@ class TestCheckboxes:
         assert f.multi is False
         assert f.required is True
 
+    def test_a_lone_checkbox_with_a_truthy_value_is_still_a_consent_tick(self):
+        # Real markup (healx.io's Lever board, harvested 2026-08): a hidden
+        # `value="0"` fallback sits next to the real checkbox, whose own
+        # `value="1"` is just the checked-state idiom, not a menu of options —
+        # and the label lives in a plain <span>, not `.application-label`.
+        inner = (
+            '<label><span class="consent-required">By applying for this '
+            "position, your data will be processed as per the Privacy Policy."
+            "</span>"
+            '<input type="hidden" name="consent[store]" value="0">'
+            '<input type="checkbox" name="consent[store]" value="1" required>'
+            "</label>"
+        )
+        reconciled = scan_lever_form(self._form(inner))
+        f = next(f for f in reconciled.fields if f.id == "consent[store]")
+        assert f.kind == "checkbox"
+        assert f.multi is False
+        assert f.required is True
+        assert f.options == ()
+        assert "Privacy Policy" in f.label
+
     def test_the_rest_of_the_form_still_scans_around_it(self):
         inner = ('<label><div class="application-label">Pronouns</div></label>'
                  '<input type="checkbox" name="pronouns" value="they/them">')
