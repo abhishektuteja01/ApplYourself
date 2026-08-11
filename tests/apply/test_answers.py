@@ -257,6 +257,48 @@ class TestIdentity:
         assert resolve(country, answers).value == "United States"
         assert resolve(r.by_id("candidate-location"), answers).value.startswith("Exampletown")
 
+    def test_a_country_only_location_field_takes_the_configured_country(self, answers):
+        """Measured live: Ashby's `_systemfield_location` is city-level on some
+        boards and country-only on others, with nothing in either payload
+        saying which. On the coarse ones "Boston" returns no options at all.
+        Falling back to `identity.country` answers the question the board is
+        actually asking — the same ordered-candidate rule a Tier B answer uses."""
+        field = MergedField(
+            id="_systemfield_location", name="_systemfield_location",
+            label="Preferred location", required=True, kind="react_select",
+            section="basic", multi=False,
+            options=(MergedOption(label="United States"),
+                     MergedOption(label="Palestine")),
+        )
+        assert resolve(field, answers).value == "United States"
+
+    def test_the_city_still_wins_where_the_board_offers_it(self, answers):
+        """The fallback is second, not a replacement."""
+        field = MergedField(
+            id="_systemfield_location", name="_systemfield_location",
+            label="Preferred location", required=True, kind="react_select",
+            section="basic", multi=False,
+            options=(MergedOption(label="United States"),
+                     MergedOption(label=answers.identity["location"])),
+        )
+        assert resolve(field, answers).value == answers.identity["location"]
+
+    def test_a_board_offering_neither_still_parks(self, answers):
+        field = MergedField(
+            id="_systemfield_location", name="_systemfield_location",
+            label="Preferred location", required=True, kind="react_select",
+            section="basic", multi=False,
+            options=(MergedOption(label="Ireland"),),
+        )
+        assert resolve(field, answers).parked is True
+
+    def test_the_fallback_is_keyed_on_the_field_not_the_label(self, answers):
+        """`identity.country` also feeds Greenhouse's phone dial-code widget,
+        which is not a country question. Only location gets a second candidate."""
+        from src.apply.answers import _identity_candidates
+        assert len(_identity_candidates("location", "x", answers)) == 2
+        assert _identity_candidates("email", "x", answers) == ("x",)
+
     def test_the_two_file_inputs_are_deferred_to_the_planner(self, merged, answers):
         r = merged("form_minimal")
         for field_id in ("resume", "cover_letter"):

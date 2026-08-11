@@ -150,6 +150,11 @@ class MiniPage:
     def wait_for_load_state(self, state, timeout=None):
         pass
 
+    def wait_for_timeout(self, ms):
+        """A static fixture never changes, so polling it is a no-op — the poll
+        must still terminate rather than spin."""
+        self.calls.append(("wait", ms))
+
 
 def driver(fixture="form_ashby_widgets.html"):
     page = MiniPage(fixture)
@@ -235,6 +240,21 @@ class TestCombobox:
         d, page = driver()
         assert d.click_option("Belgium") is False
         assert [c for c in page.calls if c[0] == "click"] == []
+
+    def test_a_miss_waits_before_giving_up(self):
+        """The location field queries a server on every keystroke, so straight
+        after typing the list is still the previous query's, or empty.
+        `_select`'s retry types a second candidate and clicks with no wait of
+        its own — that raced, and the role failed with the option it wanted
+        listed in its own error message."""
+        d, page = driver()
+        d.click_option("Belgium")
+        assert [c for c in page.calls if c[0] == "wait"], "gave up without waiting"
+
+    def test_an_option_already_there_is_clicked_without_waiting(self):
+        d, page = driver()
+        assert d.click_option("Canada") is True
+        assert [c for c in page.calls if c[0] == "wait"] == []
 
     def test_expansion_is_read_off_the_combobox_input(self):
         d, _ = driver()

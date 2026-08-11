@@ -66,6 +66,8 @@ FORM_TIMEOUT = 30000
 # Short: the input is often gone by now, and waiting the default 30s per
 # upload for a node that will never come back stalls a whole queue run.
 UPLOAD_READBACK_TIMEOUT = 2000
+# How often to re-check a server-backed listbox while waiting for its results.
+_OPTION_POLL_MS = 250
 
 
 class FillError(Exception):
@@ -536,13 +538,27 @@ class AshbyBrowserDriver(BrowserDriver):
         return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
 
     def click_option(self, label: str) -> bool:
-        options = self.page.locator(self.LISTBOX)
-        for i in range(options.count()):
-            node = options.nth(i)
-            if node.inner_text().strip().casefold() == label.casefold():
-                node.click()
-                return True
-        return False
+        """Wait for the option to actually be offered, then click it.
+
+        The base scans whatever is on screen right now, which is fine for a
+        client-side filter. Ashby's location field queries a server on every
+        keystroke, so straight after typing the list is still the previous
+        query's — or empty. `_select`'s retry path types a second candidate and
+        clicks with no wait of its own, and that raced: the option was offered
+        a moment later and the role failed with it listed in the error.
+        """
+        deadline = OPTION_TIMEOUT
+        while True:
+            options = self.page.locator(self.LISTBOX)
+            for i in range(options.count()):
+                node = options.nth(i)
+                if node.inner_text().strip().casefold() == label.casefold():
+                    node.click()
+                    return True
+            if deadline <= 0:
+                return False
+            self.page.wait_for_timeout(_OPTION_POLL_MS)
+            deadline -= _OPTION_POLL_MS
 
     def type_into(self, field_id: str, value: str) -> None:
         el = self._entry(field_id).locator(self.COMBOBOX).first
