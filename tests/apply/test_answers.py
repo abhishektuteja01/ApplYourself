@@ -292,12 +292,20 @@ class TestIdentity:
         )
         assert resolve(field, answers).parked is True
 
-    def test_the_fallback_is_keyed_on_the_field_not_the_label(self, answers):
+    def test_the_fallback_is_keyed_on_the_dom_id_not_the_label(self, answers):
         """`identity.country` also feeds Greenhouse's phone dial-code widget,
-        which is not a country question. Only location gets a second candidate."""
+        which is not a country question."""
         from src.apply.answers import _identity_candidates
-        assert len(_identity_candidates("location", "x", answers)) == 2
+        assert len(_identity_candidates("_systemfield_location", "x", answers)) == 2
         assert _identity_candidates("email", "x", answers) == ("x",)
+
+    def test_greenhouse_and_lever_location_fields_are_left_alone(self, answers):
+        """They map to the same config key but carry no option list at plan
+        time, so widening the fallback to the key would only change behaviour
+        at fill time, on the highest-volume lane, on no evidence."""
+        from src.apply.answers import _identity_candidates
+        for field_id in ("candidate-location", "location"):
+            assert _identity_candidates(field_id, "x", answers) == ("x",)
 
     def test_the_two_file_inputs_are_deferred_to_the_planner(self, merged, answers):
         r = merged("form_minimal")

@@ -978,30 +978,38 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
             )
         return _fill(picked, "A")
     if field.kind == "react_select":
-        return _resolve_choice(field, _identity_candidates(key, value, answers),
+        return _resolve_choice(field, _identity_candidates(field.id, value, answers),
                                "A", f"identity.{key}")
     return _fill(value, "A")
 
 
-def _identity_candidates(key: str, value: str, answers: Answers) -> tuple[str, ...]:
+#: The one field with a second candidate, and the only one there is evidence
+#: for. Greenhouse's `candidate-location` and Lever's `location` map to the
+#: same config key and are deliberately NOT here: measured, they carry no
+#: option list at plan time, so widening the key would only change behaviour
+#: at fill time, on the highest-volume lane, on no evidence at all.
+_COUNTRY_FALLBACK_IDS = frozenset({"_systemfield_location"})
+
+
+def _identity_candidates(field_id: str, value: str, answers: Answers) -> tuple[str, ...]:
     """The values to offer a chooser for this identity field, best first.
 
-    Only `location` has more than one, and only because the same field id is
-    two different questions depending on the board. Measured live on Ashby's
-    `_systemfield_location`: city-level on some boards, where a canonical
-    "City, State, Country" matches exactly, and **country-only** on others,
-    where "Boston" and "New York" return no options at all and "United States"
-    does. Nothing in either payload says which.
+    Only Ashby's location field has more than one, because that id is two
+    different questions depending on the board. Measured live: city-level on
+    OpenAI, Notion and Airwallex, where a canonical "City, State, Country"
+    matches exactly, and **country-only** on n8n, where "Boston" and "New York"
+    return no options at all and "United States" does. Nothing in either
+    payload says which.
 
     Falling back to the configured country is not a looser match — it is the
     answer to the coarser question the board is actually asking, stated in the
     config already. Same "first candidate the board offers wins" rule as a
     Tier B answer list, and a board offering neither still parks.
 
-    Keyed on the config key, never on the label: `identity.country` also feeds
+    Keyed on the DOM id, never on the label: `identity.country` also feeds
     Greenhouse's phone dial-code widget, which is not a country question.
     """
-    if key == "location":
+    if field_id in _COUNTRY_FALLBACK_IDS:
         return (value, answers.identity["country"])
     return (value,)
 
