@@ -41,6 +41,26 @@ class TestParsePosting:
             "widgetco", "00000001-0000-0000-0000-000000000001",
         )
 
+    def test_the_form_url_is_the_application_page_not_the_ad(self):
+        """`fill_plan` navigates to `plan.form_url`. The posting URL renders
+        the job ad, which draws no fields at all, so a driver pointed there
+        times out waiting for a form that page never shows. Greenhouse points
+        at its embed form and Lever at `/apply` for the same reason."""
+        posting = parse_posting(
+            "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
+        )
+        assert posting.form_url.endswith("/application")
+        assert posting.form_url == posting.posting_url + "/application"
+
+    def test_a_url_that_already_names_the_form_does_not_double_up(self):
+        """The Posting is canonical and the URLs derive from it, so pasting
+        either spelling in resolves to the same one."""
+        posting = parse_posting(
+            "https://jobs.ashbyhq.com/widgetco/"
+            "00000001-0000-0000-0000-000000000001/application"
+        )
+        assert posting.form_url.count("/application") == 1
+
     def test_token_property_is_the_job_id_for_plan_for_board(self):
         posting = parse_posting(
             "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"

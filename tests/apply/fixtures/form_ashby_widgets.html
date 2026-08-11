@@ -21,6 +21,18 @@
            id="_systemfield_name" type="text" class="_input_80epu_28" value="">
   </div>
 
+  <!-- The API calls this `Number` and it maps to kind `text`, but the DOM
+       renders a numeric input, which refuses prose. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000014-0000-0000-0000-000000000014"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000014-0000-0000-0000-000000000014">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000014-0000-0000-0000-000000000014">Base compensation expectation</label>
+    <input placeholder="Type here..." name="00000014-0000-0000-0000-000000000014"
+           required="" id="00000014-0000-0000-0000-000000000014" type="number"
+           class="_input_80epu_28" value="">
+  </div>
+
   <!-- An enumerated select. The API calls this kind `select`; above roughly a
        half-dozen options Ashby renders it as this combobox instead of a radio
        group, which is why the driver reads the widget off the DOM. -->

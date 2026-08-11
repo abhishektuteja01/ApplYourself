@@ -160,6 +160,7 @@ COUNTRY = "00000010-0000-0000-0000-000000000010"
 YESNO = "00000011-0000-0000-0000-000000000011"
 CHECKS = "00000012-0000-0000-0000-000000000012"
 RADIOS = "00000013-0000-0000-0000-000000000013"
+NUMBER = "00000014-0000-0000-0000-000000000014"
 
 
 class TestMiniPageItself:
@@ -406,6 +407,61 @@ class TestYesNoThroughTheFillSequence:
         those boards is a bug, not something to improvise."""
         with pytest.raises(FillError, match="no yes/no toggle"):
             F.BrowserDriver(MiniPage()).set_yesno("q1", "Yes")
+
+
+class TestANumericFieldRefusesProse:
+    """Board-agnostic, found live on Ashby: `input[type=number]` refuses text,
+    and Playwright raises a plain Error rather than a FillError — which escapes
+    `fill_plan`'s per-field isolation and takes the whole role down over one
+    unanswerable question."""
+
+    def test_prose_into_a_number_field_is_one_failed_field(self):
+        d, page = driver()
+        with pytest.raises(FillError, match="wants a number"):
+            d.fill_text(NUMBER, "Open — targeting market rate for the level.")
+        assert [c for c in page.calls if c[0] == "fill"] == []
+
+    def test_a_number_still_goes_in(self):
+        d, _ = driver()
+        d.fill_text(NUMBER, "185000")
+        assert d.value_of(NUMBER) == "185000"
+
+    @pytest.mark.parametrize("value", ["185000", "185000.50", " 42 ", "-5", "1e5"])
+    def test_the_shapes_a_number_input_accepts(self, value):
+        assert F._is_numeric(value) is True
+
+    @pytest.mark.parametrize("value", ["$185,000", "185k", "negotiable", "", "1 2"])
+    def test_it_does_not_try_to_parse_currency_or_units(self, value):
+        """Stripping a "$" or a "k" would submit a number the user never
+        wrote. Refusing parks the question instead."""
+        assert F._is_numeric(value) is False
+
+    def test_an_ordinary_text_field_is_unaffected(self):
+        d, _ = driver()
+        d.fill_text("_systemfield_name", "Alex Example")
+        assert d.value_of("_systemfield_name") == "Alex Example"
+
+    def test_the_role_survives_the_bad_field(self):
+        """One failure, and the fields after it still get written."""
+        d, page = driver()
+        p = Plan(
+            job_id="a1b2c3d4", board="gasketworks", token="1",
+            form_url="https://jobs.ashbyhq.com/gasketworks/0000/application",
+            company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
+            fields=(
+                FieldPlan(id=NUMBER, name=NUMBER, label="Comp", kind="text",
+                          section="questions", required=True, multi=False,
+                          value="negotiable", tier="B"),
+                FieldPlan(id="_systemfield_name", name="_systemfield_name",
+                          label="Full Name", kind="text", section="basic",
+                          required=True, multi=False, value="Alex Example", tier="A"),
+            ),
+            files=(), unmapped=(), draftable=(), skipped=(),
+            submit_selector=None, submit_disabled=False,
+        )
+        result = fill_plan(p, d)
+        assert len(result.failures) == 1
+        assert d.value_of("_systemfield_name") == "Alex Example"
 
 
 class TestAshbyIsRegistered:

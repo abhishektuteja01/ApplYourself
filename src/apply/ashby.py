@@ -191,8 +191,20 @@ class Posting:
         return self.job_id
 
     @property
-    def form_url(self) -> str:
+    def posting_url(self) -> str:
+        """The job ad. Statically identical to the form URL — both serve the
+        same ~32 KB client-rendered shell — but they render differently, and
+        only one of them renders the form."""
         return f"https://jobs.ashbyhq.com/{self.slug}/{self.job_id}"
+
+    @property
+    def form_url(self) -> str:
+        """What a browser must open to see the application form, matching
+        Greenhouse's embed URL and Lever's `/apply`. This was the bare posting
+        while Ashby was plan-only and nothing navigated to it — as a driver
+        target it renders the ad, and the fill times out waiting for fields
+        that page never draws."""
+        return f"{self.posting_url}/application"
 
 
 @dataclass(frozen=True)

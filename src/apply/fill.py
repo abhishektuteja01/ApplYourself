@@ -162,6 +162,17 @@ def _launch(p, *, headless: bool = False):
     )
 
 
+def _is_numeric(value: str) -> bool:
+    """What `input[type=number]` will accept. Deliberately not a currency or
+    unit parser — stripping "$" or "k" off an answer would submit a number the
+    user never wrote."""
+    try:
+        float(str(value).strip())
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 class BrowserDriver:
     """Everything the fill sequence does to a page, in one swappable object.
 
@@ -279,6 +290,15 @@ class BrowserDriver:
 
     def fill_text(self, field_id: str, value: str) -> None:
         el = self._locator(field_id).first
+        # `input[type=number]` refuses non-numeric text, and Playwright raises
+        # a plain Error rather than a FillError — which escapes the per-field
+        # isolation in `fill_plan` and takes the whole role down with it. Seen
+        # live on an Ashby compensation question whose configured answer is a
+        # sentence. Refuse it here instead, so it is one failed field.
+        if (el.get_attribute("type") or "") == "number" and not _is_numeric(value):
+            raise FillError(
+                f"{field_id}: the board wants a number and the answer is text: {value!r}"
+            )
         el.fill("")
         el.fill(value)
 
