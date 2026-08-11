@@ -317,15 +317,18 @@ def build_plan(
     """Resolve every reconciled field into a fill, an attachment or a park.
 
     `overrides` is a per-run, per-field lookup — `field.id -> (value, tier)`,
-    `tier` one of `"C1"`/`"C2"` — supplied by `/apply` (`.claude/commands/
-    apply.md`) after it classifies and, for C1, drafts an answer, or resolves
-    a C2 question from that role's `company_answers.md`. It exists so a
-    required Tier C question can ever leave `unmapped[]` without either
-    judgment landing in this module (R7) or a company-specific answer leaking
-    into `profile/application_answers.yaml` (§15 forbids exactly that for C1;
-    it binds harder for C2, which is company-specific by construction). Only
-    consulted for `resolve()`'s Tier C outcomes — every other tier keeps
-    deciding itself.
+    `tier` one of `"C1"`/`"C2"`/`"JD"` — supplied by `/apply` (`.claude/
+    commands/apply.md`) after it classifies and, for C1, drafts an answer, or
+    resolves a C2 question from that role's `company_answers.md`, or reads a
+    salary figure off the JD. It exists so a required Tier C question can
+    ever leave `unmapped[]` without either judgment landing in this module
+    (R7) or a company-specific answer leaking into
+    `profile/application_answers.yaml` (§15 forbids exactly that for C1; it
+    binds harder for C2, which is company-specific by construction).
+    `"C1"`/`"C2"` are consulted only for `resolve()`'s Tier C outcomes, same
+    as always. `"JD"` is the one exception: it is also consulted for a Tier
+    B outcome, so a salary figure the JD itself states can supersede a
+    static `rules:` match — every other tier keeps deciding itself.
     """
     overrides = overrides or {}
     out_dir = Path(out_dir)

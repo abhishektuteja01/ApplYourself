@@ -166,6 +166,14 @@ Two pools of Tier C questions, both from the plan JSON's `"unmapped"` (filter
 the optional-and-blank ones. `Read` each one's `"label"` (and `"options"` if
 present).
 
+**Also scan `"fields"` (filter `"tier" == "B"`) for a salary/compensation-shaped
+label.** A board with a static Tier B `rules:` match (the common case — see
+the template's own `salary`/`compensation` entry) resolves that field
+successfully, so it never appears in `unmapped`/`draftable` at all — skipping
+this scan would make Step 4b's JD-first check silently never fire for
+exactly the case it exists to handle. Note each such field's `"id"` and
+`"kind"` for Step 4b.
+
 Classify each conservatively:
 
 - **C2** if the label names the company (`"company"` field in the plan JSON),
@@ -176,8 +184,9 @@ Classify each conservatively:
   answers the same way regardless of employer ("describe your experience
   with X", "how many years have you worked with Y", "what's your
   availability").
-- **M** (money) if the label is a salary/compensation/pay question. Handled
-  separately in Step 4b — do not fold it into C1.
+- **M** (money) if the label is a salary/compensation/pay question — from
+  either pool above, Tier B included. Handled separately in Step 4b — do not
+  fold it into C1.
 
 Also check `"unmapped"` for a required entry with `"id" == "cover_letter"` —
 a board whose file-upload field is required and still unresolved.
@@ -236,16 +245,32 @@ behavior, not a bug to work around.
 
 **If Step 2c found no M question, skip this step entirely.**
 
-For each M question, `Read` `${OUT_DIR}/jd_snapshot.md` (already on disk
-from `/tailor`) for a stated figure or range — a number near words like
-"salary", "compensation", "pay range", "OTE". This is a judgment call over
-free text, so it stays here, not in `src/` (R7).
+For each M question that came from `"unmapped"`/`"draftable"` (genuinely
+unresolved — no Tier B rule matched it), `Read` `${OUT_DIR}/jd_snapshot.md`
+(already on disk from `/tailor`) for a stated figure or range — a number
+near words like "salary", "compensation", "pay range", "OTE". This is a
+judgment call over free text, so it stays here, not in `src/` (R7). If the
+JD states one, add it as a `"JD"`-tagged override same as any other Tier C
+answer (the option-matching a select-kind field needs is already handled
+generically by `build_plan()`, same safety net C1/C2 already rely on).
 
-If the JD states one: add `"<field_id>": {"value": "<the figure, as
-stated>", "tier": "JD"}` to `$OVERRIDES_FILE`. This tag is the one exception
-that supersedes a static Tier B `rules:` match (e.g. the template's own
-`match: [salary, compensation, ...]` default) — a figure the JD itself
-states should win over a generic configured fallback.
+For an M question that came from `"fields"` (Tier B already resolved it):
+**only override it if `"kind"` is `"text"` or `"textarea"`.** A Tier B match
+on a `select`/`react_select`/checkbox-kind field has no options listed in
+this pool (`"fields"` entries carry no `"options"` list, unlike
+`unmapped`/`draftable`), so there is no safe way to confirm a JD-derived
+value matches what the widget actually offers — writing one anyway risks
+parking a field that was already safely answered, turning a submittable
+role into a blocked one over a cosmetic salary-figure preference. Leave a
+non-text-kind Tier B field exactly as it resolved; the JD check only
+applies where it can't make things worse.
+
+If the JD states a figure for an eligible (text/textarea) field: add
+`"<field_id>": {"value": "<the figure, as stated>", "tier": "JD"}` to
+`$OVERRIDES_FILE`. This tag is the one exception that supersedes a static
+Tier B `rules:` match (e.g. the template's own `match: [salary,
+compensation, ...]` default) — a figure the JD itself states should win
+over a generic configured fallback.
 
 If the JD states nothing: add no override at all. Whatever already resolves
 the field — the user's own Tier B rule, or a Tier C draft/park if they

@@ -316,6 +316,17 @@ class TestOverrides:
         assert plan.fields[0].value == "145000"
         assert plan.fields[0].tier == "JD"
 
+    def test_a_jd_tagged_override_never_touches_a_non_tier_b_field(self, answers, tailor_dir):
+        # "JD" is the one tag that can cross a tier boundary (into Tier B
+        # only) -- it must not become a general escape hatch onto identity,
+        # EEOC or work-authorization fields.
+        plan = build_plan(
+            one([field(id="first_name", label="First Name", kind="text")]),
+            answers, tailor_dir,
+            overrides={"first_name": ("Somebody Else", "JD")},
+        )
+        assert plan.fields[0].value != "Somebody Else"
+
     def test_a_c1_tagged_override_never_supersedes_a_tier_b_rule(self, answers, tailor_dir):
         # Only "JD" gets this power. A C1/C2 draft must stay Tier-C-only, so
         # it can never silently clobber a configured Tier B fact.
