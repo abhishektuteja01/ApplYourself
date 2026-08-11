@@ -68,8 +68,9 @@ inline where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 6. **Submission** (`/apply`; plumbing in `src/apply/` — `schema.py`,
    `domscan.py`, `reconcile.py`, `answers.py`, `plan.py`, `greenhouse.py`,
    `lever.py`, `ashby.py`, `fill.py` — and `src/apply_cli.py`) — consumes
-   roles sitting at `tailored` with both a resume and a cover letter on file,
-   fills the board's application form from `profile/application_answers.yaml`,
+   roles with a resume on file (`saved` or `tailored`; a cover letter is
+   produced only when the board's own form asks for one), fills the board's
+   application form from `profile/application_answers.yaml`,
    and either submits (transitioning to `applied` through `/track`) or parks
    the role on whatever it could not resolve. Greenhouse and Lever submit;
    Greenhouse, Lever and Ashby all submit; Workday is discovered but never
@@ -141,8 +142,18 @@ judge sees them. `/rescore` discards `scored.parquet` and re-judges the whole
 11 states: `saved, skip, tailored, applied, recruiter_contact, screen, interview,
 offer, rejected, withdrawn, ghosted`. Terminal (`offer, rejected, withdrawn,
 ghosted`) reject all out-transitions. `/track` is the **sole writer of state
-transitions** (R10). `/tailor`, `/cover-letter`, `/outreach` may only append to
-side lists (`tailored_dirs[]`, `cover_letters[]`, `outreach[]`); `/standup` is
+transitions** (R10): every transition goes through it, and no other command
+writes `state:` itself. `/tailor` and `/outreach` only append to side lists
+(`tailored_dirs[]`, `outreach[]`). Two commands can fire `saved` -> `tailored`,
+both routed through `/track` and both guarded to fire only from `saved`:
+`/cover-letter` fires it after appending to `cover_letters[]`, same as
+always; `/apply` fires it itself, on a `saved` role, the moment its own
+plan-check confirms the board genuinely needs no cover letter (no required
+cover-letter upload, no unresolved company-specific question) — a cover
+letter is no longer a blanket prerequisite, only a per-board one. `/apply`'s
+entry bar is `tailored_dirs[]` alone (state `saved` or `tailored`); a board
+that DOES need a cover letter still blocks inside that same plan-check,
+just conditionally rather than via a static state-file gate. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
 
 ## Linting (`src/lint.py`)

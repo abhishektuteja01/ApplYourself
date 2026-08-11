@@ -6,6 +6,7 @@ allowed-tools:
   - Bash
   - Read
   - Edit
+  - Skill
 argument-hint: <job_id> [--submit]
 ---
 
@@ -29,10 +30,18 @@ Two Tier C sub-cases, and they resolve differently:
   (`/cover-letter` §7b already drafted it), never freshly drafted here, and
   never from a generic template.
 
-Both land in a **per-run answers override** (`/tmp/apply_$1_answers.json`) —
-never in `profile/application_answers.yaml`. That file is global; a
+A third, narrower case rides alongside C1/C2: a salary/compensation
+question. It resolves from the role's own `jd_snapshot.md` if the JD states
+a figure, tagged `"JD"` rather than `"C1"`/`"C2"` — the one tag the
+deterministic layer lets supersede a static Tier B `rules:` match, since a
+figure the JD itself states should win over a generic configured default
+(Step 4b).
+
+All three land in a **per-run answers override**
+(`${OUT_DIR}/answers_override.json`, next to the role's other artifacts) —
+never in `profile/application_answers.yaml`. That file is per-role; a
 company's "why us" answer or a one-off drafted sentence must never leak into
-the next role's run. The one exception, a separate and much narrower path,
+another role's run. The one exception, a separate and much narrower path,
 is §15's Tier B writeback (Step 5 below) — and that only ever carries a
 reusable *fact*, never drafted prose.
 
@@ -62,10 +71,30 @@ import yaml
 d = yaml.safe_load(open('pipeline/$JOB_ID/state.yaml')) or {}
 print(d.get('state', ''))
 ")
-test "$STATE" = "tailored" || {
-    echo "ERROR: pipeline/$JOB_ID/state.yaml has state '$STATE', not 'tailored'. Run /tailor and /cover-letter first."
+case "$STATE" in
+    saved|tailored) ;;
+    *)
+        echo "ERROR: pipeline/$JOB_ID/state.yaml has state '$STATE', not 'saved' or 'tailored'. Run /tailor first."
+        exit 1
+        ;;
+esac
+# `saved` is now a valid entry state, not just `tailored` -- whether this
+# role needs a cover letter before it can become `tailored` is exactly what
+# Step 2b decides, per role, from the board's own form. It used to be a
+# blanket prerequisite here; that pre-filtered roles the deterministic queue
+# (`apply_cli.eligible_queue`) would otherwise happily submit.
+
+TAILORED_DIR=$(uv run python -c "
+import yaml
+d = yaml.safe_load(open('pipeline/$JOB_ID/state.yaml')) or {}
+dirs = d.get('tailored_dirs') or []
+print(dirs[-1] if dirs else '')
+")
+test -n "$TAILORED_DIR" || {
+    echo "ERROR: pipeline/$JOB_ID/state.yaml has no tailored_dirs[]. Run /tailor first."
     exit 1
 }
+OUT_DIR="applications/${TAILORED_DIR}"
 
 COVER_DIR=$(uv run python -c "
 import yaml
@@ -73,30 +102,28 @@ d = yaml.safe_load(open('pipeline/$JOB_ID/state.yaml')) or {}
 letters = d.get('cover_letters') or []
 print(letters[-1] if letters else '')
 ")
-test -n "$COVER_DIR" || {
-    echo "ERROR: pipeline/$JOB_ID/state.yaml has no cover_letters[]. Run /cover-letter first -- /apply's Tier C2 questions resolve from its company_answers.md output."
-    exit 1
-}
-COMPANY_ANSWERS="applications/${COVER_DIR}/company_answers.md"
-# NOT a hard prerequisite. Most boards ask no "why us" question at all, and
-# every role tailored before §7b shipped predates the file — 20 of 20 on this
-# machine. Requiring it up front refused roles the deterministic queue
-# (`apply_cli.eligible_queue`) happily submits, so the two gates disagreed
-# about what was eligible. Step 5 re-checks it, by which point the plan says
-# whether any Tier C2 question actually exists.
-test -f "$COMPANY_ANSWERS" || {
-    echo "NOTE: ${COMPANY_ANSWERS} missing. Fine unless this board asks a"
-    echo "      company-specific question -- Step 5 parks the role if it does."
-    COMPANY_ANSWERS=""
-}
+COMPANY_ANSWERS=""
+if [ -n "$COVER_DIR" ]; then
+    CANDIDATE="applications/${COVER_DIR}/company_answers.md"
+    test -f "$CANDIDATE" && COMPANY_ANSWERS="$CANDIDATE"
+fi
+# A missing cover letter is NOT a hard prerequisite here. Step 2b re-checks
+# it against this role's actual plan, by which point it's known whether any
+# C2 question or required cover-letter upload genuinely exists.
 
-OVERRIDES_FILE="/tmp/apply_${JOB_ID}_answers.json"
+OVERRIDES_FILE="${OUT_DIR}/answers_override.json"
+# Persisted next to the role's other artifacts (company_answers.md,
+# jd_snapshot.md) instead of a /tmp scratch file -- an audit trail of what
+# was submitted and why. Overwritten fresh at the start of every run, so
+# every key present by the end belongs to this run only.
 # The job_id key binds this file to this role. Tier C2 answers are
 # company-specific, so `apply --answers` refuses a file drafted for another
 # role — but only if the key is here.
 printf '{"job_id": "%s"}\n' "$JOB_ID" > "$OVERRIDES_FILE"
 
 echo "job_id=$JOB_ID"
+echo "state=$STATE"
+echo "out_dir=$OUT_DIR"
 echo "company_answers=$COMPANY_ANSWERS"
 echo "overrides_file=$OVERRIDES_FILE"
 ```
@@ -119,13 +146,22 @@ echo "exit code: $?"
   — suggest `/track $1 skip` and stop here.
 - Exit `1` → a config or fetch error. Report the message verbatim and stop.
   Do not attempt to work around it.
-- Exit `0` → read `/tmp/apply_$1_plan.json`. If `"parked"` is `false` **and**
-  `"draftable"` is empty, there is nothing for this command to do — skip to
-  Step 6 with no overrides file.
+- Exit `0` → read `/tmp/apply_$1_plan.json` and continue to Step 2c
+  regardless of `"parked"`/`"draftable"` — even a role with nothing
+  outstanding in Tier C still needs Step 2c's self-promotion check (a role
+  sitting at `saved` with nothing left to resolve is exactly the "board
+  never asked for a cover letter" case, and nothing else fires that
+  transition for it). Step 2c's later steps (4, 4b, 5) are each individually
+  skippable and become no-ops when their pool is empty.
 
-## Step 3 — classify every Tier C question
+## Step 2c — classify Tier C, gate on cover-letter need, self-promote
 
-Two pools of Tier C questions, both from the JSON's `"unmapped"` (filter
+This is the single classification pass this command ever runs — the gate
+below and Steps 4/4b/5's drafting all reuse its output, so `/apply` never
+reaches C1/C2 drafting without having already confirmed, in this run, that
+whatever it needs is either absent or already on disk.
+
+Two pools of Tier C questions, both from the plan JSON's `"unmapped"` (filter
 `"tier" == "C"`) and `"draftable"` lists — the required-and-parked ones and
 the optional-and-blank ones. `Read` each one's `"label"` (and `"options"` if
 present).
@@ -140,19 +176,41 @@ Classify each conservatively:
   answers the same way regardless of employer ("describe your experience
   with X", "how many years have you worked with Y", "what's your
   availability").
+- **M** (money) if the label is a salary/compensation/pay question. Handled
+  separately in Step 4b — do not fold it into C1.
+
+Also check `"unmapped"` for a required entry with `"id" == "cover_letter"` —
+a board whose file-upload field is required and still unresolved.
+
+**The gate:** if there is any C2 question, OR a required `cover_letter`
+entry, AND `$COMPANY_ANSWERS` is empty (Step 1 found no cover letter on
+file): stop here, report `"$JOB_ID needs a cover letter -- run /cover-letter
+for this role first"`, and leave state untouched. Do not draft a C2 answer
+without `/cover-letter`'s own Step 2b research — that is exactly the
+fabrication its Step 2b exists to prevent.
+
+**Otherwise** — no cover letter is genuinely needed, or one already exists.
+If `$STATE` is still `saved`, fire the transition right here, the same
+`saved`-only guard `/cover-letter` Step 7b uses (R10; routed through
+`/track`, never written directly):
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+if [ "$STATE" = "saved" ]; then
+    uv run track "$JOB_ID" tailored --note "resume on file; board needs no cover letter, or one already exists"
+fi
+```
+
+Continue to Step 4 with the classification from above already in hand.
 
 ## Step 4 — resolve C2 from `company_answers.md`
 
-**If the plan has no C2 question, skip this step entirely** — most boards ask
-none, and the file is only needed by the ones that do.
+**If Step 2c found no C2 question, skip this step entirely** — most boards
+ask none, and the file is only needed by the ones that do.
 
-If there IS a C2 question and `$COMPANY_ANSWERS` is empty (Step 1 said the
-file is missing), stop and tell the user to run `/cover-letter` for this role
-first. Do not draft the answer here: a "why us" written without the Step 2b
-research is exactly the fabrication §7b exists to prevent.
-
-`Read` `$COMPANY_ANSWERS` (printed in Step 1). It has exactly three sections:
-`why_company`, `why_role`, `what_interests_you_about_product`.
+`Read` `$COMPANY_ANSWERS` (printed in Step 1 — Step 2c's gate already
+guaranteed this is non-empty if a C2 question exists). It has exactly three
+sections: `why_company`, `why_role`, `what_interests_you_about_product`.
 
 Match each C2 label to a section by keyword, the same mechanism as Tier B's
 `match:` keywords (§4):
@@ -173,6 +231,29 @@ A C2 label matching no section is treated the same as `INSUFFICIENT_RESEARCH`
 — never invent a fourth theme, never fall back to a C1 draft. A required C2
 question that cannot be resolved this way parks the role; that is correct
 behavior, not a bug to work around.
+
+## Step 4b — resolve money (M) questions: JD first, config fallback
+
+**If Step 2c found no M question, skip this step entirely.**
+
+For each M question, `Read` `${OUT_DIR}/jd_snapshot.md` (already on disk
+from `/tailor`) for a stated figure or range — a number near words like
+"salary", "compensation", "pay range", "OTE". This is a judgment call over
+free text, so it stays here, not in `src/` (R7).
+
+If the JD states one: add `"<field_id>": {"value": "<the figure, as
+stated>", "tier": "JD"}` to `$OVERRIDES_FILE`. This tag is the one exception
+that supersedes a static Tier B `rules:` match (e.g. the template's own
+`match: [salary, compensation, ...]` default) — a figure the JD itself
+states should win over a generic configured fallback.
+
+If the JD states nothing: add no override at all. Whatever already resolves
+the field — the user's own Tier B rule, or a Tier C draft/park if they
+haven't set one — proceeds exactly as it would without this step. The
+config-driven fallback lives entirely in the user's own
+`profile/application_answers.yaml` (`rules:` — see
+`application_answers.example.yaml`'s own `salary`/`compensation` entry for
+the pattern); never hardcode a number here.
 
 ## Step 5 — resolve C1: draft, and maybe write back a reusable rule
 
@@ -239,6 +320,20 @@ cp /tmp/apply_$1_answers_yaml.bak profile/application_answers.yaml
 and rely on the per-run override alone for this run — do not leave the file
 in a state that blocks every future run over one bad append.
 
+## Step 5b — no_ai_slop editing pass (before re-plan)
+
+Run the `no_ai_slop` skill in **edit** mode over every C1 and C2 value this
+run wrote into `$OVERRIDES_FILE` (skip `"JD"`-tagged entries — a bare figure,
+not prose) — the same deep pass `/cover-letter` Step 4 runs over its drafted
+paragraphs, for the same structural AI-tells the banned-phrase linter can't
+catch (binary contrasts, colon reveals, importance puffery, robotic rhythm).
+
+This is a voice/structure edit, NOT a rewrite of substance — no new claim,
+tool, metric, scope, or date beyond what `profile/bullets.md` (C1) or
+`company_answers.md` (C2) already attests. Take the edited text and write it
+back into the same `$OVERRIDES_FILE` entries, keeping their `tier` and the
+`job_id` key unchanged.
+
 ## Step 6 — re-plan and confirm the overrides landed
 
 ```bash
@@ -247,7 +342,7 @@ uv run apply plan "$1" --json --answers "$OVERRIDES_FILE" > /tmp/apply_$1_plan2.
 ```
 
 Compare `"unmapped"` between the two plan JSONs. Every required question this
-command resolved (Step 4 or Step 5) must be gone from the second one. If any
+command resolved (Step 4, 4b or 5) must be gone from the second one. If any
 remain — the override didn't land on the field id it was meant for, most
 likely — stop and report which ones, rather than proceeding to a browser with
 a plan that still doesn't match what was decided above.
@@ -282,10 +377,12 @@ $JOB_ID — <category from the run report>
 
 <the report's detail line for this role, verbatim>
 
-Overrides applied this run: <list of field ids resolved at C1/C2, with tier>
+Overrides applied this run: <list of field ids resolved at C1/C2/JD, with tier>
 <if a Tier B rule was written back: "Also added a reusable rule to
 profile/application_answers.yaml for: \"<label>\"">
 ```
 
-The overrides file at `/tmp/apply_$1_answers.json` is per-job and disposable
-— nothing depends on it surviving past this run.
+The overrides file at `$OVERRIDES_FILE` (`${OUT_DIR}/answers_override.json`)
+stays on disk after this run — an audit trail of what was submitted and why,
+next to the role's other artifacts. Each run overwrites it fresh (Step 1),
+so it always reflects only the most recent run's decisions.

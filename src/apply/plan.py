@@ -357,9 +357,17 @@ def build_plan(
 
         resolution = resolve(field, answers)
 
-        if resolution.tier == "C" and field.id in overrides:
+        if field.id in overrides:
             value, override_tier = overrides[field.id]
-            resolution = _override_resolution(field, value, override_tier)
+            # C1/C2 only ever supersede a Tier C outcome — a drafted answer
+            # must never silently clobber an identity/EEOC/work-authorization
+            # field. "JD" is the one exception: a figure read from the JD
+            # is allowed to supersede a static Tier B rule too (a salary
+            # question resolved by a generic `rules:` keyword match), since
+            # that is the whole point of checking the JD before falling back
+            # to the configured default.
+            if resolution.tier == "C" or (resolution.tier == "B" and override_tier == "JD"):
+                resolution = _override_resolution(field, value, override_tier)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))

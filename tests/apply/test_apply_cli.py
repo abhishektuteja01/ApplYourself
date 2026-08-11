@@ -365,9 +365,9 @@ class TestEligibleQueue:
         repo.write_state()
         assert apply_cli.eligible_queue(repo.pipeline) == [JOB_ID]
 
-    def test_missing_cover_letters_is_not_eligible(self, repo):
+    def test_missing_cover_letters_is_still_eligible(self, repo):
         repo.write_state(cover_letters=[])
-        assert apply_cli.eligible_queue(repo.pipeline) == []
+        assert apply_cli.eligible_queue(repo.pipeline) == [JOB_ID]
 
     def test_missing_tailored_dirs_is_not_eligible(self, repo):
         repo.write_state(tailored_dirs=[])
@@ -716,6 +716,26 @@ class TestOverridesAreBoundToOneRole:
         p.write_text(json.dumps({"question_1": {"value": "x", "tier": "C1"}}),
                       encoding="utf-8")
         assert apply_cli.load_overrides(p, JOB_ID) == {"question_1": ("x", "C1")}
+
+    def test_a_jd_tagged_entry_loads(self, tmp_path):
+        # "JD" is the one tier build_plan() lets supersede a static Tier B
+        # rules[] match -- a salary figure read from the JD itself.
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({
+            "job_id": JOB_ID,
+            "salary_expectation": {"value": "145000", "tier": "JD"},
+        }), encoding="utf-8")
+        assert apply_cli.load_overrides(p, JOB_ID) == {
+            "salary_expectation": ("145000", "JD")}
+
+    def test_an_unrecognized_tier_still_raises(self, tmp_path):
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({
+            "job_id": JOB_ID,
+            "question_1": {"value": "x", "tier": "B0"},
+        }), encoding="utf-8")
+        with pytest.raises(apply_cli.ApplyCliError, match="want C1, C2 or JD"):
+            apply_cli.load_overrides(p, JOB_ID)
 
 
 class TestTheReportNeverOverwritesAnotherRun:

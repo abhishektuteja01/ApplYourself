@@ -10,9 +10,9 @@
                                     fill one real form and stop; never submits.
   run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--job-id X]
                                     walk the eligible queue (state == tailored,
-                                    tailored_dirs[] and cover_letters[] both
-                                    non-empty). Default is fill-and-stop;
-                                    --submit is required to click. Writes
+                                    tailored_dirs[] non-empty). Default is
+                                    fill-and-stop; --submit is required to
+                                    click. Writes
                                     applications/apply_runs/<timestamp>.md.
 
 Run directly: `uv run python -m src.apply_cli plan <job_id>` or `uv run apply
@@ -123,10 +123,17 @@ def resolve_out_dir(job_id: str, state: dict | None) -> Path:
 
 def load_overrides(path: Path, job_id: str | None = None,
                     ) -> dict[str, tuple[str | tuple[str, ...], str]]:
-    """`/apply`'s per-run, per-field answers for Tier C questions (§15) —
-    `{"job_id": "...", "<field_id>": {"value": "...", "tier": "C1"}}`, `value`
-    a string or a list for a multi-select. Parsing only; no judgment lives
-    here (R7) — the command file decided every value before this ever runs.
+    """`/apply`'s per-run, per-field answers for Tier C questions (§15), plus
+    the one Tier B exception — `{"job_id": "...", "<field_id>": {"value":
+    "...", "tier": "C1"}}`, `value` a string or a list for a multi-select.
+    Parsing only; no judgment lives here (R7) — the command file decided
+    every value before this ever runs.
+
+    `tier` is `"C1"` (drafted from bullets.md), `"C2"` (drafted from
+    company_answers.md), or `"JD"` (a figure read from the role's own
+    jd_snapshot.md — the one tier `build_plan()` lets supersede a static
+    Tier B `rules:` match, since a salary figure the JD itself states should
+    win over a generic configured default).
 
     The `job_id` key binds the file to one role. Tier C2 answers are
     company-specific by construction ("why do you want to work at X"), so a
@@ -155,8 +162,8 @@ def load_overrides(path: Path, job_id: str | None = None,
         if not isinstance(entry, dict):
             raise ApplyCliError(f"{path}: {field_id!r} must be an object")
         tier = entry.get("tier")
-        if tier not in ("C1", "C2"):
-            raise ApplyCliError(f"{path}: {field_id!r} has tier {tier!r}, want C1 or C2")
+        if tier not in ("C1", "C2", "JD"):
+            raise ApplyCliError(f"{path}: {field_id!r} has tier {tier!r}, want C1, C2 or JD")
         value = entry.get("value")
         if isinstance(value, list):
             value = tuple(value)
@@ -388,11 +395,15 @@ def render_fill(result, plan: Plan) -> str:
 
 
 def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
-    """`state == tailored` with a resume and a cover letter both on file.
+    """`state == tailored` with a resume on file.
 
-    §8's later, reasoned statement — not just `tailored_dirs[]` — because
-    §7b puts `company_answers.md` inside the cover-letter output dir, and
-    `/apply`'s Tier C2 questions resolve from that file or park. Sorted by
+    A cover letter is no longer a blanket requirement here: whether one is
+    actually needed depends on what the board's form asks, which `/apply`'s
+    own plan-check (Step 2b) decides per role, before this queue is ever
+    walked. A role whose board genuinely requires a cover letter it doesn't
+    have still surfaces via `build_plan()`'s `unmapped`/`parked` outcome —
+    the same mechanism that already blocks any other missing required
+    field — rather than being pre-filtered out of the queue. Sorted by
     job_id: the only ordering signal every eligible role is guaranteed to
     carry, so the queue is reproducible run to run.
 
@@ -405,7 +416,6 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
         job_id for job_id, st in idx.items()
         if st.get("state") == "tailored"
         and st.get("tailored_dirs")
-        and st.get("cover_letters")
     )
 
 
@@ -691,7 +701,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if args.job_id not in queue:
             print(
                 f"ERROR: {args.job_id} is not eligible — needs state == tailored "
-                "with both tailored_dirs[] and cover_letters[] non-empty",
+                "with tailored_dirs[] non-empty",
                 file=sys.stderr,
             )
             return 1
@@ -702,8 +712,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             queue = queue[:args.limit]
 
     if not queue:
-        print("Nothing eligible: no role at state=tailored with both "
-              "tailored_dirs[] and cover_letters[] non-empty.")
+        print("Nothing eligible: no role at state=tailored with "
+              "tailored_dirs[] non-empty.")
         return 0
 
     try:

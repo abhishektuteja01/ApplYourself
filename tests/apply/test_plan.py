@@ -299,6 +299,35 @@ class TestOverrides:
         assert field_id in still_parked
         assert "matches none of the options" in still_parked[field_id].reason
 
+    def test_a_jd_override_supersedes_a_tier_b_rule(self, answers, tailor_dir):
+        # "salary" matches the fixture's Tier B rule ("Open -- targeting
+        # market rate"). A "JD" override -- the figure /apply read straight
+        # off the JD -- must win over that static default.
+        salary = field(id="salary_expectation", label="Salary Expectation",
+                        kind="text", required=False)
+        plan = build_plan(one([salary]), answers, tailor_dir)
+        assert plan.fields[0].value == "Open — targeting market rate for the level."
+        assert plan.fields[0].tier == "B"
+
+        plan = build_plan(
+            one([salary]), answers, tailor_dir,
+            overrides={"salary_expectation": ("145000", "JD")},
+        )
+        assert plan.fields[0].value == "145000"
+        assert plan.fields[0].tier == "JD"
+
+    def test_a_c1_tagged_override_never_supersedes_a_tier_b_rule(self, answers, tailor_dir):
+        # Only "JD" gets this power. A C1/C2 draft must stay Tier-C-only, so
+        # it can never silently clobber a configured Tier B fact.
+        salary = field(id="salary_expectation", label="Salary Expectation",
+                        kind="text", required=False)
+        plan = build_plan(
+            one([salary]), answers, tailor_dir,
+            overrides={"salary_expectation": ("145000", "C1")},
+        )
+        assert plan.fields[0].value == "Open — targeting market rate for the level."
+        assert plan.fields[0].tier == "B"
+
     def test_an_override_is_canonicalized_to_the_boards_own_spelling(
         self, merged, answers, tailor_dir, scan, payload
     ):
@@ -484,6 +513,41 @@ class TestMissingArtifacts:
         )
         assert plan.unmapped == ()
         assert [s.id for s in plan.skipped] == ["cover_letter"]
+
+    def test_a_required_cover_letter_with_nothing_to_attach_still_parks(
+        self, answers, tmp_path
+    ):
+        # `eligible_queue()` no longer pre-filters on cover_letters[] -- this
+        # is the mechanism that has to catch a genuinely-needed-but-missing
+        # cover letter now, at plan/run time instead.
+        out = tmp_path / "empty"
+        out.mkdir()
+        plan = build_plan(
+            one([field(id="cover_letter", name="cover_letter", label="Cover Letter",
+                       kind="file", required=True)]),
+            answers, out,
+        )
+        assert [u.id for u in plan.unmapped] == ["cover_letter"]
+        assert plan.unmapped[0].required is True
+        assert plan.parked is True
+
+    def test_a_board_that_never_asks_for_a_cover_letter_is_never_parked_on_one(
+        self, answers, tmp_path
+    ):
+        # No cover_letter field at all, and no C-tier company/motivational
+        # question either -- the "genuinely doesn't need one" case /apply's
+        # Step 2b relies on to skip /cover-letter and self-promote.
+        out = tmp_path / "empty"
+        out.mkdir()
+        (out / "Alex_Example_Resume.pdf").write_bytes(b"x")
+        plan = build_plan(
+            one([field(id="resume", name="resume", label="Resume/CV",
+                       kind="file", required=True)]),
+            answers, out,
+        )
+        assert plan.unmapped == ()
+        assert plan.parked is False
+        assert not any(u.id == "cover_letter" for u in plan.unmapped)
 
     def test_ambiguous_artifacts_park_a_required_input(self, answers, tmp_path):
         out = tmp_path / "two"
