@@ -15,7 +15,7 @@
   wake by default — it is skipped until the next interval. Schedule a wake a few
   minutes before it (see /onboarding Track C):
 
-    sudo pmset repeat wakeorpoweron MTWRFSU 01:55:00
+    sudo pmset repeat wakeorpoweron MTWRFSU 22:25:00
 
   Verify:  launchctl print gui/$(id -u)/__LABEL__
   Remove:  launchctl bootout gui/$(id -u)/__LABEL__
@@ -32,13 +32,13 @@
     <string>__REPO__/scripts/nightly_discovery.sh</string>
   </array>
 
-  <!-- 02:00 daily, five minutes after the pmset wake above. -->
+  <!-- 22:30 daily, five minutes after the pmset wake above. -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>2</integer>
+    <integer>22</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>30</integer>
   </dict>
 
   <!-- launchd's own capture of the wrapper's stdout/stderr. The wrapper writes
