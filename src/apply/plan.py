@@ -161,7 +161,7 @@ class Plan:
 
     @property
     def parked(self) -> bool:
-        return bool(self.unmapped)
+        return bool(self.required_parked)
 
     @property
     def submittable(self) -> bool:

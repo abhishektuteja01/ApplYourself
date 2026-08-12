@@ -1188,7 +1188,9 @@ def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
     for rule in answers.rules:
         if rule.matches(label):
             if field.kind == "file":
-                return _park("a rule cannot answer a file upload", "B")
+                return (_park("a rule cannot answer a file upload", "B")
+                        if field.required
+                        else _skip("optional file upload, no rule can fill it", "B"))
             if field.options or field.kind == "react_select":
                 return _resolve_choice(field, rule.answers, "B", "rule")
             return _fill(rule.answers[0], "B")
