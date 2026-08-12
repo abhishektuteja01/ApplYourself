@@ -2,9 +2,12 @@
 
 `work_auth_labels.jsonl` is every distinct (label, options) pair that read as
 work-authorization-shaped across a 237-board harvest — 176 groups, 248 field
-instances, from Greenhouse, Lever and Ashby. The `category` column is judgment,
-clustered once in a command session against that harvest (R7 keeps the
-clustering out of `src/`); everything below is mechanical.
+instances, from Greenhouse, Lever and Ashby — plus rows added one at a time
+when a live run surfaces a phrasing the harvest missed (177 groups, 249 field
+instances as of the "Country of origin" addition). The `category` column is
+judgment, clustered once in a command session against the harvest or the
+single live label (R7 keeps the clustering out of `src/`); everything below
+is mechanical.
 
 Two assertions per row, deliberately separate:
 
@@ -49,9 +52,10 @@ CORPUS = [
 
 # Categories whose answer is a statement only the user can make.
 STATUS_CLAIM = ("status_disclosure", "compound_option")
-# Categories that park no matter how the config is set.
-ALWAYS_PARK = ("export_control", "followup", "names_other_country", "nationality",
-               "alternation")
+# Categories that park no matter how the config is set. `nationality` and
+# `followup` are NOT here — they park only when their config value is unset;
+# see `TestNationalityWhenConfigured` / `TestFollowupWhenConfigured`.
+ALWAYS_PARK = ("export_control", "names_other_country", "alternation")
 
 
 def ids(rows):
@@ -108,6 +112,9 @@ def configured(answers):
             # F-1 before STEM OPT on purpose: "F1" is true whether or not the
             # STEM extension has started, while "STEM OPT" asserts it has.
             "F-1", "F1", "STEM OPT",
+            "I am authorized to work in the United States for any employer",
+            "I require sponsorship in the country of my application now or "
+            "in the future",
             "Yes, and I am currently in F-1 status (if you currently have OPT or "
             "STEM-EXT OPT or CPT, you will select this answer.)",
             "I am authorized to work lawfully in the United States and DO require "
@@ -122,8 +129,8 @@ class TestTheCorpusIsWellFormed:
         assert not unknown
 
     def test_the_corpus_is_the_size_it_claims(self):
-        assert len(CORPUS) == 176
-        assert sum(r["boards"] for r in CORPUS) == 248
+        assert len(CORPUS) == 177
+        assert sum(r["boards"] for r in CORPUS) == 249
 
     def test_rows_are_unique_on_label_and_options(self):
         keys = [(r["norm_label"], tuple(r["options"])) for r in CORPUS]
@@ -173,6 +180,132 @@ class TestCategoriesThatParkWhateverTheConfigSays:
         expected = "park" if row["required"] else "skip"
         assert r.action == expected
         assert r.tier == "B0"
+
+
+class TestNationalityWhenUnconfigured:
+    """Unlike the ALWAYS_PARK categories, nationality's park is conditional —
+    on `work_authorization.nationality` being unset. Silence must still park,
+    since answering it a false way (or a mismatched shape) is exactly the
+    failure `TestNationalityWhenConfigured` guards on the other side."""
+
+    ROWS = rows_for("nationality")
+
+    @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
+    def test_it_parks(self, row, answers):
+        assert answers.nationality == ""
+        r = resolve(field_of(row), answers)
+        expected = "park" if row["required"] else "skip"
+        assert r.action == expected
+        assert r.tier == "B0"
+
+
+class TestNationalityWhenConfigured:
+    """Every real `nationality`-category label is a different question SHAPE
+    (direct ask, second citizenship, region/country yes-no), so one config
+    value must resolve each differently rather than being echoed everywhere —
+    see `Answers.nationality`'s docstring and `_resolve_nationality`."""
+
+    ROWS = {r["label"]: r for r in rows_for("nationality")}
+
+    @pytest.fixture
+    def with_nationality(self, answers):
+        return dc_replace(answers, nationality="India")
+
+    def test_direct_ask_free_text(self, with_nationality):
+        row = self.ROWS["What is your nationality?"]
+        r = resolve(field_of(row), with_nationality)
+        assert r.action == "fill"
+        assert r.value == "India"
+
+    def test_direct_ask_country_dropdown(self, with_nationality):
+        row = self.ROWS["Please select the country you hold citizenship in"]
+        r = resolve(field_of(row), with_nationality)
+        assert r.action == "fill"
+        assert r.value.strip() == "India"
+
+    def test_second_citizenship_defaults_to_none_when_unset(self, with_nationality):
+        row = self.ROWS[
+            "If you hold citizenship in a second country, please select it "
+            "below. Otherwise, select None."
+        ]
+        r = resolve(field_of(row), with_nationality)
+        assert r.action == "fill"
+        assert r.value == "None"
+
+    def test_second_citizenship_fills_when_configured(self, answers):
+        row = self.ROWS[
+            "If you hold citizenship in a second country, please select it "
+            "below. Otherwise, select None."
+        ]
+        a = dc_replace(answers, nationality="India", second_nationality="Canada")
+        r = resolve(field_of(row), a)
+        assert r.action == "fill"
+        assert r.value.strip() == "Canada"
+
+    def test_region_yes_no_answers_no_for_a_region_it_is_not_in(self, with_nationality):
+        row = self.ROWS["Are you a citizen of a country in the EU/EFTA?✱"]
+        r = resolve(field_of(row), with_nationality)
+        assert r.action == "fill"
+        assert says(r.value, "No")
+
+    def test_region_yes_no_answers_yes_when_it_matches(self, answers):
+        row = self.ROWS["Are you a citizen of a country in the EU/EFTA?✱"]
+        a = dc_replace(answers, nationality="France")
+        r = resolve(field_of(row), a)
+        assert r.action == "fill"
+        assert says(r.value, "Yes")
+
+    def test_country_specific_yes_no_answers_no_for_a_different_country(
+        self, with_nationality
+    ):
+        row = self.ROWS["Are you currently an Indonesian citizen (WNI)?✱"]
+        r = resolve(field_of(row), with_nationality)
+        assert r.action == "fill"
+        assert says(r.value, "No")
+
+    def test_never_guesses_an_unmapped_region(self, with_nationality):
+        """A region/country this table doesn't know about must park, not
+        guess — the same never-invent discipline as the rest of this file."""
+        row = dict(self.ROWS["Are you a citizen of a country in the EU/EFTA?✱"])
+        row["label"] = "Are you a citizen of a country in Oceania?"
+        r = resolve(field_of(row), with_nationality)
+        assert r.action == "park"
+        assert r.tier == "B0"
+
+
+class TestFollowupWhenUnconfigured:
+    """Unlike the ALWAYS_PARK categories, followup's park is conditional — on
+    `work_authorization.sponsorship_followup_text` being unset."""
+
+    ROWS = rows_for("followup")
+
+    @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
+    def test_it_parks(self, row, answers):
+        assert answers.sponsorship_followup_text == ""
+        r = resolve(field_of(row), answers)
+        expected = "park" if row["required"] else "skip"
+        assert r.action == expected
+        assert r.tier == "B0"
+
+
+class TestFollowupWhenConfigured:
+    ROWS = rows_for("followup")
+
+    @pytest.fixture
+    def with_followup_text(self, answers):
+        return dc_replace(
+            answers,
+            sponsorship_followup_text=(
+                "Currently authorized to work under F-1 STEM OPT; will "
+                "require H-1B sponsorship upon its expiration."
+            ),
+        )
+
+    @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
+    def test_it_fills_the_configured_text(self, row, with_followup_text):
+        r = resolve(field_of(row), with_followup_text)
+        assert r.action == "fill"
+        assert r.value == with_followup_text.sponsorship_followup_text
 
 
 class TestTheAnswerableFamilies:

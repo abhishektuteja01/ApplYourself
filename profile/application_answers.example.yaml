@@ -69,6 +69,19 @@ identity:
 # Order them narrowest-true-first. "F1" is true whether or not a STEM extension
 # has started; "STEM OPT" asserts it has. Put the one you can always stand behind
 # ahead of the more specific one.
+#
+# `nationality` answers a DIFFERENT question from everything above: not your
+# visa status, but the country itself ("What is your nationality?", "Country
+# of origin", "Please select the country you hold citizenship in"). Leave it
+# unset and those questions park — this is never guessed. It also drives
+# region/country yes-no questions ("Are you a citizen of a country in the
+# EU/EFTA?", "Are you currently an Indonesian citizen?"), answered against a
+# small built-in region/demonym table that is extended one entry at a time as
+# real boards surface a country or region it doesn't yet cover.
+# `second_nationality` answers a SECOND citizenship question ("if you hold
+# citizenship in a second country, select it, otherwise select None") — left
+# unset, that answers "None"/"No" rather than parking, since holding no
+# second nationality is itself a statable fact.
 work_authorization:
   status: time_limited
   scope_qualified_answer: park
@@ -76,7 +89,11 @@ work_authorization:
   # status_option_candidates:
   #   - "F1"
   #   - "STEM OPT"
+  #   - "I am authorized to work in the United States for any employer"
   #   - "Yes, and I am currently in F-1 status (if you currently have OPT or STEM-EXT OPT or CPT, you will select this answer.)"
+  # nationality: "India"
+  # second_nationality: "Canada"
+  # sponsorship_followup_text: "Currently authorized to work under F-1 STEM OPT; will require H-1B sponsorship upon its expiration."
 
 # Greenhouse renders an education block that appears in no question array. It
 # fills school--0 / degree--0 / discipline--0 / start-year--0 / end-year--0,

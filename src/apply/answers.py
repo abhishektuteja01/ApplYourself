@@ -172,7 +172,12 @@ WORK_AUTHORIZATION_DOMAIN = re.compile(
     r"|work\s+status|nationalit|\bcitizen\b|optional\s+practical\s+training"
     # "Please confirm you are authorized a to work in USA or Canada" — a typo on
     # a live board that the strict "authorized to work" form missed.
-    r"|authou?ri[sz]\w*\s+\w{0,3}\s*to\s+work",
+    r"|authou?ri[sz]\w*\s+\w{0,3}\s*to\s+work"
+    # "Country of origin" — a nationality question in different clothes, seen
+    # live on ALX Africa's Greenhouse board. Same reasoning as `nationalit`:
+    # a country is not a visa status, so it must park rather than fall to
+    # tier C, where the /apply session could mistake it for an ordinary one.
+    r"|country\s+of\s+origin",
     re.IGNORECASE,
 )
 # Caught by the widened domain above but NOT work authorization. Checked FIRST,
@@ -287,7 +292,8 @@ _QUALIFIER_OFFERED_AS_ALTERNATIVE = re.compile(
 # they can make. `park` is the default and hands the question back to them.
 SCOPE_QUALIFIED_ANSWERS = ("park", "yes", "no")
 WORK_AUTHORIZATION_KEYS = ("status", "scope_qualified_answer", "status_label",
-                           "status_option_candidates")
+                           "status_option_candidates", "nationality",
+                           "second_nationality", "sponsorship_followup_text")
 # The authorization question is country-scoped; the sponsorship one is not, and
 # names a country on only 2 of the 5 captured boards. The queue only ever holds
 # roles that passed discovery's US location allowlist.
@@ -374,9 +380,108 @@ _NATIONALITY = re.compile(
     r"|citizenship\s+in|hold\s+citizenship|citizenship\s+of"
     r"|(?:what|which)\s+is\s+your\s+citizenship"
     r"|are\s+you\s+(?:currently\s+)?an?\s+\w+\s+citizen"
-    r"|citizen\s+of\s+a\s+country",
+    r"|citizen\s+of\s+a\s+country"
+    r"|country\s+of\s+origin",
     re.IGNORECASE,
 )
+# "Second citizenship" is a different fact than `nationality` — the primary
+# one — so it must not be answered from the same config value. Checked before
+# the region/demonym match below, since a second-citizenship picker also
+# offers a country list that would otherwise look like a direct-ask field.
+_SECOND_NATIONALITY = re.compile(
+    r"second\s+(?:country|nationality|citizenship)"
+    r"|another\s+(?:country|nationality|citizenship)"
+    r"|other\s+citizenship|dual\s+citizenship|additional\s+citizenship",
+    re.IGNORECASE,
+)
+_NONE_CANDIDATES = ("None", "No", "N/A", "Not applicable")
+
+# Region membership for "are you a citizen of a country in <region>?"-style
+# yes/no questions. Not exhaustive — extend as real boards surface a region
+# or country this doesn't cover, the same way `status_option_candidates`
+# grows one entry at a time (HANDOFF.md item 7).
+_SOUTH_ASIA = frozenset({
+    "afghanistan", "bangladesh", "bhutan", "india", "maldives", "nepal",
+    "pakistan", "sri lanka",
+})
+_SOUTHEAST_ASIA = frozenset({
+    "brunei", "cambodia", "timor-leste", "indonesia", "laos", "malaysia",
+    "myanmar", "philippines", "singapore", "thailand", "vietnam",
+})
+_EAST_ASIA = frozenset({
+    "china", "hong kong", "japan", "macau", "mongolia", "north korea",
+    "south korea", "taiwan",
+})
+_CENTRAL_ASIA = frozenset({
+    "kazakhstan", "kyrgyzstan", "tajikistan", "turkmenistan", "uzbekistan",
+})
+_WESTERN_ASIA = frozenset({
+    "armenia", "azerbaijan", "bahrain", "cyprus", "georgia", "iraq",
+    "israel", "jordan", "kuwait", "lebanon", "oman", "palestine", "qatar",
+    "saudi arabia", "syria", "turkey", "united arab emirates", "yemen",
+})
+_ASIA = (_SOUTH_ASIA | _SOUTHEAST_ASIA | _EAST_ASIA | _CENTRAL_ASIA
+         | _WESTERN_ASIA)
+_EU = frozenset({
+    "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia",
+    "denmark", "estonia", "finland", "france", "germany", "greece",
+    "hungary", "ireland", "italy", "latvia", "lithuania", "luxembourg",
+    "malta", "netherlands", "poland", "portugal", "romania", "slovakia",
+    "slovenia", "spain", "sweden",
+})
+_EFTA = frozenset({"iceland", "liechtenstein", "norway", "switzerland"})
+
+# Keys are matched as substrings of the normalized label, longest first, so
+# "south asia" is tried before the broader "asia" it would otherwise also
+# match. Values are the country-name sets above, in `_norm_option` form
+# (lowercase, single-spaced).
+_NATIONALITY_REGIONS: dict[str, frozenset[str]] = {
+    "eu/efta": _EU | _EFTA,
+    "eu / efta": _EU | _EFTA,
+    "european union": _EU,
+    "southeast asia": _SOUTHEAST_ASIA,
+    "south-east asia": _SOUTHEAST_ASIA,
+    "south east asia": _SOUTHEAST_ASIA,
+    "south asia": _SOUTH_ASIA,
+    "southern asia": _SOUTH_ASIA,
+    "east asia": _EAST_ASIA,
+    "eastern asia": _EAST_ASIA,
+    "central asia": _CENTRAL_ASIA,
+    "asia": _ASIA,
+}
+_REGION_PHRASES_BY_LENGTH = tuple(
+    sorted(_NATIONALITY_REGIONS, key=len, reverse=True)
+)
+# Demonym -> country, for "Are you currently an Indonesian citizen (WNI)?"
+# style questions that name a country rather than a region. Same
+# extend-as-surfaced policy as the region table above.
+_DEMONYMS: dict[str, str] = {
+    "indonesian": "indonesia", "indian": "india", "pakistani": "pakistan",
+    "bangladeshi": "bangladesh", "sri lankan": "sri lanka",
+    "nepali": "nepal", "bhutanese": "bhutan", "afghan": "afghanistan",
+    "filipino": "philippines", "malaysian": "malaysia",
+    "singaporean": "singapore", "thai": "thailand",
+    "vietnamese": "vietnam", "burmese": "myanmar", "cambodian": "cambodia",
+    "laotian": "laos", "bruneian": "brunei", "chinese": "china",
+    "japanese": "japan", "mongolian": "mongolia", "taiwanese": "taiwan",
+    "kazakh": "kazakhstan", "uzbek": "uzbekistan", "turkish": "turkey",
+    "israeli": "israel", "emirati": "united arab emirates",
+    "saudi": "saudi arabia",
+}
+
+
+def _nationality_region_match(label_norm: str, nationality_norm: str) -> bool | None:
+    """Whether the configured nationality is inside the region/country a
+    yes-no label names, or None if the label names neither — the caller
+    parks on None rather than guessing."""
+    for phrase in _REGION_PHRASES_BY_LENGTH:
+        if phrase in label_norm:
+            return nationality_norm in _NATIONALITY_REGIONS[phrase]
+    for demonym, country in _DEMONYMS.items():
+        if demonym in label_norm:
+            return nationality_norm == country
+    return None
+
 
 _YES_NO = {True: "Yes", False: "No"}
 # A board that renders "Yes." / "No." rather than "Yes" / "No" — two of them do.
@@ -575,6 +680,24 @@ class Answers:
     status", "STEM OPT"). Matched by exact normalized label like every other
     candidate list, so an entry that no board offers simply never fires and the
     question parks. Consulted only by the work-authorization resolver."""
+    nationality: str = ""
+    """The country to answer "what is your nationality?" / "country of
+    origin" / "select the country you hold citizenship in" with. Empty (the
+    default) parks the question — unlike work authorization status, this is
+    not derivable from anything else, so an unset value must never be
+    guessed. Also drives region/demonym yes-no questions ("are you a citizen
+    of a country in the EU/EFTA?"); see `_NATIONALITY_REGIONS`/`_DEMONYMS`."""
+    second_nationality: str = ""
+    """The country to answer a *second*-citizenship question with ("if you
+    hold citizenship in a second country, select it, otherwise select
+    None"). Empty (the default) answers "None"/"No" rather than parking,
+    since holding no second nationality is itself the common, statable
+    case — unlike `nationality`, silence here is an answer, not a gap."""
+    sponsorship_followup_text: str = ""
+    """Free-text answer for a conditional follow-up ("if yes, please provide
+    details regarding your current visa status and future sponsorship
+    needs") — a statement only the user can make, so never derived from
+    `status`. Empty (the default) parks the question, same as `status_label`."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -874,6 +997,24 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
             "work_authorization.status_option_candidates: must be a list of "
             "non-empty strings, each the exact option text a board offers"
         )
+    nationality = work_auth.get("nationality", "")
+    if not isinstance(nationality, str):
+        raise AnswersError(
+            f"work_authorization.nationality: must be a string, got "
+            f"{type(nationality).__name__}"
+        )
+    second_nationality = work_auth.get("second_nationality", "")
+    if not isinstance(second_nationality, str):
+        raise AnswersError(
+            f"work_authorization.second_nationality: must be a string, got "
+            f"{type(second_nationality).__name__}"
+        )
+    sponsorship_followup_text = work_auth.get("sponsorship_followup_text", "")
+    if not isinstance(sponsorship_followup_text, str):
+        raise AnswersError(
+            f"work_authorization.sponsorship_followup_text: must be a string, "
+            f"got {type(sponsorship_followup_text).__name__}"
+        )
     _check_preferences(
         status, Path(preferences_path) if preferences_path is not None else PREFERENCES_PATH
     )
@@ -887,6 +1028,9 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
         scope_qualified_answer=scope_qualified,
         status_label=status_label.strip(),
         status_option_candidates=tuple(c.strip() for c in raw_candidates),
+        nationality=nationality.strip(),
+        second_nationality=second_nationality.strip(),
+        sponsorship_followup_text=sponsorship_followup_text.strip(),
     )
 
 
@@ -1066,6 +1210,56 @@ def _resolve_demographic(field: MergedField) -> Resolution:
     return _fill((picked,) if field.multi else picked, "A2")
 
 
+def _resolve_nationality(field: MergedField, answers: Answers) -> Resolution:
+    """Nationality/citizenship questions, split by shape so one config value
+    is never asked to answer three different facts (direct ask, second
+    citizenship, region/country yes-no) — see the field docstrings on
+    `Answers.nationality`/`second_nationality`."""
+    nationality = answers.nationality
+    if not nationality:
+        return _park(
+            "work authorization: asks your nationality or citizenship, which is "
+            "a country rather than the visa status `status_label` states, and "
+            "no work_authorization.nationality is configured",
+            "B0",
+        )
+    label = field.label or ""
+    nationality_norm = _norm_option(nationality)
+
+    if _SECOND_NATIONALITY.search(label):
+        second = answers.second_nationality
+        candidates = (second,) if second else _NONE_CANDIDATES
+        picked = _pick_option(field, candidates)
+        if picked is None:
+            return _park(
+                f"nationality: second-citizenship question offers no option "
+                f"matching {(second or 'None')!r}",
+                "B0",
+            )
+        return _fill(picked, "B0")
+
+    options = tuple(o.label for o in field.options)
+    if _offers_bare_yes_no(options):
+        match = _nationality_region_match(_norm_option(label), nationality_norm)
+        if match is not None:
+            picked = _pick_option(field, _YES_NO_VARIANTS[match])
+            if picked is not None:
+                return _fill(picked, "B0")
+        return _park(
+            "nationality: this yes/no question names a country or region not "
+            "in the configured lookup — extend it rather than guess",
+            "B0",
+        )
+
+    picked = _pick_option(field, (nationality,))
+    if picked is None:
+        return _park(
+            f"nationality: {nationality!r} is not among the offered options",
+            "B0",
+        )
+    return _fill(picked, "B0")
+
+
 def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolution:
     label = field.label or ""
     options = tuple(o.label for o in field.options)
@@ -1085,15 +1279,15 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
             "B0",
         )
     if category == "nationality":
-        return _park(
-            "work authorization: asks your nationality or citizenship, which is a "
-            "country rather than the visa status `status_label` states",
-            "B0",
-        )
+        return _resolve_nationality(field, answers)
     if category == "followup":
+        if answers.sponsorship_followup_text and not field.options:
+            return _fill(answers.sponsorship_followup_text, "B0")
         return _park(
             "work authorization: a conditional follow-up asking which "
-            "sponsorship you would need, which no configured answer states",
+            "sponsorship you would need. Set "
+            "work_authorization.sponsorship_followup_text to answer these "
+            "without review",
             "B0",
         )
     if category in ("status_disclosure", "compound_option"):
