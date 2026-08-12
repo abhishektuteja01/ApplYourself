@@ -14,6 +14,10 @@ Every conversion routes through the repo's fixed `.pdf_staging` dir: Word's
 sandbox keeps a folder-access grant for one unchanging path, so a single grant
 covers every job even though each gets a new `OUT_DIR`. Do not parameterize it.
 
+Target the document **by name**, never `active document` — that resolves to
+whatever Word has focused and will export an unrelated open document as the
+deliverable. Verify the PDF's text, not just that it is non-empty.
+
 ```bash
 # Prepend the caller's variable preamble to this block.
 test -n "${OUT_DIR}" && test -n "${FILE_SLUG}" && test -n "${BASENAME}" || {
@@ -29,9 +33,9 @@ PDF_ABS="${STAGING}/${FILE_SLUG}_${BASENAME}.pdf"
 osascript <<ASEOF
 tell application "Microsoft Word"
     open POSIX file "${DOCX_ABS}"
-    set theDoc to active document
+    set theDoc to document "${FILE_SLUG}_${BASENAME}.docx"
     save as theDoc file format format PDF file name "${PDF_ABS}"
-    close active document saving no
+    close theDoc saving no
 end tell
 ASEOF
 if [ -s "${PDF_ABS}" ]; then

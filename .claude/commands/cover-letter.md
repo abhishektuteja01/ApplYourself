@@ -222,7 +222,7 @@ Write a JSON file `/tmp/cover_letter_$1_draft.json` with this shape:
 
 - `salutation`: `"Dear Hiring Manager,"` unless `--to "Name"` was passed in `$ARGUMENTS`, then `"Dear Name,"`.
 - `date`: the `TODAY` value Step 1 printed. Only needed if the template has a `{{DATE}}` placeholder — Step 1 already printed the template's actual placeholder list; use it. Omit keys from the JSON for placeholders the template doesn't have (the `{{SALUTATION}}`/`{{BODY}}` hard-refuse already happened in Step 1). If a placeholder the template DOES have (e.g. `{{CLOSING}}`) has no natural generated value, still include the key with an empty string -- the renderer blanks unfilled-but-present placeholders rather than leaving the raw `{{TOKEN}}` text in the letter, but it's cleaner for the JSON to be explicit.
-- 2-3 `body` entries is typical; aim for ~250-400 words total across them so the letter fits one page in the template's own layout.
+- 2-3 `body` entries is typical; aim for 230-300 words total across them so the letter fits one page in the template's own layout. Measured ceilings in this template: 3 paragraphs hold ~330 words, 4 hold ~300. Dropping from 4 paragraphs to 3 is the lever when a letter needs the room.
 
 ## Step 4 — no_ai_slop editing pass (before lint)
 
@@ -364,8 +364,8 @@ memory — the fixed staging dir it uses is what keeps Word's sandbox grant vali
 ## Step 7 — append the dir to state.yaml.cover_letters[]
 
 This is the side-list mutation `/cover-letter` is allowed
-(same pattern as `/tailor`'s `tailored_dirs[]`). State transitions remain
-`/track`'s sole job (R10).
+(same pattern as `/tailor`'s `tailored_dirs[]`). The transition itself happens in
+Step 7b, and goes through `/track` (R10).
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
@@ -376,6 +376,30 @@ p = state_path_for(Path('pipeline'), '$1')
 data = append_cover_letter(p, '$LATEST_DIR')
 print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 "
+```
+
+## Step 7b — transition `saved` -> `tailored`
+
+Both artifacts now exist, which is exactly `/apply`'s eligibility bar, so this is
+the point where the role becomes submittable. Runs `uv run track`, so `/track`
+stays the only writer (R10).
+
+**Only fires from `saved`.** `transition()` permits same-state and backwards
+moves, so an unguarded call would drag an `applied` or `screen` role back to
+`tailored` on a re-run. Any state other than `saved` is left untouched.
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+CURRENT=$(uv run python -c "
+from pathlib import Path
+from src.state_io import state_path_for, load_state
+print((load_state(state_path_for(Path('pipeline'), '$1')) or {}).get('state', ''))
+")
+if [ "$CURRENT" = "saved" ]; then
+    uv run track "$1" tailored --note "resume + cover letter on file"
+else
+    echo "state is '${CURRENT}', not 'saved' — leaving it alone (no transition)."
+fi
 ```
 
 ## Step 8 — runtime assertions before reporting done
@@ -389,8 +413,13 @@ Before reporting success, verify on disk:
       `/tmp/cover_letter_$1_draft.json` and `${OUT_DIR}/company_answers.md`, so
       re-running it verbatim re-checks both drafts, not the rendered docx —
       which is the intent here, since the docx is generated FROM the JSON.
-- [ ] Body word count is within 250-400 (count the `body` entries' words; /outreach
+- [ ] Body word count is within 230-300 (count the `body` entries' words; /outreach
       asserts its channel limit, and this letter has to fit one page the same way)
+- [ ] The rendered PDF is exactly one page: `pdfinfo "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf" | awk '/^Pages:/{print $2}'`
+      returns `1`. Word count is a guard rail, not the test — paragraph count and
+      ragged line breaks move the real boundary, so assert the page count itself.
+      If it returns 2, cut the body (or merge two paragraphs into one) and re-render.
+      Trust `pdfinfo`, not `mdls` — Spotlight metadata lags behind the file.
 - [ ] `pipeline/$1/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
 If any check fails, do NOT report success — diagnose and fix.
