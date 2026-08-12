@@ -109,12 +109,13 @@ _TYPE_KINDS = {
     "Location": "combobox",
 }
 
-# Ashby names the resume with a systemfield; the cover letter has no
-# systemfield at all. Over 112 boards it arrives as an employer-authored UUID
-# titled some spelling of "Cover Letter" (and, on 4 boards, the literal path
-# `cover_letter`), so it has to be recognized by title. Both alias to the ids
-# `answers.FILE_IDS` and `plan.find_artifact` already defer to /tailor for.
+# Ashby names the resume with a systemfield on most boards, but Nen (and
+# presumably others) renders it as an employer-authored UUID path instead —
+# the same shape the cover letter already needed a title fallback for. Both
+# alias to the ids `answers.FILE_IDS` and `plan.find_artifact` already defer
+# to /tailor for.
 _RESUME_PATHS = frozenset({"_systemfield_resume"})
+_RESUME_TITLE = re.compile(r"\bresume\b|\bcv\b", re.IGNORECASE)
 _COVER_LETTER_PATHS = frozenset({"cover_letter", "_systemfield_coverletter"})
 _COVER_LETTER_TITLE = re.compile(r"cover\s*letter", re.IGNORECASE)
 
@@ -163,17 +164,13 @@ _INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
 _WS = re.compile(r"\s+")
 
 # The two file fields' raw systemfield ids -> the ids answers.py/plan.py
-# already know how to defer to /tailor's output (§12a).
+# already know how to defer to /tailor's output (§12a). DOM-scan path only;
+# the live API path aliases dynamically in `_api_file_id` and carries the
+# real DOM path through as `MergedField.name` instead of a static table.
 _FILE_FIELD_IDS = {
     "_systemfield_resume": "resume",
     "_systemfield_coverletter": "cover_letter",
 }
-
-# The same aliasing, undone. The rendered form still keys these fields by their
-# systemfield path, so a driver that looks one up by the aliased id finds
-# nothing and waits out the full locator timeout on a field that is right
-# there. Only the file fields are aliased, so only they need reversing.
-DOM_FIELD_PATHS = {alias: raw for raw, alias in _FILE_FIELD_IDS.items()}
 
 
 class AshbyScanError(DomScanError):
@@ -493,7 +490,7 @@ def fetch_application_form(posting: Posting, timeout: int = 30) -> dict:
 
 
 def _api_file_id(path: str, title: str) -> str:
-    if path in _RESUME_PATHS:
+    if path in _RESUME_PATHS or _RESUME_TITLE.search(title or ""):
         return "resume"
     if path in _COVER_LETTER_PATHS or _COVER_LETTER_TITLE.search(title or ""):
         return "cover_letter"
@@ -579,7 +576,13 @@ def _api_field(entry: dict) -> list[MergedField]:
 
     return [MergedField(
         id=field_id,
-        name=field_id,
+        # File fields alias `id` to the canonical `resume`/`cover_letter` the
+        # planner speaks, but the DOM still keys the field by its real path —
+        # `_systemfield_resume` on most boards, an employer-authored UUID on
+        # Nen. `name` carries that real path through to fill.py rather than
+        # a static id->path table, which only ever knew the two systemfield
+        # spellings and left every other real path unreachable.
+        name=path if kind == "file" else field_id,
         label=field.get("title") or "",
         required=bool(entry.get("isRequired")),
         kind=kind,

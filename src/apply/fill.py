@@ -709,13 +709,13 @@ class AshbyBrowserDriver(BrowserDriver):
     def _entry(self, field_id: str):
         """The field-entry wrapper — what a group or a combobox is found under.
 
-        The two file fields reach here under the canonical `resume` /
-        `cover_letter` ids that `ashby.py` aliases them to, but the DOM still
-        keys them by systemfield path. Undo the alias, or every Ashby upload
-        waits out the full locator timeout on a field that is on the page.
+        `field_id` must already be the DOM's own `data-field-path`. The two
+        file fields are aliased to the canonical `resume` / `cover_letter`
+        ids everywhere else in the pipeline, so callers that upload a file
+        pass `FilePlan.name` — the real path `ashby.py` carried through —
+        rather than `.id`.
         """
-        path = ashby.DOM_FIELD_PATHS.get(field_id, field_id)
-        return self.page.locator(self.ENTRY.format(id=path)).first
+        return self.page.locator(self.ENTRY.format(id=field_id)).first
 
     def _upload_group(self, field_id: str):
         """Ashby's field entry doubles as the upload widget — a landed file
@@ -1087,7 +1087,7 @@ def _apply_field(driver, field: FieldPlan, result: FillResult,
 def _attach(driver, upload: FilePlan) -> FieldOutcome:
     if not upload.path.is_file():
         raise FillError(f"{upload.id}: {upload.path} is gone")
-    driver.set_files(upload.id, upload.path)
+    driver.set_files(upload.name, upload.path)
     # The one write that used to return success unread. An input that ends up
     # empty leaves failures[] empty, so the submit guard passes and the
     # application goes out with no resume attached (§9 step 4).
@@ -1099,7 +1099,7 @@ def _attach(driver, upload: FilePlan) -> FieldOutcome:
     # The widget outranks the input. A board that rendered an upload error
     # refused the file no matter what `input.files` says, and a board showing
     # the filename accepted it no matter whether the input survived.
-    shown = driver.upload_shows(upload.id, upload.path.name)
+    shown = driver.upload_shows(upload.name, upload.path.name)
     if shown is False:
         raise FillError(
             f"{upload.id}: the board rejected {upload.path.name} — "
@@ -1108,7 +1108,7 @@ def _attach(driver, upload: FilePlan) -> FieldOutcome:
     if shown is True:
         return FieldOutcome(upload.id, "attached", "", upload.path.name)
 
-    held = driver.attached_files(upload.id)
+    held = driver.attached_files(upload.name)
     if held is None:
         return FieldOutcome(
             upload.id, "attached", "", upload.path.name,

@@ -93,6 +93,15 @@ class FilePlan:
     label: str
     required: bool
     path: Path
+    name: str = ""
+    """The DOM's own selector for this upload. Defaults to `id` — true for
+    Greenhouse and Lever, where the two never diverge — and only differs on
+    Ashby, where `id` is the canonical `resume`/`cover_letter` alias and
+    `name` is the field's real, board-specific path."""
+
+    def __post_init__(self):
+        if not self.name:
+            object.__setattr__(self, "name", self.id)
 
 
 @dataclass(frozen=True)
@@ -405,7 +414,8 @@ def build_plan(
                     ))
                 continue
             files.append(FilePlan(
-                id=field.id, label=field.label, required=field.required, path=path,
+                id=field.id, name=field.name, label=field.label,
+                required=field.required, path=path,
             ))
             continue
 

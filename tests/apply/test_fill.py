@@ -858,28 +858,36 @@ class TestThePostSubmitCapture:
 
 
 class TestAshbyFindsItsFileFields:
-    """`ashby.py` aliases `_systemfield_resume` to `resume` so the canonical
-    answer rules match it. The rendered form still keys the field by the
-    systemfield path, so the driver has to undo that alias — otherwise every
-    Ashby upload waits out the full locator timeout and the role fails on a
-    field that is on the page. Live on Andera's board.
+    """`ashby.py` aliases a resume/cover-letter field's real DOM path to the
+    canonical `resume`/`cover_letter` id so the answer rules match it, and
+    carries the real path through as `FilePlan.name`. `_attach` looks the
+    field up by `.name`, not `.id`, so the driver never has to undo the
+    alias itself — otherwise every Ashby upload waits out the full locator
+    timeout on a field that is on the page. Live on Andera's board, and on
+    Nen, where the real path is not the usual `_systemfield_resume`.
     """
 
-    def test_the_resume_alias_is_undone_for_the_dom(self):
+    def test_the_resume_upload_is_looked_up_by_its_real_dom_path(self):
         page = _RecordingPage()
-        F.AshbyBrowserDriver(page)._entry("resume")
+        F.AshbyBrowserDriver(page)._entry("_systemfield_resume")
         assert "_systemfield_resume" in page.selectors[0]
-
-    def test_the_cover_letter_alias_is_undone_for_the_dom(self):
-        page = _RecordingPage()
-        F.AshbyBrowserDriver(page)._entry("cover_letter")
-        assert "_systemfield_coverletter" in page.selectors[0]
 
     def test_an_unaliased_field_is_looked_up_verbatim(self):
         # Employer-authored questions are UUIDs and must pass through.
         page = _RecordingPage()
         F.AshbyBrowserDriver(page)._entry("f81a7cc9-0d9a-4922-800b")
         assert "f81a7cc9-0d9a-4922-800b" in page.selectors[0]
+
+    def test_attach_uses_name_not_id_for_the_dom_lookup(self, resume):
+        # Nen's board: `id` is the canonical alias `resume`, but the real
+        # DOM path is an employer-authored UUID, not `_systemfield_resume`.
+        d = FakeDriver()
+        upload = FilePlan(
+            id="resume", name="f81a7cc9-0d9a-4922-800b", label="Resume/CV",
+            required=True, path=resume,
+        )
+        F._attach(d, upload)
+        assert d.calls[0] == ("attach", "f81a7cc9-0d9a-4922-800b", resume.name)
 
 
 class _ClickPage:
