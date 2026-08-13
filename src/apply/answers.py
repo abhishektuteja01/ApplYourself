@@ -8,6 +8,7 @@ field stops the submission.
 Resolution order, keyed on the merged field's section and id before its prose:
 
     A   identity / education / employment  -> application_answers.yaml blocks
+    A   kind == "date"                     -> today, computed
     A2  eeoc / demographic                 -> opt out, structurally
     B0  work authorization                 -> work_authorization.status
     B   question_<digits>                  -> rules[]
@@ -26,6 +27,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -713,6 +715,14 @@ class Answers:
     consequences past this application. Only an explicit "yes"/"no" (never
     derived from `status`: a time-limited status is authorized to work and is
     NOT a U.S. person) lets it auto-fill. See `US_PERSON_ANSWERS`."""
+    job_source: str = ""
+    """This role's discovery source from state.yaml (`linkedin`, `indeed`,
+    `greenhouse`, `lever`, `ashby`, ...) — not config, so callers set it after
+    `load()` returns (see apply_cli.build()). Answers only "how did you hear
+    about us" (see `_resolve_how_heard`): a listing JobSpy found on LinkedIn or
+    Indeed genuinely was seen there regardless of which ATS ends up hosting the
+    form, and a listing scraped straight off the company's own Greenhouse/
+    Lever/Ashby board was genuinely found on that company's own career site."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -1146,6 +1156,25 @@ def _pick_country(field: MergedField, value: str) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def _resolve_date(field: MergedField) -> Resolution | None:
+    """A board's own `Date`-typed field (kind `date`, currently Ashby-only),
+    resolved to today rather than a Tier B free-text default.
+
+    Ashby's `react-datepicker` widget parses whatever is typed on blur and
+    silently clears the input if it cannot — a Tier B sentence like
+    "Immediately." reads back fine right after `fill()` (before blur fires)
+    and then vanishes, leaving the board showing its empty picker with no
+    error anywhere. `MM/DD/YYYY` is the one format verified live against a
+    real board's picker: ISO (`YYYY-MM-DD`) silently misparsed by a day
+    (timezone rounding) and `DD/MM/YYYY` silently swapped month and day —
+    both wrong with no error either, so this is not a formatting preference,
+    it is the one format observed to survive unchanged.
+    """
+    if field.kind != "date":
+        return None
+    return _fill(date.today().strftime("%m/%d/%Y"), "A")
+
+
 def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None:
     if field.id in FILE_IDS:
         return Resolution("defer", tier="A", reason=field.id)
@@ -1436,10 +1465,60 @@ def _resolve_status_claim(field: MergedField, answers: Answers,
     )
 
 
+# Same phrasing the static "how did you hear" rule in application_answers.yaml
+# matches on — kept in sync deliberately, since this resolver only ever runs
+# as that rule's first attempt, never on its own.
+_HOW_HEARD_PHRASES = ("how did you hear", "where did you hear",
+                      "how did you learn", "become aware")
+
+# JobSpy-aggregator sources: the listing genuinely was seen on that site, no
+# matter which ATS ends up hosting the application form itself.
+_AGGREGATOR_SOURCE_LABELS = {"linkedin": "LinkedIn", "indeed": "Indeed"}
+
+# Sources that mean the row was scraped straight off the company's own board
+# rather than a third-party aggregator — Workday excluded, since apply/ never
+# submits to one (discovery/scoring only; see CLAUDE.md).
+_OWN_BOARD_SOURCES = frozenset({"greenhouse", "lever", "ashby"})
+
+# Substrings of a board's own option label that mean "found on our own site",
+# tried in order against whatever the board actually offers.
+_OWN_BOARD_OPTION_HINTS = ("career site", "careers page", "company website",
+                          "company career site")
+
+
+def _resolve_how_heard(field: MergedField, answers: Answers) -> Resolution | None:
+    """"How did you hear about us" from this role's own discovery source.
+
+    Deterministic and job-specific rather than a fixed generic default: a
+    listing JobSpy found on LinkedIn/Indeed was genuinely seen there, and one
+    scraped straight off the company's own Greenhouse/Lever/Ashby board was
+    genuinely found on that company's own career site. Only fires when the
+    label matches; returns None (falls through to the static `rules:` list)
+    on every other source, or when nothing it tries is among the board's
+    offered options.
+    """
+    if not field.options and field.kind != "react_select":
+        return None
+    if not any(phrase in _norm(field.label) for phrase in _HOW_HEARD_PHRASES):
+        return None
+    source = answers.job_source.strip().lower()
+    if source in _AGGREGATOR_SOURCE_LABELS:
+        candidates = (_AGGREGATOR_SOURCE_LABELS[source],)
+    elif source in _OWN_BOARD_SOURCES:
+        candidates = _OWN_BOARD_OPTION_HINTS
+    else:
+        return None
+    picked = _pick_option(field, candidates, mode="contains")
+    return _fill(picked, "B") if picked is not None else None
+
+
 def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
     label = _norm(field.label)
     if not label:
         return None
+    how_heard = _resolve_how_heard(field, answers)
+    if how_heard is not None:
+        return how_heard
     for rule in answers.rules:
         if rule.matches(label):
             if field.kind == "file":
@@ -1471,6 +1550,10 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
     identity = _resolve_identity(field, answers)
     if identity is not None:
         return identity
+
+    resolved_date = _resolve_date(field)
+    if resolved_date is not None:
+        return resolved_date
 
     # `_NOT_WORK_AUTH` first: the widened domain regex catches an age check, a
     # clearance question and a relocation-cities checkbox that must keep falling

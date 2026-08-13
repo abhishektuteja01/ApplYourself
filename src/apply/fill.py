@@ -763,6 +763,17 @@ class AshbyBrowserDriver(BrowserDriver):
             return "checkbox_group"
         if boxes.count() == 1 and entry.locator("button").count() >= 2:
             return "yesno"
+        if boxes.count() == 1:
+            # A lone checkbox with no companion toggle buttons is a consent
+            # tick, not the widget its API type implied. Observed live: a
+            # single-option `ValueSelect` (-> planned "select") that Ashby
+            # actually renders as `<input type="checkbox">` for an
+            # acknowledgement question ("I have read and understood the
+            # Arbitration Agreement..."). `select_option()` against it raises
+            # "Element is not a <select> element"; `checkbox`'s own
+            # `bool(field.value)` handles a truthy resolved string the same
+            # way a real Yes answer would.
+            return "checkbox"
         return planned
 
     # --- combobox -----------------------------------------------------------

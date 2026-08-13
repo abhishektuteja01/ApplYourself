@@ -166,6 +166,7 @@ YESNO = "00000011-0000-0000-0000-000000000011"
 CHECKS = "00000012-0000-0000-0000-000000000012"
 RADIOS = "00000013-0000-0000-0000-000000000013"
 NUMBER = "00000014-0000-0000-0000-000000000014"
+CONSENT = "00000015-0000-0000-0000-000000000015"
 
 
 class TestMiniPageItself:
@@ -197,6 +198,7 @@ class TestKindIsReadFromTheDom:
         (CHECKS, "select", "checkbox_group"),
         (YESNO, "yesno", "yesno"),
         ("_systemfield_name", "text", "text"),
+        (CONSENT, "select", "checkbox"),  # single-option ValueSelect, rendered as a lone tick
     ])
     def test_the_widget_on_the_page_wins(self, field_id, planned, expected):
         d, _ = driver()

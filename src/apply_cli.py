@@ -36,7 +36,7 @@ import re
 import shlex
 import sys
 import time
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass, field as dc_field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -301,6 +301,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     posting_url = url or resolve_url(job_id, state)
     target = Path(out_dir) if out_dir else resolve_out_dir(job_id, state)
     answers = load_answers()
+    answers = replace(answers, job_source=str((state or {}).get("source") or ""))
     overrides = load_overrides(Path(answers_path), job_id) if answers_path else None
 
     ats = detect_ats(posting_url)

@@ -93,7 +93,13 @@ _TYPE_KINDS = {
     "Phone": "text",
     "Url": "text",
     "Number": "text",
-    "Date": "text",
+    # Not free text: the API says "Date" up front, and the rendered widget is
+    # a `react-datepicker` `<input type="text">` that silently clears on blur
+    # if it cannot parse what was typed — a Tier B sentence like "Immediately."
+    # types in, reads back fine at fill-time, then vanishes once the field
+    # loses focus, leaving the board showing its empty picker. Kept as its own
+    # kind so `answers.py` resolves it as a real date rather than free text.
+    "Date": "date",
     "LongText": "textarea",
     "File": "file",
     # Two buttons and a hidden checkbox in the DOM; a bare true/false here.

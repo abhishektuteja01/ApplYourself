@@ -385,6 +385,41 @@ class TestIdentity:
         assert resolve(merged("form_education").by_id("preferred_name"), answers).value == "Alex"
 
 
+class TestDateFields:
+    """Ashby's `Date`-typed fields (kind `date`) resolve to today, computed —
+    never a Tier B free-text default. The board's own `react-datepicker`
+    widget silently clears whatever it cannot parse as a date on blur, so a
+    sentence like "Immediately." looked filled at fill-time and then vanished
+    with no error anywhere."""
+
+    def test_resolves_to_today_not_a_tier_b_rule(self, answers):
+        import datetime
+        f = field(id="question_1", label="When can you start a new role?", kind="date")
+        r = resolve(f, answers)
+        assert r.action == "fill"
+        assert r.tier == "A"
+        assert r.value == datetime.date.today().strftime("%m/%d/%Y")
+
+    def test_a_configured_rule_never_overrides_a_date_field(self, tmp_path, answers):
+        """Even a rule whose `match:` would otherwise hit this label must not
+        win — the format a rule's author chose (a sentence) is exactly what
+        the picker silently rejects."""
+        config = write_config(
+            tmp_path,
+            rules=[{"match": ["start", "when can you"], "answer": "Immediately."}],
+        )
+        scoped = load_answers(path=config, preferences_path=PREFS)
+        f = field(id="question_1", label="When can you start a new role?", kind="date")
+        assert resolve(f, scoped).value != "Immediately."
+
+    def test_a_plain_text_field_is_unaffected(self, answers):
+        """Only `kind == "date"` triggers this path — an ordinary text field
+        asking the same question in different words still goes through the
+        normal Tier B/C path."""
+        f = field(id="question_1", label="When can you start a new role?", kind="text")
+        assert resolve(f, answers).tier != "A"
+
+
 class TestEducationAndEmployment:
     def test_entry_zero_fills_from_config(self, merged, answers):
         r = merged("form_education")
