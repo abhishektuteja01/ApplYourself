@@ -12,6 +12,7 @@ No network: load_board is stubbed everywhere.
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 
 import pandas as pd
@@ -320,6 +321,86 @@ class TestPlanCommand:
         assert apply_cli.main(["plan", JOB_ID]) == 0
         out = capsys.readouterr().out
         assert "PARKED" in out and "Nothing would be submitted" in out
+
+
+class TestPrepareCommand:
+    """`/apply` Step 1, consolidated into the CLI: validate prerequisites and
+    derive OUT_DIR/VERTICAL/COMPANY_ANSWERS from state.yaml, printing
+    shell-quoted `KEY=value` lines the command session `eval`s."""
+
+    @pytest.fixture(autouse=True)
+    def _answers_yaml_exists(self, monkeypatch, tmp_path):
+        answers_path = tmp_path / "application_answers.yaml"
+        answers_path.write_text("schema_version: 1\n", encoding="utf-8")
+        monkeypatch.setattr(apply_cli, "DEFAULT_PATH", answers_path)
+        monkeypatch.setattr(apply_cli, "EXAMPLE_PATH", tmp_path / "application_answers.example.yaml")
+        monkeypatch.setattr(apply_cli, "_playwright_available", lambda: True)
+
+    def test_happy_path_prints_every_field(self, repo, capsys):
+        repo.write_state()
+        (repo.out_dir / "company_answers.md").write_text("why_company\n", encoding="utf-8")
+        assert apply_cli.main(["prepare", JOB_ID]) == 0
+        out = capsys.readouterr().out
+        lines = dict(line.split("=", 1) for line in out.strip().splitlines())
+        assert lines["JOB_ID"] == JOB_ID
+        assert shlex.split(lines["STATE"])[0] == "tailored"
+        assert shlex.split(lines["OUT_DIR"])[0] == str(repo.out_dir)
+        assert shlex.split(lines["VERTICAL"])[0] == "example_primary"
+        assert shlex.split(lines["COMPANY_ANSWERS"])[0] == str(repo.out_dir / "company_answers.md")
+        assert shlex.split(lines["OVERRIDES_FILE"])[0] == str(repo.out_dir / "answers_override.json")
+
+    def test_resets_the_overrides_file_to_just_job_id(self, repo, capsys):
+        repo.write_state()
+        stale = repo.out_dir / "answers_override.json"
+        stale.write_text(json.dumps({"job_id": JOB_ID, "leftover_field": "old"}),
+                          encoding="utf-8")
+        assert apply_cli.main(["prepare", JOB_ID]) == 0
+        assert json.loads(stale.read_text(encoding="utf-8")) == {"job_id": JOB_ID}
+
+    def test_no_cover_letter_leaves_company_answers_blank(self, repo, capsys):
+        repo.write_state(cover_letters=[])
+        assert apply_cli.main(["prepare", JOB_ID]) == 0
+        out = capsys.readouterr().out
+        lines = dict(line.split("=", 1) for line in out.strip().splitlines())
+        assert shlex.split(lines["COMPANY_ANSWERS"])[0] == ""
+
+    def test_missing_state_file_exits_1(self, repo, capsys):
+        assert apply_cli.main(["prepare", JOB_ID]) == 1
+        assert "state.yaml" in capsys.readouterr().err
+
+    def test_wrong_state_exits_1(self, repo, capsys):
+        repo.write_state(state="applied")
+        assert apply_cli.main(["prepare", JOB_ID]) == 1
+        assert "not 'saved' or 'tailored'" in capsys.readouterr().err
+
+    def test_saved_is_a_valid_entry_state(self, repo, capsys):
+        repo.write_state(state="saved")
+        assert apply_cli.main(["prepare", JOB_ID]) == 0
+        assert "STATE=saved" in capsys.readouterr().out
+
+    def test_no_tailored_dirs_exits_1(self, repo, capsys):
+        repo.write_state(tailored_dirs=[])
+        assert apply_cli.main(["prepare", JOB_ID]) == 1
+        assert "tailored_dirs" in capsys.readouterr().err
+
+    def test_missing_application_answers_yaml_exits_1(self, repo, monkeypatch, tmp_path, capsys):
+        missing = tmp_path / "does_not_exist.yaml"
+        monkeypatch.setattr(apply_cli, "DEFAULT_PATH", missing)
+        repo.write_state()
+        assert apply_cli.main(["prepare", JOB_ID]) == 1
+        assert str(missing) in capsys.readouterr().err
+
+    def test_missing_playwright_exits_1(self, repo, monkeypatch, capsys):
+        monkeypatch.setattr(apply_cli, "_playwright_available", lambda: False)
+        repo.write_state()
+        assert apply_cli.main(["prepare", JOB_ID]) == 1
+        assert "playwright not installed" in capsys.readouterr().err
+
+    def test_nothing_is_checked_before_state_file_existence(self, repo, monkeypatch, capsys):
+        """A missing role should not depend on load order surfacing the wrong
+        error first."""
+        assert apply_cli.main(["prepare", "no-such-job"]) == 1
+        assert "state.yaml" in capsys.readouterr().err
 
 
 class TestCliShape:
@@ -734,8 +815,37 @@ class TestOverridesAreBoundToOneRole:
             "job_id": JOB_ID,
             "question_1": {"value": "x", "tier": "B0"},
         }), encoding="utf-8")
-        with pytest.raises(apply_cli.ApplyCliError, match="want C1, C2 or JD"):
+        with pytest.raises(apply_cli.ApplyCliError, match="want C1, C2, JD, B0-LLM or AUDIT"):
             apply_cli.load_overrides(p, JOB_ID)
+
+    def test_a_b0_llm_tagged_entry_loads(self, tmp_path):
+        # "B0-LLM" is the one tier build_plan() lets supersede a Tier B0
+        # work-authorization park -- a full-sentence option judged true
+        # against plan["work_authorization"], not a static candidate match.
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({
+            "job_id": JOB_ID,
+            "visa_status": {"value": "Yes, I will need sponsorship in the future.",
+                             "tier": "B0-LLM"},
+        }), encoding="utf-8")
+        assert apply_cli.load_overrides(p, JOB_ID) == {
+            "visa_status": ("Yes, I will need sponsorship in the future.", "B0-LLM")}
+
+    def test_an_audit_tagged_entry_loads(self, tmp_path):
+        # "AUDIT" supersedes an already-resolved Tier B/B0 field the audit
+        # step judged wrong or incomplete -- not tied to one specific
+        # category the way "JD" (money) and "B0-LLM" (work-auth wording) are.
+        p = tmp_path / "answers.json"
+        p.write_text(json.dumps({
+            "job_id": JOB_ID,
+            "how_did_you_hear": {
+                "value": "Careers Page. I'm drawn to the team's focus on...",
+                "tier": "AUDIT",
+            },
+        }), encoding="utf-8")
+        assert apply_cli.load_overrides(p, JOB_ID) == {
+            "how_did_you_hear": (
+                "Careers Page. I'm drawn to the team's focus on...", "AUDIT")}
 
 
 class TestTheReportNeverOverwritesAnotherRun:

@@ -85,6 +85,15 @@ identity:
 work_authorization:
   status: time_limited
   scope_qualified_answer: park
+  # us_person_answer settles a DIFFERENT question from the above: not "may you
+  # work here" but "are you a U.S. person" as export-control rules (ITAR/EAR)
+  # define it -- citizen, permanent resident, refugee or asylee. A time-limited
+  # status (F-1 OPT, H-1B, ...) is authorized to work and is NOT a U.S. person.
+  # "park" (the default) always hands this to you -- it is a legal
+  # declaration, not a keyword rule, and a wrong answer has consequences past
+  # this application. Quote "yes"/"no" if you set it; a bare yes/no is a YAML
+  # boolean and the loader refuses it.
+  us_person_answer: park
   # status_label: "F-1 STEM OPT"
   # status_option_candidates:
   #   - "F1"

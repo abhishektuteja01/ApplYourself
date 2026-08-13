@@ -115,57 +115,15 @@ Skip re-reading `profile/bullets.md` if it was already read in full this session
 with no change signal. The two `${OUT_DIR}` files are per-job — always read them.
 When in doubt, re-read.
 
-## Step 2b — company mission research (always attempt, never blocking)
+## Step 2b — company research (delegated)
 
-Find the company's actual focus, not its marketing tagline — specific enough to
-show you looked.
+Invoke the `company-answers` skill for `$1`. It writes
+`${OUT_DIR}/company_answers.md` (three sections: `why_company`, `why_role`,
+`what_interests_you_about_product`; `INSUFFICIENT_RESEARCH` is a valid,
+already-linted outcome per section) — `/apply`'s Tier C2 reads the same
+file. If it errors or hard-refuses, surface its output verbatim and stop.
 
-Search for it using the company name **plus a disambiguating detail
-pulled from `jd_snapshot.md`** (industry/domain phrase from the JD body,
-or HQ/location if the JD states one) — many portfolio-company and
-common-word names (e.g. "Distyl", "The Agentic Loop", "Glean") collide
-with unrelated companies on a bare-name search. If the ATS slug in
-`companies.yaml`/the job URL suggests an obvious domain (e.g.
-`boards.greenhouse.io/<slug>` → try `<slug>.com`), prefer fetching that
-company's own About/Mission page directly over a generic web search.
-
-Pull at most 1-2 concrete themes — what they build, who they serve, a stated
-focus tied to this JD's work — never the homepage tagline verbatim. If the search
-returns nothing specific, the wrong company, or only marketing copy, drop this
-step and draft without it. It never blocks Step 3.
-
-**Second output: `${OUT_DIR}/company_answers.md`.** `/apply`'s Tier C2 resolves
-the recurring company-specific application questions ("why us", "what excites
-you about our product") from this file instead of searching at apply time — the
-research above is otherwise used for one clause in the letter and then
-discarded. Draft it now, right after the research above, using the same
-fabrication discipline as the letter (Step 3's NO-FAB paragraph applies here
-too: any sentence touching your own experience traces to a `bullets.md` bullet
-and REPHRASE-LICENSE binds; the plain-language escape covers only a sentence
-that makes no claim about you, which every section below normally is). Write:
-
-```
-# company_answers.md
-job_id: $1
-company: <company name>
-researched_at: <TODAY, YYYY-MM-DD>
-
-## why_company
-<2-4 sentences, grounded in the research above — INSUFFICIENT_RESEARCH if it
-found nothing specific, the wrong company, or only marketing copy>
-
-## why_role
-<2-4 sentences, grounded in jd_snapshot.md's actual work — this one almost
-never has to be INSUFFICIENT_RESEARCH, since the JD itself is the source>
-
-## what_interests_you_about_product
-<2-4 sentences, or INSUFFICIENT_RESEARCH under the same rule as why_company>
-```
-
-`INSUFFICIENT_RESEARCH` is the literal token, not a sentence — `/apply` parks
-the role on that section rather than submitting a fabricated "why us." Writing
-it is a successful outcome here, not a failure; Step 2b staying non-blocking
-does not change.
+Non-blocking either way: continue to Step 3 once it returns.
 
 ## Step 3 — draft the letter content
 
@@ -248,17 +206,15 @@ loop, which remains the final gate before render.
 ## Step 5 — lint loop (fully linted, no bullets.md exemption)
 
 Cover letters are fresh-generated prose, not verbatim bullet text — there
-is **no exemption** here, same as outreach. Lint
-`salutation` + every `body` entry (skip `date`/`closing`/`signoff_name` --
-they're not generated prose) **and** every non-`INSUFFICIENT_RESEARCH`
-section of `company_answers.md` (§7b) — one loop covers both files, since a
-violation in either blocks the same way.
+is **no exemption** here, same as outreach. Lint `salutation` + every
+`body` entry (skip `date`/`closing`/`signoff_name` -- they're not generated
+prose). `company_answers.md` is already linted by `/company-answers`
+(Step 2b) — not re-linted here.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
 uv run python <<PYEOF
 import json
-import re
 from pathlib import Path
 from src.lint import fix_mechanical, find_phrase_violations, load_de_ai_rules
 
@@ -269,14 +225,6 @@ rules = load_de_ai_rules()
 lintable_fields = ['salutation'] + [f'body[{i}]' for i in range(len(content.get('body') or []))]
 texts = [content['salutation']] + list(content.get('body') or [])
 
-company_path = Path('${OUT_DIR}/company_answers.md')
-company_preamble, company_sections = '', {}
-if company_path.exists():
-    parts = re.split(r'^## (.+)$', company_path.read_text(), flags=re.MULTILINE)
-    company_preamble = parts[0]
-    it = iter(parts[1:])
-    company_sections = {h.strip(): b.strip() for h, b in zip(it, it)}
-
 all_subs, all_violations = [], []
 fixed_texts = []
 for field, text in zip(lintable_fields, texts):
@@ -286,24 +234,9 @@ for field, text in zip(lintable_fields, texts):
     for v in find_phrase_violations(fixed, context='resume', exempt_lines=None, rules=rules):
         all_violations.append({**v, 'field': field})
 
-for section, text in company_sections.items():
-    if text == 'INSUFFICIENT_RESEARCH':
-        continue
-    fixed, subs = fix_mechanical(text, rules)
-    company_sections[section] = fixed
-    all_subs.extend({**s, 'field': f'company_answers.{section}'} for s in subs)
-    for v in find_phrase_violations(fixed, context='resume', exempt_lines=None, rules=rules):
-        all_violations.append({**v, 'field': f'company_answers.{section}'})
-
 content['salutation'] = fixed_texts[0]
 content['body'] = fixed_texts[1:]
 draft_path.write_text(json.dumps(content, indent=2))
-
-if company_path.exists():
-    rebuilt = company_preamble.rstrip('\n') + '\n\n' + '\n\n'.join(
-        f'## {section}\n{text}' for section, text in company_sections.items()
-    ) + '\n'
-    company_path.write_text(rebuilt)
 
 print(json.dumps({
     'mechanical_subs': len(all_subs),
@@ -320,12 +253,10 @@ list, which doesn't apply to cover letters.)
 If `violations` is non-empty: rewrite the offending field's text using
 ONLY words already in the relevant bullet's canonical text + its
 `allowable_synonyms`. The plain-language escape applies to exactly one case —
-prose that traces to NO bullet at all, such as the salutation, the closing, a
-company-mission sentence from Step 2b, or a `company_answers.md` section. If
-the sentence carries any claim about your experience, it traces to a bullet and
-REPHRASE-LICENSE binds; the escape is not available. Update the relevant file
-(`/tmp/cover_letter_$1_draft.json` or `${OUT_DIR}/company_answers.md`,
-matching the `field` the violation named), and re-run the lint above, following
+prose that traces to NO bullet at all, such as the salutation or the closing.
+If the sentence carries any claim about your experience, it traces to a bullet
+and REPHRASE-LICENSE binds; the escape is not available. Update
+`/tmp/cover_letter_$1_draft.json`, and re-run the lint above, following
 `.claude/shared/lint_loop.md` — read it; it holds the attempt cap and the
 hard-refuse rule.
 
@@ -381,26 +312,10 @@ print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 ## Step 7b — transition `saved` -> `tailored`
 
 Both artifacts now exist, which is exactly `/apply`'s eligibility bar, so this is
-the point where the role becomes submittable. Runs `uv run track`, so `/track`
-stays the only writer (R10).
+the point where the role becomes submittable.
 
-**Only fires from `saved`.** `transition()` permits same-state and backwards
-moves, so an unguarded call would drag an `applied` or `screen` role back to
-`tailored` on a re-run. Any state other than `saved` is left untouched.
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-CURRENT=$(uv run python -c "
-from pathlib import Path
-from src.state_io import state_path_for, load_state
-print((load_state(state_path_for(Path('pipeline'), '$1')) or {}).get('state', ''))
-")
-if [ "$CURRENT" = "saved" ]; then
-    uv run track "$1" tailored --note "resume + cover letter on file"
-else
-    echo "state is '${CURRENT}', not 'saved' — leaving it alone (no transition)."
-fi
-```
+Read `.claude/shared/self_promote.md` and run its block, with `JOB_ID="$1"`
+and `NOTE="resume + cover letter on file"`.
 
 ## Step 8 — runtime assertions before reporting done
 
@@ -410,9 +325,10 @@ Before reporting success, verify on disk:
 - [ ] `${OUT_DIR}/company_answers.md` exists and has all three `##` sections
       (§7b) — each is either 2-4 sentences or the literal `INSUFFICIENT_RESEARCH`
 - [ ] One final lint pass returns zero violations. Step 5's Python reads
-      `/tmp/cover_letter_$1_draft.json` and `${OUT_DIR}/company_answers.md`, so
-      re-running it verbatim re-checks both drafts, not the rendered docx —
-      which is the intent here, since the docx is generated FROM the JSON.
+      `/tmp/cover_letter_$1_draft.json`, so re-running it verbatim re-checks
+      the draft, not the rendered docx — which is the intent here, since the
+      docx is generated FROM the JSON. `company_answers.md` was already
+      asserted lint-clean by `/company-answers` (Step 2b).
 - [ ] Body word count is within 230-300 (count the `body` entries' words; /outreach
       asserts its channel limit, and this letter has to fit one page the same way)
 - [ ] The rendered PDF is exactly one page: `pdfinfo "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf" | awk '/^Pages:/{print $2}'`

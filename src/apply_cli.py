@@ -1,5 +1,14 @@
 """Deterministic CLI for /apply (R7: no LLM calls; R10: never writes state).
 
+  prepare <job_id>                  /apply's Step 1: validate prerequisites
+                                    (state.yaml exists and is saved/tailored,
+                                    application_answers.yaml exists, playwright
+                                    importable), derive out_dir/vertical/
+                                    company_answers from state.yaml, and reset
+                                    that role's answers_override.json. Prints
+                                    JOB_ID/STATE/OUT_DIR/VERTICAL/
+                                    COMPANY_ANSWERS/OVERRIDES_FILE=value lines
+                                    meant for `eval` in the command session.
   plan <job_id> [--json] [--url URL] [--out-dir DIR]
                                     fetch the board's rendered form and its
                                     question schema, resolve every field against
@@ -24,6 +33,7 @@ import argparse
 import json
 import random
 import re
+import shlex
 import sys
 import time
 from dataclasses import dataclass, field as dc_field
@@ -34,9 +44,9 @@ import pandas as pd
 
 from src import paths, state_io, track_cli
 from src.apply import ashby, lever
-from src.apply.answers import Answers, AnswersError, load_answers
-from src.apply.fill import (SubmitGuardError, blocking_questions, fill, has_driver,
-                             run_one)
+from src.apply.answers import DEFAULT_PATH, EXAMPLE_PATH, Answers, AnswersError, load_answers
+from src.apply.fill import (SubmitGuardError, _require_playwright, blocking_questions,
+                             fill, has_driver, run_one)
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
 from src.apply.plan import Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
@@ -121,19 +131,123 @@ def resolve_out_dir(job_id: str, state: dict | None) -> Path:
     return out_dir
 
 
+def _playwright_available() -> bool:
+    """A separate, monkeypatchable seam so tests never depend on whether the
+    optional `apply` dependency group is actually installed.
+
+    Delegates to `fill._require_playwright()` rather than importing
+    `playwright` here directly — `test_no_module_but_fill_names_the_driver`
+    enforces that only fill.py may name that import, so every other module
+    stays importable without the `apply` extras group."""
+    try:
+        _require_playwright()
+    except SystemExit:
+        return False
+    return True
+
+
+def _cmd_prepare(args: argparse.Namespace) -> int:
+    """`/apply` Step 1: validate prerequisites, derive this role's
+    out_dir/vertical/company_answers from state.yaml, and reset its
+    answers_override.json. Never judges (R7) — every check here is one Step 1
+    used to run inline as bash-wrapped Python; consolidated so the command
+    session issues one call instead of several.
+
+    Prints `key=value` lines, shell-quoted, meant for `eval` in the command
+    session — not JSON, since the caller wants these straight into bash
+    variables, not a payload to parse.
+    """
+    job_id = args.job_id
+    state_path = state_io.state_path_for(PIPELINE, job_id)
+    if not state_path.exists():
+        print(f"ERROR: {state_path} missing.", file=sys.stderr)
+        return 1
+    if not DEFAULT_PATH.exists():
+        print(f"ERROR: {DEFAULT_PATH} missing. Copy {EXAMPLE_PATH} and fill it in.",
+              file=sys.stderr)
+        return 1
+    if not _playwright_available():
+        print(
+            "ERROR: playwright not installed. Run: uv sync --group apply && "
+            "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome",
+            file=sys.stderr,
+        )
+        return 1
+
+    state = state_io.load_state(state_path) or {}
+    role_state = state.get("state", "")
+    if role_state not in ("saved", "tailored"):
+        print(
+            f"ERROR: {state_path} has state {role_state!r}, not 'saved' or "
+            "'tailored'. Run /tailor first.",
+            file=sys.stderr,
+        )
+        return 1
+    # `saved` is a valid entry state, not just `tailored` -- whether this role
+    # needs a cover letter before it can become `tailored` is exactly what
+    # /apply's Step 2c decides, per role, from the board's own form.
+
+    dirs = state.get("tailored_dirs") or []
+    if not dirs:
+        print(f"ERROR: {state_path} has no tailored_dirs[]. Run /tailor first.",
+              file=sys.stderr)
+        return 1
+    tailored_dir = dirs[-1]
+    # tailored_dirs[] entries are vertical-prefixed (same convention
+    # /cover-letter uses), so the lane is just the first path segment -- no
+    # vertical name is ever hardcoded here.
+    vertical = tailored_dir.split("/", 1)[0]
+    out_dir = APPLICATIONS / tailored_dir
+
+    company_answers = ""
+    letters = state.get("cover_letters") or []
+    if letters:
+        candidate = APPLICATIONS / letters[-1] / "company_answers.md"
+        if candidate.is_file():
+            company_answers = str(candidate)
+    # A missing cover letter is NOT a hard prerequisite here. /apply's Step 2b
+    # re-checks it against this role's actual plan, by which point it's known
+    # whether any C2 question or required cover-letter upload genuinely exists.
+
+    # Persisted next to the role's other artifacts instead of a /tmp scratch
+    # file -- an audit trail of what was submitted and why. Overwritten fresh
+    # at the start of every run, so every key present by the end belongs to
+    # this run only (§15).
+    overrides_file = out_dir / "answers_override.json"
+    overrides_file.write_text(json.dumps({"job_id": job_id}) + "\n", encoding="utf-8")
+
+    result = {
+        "JOB_ID": job_id,
+        "STATE": role_state,
+        "OUT_DIR": str(out_dir),
+        "VERTICAL": vertical,
+        "COMPANY_ANSWERS": company_answers,
+        "OVERRIDES_FILE": str(overrides_file),
+    }
+    for key in ("JOB_ID", "STATE", "OUT_DIR", "VERTICAL", "COMPANY_ANSWERS",
+                "OVERRIDES_FILE"):
+        print(f"{key}={shlex.quote(result[key])}")
+    return 0
+
+
 def load_overrides(path: Path, job_id: str | None = None,
                     ) -> dict[str, tuple[str | tuple[str, ...], str]]:
     """`/apply`'s per-run, per-field answers for Tier C questions (§15), plus
-    the one Tier B exception — `{"job_id": "...", "<field_id>": {"value":
+    the Tier B/B0 exceptions — `{"job_id": "...", "<field_id>": {"value":
     "...", "tier": "C1"}}`, `value` a string or a list for a multi-select.
     Parsing only; no judgment lives here (R7) — the command file decided
     every value before this ever runs.
 
     `tier` is `"C1"` (drafted from bullets.md), `"C2"` (drafted from
-    company_answers.md), or `"JD"` (a figure read from the role's own
-    jd_snapshot.md — the one tier `build_plan()` lets supersede a static
-    Tier B `rules:` match, since a salary figure the JD itself states should
-    win over a generic configured default).
+    company_answers.md), `"JD"` (a figure read from the role's own
+    jd_snapshot.md — supersedes a static Tier B `rules:` match, since a
+    salary figure the JD itself states should win over a generic configured
+    default), `"B0-LLM"` (which of a work-authorization field's full-sentence
+    options is true given `plan["work_authorization"]` — supersedes a Tier
+    B0 park whose `status_option_candidates` matched none of this board's
+    exact wording), or `"AUDIT"` (an already-resolved Tier B/B0 field the
+    audit step judged wrong or incomplete — e.g. a compound label a keyword
+    match only half-answered).
 
     The `job_id` key binds the file to one role. Tier C2 answers are
     company-specific by construction ("why do you want to work at X"), so a
@@ -162,8 +276,11 @@ def load_overrides(path: Path, job_id: str | None = None,
         if not isinstance(entry, dict):
             raise ApplyCliError(f"{path}: {field_id!r} must be an object")
         tier = entry.get("tier")
-        if tier not in ("C1", "C2", "JD"):
-            raise ApplyCliError(f"{path}: {field_id!r} has tier {tier!r}, want C1, C2 or JD")
+        if tier not in ("C1", "C2", "JD", "B0-LLM", "AUDIT"):
+            raise ApplyCliError(
+                f"{path}: {field_id!r} has tier {tier!r}, want C1, C2, JD, "
+                f"B0-LLM or AUDIT"
+            )
         value = entry.get("value")
         if isinstance(value, list):
             value = tuple(value)
@@ -234,6 +351,7 @@ def as_dict(plan: Plan) -> dict:
         "submit_disabled": plan.submit_disabled,
         "parked": plan.parked,
         "submittable": plan.submittable,
+        "work_authorization": plan.work_authorization,
         "fields": [
             {"id": f.id, "label": f.label, "kind": f.kind, "section": f.section,
              "required": f.required, "multi": f.multi, "tier": f.tier,
@@ -750,6 +868,11 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    prep = sub.add_parser("prepare", help="/apply's Step 1: validate prerequisites, "
+                                           "derive out_dir/vertical/company_answers")
+    prep.add_argument("job_id")
+    prep.set_defaults(func=_cmd_prepare)
 
     p = sub.add_parser("plan", help="print the fill plan for one role")
     p.add_argument("job_id")

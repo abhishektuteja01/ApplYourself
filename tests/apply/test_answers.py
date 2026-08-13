@@ -200,6 +200,73 @@ class TestRuleValidation:
             load_answers(write_config(tmp_path, rules=rules), PREFS)
 
 
+class TestRuleMatchMode:
+    """`mode: contains` — an opt-in match mode for a Tier B rule whose
+    candidate answers are short affirmations that a board's real option
+    wraps in a full sentence ("Yes" inside "Yes, I am able and willing to
+    work in the office location listed..."). Default stays `exact`."""
+
+    def test_mode_defaults_to_exact(self, tmp_path):
+        rules = [{"match": ["portfolio"], "answer": "https://x.example"}]
+        loaded = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        assert loaded.rules[0].mode == "exact"
+
+    def test_an_invalid_mode_is_rejected(self, tmp_path):
+        rules = [{"match": ["portfolio"], "answer": "x", "mode": "fuzzy"}]
+        with pytest.raises(AnswersError, match="mode"):
+            load_answers(write_config(tmp_path, rules=rules), PREFS)
+
+    def test_a_contains_rule_matches_inside_a_full_sentence_option(self, tmp_path):
+        rules = [{
+            "match": ["acknowledge"],
+            "answer": ["I acknowledge", "Yes"],
+            "mode": "contains",
+        }]
+        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        f = field(
+            label="I acknowledge that this company has an in-office culture.",
+            required=True, kind="select",
+            options=[
+                "Yes, I am able and willing to work in the office location listed.",
+                "No, I am unable and/or unwilling to work in the office location listed.",
+            ],
+        )
+        assert resolve(f, answers).value == (
+            "Yes, I am able and willing to work in the office location listed."
+        )
+
+    def test_a_contains_rule_still_parks_when_no_option_holds_any_candidate(self, tmp_path):
+        """Never guess — a candidate absent from every option parks exactly
+        like exact mode does."""
+        rules = [{
+            "match": ["acknowledge"],
+            "answer": ["I acknowledge", "Yes"],
+            "mode": "contains",
+        }]
+        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        f = field(
+            label="I acknowledge the code of conduct.",
+            required=True, kind="select",
+            options=["Agreed", "Declined"],
+        )
+        assert resolve(f, answers).parked
+
+    def test_exact_mode_does_not_match_inside_a_full_sentence(self, tmp_path):
+        """The regression contains-mode exists to fix: the default `exact`
+        mode leaves the same full-sentence option parked."""
+        rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"]}]
+        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        f = field(
+            label="I acknowledge that this company has an in-office culture.",
+            required=True, kind="select",
+            options=[
+                "Yes, I am able and willing to work in the office location listed.",
+                "No, I am unable and/or unwilling to work in the office location listed.",
+            ],
+        )
+        assert resolve(f, answers).parked
+
+
 class TestPreferencesCrossCheck:
     def test_the_real_preferences_section_reads_as_one_status(self):
         """The repo's own preferences.md states F-1 OPT and, two lines later,

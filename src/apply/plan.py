@@ -29,7 +29,7 @@ happily upload.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.apply.answers import Answers, Resolution, match_option, resolve
@@ -158,6 +158,12 @@ class Plan:
     """Lever renders hCaptcha on every form (§12a). Unattended submission is
     not possible on one of these — `submit()` blocks for a human to solve it
     rather than clicking blind."""
+    work_authorization: dict = field(default_factory=dict)
+    """The derived work-authorization facts (`_work_authorization_facts()`),
+    exposed so `/apply`'s Step 4c can judge a board's full-sentence option
+    against them without re-deriving `authorized_now`/`requires_sponsorship`
+    from `status` in prose (R7: this module looks the facts up; the command
+    session is the one that reads a board's free text against them)."""
 
     @property
     def parked(self) -> bool:
@@ -289,6 +295,30 @@ def _override_resolution(field: MergedField, value, tier: str) -> Resolution:
     return Resolution("fill", value=picked if multi else picked[0], tier=tier)
 
 
+def _work_authorization_facts(answers: Answers) -> dict[str, object]:
+    """The facts `answers.py` already derived, in JSON-safe form.
+
+    Read-only lookup, no judgment (R7): `/apply`'s Step 4c is the one that
+    reads a board's full-sentence option against these to resolve a
+    `status_option_candidates` wording gap it never asked the user to
+    pre-configure. `status_option_candidates` is copied to a list — a tuple
+    serializes fine via `json.dumps`, but every other list-shaped value in
+    `as_dict()` is a plain list, and this keeps the convention.
+    """
+    return {
+        "status": answers.status,
+        "authorized_now": answers.authorized_now,
+        "requires_sponsorship": answers.requires_sponsorship,
+        "us_person_answer": answers.us_person_answer,
+        "nationality": answers.nationality,
+        "second_nationality": answers.second_nationality,
+        "sponsorship_followup_text": answers.sponsorship_followup_text,
+        "status_label": answers.status_label,
+        "status_option_candidates": list(answers.status_option_candidates),
+        "scope_qualified_answer": answers.scope_qualified_answer,
+    }
+
+
 def _unmapped(field: MergedField, resolution: Resolution, reason: str = "") -> Unmapped:
     return Unmapped(
         id=field.id,
@@ -326,18 +356,27 @@ def build_plan(
     """Resolve every reconciled field into a fill, an attachment or a park.
 
     `overrides` is a per-run, per-field lookup — `field.id -> (value, tier)`,
-    `tier` one of `"C1"`/`"C2"`/`"JD"` — supplied by `/apply` (`.claude/
-    commands/apply.md`) after it classifies and, for C1, drafts an answer, or
-    resolves a C2 question from that role's `company_answers.md`, or reads a
-    salary figure off the JD. It exists so a required Tier C question can
-    ever leave `unmapped[]` without either judgment landing in this module
-    (R7) or a company-specific answer leaking into
-    `profile/application_answers.yaml` (§15 forbids exactly that for C1; it
-    binds harder for C2, which is company-specific by construction).
+    `tier` one of `"C1"`/`"C2"`/`"JD"`/`"B0-LLM"`/`"AUDIT"` — supplied by
+    `/apply` (`.claude/commands/apply.md`) after it classifies and, for C1,
+    drafts an answer, or resolves a C2 question from that role's
+    `company_answers.md`, or reads a salary figure off the JD, or (Step 4c)
+    judges which of a work-authorization field's full-sentence options is
+    true given `work_authorization`, or (Step 2c's audit) catches an already
+    -resolved Tier B/B0 field whose label asks for more than its value
+    covers. It exists so a required Tier C or B0 question can ever leave
+    `unmapped[]` without either judgment landing in this module (R7) or a
+    company-specific answer leaking into `profile/application_answers.yaml`
+    (§15 forbids exactly that for C1; it binds harder for C2, which is
+    company-specific by construction).
     `"C1"`/`"C2"` are consulted only for `resolve()`'s Tier C outcomes, same
-    as always. `"JD"` is the one exception: it is also consulted for a Tier
-    B outcome, so a salary figure the JD itself states can supersede a
-    static `rules:` match — every other tier keeps deciding itself.
+    as always. `"JD"`, `"B0-LLM"` and `"AUDIT"` are each consulted for a
+    Tier B or B0 outcome too — `"JD"` for Tier B (a salary figure the JD
+    itself states can supersede a static `rules:` match), `"B0-LLM"` for
+    Tier B0 (a work-authorization park whose pre-configured
+    `status_option_candidates` matched none of this board's exact wording),
+    `"AUDIT"` for either (a pattern-matched Tier B/B0 result the audit step
+    judged wrong or incomplete — e.g. a compound label a keyword match only
+    half-answered) — every other tier keeps deciding itself.
     """
     overrides = overrides or {}
     out_dir = Path(out_dir)
@@ -373,12 +412,20 @@ def build_plan(
             value, override_tier = overrides[field.id]
             # C1/C2 only ever supersede a Tier C outcome — a drafted answer
             # must never silently clobber an identity/EEOC/work-authorization
-            # field. "JD" is the one exception: a figure read from the JD
-            # is allowed to supersede a static Tier B rule too (a salary
-            # question resolved by a generic `rules:` keyword match), since
-            # that is the whole point of checking the JD before falling back
-            # to the configured default.
-            if resolution.tier == "C" or (resolution.tier == "B" and override_tier == "JD"):
+            # field. Tier B and B0 each get two narrow exceptions: "JD"
+            # supersedes a static Tier B rule (a salary figure the JD itself
+            # states should win over a generic configured default), "B0-LLM"
+            # supersedes a Tier B0 park (a work-authorization wording variant
+            # of an already-known fact), and "AUDIT" supersedes either — the
+            # general case of a pattern-matched B/B0 result the audit step
+            # judged wrong or incomplete (e.g. a compound label a keyword
+            # match only half-answered). Never a Tier A identity field or a
+            # deliberate `us_person_answer`/`scope_qualified_answer` opt-out
+            # that never reaches "park" with an unmatched-candidates reason
+            # in the first place.
+            if (resolution.tier == "C"
+                    or (resolution.tier == "B" and override_tier in ("JD", "AUDIT"))
+                    or (resolution.tier == "B0" and override_tier in ("B0-LLM", "AUDIT"))):
                 resolution = _override_resolution(field, value, override_tier)
 
         if resolution.action == "park":
@@ -461,6 +508,7 @@ def build_plan(
         api_only=reconciled.api_only,
         ats=ats,
         requires_captcha=requires_captcha,
+        work_authorization=_work_authorization_facts(answers),
     )
     _assert_accounted_for(reconciled, plan)
     return plan

@@ -197,8 +197,9 @@ one-row `score dump --job-id --no-prescreen` + one judge → `/tailor` →
 `/cover-letter`, spawning the existing commands rather than reimplementing
 them, and stops at `saved` because `/track` alone writes transitions. `.claude/shared/` holds the includes several
 commands read: `no_fab.md` (defines `NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`,
-`SKILLS-SOURCE`), `lint_loop.md` (the rewrite-loop attempt cap), and
-`render_pdf.md` (the docx->pdf block). There is no
+`SKILLS-SOURCE`), `lint_loop.md` (the rewrite-loop attempt cap),
+`render_pdf.md` (the docx->pdf block), and `self_promote.md` (the guarded
+`saved -> tailored` transition `/apply` and `/cover-letter` both fire). There is no
 `extract` module in `src/`, and no LLM *judging* in `src/` — but the deterministic
 plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
 `/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself

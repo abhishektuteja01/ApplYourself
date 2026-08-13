@@ -291,9 +291,16 @@ _QUALIFIER_OFFERED_AS_ALTERNATIVE = re.compile(
 # not derivable: it is a statement about the user's own circumstances that only
 # they can make. `park` is the default and hands the question back to them.
 SCOPE_QUALIFIED_ANSWERS = ("park", "yes", "no")
+# Whether you are a "U.S. person" as ITAR/EAR define it (citizen, permanent
+# resident, refugee or asylee) -- NOT the same as work authorization, and a
+# wrong answer has consequences past this application. `park` (the default)
+# always hands the question back to the user, same as scope_qualified_answer's
+# default; only an explicit "yes"/"no" here lets it auto-fill.
+US_PERSON_ANSWERS = ("park", "yes", "no")
 WORK_AUTHORIZATION_KEYS = ("status", "scope_qualified_answer", "status_label",
                            "status_option_candidates", "nationality",
-                           "second_nationality", "sponsorship_followup_text")
+                           "second_nationality", "sponsorship_followup_text",
+                           "us_person_answer")
 # The authorization question is country-scoped; the sponsorship one is not, and
 # names a country on only 2 of the 5 captured boards. The queue only ever holds
 # roles that passed discovery's US location allowlist.
@@ -647,6 +654,7 @@ class Rule:
     match: tuple[str, ...]      # normalized keywords, tested as substrings
     answers: tuple[str, ...]    # candidates, in preference order
     exact: tuple[str, ...] = () # normalized labels, matched whole
+    mode: str = "exact"         # "exact" (default) or "contains" — see _pick_option
 
     def matches(self, label: str) -> bool:
         """Whole-label first, then substring.
@@ -698,6 +706,13 @@ class Answers:
     details regarding your current visa status and future sponsorship
     needs") — a statement only the user can make, so never derived from
     `status`. Empty (the default) parks the question, same as `status_label`."""
+    us_person_answer: str = "park"
+    """How to answer a "U.S. person" export-control declaration (ITAR/EAR).
+    `park` (the default) always hands it to the user — this is a legal
+    declaration distinct from work authorization, and a wrong answer has
+    consequences past this application. Only an explicit "yes"/"no" (never
+    derived from `status`: a time-limited status is authorized to work and is
+    NOT a U.S. person) lets it auto-fill. See `US_PERSON_ANSWERS`."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -832,10 +847,13 @@ def _parse_rules(data) -> tuple[Rule, ...]:
         if not candidates:
             raise AnswersError(f"{where}.answer: must not be empty")
         answers = tuple(_require_str(a, f"{where}.answer") for a in candidates)
-        unknown = set(entry) - {"match", "exact", "answer"}
+        mode = entry.get("mode", "exact")
+        if mode not in ("exact", "contains"):
+            raise AnswersError(f"{where}.mode: must be 'exact' or 'contains', got {mode!r}")
+        unknown = set(entry) - {"match", "exact", "answer", "mode"}
         if unknown:
             raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
-        rules.append(Rule(match=keywords, answers=answers, exact=exact))
+        rules.append(Rule(match=keywords, answers=answers, exact=exact, mode=mode))
 
     # Matching is substring-and-first-wins, so an overlap is not a tie the file
     # order resolves — it is a rule silently shadowing another, which is how a
@@ -1015,6 +1033,16 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
             f"work_authorization.sponsorship_followup_text: must be a string, "
             f"got {type(sponsorship_followup_text).__name__}"
         )
+    # Normalized rather than coerced, same reasoning as scope_qualified_answer:
+    # PyYAML reads a bare `no` as the boolean False, and this is a legal
+    # declaration -- a silently mis-typed value must fail loud, not guess.
+    us_person_answer = work_auth.get("us_person_answer", "park")
+    if us_person_answer not in US_PERSON_ANSWERS:
+        raise AnswersError(
+            f"work_authorization.us_person_answer: {us_person_answer!r} is not "
+            f"one of {list(US_PERSON_ANSWERS)} — quote it, since YAML reads a "
+            f"bare yes/no as a boolean"
+        )
     _check_preferences(
         status, Path(preferences_path) if preferences_path is not None else PREFERENCES_PATH
     )
@@ -1031,21 +1059,40 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
         nationality=nationality.strip(),
         second_nationality=second_nationality.strip(),
         sponsorship_followup_text=sponsorship_followup_text.strip(),
+        us_person_answer=us_person_answer,
     )
 
 
 # ---------------------------------------------------------------- resolving
 
 
-def _pick_option(field: MergedField, candidates: tuple[str, ...]) -> str | None:
+def _pick_option(
+    field: MergedField, candidates: tuple[str, ...], mode: str = "exact"
+) -> str | None:
     """The first candidate the widget actually offers.
 
     With no option list — every DOM-only react-select, `country` included —
     there is nothing to check against, so the first candidate goes through and
     fill.py's post-selection assert is what catches a string the widget rejects.
+
+    `mode="contains"` matches a candidate that appears anywhere inside an
+    offered option's text (e.g. candidate "Yes" inside option "Yes, I am able
+    and willing to work..."), for a rule whose keyword is decided but whose
+    candidate answers are short affirmations that never equal a board's own
+    full-sentence option. Still first-candidate-wins, same as exact mode —
+    just a looser test per candidate.
     """
     if not field.options:
         return candidates[0] if candidates else None
+    if mode == "contains":
+        for candidate in candidates:
+            cand_norm = _norm_option(candidate)
+            if not cand_norm:
+                continue
+            for option in field.options:
+                if cand_norm in _norm_option(option.label):
+                    return option.label
+        return None
     offered = {_norm_option(o.label): o.label for o in field.options}
     for candidate in candidates:
         hit = offered.get(_norm_option(candidate))
@@ -1068,8 +1115,8 @@ def match_option(field: MergedField, candidate: str) -> str | None:
 
 
 def _resolve_choice(field: MergedField, candidates: tuple[str, ...], tier: str,
-                    what: str) -> Resolution:
-    picked = _pick_option(field, candidates)
+                    what: str, mode: str = "exact") -> Resolution:
+    picked = _pick_option(field, candidates, mode=mode)
     if picked is None:
         offered = [o.label for o in field.options]
         return _park(f"{what}: none of {list(candidates)} is offered ({offered})", tier)
@@ -1272,10 +1319,24 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
             "B0",
         )
     if category == "export_control":
+        if answers.us_person_answer == "park":
+            return _park(
+                "work authorization: this asks whether you are a \"U.S. "
+                "person\" as the export-control rules define it, which is a "
+                "different question from work authorization and is yours to "
+                "answer. Set work_authorization.us_person_answer to answer "
+                "this without review",
+                "B0",
+            )
+        value = answers.us_person_answer == "yes"
+        if not field.options:
+            return _fill(_YES_NO[value], "B0")
+        picked = _pick_option(field, _YES_NO_VARIANTS[value])
+        if picked is not None:
+            return _fill((picked,) if field.multi else picked, "B0")
         return _park(
-            "work authorization: this asks whether you are a \"U.S. person\" as "
-            "the export-control rules define it, which is a different question "
-            "from work authorization and is yours to answer",
+            "work authorization: us_person_answer is set, but this board "
+            "offers no bare Yes/No option for the \"U.S. person\" question",
             "B0",
         )
     if category == "nationality":
@@ -1386,7 +1447,7 @@ def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
                         if field.required
                         else _skip("optional file upload, no rule can fill it", "B"))
             if field.options or field.kind == "react_select":
-                return _resolve_choice(field, rule.answers, "B", "rule")
+                return _resolve_choice(field, rule.answers, "B", "rule", mode=rule.mode)
             return _fill(rule.answers[0], "B")
     return None
 

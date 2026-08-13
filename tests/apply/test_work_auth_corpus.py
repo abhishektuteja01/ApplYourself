@@ -52,10 +52,11 @@ CORPUS = [
 
 # Categories whose answer is a statement only the user can make.
 STATUS_CLAIM = ("status_disclosure", "compound_option")
-# Categories that park no matter how the config is set. `nationality` and
-# `followup` are NOT here — they park only when their config value is unset;
-# see `TestNationalityWhenConfigured` / `TestFollowupWhenConfigured`.
-ALWAYS_PARK = ("export_control", "names_other_country", "alternation")
+# Categories that park no matter how the config is set. `nationality`,
+# `followup` and `export_control` are NOT here — each parks only when its own
+# config value is unset; see `TestNationalityWhenConfigured` /
+# `TestFollowupWhenConfigured` / `TestExportControlWhenConfigured`.
+ALWAYS_PARK = ("names_other_country", "alternation")
 
 
 def ids(rows):
@@ -180,6 +181,48 @@ class TestCategoriesThatParkWhateverTheConfigSays:
         expected = "park" if row["required"] else "skip"
         assert r.action == expected
         assert r.tier == "B0"
+
+
+class TestExportControlWhenUnconfigured:
+    """Unlike the ALWAYS_PARK categories, export_control's park is
+    conditional — on `work_authorization.us_person_answer` being unset. This
+    is a legal declaration (ITAR/EAR), so silence must still park; see
+    `TestExportControlWhenConfigured` for the explicit opt-in path."""
+
+    ROWS = rows_for("export_control")
+
+    @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
+    def test_it_parks(self, row, configured):
+        assert configured.us_person_answer == "park"
+        r = resolve(field_of(row), configured)
+        expected = "park" if row["required"] else "skip"
+        assert r.action == expected
+        assert r.tier == "B0"
+
+
+class TestExportControlWhenConfigured:
+    ROWS = rows_for("export_control")
+
+    @pytest.fixture
+    def not_a_us_person(self, configured):
+        return dc_replace(configured, us_person_answer="no")
+
+    @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
+    def test_it_fills_only_when_the_board_offers_a_bare_yes_no(
+        self, row, not_a_us_person
+    ):
+        r = resolve(field_of(row), not_a_us_person)
+        if offers(row, "No"):
+            assert r.action == "fill"
+            assert says(r.value, "No")
+        else:
+            # A tri-state option set ("I am a U.S. person" / "I am a citizen
+            # of Cuba, Iran, North Korea, or Syria..." / "None of the above")
+            # offers no bare Yes/No for either polarity — still parks, since
+            # us_person_answer cannot say which qualified option is true.
+            expected = "park" if row["required"] else "skip"
+            assert r.action == expected
+            assert r.tier == "B0"
 
 
 class TestNationalityWhenUnconfigured:

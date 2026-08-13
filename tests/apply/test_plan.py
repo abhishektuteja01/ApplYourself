@@ -339,6 +339,120 @@ class TestOverrides:
         assert plan.fields[0].value == "Open — targeting market rate for the level."
         assert plan.fields[0].tier == "B"
 
+    def test_a_b0_llm_override_resolves_a_compound_option_work_auth_park(
+        self, answers, tailor_dir
+    ):
+        # `answers` fixture has status: time_limited (authorized_now=True,
+        # requires_sponsorship=True) and no status_option_candidates, so this
+        # sponsorship question -- full-sentence options, no bare Yes/No --
+        # parks at B0 exactly the way a real, unconfigured board does.
+        sponsorship = field(
+            id="visa_sponsorship", label="Will you now or in the future require "
+            "sponsorship to work in the United States?", kind="react_select",
+            options=(
+                MergedOption(label="Yes, I will require sponsorship now or in "
+                                    "the future."),
+                MergedOption(label="No, I will not require sponsorship."),
+            ),
+            required=True,
+        )
+        plan = build_plan(one([sponsorship]), answers, tailor_dir)
+        assert [u.id for u in plan.unmapped] == ["visa_sponsorship"]
+        assert plan.unmapped[0].tier == "B0"
+        assert "status_option_candidates" in plan.unmapped[0].reason
+
+        plan = build_plan(
+            one([sponsorship]), answers, tailor_dir,
+            overrides={"visa_sponsorship": (
+                "Yes, I will require sponsorship now or in the future.", "B0-LLM"
+            )},
+        )
+        assert plan.unmapped == ()
+        assert plan.fields[0].value == "Yes, I will require sponsorship now or in the future."
+        assert plan.fields[0].tier == "B0-LLM"
+
+    def test_a_b0_llm_tagged_override_never_touches_a_non_b0_field(
+        self, answers, tailor_dir
+    ):
+        # "B0-LLM" is the one tag that can cross into Tier B0 -- it must not
+        # become a general escape hatch onto identity or an ordinary Tier C
+        # question the way a C1/C2 draft is scoped to Tier C only.
+        plan = build_plan(
+            one([field(id="first_name", label="First Name", kind="text")]),
+            answers, tailor_dir,
+            overrides={"first_name": ("Somebody Else", "B0-LLM")},
+        )
+        assert plan.fields[0].value != "Somebody Else"
+
+    def test_an_audit_override_supersedes_a_tier_b_rule_match(self, answers, tailor_dir):
+        # "AUDIT" is the general case: a Tier B `rules:` keyword matched a
+        # compound label (e.g. "how did you hear about us and why do you
+        # want to work here") and answered only the half it recognized --
+        # the audit step supplies the full corrected answer.
+        salary = field(id="salary_expectation", label="Salary Expectation",
+                        kind="text", required=False)
+        plan = build_plan(
+            one([salary]), answers, tailor_dir,
+            overrides={"salary_expectation": ("145000 -- also, I'm drawn to "
+                                               "this team's mission.", "AUDIT")},
+        )
+        assert plan.fields[0].value == "145000 -- also, I'm drawn to this team's mission."
+        assert plan.fields[0].tier == "AUDIT"
+
+    def test_an_audit_override_supersedes_a_tier_b0_result(self, answers, tailor_dir):
+        # Same general case, on the Tier B0 side -- not limited to the one
+        # narrow "B0-LLM" wording-variant category.
+        sponsorship = field(
+            id="visa_sponsorship", label="Will you now or in the future require "
+            "sponsorship to work in the United States?", kind="react_select",
+            options=(
+                MergedOption(label="Yes, I will require sponsorship now or in "
+                                    "the future."),
+                MergedOption(label="No, I will not require sponsorship."),
+            ),
+            required=True,
+        )
+        plan = build_plan(
+            one([sponsorship]), answers, tailor_dir,
+            overrides={"visa_sponsorship": (
+                "Yes, I will require sponsorship now or in the future.", "AUDIT"
+            )},
+        )
+        assert plan.unmapped == ()
+        assert plan.fields[0].tier == "AUDIT"
+
+    def test_an_audit_tagged_override_never_touches_identity(self, answers, tailor_dir):
+        # Scoped to Tier B/B0 only, same as "JD" and "B0-LLM" -- not a
+        # general escape hatch onto identity or any other tier.
+        plan = build_plan(
+            one([field(id="first_name", label="First Name", kind="text")]),
+            answers, tailor_dir,
+            overrides={"first_name": ("Somebody Else", "AUDIT")},
+        )
+        assert plan.fields[0].value != "Somebody Else"
+
+    def test_a_c1_tagged_override_never_supersedes_a_tier_b0_park(
+        self, answers, tailor_dir
+    ):
+        # Only "B0-LLM" gets this power -- a C1 draft must stay Tier-C-only,
+        # so it can never silently clobber a work-authorization park.
+        sponsorship = field(
+            id="visa_sponsorship", label="Will you now or in the future require "
+            "sponsorship to work in the United States?", kind="react_select",
+            options=(
+                MergedOption(label="Yes, I will require sponsorship now or in "
+                                    "the future."),
+                MergedOption(label="No, I will not require sponsorship."),
+            ),
+            required=True,
+        )
+        plan = build_plan(
+            one([sponsorship]), answers, tailor_dir,
+            overrides={"visa_sponsorship": ("Yes, I will require sponsorship now "
+                                            "or in the future.", "C1")},
+        )
+        assert [u.id for u in plan.unmapped] == ["visa_sponsorship"]
+
     def test_an_override_is_canonicalized_to_the_boards_own_spelling(
         self, merged, answers, tailor_dir, scan, payload
     ):
