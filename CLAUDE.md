@@ -181,7 +181,7 @@ uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...
 uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
 uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
-uv run apply plan <job_id>            # /apply: print the fill plan, no browser
+uv run apply plan <job_id>            # /apply: print the fill plan, no browser (Ashby opens a headless one to read DOM-only field text)
 uv run apply run [--submit]           # /apply: walk the eligible queue (needs `uv sync --group apply`)
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx

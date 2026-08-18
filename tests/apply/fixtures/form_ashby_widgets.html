@@ -143,6 +143,32 @@
            name="00000015-0000-0000-0000-000000000015">
   </div>
 
+  <!-- A `Phone` field (API kind `text`) with an SMS-consent Yes/No radio pair
+       nested inside the same entry, sharing its `data-field-path`. The API
+       never declares this radio pair as its own field — it is a bolted-on
+       legal widget, not a second question — so it must never override the
+       phone control's own unambiguous `text` kind. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000016-0000-0000-0000-000000000016"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000016-0000-0000-0000-000000000016">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000016-0000-0000-0000-000000000016">Phone Number</label>
+    <input placeholder="1-415-555-1234..." name="00000016-0000-0000-0000-000000000016" required=""
+           id="00000016-0000-0000-0000-000000000016" type="tel" class="_input_80epu_28" value="">
+    <div class="_phoneNumberConsentLegalText_1w7z2_1 ashby-application-form-texting-consent-description">
+      <div class="_consentBody_1w7z2_8">
+        <div class="_editor_1n5m7_37">Check Yes or No to indicate your agreement to receive text
+          message updates.</div>
+      </div>
+      <div class="_container_1rwuy_1">
+        <label class="_label_1rwuy_6">
+          <input type="radio" name="00000016-0000-0000-0000-000000000016-consent">Yes</label>
+        <label class="_label_1rwuy_6">
+          <input type="radio" name="00000016-0000-0000-0000-000000000016-consent">No</label>
+      </div>
+    </div>
+  </div>
+
   <button class="_button_zyh3g_28 _primary_zyh3g_97 ashby-application-form-submit-button">
     Submit Application</button>
 </div>

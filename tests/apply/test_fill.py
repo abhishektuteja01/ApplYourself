@@ -648,6 +648,11 @@ class TestDriverGuards:
         """The patchright swap point (§9): if the driver is *imported* anywhere
         else under src/, swapping it stops being a one-line change.
 
+        `browser.py` is the one place the driver is named now — `fill.py` and
+        `ashby.py` both import `require_playwright`/`launch` from there rather
+        than naming `playwright` themselves, which is exactly what keeps this
+        guard meaningful for both.
+
         Walks the AST rather than grepping the source. A substring scan both
         false-fires on the word appearing in a comment and would miss an
         aliased import; and it was cwd-relative, so from any directory other
@@ -655,7 +660,7 @@ class TestDriverGuards:
         """
         offenders = []
         for path in sorted((REPO_ROOT / "src").rglob("*.py")):
-            if path.name == "fill.py":
+            if path.name in ("fill.py", "browser.py"):
                 continue
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 if isinstance(node, ast.Import):

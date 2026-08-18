@@ -78,6 +78,9 @@ class FieldPlan:
     multi: bool
     value: str | tuple[str, ...] | bool
     tier: str
+    description: str = ""
+    """`MergedField.description`, carried through so Step 4d's audit can weigh
+    a board's own instructional text, not just its label."""
 
     @property
     def needs_selection_assert(self) -> bool:
@@ -123,6 +126,13 @@ class Unmapped:
     does not have to assume: it used to hardcode `multi=False`, so a required
     "mark all that apply" resolved to one label, got clicked once, and was
     marked recovered — the exact hazard `_check_value` names."""
+
+    description: str = ""
+    """`MergedField.description` — instructional text under the label that a
+    board's own schema/API never states (Ashby, so far). `/apply`'s Tier C
+    classification reads this alongside `label` so a question like "please
+    explain briefly" or "don't write AI slop" is not classified or drafted
+    off the label alone."""
 
 
 @dataclass(frozen=True)
@@ -330,6 +340,7 @@ def _unmapped(field: MergedField, resolution: Resolution, reason: str = "") -> U
         reason=reason or resolution.reason,
         options=tuple(o.label for o in field.options),
         multi=field.multi,
+        description=field.description,
     )
 
 
@@ -488,6 +499,7 @@ def build_plan(
             multi=field.multi or field.kind in _MULTI_KINDS,
             value=resolution.value,
             tier=resolution.tier,
+            description=field.description,
         ))
 
     plan = Plan(

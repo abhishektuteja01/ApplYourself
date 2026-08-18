@@ -27,6 +27,16 @@ downstream had to change.
 `scan_ashby_form` is kept as the only reader for a *rendered* Ashby form, and
 the fixtures still exercise it, but it is no longer on the `load_board` path.
 
+The API is not the whole story either: a board can render instructional text
+under a label (LiveFlow's "if yes, please explain briefly", Adaptyv's "please
+don't write AI slop here") that `applicationForm` never declares — confirmed
+by diffing the API response against DevTools. `load_board` closes that gap
+with `fetch_dom_enrichment`/`_with_dom_descriptions`: one headless page load
+that reads every field's sibling description div generically, keyed by
+`data-field-path`, rather than matching known labels. It is the one place
+`apply plan`'s otherwise browser-free path opens a browser, and it degrades to
+no descriptions rather than failing the plan if that browser is unavailable.
+
 Filling is `fill.AshbyBrowserDriver` (§12a), which reads each field's widget
 off the live DOM — the API type does not name it.
 
@@ -57,16 +67,20 @@ Pure function over an HTML string for the scan; network lives in `load_board`.
 """
 from __future__ import annotations
 
+import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import unquote, urlparse
 
 from lxml import html as lxml_html
 
+from src.apply.browser import launch, require_playwright
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
 from src.discovery.sources.ats.http import CareersError, fetch_json_post, fetch_text
+
+log = logging.getLogger(__name__)
 
 ROOT_ID = "form"
 
@@ -159,6 +173,7 @@ _REQUIRED_PREFIX = re.compile(r"^_required_")
 _YESNO_TOKEN = re.compile(r"_yesno_")
 _SURVEY_CLASS = "ashby-survey-form-container"
 _QUESTION_TITLE_CLASS = "ashby-application-form-question-title"
+_QUESTION_DESCRIPTION_CLASS = "ashby-application-form-question-description"
 _SUBMIT_CLASS = "ashby-application-form-submit-button"
 #: One selector for both paths — the DOM scan and the API `load_board`, which
 #: has no HTML to check. The class is unhashed and resolves to exactly one
@@ -621,6 +636,67 @@ def fields_from_application_form(job_posting: dict) -> Reconciled:
     return Reconciled(fields=tuple(fields), api_only=())
 
 
+_DOM_ENRICHMENT_SCRIPT = """(elements, descriptionClass) => {
+    const out = {};
+    for (const el of elements) {
+        const path = el.getAttribute('data-field-path');
+        if (!path || out[path]) continue;
+        const desc = el.querySelector('.' + descriptionClass);
+        const text = desc ? desc.textContent.trim() : '';
+        if (text) out[path] = text;
+    }
+    return out;
+}"""
+
+
+def fetch_dom_enrichment(url: str, timeout: int = 30) -> dict[str, str]:
+    """`data-field-path` -> its sibling description text, read off the live,
+    client-rendered form — the same instructional copy a person sees under a
+    label but the question API never returns (LiveFlow's sponsorship
+    follow-up, Adaptyv's "no AI slop" prompt — generalized to any field on any
+    board, not matched by known label text).
+
+    One headless page load, one in-page query keyed on `data-field-path` (the
+    same id space everything else here uses), no interaction. Best-effort by
+    construction: `_with_dom_descriptions` swallows anything this raises,
+    including the `SystemExit` `require_playwright()` raises when the driver
+    is not installed, so a role simply gets no descriptions — the same
+    outcome as before this existed, never a blocked plan.
+    """
+    sync_playwright = require_playwright()
+    with sync_playwright() as p:
+        context = launch(p, headless=True)
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+            page.wait_for_selector("[data-field-path]", timeout=timeout * 1000)
+            return page.eval_on_selector_all(
+                "[data-field-path]", _DOM_ENRICHMENT_SCRIPT, _QUESTION_DESCRIPTION_CLASS,
+            )
+        finally:
+            context.close()
+
+
+def _with_dom_descriptions(reconciled: Reconciled, form_url: str, timeout: int) -> Reconciled:
+    """Fold `fetch_dom_enrichment` into an already-built `Reconciled`, field by
+    field. Never raises: a missing browser, a timeout, or a layout this was
+    never written for all just mean no descriptions get added, same as the
+    API-only plan this sits on top of.
+    """
+    try:
+        descriptions = fetch_dom_enrichment(form_url, timeout=timeout)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - enrichment only, never fatal
+        log.warning("Ashby DOM enrichment skipped for %s: %s", form_url, exc)
+        return reconciled
+    if not descriptions:
+        return reconciled
+    fields = tuple(
+        replace(f, description=descriptions[f.name]) if f.name in descriptions else f
+        for f in reconciled.fields
+    )
+    return replace(reconciled, fields=fields)
+
+
 def load_board(url: str, timeout: int = 30) -> AshbyBoard:
     """Posting URL -> an Ashby board, `plan_for_board`-shaped. One POST.
 
@@ -639,10 +715,18 @@ def load_board(url: str, timeout: int = 30) -> AshbyBoard:
     a different thing from Lever's hCaptcha, which does block on a person. The
     v3 score is still a bot-detection surface — a low score can have a
     submission silently rejected — but nothing here can wait it out.
+
+    One more network trip than the API alone needs: `_with_dom_descriptions`
+    opens a headless browser to read whatever instructional text a board
+    renders under a label but never declares in `applicationForm` (§12a). This
+    is the one place in `/apply`'s "plan" path that touches a browser at all —
+    everywhere else, `apply plan` is deliberately browser-free — and it is
+    scoped to Ashby only, best-effort, and never blocks the plan if it fails.
     """
     posting = parse_posting(url)
     job_posting = fetch_application_form(posting, timeout=timeout)
     reconciled = fields_from_application_form(job_posting)
+    reconciled = _with_dom_descriptions(reconciled, posting.form_url, timeout=timeout)
     return AshbyBoard(
         posting=posting,
         slug=posting.slug,

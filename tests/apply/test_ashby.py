@@ -8,7 +8,10 @@ that is what a future fill driver will hold.
 Plan-only: this module has no fill driver (see ashby.py's module docstring),
 so there is no submit/captcha/driver coverage here, unlike test_lever.py.
 
-No network: fetch_text and fetch_json_post are stubbed everywhere.
+No network: fetch_text and fetch_json_post are stubbed everywhere, and every
+`load_board` call also stubs `fetch_dom_enrichment` — otherwise it would open a
+real headless browser against a fake URL. `TestDomEnrichment` below is the one
+place that exercises `fetch_dom_enrichment` itself, against a fake Playwright.
 """
 from __future__ import annotations
 
@@ -194,7 +197,8 @@ class TestLoadBoard:
 
     def _board(self, payload=None):
         with patch("src.apply.ashby.fetch_json_post",
-                   return_value=payload or load_api("api_ashby_form")):
+                   return_value=payload or load_api("api_ashby_form")), \
+             patch("src.apply.ashby.fetch_dom_enrichment", return_value={}):
             return load_board(ASHBY_URL)
 
     def test_the_submit_selector_matches_the_dom_scan(self):
@@ -235,7 +239,8 @@ class TestLoadBoard:
             seen.update(body["variables"])
             return load_api("api_ashby_form")
 
-        with patch("src.apply.ashby.fetch_json_post", side_effect=capture):
+        with patch("src.apply.ashby.fetch_json_post", side_effect=capture), \
+             patch("src.apply.ashby.fetch_dom_enrichment", return_value={}):
             load_board("https://jobs.ashbyhq.com/Gasket%20Works/"
                        "00000001-0000-0000-0000-000000000001")
         assert seen["organizationHostedJobsPageName"] == "Gasket Works"
@@ -250,6 +255,108 @@ class TestLoadBoard:
         with pytest.raises(AshbyScanError, match="Cannot query field"):
             self._board({"errors": [{"message": "Cannot query field 'nope'"}],
                          "data": None})
+
+
+class TestDomEnrichment:
+    """`fetch_dom_enrichment` against a fake Playwright — no real browser, no
+    real network. It matches by class (`data-field-path` / the description
+    sibling), never by a known field id or label, so a board with instructional
+    text under any field surfaces it — not just the two known cases (LiveFlow,
+    Adaptyv) that motivated it."""
+
+    @staticmethod
+    def _fake_playwright(descriptions):
+        class Page:
+            def goto(self, *a, **kw):
+                pass
+
+            def wait_for_selector(self, *a, **kw):
+                pass
+
+            def eval_on_selector_all(self, *a, **kw):
+                return descriptions
+
+        class Ctx:
+            pages: list = []
+
+            def new_page(self):
+                return Page()
+
+            def close(self):
+                pass
+
+        class Chromium:
+            @staticmethod
+            def launch_persistent_context(**kw):
+                return Ctx()
+
+        class P:
+            chromium = Chromium()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return lambda: P()
+
+    def test_returns_whatever_the_page_carries(self, monkeypatch):
+        monkeypatch.setattr(
+            ashby, "require_playwright",
+            lambda: self._fake_playwright({"q1": "Please explain briefly."}),
+        )
+        result = ashby.fetch_dom_enrichment(ASHBY_URL)
+        assert result == {"q1": "Please explain briefly."}
+
+    def test_load_board_merges_descriptions_into_matching_fields(self, monkeypatch):
+        monkeypatch.setattr(
+            ashby, "fetch_dom_enrichment",
+            lambda url, timeout=30: {"_systemfield_name": "Legal name as on ID."},
+        )
+        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+            board = load_board(ASHBY_URL)
+        by_id = {f.id: f for f in board.reconciled.fields}
+        assert by_id["_systemfield_name"].description == "Legal name as on ID."
+        assert by_id["_systemfield_email"].description == ""
+
+    def test_a_file_fields_description_matches_by_its_real_dom_path(self, monkeypatch):
+        """`resume`'s `MergedField.id` is aliased away from
+        `_systemfield_resume`, the DOM's actual `data-field-path` — the
+        description dict is keyed by that real path, so the merge must match
+        on `.name`, not `.id`."""
+        monkeypatch.setattr(
+            ashby, "fetch_dom_enrichment",
+            lambda url, timeout=30: {"_systemfield_resume": "PDF only, 5MB max."},
+        )
+        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+            board = load_board(ASHBY_URL)
+        by_id = {f.id: f for f in board.reconciled.fields}
+        assert by_id["resume"].name == "_systemfield_resume"
+        assert by_id["resume"].description == "PDF only, 5MB max."
+
+    def test_a_failed_enrichment_degrades_to_no_descriptions_not_a_broken_plan(
+        self, monkeypatch
+    ):
+        def boom(url, timeout=30):
+            raise RuntimeError("chrome not installed")
+
+        monkeypatch.setattr(ashby, "fetch_dom_enrichment", boom)
+        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+            board = load_board(ASHBY_URL)
+        assert all(f.description == "" for f in board.reconciled.fields)
+
+    def test_missing_playwright_also_degrades_rather_than_raising(self, monkeypatch):
+        # `require_playwright()` raises SystemExit, not Exception, when the
+        # driver is not installed — the one case `_with_dom_descriptions`
+        # must catch on top of the ordinary Exception path.
+        def boom(url, timeout=30):
+            raise SystemExit("ERROR: playwright not installed...")
+
+        monkeypatch.setattr(ashby, "fetch_dom_enrichment", boom)
+        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+            board = load_board(ASHBY_URL)
+        assert all(f.description == "" for f in board.reconciled.fields)
 
 
 class TestApiFieldMapping:

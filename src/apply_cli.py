@@ -357,7 +357,7 @@ def as_dict(plan: Plan) -> dict:
             {"id": f.id, "label": f.label, "kind": f.kind, "section": f.section,
              "required": f.required, "multi": f.multi, "tier": f.tier,
              "value": list(f.value) if isinstance(f.value, tuple) else f.value,
-             "assert_selected": f.needs_selection_assert}
+             "assert_selected": f.needs_selection_assert, "description": f.description}
             for f in plan.fields
         ],
         "files": [
@@ -367,12 +367,12 @@ def as_dict(plan: Plan) -> dict:
         "unmapped": [
             {"id": u.id, "label": u.label, "required": u.required, "kind": u.kind,
              "section": u.section, "tier": u.tier, "reason": u.reason,
-             "options": list(u.options)}
+             "options": list(u.options), "description": u.description}
             for u in plan.unmapped
         ],
         "draftable": [
             {"id": d.id, "label": d.label, "kind": d.kind, "section": d.section,
-             "options": list(d.options)}
+             "options": list(d.options), "description": d.description}
             for d in plan.draftable
         ],
         "skipped": [
@@ -408,6 +408,8 @@ def render(plan: Plan) -> str:
     lines.append(f"DRAFTABLE, optional and unmatched ({len(plan.draftable)})")
     for d in plan.draftable:
         lines.append(f"    {d.id:<28} {d.label}")
+        if d.description:
+            lines.append(f"      note: {d.description}")
         if d.options:
             lines.append(f"      offers: {', '.join(d.options)}")
 
@@ -422,6 +424,8 @@ def render(plan: Plan) -> str:
         flag = "*" if u.required else " "
         lines.append(f"  {flag} {u.id:<28} [{u.tier}] {u.reason}")
         lines.append(f"      {u.label}")
+        if u.description:
+            lines.append(f"      note: {u.description}")
         if u.options:
             lines.append(f"      offers: {', '.join(u.options)}")
 

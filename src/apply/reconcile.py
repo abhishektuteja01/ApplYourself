@@ -55,6 +55,10 @@ class MergedField:
     options: tuple[MergedOption, ...] = ()
     api_source: str | None = None   # question source, or DEMOGRAPHIC_SOURCE
     api_type: str | None = None
+    description: str = ""
+    """Instructional text a board renders under the label but declares nowhere
+    in its own schema/API — e.g. Ashby's sibling description div (§12a). Empty
+    for every board/field that has none; Greenhouse and Lever never set it."""
 
     @property
     def dom_only(self) -> bool:

@@ -129,7 +129,9 @@ Read every Tier C question from the plan JSON's `"unmapped"` (filter
 `"tier" == "C"`) and `"draftable"` lists together, as one pool — required or
 optional makes no difference to how a question gets classified or answered,
 only to what happens if it stays unresolved (parks the role vs. stays blank).
-`Read` each one's `"label"` (and `"options"` if present).
+`Read` each one's `"label"` (and `"options"`/`"description"` if present) —
+`"description"` is a board's own instructional text under the label
+(Ashby only, so far) and can change how a question classifies or drafts.
 
 **Also scan `"fields"` (filter `"tier" == "B"`) for a salary/compensation-shaped
 label.** A board with a static Tier B `rules:` match (the common case — see
@@ -346,7 +348,9 @@ For each C1 question, draft an answer under NO-FAB / REPHRASE-LICENSE (same
 discipline as `/tailor`): every claim about your experience traces to a
 specific `profile/bullets.md` bullet's canonical text or its
 `allowable_synonyms`. No invented tools, metrics, scopes, or dates. Keep it
-short — these are form fields, not letter paragraphs; 1-3 sentences.
+short — these are form fields, not letter paragraphs; 1-3 sentences. If the
+question carries a `"description"`, follow it (e.g. a length cap or a
+"don't use AI" instruction) same as the label itself.
 
 Add `"<field_id>": {"value": "<drafted text>", "tier": "C1"}` to
 `$OVERRIDES_FILE` for every one, keeping the existing `job_id` key, regardless of what happens next.

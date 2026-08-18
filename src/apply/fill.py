@@ -17,9 +17,9 @@ no option list to validate against beforehand are `country` (32),
 `candidate-location` (16), `degree--0` (4), `discipline--0` (4) and
 `school--0` (3) — so this assert is not an edge case, it is the main path.
 
-`playwright` is an optional dependency (`uv sync --group apply`), and this and
-`_launch` are the only places in `src/` that name the driver, so swapping in
-patchright later is a one-line change.
+`playwright` is an optional dependency (`uv sync --group apply`); `browser.py`
+is the only module in `src/` that names the driver, so swapping in patchright
+later is a one-line change there.
 """
 from __future__ import annotations
 
@@ -32,12 +32,11 @@ from pathlib import Path
 from src import paths
 from src.apply import ashby
 from src.apply.answers import Answers, resolve
+from src.apply.browser import USER_DATA_DIR, launch as _launch, require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.apply.reconcile import MergedField, MergedOption
 
 log = logging.getLogger(__name__)
-
-USER_DATA_DIR = paths.REPO_ROOT / ".apply_profile"
 
 FORM_SELECTOR = "#application-form"
 # Attribute form, not "#id": a checkbox group's id carries a literal "[]".
@@ -209,34 +208,6 @@ class FillResult:
     @property
     def prefilled(self) -> tuple[str, ...]:
         return tuple(o.id for o in self.outcomes if o.was_prefilled)
-
-
-def _require_playwright():
-    """Import the driver, or explain how to install it. Call-time, so the module
-    imports fine without the group and `tests/test_profile_templates.py`'s AST
-    walk keeps working."""
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise SystemExit(
-            "ERROR: playwright not installed. Run `uv sync --group apply` "
-            "then `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome`."
-        ) from exc
-    return sync_playwright
-
-
-def _launch(p, *, headless: bool = False):
-    """The one place a browser is constructed.
-
-    A separate, empty profile: `channel="chrome"` selects the system Chrome
-    binary, not the user's session. Pointing this at the real profile would
-    expose every logged-in cookie and is refused by Chrome anyway.
-    """
-    return p.chromium.launch_persistent_context(
-        user_data_dir=str(USER_DATA_DIR),
-        channel="chrome",
-        headless=headless,
-    )
 
 
 def _is_numeric(value: str) -> bool:
@@ -743,13 +714,22 @@ class AshbyBrowserDriver(BrowserDriver):
     def resolve_kind(self, field_id: str, planned: str) -> str:
         """What this field renders as right now, falling back to the plan.
 
-        Only widget shape is read, never labels or options — the answer is
-        still whatever the plan resolved. A field that is not on the page (a
-        conditional question, say) keeps its planned kind and fails later in
-        the ordinary way rather than being silently reinterpreted here.
+        Reinterpretation only ever applies to `planned in ("select",
+        "combobox")` — the two API types Ashby is documented to render
+        ambiguously: `select` as a radio group at 1/3/5 options, a combobox
+        at 11/24/194, or a lone checkbox for a single acknowledgement;
+        `combobox` (the Location field) as either the enumerated or the
+        server-backed flavour, both driven the same way. Every other planned
+        kind is trusted as-is: a `text`-planned field can carry unrelated
+        nested controls in the same entry — e.g. a `Phone` field with an
+        SMS-consent Yes/No radio pair bolted onto its own `data-field-path`
+        — and those must never override the field's real, unambiguous kind.
+        A field not on the page (a conditional question, say) also keeps its
+        planned kind and fails later in the ordinary way rather than being
+        silently reinterpreted here.
         """
         entry = self._entry(field_id)
-        if entry.count() == 0:
+        if entry.count() == 0 or planned not in ("select", "combobox"):
             return planned
         if entry.locator(self.COMBOBOX).count():
             # Both flavours — the enumerated one and the server-backed location

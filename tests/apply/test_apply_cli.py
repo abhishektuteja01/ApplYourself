@@ -142,6 +142,10 @@ class TestBuildDispatchesToAshby:
         from .conftest import load_api
         monkeypatch.setattr("src.apply.ashby.fetch_json_post",
                             lambda *a, **k: load_api("api_ashby_form"))
+        # Otherwise `load_board` would open a real headless browser to read
+        # DOM-only descriptions — no network in this test module.
+        monkeypatch.setattr("src.apply.ashby.fetch_dom_enrichment",
+                            lambda *a, **k: {})
 
     def test_an_ashby_url_builds_an_ashby_plan(self, repo, monkeypatch, tailor_dir):
         repo.write_clean(**{JOB_ID: ASHBY_URL})
