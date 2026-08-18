@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gettext
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -48,6 +49,28 @@ for _c in pycountry.countries:
     if hasattr(_c, "official_name"):
         COUNTRY_NAMES[_fold(_c.official_name)] = _c.name
 
+# Native-language country names ("Deutschland", "Espana", "Brasil") come
+# from pycountry's own bundled iso-codes gettext catalogs -- the same
+# upstream project pycountry's English names are sourced from -- rather
+# than a hand-typed alias per language. Limited to major job-market
+# locales (not all ~160 iso-codes ships) to keep import cost bounded;
+# missing a rare locale just means that one native name stays unresolved,
+# same as any other unmapped input, not a crash.
+_MAJOR_LOCALES = (
+    "de", "fr", "es", "nl", "it", "pt", "pl", "tr", "ru", "zh", "ja", "ko",
+    "ar", "sv", "da", "fi", "cs", "ro", "hu", "el", "he", "th", "vi", "id",
+    "uk",
+)
+for _lang in _MAJOR_LOCALES:
+    try:
+        _cat = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=[_lang])
+    except FileNotFoundError:
+        continue
+    for _c in pycountry.countries:
+        _native = _cat.gettext(_c.name)
+        if _native != _c.name:
+            COUNTRY_NAMES.setdefault(_fold(_native), _c.name)
+
 # Colloquial aliases pycountry's own name/common_name/official_name strings
 # don't cover. A fuzzy-matching fallback (pycountry.countries.search_fuzzy)
 # was tried and rejected: it also matches unrelated common words to a
@@ -95,6 +118,25 @@ for _s in pycountry.subdivisions:
     _bare = _s.code.split("-", 1)[-1].upper()
     SUBDIVISIONS_BY_CODE.setdefault(_bare, []).append(_s)
 
+# pycountry's own subdivision.name is often the local-language ISO name
+# ("Noord-Brabant", "Bayern") rather than the English form job postings
+# use. Same iso-codes gettext catalog mechanism as COUNTRY_NAMES above,
+# translated into English, added as an extra lookup key when it differs.
+# Coverage is genuinely partial -- iso-codes' own English catalog doesn't
+# translate every subdivision (confirmed: "Bayern" -> "Bavaria" exists,
+# "Noord-Brabant" -> "North Brabant" does not) -- this narrows the gap,
+# it doesn't close it.
+try:
+    _en_subdivision_cat = gettext.translation(
+        "iso3166-2", pycountry.LOCALES_DIR, languages=["en"]
+    )
+    for _s in pycountry.subdivisions:
+        _native_name = _en_subdivision_cat.gettext(_s.name)
+        if _native_name != _s.name:
+            SUBDIVISIONS_BY_NAME.setdefault(_fold(_native_name), []).append(_s)
+except FileNotFoundError:
+    pass
+
 _SHORT_CODE_MAX_LEN = 3
 
 # Countries whose subdivisions are conventionally written as a bare 2-letter
@@ -134,14 +176,42 @@ for _cc, _data in _GC_COUNTRIES.items():
 # Jakarta/Rome/Athens collisions and has been deleted, not ported).
 # ---------------------------------------------------------------------
 
+# "St." and "Saint" are the same word to a job poster but can each be a
+# real, independently-canonical geonames entry for a DIFFERENT city
+# ("St. Petersburg" FL vs "Saint Petersburg" Russia) -- folding both forms
+# to one lookup key merges them into a shared bucket instead of the two
+# ever shadowing each other, so country-hint filtering (below) can pick
+# the right one the same way it already does for any other same-name
+# collision. Applied at both index-build time and query time. Not a
+# one-off alias: covers every St./Saint pair in the dataset (St. Louis,
+# St. Paul, St. John's, ...), not just the one that was observed.
+_ST_RE = re.compile(r"^st\.?\s+")
+
+
+def _normalize_saint(folded: str) -> str:
+    return _ST_RE.sub("saint ", folded)
+
+
 CITIES_BY_NAME: dict[str, list[dict]] = {}
 for _city in _ALL_CITIES.values():
-    CITIES_BY_NAME.setdefault(_fold(_city["name"]), []).append(_city)
+    CITIES_BY_NAME.setdefault(_normalize_saint(_fold(_city["name"])), []).append(_city)
 for _lst in CITIES_BY_NAME.values():
     _lst.sort(key=lambda c: c.get("population", 0), reverse=True)
 
-# geonames spells NYC "New York City"; postings write "New York".
-_CITY_NAME_ALIASES = {"new york": "new york city"}
+# geonames spells NYC "New York City"; postings write "New York" or "NYC".
+# Curated, closed list for names that are different words in different
+# languages/registers rather than a lexical pattern (no general mechanism
+# can derive these) -- same documented pattern as _PRE_PARSE_EXPANSIONS
+# below, not a growing pile of one-offs: add here only when a name is
+# confirmed missing and isn't covered by _normalize_saint or the
+# COUNTRY_NAMES/SUBDIVISIONS_BY_NAME locale-translation mechanisms above.
+_CITY_NAME_ALIASES = {
+    "new york": "new york city",
+    "nyc": "new york city",
+    "bangalore": "bengaluru",
+    "bruxelles": "brussels",
+    "ciudad de mexico": "mexico city",
+}
 
 # A city match with no country context yet becomes the country signal
 # itself, so it needs real prominence -- see _city_lookup's docstring.
@@ -288,10 +358,21 @@ def _disambiguate_subdivisions(
 
 
 def _city_lookup(text: str, country_hint: str = "") -> dict | None:
-    folded = _fold(text)
-    candidates = CITIES_BY_NAME.get(folded) or CITIES_BY_NAME.get(
-        _CITY_NAME_ALIASES.get(folded, "")
-    )
+    folded = _normalize_saint(_fold(text))
+    candidates = list(CITIES_BY_NAME.get(folded, []))
+    alias_target = _CITY_NAME_ALIASES.get(folded, "")
+    if alias_target:
+        # Merge rather than "or"-shortcircuit: an alias target and a
+        # direct match can both be real (e.g. a future alias could point
+        # at a name that also has its own small unrelated namesake) -- the
+        # country-hint filter below is what actually picks the right one,
+        # so both pools should be visible to it, not just whichever was
+        # checked first.
+        seen_ids = {c["geonameid"] for c in candidates}
+        for c in CITIES_BY_NAME.get(alias_target, []):
+            if c["geonameid"] not in seen_ids:
+                candidates.append(c)
+        candidates.sort(key=lambda c: c.get("population", 0), reverse=True)
     if not candidates:
         for suffix in _GENERIC_AREA_SUFFIXES:
             if folded.endswith(" " + suffix):
@@ -327,13 +408,34 @@ def _city_lookup(text: str, country_hint: str = "") -> dict | None:
     return candidates[0]
 
 
-# `or` must stay case-sensitive even though `;`/`/` don't need to be: a
+# `or` must stay case-sensitive even though `;`/`/`/`|` don't need to be: a
 # handful of US state postal codes are themselves the English word "or"
 # spelled in caps ("Portland, OR"). Matching "OR" here as a separator
 # destroys the state before libpostal ever sees it. `(?-i:...)` scopes
 # case-sensitivity to just that branch inside an otherwise case-insensitive
 # pattern.
-_SEPARATOR_RE = re.compile(r";|(?-i:\bor\b)|/", re.IGNORECASE)
+#
+# `\s-\s` (a hyphen with a space on both sides) is deliberately narrower
+# than a bare `-`: real hyphenated place names ("Winston-Salem",
+# "Sophia-Antipolis") never have spaces around the hyphen, so they're
+# untouched, while a board's own "Country - City" formatting (which
+# libpostal tokenizes inconsistently -- confirmed it happens to split
+# "France - Paris" into two components but folds "Netherlands - Alkmaar"
+# into one unparseable blob) is now split deterministically before
+# libpostal ever sees it, rather than relying on tokenizer luck.
+_SEPARATOR_RE = re.compile(r";|(?-i:\bor\b)|/|\||\s-\s", re.IGNORECASE)
+
+# `and`/`&` are deliberately NOT in `_SEPARATOR_RE` above: multi-word
+# country names legitimately contain "and" ("Trinidad and Tobago", "Bosnia
+# and Herzegovina") and splitting on it there would destroy them before
+# libpostal ever sees the whole name. Instead this is a narrow fallback
+# tried only when a segment's ordinary mining below finds *nothing at
+# all* -- real country names always resolve on the first pass and never
+# reach this path, so they can't regress. A segment that failed outright
+# ("US and Canada", "United States & Canada" -- confirmed via testing that
+# libpostal folds the whole phrase into one unparseable "house" blob) gets
+# one retry, split on " and "/" & ", mining each half separately.
+_AND_SPLIT_RE = re.compile(r"\s+and\s+|\s*&\s*", re.IGNORECASE)
 
 # A real hierarchical address (city, state, country[, zip]) essentially
 # never needs more than this many commas. A segment with more is a
@@ -507,6 +609,17 @@ def parse_location(raw: str) -> LocationParse:
 
     for seg in segments:
         c, s, ci = _mine_segment_signals(seg)
+        if not (c or s or ci) and _AND_SPLIT_RE.search(seg):
+            # Ordinary mining found nothing at all -- see _AND_SPLIT_RE's
+            # comment for why "and"/"&" aren't in the main separator regex.
+            for sub_seg in _AND_SPLIT_RE.split(seg):
+                sub_seg = sub_seg.strip()
+                if not sub_seg:
+                    continue
+                sc, ss, sci = _mine_segment_signals(sub_seg)
+                c |= sc
+                s |= ss
+                ci |= sci
         found_countries |= c
         found_states |= s
         found_cities |= ci

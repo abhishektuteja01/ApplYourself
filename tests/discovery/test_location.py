@@ -587,3 +587,97 @@ def test_semicolon_all_foreign_list_has_no_us_candidate():
     assert res.country == ""
     assert res.candidate_countries == frozenset({"United Kingdom", "Sweden"})
     assert "United States" not in res.candidate_countries
+
+
+# ---------------------------------------------------------------------
+# Found scanning ~350 random real jobs/clean.parquet location strings
+# through the parser end to end (not hypothetical). Each of these traces
+# to one of: the separator regex not covering pipe/dash, "and"/"&"
+# country lists not being surfaced as ambiguous, native-language country/
+# subdivision names, or geonames' canonical spelling differing from what
+# a job poster writes.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw", ["US and Canada", "United States and Canada", "United States & Canada"])
+def test_and_ampersand_country_lists_surface_as_candidates(raw):
+    # libpostal folds the whole phrase into one unparseable "house" blob
+    # (confirmed via parse_address), so ordinary segment mining finds
+    # nothing -- the "and"/"&" fallback split only fires on that total
+    # failure, which is what lets "Trinidad and Tobago" (tested above)
+    # keep resolving as one country without ever reaching this path.
+    res = parse_location(raw)
+    assert res.country == ""
+    assert res.candidate_countries == frozenset({"United States", "Canada"})
+
+
+def test_pipe_separated_multi_office_listing_is_ambiguous_not_a_wrong_single_answer():
+    # Before `|` was a recognized separator, libpostal mis-tokenized the
+    # whole string and confidently returned just "Seattle, WA", silently
+    # dropping the other two offices. It must resolve the same way the
+    # semicolon-separated equivalent already does: ambiguous, kept empty.
+    res = parse_location("San Francisco, CA | New York City, NY | Seattle, WA")
+    assert res.country == ""
+    assert res.state == ""
+    assert res.city == ""
+
+
+def test_country_dash_city_resolves_regardless_of_libpostal_tokenizer_luck():
+    # libpostal happens to split "France - Paris" into two components on
+    # its own but folds "Netherlands - Alkmaar" into one unparseable
+    # blob -- an explicit " - " separator makes this deterministic
+    # instead of depending on which one libpostal's model gets right.
+    assert parse_location("Netherlands - Alkmaar").country == "Netherlands"
+    assert parse_location("France - Paris").country == "France"
+
+
+@pytest.mark.parametrize("raw", ["Winston-Salem, NC", "Sophia-Antipolis, France"])
+def test_bare_hyphen_in_a_real_place_name_is_not_treated_as_a_separator(raw):
+    # The " - " separator only matches a hyphen with a space on both
+    # sides -- a real hyphenated place name has no such spaces, so it
+    # must still parse as a single segment.
+    res = parse_location(raw)
+    assert res.country != ""
+
+
+def test_nyc_abbreviation_resolves_like_new_york():
+    res = parse_location("Sapien HQ — NYC")
+    assert res.country == "United States"
+    assert res.state == "NY"
+    assert res.city == "New York City"
+
+
+def test_saint_petersburg_florida_disambiguates_from_the_russian_city():
+    # geonames' canonical spelling for the Russian city is "Saint
+    # Petersburg" and for the Florida one is "St. Petersburg" -- both
+    # spellings must resolve to whichever is correct for the given
+    # country/state context, not just whichever canonical entry happens
+    # to share the raw string exactly.
+    res = parse_location("Saint Petersburg, FL, US")
+    assert res.country == "United States"
+    assert res.state == "FL"
+
+
+def test_saint_petersburg_alone_still_means_russia():
+    # With no US state/country context, the bare name must still resolve
+    # to the globally dominant place, same as any other bare-namesake
+    # case tested elsewhere in this file.
+    assert parse_location("Saint Petersburg").country == "Russian Federation"
+
+
+@pytest.mark.parametrize("raw,country", [
+    ("Bruxelles", "Belgium"),
+    ("Bangalore", "India"),
+    ("Ciudad de México", "Mexico"),
+])
+def test_curated_city_name_aliases_resolve_the_local_or_common_spelling(raw, country):
+    assert parse_location(raw).country == country
+
+
+@pytest.mark.parametrize("raw,country", [
+    ("Deutschland", "Germany"),
+    ("España", "Spain"),
+    ("Brasil", "Brazil"),
+    ("Nederland", "Netherlands"),
+])
+def test_native_language_country_names_resolve_via_pycountrys_own_locale_data(raw, country):
+    assert parse_location(raw).country == country
