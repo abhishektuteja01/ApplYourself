@@ -100,19 +100,14 @@ class TestRelativePostedDate:
 
 
 class TestSearchTerms:
-    def test_deduplicates_case_insensitively_across_verticals(self):
+    def test_returns_exactly_one_term(self):
         terms = search_terms(verticals_module.get_config())
-        assert len(terms) == len({t.strip().casefold() for t in terms})
-        assert all(isinstance(t, str) and t for t in terms)
+        assert len(terms) == 1
 
-    def test_every_term_comes_from_a_configured_vertical(self):
+    def test_the_term_is_the_default_verticals_first_search_term(self):
         cfg = verticals_module.get_config()
-        all_configured = {
-            t.strip().casefold()
-            for v in cfg.verticals.values()
-            for t in v.search_terms
-        }
-        assert set(t.casefold() for t in search_terms(cfg)) <= all_configured
+        default = cfg.verticals[cfg.default_vertical]
+        assert search_terms(cfg) == (default.search_terms[0],)
 
 
 class TestWorkdaySourceFetch:
@@ -212,7 +207,7 @@ class TestWorkdaySourceFetch:
         n_terms = len(search_terms(verticals_module.get_config()))
         assert calls["n"] == n_terms * workday.MAX_PAGES_PER_TERM
 
-    def test_the_same_posting_under_two_terms_is_detail_fetched_once(self, monkeypatch):
+    def test_the_same_posting_is_detail_fetched_once(self, monkeypatch):
         monkeypatch.setattr(
             universe, "load",
             lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
@@ -435,12 +430,19 @@ class TestTheCrawlResumesAcrossRuns:
         companies = self._companies()
 
         class StopsAfterTwo(MockContext):
+            """`deadline_reached()` is checked several times per tenant (once
+            per company, per term, and per page), not once — so the cutoff
+            has to be a fixed budget generous enough for a couple of tenants
+            to complete, not `len(search_terms(...))`-scaled: with a single
+            configured term that shrank to 2, too tight to let even one
+            tenant's first page be read before the cut."""
+
             def __init__(self):
                 self.polled = 0
 
             def deadline_reached(self):
                 self.polled += 1
-                return self.polled > 2 * len(search_terms(verticals_module.get_config()))
+                return self.polled > 12
 
         first: list = []
         self._stub(monkeypatch, companies, first)
