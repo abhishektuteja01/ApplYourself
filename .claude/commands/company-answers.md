@@ -86,6 +86,10 @@ that company's own About/Mission page directly over a generic web search.
 
 Pull at most 1-2 concrete themes — what they build, who they serve, a
 stated focus tied to this JD's work — never the homepage tagline verbatim.
+Prioritize what the company says it values or is trying to change (mission,
+culture, problem they care about) over who runs it or how it's funded. Cite
+an exec name, funding round, or dollar figure only if the JD itself
+references it — otherwise these read as trivia, not fit.
 If the search returns nothing specific, the wrong company, or only
 marketing copy, drop this step and write `INSUFFICIENT_RESEARCH` sections
 below. Never blocks.
