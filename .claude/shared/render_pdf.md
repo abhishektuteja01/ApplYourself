@@ -39,6 +39,10 @@ tell application "Microsoft Word"
 end tell
 ASEOF
 if [ -s "${PDF_ABS}" ]; then
+    PDF_WORDS=$(pdftotext "${PDF_ABS}" - 2>/dev/null | wc -w | tr -d ' ')
+    if [ "${PDF_WORDS:-0}" -lt 50 ]; then
+        echo "WARNING: PDF has only ${PDF_WORDS:-0} extractable words — export may be blank/garbled. docx is primary, PDF supplementary."
+    fi
     cp "${PDF_ABS}" "${OUT_DIR}/${FILE_SLUG}_${BASENAME}.pdf"
     rm -f "${DOCX_ABS}" "${PDF_ABS}"
     echo "pdf rendered: ${OUT_DIR}/${FILE_SLUG}_${BASENAME}.pdf"

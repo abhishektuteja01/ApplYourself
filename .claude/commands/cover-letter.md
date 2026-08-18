@@ -331,6 +331,7 @@ Before reporting success, verify on disk:
       asserted lint-clean by `/company-answers` (Step 2b).
 - [ ] Body word count is within 230-300 (count the `body` entries' words; /outreach
       asserts its channel limit, and this letter has to fit one page the same way)
+- [ ] `pdfinfo` is installed: `command -v pdfinfo >/dev/null 2>&1 || echo "ERROR: pdfinfo not installed. Run: brew install poppler"`
 - [ ] The rendered PDF is exactly one page: `pdfinfo "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf" | awk '/^Pages:/{print $2}'`
       returns `1`. Word count is a guard rail, not the test — paragraph count and
       ragged line breaks move the real boundary, so assert the page count itself.
