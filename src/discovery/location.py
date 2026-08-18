@@ -48,7 +48,14 @@ for _c in pycountry.countries:
     if hasattr(_c, "official_name"):
         COUNTRY_NAMES[_fold(_c.official_name)] = _c.name
 
-# Colloquial aliases pycountry's own name strings don't cover.
+# Colloquial aliases pycountry's own name/common_name/official_name strings
+# don't cover. A fuzzy-matching fallback (pycountry.countries.search_fuzzy)
+# was tried and rejected: it also matches unrelated common words to a
+# country by edit-distance coincidence ("North"/"South"/"East"/"West" ->
+# Cameroon, "Central" -> Botswana, "Metro" -> France) -- exactly the kind
+# of false-positive collision this rewrite replaced the old keyword matcher
+# to avoid. Add names here only when confirmed missing from pycountry's own
+# fields (see COUNTRY_NAMES construction above).
 COUNTRY_NAMES.update({
     "usa": "United States",
     "us": "United States",
@@ -57,6 +64,17 @@ COUNTRY_NAMES.update({
     "united states of america": "United States",
     "uk": "United Kingdom",
     "u.k.": "United Kingdom",
+    "uae": "United Arab Emirates",
+    "u.a.e.": "United Arab Emirates",
+    "ksa": "Saudi Arabia",
+    "drc": "Congo, The Democratic Republic of the",
+    "dr congo": "Congo, The Democratic Republic of the",
+    "democratic republic of congo": "Congo, The Democratic Republic of the",
+    "ivory coast": "Côte d'Ivoire",
+    "burma": "Myanmar",
+    "holland": "Netherlands",
+    "russia": "Russian Federation",
+    "macedonia": "North Macedonia",
 })
 
 CC_TO_COUNTRY: dict[str, str] = {_c.alpha_2: _c.name for _c in pycountry.countries}
@@ -191,7 +209,16 @@ def _validate_state(
     name_candidates = SUBDIVISIONS_BY_NAME.get(_fold(text), [])
     if len(name_candidates) == 1:
         sub = name_candidates[0]
-        return sub.code.split("-", 1)[-1], CC_TO_COUNTRY.get(sub.country_code, ""), frozenset()
+        owner = CC_TO_COUNTRY.get(sub.country_code, "")
+        if hint_countries and owner not in hint_countries:
+            # A single name match that flatly contradicts an already-
+            # established country isn't confidently this subdivision --
+            # observed with libpostal splitting "New York, USA" into
+            # components ("new", city) + ("york", state), where "York" is
+            # a real but unrelated UK subdivision. Don't let a name
+            # collision silently override a corroborated country.
+            return "", "", frozenset({owner})
+        return sub.code.split("-", 1)[-1], owner, frozenset()
     if len(name_candidates) > 1:
         sub, ambiguous_pool = _disambiguate_subdivisions(
             name_candidates, hint_countries, sibling_texts, use_conventional_tiebreak=False,
@@ -300,7 +327,40 @@ def _city_lookup(text: str, country_hint: str = "") -> dict | None:
     return candidates[0]
 
 
-_SEPARATOR_RE = re.compile(r";|\bor\b|/", re.IGNORECASE)
+# `or` must stay case-sensitive even though `;`/`/` don't need to be: a
+# handful of US state postal codes are themselves the English word "or"
+# spelled in caps ("Portland, OR"). Matching "OR" here as a separator
+# destroys the state before libpostal ever sees it. `(?-i:...)` scopes
+# case-sensitivity to just that branch inside an otherwise case-insensitive
+# pattern.
+_SEPARATOR_RE = re.compile(r";|(?-i:\bor\b)|/", re.IGNORECASE)
+
+# A real hierarchical address (city, state, country[, zip]) essentially
+# never needs more than this many commas. A segment with more is a
+# place-list dump run together without recognized separators (observed: a
+# real 10-state posting listing every office it has) -- libpostal will
+# still tag pieces of it ("state", "country", even "house"/"road" for
+# fragments it can't place), but only a couple of them, arbitrarily, so
+# trusting those tags would silently pick one state out of ten. Refuse to
+# mine a segment shaped like that at all rather than guess.
+_MAX_SEGMENT_COMMAS = 4
+
+# A few country acronyms/colloquial names libpostal's own tokenizer fails to
+# recognize as a geographic token at all -- confirmed by testing, not
+# guessed: "Dubai, UAE" folds into a single unparseable "house"-type blob
+# instead of tagging a country component, so no amount of downstream
+# alias-matching in COUNTRY_NAMES can help (the token is gone from the
+# component list by the time our code sees it). These must be expanded to
+# a name libpostal itself tags correctly *before* parsing. Acronyms are
+# matched case-sensitively (real postings write them in caps; matching
+# lowercase would risk hitting unrelated text) using a curated, closed
+# list -- not a general acronym-expansion mechanism.
+_PRE_PARSE_EXPANSIONS: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\bUAE\b"), "United Arab Emirates"),
+    (re.compile(r"\bKSA\b"), "Saudi Arabia"),
+    (re.compile(r"\bDRC\b"), "Democratic Republic of the Congo"),
+    (re.compile(r"\bBurma\b", re.IGNORECASE), "Myanmar"),
+)
 
 
 def _mine_segment_signals(segment: str):
@@ -310,6 +370,12 @@ def _mine_segment_signals(segment: str):
     substrings/n-grams of the segment — which is what stops an incidental
     word inside a real place name ("Central" in "Central Jakarta") from
     being tested on its own and colliding with an unrelated small town."""
+    if segment.count(",") > _MAX_SEGMENT_COMMAS:
+        return set(), set(), set()
+
+    for pattern, full_name in _PRE_PARSE_EXPANSIONS:
+        segment = pattern.sub(full_name, segment)
+
     components = parse_address(segment)
 
     # Repair: libpostal occasionally folds a known city+region pair into a
@@ -372,6 +438,21 @@ def _mine_segment_signals(segment: str):
             claimed.add(i)
             continue
         siblings = tuple(t for j, (t, _) in enumerate(components) if j != i and j not in claimed)
+        # Symmetric to the also_country check above: a word that's both a
+        # real subdivision's full name AND a real, prominent city elsewhere
+        # ("New York" the state vs. New York City) is the same kind of
+        # ambiguity, just city-flavored instead of country-flavored. With
+        # no sibling text in this segment to corroborate "this really is
+        # the state" (e.g. no comma-attached country/city), a lone place
+        # name is almost always meant as the city -- this is exactly the
+        # shape of a semicolon-separated city list ("Chicago; Dallas; New
+        # York; Seattle"). Leave it unclaimed so the ordinary city lookup
+        # below picks it up instead of forcing the state reading. Only
+        # applies with no countries established yet either: once a country
+        # is already anchored (e.g. "New York, USA"), the state reading is
+        # the correct, corroborated one and must not be overridden.
+        if not siblings and not countries and _city_lookup(text):
+            continue
         code, owner, ambiguous_pool = _validate_state(
             text, countries, allow_bare_code=len(components) > 1, sibling_texts=siblings,
         )

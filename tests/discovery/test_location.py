@@ -85,6 +85,65 @@ def test_location_remote_austin():
     assert res.state == "TX"
     assert res.city == "Austin"
 
+def test_location_oregon_not_eaten_by_or_separator():
+    # "OR" the Oregon postal code must not be treated as the "or" separator.
+    res = parse_location("Portland, OR")
+    assert res.country == "United States"
+    assert res.state == "OR"
+    assert res.city == "Portland"
+
+def test_location_oregon_with_country():
+    res = parse_location("Bend, OR, USA")
+    assert res.country == "United States"
+    assert res.state == "OR"
+
+def test_location_city_list_not_hijacked_by_state_namesake():
+    # "New York" alone would libpostal-tag as a state; in a list of plain
+    # city names it must not override the other, unambiguous cities.
+    res = parse_location(
+        "Chicago; Dallas; Los Angeles; Minneapolis; New York; "
+        "San Francisco; Seattle; Washington, D.C."
+    )
+    assert res.country == ""
+    assert res.state == ""
+
+def test_location_many_state_dump_stays_unresolved():
+    res = parse_location(
+        "Raleigh-Cary, NC, Austin/Dallas, TX, Tampa Bay, FL, "
+        "Greater Boston Area, MA, Denver, CO, Atlanta, GA, CA, NJ, TN, PA"
+    )
+    assert res.state != "NJ" or res.city != "Austin"
+
+def test_location_state_name_collision_does_not_override_country():
+    # libpostal splits "New York, USA" into ("new", city) + ("york", state);
+    # "York" is a real UK subdivision, but the established country ("USA")
+    # must win over the unrelated name collision.
+    res = parse_location("New York, USA")
+    assert res.country == "United States"
+
+def test_location_uae_multiregion_flagged_not_dropped():
+    # libpostal can't tokenize "Dubai, UAE" at all without the pre-parse
+    # expansion; before that fix this silently resolved to Qatar only.
+    res = parse_location("Doha, Qatar ; Dubai, UAE")
+    assert res.country == ""
+    assert res.candidate_countries == {"Qatar", "United Arab Emirates"}
+
+def test_location_ksa_resolves():
+    res = parse_location("Riyadh, KSA")
+    assert res.country == "Saudi Arabia"
+
+def test_location_drc_resolves():
+    res = parse_location("Kinshasa, DRC")
+    assert res.country == "Congo, The Democratic Republic of the"
+
+def test_location_burma_resolves():
+    res = parse_location("Yangon, Burma")
+    assert res.country == "Myanmar"
+
+def test_location_ivory_coast_resolves():
+    res = parse_location("Abidjan, Ivory Coast")
+    assert res.country == "Côte d'Ivoire"
+
 
 # ---------------------------------------------------------------------
 # Foreign-city recognition (the shortlist-leak fix). A bare foreign city
