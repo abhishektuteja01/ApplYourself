@@ -425,6 +425,50 @@ tool, metric, scope, or date beyond what `profile/bullets.md` (C1) or
 back into the same `$OVERRIDES_FILE` entries, keeping their `tier` and the
 `job_id` key unchanged.
 
+## Step 5c — lint pass over the same values
+
+**Skip if Step 5b had no entries to edit.** `/tailor`, `/cover-letter` and
+`company-answers.md` all run `src/lint.py` over their own drafted prose;
+`/apply`'s C1/C2/AUDIT drafts are the same kind of fresh-generated text and
+need the same pass — otherwise a mechanical artifact (an em dash, a smart
+quote) rides straight into `answers_override.json` unfixed.
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+uv run python <<PYEOF
+import json
+from pathlib import Path
+from src.lint import fix_mechanical, find_phrase_violations, load_de_ai_rules
+
+path = Path("$OVERRIDES_FILE")
+content = json.loads(path.read_text())
+rules = load_de_ai_rules()
+
+lintable = [k for k, v in content.items()
+            if k != "job_id" and isinstance(v, dict) and v.get("tier") in ("C1", "C2", "AUDIT")]
+
+all_subs, all_violations = [], []
+for field_id in lintable:
+    text = content[field_id]["value"]
+    fixed, subs = fix_mechanical(text, rules)
+    content[field_id]["value"] = fixed
+    all_subs.extend({**s, "field": field_id} for s in subs)
+    for v in find_phrase_violations(fixed, context="resume", exempt_lines=None, rules=rules):
+        all_violations.append({**v, "field": field_id})
+
+path.write_text(json.dumps(content, indent=2))
+print(json.dumps({
+    "mechanical_subs": len(all_subs),
+    "violations": all_violations,
+}, indent=2, default=str))
+PYEOF
+```
+
+If `violations` is non-empty: follow `.claude/shared/lint_loop.md` — rewrite
+the flagged field's value under NO-FAB, re-run this block, at most 5
+attempts, hard-refuse (leave the role parked, do not proceed to Step 6) if
+violations remain after that.
+
 ## Step 6 — re-plan and confirm the overrides landed
 
 ```bash
