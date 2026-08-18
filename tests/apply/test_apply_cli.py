@@ -238,6 +238,62 @@ class TestResolveOutDir:
             apply_cli.resolve_out_dir(JOB_ID, {"tailored_dirs": ["example_primary/deleted"]})
 
 
+class TestParsedSalaryFor:
+    """`_parsed_salary_for()` — the deterministic bridge between a job's
+    parsed compensation columns and `Answers.parsed_salary` (§ discussion:
+    no JD text, no LLM, just clean.parquet + verticals.yaml)."""
+
+    def _write_clean(self, path, job_id, salary_min, salary_currency):
+        pd.DataFrame([{
+            "job_id": job_id, "url": GH_URL,
+            "salary_min": salary_min, "salary_currency": salary_currency,
+        }]).to_parquet(path)
+
+    def _write_verticals(self, tmp_path, vertical, markup_pct):
+        monkeypatch_target = tmp_path / "verticals.yaml"
+        monkeypatch_target.write_text(yaml.safe_dump({
+            "verticals": {vertical: {"salary_expectation": {"markup_pct": markup_pct}}},
+        }), encoding="utf-8")
+        return monkeypatch_target
+
+    def test_usd_salary_min_computes_the_marked_up_figure(self, tmp_path, monkeypatch):
+        clean = tmp_path / "clean.parquet"
+        self._write_clean(clean, JOB_ID, 120000, "USD")
+        monkeypatch.setattr(apply_cli, "CLEAN", clean)
+        monkeypatch.setattr(apply_cli.paths, "PROFILE",
+                             self._write_verticals(tmp_path, "risk_ai", 10).parent)
+        assert apply_cli._parsed_salary_for(JOB_ID, "risk_ai") == 132000.0
+
+    def test_non_usd_currency_returns_none(self, tmp_path, monkeypatch):
+        clean = tmp_path / "clean.parquet"
+        self._write_clean(clean, JOB_ID, 120000, "GBP")
+        monkeypatch.setattr(apply_cli, "CLEAN", clean)
+        monkeypatch.setattr(apply_cli.paths, "PROFILE",
+                             self._write_verticals(tmp_path, "risk_ai", 10).parent)
+        assert apply_cli._parsed_salary_for(JOB_ID, "risk_ai") is None
+
+    def test_no_salary_expectation_configured_returns_none(self, tmp_path, monkeypatch):
+        clean = tmp_path / "clean.parquet"
+        self._write_clean(clean, JOB_ID, 120000, "USD")
+        monkeypatch.setattr(apply_cli, "CLEAN", clean)
+        verticals = tmp_path / "verticals.yaml"
+        verticals.write_text(yaml.safe_dump({"verticals": {"risk_ai": {}}}), encoding="utf-8")
+        monkeypatch.setattr(apply_cli.paths, "PROFILE", verticals.parent)
+        assert apply_cli._parsed_salary_for(JOB_ID, "risk_ai") is None
+
+    def test_missing_salary_min_returns_none(self, tmp_path, monkeypatch):
+        clean = tmp_path / "clean.parquet"
+        self._write_clean(clean, JOB_ID, None, "USD")
+        monkeypatch.setattr(apply_cli, "CLEAN", clean)
+        monkeypatch.setattr(apply_cli.paths, "PROFILE",
+                             self._write_verticals(tmp_path, "risk_ai", 10).parent)
+        assert apply_cli._parsed_salary_for(JOB_ID, "risk_ai") is None
+
+    def test_no_clean_parquet_returns_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+        assert apply_cli._parsed_salary_for(JOB_ID, "risk_ai") is None
+
+
 class TestPlanCommand:
     def test_happy_path_prints_a_ready_plan(self, repo, stub_board, capsys):
         repo.write_clean(**{JOB_ID: GH_URL})

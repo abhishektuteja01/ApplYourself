@@ -41,6 +41,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from src import paths, state_io, track_cli
 from src.apply import ashby, lever
@@ -290,6 +291,41 @@ def load_overrides(path: Path, job_id: str | None = None,
     return overrides
 
 
+def _parsed_salary_for(job_id: str, vertical: str) -> float | None:
+    """This job's own parsed compensation, times its vertical's markup —
+    deterministic, no JD text involved (see `Answers.parsed_salary`).
+
+    `None` whenever any input is missing: no `clean.parquet` row, no
+    `salary_min`, a non-USD `salary_currency`, or no `salary_expectation`
+    block configured for `vertical` in `profile/verticals.yaml`. Read raw
+    (not through `src/verticals.py`'s strict loader) since this key is
+    optional and most verticals won't have it — same choice `/apply` Step 4b
+    already made for the JD-text-scan case.
+    """
+    if not vertical or not CLEAN.exists():
+        return None
+    clean = pd.read_parquet(CLEAN)
+    if "salary_min" not in clean.columns or "salary_currency" not in clean.columns:
+        return None
+    row = clean.loc[clean["job_id"] == job_id]
+    if row.empty:
+        return None
+    salary_min = row.iloc[0]["salary_min"]
+    currency = str(row.iloc[0]["salary_currency"] or "").strip().upper()
+    if currency != "USD" or pd.isna(salary_min) or not salary_min:
+        return None
+
+    verticals_path = paths.PROFILE / "verticals.yaml"
+    if not verticals_path.is_file():
+        return None
+    config = yaml.safe_load(verticals_path.read_text(encoding="utf-8")) or {}
+    block = (config.get("verticals") or {}).get(vertical) or {}
+    markup_pct = (block.get("salary_expectation") or {}).get("markup_pct")
+    if markup_pct is None:
+        return None
+    return float(salary_min) * (1 + float(markup_pct) / 100)
+
+
 def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
           answers_path: Path | None = None) -> tuple[Plan, "Answers"]:
     """Everything `plan` does, minus the printing.
@@ -302,6 +338,9 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     target = Path(out_dir) if out_dir else resolve_out_dir(job_id, state)
     answers = load_answers()
     answers = replace(answers, job_source=str((state or {}).get("source") or ""))
+    tailored_dirs = (state or {}).get("tailored_dirs") or []
+    vertical = tailored_dirs[-1].split("/", 1)[0] if tailored_dirs else ""
+    answers = replace(answers, parsed_salary=_parsed_salary_for(job_id, vertical))
     overrides = load_overrides(Path(answers_path), job_id) if answers_path else None
 
     ats = detect_ats(posting_url)

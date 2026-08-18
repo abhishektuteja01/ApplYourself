@@ -11,6 +11,7 @@ Resolution order, keyed on the merged field's section and id before its prose:
     A   kind == "date"                     -> today, computed
     A2  eeoc / demographic                 -> opt out, structurally
     B0  work authorization                 -> work_authorization.status
+    PARSED money question, parsed_salary set -> clean.parquet compensation
     B   question_<digits>                  -> rules[]
     C   anything left                      -> park if required, skip if not
 
@@ -159,6 +160,17 @@ _OPT_OUT_FALLBACKS = (
     "I prefer not to answer",
     "Prefer not to say",
     "I decline to self-identify for protected veteran status",
+)
+
+# Anything salary/compensation shaped — same keyword set the `salary`/
+# `compensation` template rule in application_answers.yaml matches, and the one
+# `/apply` Step 4b scans "fields"/"unmapped"/"draftable" for. Kept here as a
+# domain check (rather than only a `rules[]` keyword) so `_resolve_parsed_salary`
+# can recognize a money question even when the user's own `rules:` list doesn't
+# happen to cover it verbatim.
+_MONEY_DOMAIN = re.compile(
+    r"salary|compensation|desired\s+rate\s+of\s+pay|pay\s+expectation",
+    re.IGNORECASE,
 )
 
 # Anything work-authorization shaped. A rules[] keyword that lands in here is a
@@ -723,6 +735,19 @@ class Answers:
     Indeed genuinely was seen there regardless of which ATS ends up hosting the
     form, and a listing scraped straight off the company's own Greenhouse/
     Lever/Ashby board was genuinely found on that company's own career site."""
+    parsed_salary: float | None = None
+    """A salary figure computed from this job's own parsed compensation
+    columns (`clean.parquet`'s `salary_min`/`salary_currency`, populated for
+    Ashby postings via `includeCompensation=true`) times the vertical's
+    `salary_expectation.markup_pct` — not config, and not the JD's own prose.
+    Like `job_source`, callers set it after `load()` returns (see
+    `apply_cli.build()`). `None` (the default: most postings carry no
+    structured compensation, or the vertical has no `salary_expectation`
+    block) leaves every money question to whatever already resolves it — a
+    `rules:` match, or `/apply`'s JD-text scan/park. Set, it fills any
+    `_MONEY_DOMAIN`-shaped question outright and supersedes a static
+    `rules:` default, since a number this role's own posting states should
+    always win over a generic configured fallback."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -1512,6 +1537,25 @@ def _resolve_how_heard(field: MergedField, answers: Answers) -> Resolution | Non
     return _fill(picked, "B") if picked is not None else None
 
 
+def _resolve_parsed_salary(field: MergedField, answers: Answers) -> Resolution | None:
+    """A money question, answered from `answers.parsed_salary` when this job's
+    own parsed compensation data set one — deterministic, so it runs ahead of
+    `_resolve_rule` and supersedes a static `rules:` default outright, same as
+    `/apply`'s JD-text scan does for the cases that reach it (see
+    `Answers.parsed_salary`). Untouched (returns `None`) whenever no figure was
+    computed, which is the common case."""
+    if answers.parsed_salary is None:
+        return None
+    if not _MONEY_DOMAIN.search(field.label or ""):
+        return None
+    if field.kind == "file":
+        return None
+    figure = round(answers.parsed_salary)
+    if field.options or field.kind == "react_select":
+        return _resolve_choice(field, (str(figure), f"${figure:,}"), "PARSED", "rule")
+    return _fill(str(figure), "PARSED")
+
+
 def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
     label = _norm(field.label)
     if not label:
@@ -1568,6 +1612,10 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
         if resolution.parked and not field.required:
             return _skip(resolution.reason, "B0")
         return resolution
+
+    parsed_salary = _resolve_parsed_salary(field, answers)
+    if parsed_salary is not None:
+        return parsed_salary
 
     rule = _resolve_rule(field, answers)
     if rule is not None:

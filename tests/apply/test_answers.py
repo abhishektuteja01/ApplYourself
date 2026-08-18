@@ -1013,3 +1013,50 @@ class TestLoaderRejectsSilentMisconfiguration:
         answers = load_answers(self._cfg(tmp_path, ok),
                                 FIXTURES / "preferences_time_limited.md")
         assert answers.rules[0].exact == ("state",)
+
+
+class TestParsedSalary:
+    """`Answers.parsed_salary` — a figure computed upstream in
+    `apply_cli._parsed_salary_for()` from this job's own parsed compensation
+    columns, not config or JD prose. `resolve()` must fill a money-shaped
+    question from it outright, ahead of and superseding any static `rules:`
+    default, and leave every other field untouched."""
+
+    def _answers(self, tmp_path, parsed_salary):
+        base = load_answers(write_config(tmp_path, rules=[
+            {"match": ["salary", "compensation"], "answer": "Open to conversation"},
+        ]), PREFS)
+        return dc_replace(base, parsed_salary=parsed_salary)
+
+    def test_fills_a_money_field_from_parsed_salary_over_the_configured_rule(self, tmp_path):
+        a = self._answers(tmp_path, 132000.0)
+        r = resolve(field(label="What are your salary expectations?"), a)
+        assert r.action == "fill"
+        assert r.value == "132000"
+        assert r.tier == "PARSED"
+
+    def test_a_select_kind_field_matches_the_computed_figure_as_an_option(self, tmp_path):
+        a = self._answers(tmp_path, 132000.0)
+        r = resolve(field(label="Desired compensation", options=["$132,000", "$150,000"]), a)
+        assert r.action == "fill"
+        assert r.value == "$132,000"
+        assert r.tier == "PARSED"
+
+    def test_a_select_kind_field_parks_when_no_option_matches(self, tmp_path):
+        a = self._answers(tmp_path, 132000.0)
+        r = resolve(field(label="Desired compensation", required=True,
+                           options=["$150,000", "$200,000"]), a)
+        assert r.action == "park"
+        assert r.tier == "PARSED"
+
+    def test_a_non_money_field_is_untouched(self, tmp_path):
+        a = self._answers(tmp_path, 132000.0)
+        r = resolve(field(label="What is your notice period?"), a)
+        assert r.tier != "PARSED"
+
+    def test_no_parsed_salary_falls_through_to_the_configured_rule(self, tmp_path):
+        a = self._answers(tmp_path, None)
+        r = resolve(field(label="What are your salary expectations?"), a)
+        assert r.action == "fill"
+        assert r.value == "Open to conversation"
+        assert r.tier == "B"

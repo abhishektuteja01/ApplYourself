@@ -228,7 +228,16 @@ behavior, not a bug to work around.
 
 ## Step 4b — resolve money (M) questions: JD first, config fallback
 
-**If Step 2c found no M question, skip this step entirely.**
+**If Step 2c found no M question, skip this step entirely.** This also
+covers the case where `src/apply/answers.py`'s `_resolve_parsed_salary`
+already filled the field from this job's own parsed compensation columns
+(`clean.parquet`'s `salary_min`/`salary_currency`, times the vertical's
+`salary_expectation.markup_pct`, computed in `apply_cli.build()`) — that
+path is fully deterministic (R7), runs ahead of everything below, and
+supersedes a static `rules:` default outright, so a field it resolved never
+reaches Step 2c's scan in the first place. Everything from here on is the
+fallback for a job with no usable parsed compensation (non-USD, unparsed, or
+no `salary_expectation` configured for `$VERTICAL`).
 
 For each M question that came from `"unmapped"`/`"draftable"` (genuinely
 unresolved — no Tier B rule matched it), `Read` `${OUT_DIR}/jd_snapshot.md`
