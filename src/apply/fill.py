@@ -24,6 +24,7 @@ later is a one-line change there.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field as dc_field, replace
 from datetime import datetime
@@ -57,7 +58,11 @@ SELECT_MULTI_VALUE = ".select__multi-value__label"
 CONFIRMATION_MARKERS = (
     "text=/thank you for applying/i",
     "text=/application (?:has been )?(?:submitted|received)/i",
-    "text=/your application was (?:submitted|sent)/i",
+    # Ashby's real wording, verbatim (drata/handshake/abridge/claylabs,
+    # 2026-08-18): "Your application was successfully submitted." The
+    # adverb between "was" and the verb is why the original regex missed
+    # every one of these and parked them as submitted_unconfirmed.
+    "text=/your application was (?:successfully )?(?:submitted|sent)/i",
     "text=/we(?:'ve| have) received your application/i",
 )
 
@@ -111,7 +116,22 @@ SUBMIT_ATTEMPTS = 2
 # said the page looked right. Keyed by ats, and absent for a board nobody has
 # watched yet — an unknown board falls back to the text markers.
 SUBMIT_REQUEST_MARKERS = {
-    "ashby": ("ApiSubmitSingleApplicationFormAction",),
+    # Was the literal op name "ApiSubmitSingleApplicationFormAction" —
+    # reverse-engineered off one bundle capture and true for one real submit
+    # (Take2). drata/handshake/abridge/claylabs (2026-08-18) all fired the
+    # click and rendered the real success banner, yet this string never
+    # showed up in any response URL: `?op=<name>` is how *our own* Python
+    # fetch in `load_board` names its query, not a guarantee about how the
+    # live frontend's bundle shapes its own mutation call — batching or a
+    # bundle change can drop the name from the URL entirely. The endpoint
+    # path does not depend on that. Safe because nothing else on this page
+    # calls it through the browser: `load_board`'s own `ApplicationForm`
+    # read is a server-side fetch (never seen by `page.on`), and
+    # `watch_submit_requests` is only installed right before the click, after
+    # any page-load traffic has long since finished — the one POST this can
+    # see in that window is the submit mutation. Gated by
+    # SUBMIT_REQUEST_METHOD below regardless.
+    "ashby": ("jobs.ashbyhq.com/api/non-user-graphql",),
     # Measured on observe.ai: `boards.greenhouse.io/embed/<board>/jobs/<id>`.
     # `job-boards.greenhouse.io/embed/job_app` — the iframe's own GET, loaded
     # once per page view — contains this same substring (it's the `job-`
@@ -119,14 +139,43 @@ SUBMIT_REQUEST_MARKERS = {
     # SUBMIT_REQUEST_METHOD below.
     "greenhouse": ("boards.greenhouse.io/embed/",),
 }
-# Per-ats method a matched marker must also carry. Ashby's op= name never
-# appears on any request but the real submit, so it needs no gate; absent
-# here means "URL match alone is enough."
+# Per-ats method a matched marker must also carry.
 SUBMIT_REQUEST_METHOD = {
+    "ashby": "POST",
     "greenhouse": "POST",
 }
 # How long to let the board answer the click before reading the page.
 SUBMIT_SETTLE_MS = 5000
+# Extra time to keep polling for the submit-endpoint request once
+# SUBMIT_SETTLE_MS has passed and none has landed yet, before treating its
+# absence as ambiguous rather than proof of nothing sent. Measured live on
+# Airwallex (job 64dcf405): the fixed 5s wait had already been read as
+# silence when the request — and the board's own confirmation email —
+# arrived after it. Polled in short steps so a request that lands early still
+# returns immediately; only a truly silent click burns the whole budget.
+SUBMIT_REQUEST_EXTRA_WAIT_MS = 15000
+SUBMIT_REQUEST_POLL_MS = 500
+# Ashby names the exact field it thinks is unanswered, one per line: "Missing
+# entry for required field: LinkedIn Profile". Generic — matched against
+# whatever `submission_refused()` read, not gated to one ats — so a board that
+# renders the same wording gets the same recovery for free.
+MISSING_FIELD_PATTERN = re.compile(
+    r"missing entry for required field:\s*(.+)", re.IGNORECASE
+)
+# b9a009ad measured every field's real DOM state correct — right value, right
+# radio checked — right after fill_plan wrote it, and the board still named a
+# different subset of those same fields missing on three separate live runs.
+# Nothing rules out a client-side debounce on Ashby's own answered/validation
+# state that a fast field-by-field fill can outrun: eight fields written
+# back-to-back in milliseconds gives each one's own settle time to overlap the
+# next's, and whichever field's update got coalesced away varies with timing
+# jitter — which matches "a different field each time" better than a fixed
+# broken selector would. Confirmed live once the pace was added — b9a009ad
+# went through clean. Applied to every board, not just Ashby: Greenhouse and
+# Lever have shown no version of this failure, but nothing about a client-side
+# debounce is Ashby-specific, and the cost of one second a field is cheap
+# next to a false "missing" on an irreversible click.
+FIELD_PACE_MS = 1000
 # How often to re-check a server-backed listbox while waiting for its results.
 _OPTION_POLL_MS = 250
 # How long to let a react-select's chosen value land before calling it stuck.
@@ -421,6 +470,26 @@ class BrowserDriver:
             if marker.casefold() in lowered:
                 return marker
         return ""
+
+    def missing_field_labels(self) -> tuple[str, ...]:
+        """The exact labels the board just named as unanswered, or ().
+
+        Measured on b9a009ad (Ashby): every field it named was already correct
+        in the DOM — right value, right radio checked — both right after
+        `fill_plan` and in the post-refusal screenshot. The mismatch lives in
+        whatever internal state the board's own validation reads, not in
+        anything a pre-click read-back can see, so guessing which field might
+        have drifted and skip-if-already-right (`_reverify_fields`) cannot
+        catch it. Reading the board's own complaint and forcing a fresh write
+        on exactly those fields — even though they already read correctly — is
+        the one recovery that reacts to what actually happened rather than a
+        guess made in advance.
+        """
+        try:
+            text = self.page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
+        except Exception:  # noqa: BLE001 - unreadable page names nothing
+            return ()
+        return tuple(m.strip() for m in MISSING_FIELD_PATTERN.findall(text) if m.strip())
 
     def attached_files(self, field_id: str) -> tuple[str, ...] | None:
         """Filenames the input holds, or None if that cannot be determined.
@@ -1147,6 +1216,7 @@ def fill_plan(plan: Plan, driver, answers: Answers | None = None,
         except FillError as exc:
             result.failures.append(str(exc))
             result.outcomes.append(FieldOutcome(field.id, "failed", note=str(exc)))
+        driver.wait(FIELD_PACE_MS)
 
     _probe_parked_selects(driver, plan, result, answers)
     return result
@@ -1228,29 +1298,44 @@ def blocking_questions(plan: Plan, result: FillResult) -> tuple[str, ...]:
     return tuple(u.id for u in plan.unmapped if u.id not in recovered)
 
 
-def _reverify_toggle_fields(driver, plan: Plan) -> None:
-    """Re-check every yes/no toggle, radio group and checkbox group
-    immediately before the click, and re-apply any that drifted since
-    `fill_plan` set it.
+def _reverify_fields(driver, plan: Plan) -> None:
+    """Re-check every field immediately before the click, and re-apply any
+    that drifted since `fill_plan` set it.
 
     Live on Take2 (Ashby): a toggle read back correctly right when
     `_apply_field` set it, then came back cleared by submit time — a
     *different* field each retry ("legally authorized to work", then "4 days
     a week"), which rules out one bad selector or field id and points at
-    something external resetting a toggle asynchronously after our own fill
+    something external resetting a field asynchronously after our own fill
     already finished. The board's own "Autofill from resume" feature
     (visible on this exact form) is the leading suspect, but the fix does not
     depend on knowing the cause: whatever cleared it, this is the last chance
     to notice before the irreversible click.
 
-    `radio_group` and `checkbox_group` get the same treatment on the same
-    theory, not because either has been caught drifting — nothing has been.
-    But nothing rules it out either, and re-checking a field that never moved
-    costs one extra read; missing one that did costs a wrong answer under the
-    user's name after the click can no longer be undone.
+    Every field kind gets checked against the *live* kind
+    (`driver.resolve_kind`), not `field.kind` as planned. Ashby declares a
+    field's API type up front (e.g. `select`) and only decides at render time
+    whether that is a radio group, a combobox or a lone checkbox (see
+    `AshbyBrowserDriver.resolve_kind`) — comparing against the planned kind
+    silently skipped every drifted field Ashby renders that way, which is
+    exactly the shape b9a009ad failed in ("Which best describes your
+    experience with AI agents...", a `select`-planned field Ashby rendered
+    and filled as a radio group).
+
+    Text and textarea fields get the same treatment: b9a009ad's other two
+    failures ("LinkedIn Profile", plain text) were never covered at all
+    before this, which left every free-text answer with no safety net.
+
+    `checkbox` (a lone consent tick) and `react_select` are deliberately left
+    out — re-driving a react-select this close to the click means reopening
+    and re-typing into a live widget, a bigger and riskier action than a
+    single click or fill, and neither has been observed drifting. Nothing
+    rules it out either, but the trade isn't worth it without evidence.
     """
     for field in plan.fields:
-        if field.kind == "yesno":
+        kind = driver.resolve_kind(field.id, field.kind)
+
+        if kind == "yesno":
             want = str(field.value)
             shown = driver.selected_label(field.id)
             if shown.strip().casefold() == want.strip().casefold():
@@ -1260,7 +1345,7 @@ def _reverify_toggle_fields(driver, plan: Plan) -> None:
             except FillError:
                 continue  # best-effort; an unresolved drift still fails at the click
 
-        elif field.kind == "radio_group":
+        elif kind == "radio_group":
             want = (field.value if isinstance(field.value, tuple) else (field.value,))[0]
             shown = driver.checked_radio_label(field.id)
             if shown.strip().casefold() == str(want).strip().casefold():
@@ -1270,7 +1355,7 @@ def _reverify_toggle_fields(driver, plan: Plan) -> None:
             except FillError:
                 continue
 
-        elif field.kind == "checkbox_group":
+        elif kind == "checkbox_group":
             wanted = field.value if isinstance(field.value, tuple) else (field.value,)
             shown = {s.strip().casefold() for s in driver.checked_group_labels(field.id)}
             for label in wanted:
@@ -1281,8 +1366,28 @@ def _reverify_toggle_fields(driver, plan: Plan) -> None:
                 except FillError:
                     continue
 
+        elif kind == "select":
+            want = str(field.value)
+            shown = driver.selected_option_label(field.id)
+            if shown.strip() == want.strip():
+                continue
+            try:
+                driver.select_native(field.id, want)
+            except FillError:
+                continue
 
-def submit(plan: Plan, result: FillResult, driver) -> None:
+        elif kind in ("text", "textarea", "date"):
+            want = str(field.value)
+            shown = driver.value_of(field.id)
+            if shown.strip() == want.strip():
+                continue
+            try:
+                driver.fill_text(field.id, want)
+            except FillError:
+                continue
+
+
+def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = None) -> None:
     """Click the one submit button on an already-filled form.
 
     The only path to a real click — `fill_plan` never reaches it, by
@@ -1301,13 +1406,28 @@ def submit(plan: Plan, result: FillResult, driver) -> None:
     if driver.submit_disabled_now(plan.submit_selector):
         raise SubmitGuardError("submit button is disabled")
 
-    driver.watch_submit_requests(plan.ats, result.submit_requests)
-    _reverify_toggle_fields(driver, plan)
-
     for attempt in range(SUBMIT_ATTEMPTS):
         # An upload still in flight makes the board refuse the click outright.
         # Observed live on Ashby, which says so in as many words.
         driver.settle()
+        # Re-checked after `settle()`, not before: `settle()`'s networkidle
+        # wait is exactly the window a field has been seen drifting in, and a
+        # reverify done earlier in the function would miss a drift that
+        # happens during the wait it is meant to guard against. Repeated on
+        # every retry attempt too — a drift caught and fixed on attempt 1 is
+        # not evidence attempt 2 is still safe.
+        _reverify_fields(driver, plan)
+        # Registered fresh, right here, never earlier: Ashby's location combobox
+        # queries the same GraphQL gateway on every keystroke (§12a), and
+        # `_reverify_fields` above — or a prior attempt's post-refusal
+        # reapply of a named combobox field — can retype one. Watching from
+        # before the loop (or reusing one sink across attempts) would let that
+        # unrelated POST get read as the submit's own signal, once the marker
+        # stopped requiring the mutation's own op name (see
+        # SUBMIT_REQUEST_MARKERS). A sink opened immediately before this
+        # click can only ever catch traffic the click itself caused.
+        attempt_requests: list[str] = []
+        driver.watch_submit_requests(plan.ats, attempt_requests)
         driver.click_submit(plan.submit_selector)
         # The click is the irreversible act. Record it before anything else
         # runs: a captcha timeout, a driver error, a navigation hiccup — none
@@ -1323,16 +1443,35 @@ def submit(plan: Plan, result: FillResult, driver) -> None:
         # good submission as unconfirmed.
         driver.wait(SUBMIT_SETTLE_MS)
 
-        # A board we can watch settles it outright: no request to its submit
-        # endpoint means the click did nothing, whatever the page looks like.
-        if SUBMIT_REQUEST_MARKERS.get(plan.ats) and not result.submit_requests:
-            result.submitted = False
-            result.submit_error = (
-                f"clicked {plan.submit_selector} but {plan.ats} never called its "
-                f"submit endpoint — nothing was sent"
-            )
-            log.info("submit fired no request (attempt %d)", attempt + 1)
-            continue
+        # A board we can watch normally settles it outright: a request to its
+        # submit endpoint is the strongest signal there is. But its absence at
+        # this point is not yet proof of anything — see SUBMIT_REQUEST_EXTRA_WAIT_MS
+        # — so a board we watch gets extra time for a late request to land
+        # before its absence is treated as meaningful at all.
+        if SUBMIT_REQUEST_MARKERS.get(plan.ats) and not attempt_requests:
+            waited = 0
+            while waited < SUBMIT_REQUEST_EXTRA_WAIT_MS and not attempt_requests:
+                driver.wait(SUBMIT_REQUEST_POLL_MS)
+                waited += SUBMIT_REQUEST_POLL_MS
+            if not attempt_requests:
+                # Still ambiguous, never proof of failure: `submitted` stays
+                # true and this attempt is not retried on this signal alone — a
+                # real submission whose request merely arrived even later would
+                # otherwise get clicked a second time. Only an explicit refusal
+                # below is a strong enough signal to justify clicking again.
+                result.submit_error = (
+                    f"clicked {plan.submit_selector} but no {plan.ats} submit "
+                    f"request was observed — ambiguous, not re-clicked; verify "
+                    f"by hand before retrying"
+                )
+                log.info("submit request marker not observed (attempt %d)", attempt + 1)
+
+        # Folded into the aggregate only now, after this attempt's own
+        # post-click window has closed — `result.confirmed` and the evidence
+        # file read the aggregate, but nothing before this point ever
+        # consulted it, so an earlier attempt's stray combobox traffic still
+        # cannot count towards this attempt's signal.
+        result.submit_requests.extend(attempt_requests)
 
         refusal = driver.submission_refused()
         if not refusal:
@@ -1345,15 +1484,43 @@ def submit(plan: Plan, result: FillResult, driver) -> None:
         result.submit_error = f"the board refused the click: {refusal}"
         log.info("submit refused (attempt %d): %s", attempt + 1, refusal)
 
+        # Named fields were confirmed correct in the DOM — right value, right
+        # radio checked — both right after the original fill and in the
+        # post-refusal screenshot (b9a009ad). `_reverify_fields` above already
+        # found nothing to fix for exactly this reason: a read-back that
+        # already matches looks identical whether the board's own state is
+        # fine or not. Forcing a fresh write on exactly what the board named,
+        # rather than skipping because it reads correct, is the one recovery
+        # that reacts to the board's real complaint instead of a guess made in
+        # advance.
+        named = driver.missing_field_labels()
+        if named:
+            wanted = {label.strip().casefold() for label in named}
+            for missed in plan.fields:
+                if missed.label.strip().casefold() not in wanted:
+                    continue
+                try:
+                    outcome = _apply_field(driver, missed, result, answers)
+                except FillError as exc:
+                    log.info("re-apply after refusal failed for %s: %s",
+                              missed.id, exc)
+                    continue
+                outcome.note = "reapplied after the board named it missing"
+                result.outcomes.append(outcome)
+
     # A recorded submit response is confirmation on its own — it is the board
     # accepting the application, not a page that happens to read like it did.
+    # Deliberately `attempt_requests` (the last attempt only), not the
+    # `result.submit_requests` aggregate: a refused first attempt's own
+    # traffic — including a reapplied combobox's stray query to the same
+    # endpoint — must not stand in for evidence about a silent second click.
     result.confirmed = result.submitted and (
-        bool(result.submit_requests) or driver.submission_confirmed()
+        bool(attempt_requests) or driver.submission_confirmed()
     )
-    result.evidence = capture_submit_evidence(driver, plan)
+    result.evidence = capture_submit_evidence(driver, plan, result)
 
 
-def capture_submit_evidence(driver, plan) -> Path | None:
+def capture_submit_evidence(driver, plan, result: FillResult | None = None) -> Path | None:
     """Write what the board rendered after the click, and return the text path.
 
     `CONFIRMATION_MARKERS` is guessed — no live confirmation page had ever been
@@ -1361,6 +1528,13 @@ def capture_submit_evidence(driver, plan) -> Path | None:
     The page that would have settled the question was on screen and closed
     unrecorded. This keeps it: the next submission is what turns that list from
     a guess into something measured.
+
+    `result.submit_requests` is recorded too, for the same reason: the network
+    signal used to fail silently (drata/handshake/abridge/claylabs,
+    2026-08-18) with nothing kept to show why — the evidence file had the
+    rendered text but not what, if anything, the board's own network traffic
+    looked like. An empty list here means the marker genuinely never fired,
+    not that no one checked.
 
     Diagnostics only. It runs after the click, never decides whether one
     happens, and every failure here is swallowed — losing a screenshot must not
@@ -1374,10 +1548,12 @@ def capture_submit_evidence(driver, plan) -> Path | None:
 
         page = driver.page
         text = page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
+        requests = result.submit_requests if result is not None else []
         note = (
             f"# post-submit capture\n"
             f"job_id: {plan.job_id}\n"
             f"company: {plan.company}\n"
+            f"submit_requests: {requests!r}\n"
             f"ats: {plan.ats}\n"
             f"form_url: {plan.form_url}\n"
             f"landed_url: {page.url}\n"
@@ -1430,7 +1606,7 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
             fill_plan(plan, driver, answers, result=result)
             if submit_after:
                 try:
-                    submit(plan, result, driver)
+                    submit(plan, result, driver, answers)
                 except SubmitGuardError as exc:
                     # Refusal — raised before the click, so `submitted` is
                     # still False and nothing went out.

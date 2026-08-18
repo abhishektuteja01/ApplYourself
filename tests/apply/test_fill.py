@@ -90,6 +90,7 @@ class FakeDriver:
         self.confirms = False                  # board acknowledges the submit
         self._page = FakePage()                # what the post-submit capture reads
         self.refusals: list[str] = []          # the board's refusal, per click
+        self.named_missing: list[list[str]] = []  # labels named missing, per refusal
 
     def goto(self, url):
         self.calls.append(("goto", url))
@@ -215,6 +216,11 @@ class FakeDriver:
         # A list, so a test can refuse the first click and accept the retry.
         return self.refusals.pop(0) if self.refusals else ""
 
+    def missing_field_labels(self):
+        self.calls.append(("missing_field_labels",))
+        # A list, so a test can name fields on one refusal and none on another.
+        return tuple(self.named_missing.pop(0)) if self.named_missing else ()
+
     @property
     def page(self):
         """The post-submit capture reads the page directly. `None` stands in
@@ -271,6 +277,31 @@ class TestOrder:
             files=[FilePlan(id="resume", label="R", required=True, path=resume)],
         ), d)
         assert not any("submit" in str(c).lower() for c in d.calls)
+
+
+class TestFieldsArePacedNotBurst:
+    """b9a009ad: every field read back correct right after `fill_plan`, but a
+    different subset came back missing on the board's own validation each
+    live run — fixed live by pacing Ashby's fields a second apart, giving
+    whatever client-side debounce reads that state room to settle between
+    writes. Applied to every board: nothing about a client-side debounce is
+    Ashby-specific, and Greenhouse/Lever fields are cheap to pace even though
+    neither has shown this failure.
+    """
+
+    def test_ashby_waits_between_fields(self):
+        d = FakeDriver()
+        fill_plan(plan_ashby(fields=[field(id="q1"), field(id="q2")]), d)
+        kinds = [c[0] for c in d.calls]
+        assert kinds.count("wait") == 2
+        assert ("wait", F.FIELD_PACE_MS) in d.calls
+
+    def test_greenhouse_and_lever_are_paced_too(self):
+        d = FakeDriver()
+        fill_plan(plan(fields=[field(id="q1"), field(id="q2")]), d)
+        kinds = [c[0] for c in d.calls]
+        assert kinds.count("wait") == 2
+        assert ("wait", F.FIELD_PACE_MS) in d.calls
 
 
 class TestConfigWins:
@@ -930,10 +961,16 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
     submit click — a different field each retry, which pointed at something
     external (the board's own "Autofill from resume" feature) resetting a
     toggle after the fill already finished. `submit()` re-checks every
-    yes/no, radio-group and checkbox-group field immediately before the
-    click and re-applies any that drifted, whatever caused it. Radio and
-    checkbox groups aren't known to drift the same way — this is precaution,
+    yes/no, radio-group, checkbox-group, select and text field immediately
+    before the click and re-applies any that drifted, whatever caused it.
+    Checkbox groups aren't known to drift the same way — this is precaution,
     not a repro.
+
+    Live on b9a009ad (Ashby): a `select`-planned field Ashby rendered as a
+    radio group, and a plain text field, both drifted and were never caught —
+    the reverify only ever compared against `field.kind` as planned, which a
+    `select`-planned field never equals `"radio_group"`, and text fields were
+    not reverified at all.
     """
 
     def test_a_drifted_toggle_is_reapplied_before_the_click(self, tmp_path,
@@ -998,6 +1035,78 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         F.submit(p, result, d)
         assert ("check_group", "q1", "Python") not in d.calls
         assert ("check_group", "q1", "Go") not in d.calls
+
+    def test_a_drifted_text_field_is_refilled_before_the_click(self, tmp_path,
+                                                                monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d.values["q1"] = "https://linkedin.com/in/wrong"  # drifted after fill_plan
+        p = plan(fields=[field(id="q1", kind="text",
+                               value="https://linkedin.com/in/right")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert d.values["q1"] == "https://linkedin.com/in/right"
+        assert ("fill", "q1", "https://linkedin.com/in/right") in d.calls
+
+    def test_an_already_correct_text_field_is_left_alone(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver()
+        d.values["q1"] = "https://linkedin.com/in/right"
+        p = plan(fields=[field(id="q1", kind="text",
+                               value="https://linkedin.com/in/right")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert ("fill", "q1", "https://linkedin.com/in/right") not in d.calls
+
+    def test_a_select_planned_field_ashby_rendered_as_radio_group_is_reverified(
+            self, tmp_path, monkeypatch):
+        # b9a009ad: `field.kind` is the API-declared "select", but Ashby
+        # rendered (and filled) it as a live radio group — the reverify must
+        # follow the live kind, not the planned one, or it silently skips
+        # exactly this field.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver(kinds={"q1": "radio_group"})
+        d._selected["q1"] = "No experience with AI agents"  # drifted
+        p = plan(fields=[field(id="q1", kind="select", value="I have built agents")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert d._selected["q1"] == "I have built agents"
+        assert ("check_radio", "q1", "I have built agents") in d.calls
+
+    def test_a_drifted_native_select_is_reapplied_before_the_click(self, tmp_path,
+                                                                    monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver(options={"q1": ("Yes", "No")})
+        d._selected["q1"] = "No"
+        p = plan(fields=[field(id="q1", kind="select", value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert d._selected["q1"] == "Yes"
+        assert ("select_native", "q1", "Yes") in d.calls
+
+    def test_reverify_runs_again_on_every_retry_not_just_once(self, tmp_path,
+                                                                monkeypatch):
+        # A single reverify call before the retry loop only catches a drift
+        # that happens once. `_reverify_fields` must run right before *every*
+        # click, including the retry, or a re-drift between attempts (e.g.
+        # during the `settle()` wait each attempt does) goes uncaught again.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+
+        class RedriftingDriver(FakeDriver):
+            def click_submit(self, selector):
+                super().click_submit(selector)
+                if len([c for c in self.calls if c[0] == "click_submit"]) == 1:
+                    self._selected["q1"] = "No"  # drifts again after the 1st click
+
+        d = RedriftingDriver()
+        d._selected["q1"] = "No"
+        d.refusals = ["updating your application"]  # forces a retry
+        p = plan(fields=[field(id="q1", kind="yesno", value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 2
+        assert [c for c in d.calls if c == ("yesno", "q1", "Yes")].__len__() == 2
+        assert d._selected["q1"] == "Yes"
 
 
 class TestAshbySubmitClick:
@@ -1107,6 +1216,69 @@ class TestARefusedClickIsNotASubmission:
         assert result.confirmed is False
 
 
+class TestNamedMissingFieldsAreReappliedAfterARefusal:
+    """Live on b9a009ad (Ashby): every field the board named as missing was
+    already correct in the DOM — right value, right radio checked — both
+    right after the original fill and in the post-refusal screenshot.
+    `_reverify_fields` found nothing to fix because a read-back that already
+    matches looks identical whether the board's internal state is fine or
+    not. `submit()` now reads the board's own "Missing entry for required
+    field: X" text after a refusal and forces a fresh write on exactly the
+    fields it named, whether or not they already read correctly, before the
+    retry click.
+    """
+
+    def test_a_field_the_board_named_missing_is_rewritten_even_though_it_reads_correct(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver(values={"q1": "https://linkedin.com/in/right"})  # already correct
+        d.refusals = ["missing entry for required field"]  # first click only
+        d.named_missing = [["LinkedIn Profile"]]
+        p = plan(fields=[field(id="q1", kind="text", label="LinkedIn Profile",
+                               value="https://linkedin.com/in/right")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert result.submitted is True
+        assert ("fill", "q1", "https://linkedin.com/in/right") in d.calls
+
+    def test_a_field_the_board_did_not_name_is_left_alone(self, tmp_path,
+                                                            monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver(values={"q1": "v", "q2": "w"})
+        d.refusals = ["missing entry for required field"]
+        d.named_missing = [["Only Q1"]]
+        p = plan(fields=[
+            field(id="q1", kind="text", label="Only Q1", value="v"),
+            field(id="q2", kind="text", label="Some Other Question", value="w"),
+        ])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert ("fill", "q1", "v") in d.calls
+        assert ("fill", "q2", "w") not in d.calls
+
+    def test_a_named_radio_group_field_is_reapplied_too(self, tmp_path,
+                                                          monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver(kinds={"q1": "radio_group"})
+        d._selected["q1"] = "Yes"  # already correct
+        d.refusals = ["missing entry for required field"]
+        d.named_missing = [["Which best describes it?"]]
+        p = plan(fields=[field(id="q1", kind="select", label="Which best describes it?",
+                               value="Yes")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert ("check_radio", "q1", "Yes") in d.calls
+
+    def test_no_named_fields_means_no_reapply_attempt(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = FakeDriver(values={"q1": "v"})
+        d.refusals = ["updating your application"]  # a refusal that names nothing
+        p = plan(fields=[field(id="q1", kind="text", label="Q1", value="v")])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+        assert [c for c in d.calls if c[0] == "fill"] == []
+
+
 class TestTheSubmitRequestIsTheRealConfirmation:
     """Ashby's button rendered, enabled, clickable, with the right text — and
     clicking it fired no request at all. The page afterwards looked exactly like
@@ -1139,14 +1311,63 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         assert result.submitted is True
         assert result.confirmed is True, "the board accepted it; text is irrelevant"
 
-    def test_a_click_that_fires_nothing_is_not_a_submission(self, tmp_path,
-                                                             monkeypatch):
+    def test_a_click_that_fires_nothing_is_ambiguous_not_failed(self, tmp_path,
+                                                                 monkeypatch):
+        # Airwallex (64dcf405): the request landed late enough that the old
+        # fixed wait had already read it as silence, even though the board's
+        # own confirmation email proved the click went through. Absence alone
+        # must never flip `submitted` back off, or a real submission gets
+        # re-clicked on the next attempt.
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()                    # never records a request
         result = FillResult(form_url="x")
         F.submit(plan_ashby(), result, d)
-        assert result.submitted is False
-        assert "never called its submit endpoint" in result.submit_error
+        assert result.submitted is True
+        assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 1, (
+            "ambiguity alone must not justify a second click"
+        )
+        assert "ambiguous" in result.submit_error
+
+    def test_a_refused_first_attempts_request_does_not_confirm_a_silent_retry(
+        self, tmp_path, monkeypatch,
+    ):
+        # Attempt 1 fires a real (marker-matching) request but the board
+        # refuses the click, so it is retried. Attempt 2's click fires
+        # nothing at all. `result.submit_requests` (the full-run aggregate,
+        # kept for diagnostics/evidence) is non-empty because of attempt 1 —
+        # but confirmation must be judged on the attempt that actually went
+        # out, not on stale traffic from one the board already rejected.
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        marker = F.SUBMIT_REQUEST_MARKERS["ashby"][0]
+        d = FakeDriver()
+        d.refusals = ["updating your application"]  # first click only
+
+        sinks: list[list[str]] = []
+
+        def watch(_ats, sink):
+            sinks.append(sink)
+
+        clicks = 0
+
+        def click(selector):
+            nonlocal clicks
+            clicks += 1
+            d.calls.append(("click_submit", selector))
+            if clicks == 1:
+                sinks[-1].append(f"200 https://x/api/graphql?op={marker}")
+            # attempt 2's click fires nothing
+
+        d.watch_submit_requests = watch
+        d.click_submit = click
+        result = FillResult(form_url="x")
+        F.submit(plan_ashby(), result, d)
+
+        assert clicks == 2
+        assert result.submitted is True, "attempt 2's click was never refused"
+        assert result.submit_requests, "attempt 1's request is kept for diagnostics"
+        assert result.confirmed is False, (
+            "attempt 1's rejected click must not confirm attempt 2's silent one"
+        )
 
     def test_an_unwatched_board_still_falls_back_to_page_text(self, tmp_path,
                                                               monkeypatch):
@@ -1229,3 +1450,46 @@ class TestGreenhouseSubmitMarkerIgnoresItsOwnGetLoad:
         page.handler(self._FakeResponse(
             "https://boards.greenhouse.io/embed/acme/jobs/123", 200, "POST"))
         assert sink == ["200 https://boards.greenhouse.io/embed/acme/jobs/123"]
+
+
+class TestMissingFieldLabelsParsesTheBoardsOwnComplaint:
+    """`b9a009ad`'s real banner, verbatim: one "Missing entry for required
+    field: X" line per unanswered question."""
+
+    class _TextPage:
+        def __init__(self, text):
+            self._text = text
+
+        def locator(self, _selector):
+            return self
+
+        def inner_text(self, timeout=None):
+            return self._text
+
+    def test_one_named_field(self):
+        page = self._TextPage(
+            "Your form needs corrections\n"
+            "Missing entry for required field: LinkedIn Profile\n"
+        )
+        driver = F.BrowserDriver(page)
+        assert driver.missing_field_labels() == ("LinkedIn Profile",)
+
+    def test_several_named_fields_in_one_banner(self):
+        page = self._TextPage(
+            "Your form needs corrections\n"
+            "Missing entry for required field: Email\n"
+            "Missing entry for required field: Which best describes your "
+            "experience with AI agents or agentic workflows?\n"
+        )
+        driver = F.BrowserDriver(page)
+        assert driver.missing_field_labels() == (
+            "Email",
+            "Which best describes your experience with AI agents or agentic "
+            "workflows?",
+        )
+
+    def test_no_named_fields_on_an_unrelated_refusal(self):
+        page = self._TextPage("We're updating your application, please try "
+                              "again when they're finished.")
+        driver = F.BrowserDriver(page)
+        assert driver.missing_field_labels() == ()
