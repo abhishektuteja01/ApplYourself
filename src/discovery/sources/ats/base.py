@@ -21,6 +21,11 @@ from src.discovery.sources.base import Source, SourceResult
 # error page decodes as invalid JSON and arrives as CareersError instead.
 PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexError)
 
+# Per-source pacing floor, config can't go below this. Default 1.0s, unchanged
+# since initial commit. Greenhouse is on a lowered floor for an A/B against
+# rate-limiting (plan.md); no 429 evidence has ever backed the 1.0s default.
+MIN_PACING_SECONDS = {"greenhouse": 0.5}
+
 
 def job_items(payload, key: str) -> list[dict]:
     """Items under `key` of a dict payload, skipping anything that isn't a dict.
@@ -47,7 +52,8 @@ class AtsBoardSource(Source):
         raise NotImplementedError
 
     def fetch(self, ctx) -> SourceResult:
-        pacing = max(1.0, ctx.config.sources[self.name].pacing_seconds)
+        floor = MIN_PACING_SECONDS.get(self.name, 1.0)
+        pacing = max(floor, ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
 
         rows: list[dict] = []
