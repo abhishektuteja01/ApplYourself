@@ -7,7 +7,7 @@ from collections import defaultdict
 import pandas as pd
 from jobspy import scrape_jobs
 from jobspy.linkedin import LinkedIn
-from jobspy.model import DescriptionFormat, ScraperInput, Site
+from jobspy.model import Country, DescriptionFormat, ScraperInput, Site
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -82,6 +82,19 @@ def _detail_values(details: dict) -> dict:
     return values
 
 
+def _country_indeed_value(location: str) -> str:
+    """jobspy's `country_indeed` picks which Indeed domain (indeed.com vs.
+    indeed.de, etc.) a query hits -- it's independent of `location=`, so a
+    hardcoded "usa" silently scoped every non-US query to the US site once
+    the allowlist stopped being US-only. Falls back to "usa" for anything
+    jobspy's own Country enum doesn't recognize (e.g. a continent name)."""
+    try:
+        Country.from_string(location)
+    except ValueError:
+        return "usa"
+    return location
+
+
 class JobSpySource(Source):
     def fetch(self, ctx) -> SourceResult:
         rows = []
@@ -91,7 +104,11 @@ class JobSpySource(Source):
         pacing = ctx.config.sources[self.name].pacing_seconds
         pacing = max(0.5, pacing)
 
-        locations = ctx.config.location_allowlist.countries or ["United States"]
+        # effective_countries() folds in the `continents` shorthand; a
+        # countries-only config would otherwise search "United States" here
+        # while cleaning.py filters everything down to (say) Europe-only,
+        # silently returning zero rows. Sorted for deterministic query order.
+        locations = sorted(ctx.config.location_allowlist.effective_countries()) or ["United States"]
 
         # Materialized up front only so the deadline can break one loop rather
         # than four. Iteration order is unchanged: vertical, term, location,
@@ -125,7 +142,7 @@ class JobSpySource(Source):
                     is_remote=is_remote,
                     results_wanted=RESULTS_WANTED,
                     hours_old=HOURS_OLD,
-                    country_indeed="usa",
+                    country_indeed=_country_indeed_value(location),
                     description_format=DESCRIPTION_FORMAT,
                     # Deferred to _backfill_descriptions below; see the module
                     # comment on DETAIL_PACING_SECONDS.

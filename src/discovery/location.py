@@ -70,10 +70,10 @@ COUNTRY_TO_CC: dict[str, str] = {name: cc for cc, name in CC_TO_COUNTRY.items()}
 # same segment.
 # ---------------------------------------------------------------------
 
-SUBDIVISIONS_BY_NAME: dict[str, object] = {}
+SUBDIVISIONS_BY_NAME: dict[str, list] = {}
 SUBDIVISIONS_BY_CODE: dict[str, list] = {}
 for _s in pycountry.subdivisions:
-    SUBDIVISIONS_BY_NAME.setdefault(_fold(_s.name), _s)
+    SUBDIVISIONS_BY_NAME.setdefault(_fold(_s.name), []).append(_s)
     _bare = _s.code.split("-", 1)[-1].upper()
     SUBDIVISIONS_BY_CODE.setdefault(_bare, []).append(_s)
 
@@ -188,9 +188,17 @@ def _validate_state(
     Brazil's Maranhão) — by checking which candidate country the sibling
     text is actually a real city in.
     """
-    sub = SUBDIVISIONS_BY_NAME.get(_fold(text))
-    if sub is not None:
+    name_candidates = SUBDIVISIONS_BY_NAME.get(_fold(text), [])
+    if len(name_candidates) == 1:
+        sub = name_candidates[0]
         return sub.code.split("-", 1)[-1], CC_TO_COUNTRY.get(sub.country_code, ""), frozenset()
+    if len(name_candidates) > 1:
+        sub, ambiguous_pool = _disambiguate_subdivisions(
+            name_candidates, hint_countries, sibling_texts, use_conventional_tiebreak=False,
+        )
+        if sub is not None:
+            return sub.code.split("-", 1)[-1], CC_TO_COUNTRY.get(sub.country_code, ""), frozenset()
+        return "", "", ambiguous_pool
 
     if not allow_bare_code:
         return "", "", frozenset()
@@ -205,30 +213,51 @@ def _validate_state(
     if len(candidates) <= 1:
         return "", "", frozenset()
 
+    sub, ambiguous_pool = _disambiguate_subdivisions(
+        candidates, hint_countries, sibling_texts, use_conventional_tiebreak=True,
+    )
+    if sub is not None:
+        return bare, CC_TO_COUNTRY.get(sub.country_code, ""), frozenset()
+    return "", "", ambiguous_pool
+
+
+def _disambiguate_subdivisions(
+    candidates: list,
+    hint_countries: set[str],
+    sibling_texts: tuple[str, ...],
+    use_conventional_tiebreak: bool,
+):
+    """Shared narrowing logic for a collision pool of pycountry subdivisions
+    that share the same name or the same bare code: known-country hint,
+    then (codes only) the "conventionally abbreviated this way" tie-break,
+    then sibling-city corroboration, else surface the pool as ambiguous.
+    Returns (matched_subdivision_or_None, ambiguous_pool)."""
     if hint_countries:
         narrowed = [
             s for s in candidates
             if CC_TO_COUNTRY.get(s.country_code, "") in hint_countries
         ]
         if len(narrowed) == 1:
-            return bare, CC_TO_COUNTRY.get(narrowed[0].country_code, ""), frozenset()
+            return narrowed[0], frozenset()
 
-    conventional = [s for s in candidates if s.country_code in _COMMONLY_ABBREVIATED_CC]
-    if len(conventional) == 1:
-        return bare, CC_TO_COUNTRY.get(conventional[0].country_code, ""), frozenset()
+    pool = candidates
+    if use_conventional_tiebreak:
+        conventional = [s for s in candidates if s.country_code in _COMMONLY_ABBREVIATED_CC]
+        if len(conventional) == 1:
+            return conventional[0], frozenset()
+        pool = conventional if conventional else candidates
 
-    pool = conventional if conventional else candidates
     if sibling_texts:
-        matched_cc: set[str] = set()
+        matched: dict[str, object] = {}
         for sib in sibling_texts:
             for cand in pool:
                 if _city_lookup(sib, CC_TO_COUNTRY.get(cand.country_code, "")):
-                    matched_cc.add(cand.country_code)
-        if len(matched_cc) == 1:
-            return bare, CC_TO_COUNTRY.get(next(iter(matched_cc)), ""), frozenset()
+                    matched[cand.country_code] = cand
+        if len(matched) == 1:
+            return next(iter(matched.values())), frozenset()
 
     ambiguous_pool = frozenset(CC_TO_COUNTRY.get(s.country_code, "") for s in pool) - {""}
-    return "", "", ambiguous_pool
+    return None, ambiguous_pool
 
 
 def _city_lookup(text: str, country_hint: str = "") -> dict | None:
@@ -313,19 +342,35 @@ def _mine_segment_signals(segment: str):
         # A word that is both a real subdivision's full name AND a real
         # country's full name ("Georgia") is genuinely ambiguous when it's
         # the segment's only component -- no anchoring city or other
-        # context to pick a side, unlike "Atlanta, Georgia"/"Tbilisi,
-        # Georgia", where libpostal's own role-tagging already resolved it
-        # correctly (state vs. country) using the surrounding text. Surface
-        # both as candidate countries instead of confidently picking one.
-        if len(components) == 1:
-            also_country = _validate_country(text)
-            if also_country:
-                code, owner, _pool = _validate_state(text, countries, allow_bare_code=False)
+        # context to pick a side. Surface both as candidate countries
+        # instead of confidently picking one.
+        also_country = _validate_country(text)
+        if also_country:
+            siblings = tuple(t for j, (t, _) in enumerate(components) if j != i and j not in claimed)
+            code, owner, _pool = _validate_state(
+                text, countries, allow_bare_code=False, sibling_texts=siblings,
+            )
+            if len(components) == 1:
                 if owner:
                     countries.add(owner)
                     countries.add(also_country)
-                claimed.add(i)
-                continue
+                else:
+                    countries.add(also_country)
+            elif owner and any(_city_lookup(sib, owner) for sib in siblings):
+                # A sibling really is a city in the subdivision's own
+                # country ("Atlanta" is a real US city) -- libpostal's
+                # "state" tag is corroborated, so trust the state reading.
+                states.add((code, owner))
+                countries.add(owner)
+            else:
+                # Not corroborated: libpostal's "state" tag on this word is
+                # unreliable when the rest of the segment is a foreign city
+                # it doesn't recognize ("Batumi, Adjara, Georgia" -- Batumi
+                # is a real city in the country Georgia, not the US). Prefer
+                # the unambiguous country reading rather than guessing state.
+                countries.add(also_country)
+            claimed.add(i)
+            continue
         siblings = tuple(t for j, (t, _) in enumerate(components) if j != i and j not in claimed)
         code, owner, ambiguous_pool = _validate_state(
             text, countries, allow_bare_code=len(components) > 1, sibling_texts=siblings,
@@ -349,8 +394,12 @@ def _mine_segment_signals(segment: str):
         if country_hint:
             city = _city_lookup(text, country_hint)
         elif restrict_city_countries:
+            # Sorted so the pick is stable across process runs — plain
+            # `set` iteration order for strings is randomized per process
+            # in CPython (PYTHONHASHSEED), which would otherwise let the
+            # same input resolve to a different country on different runs.
             city = next(
-                (c for cc in restrict_city_countries if (c := _city_lookup(text, cc))),
+                (c for cc in sorted(restrict_city_countries) if (c := _city_lookup(text, cc))),
                 None,
             )
         else:

@@ -38,6 +38,21 @@ class LocationAllowlist:
         result = {location.COUNTRY_NAMES.get(location._fold(c), c) for c in self.countries}
         for continent in self.continents:
             result |= set(location.CONTINENT_TO_COUNTRIES.get(continent, []))
+
+        if not result and self.states:
+            # A states-only allowlist ("just TX") with no countries/continents
+            # configured still needs a country floor: without one, a row that
+            # only resolves to a bare country ("Canada", no state text) has
+            # no `parsed.state` for the states check to test and slips through
+            # unfiltered. Scope it to whichever countries the configured
+            # states actually belong to.
+            for s in self.states:
+                subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(s), [])
+                if not subs:
+                    subs = location.SUBDIVISIONS_BY_CODE.get(s.strip().upper(), [])
+                result |= {location.CC_TO_COUNTRY.get(sub.country_code, "") for sub in subs}
+            result.discard("")
+
         return result
 
     def effective_states(self) -> set[str]:
@@ -49,11 +64,18 @@ class LocationAllowlist:
 
         result = set()
         for s in self.states:
-            sub = location.SUBDIVISIONS_BY_NAME.get(location._fold(s))
-            if sub is not None:
-                result.add(sub.code.split("-", 1)[-1])
+            subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(s), [])
+            if subs:
+                # A name that collides across countries (e.g. "Santa Cruz")
+                # can't be narrowed here -- there's no sibling country to
+                # check against, unlike the parser's own use of this table.
+                # Accept any of them; membership is still exact-code matched
+                # per row downstream, so this only ever widens the allowlist
+                # to cover every country that name could mean, never the
+                # wrong single one.
+                result.update(sub.code.split("-", 1)[-1] for sub in subs)
             else:
-                result.add(s)
+                result.add(s.strip())
         return result
 
 @dataclass
@@ -115,6 +137,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
             countries=loc.get("countries", []),
             states=loc.get("states", []),
             cities=loc.get("cities", []),
+            continents=loc.get("continents", []),
         )
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
