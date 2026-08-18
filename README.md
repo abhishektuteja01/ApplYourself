@@ -67,10 +67,14 @@ excluding URL and description so it stays stable across re-scrapes.
 Requires **Python 3.12** (pinned `>=3.12,<3.13`), [uv](https://docs.astral.sh/uv/),
 and Claude Code for the slash commands. PDF output additionally needs
 **Microsoft Word on macOS** (it is driven by `osascript`); every other stage runs
-anywhere Python does.
+anywhere Python does. Discovery's location filter requires the system
+**libpostal** C library — `brew install libpostal` on macOS,
+`apt-get install libpostal-utils` on Debian/Ubuntu — there is no fallback
+parser, so `discover` will not run without it.
 
 ```bash
 git clone <this repo> && cd <this repo>
+brew install libpostal   # or apt-get install libpostal-utils
 uv sync
 uv run pytest tests -q     # should be fully green
 ```

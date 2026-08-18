@@ -24,7 +24,9 @@ dependencies = [
     { name = "geonamescache" },
     { name = "lxml" },
     { name = "pandas" },
+    { name = "postal" },
     { name = "pyarrow" },
+    { name = "pycountry" },
     { name = "python-docx" },
     { name = "python-jobspy" },
     { name = "pyyaml" },
@@ -46,7 +48,9 @@ requires-dist = [
     { name = "geonamescache", specifier = ">=3.0.1" },
     { name = "lxml", specifier = ">=5.0" },
     { name = "pandas", specifier = ">=2.2" },
+    { name = "postal", specifier = ">=1.1.11" },
     { name = "pyarrow", specifier = ">=15.0" },
+    { name = "pycountry", specifier = ">=24.0" },
     { name = "python-docx", specifier = ">=1.1" },
     { name = "python-jobspy", specifier = ">=1.1.80,<1.2" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -303,6 +307,15 @@ wheels = [
 ]
 
 [[package]]
+name = "postal"
+version = "1.1.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d8/a0/9f6479ebf9f186060aef11a8530433bb07895da381cc42acfa8c4d615a8b/postal-1.1.11.tar.gz", hash = "sha256:2c1a5de42fcaf742c99b9f0230594b990f050ad7a7ab1223c1bc5e7db91200a6", size = 21958, upload-time = "2025-10-29T05:29:39.606Z" }
+
+[[package]]
 name = "pyarrow"
 version = "24.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -315,6 +328,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/5f/e8/f88ce625fe8babaae64e8db2d417c7653adb3019b08aae85c5ed787dc816/pyarrow-24.0.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:3b13dedfe76a0ad2d1d859b0811b53827a4e9d93a0bcb05cf59333ab4980cc7e", size = 49376032, upload-time = "2026-04-21T10:47:48.967Z" },
     { url = "https://files.pythonhosted.org/packages/36/7a/82c363caa145fff88fb475da50d3bf52bb024f61917be5424c3392eaf878/pyarrow-24.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:25ea65d868eb04015cd18e6df2fbe98f07e5bda2abefabcb88fce39a947716f6", size = 51929490, upload-time = "2026-04-21T10:47:55.981Z" },
     { url = "https://files.pythonhosted.org/packages/66/1c/e3e72c8014ad2743ca64a701652c733cc5cbcee15c0463a32a8c55518d9e/pyarrow-24.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:295f0a7f2e242dabd513737cf076007dc5b2d59237e3eca37b05c0c6446f3826", size = 27355660, upload-time = "2026-04-21T10:48:01.718Z" },
+]
+
+[[package]]
+name = "pycountry"
+version = "26.2.16"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/1d/061b9e7a48b85cfd69f33c33d2ef784a531c359399ad764243399673c8f5/pycountry-26.2.16.tar.gz", hash = "sha256:5b6027d453fcd6060112b951dd010f01f168b51b4bf8a1f1fc8c95c8d94a0801", size = 7711342, upload-time = "2026-02-17T03:42:52.367Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/42/7703bd45b62fecd44cd7d3495423097e2f7d28bc2e99e7c1af68892ab157/pycountry-26.2.16-py3-none-any.whl", hash = "sha256:115c4baf7cceaa30f59a4694d79483c9167dbce7a9de4d3d571c5f3ea77c305a", size = 8044600, upload-time = "2026-02-17T03:42:49.777Z" },
 ]
 
 [[package]]

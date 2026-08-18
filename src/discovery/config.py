@@ -23,6 +23,38 @@ class LocationAllowlist:
     countries: list[str] = field(default_factory=list)
     states: list[str] = field(default_factory=list)
     cities: list[str] = field(default_factory=list)
+    # Optional shorthand: "Europe" expands to every European country at
+    # compare time instead of the user typing ~44 country names by hand.
+    # Purely additive -- existing countries-only configs are unaffected.
+    continents: list[str] = field(default_factory=list)
+
+    def effective_countries(self) -> set[str]:
+        """`countries` plus whatever `continents` expands to, normalized to
+        the canonical names `location.parse_location` returns."""
+        from src.discovery import location  # local import: avoid a hard
+        # dependency on libpostal's system library for callers that never
+        # touch location filtering (e.g. pure config validation/tests).
+
+        result = {location.COUNTRY_NAMES.get(location._fold(c), c) for c in self.countries}
+        for continent in self.continents:
+            result |= set(location.CONTINENT_TO_COUNTRIES.get(continent, []))
+        return result
+
+    def effective_states(self) -> set[str]:
+        """`states` normalized to the 2-letter subdivision codes
+        `location.parse_location` returns, accepting either a full name
+        ("Texas") or a code ("TX") -- full names used to be a silent no-op
+        because the parser only ever produced codes."""
+        from src.discovery import location
+
+        result = set()
+        for s in self.states:
+            sub = location.SUBDIVISIONS_BY_NAME.get(location._fold(s))
+            if sub is not None:
+                result.add(sub.code.split("-", 1)[-1])
+            else:
+                result.add(s)
+        return result
 
 @dataclass
 class DiscoveryConfig:

@@ -212,8 +212,11 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     if df.empty:
         return df.copy()
 
-    allow_countries = {c.lower() for c in cfg.location_allowlist.countries}
-    allow_states = {s.lower() for s in cfg.location_allowlist.states}
+    # effective_countries() folds in the optional `continents` shorthand;
+    # effective_states() accepts either a full name or a code, since
+    # parse_location only ever returns codes.
+    allow_countries = {c.lower() for c in cfg.location_allowlist.effective_countries()}
+    allow_states = {s.lower() for s in cfg.location_allowlist.effective_states()}
     allow_cities = {c.lower() for c in cfg.location_allowlist.cities}
 
     keep_indices = []
@@ -223,13 +226,26 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
         raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
         parsed = parse_location(raw_loc_str)
 
-        # 1. Nothing parsed, or remote-only -> KEEP
-        if not parsed.country and not parsed.state and not parsed.city:
+        # 1. Nothing parsed at all -> KEEP (conservative default, unchanged).
+        if not parsed.country and not parsed.state and not parsed.city and not parsed.candidate_countries:
             keep_indices.append(idx)
             if parsed.remote:
                 new_locations.append("Remote")
             else:
                 new_locations.append(raw_loc_str)
+            continue
+
+        # 1b. A genuine multi-region ambiguity (location.py no longer picks
+        # a winner among multiple countries itself -- that decision belongs
+        # here, against whatever the user actually configured, so an
+        # India-only allowlist gets the same "don't guess" protection a
+        # US-only one does). Overlaps the allowlist -> KEEP unresolved for
+        # review; no overlap at all -> positively excluded -> DROP.
+        if parsed.candidate_countries:
+            candidates_lower = {c.lower() for c in parsed.candidate_countries}
+            if not allow_countries or candidates_lower & allow_countries:
+                keep_indices.append(idx)
+                new_locations.append("Remote" if parsed.remote else raw_loc_str)
             continue
 
         # 2. Parsed to a place positively OUTSIDE the allowlist -> DROP

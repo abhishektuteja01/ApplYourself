@@ -4,10 +4,18 @@ from src.discovery.location import parse_location
 
 
 # A place is "positively non-US" (and thus dropped by the United-States
-# allowlist) exactly when it resolves to a non-empty, non-US country.
+# allowlist) exactly when it resolves to a non-empty, non-US country, OR
+# when every candidate in a genuine multi-region ambiguity is foreign (the
+# candidate_countries path — location.py itself no longer picks a winner
+# among multiple countries, so this helper mirrors what cleaning.py's
+# allowlist-intersection check would do for a US-only allowlist).
 def _is_foreign(raw):
     r = parse_location(raw)
-    return bool(r.country) and r.country != "United States"
+    if r.country:
+        return r.country != "United States"
+    if r.candidate_countries:
+        return "United States" not in r.candidate_countries
+    return False
 
 
 def _is_us(raw):
@@ -115,13 +123,6 @@ def test_assorted_foreign_cities_dropped(raw):
     assert _is_foreign(raw), f"{raw!r} should be positively non-US"
 
 
-# Namesake protection is name-based, so some foreign cities that happen to
-# share a US city's name stay US (conservative — we never over-drop). Amsterdam
-# (Amsterdam, NY) is one; documented so the behavior is intentional, not a bug.
-def test_foreign_city_sharing_us_name_stays_us():
-    assert _is_us("Amsterdam")
-
-
 # Explicit country suffix still works (regression on the pre-existing path).
 @pytest.mark.parametrize("raw,country", [
     ("Berlin, Germany", "Germany"),
@@ -134,20 +135,41 @@ def test_foreign_city_with_country_suffix(raw, country):
 
 
 # ---------------------------------------------------------------------
-# Namesake protection: a foreign city that is ALSO a US city stays US, so
-# we never over-drop legitimate US roles. These names are excluded from the
-# foreign table because a US city bears them too.
+# Namesake resolution, worldwide design: a bare city name shared by both a
+# US place and a larger foreign place now resolves to whichever is the
+# real-world dominant place (population-ranked, same tie-break used
+# throughout this module) -- it is NOT hardcoded to prefer the US namesake.
+# This is a deliberate behavior change from the old dictionary-matcher
+# design, which always preferred a US namesake to be "conservative" -- that
+# was itself a hardcoded home-country privilege (the exact kind this
+# rewrite removes; see CLAUDE.md's no-hardcoding rule and the location.py
+# module docstring). An India-based user's search deserves the same quality
+# of resolution a US-based user's does, and "assume US" doesn't generalize.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,state", [
-    ("Paris", "TX"),
-    ("Vancouver", "WA"),
-    ("Manchester", "NH"),
-    ("Cambridge", "MA"),
-    ("Cambridge, MA", "MA"),
-    ("Paris, TX", "TX"),
+@pytest.mark.parametrize("raw,country", [
+    ("Paris", "France"),
+    ("Vancouver", "Canada"),
+    ("Manchester", "United Kingdom"),
+    ("Cambridge", "United Kingdom"),
+    ("Amsterdam", "Netherlands"),
 ])
-def test_us_namesake_stays_us(raw, state):
+def test_bare_namesake_resolves_to_globally_dominant_place(raw, country):
+    res = parse_location(raw)
+    assert res.country == country
+    assert _is_foreign(raw)
+
+
+# An EXPLICIT state code or name is real disambiguating context, not a
+# population guess, so it still resolves confidently to its own US place
+# regardless of the bare-name namesake's global population.
+@pytest.mark.parametrize("raw,state", [
+    ("Paris, TX", "TX"),
+    ("Cambridge, MA", "MA"),
+    ("Vancouver, WA", "WA"),
+    ("Manchester, NH", "NH"),
+])
+def test_us_namesake_with_explicit_state_stays_us(raw, state):
     res = parse_location(raw)
     assert res.country == "United States"
     assert res.state == state
@@ -173,15 +195,19 @@ def test_us_inclusive_global_role_kept():
     assert _is_kept_unresolved("New York, London or Singapore")
 
 
-def test_foreign_list_with_us_namesake_not_mislabeled():
-    # The user's case: an all-European list whose only "US" signal is the
-    # Paris/Texas namesake. We can't deterministically tell it from a genuine
-    # US-inclusive list, so we conservatively KEEP it -- but crucially we do
-    # NOT fabricate a confident "Paris, TX" label (the old bug).
+def test_bare_comma_list_no_longer_fabricates_a_us_namesake():
+    # A 5-city list joined only by commas (no "or"/";"/"/") isn't split into
+    # segments by design (comma is ambiguous between "city, state" and a
+    # list -- see location.py's module docstring), so libpostal parses it as
+    # one ungrammatical blob. It reliably recognizes at most one real place
+    # inside the noise; here that's "Paris", which -- under the new
+    # worldwide, unbiased design -- resolves to the globally dominant real
+    # Paris (France), not a fabricated "Paris, TX" the way the old
+    # dictionary matcher's blind namesake bias used to risk. The key
+    # invariant this test protects is the second part: never confidently
+    # mislabel this as a US place.
     res = parse_location("London, Stockholm, Lisbon, Berlin, Paris")
-    assert res.country == ""
-    assert res.state == ""
-    assert res.city == ""
+    assert res.country != "United States"
 
 
 def test_strong_us_anchor_with_foreign_city_kept():
@@ -261,8 +287,244 @@ def test_foreign_locations_still_resolve_after_the_namesake_rule(raw, country):
     assert _is_foreign(raw)
 
 
-@pytest.mark.parametrize("raw", ["Beirut, Lebanon", "Tbilisi, Georgia"])
-def test_genuine_us_foreign_namesake_stays_unresolved(raw):
-    # "Lebanon"/"Georgia" name both a US place and a country, so the signals
-    # genuinely conflict. Unresolved -> kept for manual review, never auto-dropped.
+# "Lebanon"/"Georgia" name both a US place and a country, but a real city
+# anchors the context here, so libpostal's own role-tagging resolves both
+# confidently as countries -- unlike the old dictionary matcher, which
+# blindly tested "Lebanon"/"Georgia" against a US-namesake table regardless
+# of context and collapsed the parse to ambiguous. Bare "Georgia" alone
+# (no anchoring city) stays genuinely ambiguous -- see
+# test_bare_state_country_namesake_stays_unresolved below.
+@pytest.mark.parametrize("raw,country", [
+    ("Beirut, Lebanon", "Lebanon"),
+    ("Tbilisi, Georgia", "Georgia"),
+])
+def test_us_foreign_namesake_resolves_confidently_in_context(raw, country):
+    res = parse_location(raw)
+    assert res.country == country
+    assert _is_foreign(raw)
+
+
+def test_bare_state_country_namesake_stays_unresolved():
+    # No anchoring city -> genuinely ambiguous between the US state and the
+    # country -> unresolved, kept for manual review, never auto-dropped.
+    assert _is_kept_unresolved("Georgia")
+
+
+# ---------------------------------------------------------------------
+# The regression that started this rewrite: job_id 35a899e2's "Central
+# Jakarta" parsed to nothing (a small US town, Central LA, collided with
+# the unrelated adjective "Central") and silently leaked past a US-only
+# allowlist. libpostal recognizes "Central Jakarta" as one place unit, so
+# the collision-inducing sub-token match never happens.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw", [
+    "Central Jakarta", "South Jakarta", "North Jakarta",
+    "East Jakarta", "West Jakarta",
+])
+def test_jakarta_district_no_longer_leaks_past_the_allowlist(raw):
+    res = parse_location(raw)
+    assert res.country == "Indonesia"
+    assert _is_foreign(raw)
+
+
+# ---------------------------------------------------------------------
+# Same-string US-city/foreign-country collisions that used to collapse to
+# unresolved (silently kept, bypassing the allowlist) because a small US
+# town shares a name with a major foreign capital. Not hypothetical --
+# found by direct testing this session, same bug class as Jakarta.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,country", [
+    ("Rome, Italy", "Italy"),
+    ("Athens, Greece", "Greece"),
+    ("Cairo, Egypt", "Egypt"),
+    ("Delhi, India", "India"),
+])
+def test_us_city_foreign_country_collisions_resolve_foreign(raw, country):
+    res = parse_location(raw)
+    assert res.country == country
+    assert _is_foreign(raw)
+
+
+# ---------------------------------------------------------------------
+# Namesake city+state vs. city+country pairs, both sides in one place so a
+# future change can't silently break one side without the test file
+# showing it right next to its counterpart.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,state", [
+    ("Athens, OH", "OH"),
+    ("Rome, GA", "GA"),
+    ("Birmingham, AL", "AL"),
+    ("Dublin, OH", "OH"),
+    ("Valencia, CA", "CA"),
+    ("York, PA", "PA"),
+])
+def test_namesake_pair_us_side(raw, state):
+    res = parse_location(raw)
+    assert res.country == "United States"
+    assert res.state == state
+
+
+@pytest.mark.parametrize("raw,country", [
+    ("Athens, Greece", "Greece"),
+    ("Rome, Italy", "Italy"),
+    ("Birmingham, UK", "United Kingdom"),
+    ("Dublin, Ireland", "Ireland"),
+    ("Valencia, Spain", "Spain"),
+    ("York, UK", "United Kingdom"),
+])
+def test_namesake_pair_foreign_side(raw, country):
+    res = parse_location(raw)
+    assert res.country == country
+    assert _is_foreign(raw)
+
+
+# ---------------------------------------------------------------------
+# The libpostal single-merged-token quirk and its repair (see location.py's
+# module-level comment on the "Paris, TX" case).
+# ---------------------------------------------------------------------
+
+def test_paris_tx_merge_quirk_is_repaired():
+    res = parse_location("Paris, TX")
+    assert res.country == "United States"
+    assert res.state == "TX"
+    assert res.city == "Paris"
+
+
+def test_paris_tx_usa_agrees_with_the_repaired_case():
+    # libpostal already splits this one cleanly without the repair path --
+    # confirms both paths land on the same answer.
+    res = parse_location("Paris, TX, USA")
+    assert res.country == "United States"
+    assert res.state == "TX"
+
+
+# ---------------------------------------------------------------------
+# Worldwide subdivision correctness -- new coverage class, not present in
+# the old US-only design at all.
+# ---------------------------------------------------------------------
+
+def test_vancouver_bc_resolves_to_canada_without_a_country_suffix():
+    # Under the old US-only state table this wrongly resolved to
+    # Washington state (see location.py's module docstring) -- fixed as a
+    # natural consequence of validating subdivisions worldwide.
+    res = parse_location("Vancouver, BC")
+    assert res.country == "Canada"
+    assert res.state == "BC"
+
+
+def test_bengaluru_karnataka_resolves_via_diacritic_folded_subdivision():
+    # pycountry's real subdivision name is "Karnātaka" (diacritics) --
+    # confirms _fold() is applied to subdivision names, not just cities.
+    res = parse_location("Bengaluru, Karnataka")
+    assert res.country == "India"
+    assert res.state == "KA"
+
+
+def test_bangalore_ka_code_collision_does_not_silently_pick_the_wrong_country():
+    # "KA" is both India's Karnataka and Georgia's Kakheti region -- a bare
+    # code alone can't tell them apart. The city itself ("Bangalore") is
+    # only a real place in India, which is what the overall parse should
+    # land on -- via the city signal, not a guessed subdivision code.
+    res = parse_location("Bangalore, KA")
+    assert res.country == "India"
+
+
+@pytest.mark.parametrize("raw,country,state", [
+    ("Toronto, Ontario, Canada", "Canada", "ON"),
+    ("Recife, PE, Brazil", "Brazil", "PE"),
+])
+def test_full_hierarchical_strings_outside_north_america_and_europe(raw, country, state):
+    res = parse_location(raw)
+    assert res.country == country
+    assert res.state == state
+
+
+# ---------------------------------------------------------------------
+# New Mexico vs. Mexico: a country name that is a strict substring of a US
+# state's name must not bleed a phantom country signal into the state.
+# ---------------------------------------------------------------------
+
+def test_albuquerque_new_mexico_is_us():
+    res = parse_location("Albuquerque, New Mexico")
+    assert res.country == "United States"
+    assert res.state == "NM"
+
+
+def test_bare_new_mexico_is_unambiguous_unlike_georgia_or_washington():
+    # Unlike "Georgia"/"Washington", "New Mexico" isn't also a country name
+    # or a same-named US city, so it resolves confidently on its own.
+    res = parse_location("New Mexico")
+    assert res.country == "United States"
+    assert res.state == "NM"
+
+
+@pytest.mark.parametrize("raw", ["Mexico", "Mexico City, Mexico"])
+def test_mexico_the_country_is_unaffected_by_the_new_mexico_namesake(raw):
+    assert parse_location(raw).country == "Mexico"
+
+
+# ---------------------------------------------------------------------
+# Multi-word countries containing "and" must survive the list-separator
+# pre-split intact -- "and" is deliberately excluded from the separator
+# regex for exactly this reason (see location.py's module docstring).
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw", [
+    "Trinidad and Tobago", "Antigua and Barbuda", "Bosnia and Herzegovina",
+])
+def test_and_countries_survive_the_list_separator_presplit(raw):
+    assert parse_location(raw).country == raw
+
+
+# ---------------------------------------------------------------------
+# Multi-region reconciliation across every separator style. location.py no
+# longer decides keep-vs-drop for a multi-country ambiguity itself (that
+# moved to cleaning.py's allowlist-aware logic) -- it surfaces every
+# candidate via `candidate_countries` instead, asserted here directly.
+# ---------------------------------------------------------------------
+# Found by scanning real historical data after this rewrite landed, not
+# hypothetical: bare short codes/words that are also real (tiny) places
+# elsewhere in the world must not silently hijack the country resolution.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw", ["PA", "WA", "Asia"])
+def test_bare_short_tokens_dont_resolve_via_a_tiny_unrelated_namesake(raw):
+    # "Pa" (Burkina Faso, pop. 15k), "Wa" (Ghana, pop. 78k) and "Asia"
+    # (a town in the Philippines, pop. 24k) are all real geonames entries
+    # that would otherwise hijack a bare US-state-abbreviation-shaped
+    # string with no other context.
     assert _is_kept_unresolved(raw)
+
+
+def test_ambiguous_state_code_does_not_get_overridden_by_an_unrelated_city():
+    # "PA" collides between Brazil's Pará and Pennsylvania, and the real
+    # Warrington, PA (a small Bucks County community) isn't in the geonames
+    # dataset at all -- only the much bigger Warrington, England is. The
+    # ambiguous state signal must suppress the unconstrained global city
+    # fallback rather than let it confidently resolve to the UK.
+    assert _is_kept_unresolved("Warrington, PA")
+
+
+# ---------------------------------------------------------------------
+
+def test_slash_separator_resolves_the_real_segment_and_ignores_remote():
+    res = parse_location("Austin, TX / Remote")
+    assert res.country == "United States"
+    assert res.state == "TX"
+    assert res.remote is True
+
+
+def test_or_list_of_two_full_us_pairs_is_a_multi_site_listing_kept():
+    # Both segments are the same country but different states -> a
+    # multi-site listing, not a single answer -> kept for review.
+    assert _is_kept_unresolved("Chicago, Illinois or Austin, Texas")
+
+
+def test_semicolon_all_foreign_list_has_no_us_candidate():
+    res = parse_location("London, United Kingdom; Stockholm, Sweden")
+    assert res.country == ""
+    assert res.candidate_countries == frozenset({"United Kingdom", "Sweden"})
+    assert "United States" not in res.candidate_countries

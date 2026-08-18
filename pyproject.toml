@@ -30,6 +30,12 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.32",
     "geonamescache>=3.0.1",
+    # Requires the system libpostal C library (brew install libpostal /
+    # apt-get install libpostal-data libpostal-utils) — see onboarding for
+    # setup. Hard requirement: discover's location filter has no fallback
+    # parser, by design (see src/discovery/location.py).
+    "postal>=1.1.11",
+    "pycountry>=24.0",
 ]
 
 [project.urls]

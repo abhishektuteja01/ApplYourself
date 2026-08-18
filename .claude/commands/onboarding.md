@@ -223,15 +223,23 @@ Unlocks: discovery, classification and scoring.
 
 Unlocks: the overnight scrape.
 
-1. `cp profile/discovery.example.yaml profile/discovery.yaml`
-2. Propose `location_allowlist` from the locations they gave in Stage 2 — this
+1. Discovery's location filter requires the system `libpostal` C library —
+   install it before `uv sync` (`brew install libpostal` on macOS,
+   `apt-get install libpostal-utils` on Debian/Ubuntu). There is no
+   fallback parser: `discover` will not run without it.
+2. `cp profile/discovery.example.yaml profile/discovery.yaml`
+3. Propose `location_allowlist` from the locations they gave in Stage 2 — this
    is the **hard** geographic filter, and rows outside it are dropped in
-   cleaning, so write in every spelling a board might use (the metro, the state
-   abbreviation, "Remote", "Hybrid") rather than one canonical string. Confirm
-   that, and ask about `deadline_hours` and which sources to enable in the same
-   batch, with every source on by default — a thin first shortlist is the
-   common disappointment, and a disabled source is the usual cause.
-3. Offer `cp profile/companies.example.yaml profile/companies.yaml` as a
+   cleaning. The parser resolves any country's cities/states/provinces from
+   context (not just the US), so write canonical names or codes — `countries:
+   ["United States"]`, `states: ["Texas"]` or `["TX"]`, both work — rather
+   than every spelling a board might use. A `continents` shorthand is also
+   available for a wide search (`continents: ["Europe"]` instead of listing
+   every country in it). Confirm that, and ask about `deadline_hours` and
+   which sources to enable in the same batch, with every source on by
+   default — a thin first shortlist is the common disappointment, and a
+   disabled source is the usual cause.
+4. Offer `cp profile/companies.example.yaml profile/companies.yaml` as a
    one-liner: `data/universe/*.csv` already ships thousands of boards, so this
    is only for companies they specifically care about, and `name` must match how
    job boards spell it because it feeds `job_id`.
