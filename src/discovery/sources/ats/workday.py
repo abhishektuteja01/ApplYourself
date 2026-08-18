@@ -52,7 +52,6 @@ import time
 from datetime import date, timedelta
 
 from src.discovery import cleaning
-from src.discovery import trace
 from src.discovery import universe
 from src.discovery.crawl_cursor import load_cursor, save_cursor
 from src.discovery.htmlutil import html_to_text
@@ -254,8 +253,6 @@ class WorkdaySource(Source):
         companies = head + tail
         completed = 0
 
-        ticker = trace.Ticker(self.name, len(companies), every=100)
-
         for c in companies:
             if ctx.deadline_reached():
                 break
@@ -270,7 +267,6 @@ class WorkdaySource(Source):
                 continue
 
             polled += 1
-            ticker.tick(polled, ok=ok, err=err_other)
 
             c_fetched = 0
             # Keyed by externalPath: the same posting can surface under more
@@ -411,8 +407,6 @@ class WorkdaySource(Source):
         # Only the rotated tail advances; the fixed head is crawled every run.
         cursor.advance(tail, max(0, completed - len(head)), key=lambda c: c.slug)
         save_cursor(cursor)
-
-        ticker.finish(polled, ok=ok, err=err_other, kept=kept)
 
         summary = (f"Companies polled: {polled} | OK: {ok} | Err: {err_other} "
                    f"| Rows kept: {kept}")

@@ -11,7 +11,6 @@ from jobspy.model import DescriptionFormat, ScraperInput, Site
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.discovery import trace
 from src.discovery.cleaning import apply_title_exclusion
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
@@ -117,7 +116,6 @@ class JobSpySource(Source):
                 time.sleep(pacing)
 
             total_queries += 1
-            q_t0 = time.time()
 
             try:
                 df = scrape_jobs(
@@ -142,10 +140,6 @@ class JobSpySource(Source):
                 msg = f"{type(e).__name__}: {e}"
                 errors.append(f"{self.name} term='{term}' remote={is_remote}: {msg}")
                 df = pd.DataFrame()
-
-            trace.trace(f"{self.name} q{total_queries}/{len(queries)} "
-                        f"{vertical} '{term}' remote={is_remote} "
-                        f"rows={len(df)} {time.time() - q_t0:.1f}s")
 
             if not df.empty:
                 df = df.where(pd.notnull(df), None)
@@ -181,7 +175,6 @@ class JobSpySource(Source):
         filled = empty = unparsed = 0
         elapsed = 0.0
         stopped = False
-        ticker = trace.Ticker(f"{self.name} detail", len(by_url), every=100)
 
         for i, (url, group) in enumerate(by_url.items()):
             if ctx.deadline_reached():
@@ -219,12 +212,7 @@ class JobSpySource(Source):
             for row in group:
                 row.update(values)
 
-            ticker.tick(filled + empty, filled=filled, empty=empty,
-                        fetch=f"{elapsed / max(1, filled + empty):.2f}s")
-
         attempted = filled + empty
-        ticker.finish(attempted, filled=filled, empty=empty, unparsed=unparsed,
-                      fetch=f"{elapsed / max(1, attempted):.2f}s")
 
         unique_urls = len({row["job_url"] for row in rows if row["job_url"]})
         lines = [

@@ -19,7 +19,6 @@ from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
 from src.discovery.sources.ats.workday import WorkdaySource
 from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
-from src.discovery import trace
 from src.discovery import universe
 from src.discovery.schema import validate_frame, COLUMNS
 from src import verticals
@@ -70,12 +69,10 @@ def _run_source(source, ctx, run_id, scraped_date, shard_file) -> dict:
     future, aborts the run, and the caller's finally still guarantees cleaning.
     """
     t0 = time.time()
-    trace.trace(f"{source.name} lane start")
     try:
         res = source.fetch(ctx)
     except Exception:  # noqa: BLE001 — deliberate per-source containment
         log.exception("Source %s crashed; continuing.", source.name)
-        trace.trace(f"{source.name} lane CRASHED after {time.time() - t0:.1f}s")
         return {"duration": time.time() - t0, "crash": traceback.format_exc().rstrip()}
 
     outcome = {
@@ -110,8 +107,6 @@ def _run_source(source, ctx, run_id, scraped_date, shard_file) -> dict:
             "failing, not an empty crawl. First: %s",
             source.name, len(res.errors), res.errors[0],
         )
-    trace.trace(f"{source.name} lane done in {outcome['duration']:.1f}s "
-                f"rows={outcome['rows']} truncated={outcome['truncated']}")
     return outcome
 
 
