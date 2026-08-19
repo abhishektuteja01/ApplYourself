@@ -18,7 +18,7 @@ identity:
   preferred_name: "Alex"        # repeat first_name if you have no other
   email: "alex@example.com"
   phone: "+1 555 0100"
-  location: "Exampletown, Massachusetts, United States"
+  location: "Exampletown, Example State, United States"
   country: "United States"
 
 # Answers the two questions almost every board asks, and nothing else.
@@ -75,7 +75,7 @@ identity:
 # of origin", "Please select the country you hold citizenship in"). Leave it
 # unset and those questions park — this is never guessed. It also drives
 # region/country yes-no questions ("Are you a citizen of a country in the
-# EU/EFTA?", "Are you currently an Indonesian citizen?"), answered against a
+# EU/EFTA?", "Are you currently a <demonym> citizen?"), answered against a
 # small built-in region/demonym table that is extended one entry at a time as
 # real boards surface a country or region it doesn't yet cover.
 # `second_nationality` answers a SECOND citizenship question ("if you hold
@@ -100,8 +100,8 @@ work_authorization:
   #   - "STEM OPT"
   #   - "I am authorized to work in the United States for any employer"
   #   - "Yes, and I am currently in F-1 status (if you currently have OPT or STEM-EXT OPT or CPT, you will select this answer.)"
-  # nationality: "India"
-  # second_nationality: "Canada"
+  # nationality: "<the country you hold citizenship in>"
+  # second_nationality: "<a second country, if you hold one>"
   # sponsorship_followup_text: "Currently authorized to work under F-1 STEM OPT; will require H-1B sponsorship upon its expiration."
 
 # Greenhouse renders an education block that appears in no question array. It
@@ -112,12 +112,12 @@ work_authorization:
 # stuck and parks the role if it did not.
 education:
   school: "Example University"
-  degree: "Master's Degree"
-  discipline: "Computer Science"
+  degree: "Bachelor's Degree"
+  discipline: "Industrial Engineering"
   start_year: 2019
-  end_year: 2021
+  end_year: 2022
   # start_month: "September"
-  # end_month: "May"
+  # end_month: "December"
 
 # Rare (1 in 60 boards) but required wherever it renders. Your current or most
 # recent role, one entry. Delete the block if you would rather park those roles
@@ -173,9 +173,13 @@ rules:
     answer: ["Yes"]
   # Whole-label rules, for labels a substring keyword cannot target safely.
   - exact: [state]
-    answer: ["Massachusetts"]
-  - exact: [current company, current employer]
-    answer: "Widget Corp"
+    answer: ["Example State"]
+  # Only write this one if you actually hold the role now. The employment block
+  # above sets current_role: false, so this persona has no current employer and
+  # asserting one here would be a false statement — leave it commented and let
+  # the question park.
+  # - exact: [current company, current employer]
+  #   answer: "Widget Corp"
 
 # No rules for gender, race, veteran or disability status: those are the EEOC
 # and demographic blocks, and /apply opts out of every one of them structurally.

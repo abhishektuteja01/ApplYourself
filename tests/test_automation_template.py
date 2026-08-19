@@ -115,14 +115,34 @@ class TestWrapper:
         assert "__" not in WRAPPER.read_text(encoding="utf-8")
 
     def test_hardens_path_for_launchd(self):
-        """launchd's minimal PATH excludes every common uv location, so an
-        unhardened wrapper dies with 'uv: command not found'."""
+        """launchd's (and cron's) minimal PATH excludes every common uv
+        location, so an unhardened wrapper dies with 'uv: command not found'.
+        Both platforms' install dirs must be covered: uv's own standalone
+        installer, and Homebrew for a macOS `brew install uv`."""
         text = WRAPPER.read_text(encoding="utf-8")
-        assert "/opt/homebrew/bin" in text and "/usr/local/bin" in text
+        export = [ln for ln in text.splitlines() if ln.startswith("export PATH=")]
+        assert len(export) == 1, "expected exactly one PATH-hardening line"
+        line = export[0]
+        for entry in ("$HOME/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"):
+            assert entry in line, f"{entry} missing from the hardened PATH"
+        assert line.rstrip('"').endswith("$PATH"), "must extend, not replace, PATH"
         assert "exit 127" in text, "must fail loudly when uv is absent"
 
     def test_holds_sleep_off_for_the_run(self):
-        assert "caffeinate" in WRAPPER.read_text(encoding="utf-8")
+        """caffeinate is macOS-only; unguarded it exits 127 on Linux and
+        discovery never runs at all."""
+        text = WRAPPER.read_text(encoding="utf-8")
+        assert "caffeinate" in text
+        assert "command -v caffeinate" in text, "caffeinate must be guarded"
+        # The guard needs a fallback, or the guard alone still skips discovery.
+        code = "\n".join(
+            line
+            for line in text.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        assert code.count("run discover") >= 2, (
+            "guarded caffeinate needs a plain `run discover` fallback"
+        )
 
     def test_runs_only_the_deterministic_step(self):
         """R7: no LLM in an unattended job. Scoring is a slash command, so it

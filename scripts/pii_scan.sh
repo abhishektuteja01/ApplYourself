@@ -42,6 +42,7 @@ allowlist=(
   data/universe/ashby.csv
   data/universe/greenhouse.csv
   data/universe/lever.csv
+  data/universe/workday.csv
   profile/resume_template.example.docx
   profile/cover_letter_template.example.docx
 )
