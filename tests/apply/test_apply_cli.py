@@ -993,6 +993,24 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         out = apply_cli._run_role(JOB_ID, submit=True, headless=False)
         assert out.category == "submitted_unconfirmed"
 
+    def test_a_failed_state_write_on_the_crash_path_is_submitted_untracked(
+        self, monkeypatch
+    ):
+        # Same bar as the non-crash path: a refused transition leaves the role
+        # `tailored`, so the next --submit run applies to the same board again.
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 1)
+
+        def submit_then_die(plan, answers, sink=None, **kw):
+            sink.append(_fake_result(submitted=True))
+            raise RuntimeError("Target page has been closed")
+
+        monkeypatch.setattr(apply_cli, "run_one", submit_then_die)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "submitted_untracked"
+        assert "still says tailored" in out[0].detail
+
     def test_a_crash_with_nothing_submitted_is_an_ordinary_failure(
         self, monkeypatch
     ):

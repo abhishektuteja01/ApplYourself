@@ -15,6 +15,12 @@ Workday, LinkedIn, Indeed and company careers pages are always manual-apply:
 they are discovered and scored like any other posting, but `/apply` will never
 submit to one.
 
+**The typed confirmation is not guaranteed.** `/apply` always passes `--yes`,
+which skips the CLI's prompt, and its own replacement confirmation (Step 6b) is
+skipped when the form needed no drafted answers. For a role whose form is
+entirely standard fields, `/apply <job_id> --submit` submits for real with no
+second confirmation.
+
 It is sponsorship-aware throughout — the scoring pre-screen skips postings that
 state a hard ineligibility, and the outreach drafts have per-channel rules for
 when to raise work authorization.
@@ -256,8 +262,11 @@ there, not in `src/`.
 ## Tests
 
 ```bash
-uv run pytest tests -q
+uv run pytest tests -q --ignore=tests/discovery
 ```
+
+Drop the `--ignore` to include `tests/discovery`, which needs
+`uv sync --group discovery` (libpostal).
 
 Tests run against a synthetic three-lane config in `tests/fixtures/verticals.yaml`
 (lanes `example_primary`, `example_secondary` and `example_tertiary`, whose

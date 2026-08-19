@@ -13,8 +13,10 @@
                                     fetch the board's rendered form and its
                                     question schema, resolve every field against
                                     profile/application_answers.yaml, and print
-                                    the plan. No browser, no submission, nothing
-                                    written anywhere.
+                                    the plan. No submission, nothing written
+                                    anywhere; no browser either, except on Ashby,
+                                    which opens one headless page for field text
+                                    the API does not carry.
   fill <job_id> [--force] [--headless] [--no-pause]
                                     fill one real form and stop; never submits.
   run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--yes] [--job-id X]
@@ -357,8 +359,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
         return plan_for_board(board, answers, target, job_id=job_id, overrides=overrides,
                               ats="lever", requires_captcha=board.requires_captcha), answers
     if ats == "ashby":
-        # Scan-only board: build() and `apply plan` work fully; fill()/run()
-        # refuse loudly, since fill.py has no Ashby driver yet (§12a).
+        # Read through Ashby's GraphQL form API, not its HTML.
         board = ashby.load_board(posting_url)
         return plan_for_board(board, answers, target, job_id=job_id, overrides=overrides,
                               ats="ashby"), answers
@@ -711,7 +712,14 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
     except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
         landed = sink[0] if sink else None
         if landed is not None and landed.submitted:
-            _track_applied(job_id, plan)
+            rc, exc_note = _track_applied(job_id, plan)
+            if rc:
+                return RunOutcome(
+                    job_id, plan.company, plan.title, "submitted_untracked",
+                    detail=f"SUBMITTED, then {type(exc).__name__}: {exc}, and "
+                           f"track_cli exited {rc}{exc_note} — state.yaml still says "
+                           f"tailored; fix by hand before the next run",
+                )
             return RunOutcome(
                 job_id, plan.company, plan.title, "submitted_unconfirmed",
                 detail=f"SUBMITTED, then {type(exc).__name__}: {exc} — the click "

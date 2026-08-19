@@ -141,7 +141,7 @@ class _AllRequestsFailedSource:
     failure — so nothing above trace level flagged a wholesale outage."""
     name = "workday"
     def fetch(self, ctx):
-        return SourceResult([], [], ["3M [AI Engineer]: HTTP 400: https://x"] * 5)
+        return SourceResult([], [], ["Cog Industries [Cog Engineer]: HTTP 400: https://x"] * 5)
 
 def test_zero_rows_with_errors_logs_a_warning(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
