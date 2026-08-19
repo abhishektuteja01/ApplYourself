@@ -1,5 +1,5 @@
 ---
-description: Set up your own copy of the pipeline in about 35 minutes — four questions instead of 33 decisions, real scored jobs on screen by minute 26. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
+description: Set up your own copy of the pipeline in about 35 minutes — five questions instead of 33 decisions, real scored jobs on screen by minute 26. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
 model: opus
 effort: high
 allowed-tools:
@@ -15,16 +15,17 @@ argument-hint: "[audit | step <n>]"
 
 # /onboarding — set up your own copy
 
-Five steps, ~35 minutes, four questions instead of 33 decisions, real scored
+Five steps, ~35 minutes, five questions instead of 33 decisions, real scored
 postings on screen at step 3 — against 48-74 minutes to do the same setup by
 hand. Step 0 is bootstrap and carries no number the user sees. Everything
 written is user data under `profile/`; nothing tracked changes.
 
 ## Contract (binding)
 
-- **Four questions, total.** Step 1: work authorization. Step 2:
-  `/new-vertical`'s single confirm-or-edit. Step 4: two, batched into one
-  `AskUserQuestion`. If a step seems to need a fifth, you inferred too little.
+- **Five questions, total.** Step 1: work authorization. Step 2:
+  `/new-vertical`'s experience cap and confirm-or-edit, batched into one
+  `AskUserQuestion`. Step 4: two, batched into one `AskUserQuestion`. If a step
+  seems to need a sixth, you inferred too little.
 - **You do the work; the user gives hints and a verdict.** Draft the file, show
   it once, let them strike or reword. Never walk a user through a file field by
   field.
@@ -174,7 +175,8 @@ you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
    pick, and keep it short: it rides in the packet for every row scored.
    `scoring_rubric.md` ships working defaults every judge reads, so the copy is
    enough. Print the assumed block and move on; step 4 confirms it against real
-   rows: **US-wide, no compensation floor, every source on, 4-hour deadline.**
+   rows: **US-wide, every source on, and a 4-hour limit on each nightly run.**
+   Step 3's first scrape is capped much shorter so it finishes while they wait.
 
 5. `bullets.md` and `skills_master.md` — **draft both yourself** from what the
    resume says. This is the step that decides every generated document.
@@ -196,21 +198,19 @@ you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
      else was transcribed as written, and `profile/bullets.md` is editable any
      time. No question here — corrections are volunteered.
 
-6. `profile/application_answers.yaml`, only if it exists (it ships behind
-   `--with-apply`): **fill it, never interview for it.** `identity`, `education`
-   and `employment` from the resume just parsed, with `location` and `country`
-   as canonical place names; `work_authorization` from question 1, which the
-   loader cross-checks against `preferences.md`'s "## Work authorization"
-   section; `rules` as shipped. Show the filled file once. A field the resume
-   cannot answer stays empty — `/apply` parks the role rather than inventing an
-   answer. Absent, say nothing: step 5's menu adds it and re-runs
-   `/onboarding step 1` to fill it from the same resume.
+6. `profile/application_answers.yaml`, which the scaffold always copies:
+   **fill it, never interview for it.** `identity`, `education` and `employment`
+   from the resume just parsed, with `location` and `country` as canonical place
+   names; `work_authorization` from question 1, which the loader cross-checks
+   against `preferences.md`'s "## Work authorization" section; `rules` as
+   shipped. Show the filled file once. A field the resume cannot answer stays
+   empty — `/apply` parks the role rather than inventing an answer.
 
 7. One line, no question: `bullets_diction_pass_completed` in
    `profile/de_ai_rules.yaml` exempts confirmed canonical text from Tier 2
    banned-phrase linting. Leave it `false`; flip it only if the user asks.
 
-## Step 2 — your lane, drafted from your resume (~5 min, 1 question)
+## Step 2 — your lane, drafted from your resume (~5 min, 2 questions)
 
 After the scaffold, `verticals.yaml` holds `schema_version`, `default_vertical`
 set to the lane, an empty `verticals:`, an empty `classifier_rules:`, and
@@ -219,8 +219,9 @@ That is `/new-vertical`'s expected input, not damage to repair.
 
 Run **`/new-vertical <lane>`** and let it drive. Quick mode writes the loader's
 minimum — the block, one catch-all classifier rule, `rubric.md`, `tailoring.md`
-and `resume_<lane>.md` — and asks one confirm-or-edit. That is question 2. Do not
-duplicate any of it here and do not pre-empt its question.
+and `resume_<lane>.md` — and asks the experience cap plus a confirm-or-edit.
+Those are questions 2 and 3. Do not duplicate any of it here and do not pre-empt
+them.
 
 It ends with `verticals-check` passing. If it does not, stop and report.
 
@@ -270,11 +271,12 @@ Show ~10 scored rows in one table: title, company, location, fit score,
 suggested action, and the judge's one-line reason. Then one `AskUserQuestion`
 carrying both remaining questions:
 
-- **Question 3** — *"Which of these would you actually apply to?"* Multi-select
+- **Question 4** — *"Which of these would you actually apply to?"* Multi-select
   over the ten, plus `None of them`.
-- **Question 4** — *"I assumed US-wide, no compensation floor, every source on,
-  and a 4-hour deadline. Anything wrong here?"* Options: `Looks right` ·
-  `Narrow the locations` · `Set a compensation floor` · `Turn a source off`.
+- **Question 5** — *"I guessed anywhere in the US, every job board on, and up to
+  4 hours per nightly run. You capped jobs at N years. Anything wrong?"*
+  Options: `Looks right` · `Narrow the locations` · `Turn a source off` ·
+  `Change the experience cap`.
 
 Apply what they said, in one pass, then stop. No second round.
 
@@ -284,20 +286,21 @@ Apply what they said, in one pass, then stop. No second round.
 - **Rubric feel.** A row they would apply to that scored low, or a high scorer
   they rejected, is one tier-boundary edit in the lane's `rubric.md`. If it takes
   more than one, that is `/tune-vertical` — say so and leave the rubric alone.
-- **Question 4's answer.** A source they turn off is `enabled: false` under that
-  source in `discovery.yaml`'s `sources` block, and nowhere else.
-  Locations and any comp floor go into
-  `preferences.md`; locations also into `discovery.yaml`'s `location_allowlist`,
-  the hard geographic filter that drops rows in cleaning. Canonical names or
-  codes (`states: ["Texas"]` or `["TX"]`, `continents: ["Europe"]`), not every
-  spelling a board might use.
+- **Question 5's answer.** A source they turn off is `enabled: false` under that
+  source in `discovery.yaml`'s `sources` block, and nowhere else. Locations go
+  into `preferences.md` and into `discovery.yaml`'s `location_allowlist`, the
+  hard geographic filter that drops rows in cleaning. Canonical names or codes
+  (`states: ["Texas"]` or `["TX"]`, `continents: ["Europe"]`), not every
+  spelling a board might use. A new experience cap is `max_years` in the lane's
+  `disqualifier` block.
 
 ```bash
 uv run verticals-check
 ```
 
-Term and rule changes take effect on the next `discover`; `/rescore` re-judges
-rows already scored.
+If the rubric boundary or `max_years` changed, run `/rescore` and show the new
+top rows — otherwise their edit has no visible effect. Term changes need a fresh
+scrape, so those only say "next run".
 
 ## Step 5 — your daily loop (~2 min, 0 questions)
 
@@ -344,10 +347,11 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   is the fix when the shortlist stays thin or keeps surfacing the wrong titles.
 - **`/suggest-synonyms`** — extends the two synonyms per bullet with phrasings
   taken from real postings. Needs `shortlist/*.md` and `jobs/scored.parquet`.
-- **The `/apply` path**, if step 1 skipped it:
+- **The `/apply` path** — `application_answers.yaml` is already filled; what is
+  missing is the browser:
   `uv run onboard-scaffold --vertical <lane> --work-auth <status> --with-apply`
-  (it skips everything already present), then `/onboarding step 1` to fill
-  `application_answers.yaml` from the resume.
+  installs the apply dependency group and Playwright's Chrome, and skips
+  everything already present.
 - **The PII gate** — `profile/pii_denylist.txt`, which matters once
   `application_answers.yaml` holds a real email and phone.
   `./scripts/pii_scan.sh` checks tracked files. Required before publishing a
@@ -411,6 +415,6 @@ step_completed: 3               # 0-5; 5 means setup is done
 notes:
   - lane: revenue_ops; contexts WID (Widget Corp), SPR (side project), EDU (degree)
   - time-limited authorization; sponsorship_rules reconciled by the scaffold
-  - application_answers.yaml not installed (no --with-apply)
+  - application_answers.yaml filled; apply browser not installed
   - deferred: /tune-vertical, voice samples, nightly launchd
 ```

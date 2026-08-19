@@ -1,5 +1,5 @@
 ---
-description: Quick-add a job-search vertical — drafts the one profile/verticals.yaml block the loader requires, a classifier rule, rubric.md, tailoring.md and the scoring resume from the existing profile, then asks a single confirm-or-edit. Config only, no code edits. Deep tuning is /tune-vertical.
+description: Quick-add a job-search vertical — drafts the one profile/verticals.yaml block the loader requires, a classifier rule, rubric.md, tailoring.md and the scoring resume from the existing profile, then asks an experience cap and a single confirm-or-edit. Config only, no code edits. Deep tuning is /tune-vertical.
 model: opus
 effort: medium
 allowed-tools:
@@ -20,8 +20,8 @@ Verticals are data-driven: `profile/verticals.yaml` +
 whole registry. If you find yourself editing a `.py` file or another command
 file, stop — the config contract is being violated.
 
-Quick mode writes the loader's minimum and nothing more, in one pass with one
-question. Everything optional stays out of the file.
+Quick mode writes the loader's minimum and nothing more, in one pass with two
+questions. Everything optional stays out of the file.
 
 **Out of scope here — this is `/tune-vertical`'s entire reason to exist. Do not
 ask about it:** `skill_weights`, `title_include_terms` /
@@ -117,8 +117,8 @@ Draft from those plus the lane name and description. Ask nothing yet.
 - `search_terms` — 6-12 real job titles for the lane, spine first, adjacent
   after; comment the tiers like the example block does.
 - `linkedin_terms` — the reduced set (429 mitigation), usually the spine only.
-- `disqualifier` — `max_years: 4`, a fresh `scored_by` stamp, and
-  `reasoning_years` in the established voice ("Auto-skipped by deterministic
+- `disqualifier` — `max_years` from Step 3's answer, a fresh `scored_by` stamp,
+  and `reasoning_years` in the established voice ("Auto-skipped by deterministic
   pre-screen: ..."). Omit `phrases` and `title_phrases`.
 
 Omit `skill_weights` and the three `title_*_terms` lists entirely.
@@ -159,7 +159,13 @@ three or four lines summarizing each prose file (rubric tiers, bullet budget +
 skills layout line count, resume sections). Say in one line what you inferred
 and what you left for `/tune-vertical`.
 
-Then one `AskUserQuestion`, one question — "Use this lane as drafted?":
+Then one `AskUserQuestion` carrying both questions.
+
+"Skip jobs asking for more than how many years of experience?" — `3 years` /
+`5 years` / `8 years` / `12 years`. Say in one line that anything above the cap
+is dropped before scoring, and `/tune-vertical` can change it later.
+
+"Use this lane as drafted?":
 
 - Use as drafted
 - Edit the search terms (they give the list; re-show, then apply)

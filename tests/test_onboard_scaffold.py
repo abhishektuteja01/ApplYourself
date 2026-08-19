@@ -21,7 +21,7 @@ REAL_PROFILE = REPO_ROOT / "profile"
 
 # What a default run must produce, derived from the shipped templates rather
 # than listed, so a new template is covered the day it lands.
-GATED = set(scaffold.APPLY_TEMPLATES) | set(scaffold.OPTIONAL_TEMPLATES)
+GATED = set(scaffold.OPTIONAL_TEMPLATES)
 
 # A lane block with every key the strict loader requires, plus the one
 # classifier rule /new-vertical's quick mode writes.
@@ -74,6 +74,12 @@ class TestCopies:
         assert (prof / "resume_template.docx").read_bytes() == (
             prof / "resume_template.example.docx").read_bytes()
 
+    def test_the_answers_file_lands_without_the_apply_flag(self, prof):
+        """/onboarding fills it from the resume it has already parsed, so the
+        copy is on the default path; --with-apply only installs the browser."""
+        assert run("--vertical", "my_lane", "--work-auth", "citizen") == 0
+        assert (prof / "application_answers.yaml").is_file()
+
     def test_the_later_menu_templates_stay_out_of_the_default_path(self, prof):
         run("--vertical", "my_lane", "--work-auth", "citizen")
         for template in GATED:
@@ -85,7 +91,6 @@ class TestCopies:
         assert (prof / "contacts.yaml").is_file()
         assert (prof / "companies.yaml").is_file()
         assert (prof / "pii_denylist.txt").is_file()
-        assert not (prof / "application_answers.yaml").exists()
 
     def test_a_new_template_is_picked_up_without_a_code_change(self, prof):
         (prof / "brandnew.example.md").write_text("hello\n", encoding="utf-8")
@@ -277,10 +282,9 @@ class TestApplyPath:
         monkeypatch.setattr(subprocess, "run", _fake)
         return calls
 
-    def test_with_apply_copies_the_answers_file_and_runs_both_commands(self, prof, monkeypatch):
+    def test_with_apply_runs_both_commands(self, prof, monkeypatch):
         calls = self._record(monkeypatch, [0, 0])
         assert run("--vertical", "my_lane", "--work-auth", "citizen", "--with-apply") == 0
-        assert (prof / "application_answers.yaml").is_file()
         assert [c[0] for c in calls] == [
             ["uv", "sync", "--group", "apply"],
             ["uv", "run", "playwright", "install", "chrome"],
@@ -325,5 +329,5 @@ def test_the_real_profile_is_never_a_target(prof):
     """The fixture repoints PROFILE; this asserts the module reads it through
     the module attribute rather than capturing paths.PROFILE at import."""
     run("--vertical", "my_lane", "--work-auth", "citizen")
-    assert scaffold._templates(False, False)
-    assert all(p.parent == prof for p in scaffold._templates(True, True))
+    assert scaffold._templates(False)
+    assert all(p.parent == prof for p in scaffold._templates(True))

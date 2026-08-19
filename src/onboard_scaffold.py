@@ -11,11 +11,14 @@ overwrites, `--dry-run` prints the full plan and touches nothing.
 
 Templates NOT copied by default, because /onboarding puts them on its "later,
 when you want it" menu rather than the setup path:
-  application_answers.example.yaml  -> --with-apply  (the /apply path)
   voice_samples / contacts / companies / pii_denylist -> --with-optional
       (/outreach's voice samples, optional contact and company lists, and the
       PII gate, which only matters once application_answers.yaml holds a real
       email and phone)
+
+--with-apply copies no extra template: it installs the apply dependency group
+and Playwright's Chrome. application_answers.yaml is always copied, so
+/onboarding can fill it from the resume it has already parsed.
 
 The two YAML edits are line-based, not a parse-and-dump: `ruamel.yaml` is not a
 dependency and PyYAML would drop every comment in both files, including
@@ -48,7 +51,6 @@ PROFILE = paths.PROFILE  # tests repoint these names; keep them module attrs
 REPO_ROOT = paths.REPO_ROOT
 
 # Gated out of the default path — see the module docstring.
-APPLY_TEMPLATES = ("application_answers.example.yaml",)
 OPTIONAL_TEMPLATES = (
     "voice_samples.example.md",
     "contacts.example.yaml",
@@ -91,12 +93,10 @@ def _target_for(template: Path) -> Path:
     return template.with_name(f"{head}.{tail}")
 
 
-def _templates(with_apply: bool, with_optional: bool) -> list[Path]:
+def _templates(with_optional: bool) -> list[Path]:
     """Every shipped template on the selected path, discovered by glob so a new
     one is picked up without a code change."""
     excluded = set()
-    if not with_apply:
-        excluded |= set(APPLY_TEMPLATES)
     if not with_optional:
         excluded |= set(OPTIONAL_TEMPLATES)
     return [p for p in sorted(PROFILE.glob("*.example.*")) if p.name not in excluded]
@@ -355,8 +355,8 @@ def probe_libpostal(rep: Report) -> None:
 
 
 def setup_apply_path(dry_run: bool, rep: Report) -> bool:
-    """`uv sync --group apply` plus Playwright's Chrome, exactly as
-    /onboarding stage 7 has them. True if both succeeded."""
+    """`uv sync --group apply` plus Playwright's Chrome. True if both
+    succeeded."""
     commands = [
         ["uv", "sync", "--group", "apply"],
         ["uv", "run", "playwright", "install", "chrome"],
@@ -420,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     rep = Report()
-    templates = _templates(args.with_apply, args.with_optional)
+    templates = _templates(args.with_optional)
     written = copy_templates(templates, args.force, args.dry_run, rep)
     reconcile_verticals(args.vertical, "verticals.yaml" in written, args.dry_run, rep)
     apply_work_auth(args.work_auth, args.dry_run, rep)
