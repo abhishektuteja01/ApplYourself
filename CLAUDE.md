@@ -77,9 +77,20 @@ uv run pytest tests/test_verticals.py -q          # single test file
 uv run pytest tests/test_verticals.py::<name>     # single test
 
 # Deterministic CLIs (entry points in pyproject [project.scripts]).
-uv run discover [--resume <run_id>]   # overnight scrape -> jobs/clean.parquet
+uv run discover [--resume <run_id>] [--deadline-hours H] [--source NAME] [--max-terms N]
+                                      # overnight scrape -> jobs/clean.parquet
+                                      # the three overrides narrow one run without
+                                      # touching config; --source is exhaustive and
+                                      # repeatable (naming one excludes the inbox)
                                       # needs `uv sync --group discovery` (libpostal)
 uv run verticals-check                # validate config + rubric/tailoring dirs
+uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
+                                      # [--with-apply] [--with-optional] [--force] [--dry-run]
+                                      # /onboarding's setup chores: copy every
+                                      # profile/*.example.* to its real name, strip the
+                                      # example lanes + set default_vertical, reconcile
+                                      # sponsorship_rules.yaml, probe libpostal.
+                                      # Skips existing files unless --force
 uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]
                                       # one JD -> jobs/raw + clean rebuild
                                       # --vertical: lane (/ingest always passes it)
@@ -108,10 +119,13 @@ uv run python scripts/scrub_example_templates.py  # strip Word metadata from the
 The user-facing workflow is the slash commands (`/onboarding`, `/score`,
 `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 `/track`, `/standup`,
-`/new-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`, `/ingest`), defined in
+`/new-vertical`, `/tune-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`,
+`/ingest`), defined in
 `.claude/commands/*.md`. The judge is a subagent, not a command:
 `.claude/agents/score-judge.md`, spawned by `/score`, `/rescore` and `/ingest`,
-never invoked directly. `/company-answers <job_id>` drafts that
+never invoked directly. `/new-vertical <name>` writes the loader's minimum for a
+new lane in one confirm-or-edit; `/tune-vertical <name>` is the deep pass over a
+lane that already exists, run against real scored rows. `/company-answers <job_id>` drafts that
 role's `company_answers.md` into its `/tailor` output dir; `/apply` calls it
 directly for roles that need no full cover letter. `/ingest <url> <vertical> [resume]
 [cover-letter]` is the single-URL fast path: it chains `ingest-url` → a

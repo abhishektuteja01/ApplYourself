@@ -28,4 +28,5 @@ the editor's name into the document metadata, so run
 `scripts/scrub_example_templates.py` afterwards. `--check` exits 1 if either file
 still needs it.
 
-`/onboarding` is the interview that fills all of it in.
+`uv run onboard-scaffold` copies each template to its real name, skipping any file
+that already exists; `/onboarding` is the five-step pass that fills them in.

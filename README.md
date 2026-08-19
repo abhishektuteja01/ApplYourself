@@ -106,8 +106,10 @@ resume.
 
 Lanes are **pure config**. `src/` hardcodes no lane, no search term, no company.
 
-Run `/new-vertical` to add one. It's an interview: it drafts each piece, shows it
-to you, and applies only what you confirm.
+Run `/new-vertical` to add one. It's quick mode: it drafts the block the loader
+requires, one classifier rule, the rubric, the tailoring defaults and the lane's
+resume, then asks a single confirm-or-edit. `/tune-vertical <name>` is the deep
+pass afterwards, once you've seen real postings in the lane.
 
 <details>
 <summary><b>The vertical config schema</b></summary>
@@ -177,15 +179,21 @@ uv run pytest tests -q --ignore=tests/discovery   # should be fully green
 /onboarding
 ```
 
-It reads your resume, drafts every `profile/` file for you, and asks only what it
-cannot infer: your constraints, your first lane, where you'll work. About half
-an hour end to end, and it's resumable: stop after any stage and re-run to
-continue. The one part that genuinely needs you is the bullet review, where you
-strike anything you wouldn't defend on a call.
+Five steps, about fifteen minutes, four questions: your work authorization, one
+confirm-or-edit on your first lane, and two against real scored postings, which
+are on screen at step 3. It reads your resume and drafts every `profile/` file
+for you, showing you only the handful of lines it had to interpret. It's
+resumable: stop after any step and re-run to continue, or `/onboarding step <n>`
+to jump.
 
 Already set up and want a health check? `/onboarding audit` reports what's
-missing or invalid and changes nothing. Prefer to do it by hand? Every file has a
-template beside it. See [What only you can supply](#what-only-you-can-supply).
+missing or invalid and changes nothing. Prefer to do it by hand?
+`uv run onboard-scaffold --vertical <lane> --work-auth <status>` does the
+mechanical half — every `profile/*.example.*` copied to its real name, the
+example lanes stripped out of `verticals.yaml`, `sponsorship_rules.yaml`
+reconciled — and leaves the writing to you. It leaves `verticals.yaml`
+without a lane, so it won't load until `/new-vertical <lane>` writes one. See
+[What only you can supply](#what-only-you-can-supply).
 
 **3. Check your config loads.**
 
@@ -278,7 +286,7 @@ in `.claude/commands/`, not in `src/`.
 
 | command | what it does | writes |
 |---|---|---|
-| `/onboarding` | Nine-stage resumable setup interview. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
+| `/onboarding` | Five-step resumable setup: four questions, ~15 minutes, real scored jobs at step 3. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
 | `/score` | Score new rows and regenerate today's shortlist. Fans out one judge agent per lane range. Takes no arguments. | `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `/rescore` | Throw away every judgment and re-judge the whole 14-day window. Explicit only. | same, after deleting `jobs/scored.parquet` |
 | `/tailor <job_id>` | One-page ATS-clean tailored resume, plus the audit trail behind it. | `applications/<vertical>/<dir>/`: `_Resume.docx`, `_Resume.pdf`, `resume.md`, `trace.md`, `keywords_to_mirror.md`, `jd_snapshot.md`, `lint_report.md` |
@@ -289,7 +297,8 @@ in `.claude/commands/`, not in `src/`.
 | `/track <job_id> <state>` | Move a role through the state machine. The **only** writer of state. | `pipeline/<job_id>/state.yaml` |
 | `/standup` | Rebuild the whole-pipeline view. Read-only on state. | `pipeline.md` |
 | `/ingest <url> <vertical> [resume] [cover-letter]` | Single-URL fast path: ingest, score one row, tailor, letter. Stops before applying. | everything the chained commands write |
-| `/new-vertical <name>` | Four-round interview that onboards a new lane as pure config. | `profile/verticals.yaml` block + `profile/verticals/<name>/` |
+| `/new-vertical <name>` | Quick-add a lane as pure config: the loader's minimum, one confirm-or-edit. | `profile/verticals.yaml` block + `profile/verticals/<name>/` |
+| `/tune-vertical <name>` | Deep tuning pass on a lane that already exists, against rows you've seen: search terms, `skill_weights`, the title gate, classifier collisions, disqualifiers, rubric tiers, `vertical_lean`. | the same two, edited in place |
 | `/suggest-synonyms` | Three-track audit of your bullets and skills against real shortlist keywords. Proposes, never edits. | `profile/synonyms_draft_<date>.md` |
 | `/no_ai_slop` | Editor pass: sharpen a draft, or name its AI-slop patterns without rewriting. | nothing; returns the edit in conversation |
 
@@ -305,6 +314,7 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 | `uv run discover [--resume <run_id>]` | Overnight scrape, then cleaning. Needs `--group discovery`. | `jobs/raw/<run_id>_<source>.parquet`, `jobs/runs/<run_id>.md`, then cleaning's output |
 | `uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]` | One posting into the pipeline, then a full clean rebuild. Needs `--group discovery`. | `jobs/raw/<run_id>.parquet`, `jobs/clean.parquet` |
 | `uv run verticals-check` | Validate config plus every per-lane rubric, tailoring file and resume. | nothing |
+| `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, reconcile `sponsorship_rules.yaml`, probe for libpostal. Skips any file that already exists unless `--force`. | the copied `profile/` files |
 | `uv run score <subcommand>` | `/score`'s plumbing: `prepare`, `dump`, `split`, `ranges`, `check-coverage`, `merge`, `render`. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
 | `uv run tailor-prep <job_id>` | `/tailor`'s front matter: prereqs, row load, output dir. Also `identity` and `snapshot`. | `/tmp/tailor_<job_id>_row.json`, the `applications/` output dir |
@@ -375,7 +385,8 @@ not personal data:
 - `profile/de_ai_rules.yaml` holds the banned phrasing. It ships
   `bullets_diction_pass_completed: false`, which holds your canonical bullet text
   to the same linting as generated prose. Once you've read your bullets for
-  diction yourself, set it `true` to exempt them. `/onboarding` offers to flip it.
+  diction yourself, set it `true` to exempt them. `/onboarding` leaves it `false`
+  unless you ask.
 - `profile/sponsorship_rules.yaml` has a `false_positive_guard` that assumes
   you're already authorized to work. Remove those phrases if you need sponsorship.
 
@@ -659,8 +670,10 @@ git config core.hooksPath .githooks                            # once per clone
 git add -A && ./scripts/pii_scan.sh                            # or run it by hand
 ```
 
-It's opt-in and off the setup path. `/onboarding` doesn't touch it, because a
-fork you never push doesn't need it. Set it up before your first push if you do
+It's opt-in and off the setup path: `/onboarding` puts it on its later menu
+rather than the five steps, because a fork you never push doesn't need it
+(`onboard-scaffold --with-optional` copies the denylist template if you want it
+early). Set it up before your first push if you do
 publish, and work through the categories deliberately: name, email, phone,
 address, government identifiers, local filesystem paths, handles, other people's
 names, employers and schools.
