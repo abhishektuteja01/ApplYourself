@@ -25,7 +25,8 @@ A "vertical" is a job lane. `src/verticals.py` is the single source of truth loa
   `.claude/hooks/fixture_mirrors.sh` fails immediately at edit time.
 - Templates for onboarding a new vertical: `profile/verticals.example.yaml` and
   `profile/verticals/example_*/` (three: primary, secondary, tertiary — the
-  fixtures' `default_vertical` is tertiary). Use `/new-vertical`.
+  fixtures' `default_vertical` is tertiary). Use `/new-vertical` to add a lane,
+  `/tune-vertical` to sharpen one.
 
 > The two fixture files are **synthetic** — three fictional verticals
 > (`example_primary/secondary/tertiary`), no real search terms or skill weights.
