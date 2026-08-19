@@ -176,7 +176,7 @@ uv run pytest tests -q --ignore=tests/discovery   # should be fully green
 **2. Install libpostal.** The location filter in cleaning needs the system
 **libpostal** C library and its Python binding, with no fallback parser, and
 every ingestion path runs cleaning — including the scrape `/onboarding` does at
-its step 3. This is the one genuinely annoying install.
+its step 1. This is the one genuinely annoying install.
 
 ```bash
 brew install libpostal            # macOS. On Linux, build from source first.
@@ -191,10 +191,12 @@ uv run pytest tests -q            # the discovery tests can run now too
 /onboarding
 ```
 
-Five steps, about 35 minutes, four questions instead of the 33 decisions the
-by-hand path asks for: your work authorization, one confirm-or-edit on your
-first lane, and two against real scored postings, which are on screen partway
-through. It reads your resume and drafts every `profile/` file for you, showing
+Five steps, about 21 minutes, seven questions instead of the 33 decisions the
+by-hand path asks for: the roles you want, your work authorization, an
+experience cap and one confirm-or-edit on your first lane, two on what it
+inferred, and one against real scored postings, which are on screen by minute
+17. The scrape starts while it reads your resume, and the scoring runs while you
+answer the review questions. It drafts every `profile/` file for you, showing
 you only the handful of lines it had to interpret. It's
 resumable: stop after any step and re-run to continue, or `/onboarding step <n>`
 to jump.
@@ -290,7 +292,7 @@ in `.claude/commands/`, not in `src/`.
 
 | command | what it does | writes |
 |---|---|---|
-| `/onboarding` | Five-step resumable setup: four questions, ~35 minutes, real scored jobs at step 3. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
+| `/onboarding` | Five-step resumable setup: seven questions, ~21 minutes, real scored jobs at step 4. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
 | `/score` | Score new rows and regenerate today's shortlist. Fans out one judge agent per lane range. Takes no arguments. | `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `/rescore` | Throw away every judgment and re-judge the whole 14-day window. Explicit only. | same, after deleting `jobs/scored.parquet` |
 | `/tailor <job_id>` | One-page ATS-clean tailored resume, plus the audit trail behind it. | `applications/<vertical>/<dir>/`: `_Resume.docx`, `_Resume.pdf`, `resume.md`, `trace.md`, `keywords_to_mirror.md`, `jd_snapshot.md`, `lint_report.md` |

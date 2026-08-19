@@ -125,7 +125,9 @@ The user-facing workflow is the slash commands (`/onboarding`, `/score`,
 `.claude/commands/*.md`. The judge is a subagent, not a command:
 `.claude/agents/score-judge.md`, spawned by `/score`, `/rescore` and `/ingest`,
 never invoked directly. `/new-vertical <name>` writes the loader's minimum for a
-new lane in one confirm-or-edit; `/tune-vertical <name>` is the deep pass over a
+new lane in one confirm-or-edit, and splits into `pass-a` (the lane block and
+classifier rule, enough to start scraping) and `pass-b` (the three prose files)
+when `/onboarding` passes a mode token; `/tune-vertical <name>` is the deep pass over a
 lane that already exists, run against real scored rows. `/company-answers <job_id>` drafts that
 role's `company_answers.md` into its `/tailor` output dir; `/apply` calls it
 directly for roles that need no full cover letter. `/ingest <url> <vertical> [resume]

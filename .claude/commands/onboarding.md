@@ -1,5 +1,5 @@
 ---
-description: Set up your own copy of the pipeline in about 35 minutes — five questions instead of 33 decisions, real scored jobs on screen by minute 26. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
+description: Set up your own copy of the pipeline in about 21 minutes — seven questions instead of 33 decisions, real scored jobs on screen by minute 17. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
 model: opus
 effort: high
 allowed-tools:
@@ -9,23 +9,27 @@ allowed-tools:
   - Edit
   - Glob
   - Grep
+  - Agent
   - AskUserQuestion
 argument-hint: "[audit | step <n>]"
 ---
 
 # /onboarding — set up your own copy
 
-Five steps, ~35 minutes, five questions instead of 33 decisions, real scored
-postings on screen at step 3 — against 48-74 minutes to do the same setup by
-hand. Step 0 is bootstrap and carries no number the user sees. Everything
-written is user data under `profile/`; nothing tracked changes.
+Five steps, ~21 minutes, seven questions instead of 33 decisions, real scored
+postings on screen at step 4 — against 48-74 minutes to do the same setup by
+hand. The scrape starts at the end of step 1 and runs through step 2; scoring
+starts at the top of step 3 and runs through the review questions. Step 0 is
+bootstrap and carries no number the user sees. Everything written is user data
+under `profile/`; nothing tracked changes.
 
 ## Contract (binding)
 
-- **Five questions, total.** Step 1: work authorization. Step 2:
-  `/new-vertical`'s experience cap and confirm-or-edit, batched into one
-  `AskUserQuestion`. Step 4: two, batched into one `AskUserQuestion`. If a step
-  seems to need a sixth, you inferred too little.
+- **Seven questions, total.** Step 1: four — the roles (plain text), work
+  authorization, and `/new-vertical pass-a`'s experience cap plus confirm-or-edit
+  batched into one `AskUserQuestion`. Step 3: two, batched into one
+  `AskUserQuestion`. Step 4: one. If a step seems to need an eighth, you inferred
+  too little.
 - **You do the work; the user gives hints and a verdict.** Draft the file, show
   it once, let them strike or reword. Never walk a user through a file field by
   field.
@@ -34,19 +38,19 @@ written is user data under `profile/`; nothing tracked changes.
   unconfirmed text; if the user edits a draft, re-show it before applying.
 - **NO-FAB over everything drafted from the resume** — read
   `.claude/shared/no_fab.md`. Nothing enters `bullets.md`, `skills_master.md` or
-  `application_answers.yaml` that the resume or the four answers do not support.
+  `application_answers.yaml` that the resume or the answers support.
 - **Never run `sudo`, `launchctl`, `git commit` or `git push`.** Print them.
 - Never edit `src/`, `tests/` or `.claude/`, and neither does anything you
   delegate to. If a step seems to need it, stop and report — the config
   contract is wrong, not the setup.
 - You run only what a numbered step lists: the bootstrap in 0b, the scaffold in
-  1.3, `discover` and `/score` in 3, `verticals-check` in 4. Everything
-  downstream is handed off.
+  1.3, `discover` in 1.5, the scoring agent in 3.3, `verticals-check` in 4.
+  Everything downstream is handed off.
 - Print the position line first in every numbered step, verbatim:
-  - `Step 1 of 5 · ~30 min left · you'll see real jobs at step 3.`
-  - `Step 2 of 5 · ~21 min left · you'll see real jobs at step 3.`
-  - `Step 3 of 5 · ~16 min left · this is the jobs step.`
-  - `Step 4 of 5 · ~7 min left · real postings, two questions.`
+  - `Step 1 of 5 · ~18 min left · you'll see real scored jobs at step 4.`
+  - `Step 2 of 5 · ~14 min left · your first scrape is running behind this.`
+  - `Step 3 of 5 · ~7 min left · scoring starts here.`
+  - `Step 4 of 5 · ~4 min left · real postings, one question.`
   - `Step 5 of 5 · done · your daily loop.`
 - Write `profile/.onboarding.md` after each step (schema at the bottom).
   Re-running resumes at the first incomplete step. `$ARGUMENTS` of `step <n>`
@@ -76,7 +80,7 @@ for f in profile/discovery.yaml profile/application_answers.yaml \
 # at run time.
 if uv run python -c "import postal.parser" >/dev/null 2>&1
 then echo "ok   libpostal binding"
-else echo "absent  libpostal binding (step 3 needs it)"; fi
+else echo "absent  libpostal binding (step 1's scrape needs it)"; fi
 echo "--- validity ---"
 uv run verticals-check 2>&1 | tail -5
 echo "--- progress ---"
@@ -87,16 +91,17 @@ Map each result to the step that fixes it, in a short checklist, and start
 there. If everything is present and `verticals-check` passes, report that and
 stop — that is the audit. `audit` mode always stops here.
 
-**libpostal is a hard prerequisite for step 3.** The location filter in cleaning
-imports the `postal` binding (opt-in group `discovery`), compiled against the
-system `libpostal` C library. No fallback parser, and no way around it: `uv run
-discover` and `uv run ingest-url` both go through cleaning. Steps 1, 2, 4 and 5
-do not need it.
+**libpostal is a hard prerequisite for the scrape at the end of step 1.** The
+location filter in cleaning imports the `postal` binding (opt-in group
+`discovery`), compiled against the system `libpostal` C library. No fallback
+parser, and no way around it: `uv run discover` and `uv run ingest-url` both go
+through cleaning. Steps 2, 4 and 5 do not need it, and step 1 up to the scrape
+does not either.
 
 If the probe says absent, say so now and let 0b's `uv sync --group discovery`
 try. The wheel builds only against a system libpostal that is already there, so
 if that sync fails to compile, print these and have the user run the install in
-another terminal while steps 1 and 2 continue:
+another terminal while step 1's questions continue:
 
 - macOS: `brew install libpostal`, then `uv sync --group discovery`
 - Linux: build from source (`github.com/openvenues/libpostal`) — no distro
@@ -114,36 +119,36 @@ nohup uv run pytest tests -q --ignore=tests/discovery \
 ```
 
 If the second line fails to compile, that is the C library missing — print the
-install block from 0a and carry on; step 3 is where it becomes blocking.
+install block from 0a and carry on; step 1.5 is where it becomes blocking.
 
 `test_real_config_drift.py` is excluded because step 1.3 leaves `verticals.yaml`
-deliberately non-loading until step 2 writes the lane; `/new-vertical` runs that
-file itself at the end of step 2.
+deliberately non-loading, and the lane is only complete once step 2's
+`/new-vertical <lane> pass-b` writes the three prose files; that pass runs the
+full check itself.
 
 That is the only test run in this command. Do not wait for it and do not start a
 second one — step 5 reads the log at hand-off.
 
 `onboard-scaffold` does every remaining chore, but two of its flags are answers
-you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
-1. Nothing between here and there needs it.
+you do not have yet (`--vertical`, `--work-auth`), so it runs inside step 1.
 
-## Step 1 — your resume and your work authorization (~9 min, 1 question)
+## Step 1 — your lane, and the scrape starts (~4 min, 4 questions)
 
-1. Ask them to **drop their current resume into `profile/` and say when it is
-   there** — no path to type, and `profile/*` is gitignored. Then find it: glob
-   `profile/` for `.docx`, `.pdf` and `.md` files that are neither a known
-   profile file nor a `*.example.*` template. One match, take it; several, name
-   them and ask which; none, say what you looked for and ask again.
-   - `.docx` → `uv run profile-extract <file>`
-   - `.pdf` or `.md` → read it directly
+Nothing here reads the resume. The whole point of this order is that the scrape
+only needs the lane's `search_terms`, so it can be running while step 2 reads
+the resume.
 
-2. **Question 1**, one `AskUserQuestion`: *"What's your work authorization?"*
+1. **Question 1**, plain text, no `AskUserQuestion`: *"What roles are you going
+   for? A title or two is enough."* Keep their wording verbatim — it is the
+   description you hand `/new-vertical` in 1.4.
+
+2. **Question 2**, one `AskUserQuestion`: *"What's your work authorization?"*
    - `Citizen or permanent resident`
    - `Need sponsorship now`
    - `Authorized now, time-limited` (F-1 OPT, STEM OPT, any visa with an end date)
 
    One answer, three files — the scaffold flag, `preferences.md`'s
-   authorization section, `application_answers.yaml`:
+   authorization section, `application_answers.yaml` (step 2 fills both files):
 
    | answer | `--work-auth` | `application_answers.yaml` |
    |---|---|---|
@@ -152,7 +157,7 @@ you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
    | time-limited | `time_limited` | `time_limited` |
 
 3. Bootstrap, continued — both scaffold inputs now exist. Derive the lane name
-   from the resume (snake_case, `^[a-z][a-z0-9_]*$`); step 2 carries it into
+   from the stated roles (snake_case, `^[a-z][a-z0-9_]*$`); 1.4 carries it into
    what `/new-vertical` confirms.
 
    ```bash
@@ -171,138 +176,227 @@ you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
    at the top, `City, ST | Num| Email` under it, `NAME` again after `Sincerely,`
    — and mails as written.
 
-4. `preferences.md` — delete the two authorization variants the user did not
+4. Run **`/new-vertical <lane> "<their stated roles>" pass-a`** and let it drive.
+   Pass A writes only the `verticals.yaml` lane block and one classifier rule,
+   and asks the experience cap plus a confirm-or-edit in one `AskUserQuestion` —
+   **questions 3 and 4**. Do not duplicate any of it here and do not pre-empt
+   them.
+
+   Pass A ends with the loader working and a marker at
+   `profile/verticals/<lane>/.pass_a_only`. `verticals-check` fails until step 2
+   runs pass B; that failure is expected here, not damage to repair.
+
+   If that marker is already on disk when you reach 1.4, a previous session got
+   this far: skip pass A, leave questions 3 and 4 unasked, and go to 1.5.
+
+5. **Start the scrape and move on. Do not wait for it.** LinkedIn, the lane's
+   first two terms, six-minute deadline, backgrounded into a log step 3 reads.
+
+   ```bash
+   mkdir -p logs jobs
+   uv run python -c "import postal.parser" || echo "BLOCKED: libpostal binding missing"
+   nohup uv run discover --source linkedin --max-terms 2 --deadline-hours 0.1 \
+         > logs/onboarding_scrape.log 2>&1 &
+   ```
+
+   **libpostal is blocking here**, not later: cleaning runs on every ingestion
+   path, so the scrape cannot start without the binding. If it is missing, skip
+   the `nohup` line, say so in one line, print the install block from 0a, and
+   continue to step 2 — step 3 picks it up through the paste-URL fallback. Never
+   dead-end the user on it.
+
+   Say what the scrape is before starting it: LinkedIn search only, two terms.
+   No Indeed unless the fallback fires, no Greenhouse, Lever, Ashby or Workday
+   board crawls (those reach only companies already in `profile/companies.yaml`
+   or `data/universe/*.csv`, and take far longer than this has). Expect a
+   fraction of an overnight run. `location_allowlist` stays at the shipped
+   `countries: ["United States"]`; nothing here needs undoing, because tomorrow's
+   plain `uv run discover` runs the full config.
+
+## Step 2 — your resume (~7 min, 0 questions)
+
+The scrape is running behind this step. Ask nothing; everything drafted here is
+shown, and the one thing that needs a verdict is folded into step 3's questions.
+
+1. Ask them to **drop their current resume into `profile/` and say when it is
+   there** — no path to type, and `profile/*` is gitignored. Then find it: glob
+   `profile/` for `.docx`, `.pdf` and `.md` files that are neither a known
+   profile file nor a `*.example.*` template. One match, take it; several, name
+   them and ask which; none, say what you looked for and ask again.
+   - `.docx` → `uv run profile-extract <file>`
+   - `.pdf` or `.md` → read it directly
+
+2. `preferences.md` — delete the two authorization variants the user did not
    pick, and keep it short: it rides in the packet for every row scored.
    `scoring_rubric.md` ships working defaults every judge reads, so the copy is
-   enough. Print the assumed block and move on; step 4 confirms it against real
+   enough. Print the assumed block and move on; step 3 confirms it against real
    rows: **US-wide, every source on, and a 4-hour limit on each nightly run.**
-   Step 3's first scrape is capped much shorter so it finishes while they wait.
+   Step 1's first scrape is capped much shorter so it finishes while they wait.
 
-5. `bullets.md` and `skills_master.md` — **draft both yourself** from what the
+3. `bullets.md` and `skills_master.md` — **draft both yourself** from what the
    resume says. This is the step that decides every generated document.
    - Group into contexts (one per employer, project or degree), pick a short
      `<CTX>` tag, id the bullets `B-<CTX>-NN` zero-padded (`B-WID-01`) —
      `skills_master.md`'s `evidence:` references point at them. Fill `source`,
      `tags` and `evidence` from the resume.
-   - **Two `allowable_synonyms` per bullet**: the process name and the artifact
-     name. A synonym re-packages the *same* claim — never a wider scope, a bigger
-     number, or a more senior verb. `/suggest-synonyms` grows the list from real
-     postings later.
+   - **Every useful synonym per bullet**, lane-aware: draft the full set of
+     phrasings a posting in this lane could plausibly use for that same claim —
+     the process name, the artifact name, the tool-flavored name, the
+     industry-standard name. NO-FAB is unchanged: a synonym re-packages the
+     *same* claim, never a wider scope, a bigger number or a more senior verb.
+     `/suggest-synonyms` in step 4 is a top-up against real postings, not the
+     source.
    - `skills_master.md`: every tool, language, platform and method the bullets
-     evidence, each with an `evidence` reference to a real `B-*` id and up to two
-     display aliases (`"Postgres"` for PostgreSQL). A skill with no bullet behind
-     it does not go in the file. Leave `vertical_lean` empty — `/tune-vertical`
-     tags it once real rows exist.
+     evidence, each with an `evidence` reference to a real `B-*` id, the same
+     maximal `allowable_synonyms` treatment, and up to two display aliases
+     (`"Postgres"` for PostgreSQL). A skill with no bullet behind it does not go
+     in the file. Leave `vertical_lean` empty — `/tune-vertical` tags it once
+     real rows exist.
    - **Review by exception.** Print only the 3-5 items the resume genuinely
      leaves ambiguous, each with the reading you took, then one line: everything
      else was transcribed as written, and `profile/bullets.md` is editable any
-     time. No question here — corrections are volunteered.
+     time. Carry that list into step 3 — it is one of that step's two questions.
 
-6. `profile/application_answers.yaml`, which the scaffold always copies:
+4. `profile/application_answers.yaml`, which the scaffold always copies:
    **fill it, never interview for it.** `identity`, `education` and `employment`
    from the resume just parsed, with `location` and `country` as canonical place
-   names; `work_authorization` from question 1, which the loader cross-checks
-   against `preferences.md`'s "## Work authorization" section; `rules` as
-   shipped. Show the filled file once. A field the resume cannot answer stays
-   empty — `/apply` parks the role rather than inventing an answer.
+   names; `work_authorization` from step 1's question 2, which the loader
+   cross-checks against `preferences.md`'s "## Work authorization" section;
+   `rules` as shipped. Show the filled file once. A field the resume cannot
+   answer stays empty — `/apply` parks the role rather than inventing an answer.
 
-7. One line, no question: `bullets_diction_pass_completed` in
+5. One line, no question: `bullets_diction_pass_completed` in
    `profile/de_ai_rules.yaml` exempts confirmed canonical text from Tier 2
    banned-phrase linting. Leave it `false`; flip it only if the user asks.
 
-## Step 2 — your lane, drafted from your resume (~5 min, 2 questions)
+6. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`
+   and `resume_<lane>.md` from the bullets just authored, removes the
+   `.pass_a_only` marker, and ends with `verticals-check` passing. It asks
+   nothing. If the check does not pass, stop and report.
 
-After the scaffold, `verticals.yaml` holds `schema_version`, `default_vertical`
-set to the lane, an empty `verticals:`, an empty `classifier_rules:`, and
-`out_of_lane.reasoning`. It does not load yet, and `verticals-check` fails.
-That is `/new-vertical`'s expected input, not damage to repair.
+   Skill weights, `title_include_terms`, rubric tier boundaries, classifier
+   collisions and `vertical_lean` tagging stay out of both passes. The include
+   gate is step 3's, tested against real titles; the rest is `/tune-vertical`'s.
 
-Run **`/new-vertical <lane>`** and let it drive. Quick mode writes the loader's
-minimum — the block, one catch-all classifier rule, `rubric.md`, `tailoring.md`
-and `resume_<lane>.md` — and asks the experience cap plus a confirm-or-edit.
-Those are questions 2 and 3. Do not duplicate any of it here and do not pre-empt
-them.
+## Step 3 — scoring starts (~3 min, 2 questions)
 
-It ends with `verticals-check` passing. If it does not, stop and report.
+In this order. The scoring agent must be spawned before the questions, so the
+user answers them while it runs.
 
-Skill weights, the title gate, rubric tier boundaries, classifier collisions and
-`vertical_lean` tagging are all deliberately absent. They are `/tune-vertical`'s,
-after step 3 puts real postings on screen.
-
-## Step 3 — your first scrape and score (~9 min, 0 questions)
-
-The jobs step, and the one network call. Deliberately narrow: **one source, the
-lane's first two search terms, six-minute deadline** — three flags on the run,
-nothing written to `profile/`. Say what that means before running — Indeed
-search only. No LinkedIn (rate-limits hard on a first run), no Greenhouse,
-Lever, Ashby or Workday board crawls (those reach only companies already in
-`profile/companies.yaml` or `data/universe/*.csv`, and take far longer than this
-step has). Expect a fraction of an overnight run.
-
-**Do not start this step until `uv run python -c "import postal.parser"`
-succeeds.** Cleaning runs on every ingestion path, so neither the scrape nor a
-pasted URL works without it. If it is still missing, stop here, print the
-install block from step 0a, and write the progress file at
-`step_completed: 2` — re-running resumes on this step.
-
-`location_allowlist` stays at the shipped `countries: ["United States"]` — the
-US-wide default step 1 stated. Nothing here needs undoing later: tomorrow's
-plain `uv run discover` runs the full config.
+### 3.1 Read the scrape log
 
 ```bash
-uv run discover --source indeed --max-terms 2 --deadline-hours 0.1
+tail -20 logs/onboarding_scrape.log
+```
+
+`ZERO rows (likely rate-limited or no results)` or no rows at all → re-run on
+Indeed, backgrounded the same way, and carry on with 3.2 while it runs:
+
+```bash
+nohup uv run discover --source indeed --max-terms 2 --deadline-hours 0.1 \
+      > logs/onboarding_scrape_indeed.log 2>&1 &
+```
+
+Still zero after that, or libpostal never arrived: say so in one line with the
+likely cause — the first two search terms do not match how these boards title
+the role, the deadline cut the run short, or both boards rate-limited — then take
+the fallback. Have them paste two or three job URLs and run
+`uv run ingest-url <url> --vertical <lane>` on each. Step 4 needs postings, not a
+scrape.
+
+```bash
 uv run python -c "
 import pandas as pd; d = pd.read_parquet('jobs/clean.parquet')
 print(len(d), 'rows'); print(d.title.value_counts().head(20).to_string())"
 ```
 
-Then `/score`, and read the shortlist it writes.
+### 3.2 The title gate
 
-**If the scrape runs and returns zero rows**, say so rather than continuing into
-an empty step 4. One line on the likely cause — the first two search terms do not
-match how these boards title the role, the deadline cut the run short, or Indeed
-rate-limited — then take the fallback: have them paste two or three job URLs, run
-`uv run ingest-url <url> --vertical <lane>` on each, then `/score`. Step 4 runs
-against those rows instead. It needs postings, not a scrape.
+Draft a candidate `title_include_terms` for the lane from those real titles, then
+**test it before writing it**. A nonempty `title_include_terms` flips the lane
+from blocklist to allowlist and the gate runs during cleaning
+(`src/discovery/cleaning.py:apply_title_exclusion`), so a list drafted blind
+empties the lane silently.
 
-## Step 4 — react to real postings (~5 min, 2 questions)
+```bash
+uv run python -c "
+import re, pandas as pd
+LANE  = '<lane>'
+TERMS = ['<term one>', '<term two>']          # the candidate title_include_terms
+d = pd.read_parquet('jobs/clean.parquet')
+d = d[d.vertical == LANE]
+rx = re.compile('|'.join(r'\b' + re.escape(t) + r'\b' for t in TERMS), re.I)
+keep = d.title.fillna('').astype(str).str.contains(rx)
+print(f'{int(keep.sum())}/{len(d)} rows kept')
+print('DROPPED:'); print(d.loc[~keep, 'title'].value_counts().head(15).to_string())"
+```
 
-Show ~10 scored rows in one table: title, company, location, fit score,
-suggested action, and the judge's one-line reason. Then one `AskUserQuestion`
-carrying both remaining questions:
+Write the list into the lane block only if it keeps a clear majority of the rows
+already scraped. Otherwise leave `title_include_terms` absent and say in one
+line that the lane stays on the blocklist until `/tune-vertical`.
+`title_exclude_terms` belongs to `/new-vertical pass-a` — do not redraft it here.
 
-- **Question 4** — *"Which of these would you actually apply to?"* Multi-select
-  over the ten, plus `None of them`.
-- **Question 5** — *"I guessed anywhere in the US, every job board on, and up to
+### 3.3 Spawn the scoring agent, in the background
+
+Spawn **one** background agent whose whole job is to run `/score` for this repo
+and report the line it prints. Do not reimplement scoring here and do not spawn
+judge agents from this command. If that agent cannot spawn its own judge
+subagents, it judges the ranges itself against the lane's `rubric.md` — slower,
+but it is in the background and the user does not feel it.
+
+### 3.4 The two review questions, one `AskUserQuestion`
+
+- **Question 5** — *"A few things in your resume I had to interpret — did I get
+  these right?"* The 3-5 genuinely ambiguous items from step 2.3, each with the
+  reading you took. Nothing else goes in this list.
+- **Question 6** — *"I guessed anywhere in the US, every job board on, and up to
   4 hours per nightly run. You capped jobs at N years. Anything wrong?"*
   Options: `Looks right` · `Narrow the locations` · `Turn a source off` ·
   `Change the experience cap`.
 
+### 3.5 Apply the answers, then collect the scoring agent
+
+- A source they turn off is `enabled: false` under that source in
+  `discovery.yaml`'s `sources` block, and nowhere else.
+- Locations go into `preferences.md` and into `discovery.yaml`'s
+  `location_allowlist`, the hard geographic filter that drops rows in cleaning.
+  Canonical names or codes (`states: ["Texas"]` or `["TX"]`,
+  `continents: ["Europe"]`), not every spelling a board might use.
+- A new experience cap is `max_years` in the lane's `disqualifier` block.
+- Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
+
+Then wait on the scoring agent and read the shortlist it wrote.
+
+## Step 4 — react to real postings (~3 min, 1 question)
+
+Show ~10 scored rows in one table: title, company, location, fit score,
+suggested action, and the judge's one-line reason. Then one `AskUserQuestion`:
+
+- **Question 7** — *"Which of these would you actually apply to?"* Multi-select
+  over the ten, plus `None of them`.
+
 Apply what they said, in one pass, then stop. No second round.
 
 - **Terms.** Drop the terms behind a title family they rejected wholesale; add
-  the family the keeps share if the current terms missed it. Step 3 only used
+  the family the keeps share if the current terms missed it. Step 1 only used
   the first two, so the rest of the list is untested — leave it.
 - **Rubric feel.** A row they would apply to that scored low, or a high scorer
   they rejected, is one tier-boundary edit in the lane's `rubric.md`. If it takes
   more than one, that is `/tune-vertical` — say so and leave the rubric alone.
-- **Question 5's answer.** A source they turn off is `enabled: false` under that
-  source in `discovery.yaml`'s `sources` block, and nowhere else. Locations go
-  into `preferences.md` and into `discovery.yaml`'s `location_allowlist`, the
-  hard geographic filter that drops rows in cleaning. Canonical names or codes
-  (`states: ["Texas"]` or `["TX"]`, `continents: ["Europe"]`), not every
-  spelling a board might use. A new experience cap is `max_years` in the lane's
-  `disqualifier` block.
 
 ```bash
 uv run verticals-check
 ```
 
-If the rubric boundary or `max_years` changed, run `/rescore` and show the new
-top rows — otherwise their edit has no visible effect. Term changes need a fresh
+If a rubric boundary or `max_years` changed, run `/rescore` and show the new top
+rows — otherwise their edit has no visible effect. Term changes need a fresh
 scrape, so those only say "next run".
 
-## Step 5 — your daily loop (~2 min, 0 questions)
+Then run **`/suggest-synonyms`**. The `shortlist/*.md` and `jobs/scored.parquet`
+it needs exist for the first time here. It writes a draft file and nothing else;
+hand the user the path and move on rather than working through it now.
+
+## Step 5 — your daily loop (~1 min, 0 questions)
 
 Read the background test run first:
 
@@ -312,8 +406,8 @@ tail -3 logs/onboarding_tests.log
 
 Green — one line, and note that `tests/discovery` and
 `tests/test_real_config_drift.py` were excluded from that run; `uv run pytest
-tests -q` now covers both, since libpostal is installed and the lane exists. Not
-green, or still running: report what failed and do not declare setup done.
+tests -q` now covers both, since libpostal is installed and the lane is complete.
+Not green, or still running: report what failed and do not declare setup done.
 
 ```
 Every morning        uv run discover      overnight scrape -> jobs/clean.parquet
@@ -345,8 +439,8 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   weights, the title gate, classifier collisions, disqualifier phrases, rubric
   tiers, `vertical_lean` tags. Run it once a few days of shortlists exist. This
   is the fix when the shortlist stays thin or keeps surfacing the wrong titles.
-- **`/suggest-synonyms`** — extends the two synonyms per bullet with phrasings
-  taken from real postings. Needs `shortlist/*.md` and `jobs/scored.parquet`.
+- **`/suggest-synonyms`** again — step 4 ran it once, against one day of
+  postings. It gets better as `shortlist/*.md` accumulates.
 - **The `/apply` path** — `application_answers.yaml` is already filled; what is
   missing is the browser:
   `uv run onboard-scaffold --vertical <lane> --work-auth <status> --with-apply`
@@ -369,7 +463,8 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   preserved instead of rebuilt: every paragraph that is not a `{{TOKEN}}` ships
   verbatim. Style the copies, never the tracked `.example.docx`;
   `uv run python scripts/scrub_example_templates.py` strips a re-save's metadata.
-- **A second lane** — `/new-vertical <name>` again.
+- **A second lane** — `/new-vertical <name>` again, with no mode token: both
+  passes run at once, because the bullets already exist.
 
 ## Nightly discovery (macOS only)
 
