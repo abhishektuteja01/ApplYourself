@@ -26,13 +26,13 @@ authoritative filter, since search hits are not assumed relevant.
 `search_terms()` scopes to the default vertical's first configured term only
 (sourced from `profile/verticals.yaml`, never hardcoded — R7's
 company/vertical-agnostic rule extends to search terms too), not the union
-across every vertical. Tenants x every term across `ai_eng`/`risk_ai`/`sap`
-(48 terms) was 90+ tenants x 48 — thousands of list requests before a single
+across every vertical. Tenants x every term across all configured verticals
+was 90+ tenants x dozens of terms — thousands of list requests before a single
 posting was read, blowing an 8-hour run. One term per tenant costs one page
 in the common case (a tenant with a handful of matches never fills
 `LIST_LIMIT`, so pagination stops at page 0) — the tradeoff is that Workday
-now surfaces `ai_eng` roles only; `risk_ai`/`sap` stay covered by
-LinkedIn/Indeed/the other board sources.
+surfaces default-vertical roles only; the other configured verticals stay
+covered by LinkedIn/Indeed/the other board sources.
 
 **`total` cannot be trusted past page 0.** Confirmed live: NVIDIA's `total`
 reads 2000 at `offset=0`, then 0 at every later offset checked, including
