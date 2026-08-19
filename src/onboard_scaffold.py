@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,10 @@ OPTIONAL_TEMPLATES = (
 )
 
 WORK_AUTH_CHOICES = ("citizen", "needs_now", "time_limited")
+
+# The loader's own lane-name pattern. An invalid name here writes an
+# unloadable default_vertical, and the strip is not re-runnable to fix it.
+VERTICAL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 LIBPOSTAL_INSTALL = {
     "darwin": "brew install libpostal",
@@ -397,7 +402,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="onboard-scaffold", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vertical", required=True,
-                        help="name of the lane /new-vertical will write; becomes default_vertical")
+                        help="name of the lane /new-vertical will write; becomes "
+                             "default_vertical. Must match ^[a-z][a-z0-9_]*$")
     parser.add_argument("--work-auth", required=True, choices=WORK_AUTH_CHOICES)
     parser.add_argument("--with-apply", action="store_true",
                         help="also set up the /apply submission path")
@@ -406,6 +412,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
     parser.add_argument("--dry-run", action="store_true", help="print the plan; write nothing")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    if not VERTICAL_NAME_RE.match(args.vertical):
+        print(f"--vertical {args.vertical!r} must match "
+              f"{VERTICAL_NAME_RE.pattern} (lowercase, digits, underscores)",
+              file=sys.stderr)
+        return 2
 
     rep = Report()
     templates = _templates(args.with_apply, args.with_optional)

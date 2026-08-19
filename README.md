@@ -173,16 +173,29 @@ uv sync
 uv run pytest tests -q --ignore=tests/discovery   # should be fully green
 ```
 
-**2. Fill in your profile.** In Claude Code:
+**2. Install libpostal.** The location filter in cleaning needs the system
+**libpostal** C library and its Python binding, with no fallback parser, and
+every ingestion path runs cleaning — including the scrape `/onboarding` does at
+its step 3. This is the one genuinely annoying install.
+
+```bash
+brew install libpostal            # macOS. On Linux, build from source first.
+uv sync --group discovery
+uv run python -c "import postal.parser"   # must exit 0
+uv run pytest tests -q            # the discovery tests can run now too
+```
+
+**3. Fill in your profile.** In Claude Code:
 
 ```
 /onboarding
 ```
 
-Five steps, about fifteen minutes, four questions: your work authorization, one
-confirm-or-edit on your first lane, and two against real scored postings, which
-are on screen at step 3. It reads your resume and drafts every `profile/` file
-for you, showing you only the handful of lines it had to interpret. It's
+Five steps, about 35 minutes, four questions instead of the 33 decisions the
+by-hand path asks for: your work authorization, one confirm-or-edit on your
+first lane, and two against real scored postings, which are on screen partway
+through. It reads your resume and drafts every `profile/` file for you, showing
+you only the handful of lines it had to interpret. It's
 resumable: stop after any step and re-run to continue, or `/onboarding step <n>`
 to jump.
 
@@ -195,23 +208,14 @@ reconciled — and leaves the writing to you. It leaves `verticals.yaml`
 without a lane, so it won't load until `/new-vertical <lane>` writes one. See
 [What only you can supply](#what-only-you-can-supply).
 
-**3. Check your config loads.**
+**4. Check your config loads.**
 
 ```bash
 uv run verticals-check     # prints your lanes, or fails with what's missing
 ```
 
-**4. Install libpostal, then get some jobs in.** The location filter needs the
-system **libpostal** C library, and there's no fallback parser, so both
-ingestion paths need it. This is the one genuinely annoying install.
-
-```bash
-brew install libpostal            # macOS. On Linux, build from source first.
-uv sync --group discovery
-uv run pytest tests -q            # the discovery tests can run now too
-```
-
-Then either scrape overnight, or start with a single posting:
+**5. Get more jobs in.** Either scrape overnight, or start with a single
+posting:
 
 ```bash
 uv run discover                                  # the full run
@@ -222,7 +226,7 @@ In Claude Code, `/ingest <url> <vertical> resume cover-letter` runs the whole
 chain on one posting (ingest, score, tailor, letter) and stops before
 applying.
 
-**5. Score, then tailor.** In Claude Code:
+**6. Score, then tailor.** In Claude Code:
 
 ```
 /score                    # writes shortlist/<date>.md
@@ -286,7 +290,7 @@ in `.claude/commands/`, not in `src/`.
 
 | command | what it does | writes |
 |---|---|---|
-| `/onboarding` | Five-step resumable setup: four questions, ~15 minutes, real scored jobs at step 3. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
+| `/onboarding` | Five-step resumable setup: four questions, ~35 minutes, real scored jobs at step 3. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
 | `/score` | Score new rows and regenerate today's shortlist. Fans out one judge agent per lane range. Takes no arguments. | `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `/rescore` | Throw away every judgment and re-judge the whole 14-day window. Explicit only. | same, after deleting `jobs/scored.parquet` |
 | `/tailor <job_id>` | One-page ATS-clean tailored resume, plus the audit trail behind it. | `applications/<vertical>/<dir>/`: `_Resume.docx`, `_Resume.pdf`, `resume.md`, `trace.md`, `keywords_to_mirror.md`, `jd_snapshot.md`, `lint_report.md` |

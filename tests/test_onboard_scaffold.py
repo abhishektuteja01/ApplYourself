@@ -302,6 +302,25 @@ class TestApplyPath:
         assert calls == []
 
 
+class TestVerticalName:
+    """An invalid lane name writes an unloadable default_vertical, and a re-run
+    skips the existing file rather than repairing it."""
+
+    @pytest.mark.parametrize("name", ["My Lane", "Revenue-Ops", "1lane", "", "lane!"])
+    def test_an_invalid_name_exits_nonzero_and_writes_nothing(self, prof, name, capsys):
+        assert run("--vertical", name, "--work-auth", "citizen") != 0
+        assert not list(prof.glob("verticals.yaml"))
+        assert "^[a-z][a-z0-9_]*$" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("name", ["lane", "revenue_ops", "lane2"])
+    def test_a_valid_name_is_accepted(self, prof, name):
+        assert run("--vertical", name, "--work-auth", "citizen") == 0
+
+    def test_the_pattern_is_the_loader_pattern(self):
+        from src import verticals as v
+        assert scaffold.VERTICAL_NAME_RE.pattern == v._NAME_RE.pattern
+
+
 def test_the_real_profile_is_never_a_target(prof):
     """The fixture repoints PROFILE; this asserts the module reads it through
     the module attribute rather than capturing paths.PROFILE at import."""

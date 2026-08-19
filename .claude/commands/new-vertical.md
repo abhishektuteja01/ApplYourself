@@ -34,6 +34,9 @@ collisions, `disqualifier.phrases` / `title_phrases`, rubric tier boundaries,
 - **No code edits.** `src/`, `tests/*.py` and other command files stay
   untouched. Never edit `tests/**/fixtures/verticals.yaml` — synthetic by
   design; a new lane needs no fixture change.
+  `tests/test_real_config_drift.py` is generic over whatever lanes
+  `profile/verticals.yaml` holds, so it covers the new lane unedited. Lane-specific
+  structural assertions are `/tune-vertical`'s.
 - **NO-FAB** — read `.claude/shared/no_fab.md`. Every drafted term, skill and
   resume line traces to `profile/bullets.md`, `profile/skills_master.md` or the
   resume onboarding already parsed. Never invent a skill and never add a new

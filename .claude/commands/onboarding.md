@@ -1,5 +1,5 @@
 ---
-description: Set up your own copy of the pipeline in about fifteen minutes — four questions, real scored jobs on screen at minute 8. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
+description: Set up your own copy of the pipeline in about 35 minutes — four questions instead of 33 decisions, real scored jobs on screen by minute 26. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
 model: opus
 effort: high
 allowed-tools:
@@ -15,9 +15,10 @@ argument-hint: "[audit | step <n>]"
 
 # /onboarding — set up your own copy
 
-Five steps, ~15 minutes, four questions, real scored postings at step 3. Step 0
-is bootstrap and carries no number the user sees. Everything written is user
-data under `profile/`, except one flag in the committed `de_ai_rules.yaml`.
+Five steps, ~35 minutes, four questions instead of 33 decisions, real scored
+postings on screen at step 3 — against 48-74 minutes to do the same setup by
+hand. Step 0 is bootstrap and carries no number the user sees. Everything
+written is user data under `profile/`; nothing tracked changes.
 
 ## Contract (binding)
 
@@ -34,23 +35,23 @@ data under `profile/`, except one flag in the committed `de_ai_rules.yaml`.
   `.claude/shared/no_fab.md`. Nothing enters `bullets.md`, `skills_master.md` or
   `application_answers.yaml` that the resume or the four answers do not support.
 - **Never run `sudo`, `launchctl`, `git commit` or `git push`.** Print them.
-- Never edit `src/`, `tests/` or `.claude/`. If a step seems to need it, stop and
-  report — the config contract is wrong, not the setup. One delegated exception:
-  `/new-vertical` may add structural assertions for the new lane to
-  `tests/test_real_config_drift.py` under its own rules.
-- Step 3's `discover` and `/score` are the only things you run for the user.
-  Everything downstream is handed off.
+- Never edit `src/`, `tests/` or `.claude/`, and neither does anything you
+  delegate to. If a step seems to need it, stop and report — the config
+  contract is wrong, not the setup.
+- You run only what a numbered step lists: the bootstrap in 0b, the scaffold in
+  1.3, `discover` and `/score` in 3, `verticals-check` in 4. Everything
+  downstream is handed off.
 - Print the position line first in every numbered step, verbatim:
-  - `Step 1 of 5 · ~13 min left · you'll see real jobs at step 3.`
-  - `Step 2 of 5 · ~11 min left · you'll see real jobs at step 3.`
-  - `Step 3 of 5 · ~8 min left · this is the jobs step.`
-  - `Step 4 of 5 · ~4 min left · real postings, two questions.`
+  - `Step 1 of 5 · ~30 min left · you'll see real jobs at step 3.`
+  - `Step 2 of 5 · ~21 min left · you'll see real jobs at step 3.`
+  - `Step 3 of 5 · ~16 min left · this is the jobs step.`
+  - `Step 4 of 5 · ~7 min left · real postings, two questions.`
   - `Step 5 of 5 · done · your daily loop.`
 - Write `profile/.onboarding.md` after each step (schema at the bottom).
   Re-running resumes at the first incomplete step. `$ARGUMENTS` of `step <n>`
   jumps there; `audit` runs step 0a and stops.
 
-## Step 0 — bootstrap (unnumbered, ~2 min, 0 questions)
+## Step 0 — bootstrap (unnumbered, ~3 min, 0 questions)
 
 ### 0a. Audit — no writes. This is also all `audit` mode runs.
 
@@ -69,11 +70,12 @@ echo "--- optional (later menu) ---"
 for f in profile/discovery.yaml profile/application_answers.yaml \
          profile/voice_samples.md profile/contacts.yaml profile/pii_denylist.txt; do
   test -s "$f" && echo "ok   $f" || echo "absent  $f"; done
-# Probe the C library, not the binding: `uv run --group discovery` would try to
-# compile `postal` against a libpostal that may not be there.
-if pkg-config --exists libpostal 2>/dev/null || ls /usr/local/lib/libpostal.* \
-   /opt/homebrew/lib/libpostal.* /usr/lib/libpostal.* >/dev/null 2>&1
-then echo "ok   libpostal"; else echo "absent  libpostal (uv run discover only)"; fi
+# Probe the Python binding, not the C library: both ingestion paths import
+# `postal.parser`, and a system libpostal with no binding installed still dies
+# at run time.
+if uv run python -c "import postal.parser" >/dev/null 2>&1
+then echo "ok   libpostal binding"
+else echo "absent  libpostal binding (step 3 needs it)"; fi
 echo "--- validity ---"
 uv run verticals-check 2>&1 | tail -5
 echo "--- progress ---"
@@ -84,24 +86,38 @@ Map each result to the step that fixes it, in a short checklist, and start
 there. If everything is present and `verticals-check` passes, report that and
 stop — that is the audit. `audit` mode always stops here.
 
-**libpostal, before anything begins.** `uv run discover`'s location filter needs
-the `postal` binding (opt-in group `discovery`), compiled against the system
-`libpostal` C library. No fallback parser. If the probe says absent, print the
-install command now — the user can run it in another terminal while onboarding
-continues. Not fatal: it only decides whether step 3 scrapes or falls back to
-pasted URLs.
+**libpostal is a hard prerequisite for step 3.** The location filter in cleaning
+imports the `postal` binding (opt-in group `discovery`), compiled against the
+system `libpostal` C library. No fallback parser, and no way around it: `uv run
+discover` and `uv run ingest-url` both go through cleaning. Steps 1, 2, 4 and 5
+do not need it.
 
-- macOS: `brew install libpostal && uv sync --group discovery`
+If the probe says absent, say so now and let 0b's `uv sync --group discovery`
+try. The wheel builds only against a system libpostal that is already there, so
+if that sync fails to compile, print these and have the user run the install in
+another terminal while steps 1 and 2 continue:
+
+- macOS: `brew install libpostal`, then `uv sync --group discovery`
 - Linux: build from source (`github.com/openvenues/libpostal`) — no distro
-  packages it; install its dev headers, expect a ~2 GB data download.
+  packages it; install its dev headers, expect a ~2 GB data download. Then
+  `uv sync --group discovery`.
 
 ### 0b. Install, then one background test run
 
 ```bash
 uv sync
+uv run python -c "import postal.parser" >/dev/null 2>&1 || uv sync --group discovery
 mkdir -p logs
-nohup uv run pytest tests -q --ignore=tests/discovery > logs/onboarding_tests.log 2>&1 &
+nohup uv run pytest tests -q --ignore=tests/discovery \
+      --ignore=tests/test_real_config_drift.py > logs/onboarding_tests.log 2>&1 &
 ```
+
+If the second line fails to compile, that is the C library missing — print the
+install block from 0a and carry on; step 3 is where it becomes blocking.
+
+`test_real_config_drift.py` is excluded because step 1.3 leaves `verticals.yaml`
+deliberately non-loading until step 2 writes the lane; `/new-vertical` runs that
+file itself at the end of step 2.
 
 That is the only test run in this command. Do not wait for it and do not start a
 second one — step 5 reads the log at hand-off.
@@ -110,7 +126,7 @@ second one — step 5 reads the log at hand-off.
 you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
 1. Nothing between here and there needs it.
 
-## Step 1 — your resume and your work authorization (~2 min, 1 question)
+## Step 1 — your resume and your work authorization (~9 min, 1 question)
 
 1. Ask them to **drop their current resume into `profile/` and say when it is
    there** — no path to type, and `profile/*` is gitignored. Then find it: glob
@@ -192,11 +208,9 @@ you do not have yet (`--vertical`, `--work-auth`), so it runs at the top of step
 
 7. One line, no question: `bullets_diction_pass_completed` in
    `profile/de_ai_rules.yaml` exempts confirmed canonical text from Tier 2
-   banned-phrase linting. It stays `false` unless the user asks for it — the flag
-   only claims the pass happened. It is the one edit here that shows in
-   `git status`.
+   banned-phrase linting. Leave it `false`; flip it only if the user asks.
 
-## Step 2 — your lane, drafted from your resume (~3 min, 1 question)
+## Step 2 — your lane, drafted from your resume (~5 min, 1 question)
 
 After the scaffold, `verticals.yaml` holds `schema_version`, `default_vertical`
 set to the lane, an empty `verticals:`, an empty `classifier_rules:`, and
@@ -214,25 +228,28 @@ Skill weights, the title gate, rubric tier boundaries, classifier collisions and
 `vertical_lean` tagging are all deliberately absent. They are `/tune-vertical`'s,
 after step 3 puts real postings on screen.
 
-## Step 3 — your first scrape and score (~4 min, 0 questions)
+## Step 3 — your first scrape and score (~9 min, 0 questions)
 
 The jobs step, and the one network call. Deliberately narrow: **one source, the
-lane's first two search terms, half-hour deadline** — three flags on the run,
+lane's first two search terms, six-minute deadline** — three flags on the run,
 nothing written to `profile/`. Say what that means before running — Indeed
 search only. No LinkedIn (rate-limits hard on a first run), no Greenhouse,
 Lever, Ashby or Workday board crawls (those reach only companies already in
 `profile/companies.yaml` or `data/universe/*.csv`, and take far longer than this
 step has). Expect a fraction of an overnight run.
 
-If libpostal was absent at step 0, skip the scrape and go straight to the
-fallback below — the location filter cannot run without it.
+**Do not start this step until `uv run python -c "import postal.parser"`
+succeeds.** Cleaning runs on every ingestion path, so neither the scrape nor a
+pasted URL works without it. If it is still missing, stop here, print the
+install block from step 0a, and write the progress file at
+`step_completed: 2` — re-running resumes on this step.
 
 `location_allowlist` stays at the shipped `countries: ["United States"]` — the
 US-wide default step 1 stated. Nothing here needs undoing later: tomorrow's
 plain `uv run discover` runs the full config.
 
 ```bash
-uv run discover --source indeed --max-terms 2 --deadline-hours 0.5
+uv run discover --source indeed --max-terms 2 --deadline-hours 0.1
 uv run python -c "
 import pandas as pd; d = pd.read_parquet('jobs/clean.parquet')
 print(len(d), 'rows'); print(d.title.value_counts().head(20).to_string())"
@@ -240,14 +257,14 @@ print(len(d), 'rows'); print(d.title.value_counts().head(20).to_string())"
 
 Then `/score`, and read the shortlist it writes.
 
-**If the scrape returns zero rows**, say so rather than continuing into an empty
-step 4. One line on the likely cause — the first two search terms do not match how
-these boards title the role, the deadline cut the run short, or Indeed rate-limited —
-then take the fallback: have them paste two or three job URLs, run `uv run
-ingest-url <url> --vertical <lane>` on each, then `/score`. Step 4 runs against
-those rows instead. It needs postings, not a scrape.
+**If the scrape runs and returns zero rows**, say so rather than continuing into
+an empty step 4. One line on the likely cause — the first two search terms do not
+match how these boards title the role, the deadline cut the run short, or Indeed
+rate-limited — then take the fallback: have them paste two or three job URLs, run
+`uv run ingest-url <url> --vertical <lane>` on each, then `/score`. Step 4 runs
+against those rows instead. It needs postings, not a scrape.
 
-## Step 4 — react to real postings (~3 min, 2 questions)
+## Step 4 — react to real postings (~5 min, 2 questions)
 
 Show ~10 scored rows in one table: title, company, location, fit score,
 suggested action, and the judge's one-line reason. Then one `AskUserQuestion`
@@ -267,7 +284,9 @@ Apply what they said, in one pass, then stop. No second round.
 - **Rubric feel.** A row they would apply to that scored low, or a high scorer
   they rejected, is one tier-boundary edit in the lane's `rubric.md`. If it takes
   more than one, that is `/tune-vertical` — say so and leave the rubric alone.
-- **Question 4's answer.** Locations and any comp floor go into
+- **Question 4's answer.** A source they turn off is `enabled: false` under that
+  source in `discovery.yaml`'s `sources` block, and nowhere else.
+  Locations and any comp floor go into
   `preferences.md`; locations also into `discovery.yaml`'s `location_allowlist`,
   the hard geographic filter that drops rows in cleaning. Canonical names or
   codes (`states: ["Texas"]` or `["TX"]`, `continents: ["Europe"]`), not every
@@ -280,7 +299,7 @@ uv run verticals-check
 Term and rule changes take effect on the next `discover`; `/rescore` re-judges
 rows already scored.
 
-## Step 5 — your daily loop (~1 min, 0 questions)
+## Step 5 — your daily loop (~2 min, 0 questions)
 
 Read the background test run first:
 
@@ -288,16 +307,17 @@ Read the background test run first:
 tail -3 logs/onboarding_tests.log
 ```
 
-Green — one line, and note that `tests/discovery` was excluded; once libpostal is
-installed, `uv run pytest tests -q` covers it. Not green, or still running:
-report what failed and do not declare setup done.
+Green — one line, and note that `tests/discovery` and
+`tests/test_real_config_drift.py` were excluded from that run; `uv run pytest
+tests -q` now covers both, since libpostal is installed and the lane exists. Not
+green, or still running: report what failed and do not declare setup done.
 
 ```
 Every morning        uv run discover      overnight scrape -> jobs/clean.parquet
 Then                 /score               judges new rows, writes today's shortlist
 Per role you like    /tailor <job_id>     tailored resume
                      /cover-letter <job_id>
-Optional             /apply               fills the form; submits only on --submit
+Optional             /apply <job_id> [--submit]   fills; submits only on --submit
 End of day           /track <job_id> <state>
 Weekly               /standup             regenerates pipeline.md
 ```
