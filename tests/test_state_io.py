@@ -173,6 +173,19 @@ def test_transition_rejects_out_of_every_terminal_state(tmp_path, terminal):
         transition(p, "saved")
 
 
+@pytest.mark.parametrize("terminal", sorted(TERMINAL_STATES))
+def test_transition_rejects_a_terminal_self_transition(tmp_path, terminal):
+    """A terminal state rejects re-entering itself too. Re-firing /track on an
+    already-rejected role must fail loud rather than append a duplicate history
+    entry and move last_touch."""
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    transition(p, terminal, initial_fields=_initial())
+    before = load_state(p)
+    with pytest.raises(ValueError, match="cannot transition out of terminal"):
+        transition(p, terminal)
+    assert load_state(p) == before
+
+
 @pytest.mark.parametrize("record", [
     {"state": "saved", "state_history": []},
     {"job_id": "", "state": "saved", "state_history": []},

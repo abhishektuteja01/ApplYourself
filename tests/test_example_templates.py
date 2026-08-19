@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -230,8 +231,21 @@ def _all_package_text(path: Path) -> set[str]:
 
 class TestFilesExist:
     def test_both_templates_are_committed(self):
-        assert RESUME_TEMPLATE.exists(), f"{RESUME_TEMPLATE} missing"
-        assert COVER_TEMPLATE.exists(), f"{COVER_TEMPLATE} missing"
+        """Present on disk is not the claim — these are the only tracked
+        binaries, and a new clone gets nothing from an untracked file."""
+        for path in (RESUME_TEMPLATE, COVER_TEMPLATE):
+            assert path.exists(), f"{path} missing"
+            result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", str(path.relative_to(REPO_ROOT))],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            assert result.returncode == 0, (
+                f"{path.relative_to(REPO_ROOT)} exists but is not tracked by git, "
+                f"so a fresh clone would not get it: {result.stderr.strip()}"
+            )
 
     def test_both_are_valid_zip_archives(self):
         for path in (RESUME_TEMPLATE, COVER_TEMPLATE):

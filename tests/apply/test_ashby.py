@@ -176,6 +176,51 @@ class TestScanAshbyForm:
             scan_ashby_form(html)
 
 
+class TestTheSubmitButtonMustBeUnambiguous:
+    """`SUBMIT_SELECTOR` is a *class*, not an id — the one selector in
+    /apply that could match more than one element and still look fine. The
+    DOM-scan path is the only one that can count them (the API path has no
+    HTML), so this is where the ambiguity has to be refused.
+    """
+
+    def _root(self, html: str):
+        from lxml import html as lxml_html
+
+        return lxml_html.fromstring(html).xpath('//*[@id="form"]')[0]
+
+    def _form(self, buttons: str) -> str:
+        return f'<html><body><div id="form">{buttons}</div></body></html>'
+
+    def test_one_button_yields_the_shared_selector(self):
+        scan = ashby._submit_scan(self._root(self._form(
+            '<button class="_button_x ashby-application-form-submit-button">'
+            "Submit Application</button>"
+        )))
+        assert scan.submit_selector == ashby.SUBMIT_SELECTOR
+        assert scan.submit_disabled is False
+
+    def test_a_disabled_button_is_reported_disabled(self):
+        scan = ashby._submit_scan(self._root(self._form(
+            '<button disabled class="ashby-application-form-submit-button">'
+            "Submit Application</button>"
+        )))
+        assert scan.submit_disabled is True
+
+    def test_no_button_at_all_is_no_selector_not_a_raise(self):
+        scan = ashby._submit_scan(self._root(self._form("<p>still loading</p>")))
+        assert scan.submit_selector is None
+
+    def test_two_matching_buttons_raise_rather_than_picking_one(self):
+        with pytest.raises(AshbyScanError,
+                           match="expected one submit button, found 2"):
+            ashby._submit_scan(self._root(self._form(
+                '<button class="ashby-application-form-submit-button">'
+                "Submit Application</button>"
+                '<button class="ashby-application-form-submit-button _hidden">'
+                "Submit Application</button>"
+            )))
+
+
 class TestFetchForm:
     def test_a_404_is_an_ordinary_expiry(self):
         from src.discovery.sources.ats.http import CareersError

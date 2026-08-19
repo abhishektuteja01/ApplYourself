@@ -56,6 +56,54 @@ def test_empty_document_raises():
         scan_form("   ")
 
 
+def test_a_document_lxml_cannot_parse_is_a_domscan_error():
+    """A malformed board must fail as one role, not as the queue walk. lxml
+    raises a bare ValueError on a string carrying an XML encoding declaration
+    — not a DomScanError, so it was not in `apply_cli.BUILD_ERRORS` and the
+    whole walk died on it."""
+    with pytest.raises(DomScanError, match="could not parse"):
+        scan_form('<?xml version="1.0" encoding="UTF-8"?>'
+                  '<html><body><form id="application-form"></form></body></html>')
+
+
+def test_a_required_field_with_no_id_raises():
+    """No id means no selector, so nothing can fill it — and an unfilled
+    required field is a refused submit at best."""
+    with pytest.raises(DomScanError, match="required text field has no id"):
+        scan_form('<form id="application-form">'
+                  '<input type="text" aria-required="true"/>'
+                  "</form>")
+
+
+def test_an_optional_field_with_no_id_is_dropped_quietly():
+    """The same shape, not required: an unlabelled decoy is not worth failing
+    a whole board on."""
+    s = scan_form('<form id="application-form">'
+                  '<input type="text"/>'
+                  '<input id="email" type="email"/>'
+                  "</form>")
+    assert ids(s) == ["email"]
+
+
+def test_a_file_input_with_no_group_wrapper_raises():
+    """The role=group wrapper carries the file field's real label and required
+    flag; without it the scan would report an unlabelled, optional resume."""
+    with pytest.raises(DomScanError, match="no role=group wrapper"):
+        scan_form('<form id="application-form">'
+                  '<input id="resume" type="file"/>'
+                  "</form>")
+
+
+def test_two_submit_buttons_raise_rather_than_picking_one():
+    """Which one posts the application is not guessable from the DOM, and
+    guessing wrong clicks something else on a filled form."""
+    with pytest.raises(DomScanError, match="expected one submit button, found 2"):
+        scan_form('<form id="application-form">'
+                  '<button type="submit">Save draft</button>'
+                  '<button type="submit">Submit application</button>'
+                  "</form>")
+
+
 def test_unknown_input_type_raises():
     with pytest.raises(DomScanError, match="unknown input type"):
         scan_form(
@@ -244,8 +292,35 @@ def test_a_renamed_block_container_raises_instead_of_falling_into_questions():
 
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_block_id_shapes_agree_with_their_containers(scan, name):
-    """The same cross-check, asserted positively on every captured board."""
-    scan(name)
+    """The cross-check in the *other* direction, which `scan_form` does not
+    make itself.
+
+    `scan_form` raises when an id has a block's shape but the container class
+    put it somewhere else. It never checks the reverse: a container class that
+    matches too broadly pulls an employer-authored question into a
+    Greenhouse-owned block, where it is answered structurally instead of by
+    rule, and nothing raises. So: every field the scan filed under one of the
+    four blocks must also carry that block's id shape.
+    """
+    from src.apply.domscan import _BLOCK_ID_SHAPES
+
+    shapes = dict(_BLOCK_ID_SHAPES)
+    misfiled = [
+        (f.id, f.section) for f in scan(name).fields
+        if f.section in shapes and not shapes[f.section].match(f.id)
+    ]
+    assert misfiled == []
+
+
+def test_the_captured_boards_between_them_exercise_every_block(scan):
+    """The per-board check above is vacuous on a board that renders no
+    Greenhouse-owned block at all (form_multiselect renders none). Across the
+    five captures, all four blocks have to be hit, or the check is asserting
+    nothing anywhere."""
+    from src.apply.domscan import _BLOCK_ID_SHAPES
+
+    seen = {f.section for name in FORM_FIXTURES for f in scan(name).fields}
+    assert {block for block, _ in _BLOCK_ID_SHAPES} <= seen
 
 
 def test_employment_years_are_text_not_number(scan):

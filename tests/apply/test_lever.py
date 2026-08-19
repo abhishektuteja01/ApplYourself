@@ -180,6 +180,23 @@ class TestLoadBoard:
         assert board.requires_captcha is True
         assert board.slug == "widgetco"
 
+    def test_two_submit_buttons_raise_rather_than_picking_one(self):
+        """`btn-submit` is a data-qa attribute, not a unique id — a board that
+        renders a second one (a "save and finish later" twin) makes the
+        selector ambiguous, and the guard refuses instead of clicking whichever
+        Playwright resolves first on an already-filled form."""
+        html = load_html("form_lever_full").replace(
+            "</form>",
+            '<button type="button" data-qa="btn-submit">Save for later</button></form>',
+            1,
+        )
+        with patch("src.apply.lever.fetch_text", return_value=html):
+            with pytest.raises(LeverScanError,
+                               match="expected one submit button, found 2"):
+                load_board(
+                    "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+                )
+
     def test_plan_for_board_carries_ats_and_captcha_through(self, answers, tailor_dir):
         html = load_html("form_lever_minimal")
         with patch("src.apply.lever.fetch_text", return_value=html):
@@ -321,7 +338,7 @@ class TestCheckboxes:
         assert f.required is True
 
     def test_a_lone_checkbox_with_a_truthy_value_is_still_a_consent_tick(self):
-        # Real markup (healx.io's Lever board, harvested 2026-08): a hidden
+        # Real markup harvested from a live Lever board: a hidden
         # `value="0"` fallback sits next to the real checkbox, whose own
         # `value="1"` is just the checked-state idiom, not a menu of options —
         # and the label lives in a plain <span>, not `.application-label`.

@@ -532,7 +532,7 @@ def test_project_raw_never_overrides_discovery_set_vertical():
     ("Sprocket Compliance Analyst", "example_secondary"),
     # tertiary's signals, leading and trailing
     ("Cog Engineer", "example_tertiary"),
-    ("Forward Deployed Engineer", "example_tertiary"),
+    ("Cog Deployment Engineer", "example_tertiary"),
     ("Software Engineer - Applied Cog", "example_tertiary"),
     # ORDER: primary's strong rule is first, so it wins over a secondary word
     ("Widget Sprocket Risk Analyst", "example_primary"),
@@ -1259,7 +1259,7 @@ def test_title_inclusion_gate_tertiary(cfg):
     from src.discovery.cleaning import apply_title_exclusion
     import pandas as pd
 
-    keep = ["Cog Engineer", "Applied Cog Engineer", "Agentic Cog Engineer"]
+    keep = ["Cog Engineer", "Applied Cog Engineer", "Flywheel Cog Engineer"]
     drop = [
         "Backend Engineer, Payments",       # no include term
         "Data Engineer",

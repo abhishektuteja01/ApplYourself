@@ -676,7 +676,7 @@ class TestFailureIsolation:
 
 class TestDriverGuards:
     def test_no_module_but_fill_names_the_driver(self):
-        """The patchright swap point (§9): if the driver is *imported* anywhere
+        """The driver swap point (§9): if the driver is *imported* anywhere
         else under src/, swapping it stops being a one-line change.
 
         `browser.py` is the one place the driver is named now — `fill.py` and
@@ -700,7 +700,7 @@ class TestDriverGuards:
                     names = [node.module or ""]
                 else:
                     continue
-                if any(n.split(".")[0] in ("playwright", "patchright") for n in names):
+                if any(n.split(".")[0] == "playwright" for n in names):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
         assert offenders == []
 
@@ -1493,3 +1493,154 @@ class TestMissingFieldLabelsParsesTheBoardsOwnComplaint:
                               "again when they're finished.")
         driver = F.BrowserDriver(page)
         assert driver.missing_field_labels() == ()
+
+
+class TestAReverifyThatCannotWriteStillReachesTheClick:
+    """`_reverify_fields` is best-effort by design: it runs after every field
+    already read back correct once, and a widget that refuses a second write
+    is not new information. Letting the `FillError` out would abort `submit()`
+    *before* the click on a form that is, as far as every read-back goes,
+    completely filled — turning a recoverable drift into a role that never
+    applies. The click is what has to survive; an unresolved drift still
+    surfaces as the board's own refusal.
+    """
+
+    def _driver(self, method):
+        class Refuses(FakeDriver):
+            pass
+
+        def blow_up(*args, **kwargs):
+            raise FillError(f"{method}: the widget would not take it")
+
+        d = Refuses()
+        setattr(d, method, blow_up)
+        return d
+
+    @pytest.mark.parametrize("kind,method,value,drift", [
+        ("yesno", "set_yesno", "Yes", "No"),
+        ("radio_group", "check_radio_group", "Yes", "No"),
+        ("checkbox_group", "check_group_option", ("Python", "Go"), None),
+        ("select", "select_native", "Yes", "No"),
+        ("text", "fill_text", "right", "wrong"),
+    ])
+    def test_a_field_that_refuses_the_rewrite_does_not_block_the_click(
+            self, kind, method, value, drift, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = self._driver(method)
+        if kind == "checkbox_group":
+            d._checked_groups["q1"] = {"Python"}   # "Go" drifted out
+        elif kind == "text":
+            d.values["q1"] = drift
+        else:
+            d._selected["q1"] = drift
+
+        p = plan(fields=[field(id="q1", kind=kind, value=value)])
+        result = FillResult(form_url="x")
+        F.submit(p, result, d)
+
+        assert ("click_submit", p.submit_selector) in d.calls
+        assert result.submitted is True
+
+    def test_the_refusing_driver_really_would_have_raised(self, tmp_path, monkeypatch):
+        """Without the swallow this is what `submit()` would have propagated —
+        so the tests above are not passing because nothing was attempted."""
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        d = self._driver("fill_text")
+        with pytest.raises(FillError):
+            d.fill_text("q1", "right")
+
+
+class TestAReapplyThatFailsStillLetsTheRetryClick:
+    """The post-refusal re-apply is a recovery attempt, not a precondition. A
+    field that will not take a fresh write must not stop the retry click — the
+    board named it, but the board is also the only thing that can tell us
+    whether the retry lands."""
+
+    def test_a_failed_reapply_does_not_abort_the_retry(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+
+        class RefusesTheRewrite(FakeDriver):
+            def fill_text(self, field_id, value):
+                self.calls.append(("fill_attempted", field_id, value))
+                raise FillError("the field would not take it")
+
+        d = RefusesTheRewrite(values={"q1": "v"})
+        d.refusals = ["missing entry for required field"]   # first click only
+        d.named_missing = [["Only Q1"]]
+        p = plan(fields=[field(id="q1", kind="text", label="Only Q1", value="v")])
+        result = FillResult(form_url="x")
+
+        F.submit(p, result, d)
+
+        assert len([c for c in d.calls if c[0] == "click_submit"]) == 2
+        assert result.submitted is True
+        # The failed re-apply must not be reported as a field that was fixed.
+        assert [o for o in result.outcomes
+                if o.note == "reapplied after the board named it missing"] == []
+
+
+class TestTeardownAndReportingNeverLoseALandedSubmit:
+    """Two swallowed handlers in `run_one`, both downstream of the
+    irreversible click. A submission the caller never sees leaves the role at
+    `tailored`, and the next `--submit` run applies to the same board again —
+    the duplicate-application failure this whole module is built to avoid.
+    """
+
+    def _playwright(self, ctx):
+        class P:
+            chromium = type("C", (), {
+                "launch_persistent_context": staticmethod(lambda **kw: ctx)})()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return lambda: lambda: P()
+
+    def _ctx(self, *, close_raises=False):
+        class Ctx:
+            pages = []
+
+            def new_page(self):
+                return object()
+
+            def close(self):
+                if close_raises:
+                    raise RuntimeError("Target page has been closed")
+
+        return Ctx()
+
+    def _run(self, monkeypatch, ctx, *, after=None, sink=None):
+        driver = FakeDriver()
+        monkeypatch.setattr(F, "_require_playwright", self._playwright(ctx))
+        monkeypatch.setattr(F, "fill_plan",
+                            lambda plan, driver, answers, result=None: result)
+        monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
+        result = F.run_one(plan(), submit_after=True, after=after, sink=sink)
+        return driver, result
+
+    def test_a_context_that_will_not_close_still_returns_the_submission(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        sink: list = []
+        driver, result = self._run(monkeypatch, self._ctx(close_raises=True),
+                                    sink=sink)
+        assert ("click_submit", plan().submit_selector) in driver.calls
+        assert result.submitted is True
+        assert sink[0] is result
+
+    def test_a_reporting_callback_that_blows_up_does_not_lose_the_submission(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
+        called: list = []
+
+        def explode(result):
+            called.append(result.submitted)
+            raise RuntimeError("the terminal went away")
+
+        driver, result = self._run(monkeypatch, self._ctx(), after=explode)
+        assert called == [True], "the callback must actually have run"
+        assert ("click_submit", plan().submit_selector) in driver.calls
+        assert result.submitted is True
