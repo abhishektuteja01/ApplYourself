@@ -43,7 +43,7 @@ OUT_DIR="applications/${LATEST_DIR}"
 test -d "$OUT_DIR" || { echo "ERROR: ${OUT_DIR} referenced by state.yaml does not exist on disk."; exit 1; }
 test -f "${OUT_DIR}/jd_snapshot.md" || { echo "ERROR: ${OUT_DIR}/jd_snapshot.md missing."; exit 1; }
 
-TODAY=$(date "+%B %-d, %Y")
+TODAY=$(date "+%B %e, %Y" | tr -s ' ')
 ENV_FILE="/tmp/company_answers_$1_env.sh"
 {
   printf 'OUT_DIR=%q\n' "$OUT_DIR"

@@ -1,13 +1,19 @@
 # ApplYourself
 
 A personal, human-gated job-search pipeline. It scrapes job postings, scores
-them against a profile you write, and drafts tailored resumes, cover letters
-and outreach — as files on disk, for you to read, edit and send yourself.
+them against a profile you write, drafts tailored resumes, cover letters and
+outreach, and can submit applications to a few ATS boards on your behalf.
 
-**It never submits anything.** There is no auto-apply, no form filling, no
-sending. Every outward action is yours. This is deliberate and structural, not
-a missing feature: no module in this repo posts to an employer, an ATS, or a
-mailbox. If you want that, this is the wrong tool.
+**What it sends, and what it does not.** Outreach messages and cover letters are
+only ever written to disk — nothing in this repo emails, DMs or posts a message
+anywhere. Application *submission* is different: `/apply` drives a real browser
+(Playwright) and can fill and submit an employer's application form. It is
+opt-in per run — the default fills the form and stops; only `apply run --submit`
+actually presses submit, and it lists the roles and asks you to type a
+confirmation first unless you pass `--yes`. Submission covers **Greenhouse, Lever and Ashby only**.
+Workday, LinkedIn, Indeed and company careers pages are always manual-apply:
+they are discovered and scored like any other posting, but `/apply` will never
+submit to one.
 
 It is sponsorship-aware throughout — the scoring pre-screen skips postings that
 state a hard ineligibility, and the outreach drafts have per-channel rules for
@@ -31,14 +37,15 @@ without writing it down, in an artifact stored next to the resume it produced.
 The `src/` half holds no judgment at all — given the same inputs and the same
 seen-ledger, it does the same thing every time.
 
-**The slash commands are the product.** `src/` on its own is a scraper and a
-docx renderer. You need Claude Code to run the interesting half.
+**The slash commands are the product.** `src/` on its own is a scraper, a docx
+renderer and a form filler. You need Claude Code to run the interesting half —
+the deciding.
 
 ## Pipeline
 
 1. **Discovery** (`uv run discover`) — deterministic, LLM-free scrape. Manual
    clips in `inbox/*.md` → JobSpy (LinkedIn, Indeed) → Greenhouse/Lever/Ashby
-   JSON boards over `data/universe/*.csv`. Board and inbox rows are classified
+   JSON boards and Workday over `data/universe/*.csv`. Board and inbox rows are classified
    into a lane by title at fetch time; unclassified rows are dropped.
 2. **Cleaning** (automatic, at the end of every discovery run) — normalize,
    drop short/stale/out-of-area rows, dedupe (exact, then fuzzy at
@@ -58,6 +65,13 @@ docx renderer. You need Claude Code to run the interesting half.
 5. **Tracking** (`/track`, `/standup`) — one `pipeline/<job_id>/state.yaml` per
    role, moving through an 11-state machine. `/track` is the only writer of
    state transitions.
+6. **Submission** (`/apply`; `src/apply/`, `src/apply_cli.py`) — takes roles
+   with a resume on file, scans the board's form, fills it from
+   `profile/application_answers.yaml` plus a per-run answers file, and either
+   submits or parks the role on whatever it could not resolve. Greenhouse,
+   Lever and Ashby submit; everything else is reported as manual-apply, not
+   failed. A cover letter is produced only when the board's own form asks for
+   one.
 
 `job_id = sha1(company_normalized + "|" + title_normalized)[:8]`, deliberately
 excluding URL and description so it stays stable across re-scrapes.
@@ -67,16 +81,35 @@ excluding URL and description so it stays stable across re-scrapes.
 Requires **Python 3.12** (pinned `>=3.12,<3.13`), [uv](https://docs.astral.sh/uv/),
 and Claude Code for the slash commands. PDF output additionally needs
 **Microsoft Word on macOS** (it is driven by `osascript`); every other stage runs
-anywhere Python does. Discovery's location filter requires the system
-**libpostal** C library — `brew install libpostal` on macOS,
-`apt-get install libpostal-utils` on Debian/Ubuntu — there is no fallback
-parser, so `discover` will not run without it.
+anywhere Python does. The core install needs no C toolchain.
 
 ```bash
 git clone <this repo> && cd <this repo>
-brew install libpostal   # or apt-get install libpostal-utils
 uv sync
-uv run pytest tests -q     # should be fully green
+uv run pytest tests -q --ignore=tests/discovery   # should be fully green
+```
+
+Only for `uv run discover`: the location filter requires the system
+**libpostal** C library, via the opt-in `discovery` dependency group. There is
+no fallback parser, so `discover` will not run without it — but scoring,
+tailoring and `/ingest` all do. On macOS, `brew install libpostal`. On Linux
+there is no distro package; build it from source
+([openvenues/libpostal](https://github.com/openvenues/libpostal)). Budget for
+it: the build downloads roughly 2GB of data files, and the development headers
+must be present for the `postal` Python binding to compile.
+
+```bash
+brew install libpostal   # macOS; on Linux build libpostal from source first
+uv sync --group discovery
+uv run pytest tests -q     # the discovery tests need libpostal; now green too
+```
+
+Only for `/apply`: the browser driver is an opt-in dependency group, and needs a
+Chrome to drive. Every other stage works on a clone that never installs it.
+
+```bash
+uv sync --group apply
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome   # macOS
 ```
 
 ### Configuration
@@ -101,6 +134,7 @@ cp profile/preferences.example.md       profile/preferences.md
 cp profile/bullets.example.md           profile/bullets.md
 cp profile/skills_master.example.md     profile/skills_master.md
 cp profile/voice_samples.example.md     profile/voice_samples.md
+cp profile/application_answers.example.yaml profile/application_answers.yaml
 cp profile/companies.example.yaml       profile/companies.yaml   # optional
 cp profile/contacts.example.yaml        profile/contacts.yaml    # optional
 
@@ -125,8 +159,10 @@ the block key in `profile/verticals.yaml`, its `display_name`, its
 in `classifier_rules`. Miss any of those and `verticals-check` still passes
 while your lane does nothing.
 
-Everything under `profile/` is gitignored user data. Nothing you write there
-is ever committed.
+The `profile/` files you fill in are gitignored user data — nothing you write
+into them is ever committed. What *is* tracked there is only the scaffolding:
+every `.example.*` template, the `example_*` lane directories, and the two rule
+files that ship as real defaults (see below).
 
 ### The content only you can supply
 
@@ -141,6 +177,7 @@ The work is filling them in.
 | `preferences.md` | Work authorization, location, comp, deal-breakers. |
 | `scoring_rubric.md` | Shared scoring schema and sponsorship precedence, on top of each lane's own `rubric.md`. Ships working defaults. |
 | `voice_samples.md` | Messages you actually sent, so outreach sounds like you. `/outreach` **refuses to run** without it. |
+| `application_answers.yaml` | The standing answers `/apply` fills forms from — contact details, work authorization, demographics, links. A field it cannot resolve here parks the role instead of guessing. |
 | `contacts.yaml` | People to reach out to. Optional. |
 | `resume_template.docx` | Word template whose five named paragraph styles the resume renderer fills. Its body text is discarded. |
 | `cover_letter_template.docx` | Your own letter design. Everything that is not a `{{PLACEHOLDER}}` is **preserved into every letter**, so nothing decorative is free. |
@@ -183,21 +220,31 @@ Deterministic CLIs:
 ```bash
 uv run discover [--resume <run_id>]   # scrape -> jobs/clean.parquet
 uv run verticals-check                # validate config + per-lane files
-uv run ingest-url <url>               # pull one posting into inbox/
+uv run ingest-url <url>               # fetch one posting -> raw parquet, then rerun cleaning
 uv run score <subcommand>             # scoring plumbing (dump/split/merge/...)
 uv run track <job_id> <state>         # state transition
 uv run tailor-prep <job_id>           # /tailor's deterministic front-matter
 uv run profile-extract <file>         # dump a .docx resume's text
+uv run apply <subcommand>             # prepare / plan / fill / run [--submit]
 ```
 
+`uv run apply` needs `uv sync --group apply`. `plan` prints the fill plan without
+touching a form; `fill` fills one real form and stops; `run` walks the eligible
+queue. `--submit` is off by default and is the only thing that presses submit:
+`apply run --submit` requires an explicit `--limit` (unless `--job-id` names
+one role), prints the roles it is about to apply to and asks for a typed
+confirmation unless `--yes` is passed (non-interactive stdin without `--yes` is
+refused, never auto-confirmed), `--rate` is clamped to a 30-second minimum, and
+at most one application per company goes out per run.
+
 Slash commands (in Claude Code): `/onboarding`, `/score`, `/rescore`, `/tailor`,
-`/cover-letter`, `/outreach`, `/track`, `/standup`, `/new-vertical`,
-`/suggest-synonyms`, `/no_ai_slop`.
+`/cover-letter`, `/company-answers`, `/apply`, `/outreach`, `/track`,
+`/standup`, `/new-vertical`, `/suggest-synonyms`, `/ingest`, `/no_ai_slop`.
 
 ### Running it nightly (macOS)
 
 `scripts/nightly_discovery.sh` plus `scripts/launchagent.example.plist` schedule
-the scrape at 02:00, wrapped in `caffeinate` so sleep does not kill it mid-run. A
+the scrape at 22:30, wrapped in `caffeinate` so sleep does not kill it mid-run. A
 `launchd` job whose start time falls while the Mac is asleep is skipped rather
 than deferred, so it needs a `pmset` wake a few minutes earlier. `/onboarding`
 prints the install block for you at the end; scoring stays a morning decision,
@@ -213,8 +260,9 @@ uv run pytest tests -q
 ```
 
 Tests run against a synthetic three-lane config in `tests/fixtures/verticals.yaml`
-(fictional "widget"/"sprocket"/"cog" lanes), never your real one.
-`tests/test_real_config_drift.py` additionally checks your live
+(lanes `example_primary`, `example_secondary` and `example_tertiary`, whose
+contents are drawn from a fictional widget/sprocket/cog world), never your real
+one. `tests/test_real_config_drift.py` additionally checks your live
 `profile/verticals.yaml` when it exists, and skips on a fresh clone.
 
 ## Before you push: the PII gate
@@ -240,8 +288,9 @@ your list will not flag every longer word that happens to contain it; prefix a
 pattern with `~` when you *do* want it to match inside longer words (a handle,
 for instance). A missing denylist is an error, not a pass — the gate refuses to
 report a scan it never ran.
-`LICENSE` and `data/universe/*.csv` are allowlisted inside the script: MIT
-attribution and vendored company names are supposed to be there.
+`LICENSE` and the `data/universe/` CSVs are allowlisted in the script by name,
+never by glob: MIT attribution and vendored company names are supposed to be
+there.
 
 ## License
 
@@ -253,3 +302,7 @@ The company seed lists in `data/universe/` are vendored from
 
 Scraping job boards may conflict with their terms of service. Whether to run
 this, and against what, is your call.
+
+The same applies to `/apply`, which automates form filling and submission into
+third-party ATS systems. Some of those services restrict automated submission in
+their terms. Read them, and decide for yourself whether to run it.

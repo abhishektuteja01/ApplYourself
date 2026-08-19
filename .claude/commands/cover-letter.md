@@ -68,7 +68,7 @@ VERTICAL="${LATEST_DIR%%/*}"
 eval "$(uv run tailor-prep identity "$VERTICAL")" || exit 1
 test -n "$FILE_SLUG" || { echo "ERROR: no FILE_SLUG for vertical ${VERTICAL} -- its resume_file needs a bold name line."; exit 1; }
 
-TODAY=$(date "+%B %-d, %Y")
+TODAY=$(date "+%B %e, %Y" | tr -s ' ')
 
 # Persist the resolved values: shell state does NOT survive between Bash calls,
 # and `eval` above consumed prep's stdout so nothing printed APPLICANT_NAME or
@@ -331,12 +331,13 @@ Before reporting success, verify on disk:
       asserted lint-clean by `/company-answers` (Step 2b).
 - [ ] Body word count is within 230-300 (count the `body` entries' words; /outreach
       asserts its channel limit, and this letter has to fit one page the same way)
-- [ ] `pdfinfo` is installed: `command -v pdfinfo >/dev/null 2>&1 || echo "ERROR: pdfinfo not installed. Run: brew install poppler"`
+- [ ] `pdfinfo` is installed: `command -v pdfinfo >/dev/null 2>&1 || echo "ERROR: pdfinfo not installed. Run: brew install poppler (macOS) / apt install poppler-utils (Debian/Ubuntu)"`
 - [ ] The rendered PDF is exactly one page: `pdfinfo "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf" | awk '/^Pages:/{print $2}'`
       returns `1`. Word count is a guard rail, not the test — paragraph count and
       ragged line breaks move the real boundary, so assert the page count itself.
       If it returns 2, cut the body (or merge two paragraphs into one) and re-render.
       Trust `pdfinfo`, not `mdls` — Spotlight metadata lags behind the file.
+      `mdls` is macOS-only; `pdfinfo` is the portable check.
 - [ ] `pipeline/$1/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
 If any check fails, do NOT report success — diagnose and fix.

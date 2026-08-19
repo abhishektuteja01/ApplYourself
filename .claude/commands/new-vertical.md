@@ -192,12 +192,16 @@ lane's files as the shape reference (the committed
   `profile/verticals/example_primary/resume_example_primary.md`. Everything
   in it must be attested in `profile/bullets.md`.
 - **`rubric.md`** — a header stating who reads it, then the four axes, whose
-  names and maxima are fixed by `profile/scoring_rubric.md`: `title_match`
-  0-30 (which exact titles hit which band, out-of-lane → 0),
-  `jd_skill_overlap` 0-30 (this vertical's `skill_weights` as the anchor,
-  standard bands, plus any lane-specific soft signals), `seniority_fit` 0-20
-  (usually identical heuristic across verticals; note that rows over
-  `max_years` are pre-screened out), `domain_bonus` 0-20 tiers — plus any
+  **maxima** are fixed by `profile/scoring_rubric.md` (which also fixes the
+  JSON keys a judge emits: `title` 0-30, `skills` 0-30, `seniority` 0-20,
+  `domain` 0-20). The axis *labels* inside a rubric are prose, not those
+  keys — every lane in the repo, the `example_*` ones included, spells them
+  `title_match` / `jd_skill_overlap` / `seniority_fit` / `domain_bonus`.
+  Follow that convention. Cover: title 0-30 (which exact titles hit which
+  band, out-of-lane → 0), skills 0-30 (this vertical's `skill_weights` as
+  the anchor, standard bands, plus any lane-specific soft signals),
+  seniority 0-20 (usually identical heuristic across verticals; note that
+  rows over `max_years` are pre-screened out), domain 0-20 tiers — plus any
   LLM-judged caps and an `## Additional self-check items` section. Every tier
   anchored to the user's REAL evidence from Round 1; propose the top-band and
   bottom-band boundaries and have them confirmed.

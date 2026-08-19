@@ -15,8 +15,10 @@ argument-hint: "[audit | stage <n>]"
 
 # /onboarding — set up your own copy
 
-Seven stages, about 20 minutes, plus `/new-vertical`'s own 10-15 for your first
-lane. Ends at a working `discover` → `/score` → `/tailor` → `/cover-letter`. Everything this command writes is user data under
+Nine stages (0 through 8), about 25 minutes, plus `/new-vertical`'s own 10-15 for your first
+lane. Ends at a working `discover` → `/score` → `/tailor` → `/cover-letter`.
+Stage 7 sets up `/apply` and is optional — skip it to stop at scoring and
+tailoring. Everything this command writes is user data under
 `profile/`. It never edits code, tests, or another command.
 
 ## The interview contract (binding)
@@ -73,7 +75,8 @@ for f in profile/verticals.yaml profile/preferences.md \
 done
 echo "--- per-command ---"
 for f in profile/resume_template.docx profile/cover_letter_template.docx \
-         profile/voice_samples.md profile/contacts.yaml; do
+         profile/voice_samples.md profile/contacts.yaml \
+         profile/application_answers.yaml; do
   test -s "$f" && echo "ok   $f" || echo "absent  $f"
 done
 # Absent is not fatal here: src/discovery/config.py falls back to code defaults.
@@ -97,7 +100,23 @@ straight to that stage instead.
 
 ```bash
 uv sync
-uv run pytest tests -q 2>&1 | tail -3
+uv run pytest tests -q --ignore=tests/discovery 2>&1 | tail -3
+```
+
+Only for `uv run discover`: the location filter needs the `postal` binding
+(opt-in group `discovery`), which compiles against the system `libpostal` C
+library — install that **first**, or the group's sync fails. There is no
+fallback parser. Scoring and tailoring run fine without any of it, so skip
+this if the user is starting from `/ingest` or manual `inbox/` clips.
+
+- macOS: `brew install libpostal`
+- Linux: build from source (`github.com/openvenues/libpostal`). No distro
+  packages it. Install its dev headers, which the `postal` binding compiles
+  against, and expect a ~2 GB data download.
+
+```bash
+uv sync --group discovery
+uv run pytest tests -q 2>&1 | tail -3   # discovery tests included, now green
 ```
 
 Tests must be fully green before continuing. If they are not, stop and report —
@@ -223,12 +242,8 @@ Unlocks: discovery, classification and scoring.
 
 Unlocks: the overnight scrape.
 
-1. Discovery's location filter requires the system `libpostal` C library —
-   install it before `uv sync` (`brew install libpostal` on macOS,
-   `apt-get install libpostal-utils` on Debian/Ubuntu). There is no
-   fallback parser: `discover` will not run without it.
-2. `cp profile/discovery.example.yaml profile/discovery.yaml`
-3. Propose `location_allowlist` from the locations they gave in Stage 2 — this
+1. `cp profile/discovery.example.yaml profile/discovery.yaml`
+2. Propose `location_allowlist` from the locations they gave in Stage 2 — this
    is the **hard** geographic filter, and rows outside it are dropped in
    cleaning. The parser resolves any country's cities/states/provinces from
    context (not just the US), so write canonical names or codes — `countries:
@@ -239,7 +254,7 @@ Unlocks: the overnight scrape.
    which sources to enable in the same batch, with every source on by
    default — a thin first shortlist is the common disappointment, and a
    disabled source is the usual cause.
-4. Offer `cp profile/companies.example.yaml profile/companies.yaml` as a
+3. Offer `cp profile/companies.example.yaml profile/companies.yaml` as a
    one-liner: `data/universe/*.csv` already ships thousands of boards, so this
    is only for companies they specifically care about, and `name` must match how
    job boards spell it because it feeds `job_id`.
@@ -275,7 +290,40 @@ on — restyling is a Word session they can do any time:
   `uv run python scripts/scrub_example_templates.py` strips it, `--check`
   confirms.
 
-## Stage 7 — verify and hand off (2 min)
+## Stage 7 — the submission path (optional, 4 min)
+
+Unlocks: `/apply`, which fills and submits Greenhouse, Lever and Ashby forms.
+Skip it if they only want scoring and tailoring — nothing earlier depends on
+it, and `/apply` is the only thing that breaks. Say that, ask once, and move on
+if they decline.
+
+```bash
+cp profile/application_answers.example.yaml profile/application_answers.yaml
+uv sync --group apply
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome
+```
+
+All three are required: `uv run apply prepare` exits 1 if the answers file or
+Playwright's Chrome is missing.
+
+Then fill the copy yourself from what you already have — one batched
+`AskUserQuestion` only for what you cannot source:
+
+- `identity` — from the resume; `location` and `country` written as canonical
+  place names.
+- `work_authorization` — reuse the Stage 2 answer. One of `citizen_or_pr`,
+  `needs_sponsorship_now`, `time_limited`; the loader cross-checks it against
+  `preferences.md`'s "## Work authorization" section, so the two must agree.
+- `education` and `employment` — from the same resume Stage 3 read.
+- `rules` — leave as shipped unless they have an opinion.
+
+Every value is submitted under their name and there is no guess behind it: a
+field this file cannot answer parks the role instead of inventing an answer.
+Say two things and stop — this file holds their email and phone, so those
+strings belong in `profile/pii_denylist.txt`; and `/apply` never submits to
+Workday, LinkedIn, Indeed or a company careers page, which stay manual.
+
+## Stage 8 — verify and hand off (2 min)
 
 ```bash
 uv run verticals-check
@@ -335,7 +383,7 @@ mkdir -p logs ~/Library/LaunchAgents
 sed -e "s|__LABEL__|$LABEL|g" -e "s|__REPO__|$PWD|g" \
     scripts/launchagent.example.plist > ~/Library/LaunchAgents/$LABEL.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/$LABEL.plist
-sudo pmset repeat wakeorpoweron MTWRFSU 01:55:00
+sudo pmset repeat wakeorpoweron MTWRFSU 22:25:00
 launchctl print gui/$(id -u)/$LABEL | head -20
 ```
 
@@ -346,10 +394,10 @@ installing a first one: run `launchctl bootout gui/$(id -u)/$LABEL` before the
 bootstrap — copying the plist alone changes nothing, since launchd runs the
 configuration it loaded.
 
-Four ways an empty morning happens: the Mac was asleep at 02:00 with no wake
+Four ways an empty morning happens: the Mac was asleep at 22:30 with no wake
 scheduled (a `launchd` job whose time falls during sleep is skipped, not
-deferred); the wake fired at 01:55 but idle sleep took it back down before 02:00
-(move the wake to 01:59 if their `pmset sleep` is under 5 minutes —
+deferred); the wake fired at 22:25 but idle sleep took it back down before 22:30
+(move the wake to 22:29 if their `pmset sleep` is under 5 minutes —
 `caffeinate` is inside the job and cannot help before it starts); the Mac was
 shut down or on battery (`wakeorpoweron` boots to the login window, where the
 `gui/` domain holding the agent is not loaded); or `sudo pmset repeat` silently
@@ -367,7 +415,7 @@ is the authority when the two disagree.
 ```markdown
 # onboarding progress
 
-stage_completed: 4              # 0-7; 7 means setup is done
+stage_completed: 4              # 0-8; 8 means setup is done (7 skippable)
 notes:
   - contexts agreed: WID (Widget Corp), SPR (side project), EDU (degree)
   - user declined a compensation floor
