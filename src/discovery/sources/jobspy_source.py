@@ -15,7 +15,7 @@ from src.discovery.cleaning import apply_title_exclusion
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
 
-# 100 over 50: A/B resolved, roughly doubled rows/run with no 429s.
+# A/B: results_wanted 100 over 50 roughly doubled rows/run with no 429s.
 RESULTS_WANTED = 100
 HOURS_OLD = 336
 DESCRIPTION_FORMAT = "markdown"

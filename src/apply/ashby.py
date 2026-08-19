@@ -1,36 +1,26 @@
 """Ashby application form: read the question API into a merged field set.
 
-**The form is client-rendered, so there is no HTML to scan.** Measured over 6
-orgs: a static GET of a live posting returns the same ~32 KB shell with zero
-`<form>` elements and zero `data-field-path` attributes, and `<url>` and
-`<url>/application` are byte-identical. The committed `form_ashby_*.html`
-fixtures are browser-DOM snapshots — they carry computed inline styles and
-hashed CSS-module class names that only exist post-render — which is why the
-DOM scanner below passed its tests while failing on every real URL.
-
-`load_board` therefore reads Ashby's own anonymous GraphQL endpoint instead:
+**The form is client-rendered, so there is no HTML to scan.** `load_board`
+reads Ashby's own anonymous GraphQL endpoint instead:
 
     POST https://jobs.ashbyhq.com/api/non-user-graphql?op=ApplicationForm
 
-The collection is `fieldEntries` and `field` is a **JSON scalar**, so the
-whole definition (`type`, `path`, `title`, `selectableValues`) arrives in one
-blob rather than as a selectable sub-object — which is why probing GraphQL
-field names never found it. Recovered from the compiled query AST in the
-frontend bundle (search `FormRenderParts` in
+The collection is `fieldEntries`, and `field` is a **JSON scalar** carrying the
+whole definition (`type`, `path`, `title`, `selectableValues`) in one blob
+rather than as a selectable sub-object. The query was recovered from the
+compiled AST in the frontend bundle (search `FormRenderParts` in
 `cdn.ashbyprd.com/frontend_non_user/<hash>/assets/index-*.js`); the hash
 changes on deploy, so re-read the bundle if the query stops resolving.
+`field.path` is the id space this module already keyed on (`_systemfield_*`, a
+UUID for employer-authored questions).
 
-`field.path` is exactly the id space this module already keyed on
-(`_systemfield_*`, a UUID for employer-authored questions), so nothing
-downstream had to change.
-
-`scan_ashby_form` is kept as the only reader for a *rendered* Ashby form, and
-the fixtures still exercise it, but it is no longer on the `load_board` path.
+`scan_ashby_form` reads a *rendered* Ashby form only; it is not on the
+`load_board` path. The committed `form_ashby_*.html` fixtures are browser-DOM
+snapshots, which is what it expects.
 
 The API is not the whole story either: a board can render instructional text
-under a label (LiveFlow's "if yes, please explain briefly", Adaptyv's "please
-don't write AI slop here") that `applicationForm` never declares — confirmed
-by diffing the API response against DevTools. `load_board` closes that gap
+under a label ("if yes, please explain briefly", "please don't write AI slop
+here") that `applicationForm` never declares. `load_board` closes that gap
 with `fetch_dom_enrichment`/`_with_dom_descriptions`: one headless page load
 that reads every field's sibling description div generically, keyed by
 `data-field-path`, rather than matching known labels. It is the one place
@@ -652,9 +642,9 @@ _DOM_ENRICHMENT_SCRIPT = """(elements, descriptionClass) => {
 def fetch_dom_enrichment(url: str, timeout: int = 30) -> dict[str, str]:
     """`data-field-path` -> its sibling description text, read off the live,
     client-rendered form — the same instructional copy a person sees under a
-    label but the question API never returns (LiveFlow's sponsorship
-    follow-up, Adaptyv's "no AI slop" prompt — generalized to any field on any
-    board, not matched by known label text).
+    label but the question API never returns (a sponsorship follow-up, a "no
+    AI slop" prompt). Generalized to any field on any board, never matched by
+    known label text.
 
     One headless page load, one in-page query keyed on `data-field-path` (the
     same id space everything else here uses), no interaction. Best-effort by

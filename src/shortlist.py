@@ -172,11 +172,9 @@ def render_shortlist_markdown(
             assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
             status = row["application_status"] if row.get("already_seen") else "new"
             kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
-            # Derived from the URL, not the source name. Keying on
-            # `source == "workday"` marked 0 rows (Workday roles arrive
-            # labelled "indeed" as often as not) while leaving every LinkedIn,
-            # Indeed and Ashby row unmarked — 146 of 286 roles at fit >= 85
-            # were silently un-submittable. §12c puts all of them in the same
+            # Derived from the URL, not `source`: Workday rows often arrive
+            # labelled "indeed", and LinkedIn/Indeed/Ashby rows are
+            # manual-apply too. §12c puts all of them in the same
             # manual-apply category, so the same predicate the queue uses
             # decides it here.
             manual_apply = (

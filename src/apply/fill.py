@@ -18,8 +18,7 @@ no option list to validate against beforehand are `country` (32),
 `school--0` (3) — so this assert is not an edge case, it is the main path.
 
 `playwright` is an optional dependency (`uv sync --group apply`); `browser.py`
-is the only module in `src/` that names the driver, so swapping in patchright
-later is a one-line change there.
+is the only module in `src/` that names the driver.
 """
 from __future__ import annotations
 
@@ -47,21 +46,18 @@ FIELD = '{form} [id="{id}"]'
 FIELD_BY_NAME = '{form} [name="{id}"]'
 
 # react-select's rendered parts, as they appear on every board sampled.
-SELECT_CONTAINER = ".select__container"
 SELECT_OPTION = ".select__option"
 SELECT_SINGLE_VALUE = ".select__single-value"
 SELECT_MULTI_VALUE = ".select__multi-value__label"
 
 # Positive acknowledgements only. Matching none of these means "unconfirmed",
-# never "failed" — see `BrowserDriver.submission_confirmed`. Provisional until
-# a real submission is observed; extend, do not invert.
+# never "failed" — see `BrowserDriver.submission_confirmed`. Extend, never
+# invert.
 CONFIRMATION_MARKERS = (
     "text=/thank you for applying/i",
     "text=/application (?:has been )?(?:submitted|received)/i",
-    # Ashby's real wording, verbatim (drata/handshake/abridge/claylabs,
-    # 2026-08-18): "Your application was successfully submitted." The
-    # adverb between "was" and the verb is why the original regex missed
-    # every one of these and parked them as submitted_unconfirmed.
+    # Ashby's wording, verbatim: "Your application was successfully submitted."
+    # The optional adverb between "was" and the verb is load-bearing.
     "text=/your application was (?:successfully )?(?:submitted|sent)/i",
     "text=/we(?:'ve| have) received your application/i",
 )
@@ -97,13 +93,10 @@ UPLOAD_ERROR_MARKERS = (
 SUBMIT_REFUSED_MARKERS = (
     "please try again when they",       # "...when they're finished"
     "updating your application",
-    # Measured live on Take2 (Ashby): the submit request fired (a 200 to
-    # ApiSubmitSingleApplicationFormAction — GraphQL's success-status
-    # convention, not the application's), but the board's own validation
-    # rejected it and re-rendered the form with this banner. Without this
-    # marker `submission_refused()` found nothing and the request-marker
-    # guard alone let it through: a request marker proves the click did
-    # something, never that the board accepted it.
+    # Ashby can answer the submit request 200 (GraphQL's success-status
+    # convention, not the application's) and still re-render the form with
+    # this banner — a request marker proves the click did something, never
+    # that the board accepted it.
     "your form needs corrections",
     "missing entry for required field",
 )
@@ -116,23 +109,14 @@ SUBMIT_ATTEMPTS = 2
 # said the page looked right. Keyed by ats, and absent for a board nobody has
 # watched yet — an unknown board falls back to the text markers.
 SUBMIT_REQUEST_MARKERS = {
-    # Was the literal op name "ApiSubmitSingleApplicationFormAction" —
-    # reverse-engineered off one bundle capture and true for one real submit
-    # (Take2). drata/handshake/abridge/claylabs (2026-08-18) all fired the
-    # click and rendered the real success banner, yet this string never
-    # showed up in any response URL: `?op=<name>` is how *our own* Python
-    # fetch in `load_board` names its query, not a guarantee about how the
-    # live frontend's bundle shapes its own mutation call — batching or a
-    # bundle change can drop the name from the URL entirely. The endpoint
-    # path does not depend on that. Safe because nothing else on this page
-    # calls it through the browser: `load_board`'s own `ApplicationForm`
-    # read is a server-side fetch (never seen by `page.on`), and
-    # `watch_submit_requests` is only installed right before the click, after
-    # any page-load traffic has long since finished — the one POST this can
-    # see in that window is the submit mutation. Gated by
+    # Matched on the endpoint path, not the GraphQL op name: `?op=<name>` is
+    # how our own `load_board` fetch labels its query, and the live bundle's
+    # mutation can omit it entirely. Safe to match this broadly because
+    # nothing else reaches this endpoint through the browser — `load_board`
+    # is a server-side fetch `page.on` never sees, and `watch_submit_requests`
+    # is installed only right before the click. Gated by
     # SUBMIT_REQUEST_METHOD below regardless.
     "ashby": ("jobs.ashbyhq.com/api/non-user-graphql",),
-    # Measured on observe.ai: `boards.greenhouse.io/embed/<board>/jobs/<id>`.
     # `job-boards.greenhouse.io/embed/job_app` — the iframe's own GET, loaded
     # once per page view — contains this same substring (it's the `job-`
     # prefix, not a different path), so the URL alone is not unique. Gated by
@@ -148,11 +132,10 @@ SUBMIT_REQUEST_METHOD = {
 SUBMIT_SETTLE_MS = 5000
 # Extra time to keep polling for the submit-endpoint request once
 # SUBMIT_SETTLE_MS has passed and none has landed yet, before treating its
-# absence as ambiguous rather than proof of nothing sent. Measured live on
-# Airwallex (job 64dcf405): the fixed 5s wait had already been read as
-# silence when the request — and the board's own confirmation email —
-# arrived after it. Polled in short steps so a request that lands early still
-# returns immediately; only a truly silent click burns the whole budget.
+# absence as ambiguous rather than proof of nothing sent. A board can answer
+# well after a fixed 5s wait would have called it silence. Polled in short
+# steps so a request that lands early still returns immediately; only a truly
+# silent click burns the whole budget.
 SUBMIT_REQUEST_EXTRA_WAIT_MS = 15000
 SUBMIT_REQUEST_POLL_MS = 500
 # Ashby names the exact field it thinks is unanswered, one per line: "Missing
@@ -162,24 +145,16 @@ SUBMIT_REQUEST_POLL_MS = 500
 MISSING_FIELD_PATTERN = re.compile(
     r"missing entry for required field:\s*(.+)", re.IGNORECASE
 )
-# b9a009ad measured every field's real DOM state correct — right value, right
-# radio checked — right after fill_plan wrote it, and the board still named a
-# different subset of those same fields missing on three separate live runs.
-# Nothing rules out a client-side debounce on Ashby's own answered/validation
-# state that a fast field-by-field fill can outrun: eight fields written
-# back-to-back in milliseconds gives each one's own settle time to overlap the
-# next's, and whichever field's update got coalesced away varies with timing
-# jitter — which matches "a different field each time" better than a fixed
-# broken selector would. Confirmed live once the pace was added — b9a009ad
-# went through clean. Applied to every board, not just Ashby: Greenhouse and
-# Lever have shown no version of this failure, but nothing about a client-side
-# debounce is Ashby-specific, and the cost of one second a field is cheap
-# next to a false "missing" on an irreversible click.
+# Wait between field writes. A board can debounce its own answered/validation
+# state, and a fill fast enough to outrun that gets a varying subset of
+# correctly-written fields reported missing at submit. Applied to every board:
+# one second a field is cheap next to a false "missing" on an irreversible
+# click.
 FIELD_PACE_MS = 1000
 # How often to re-check a server-backed listbox while waiting for its results.
 _OPTION_POLL_MS = 250
 # How long to let a react-select's chosen value land before calling it stuck.
-# Ashby's React state update can lag a click by a beat (§ live on Cohere).
+# Ashby's React state update can lag a click by a beat.
 SELECT_SETTLE_TIMEOUT = 2000
 
 
@@ -230,10 +205,10 @@ class FillResult:
 
     confirmed: bool = False
     """The board positively acknowledged the application. Absence is NOT
-    evidence of failure: no confirmation page has been observed live yet, so
-    this only ever goes true on a positive match. A submitted-but-unconfirmed
-    role is reported as such and still transitions to `applied`, because a
-    duplicate application is the worse failure."""
+    evidence of failure: this only ever goes true on a positive match against
+    `CONFIRMATION_MARKERS`. A submitted-but-unconfirmed role is reported as
+    such and still transitions to `applied`, because a duplicate application
+    is the worse failure."""
 
     submit_requests: list[str] = dc_field(default_factory=list)
     """2xx responses to the board's own submit endpoint, seen after the click.
@@ -408,11 +383,10 @@ class BrowserDriver:
         """Positive evidence that the board accepted the application.
 
         Absence is deliberately NOT failure. `result.submitted` is already true
-        by the time this runs, and no live confirmation page has been observed
-        yet (phase 1's real-submission checkpoint is still deferred), so the
-        marker list is provisional. A real submission should *extend* it —
-        never invert the default, which would turn "assume submitted" into
-        "assume failed" and reintroduce the duplicate-application path.
+        by the time this runs, and the marker list only ever covers wordings
+        someone has seen. A new one should *extend* it — never invert the
+        default, which would turn "assume submitted" into "assume failed" and
+        reintroduce the duplicate-application path.
         """
         for marker in CONFIRMATION_MARKERS:
             try:
@@ -593,7 +567,7 @@ class BrowserDriver:
         `tests/apply/fixtures/work_auth_labels.jsonl`), and a configured
         answer copied from that corpus carries the same space. The DOM text
         was already stripped before this comparison; the answer was not,
-        which is what let "yes " fail to match "yes" live on Cohere.
+        which is what let "yes " fail to match "yes".
         """
         for radio, text in self._radio_options(field_id):
             if text.casefold() == label.strip().casefold():
@@ -1080,8 +1054,8 @@ def _select(driver, field: FieldPlan, label: str, result: FillResult,
     # The click has already returned and the option is chosen, but Ashby's
     # React state update can lag it by a beat — read immediately after and
     # `selected_label` can still come back empty for a value that lands a
-    # moment later. Live on Cohere's `_systemfield_location`: the exact same
-    # field, read again right after this raised, held the right value.
+    # moment later — the same field, read again a moment after, holds the
+    # right value. So poll rather than raise on the first read.
     shown = driver.selected_label(field.id)
     deadline = SELECT_SETTLE_TIMEOUT
     while not shown and deadline > 0:
@@ -1148,14 +1122,10 @@ def _attach(driver, upload: FilePlan) -> FieldOutcome:
     if not upload.path.is_file():
         raise FillError(f"{upload.id}: {upload.path} is gone")
     driver.set_files(upload.name, upload.path)
-    # The one write that used to return success unread. An input that ends up
-    # empty leaves failures[] empty, so the submit guard passes and the
-    # application goes out with no resume attached (§9 step 4).
+    # Read back, not assumed: an input that ends up empty leaves failures[]
+    # empty, so the submit guard passes and the application goes out with no
+    # resume attached. See `attached_files` for why `None` is not failure.
     #
-    # Confirmatory, never punitive: `None` means the input could not be read
-    # back (it was detached by a re-render — observed live on a Greenhouse
-    # cover_letter field), which is not evidence the upload failed. Treating
-    # it as failure would block submissions that are perfectly fine.
     # The widget outranks the input. A board that rendered an upload error
     # refused the file no matter what `input.files` says, and a board showing
     # the filename accepted it no matter whether the input survived.
@@ -1302,15 +1272,12 @@ def _reverify_fields(driver, plan: Plan) -> None:
     """Re-check every field immediately before the click, and re-apply any
     that drifted since `fill_plan` set it.
 
-    Live on Take2 (Ashby): a toggle read back correctly right when
-    `_apply_field` set it, then came back cleared by submit time — a
-    *different* field each retry ("legally authorized to work", then "4 days
-    a week"), which rules out one bad selector or field id and points at
-    something external resetting a field asynchronously after our own fill
-    already finished. The board's own "Autofill from resume" feature
-    (visible on this exact form) is the leading suspect, but the fix does not
-    depend on knowing the cause: whatever cleared it, this is the last chance
-    to notice before the irreversible click.
+    A toggle can read back correctly when `_apply_field` sets it and be
+    cleared again by submit time — a different field each retry, so not one
+    bad selector but something external resetting fields asynchronously after
+    the fill finished (a board's own resume-autofill, for one). The fix does
+    not depend on the cause: this is the last chance to notice before the
+    irreversible click.
 
     Every field kind gets checked against the *live* kind
     (`driver.resolve_kind`), not `field.kind` as planned. Ashby declares a
@@ -1528,18 +1495,10 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
 def capture_submit_evidence(driver, plan, result: FillResult | None = None) -> Path | None:
     """Write what the board rendered after the click, and return the text path.
 
-    `CONFIRMATION_MARKERS` is guessed — no live confirmation page had ever been
-    read when it was written, and the first real submission matched none of it.
-    The page that would have settled the question was on screen and closed
-    unrecorded. This keeps it: the next submission is what turns that list from
-    a guess into something measured.
-
-    `result.submit_requests` is recorded too, for the same reason: the network
-    signal used to fail silently (drata/handshake/abridge/claylabs,
-    2026-08-18) with nothing kept to show why — the evidence file had the
-    rendered text but not what, if anything, the board's own network traffic
-    looked like. An empty list here means the marker genuinely never fired,
-    not that no one checked.
+    `CONFIRMATION_MARKERS` only covers wordings someone has read, so a
+    submission it does not match is exactly the one worth keeping the page
+    for. `result.submit_requests` is recorded alongside it: an empty list
+    there means the marker genuinely never fired, not that no one checked.
 
     Diagnostics only. It runs after the click, never decides whether one
     happens, and every failure here is swallowed — losing a screenshot must not

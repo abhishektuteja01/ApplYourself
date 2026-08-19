@@ -26,13 +26,11 @@ authoritative filter, since search hits are not assumed relevant.
 `search_terms()` scopes to the default vertical's first configured term only
 (sourced from `profile/verticals.yaml`, never hardcoded — R7's
 company/vertical-agnostic rule extends to search terms too), not the union
-across every vertical. Tenants x every term across all configured verticals
-was 90+ tenants x dozens of terms — thousands of list requests before a single
-posting was read, blowing an 8-hour run. One term per tenant costs one page
-in the common case (a tenant with a handful of matches never fills
-`LIST_LIMIT`, so pagination stops at page 0) — the tradeoff is that Workday
-surfaces default-vertical roles only; the other configured verticals stay
-covered by LinkedIn/Indeed/the other board sources.
+across every vertical. One term per tenant costs one page in the common case
+(a tenant with a handful of matches never fills `LIST_LIMIT`, so pagination
+stops at page 0). Workday therefore surfaces default-vertical roles only; the
+other configured verticals stay covered by LinkedIn/Indeed and the other
+board sources.
 
 **`total` cannot be trusted past page 0.** Confirmed live: NVIDIA's `total`
 reads 2000 at `offset=0`, then 0 at every later offset checked, including
@@ -69,19 +67,13 @@ from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_
 from src.discovery.sources.base import Source, SourceResult
 
 #
-# Confirmed live: the `Search/jobs` endpoint 400s on any `limit` above 20,
-# on every tenant tried (3M, Accenture, Adobe, Cisco) — 21 fails, 20 succeeds,
-# no variance. This is Workday's server-side page-size ceiling, not a
-# per-tenant quirk, so it is not configurable like `pacing_seconds` is.
+# The `Search/jobs` endpoint 400s on any `limit` above 20 — 21 fails, 20
+# succeeds. This is Workday's server-side page-size ceiling, not a per-tenant
+# quirk, so it is not configurable like `pacing_seconds` is.
 LIST_LIMIT = 20
 # A ceiling per (company, search term) pair, not per company, so one broad
-# term cannot consume a whole run's deadline.
-#
-# This used to claim "a page never reached is read again, from page 0, next
-# run" — true of a deadline cut, false of this cap: every run started at
-# offset 0, so pages past 6 * LIST_LIMIT = 120 were never read on ANY run, a
-# permanent blind spot rather than work spread across runs. `crawl_cursor`
-# now persists where each pair stopped, which makes the claim true.
+# term cannot consume a whole run's deadline. `crawl_cursor` persists where
+# each pair stopped, so pages past the cap are reached on a later run.
 MAX_PAGES_PER_TERM = 6
 
 _POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)

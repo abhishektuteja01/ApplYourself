@@ -140,7 +140,7 @@ def _render_source(name: str, outcome: dict) -> list[str]:
 def main(args=None):
     # asctime is load-bearing: urllib3's retry warnings propagate to root, and
     # without a timestamp on them a slow night cannot be reconstructed after
-    # the fact — which is exactly what happened on 2026-08-08.
+    # the fact.
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser()

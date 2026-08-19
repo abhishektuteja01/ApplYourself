@@ -48,8 +48,8 @@ class ApplyUrlError(Exception):
 
 
 class PostingExpired(Exception):
-    """The board no longer serves this posting. 3 of 58 sampled were already
-    gone, so this is an ordinary outcome, not a failure of the run."""
+    """The board no longer serves this posting. An ordinary outcome, not a
+    failure of the run."""
 
 
 @dataclass(frozen=True)

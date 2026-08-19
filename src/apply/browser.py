@@ -7,8 +7,7 @@ Split out so the second caller does not have to import `fill.py` to reach it —
 `fill.py` already imports `ashby`, so the reverse import would be a cycle.
 
 `playwright` is an optional dependency (`uv sync --group apply`), and this is
-the only module in `src/` that names the driver, so swapping in patchright
-later is a one-line change here.
+the only module in `src/` that names the driver.
 """
 from __future__ import annotations
 

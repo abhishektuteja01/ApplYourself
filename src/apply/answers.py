@@ -214,10 +214,9 @@ _NOT_WORK_AUTH = re.compile(
 )
 _AUTHORIZED_FAMILY = re.compile(
     r"authou?ri[sz]\w*\s+to\s+work|legally\s+authou?ri[sz]"
-    # Same question, three more spellings, all live: "Do you have the legal
-    # right to work in...", "Are you legally eligible to work in the US?", "Do
-    # you have valid U.S. work authorization?". Each used to fall past every
-    # family and park with "matches no answerable family".
+    # Same question, three more spellings: "Do you have the legal right to
+    # work in...", "Are you legally eligible to work in the US?", "Do you have
+    # valid U.S. work authorization?".
     r"|right\s+to\s+work|eligib\w*\s+to\s+(?:work|live)"
     r"|(?:have|hold)\s+(?:\S+\s+){0,3}work\s+authori[sz]"
     r"|authou?ri[sz]\w*\s+\w{0,3}\s*to\s+work",
@@ -233,9 +232,8 @@ _PROOF_FAMILY = re.compile(
 )
 _SPONSORSHIP_FAMILY = re.compile(
     r"(?:requir|need)\w*[^?]*sponsor|sponsor\w*[^?]*(?:requir|need)"
-    # The family assumed the word "sponsor". Two live labels ask exactly the same
-    # thing without it: "Do you need a work visa?", "Do you require work
-    # authorization?" — both used to match no family at all.
+    # Two shapes that ask the same thing without the word "sponsor": "Do you
+    # need a work visa?", "Do you require work authorization?".
     r"|(?:requir|need)\w*\s+(?:\S+\s+){0,3}(?:work\s+)?visa"
     r"|(?:requir|need)\w*\s+(?:\S+\s+){0,3}work\s+authori[sz]",
     re.IGNORECASE,
@@ -248,8 +246,7 @@ _SPONSORSHIP_NEGATED = re.compile(
 # When a label reads as both families, which one is actually being asked. These
 # all open with the sponsorship verb and mention authorization only as the thing
 # the sponsorship would maintain: "Will you require sponsorship ... to maintain
-# authorization to work in the United States?". Four observed shapes; five labels
-# used to park here as "reads as both families".
+# authorization to work in the United States?". Four observed shapes.
 _SPONSORSHIP_GOVERNS = re.compile(
     r"^\s*(?:will|do|would)\s+you\s+(?:\S+\s+){0,8}"
     r"(?:requir|need)\w*\s+(?:\S+\s+){0,4}sponsor"
@@ -261,10 +258,10 @@ _SPONSORSHIP_GOVERNS = re.compile(
 # answers exactly one question: may you work in the US at all, today. Any
 # scope qualifier — permanence, employer-independence, freedom from
 # sponsorship — asks something else, and answering it from `authorized_now`
-# states a falsehood for a time_limited status. Observed on real boards:
-# "Are you permanently authorized to work for any employer in the United
-# States?" and "I am authorized to work without sponsorship or restrictions
-# for any employer in the U.S." Both used to come back Yes.
+# states a falsehood for a time_limited status. The shapes: "Are you
+# permanently authorized to work for any employer in the United States?" and
+# "I am authorized to work without sponsorship or restrictions for any
+# employer in the U.S."
 _AUTHORIZED_QUALIFIED = re.compile(
     r"permanent\w*"
     r"|ongoing"
@@ -1240,10 +1237,9 @@ def _identity_candidates(field_id: str, value: str, answers: Answers) -> tuple[s
     """The values to offer a chooser for this identity field, best first.
 
     Only Ashby's location field has more than one, because that id is two
-    different questions depending on the board. Measured live: city-level on
-    OpenAI, Notion and Airwallex, where a canonical "City, State, Country"
-    matches exactly, and **country-only** on n8n, where "Boston" and "New York"
-    return no options at all and "United States" does. Nothing in either
+    different questions depending on the board: city-level, where a canonical
+    "City, State, Country" matches exactly, and **country-only**, where a city
+    name returns no options at all and "United States" does. Nothing in either
     payload says which.
 
     Falling back to the configured country is not a looser match — it is the

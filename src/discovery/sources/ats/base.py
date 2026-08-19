@@ -21,9 +21,8 @@ from src.discovery.sources.base import Source, SourceResult
 # error page decodes as invalid JSON and arrives as CareersError instead.
 PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexError)
 
-# Per-source pacing floor, config can't go below this. Default 1.0s, unchanged
-# since initial commit. Greenhouse is on a lowered floor for an A/B against
-# rate-limiting (plan.md); no 429 evidence has ever backed the 1.0s default.
+# Per-source pacing floor, config can't go below this. Default 1.0s;
+# Greenhouse runs at 0.5s.
 MIN_PACING_SECONDS = {"greenhouse": 0.5}
 
 

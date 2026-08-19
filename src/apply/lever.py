@@ -181,10 +181,8 @@ def _scan_question(question_el) -> MergedField | None:
         )
 
     # Checkboxes, before the generic branch — they group by shared name the
-    # same way radios do. Measured over 19 live Lever boards: 10 of them
-    # render at least one, as `pronouns`, `consent[store]` (GDPR storage
-    # consent) or a custom card field, and every one of those 10 used to die
-    # with `unknown input type 'checkbox'`. No committed fixture had one.
+    # same way radios do. Common on Lever, as `pronouns`, `consent[store]`
+    # (GDPR storage consent) or a custom card field.
     checkboxes = question_el.xpath('.//input[@type="checkbox"]')
     if checkboxes:
         name = checkboxes[0].get("name") or ""

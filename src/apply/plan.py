@@ -123,9 +123,8 @@ class Unmapped:
 
     multi: bool = False
     """Whether the widget takes several answers. Carried so fill-time recovery
-    does not have to assume: it used to hardcode `multi=False`, so a required
-    "mark all that apply" resolved to one label, got clicked once, and was
-    marked recovered — the exact hazard `_check_value` names."""
+    clicks every label a "mark all that apply" resolves to, rather than
+    assuming one — the hazard `_check_value` names."""
 
     description: str = ""
     """`MergedField.description` — instructional text under the label that a
