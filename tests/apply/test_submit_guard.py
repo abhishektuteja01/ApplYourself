@@ -62,7 +62,7 @@ class FakeSubmitDriver:
     def submission_confirmed(self):
         return self.confirms
 
-    def settle(self):
+    def settle(self, timeout=None, floor_ms=0):
         """Uploads must finish before the click — a board that is still
         processing one refuses it outright."""
 

@@ -104,8 +104,8 @@ class FakeDriver:
         self.calls.append(("yesno", field_id, label))
         self._selected[field_id] = label
 
-    def settle(self):
-        self.calls.append(("settle",))
+    def settle(self, timeout=None, floor_ms=0):
+        self.calls.append(("settle", timeout, floor_ms))
 
     def value_of(self, field_id):
         return self._selected.get(field_id, self.values.get(field_id, ""))
@@ -249,6 +249,20 @@ class TestOrder:
         after = [i for i, k in enumerate(kinds) if k == "settle" and i > attach]
         assert after, "the upload must be allowed to land"
         assert after[0] < kinds.index("fill")
+
+    def test_the_post_upload_settle_outwaits_a_slow_resume_parse(self, resume):
+        # Lever's parse outruns the default networkidle ceiling, so the fill
+        # races it and the parse overwrites what was already written. The
+        # settle that follows the attach gets its own longer ceiling and a
+        # floor; the one that precedes it keeps the default.
+        d = FakeDriver()
+        fill_plan(plan(
+            fields=[field(id="first_name", value="Alex")],
+            files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
+        ), d)
+        settles = [c for c in d.calls if c[0] == "settle"]
+        assert settles[0] == ("settle", None, 0)
+        assert settles[-1] == ("settle", F.UPLOAD_PARSE_TIMEOUT, F.UPLOAD_PARSE_FLOOR_MS)
 
     def test_the_page_settles_before_the_first_upload_too(self, resume):
         # The upload widget is wired by script that lands after the form
@@ -625,6 +639,78 @@ class TestLeverBrowserDriverSelectorBoundary:
         driver = F.LeverBrowserDriver(FakePage())
         driver._locator("name")
         assert calls == ['#application-form [name="name"]']
+
+
+class TestLeverCardRadios:
+    """A Lever custom-card radio labels with <span
+    class="application-answer-alternative">; the base driver reads the EEO
+    question's "eeo-option-text" and finds nothing, so every card radio
+    matched "" and failed with `no radio labelled ...`."""
+
+    class FakeRadio:
+        def __init__(self, value, label):
+            self.value, self.label, self.checked = value, label, False
+
+        def get_attribute(self, name):
+            return self.value if name == "value" else None
+
+        def check(self):
+            self.checked = True
+
+        def is_checked(self):
+            return self.checked
+
+        def locator(self, selector):
+            assert selector == "xpath=following-sibling::span[1]"
+            label = self.label
+
+            class Span:
+                def count(self_inner):
+                    return 1 if label is not None else 0
+
+                @property
+                def first(self_inner):
+                    return self_inner
+
+                def inner_text(self_inner):
+                    return label
+            return Span()
+
+    def _driver(self, radios):
+        outer = self
+
+        class Group:
+            def count(self_inner):
+                return len(radios)
+
+            def nth(self_inner, i):
+                return radios[i]
+
+        class FakePage:
+            def locator(self_inner, selector):
+                return Group()
+        return F.LeverBrowserDriver(FakePage())
+
+    def test_checks_the_radio_whose_sibling_span_carries_the_label(self):
+        radios = [self.FakeRadio("Yes", "Yes"), self.FakeRadio("No", "No")]
+        self._driver(radios).check_radio_group("cards[x][field9]", "No")
+        assert [r.checked for r in radios] == [False, True]
+
+    def test_falls_back_to_the_option_value_when_there_is_no_label_span(self):
+        radios = [self.FakeRadio("OPTION 1", None), self.FakeRadio("OPTION 2", None)]
+        self._driver(radios).check_radio_group("cards[x][field6]", "OPTION 2")
+        assert [r.checked for r in radios] == [False, True]
+
+    def test_an_option_the_board_does_not_offer_still_fails(self):
+        radios = [self.FakeRadio("Yes", "Yes"), self.FakeRadio("No", "No")]
+        with pytest.raises(F.FillError, match="no radio labelled"):
+            self._driver(radios).check_radio_group("cards[x][field9]", "Maybe")
+
+    def test_read_back_reports_the_checked_label(self):
+        radios = [self.FakeRadio("Yes", "Yes"), self.FakeRadio("No", "No")]
+        d = self._driver(radios)
+        d.check_radio_group("cards[x][field9]", "Yes")
+        assert d.checked_radio_label("cards[x][field9]") == "Yes"
 
 
 class TestCaptchaWait:

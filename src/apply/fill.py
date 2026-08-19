@@ -74,6 +74,12 @@ UPLOAD_CHOOSER_TIMEOUT = 5000
 # How long to wait for the widget to show a filename or an error. The upload is
 # still in flight when the check runs, so this is a poll, not a single read.
 UPLOAD_VERDICT_TIMEOUT = 15000
+# Post-attach settle only. The resume parse writes into fields already on the
+# page, and on Lever it routinely outruns OPTION_TIMEOUT -- the fill then races
+# it and the parse wins. Floor as well as ceiling: networkidle can report idle
+# in the gap before the parse XHR is even issued.
+UPLOAD_PARSE_TIMEOUT = 30000
+UPLOAD_PARSE_FLOOR_MS = 5000
 # Text a board renders when it refused a file. Unlike CONFIRMATION_MARKERS,
 # absence here is NOT treated as failure either — this list only ever turns an
 # unverifiable upload into a definite one. The asymmetry runs the opposite way
@@ -278,10 +284,17 @@ class BrowserDriver:
         self.page.goto(url, wait_until="domcontentloaded")
         self.page.wait_for_selector(FORM_SELECTOR, timeout=FORM_TIMEOUT)
 
-    def settle(self) -> None:
-        """Let an upload's XHR finish before anything is read back."""
+    def settle(self, timeout: int = OPTION_TIMEOUT, floor_ms: int = 0) -> None:
+        """Let an upload's XHR finish before anything is read back.
+
+        `floor_ms` waits before the readiness check rather than after it: a
+        board that has not yet issued its parse request is idle by every
+        measure, so networkidle alone returns immediately and proves nothing.
+        """
+        if floor_ms:
+            self.page.wait_for_timeout(floor_ms)
         try:
-            self.page.wait_for_load_state("networkidle", timeout=OPTION_TIMEOUT)
+            self.page.wait_for_load_state("networkidle", timeout=timeout)
         except Exception:  # noqa: BLE001 - a busy page is not a failure
             log.debug("networkidle did not settle; continuing")
 
@@ -684,6 +697,29 @@ class LeverBrowserDriver(BrowserDriver):
                 box.check()
                 return
         raise FillError(f"{field_id}: no checkbox labelled {label!r}")
+
+    def _radio_options(self, field_id: str):
+        """A custom-card radio labels with <span class=
+        "application-answer-alternative">, where the base implementation reads
+        the EEO question's "eeo-option-text" and finds nothing -- every
+        card radio then matched the empty string and failed. The first sibling
+        span rather than either class name, so a rename does not break it
+        again, with the same `value` fallback as `_checkbox_options` above.
+        """
+        radios = self._locator(field_id)
+        for i in range(radios.count()):
+            radio = radios.nth(i)
+            span = radio.locator("xpath=following-sibling::span[1]")
+            text = span.first.inner_text().strip() if span.count() else ""
+            yield radio, (text or radio.get_attribute("value") or "")
+
+    def check_radio_group(self, field_id: str, label: str) -> None:
+        for radio, text in self._radio_options(field_id):
+            value = radio.get_attribute("value") or ""
+            if label.strip().casefold() in (value.casefold(), text.casefold()):
+                radio.check()
+                return
+        raise FillError(f"{field_id}: no radio labelled {label!r}")
 
 
 class AshbyBrowserDriver(BrowserDriver):
@@ -1178,7 +1214,7 @@ def fill_plan(plan: Plan, driver, answers: Answers | None = None,
             result.failures.append(str(exc))
             result.outcomes.append(FieldOutcome(upload.id, "failed", note=str(exc)))
     if plan.files:
-        driver.settle()
+        driver.settle(timeout=UPLOAD_PARSE_TIMEOUT, floor_ms=UPLOAD_PARSE_FLOOR_MS)
 
     for field in plan.fields:
         try:
