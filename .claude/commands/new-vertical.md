@@ -1,5 +1,5 @@
 ---
-description: Quick-add a job-search vertical — drafts the one profile/verticals.yaml block the loader requires, a classifier rule, rubric.md, tailoring.md and the scoring resume from the existing profile, then asks an experience cap and a single confirm-or-edit. Splits into pass-a (scrape-ready lane block + rule) and pass-b (the three prose files) when a mode token is given. Config only, no code edits. Deep tuning is /tune-vertical.
+description: Quick-add a job-search vertical — drafts the one profile/verticals.yaml block the loader requires, a classifier rule, rubric.md, tailoring.md and the scoring resume from the existing profile, then asks an experience cap, a target level and a single confirm-or-edit. Splits into pass-a (scrape-ready lane block + rule) and pass-b (the three prose files) when a mode token is given. Config only, no code edits. Deep tuning is /tune-vertical.
 model: opus
 effort: medium
 allowed-tools:
@@ -20,7 +20,7 @@ Verticals are data-driven: `profile/verticals.yaml` +
 whole registry. If you find yourself editing a `.py` file or another command
 file, stop — the config contract is being violated.
 
-Quick mode writes the loader's minimum and nothing more, with two questions.
+Quick mode writes the loader's minimum and nothing more, with three questions.
 Everything optional stays out of the file.
 
 ## Modes
@@ -29,8 +29,8 @@ Optional second token in `$ARGUMENTS`, spelled exactly `pass-a` or `pass-b`.
 
 | token | writes | asks | verifies |
 |---|---|---|---|
-| *(none)* | all five artifacts, one pass | both questions | full block |
-| `pass-a` | the `verticals.yaml` lane block + one `classifier_rules` entry + the marker | both questions | loader + classifier only |
+| *(none)* | all five artifacts, one pass | all three questions | full block |
+| `pass-a` | the `verticals.yaml` lane block + one `classifier_rules` entry + the marker | all three questions | loader + classifier only |
 | `pass-b` | `rubric.md`, `tailoring.md`, `resume_<name>.md`; deletes the marker | nothing | full block |
 
 `load_verticals()` needs only the lane block, so `pass-a` is enough to start a
@@ -43,13 +43,15 @@ deleted by `pass-b`.
 **Out of scope here — this is `/tune-vertical`'s entire reason to exist. Do not
 ask about it:** `skill_weights`, `title_include_terms` /
 `title_strong_keep_terms`, classifier rule priority and
-collisions, `disqualifier.phrases` / `title_phrases`, rubric tier boundaries,
+collisions, `disqualifier.phrases`, rubric tier boundaries,
 `vertical_lean` tagging.
 
-`title_exclude_terms` is in scope here — it is a blocklist and cannot empty a
-lane. `title_include_terms` never is: a nonempty one flips the
-lane to an allowlist and the gate runs during cleaning, so a blind list discards
-rows before anyone can inspect them.
+`title_exclude_terms` is in scope here — it drops only what it names, so a
+wrong entry costs those rows and not the lane. Keep it short: it runs during
+cleaning, and a high-volume word still guts a lane no `/rescore` can restore.
+`title_include_terms` is never in scope: a nonempty one flips the lane to an
+allowlist enforced at that same point, so a blind list discards everything it
+failed to anticipate.
 
 ## Hard rules (binding)
 
@@ -67,7 +69,7 @@ rows before anyone can inspect them.
 - **Reasoning and stamp strings are literal config fields** — draft them fresh
   (`rubric:<name-with-dashes>-jd-years-disqualifier`), never reuse another
   lane's.
-- **One call, two questions.** At most one `AskUserQuestion` call, in Step 3,
+- **One call, three questions.** At most one `AskUserQuestion` call, in Step 3,
   after the whole draft is on screen — carried by bare mode and by `pass-a`.
   `pass-b` asks nothing. Never apply unconfirmed text; if the user edits, re-show
   the changed part before writing.
@@ -166,11 +168,30 @@ description argument plus the lane name — bullets are not read.
 - `search_terms` — 6-12 real job titles for the lane, spine first, adjacent
   after; comment the tiers like the example block does.
 - `linkedin_terms` — the reduced set (429 mitigation), usually the spine only.
-- `disqualifier` — `max_years` from Step 3's answer, a fresh `scored_by` stamp,
-  and `reasoning_years` in the established voice ("Auto-skipped by deterministic
-  pre-screen: ..."). Omit `phrases` and `title_phrases`.
-- `title_exclude_terms` — a short blocklist of title words that are not this
-  lane (adjacent seniorities, unrelated functions).
+- `disqualifier` — `max_years` from Step 3's answer, `title_phrases` from
+  Step 3's level answer, a fresh `scored_by` stamp, and `reasoning_years` plus
+  `reasoning_title` in the established voice ("Auto-skipped by deterministic
+  pre-screen: ..."). **`reasoning_title` is required whenever `title_phrases` is
+  nonempty** — without it `load_verticals()` raises and the lane does not load.
+  Omit `phrases`.
+  - Draft the phrases from the level answer crossed with **this lane's own title
+    vocabulary** — the band words differ per lane, so read them off the lane's
+    real titles (`search_terms`, the description argument), never off a fixed
+    list.
+  - Exclude in **both directions**: a senior/lead answer excludes the bands
+    below it, an entry/mid answer excludes the bands above it.
+  - All phrases lowercase — prescreen matches by plain substring containment,
+    not word boundaries.
+  - Keep the list short and specific. A bare short phrase over-catches (`associate`
+    also matches "Associate Director"); prefer the longer phrase when it would.
+  - A wrong guess costs nothing permanent: tripped rows are auto-scored and
+    stamped `title`, not deleted, so editing the list and running `/rescore`
+    undoes it with no re-scrape.
+- `title_exclude_terms` — a short blocklist of title words naming a different
+  *function*, not a different level. Seniority belongs in `title_phrases`
+  above and must not be repeated here: this list drops rows during cleaning,
+  so a level word here deletes the row before prescreen can stamp it and
+  `/rescore` cannot bring it back.
 
 Omit `skill_weights`, `title_include_terms` and `title_strong_keep_terms`
 entirely. A nonempty `title_include_terms` turns the lane into an allowlist
@@ -210,13 +231,21 @@ judges score every row in this lane against this file.
 Show, in one message: the YAML block in full, the classifier rule in full, and —
 bare mode only — three or four lines summarizing each prose file (rubric tiers,
 bullet budget + skills layout line count, resume sections). Say in one line what
-you inferred and what you left for `/tune-vertical`.
+you inferred and what you left for `/tune-vertical`. After the answers land,
+restate the locked decisions including `max_years`, the level answer and the
+`title_phrases` it produced.
 
-Then one `AskUserQuestion` carrying both questions.
+Then one `AskUserQuestion` carrying all three questions, in this order — the
+confirm-or-edit stays last.
 
 "Skip jobs asking for more than how many years of experience?" — `3 years` /
 `5 years` / `8 years` / `12 years`. Say in one line that anything above the cap
 is dropped before scoring, and `/tune-vertical` can change it later.
+
+"What level are you targeting?" — `Entry / associate` / `Mid-level` /
+`Senior / staff` / `Lead / director and up`. The answer becomes
+`disqualifier.title_phrases`. Say in one line that anything matching the excluded
+bands is dropped before scoring but stays visible and reversible with `/rescore`.
 
 "Use this lane as drafted?":
 
@@ -262,6 +291,10 @@ bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
 print('MISCLASSIFIED:', bad or 'none')"
 ```
 
+The `load_verticals()` call is what catches a malformed `disqualifier` block
+before the scrape — a failure there means `title_phrases` is nonempty with no
+`reasoning_title`.
+
 Do not run `verticals-check` or `tests/test_real_config_drift.py` here — both
 fail by design while the three prose files are missing.
 
@@ -280,14 +313,16 @@ it never saw the lane.
 
 ## Step 6a — report (`pass-a`)
 
-The lane block, the rule, `max_years`, `title_exclude_terms`, and the marker
+The lane block, the rule, `max_years`, the level answer and its
+`title_phrases`, `title_exclude_terms`, and the marker
 path. State that the lane is scrape-ready but not yet scoreable: `uv run
 discover` can run now; scoring needs `pass-b`'s three files. Name the single next
 step, `/new-vertical <name> pass-b`.
 
 ## Step 6b — report (bare mode and `pass-b`)
 
-Files written, the locked decisions (terms, rule, `max_years`, skills layout),
+Files written, the locked decisions (terms, rule, `max_years`, the level answer
+and its `title_phrases`, skills layout),
 and:
 
 - `uv run discover` then `/score` — their call, it hits the network.

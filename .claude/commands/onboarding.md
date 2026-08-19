@@ -1,5 +1,5 @@
 ---
-description: Set up your own copy of the pipeline in about 21 minutes — seven questions instead of 33 decisions, real scored jobs on screen by minute 17. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
+description: Set up your own copy of the pipeline in about 21 minutes — eight questions instead of 33 decisions, real scored jobs on screen by minute 17. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
 model: opus
 effort: high
 allowed-tools:
@@ -16,7 +16,7 @@ argument-hint: "[audit | step <n>]"
 
 # /onboarding — set up your own copy
 
-Five steps, ~21 minutes, seven questions instead of 33 decisions, real scored
+Five steps, ~21 minutes, eight questions instead of 33 decisions, real scored
 postings on screen at step 4 — against 48-74 minutes to do the same setup by
 hand. The scrape starts at the end of step 1 and runs through step 2; scoring
 starts at the top of step 3 and runs through the review questions. Step 0 is
@@ -25,11 +25,11 @@ under `profile/`; nothing tracked changes.
 
 ## Contract (binding)
 
-- **Seven questions, total.** Step 1: four — the roles (plain text), work
-  authorization, and `/new-vertical pass-a`'s experience cap plus confirm-or-edit
-  batched into one `AskUserQuestion`. Step 3: two, batched into one
-  `AskUserQuestion`. Step 4: one. If a step seems to need an eighth, you inferred
-  too little.
+- **Eight questions, total.** Step 1: five — the roles (plain text), work
+  authorization, and `/new-vertical pass-a`'s experience cap, level band and
+  confirm-or-edit batched into one `AskUserQuestion`. Step 3: two, batched into
+  one `AskUserQuestion`. Step 4: one. If a step seems to need a ninth, you
+  inferred too little.
 - **You do the work; the user gives hints and a verdict.** Draft the file, show
   it once, let them strike or reword. Never walk a user through a file field by
   field.
@@ -44,7 +44,7 @@ under `profile/`; nothing tracked changes.
   delegate to. If a step seems to need it, stop and report — the config
   contract is wrong, not the setup.
 - You run only what a numbered step lists: the bootstrap in 0b, the scaffold in
-  1.3, `discover` in 1.5, the scoring agent in 3.3, `verticals-check` in 4.
+  1.3, `discover` in 1.5, the scoring agent in 3.4, `verticals-check` in 4.
   Everything downstream is handed off.
 - Print the position line first in every numbered step, verbatim:
   - `Step 1 of 5 · ~18 min left · you'll see real scored jobs at step 4.`
@@ -132,7 +132,7 @@ second one — step 5 reads the log at hand-off.
 `onboard-scaffold` does every remaining chore, but two of its flags are answers
 you do not have yet (`--vertical`, `--work-auth`), so it runs inside step 1.
 
-## Step 1 — your lane, and the scrape starts (~4 min, 4 questions)
+## Step 1 — your lane, and the scrape starts (~4 min, 5 questions)
 
 Nothing here reads the resume. The whole point of this order is that the scrape
 only needs the lane's `search_terms`, so it can be running while step 2 reads
@@ -178,16 +178,20 @@ the resume.
 
 4. Run **`/new-vertical <lane> "<their stated roles>" pass-a`** and let it drive.
    Pass A writes only the `verticals.yaml` lane block and one classifier rule,
-   and asks the experience cap plus a confirm-or-edit in one `AskUserQuestion` —
-   **questions 3 and 4**. Do not duplicate any of it here and do not pre-empt
-   them.
+   and asks the experience cap and the target level — **questions 3 and 4** —
+   plus the confirm-or-edit — **Question 5** — in one `AskUserQuestion`. Do not
+   duplicate any of it here and do not pre-empt them.
+
+   The level answer becomes `disqualifier.title_phrases` in the lane block:
+   titles containing any phrase are dropped at prescreen and stamped
+   `disqualified: title`, so a wrong band costs a `/rescore`, not a re-scrape.
 
    Pass A ends with the loader working and a marker at
    `profile/verticals/<lane>/.pass_a_only`. `verticals-check` fails until step 2
    runs pass B; that failure is expected here, not damage to repair.
 
    If that marker is already on disk when you reach 1.4, a previous session got
-   this far: skip pass A, leave questions 3 and 4 unasked, and go to 1.5.
+   this far: skip pass A, leave questions 3-5 unasked, and go to 1.5.
 
 5. **Start the scrape and move on. Do not wait for it.** LinkedIn, the lane's
    first two terms, six-minute deadline, backgrounded into a log step 3 reads.
@@ -336,7 +340,29 @@ already scraped. Otherwise leave `title_include_terms` absent and say in one
 line that the lane stays on the blocklist until `/tune-vertical`.
 `title_exclude_terms` belongs to `/new-vertical pass-a` — do not redraft it here.
 
-### 3.3 Spawn the scoring agent, in the background
+### 3.3 What the level band drops
+
+Show the effect of the lane's `disqualifier.title_phrases` before 3.5 asks the
+user to confirm it. Lowercase substring match, as `src/prescreen.py` does it —
+not the word-boundary regex 3.2 uses.
+
+```bash
+uv run python -c "
+import pandas as pd
+LANE    = '<lane>'
+PHRASES = ['<phrase one>', '<phrase two>']    # the lane's disqualifier.title_phrases
+d = pd.read_parquet('jobs/clean.parquet')
+d = d[d.vertical == LANE]
+t = d.title.fillna('').astype(str).str.lower()
+hit = t.apply(lambda s: any(p in s for p in PHRASES))
+print(f'{int(hit.sum())}/{len(d)} rows disqualified on level')
+print('DROPPED:'); print(d.loc[hit, 'title'].value_counts().head(15).to_string())"
+```
+
+Unlike the include gate, these rows are kept and stamped, so a wrong band costs
+a `/rescore`, not a re-scrape.
+
+### 3.4 Spawn the scoring agent, in the background
 
 Spawn **one** background agent whose whole job is to run `/score` for this repo
 and report the line it prints. Do not reimplement scoring here and do not spawn
@@ -344,17 +370,18 @@ judge agents from this command. If that agent cannot spawn its own judge
 subagents, it judges the ranges itself against the lane's `rubric.md` — slower,
 but it is in the background and the user does not feel it.
 
-### 3.4 The two review questions, one `AskUserQuestion`
+### 3.5 The two review questions, one `AskUserQuestion`
 
-- **Question 5** — *"A few things in your resume I had to interpret — did I get
+- **Question 6** — *"A few things in your resume I had to interpret — did I get
   these right?"* The 3-5 genuinely ambiguous items from step 2.3, each with the
   reading you took. Nothing else goes in this list.
-- **Question 6** — *"I guessed anywhere in the US, every job board on, and up to
-  4 hours per nightly run. You capped jobs at N years. Anything wrong?"*
+- **Question 7** — *"I guessed anywhere in the US, every job board on, and up to
+  4 hours per nightly run. You capped jobs at N years, and I'm dropping titles
+  outside <band> — that's M of the rows scraped. Anything wrong?"*
   Options: `Looks right` · `Narrow the locations` · `Turn a source off` ·
-  `Change the experience cap`.
+  `Change the level or years cap`.
 
-### 3.5 Apply the answers, then collect the scoring agent
+### 3.6 Apply the answers, then collect the scoring agent
 
 - A source they turn off is `enabled: false` under that source in
   `discovery.yaml`'s `sources` block, and nowhere else.
@@ -362,7 +389,8 @@ but it is in the background and the user does not feel it.
   `location_allowlist`, the hard geographic filter that drops rows in cleaning.
   Canonical names or codes (`states: ["Texas"]` or `["TX"]`,
   `continents: ["Europe"]`), not every spelling a board might use.
-- A new experience cap is `max_years` in the lane's `disqualifier` block.
+- A new years cap is `max_years`, a new level band is `title_phrases` — both in
+  the lane's `disqualifier` block.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
 
 Then wait on the scoring agent and read the shortlist it wrote.
@@ -372,7 +400,7 @@ Then wait on the scoring agent and read the shortlist it wrote.
 Show ~10 scored rows in one table: title, company, location, fit score,
 suggested action, and the judge's one-line reason. Then one `AskUserQuestion`:
 
-- **Question 7** — *"Which of these would you actually apply to?"* Multi-select
+- **Question 8** — *"Which of these would you actually apply to?"* Multi-select
   over the ten, plus `None of them`.
 
 Apply what they said, in one pass, then stop. No second round.
@@ -388,8 +416,8 @@ Apply what they said, in one pass, then stop. No second round.
 uv run verticals-check
 ```
 
-If a rubric boundary or `max_years` changed, run `/rescore` and show the new top
-rows — otherwise their edit has no visible effect. Term changes need a fresh
+If a rubric boundary, `max_years` or `title_phrases` changed, run `/rescore` and
+show the new top rows — otherwise their edit has no visible effect. Term changes need a fresh
 scrape, so those only say "next run".
 
 Then run **`/suggest-synonyms`**. The `shortlist/*.md` and `jobs/scored.parquet`
