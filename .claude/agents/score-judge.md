@@ -49,10 +49,11 @@ self-check on every row, `Write` to
 `--range 51-100` → `batch_<v>_006.json` through `_010.json`. Never write
 elsewhere. Never delete a batch file.
 
-This numbering is unique per judge only because every range starts on a
-10-row boundary. `src.score_cli.judge_ranges` enforces that (chunk must be
-a multiple of `JUDGE_BATCH`); ranges from any other source are invalid —
-stop and report rather than renumbering.
+This numbering is unique per judge only because every range *starts* on a
+10-row boundary. Check your start, not your length: a vertical's final
+range may be short (85 rows -> `1-85`), which is valid. What is invalid is
+a range starting off the 10-row grid (e.g. `4-83`) — stop and report that
+rather than renumbering.
 
 ## Step 4 — report
 
