@@ -61,6 +61,8 @@ the resume and carry it into the Step 3 draft as part of what gets confirmed.
 uv run verticals-check
 grep -n "^  <name>:" profile/verticals.yaml
 ls -d profile/verticals/<name> 2>/dev/null
+cmp -s profile/bullets.md profile/bullets.example.md && echo "STOP: bullets.md is still the example"
+cmp -s profile/skills_master.md profile/skills_master.example.md && echo "STOP: skills_master.md is still the example"
 uv run python -c "
 import yaml; d = yaml.safe_load(open('profile/verticals.yaml'))
 print('default_vertical:', d.get('default_vertical'))
@@ -71,6 +73,11 @@ print('out_of_lane:', bool((d.get('out_of_lane') or {}).get('reasoning')))"
 
 A hit on the `grep` or the `ls` means a previous run got partway. Stop; ask
 resume vs rename.
+
+Either `STOP:` line means `onboard-scaffold` copied the template and nothing has
+authored it yet. Stop and send the user to `/onboarding step 1`. Both files parse
+fine as the example person, so drafting against them silently fills the lane's
+resume, rubric and Skills layout with someone else's evidence.
 
 Two accepted starting states:
 
