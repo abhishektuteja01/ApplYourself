@@ -68,8 +68,8 @@ cites NO-FAB and REPHRASE-LICENSE by name for the C1 path.
 
 ## Step 1 — prerequisites (one call, fail loud)
 
-`uv run apply prepare` now runs every deterministic check Step 1 used to run
-inline: `pipeline/$JOB_ID/state.yaml` exists and its state is `saved`/
+`uv run apply prepare` runs every deterministic check: `pipeline/$JOB_ID/state.yaml`
+exists and its state is `saved`/
 `tailored`, `application_answers.yaml` exists, playwright is importable —
 and derives `OUT_DIR`/`VERTICAL`/`COMPANY_ANSWERS` from state.yaml and resets
 that role's `answers_override.json` (§15: the `job_id` key binds the file to
@@ -98,6 +98,13 @@ Parse `$ARGUMENTS` for an optional `--submit` flag. Its absence means
 fill-and-stop for this role — same default as `uv run apply run` (§13: never
 a config default, always per invocation).
 
+**Submission bounds** — `--submit` is off by default; `apply run --submit`
+requires an explicit `--limit` (unless `--job-id` names one role); `--rate` is
+clamped to a 30s minimum; at most one submission per company per run. The CLI
+also prints the roles it is about to apply to and demands a typed confirmation
+unless `--yes` is passed; this command always passes `--yes`, because Step 6b
+is that confirmation.
+
 ## Step 2 — the first plan
 
 ```bash
@@ -115,7 +122,7 @@ echo "exit code: $?"
   outstanding in Tier C still needs Step 2c's self-promotion check (a role
   sitting at `saved` with nothing left to resolve is exactly the "board
   never asked for a cover letter" case, and nothing else fires that
-  transition for it). Step 2c's later steps (4, 4b, 5) are each individually
+  transition for it). Step 2c's later steps (4, 4b, 4c, 4d, 5) are each individually
   skippable and become no-ops when their pool is empty.
 
 ## Step 2c — classify Tier C, gate on cover-letter need, self-promote
@@ -501,6 +508,33 @@ resolved, or it's a non-Tier-C park this command has no business touching),
 report the remaining unmapped questions verbatim and stop. Do not open a
 browser for a role that will not submit.
 
+## Step 6b — user confirmation of the drafted answers (required)
+
+Step 6 is this command checking its own work. This step is the user checking
+it. Nothing drafted here goes out under their name unconfirmed.
+
+Show the user, in the conversation, every `"C1"`, `"C2"`, `"AUDIT"`, `"JD"`
+and `"B0-LLM"` entry this run wrote into `$OVERRIDES_FILE` — the question
+label, the field id, the tier, and the **full value verbatim**, never a
+summary or a truncation:
+
+```
+<field_id> [<tier>] — "<question label>"
+<the value, in full>
+```
+
+Then ask for explicit confirmation to proceed, and **stop and wait for the
+user's reply**.
+
+- User confirms → continue to Step 7.
+- User asks for a change → `Edit` `$OVERRIDES_FILE`, re-run Steps 5b, 5c and
+  6, then show the revised values and ask again.
+- User declines, or does not reply → stop. Report what was drafted and where
+  `$OVERRIDES_FILE` sits. Do not run Step 7 with `--submit`.
+
+If `$OVERRIDES_FILE` holds no drafted entries this run (nothing but the
+`job_id` key), there is nothing to confirm — say so and continue to Step 7.
+
 ## Step 7 — fill (and submit, if asked)
 
 ```bash
@@ -508,15 +542,44 @@ cd "$(git rev-parse --show-toplevel)"
 SUBMIT_FLAG=""
 # if --submit was in $ARGUMENTS:
 # SUBMIT_FLAG="--submit"
-uv run apply run --job-id "$1" --answers "$OVERRIDES_FILE" $SUBMIT_FLAG
+uv run apply run --job-id "$1" --answers "$OVERRIDES_FILE" --yes $SUBMIT_FLAG
 ```
 
+Only run this step once Step 6b's confirmation is in hand. `--yes` stands in
+for the CLI's own submit prompt, which this session (no tty) could not answer.
+
 Without `--submit` this fills the form and stops — the browser stays open for
-review per `apply run`'s existing behavior. With `--submit`, a successful
-click transitions the role to `applied` through `/track` automatically (R10;
-`apply_cli` never touches `state.yaml` itself). Either way a run report lands
-in `applications/apply_runs/<timestamp>.md` (§10) — read it back and surface
-its category (`submitted`/`parked`/`ready`/`failed`) to the user verbatim.
+review per `apply run`'s existing behavior. **A no-submit run is not a dry
+run: filling UPLOADS the resume and the cover letter to the ATS**
+(`src/apply/fill.py` attaches every planned file before touching any field),
+so the documents have already left the machine before any submit decision is
+made. The same holds for `uv run apply fill`. Say this to the user when they
+ask for a fill-only run.
+
+With `--submit`, a successful click transitions the role to `applied` through
+`/track` automatically (R10; `apply_cli` never touches `state.yaml` itself).
+The submission bounds in Step 1 apply. Either way a run report lands in
+`applications/apply_runs/<timestamp>.md` (§10) — read it back and surface its
+category verbatim. The report's nine categories, in `src/apply_cli.py`'s own
+order:
+
+| category | what it means |
+|---|---|
+| `submitted` | clicked, confirmed, and transitioned to `applied` |
+| `submitted_unconfirmed` | clicked, but no confirmation seen — tell the user to verify by hand |
+| `submitted_untracked` | clicked, but `state.yaml` was NOT updated |
+| `parked` | something stayed unresolved; nothing was submitted |
+| `ready` | every field resolved; rerun with `--submit` to click |
+| `manual` | no submit path for this board — apply by hand (not a failure) |
+| `skipped` | another role at this company was already submitted this run (one submission per company per run) |
+| `failed` | the fill or the submit guard refused |
+| `expired` | the posting is gone |
+
+`submitted_untracked` is reported **first and unmissably**, under the run
+report's own banner text — `SUBMITTED BUT NOT TRACKED — fix state.yaml by
+hand`. An unreported one means the role is still eligible next run and gets a
+duplicate application. `submitted_untracked` and `failed` are the two
+categories that exit non-zero.
 
 ## Step 8 — report
 
@@ -531,6 +594,10 @@ Overrides applied this run: <list of field ids resolved at C1/C2/JD/B0-LLM/AUDIT
 <if a Tier B rule was written back: "Also added a reusable rule to
 profile/application_answers.yaml for: \"<label>\"">
 ```
+
+If the category is `submitted_untracked`, lead with the report's banner —
+`SUBMITTED BUT NOT TRACKED — fix state.yaml by hand` — and name the job_id.
+If it is `submitted_unconfirmed`, tell the user to verify on the board.
 
 The overrides file at `$OVERRIDES_FILE` (`${OUT_DIR}/answers_override.json`)
 stays on disk after this run — an audit trail of what was submitted and why,

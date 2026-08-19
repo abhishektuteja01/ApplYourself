@@ -221,6 +221,77 @@ class TestRunOneNeverSubmitsByDefault:
         assert "boom" in result.submit_error
 
 
+class TestTheFillEntryPointCannotSubmit:
+    """`fill()` is the documented no-submit API surface — `apply fill` reaches
+    it and has no `--submit` in reach at all. Every other test drives
+    `fill_plan` or `run_one` directly, so the one function the narrow CLI
+    actually calls was never checked against a driver that would have
+    clicked.
+    """
+
+    def _playwright(self):
+        class Ctx:
+            pages = []
+
+            def new_page(self):
+                return object()
+
+            def close(self):
+                pass
+
+        class P:
+            chromium = type("C", (), {
+                "launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return lambda: lambda: P()
+
+    def test_a_driver_that_would_have_clicked_is_never_asked_to(self, monkeypatch):
+        driver = FakeSubmitDriver()
+        monkeypatch.setattr(F, "_require_playwright", self._playwright())
+        monkeypatch.setattr(F, "fill_plan",
+                            lambda plan, drv, answers, result=None: result)
+        monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
+
+        result = F.fill(plan())
+
+        assert driver.clicked == []
+        assert result.submitted is False
+        assert result.submit_error == ""
+
+    def test_the_same_driver_does_click_from_the_submitting_entry_point(
+        self, monkeypatch
+    ):
+        """Otherwise the test above passes because the fake never clicks."""
+        driver = FakeSubmitDriver()
+        monkeypatch.setattr(F, "_require_playwright", self._playwright())
+        monkeypatch.setattr(F, "fill_plan",
+                            lambda plan, drv, answers, result=None: result)
+        monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
+
+        result = F.run_one(plan(), submit_after=True)
+
+        assert driver.clicked == [plan().submit_selector]
+        assert result.submitted is True
+
+    def test_fill_publishes_its_result_into_the_sink_before_the_browser_opens(
+        self, monkeypatch
+    ):
+        sink: list = []
+        monkeypatch.setattr(F, "_require_playwright", self._playwright())
+        monkeypatch.setattr(F, "fill_plan",
+                            lambda plan, drv, answers, result=None: result)
+        monkeypatch.setattr(F, "_driver_for", lambda ats, page: FakeSubmitDriver())
+
+        result = F.fill(plan(), sink=sink)
+        assert sink == [result]
+
+
 class TestStaticSubmitSelectorBoundary:
     def test_submit_selector_is_touched_only_by_the_guarded_path(self):
         """`submit_selector` must not be read or clicked from any function

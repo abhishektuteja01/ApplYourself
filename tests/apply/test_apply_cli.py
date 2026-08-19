@@ -1018,3 +1018,437 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         monkeypatch.setattr(apply_cli, "run_one", interrupt)
         with pytest.raises(KeyboardInterrupt):
             apply_cli._run_role(JOB_ID, submit=True, headless=False)
+
+
+def _unmapped(field_id="why_us"):
+    from src.apply.plan import Unmapped
+    return Unmapped(id=field_id, label="Why us?", required=True, kind="textarea",
+                     section="questions", tier="C",
+                     reason="no rule matches this question")
+
+
+class TestSubmitRequiresAnExplicitBound:
+    """`--submit` with no bound walks the whole eligible queue and applies to
+    every role in it. The check runs before anything is loaded, so a mistyped
+    command cannot send a single application."""
+
+    def test_submit_without_limit_exits_1_and_opens_no_browser(
+        self, repo, monkeypatch, tmp_path, capsys
+    ):
+        repo.write_state()
+        runs = tmp_path / "apply_runs"
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", runs)
+        planned: list[str] = []
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (planned.append(job_id),
+                                                   (_fake_plan(job_id), None))[1])
+        monkeypatch.setattr(apply_cli, "run_one",
+                             _raise(AssertionError("must not open a browser")))
+
+        assert apply_cli.main(["run", "--submit"]) == 1
+        assert "--limit" in capsys.readouterr().err
+        assert planned == [], "nothing may even be fetched"
+        assert not runs.exists(), "no run was started, so no report belongs to one"
+
+    def test_without_submit_no_limit_is_needed(self, repo, monkeypatch, tmp_path):
+        # The bound is on *submitting*, not on walking. A fill-and-stop run
+        # sends nothing, so it stays unbounded.
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result())
+        assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
+
+    def test_job_id_is_exempt_because_one_named_role_is_already_a_bound(
+        self, repo, monkeypatch, tmp_path
+    ):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        seen: list = []
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: (seen.append((plan.job_id,
+                                                      kw.get("submit_after"))),
+                                          _fake_result())[1],
+        )
+        assert apply_cli.main(
+            ["run", "--submit", "--yes", "--job-id", JOB_ID, "--rate", "0s"]) == 0
+        assert seen == [(JOB_ID, True)]
+
+
+class TestTheRateFloor:
+    """A hard floor, never a config key: `--rate` paces requests at other
+    people's employer boards, so it is not the operator's to turn down."""
+
+    def test_the_floor_is_thirty_seconds(self):
+        assert apply_cli.MIN_RATE_SECONDS == 30.0
+
+    def test_zero_is_raised_to_the_floor_and_says_so(self, capsys):
+        assert apply_cli.clamp_rate(0) == 30.0
+        err = capsys.readouterr().err
+        assert "below the 30s floor" in err
+
+    def test_a_value_just_under_is_raised_too(self, capsys):
+        assert apply_cli.clamp_rate(29.9) == 30.0
+        assert "WARNING" in capsys.readouterr().err
+
+    def test_a_value_above_the_floor_is_untouched_and_silent(self, capsys):
+        assert apply_cli.clamp_rate(240.0) == 240.0
+        assert capsys.readouterr().err == ""
+
+    def test_the_floor_is_what_the_queue_walk_actually_paces_with(
+        self, repo, monkeypatch, tmp_path
+    ):
+        """Defining the clamp is not the same as wiring it in — `--rate 0s`
+        has to arrive at `run_queue` as 30, not 0."""
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        recorded: dict = {}
+
+        def record(job_ids, **kw):
+            recorded.update(kw)
+            return []
+
+        monkeypatch.setattr(apply_cli, "run_queue", record)
+        assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
+        assert recorded["rate"] == 30.0
+
+
+class TestOneSubmissionPerCompanyPerRun:
+    """Two roles at one company in one run reads to the company as a script,
+    not a candidate. The cap is on *submitting*, so the second role never
+    opens a browser at all and lands in its own report category — not
+    `failed`, which is for breakage."""
+
+    def _stub(self, monkeypatch, plan_companies):
+        opened: list[str] = []
+        monkeypatch.setattr(
+            apply_cli, "build",
+            lambda job_id, **kw: (_fake_plan(job_id,
+                                              company=plan_companies[job_id]), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: (opened.append(plan.job_id),
+                                          _fake_result(submitted=True,
+                                                       confirmed=True))[1])
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
+        return opened
+
+    def test_the_second_role_at_one_company_is_skipped_and_never_opened(
+        self, monkeypatch
+    ):
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group",
+                                           "a2": "Bushing Group",
+                                           "b1": "Gasket Works"})
+        sleeps: list[float] = []
+        out = apply_cli.run_queue(
+            ["a1", "a2", "b1"], submit=True, rate=30, jitter=0,
+            sleeper=sleeps.append, jitter_fn=lambda a, b: 0,
+            companies={"a1": "Bushing Group", "a2": "Bushing Group",
+                        "b1": "Gasket Works"},
+        )
+        assert [o.category for o in out] == ["submitted", "skipped", "submitted"]
+        assert opened == ["a1", "b1"]
+        # Only one gap: before b1. A role nothing was attempted for must not
+        # buy the next one a four-minute wait.
+        assert sleeps == [30]
+
+    def test_the_skipped_role_says_which_company_capped_it(self, monkeypatch):
+        self._stub(monkeypatch, {"a1": "Bushing Group", "a2": "Bushing Group"})
+        out = apply_cli.run_queue(
+            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            companies={"a1": "Bushing Group", "a2": "Bushing Group"},
+        )
+        assert out[1].company == "Bushing Group"
+        assert "already submitted to this company" in out[1].detail
+
+    def test_a_role_that_did_not_submit_does_not_cap_its_company(self, monkeypatch):
+        # Only a submission spends the company's one slot. A parked or failed
+        # first role must leave the second one applyable.
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        opened: list[str] = []
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: (opened.append(plan.job_id),
+                                          _fake_result(failures=["boom"]))[1])
+        out = apply_cli.run_queue(
+            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            companies={"a1": "Bushing Group", "a2": "Bushing Group"},
+        )
+        assert opened == ["a1", "a2"]
+        assert [o.category for o in out] == ["failed", "failed"]
+
+    def test_a_fill_and_stop_walk_is_not_capped(self, monkeypatch):
+        # Nothing is sent without --submit, so there is nothing to cap.
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group",
+                                           "a2": "Bushing Group"})
+        apply_cli.run_queue(
+            ["a1", "a2"], submit=False, sleeper=lambda s: None,
+            companies={"a1": "Bushing Group", "a2": "Bushing Group"},
+        )
+        assert opened == ["a1", "a2"]
+
+    def test_a_differently_spelled_company_is_still_the_same_company(
+        self, monkeypatch
+    ):
+        # state.yaml carries whatever each board called itself. Comparing the
+        # raw strings would let "Bushing Group, Inc." and "The Bushing Group
+        # LLC" both submit.
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group, Inc.",
+                                           "a2": "The Bushing Group LLC"})
+        out = apply_cli.run_queue(
+            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            companies={"a1": "Bushing Group, Inc.", "a2": "The Bushing Group LLC"},
+        )
+        assert [o.category for o in out] == ["submitted", "skipped"]
+        assert opened == ["a1"]
+
+    def test_the_plan_company_counts_even_when_the_index_carried_none(
+        self, monkeypatch
+    ):
+        # state.yaml can be missing `company:` entirely; the board's own name
+        # is only known once the plan is built. Both spellings are counted, so
+        # a blank index entry does not hand the company a second submission.
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group, Inc.",
+                                           "a2": "Bushing Group"})
+        out = apply_cli.run_queue(
+            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            companies={"a1": "", "a2": "The Bushing Group LLC"},
+        )
+        assert [o.category for o in out] == ["submitted", "skipped"]
+        assert opened == ["a1"]
+
+    def test_the_report_gives_skipped_its_own_section(self):
+        from src.apply_cli import RunOutcome
+        text = apply_cli.render_report(
+            [RunOutcome("a2", "Bushing Group", "Eng", "skipped",
+                        detail="already submitted to this company in this run")],
+            apply_cli.datetime(2026, 1, 1),
+        )
+        assert "one submission per company per run" in text
+        assert "## Failed" not in text
+
+    def test_a_skipped_role_does_not_make_the_run_exit_nonzero(self):
+        assert "skipped" not in apply_cli._EXIT_NONZERO
+
+
+class TestQueueCompanies:
+    def test_the_company_comes_from_state_yaml(self, repo):
+        repo.write_state(job_id="aaaa1111")
+        repo.write_state(job_id="bbbb2222")
+        got = apply_cli.queue_companies(["aaaa1111", "bbbb2222", "nosuchrole"],
+                                         repo.pipeline)
+        assert got == {"aaaa1111": "Bushing Group", "bbbb2222": "Bushing Group",
+                        "nosuchrole": ""}
+
+
+class TestFillRefusesAParkedRole:
+    """`apply fill` opens a real browser. A role whose plan already parks has
+    a required question nothing can answer, so the browser would only be
+    opened to show a form that cannot be completed."""
+
+    def test_a_parked_role_does_not_reach_the_browser(self, repo, monkeypatch, capsys):
+        repo.write_state()
+        monkeypatch.setattr(
+            apply_cli, "build",
+            lambda job_id, **kw: (_fake_plan(job_id, unmapped=[_unmapped()]), None))
+        monkeypatch.setattr(apply_cli, "fill",
+                             _raise(AssertionError("must not open a browser")))
+
+        assert apply_cli.main(["fill", JOB_ID]) == 1
+        out, err = capsys.readouterr()
+        assert "Refusing to open a browser" in err
+        assert "PARKED" in out, "the plan is printed so the park is legible"
+
+    def test_force_opens_it_anyway(self, repo, monkeypatch):
+        repo.write_state()
+        monkeypatch.setattr(
+            apply_cli, "build",
+            lambda job_id, **kw: (_fake_plan(job_id, unmapped=[_unmapped()]), None))
+        opened: list[str] = []
+        monkeypatch.setattr(
+            apply_cli, "fill",
+            lambda plan, answers, **kw: (opened.append(plan.job_id),
+                                          _fake_result())[1])
+        assert apply_cli.main(["fill", JOB_ID, "--force", "--headless"]) == 0
+        assert opened == [JOB_ID]
+
+    def test_an_unparked_role_needs_no_force(self, repo, monkeypatch):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        opened: list[str] = []
+        monkeypatch.setattr(
+            apply_cli, "fill",
+            lambda plan, answers, **kw: (opened.append(plan.job_id),
+                                          _fake_result())[1])
+        assert apply_cli.main(["fill", JOB_ID, "--headless"]) == 0
+        assert opened == [JOB_ID]
+
+
+class TestSubmitAsksBeforeItSends:
+    """`--submit` presses submit on someone else's employer form. Driving the
+    CLI directly used to do that unattended; now it prints what it is about to
+    send and demands a typed yes, and `--yes` is the only way past that."""
+
+    @pytest.fixture
+    def answering(self, monkeypatch):
+        """Stand in for a human at a terminal answering the prompt."""
+        def at_the_keyboard(reply, tty=True):
+            monkeypatch.setattr(apply_cli.sys.stdin, "isatty", lambda: tty,
+                                 raising=False)
+            monkeypatch.setattr("builtins.input", lambda prompt="": reply)
+        return at_the_keyboard
+
+    @pytest.fixture
+    def never_opens(self, monkeypatch, tmp_path):
+        """Every path past the gate blows up, so reaching one is a failure."""
+        runs = tmp_path / "apply_runs"
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", runs)
+        monkeypatch.setattr(apply_cli, "build",
+                             _raise(AssertionError("must not fetch a board")))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             _raise(AssertionError("must not open a browser")))
+        monkeypatch.setattr(apply_cli.track_cli, "main",
+                             _raise(AssertionError("must not write state")))
+        return runs
+
+    def _submitting(self, monkeypatch, tmp_path):
+        """Record what actually got submitted."""
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        seen: list = []
+        monkeypatch.setattr(
+            apply_cli, "run_one",
+            lambda plan, answers, **kw: (seen.append((plan.job_id,
+                                                      kw.get("submit_after"))),
+                                          _fake_result())[1])
+        return seen
+
+    @pytest.mark.parametrize("reply", ["", "   ", "n", "no", "yeah maybe", "Y E S"])
+    def test_anything_but_a_typed_yes_aborts(
+        self, repo, monkeypatch, capsys, answering, never_opens, reply
+    ):
+        repo.write_state()
+        answering(reply)
+        assert apply_cli.main(
+            ["run", "--submit", "--limit", "1", "--rate", "0s", "--jitter", "0s"]) == 1
+        assert "ABORTED" in capsys.readouterr().err
+        assert not never_opens.exists(), "an aborted run owns no report"
+
+    @pytest.mark.parametrize("reply", ["yes", "y", "YES", " yes "])
+    def test_a_typed_yes_proceeds_and_submits(
+        self, repo, monkeypatch, tmp_path, answering, reply
+    ):
+        repo.write_state()
+        seen = self._submitting(monkeypatch, tmp_path)
+        answering(reply)
+        assert apply_cli.main(
+            ["run", "--submit", "--limit", "1", "--rate", "0s"]) == 0
+        assert seen == [(JOB_ID, True)]
+
+    def test_a_non_tty_without_yes_refuses_instead_of_proceeding(
+        self, repo, monkeypatch, capsys, answering, never_opens
+    ):
+        # Fail closed: nobody can answer, so nothing may go out. `input` would
+        # raise here anyway, but the point is that it is never reached.
+        repo.write_state()
+        answering("yes", tty=False)
+        monkeypatch.setattr("builtins.input",
+                             _raise(AssertionError("must not prompt")))
+        assert apply_cli.main(
+            ["run", "--submit", "--limit", "1", "--rate", "0s", "--jitter", "0s"]) == 1
+        err = capsys.readouterr().err
+        assert "--yes" in err and "not a terminal" in err
+        assert not never_opens.exists()
+
+    def test_yes_skips_the_prompt_entirely(
+        self, repo, monkeypatch, tmp_path, answering
+    ):
+        repo.write_state()
+        seen = self._submitting(monkeypatch, tmp_path)
+        answering("no", tty=False)
+        monkeypatch.setattr("builtins.input",
+                             _raise(AssertionError("must not prompt")))
+        assert apply_cli.main(
+            ["run", "--submit", "--limit", "1", "--yes", "--rate", "0s"]) == 0
+        assert seen == [(JOB_ID, True)]
+
+    def test_a_fill_and_stop_run_is_never_gated(
+        self, repo, monkeypatch, tmp_path, answering
+    ):
+        # Nothing is sent without --submit, so there is nothing to confirm —
+        # not even on a non-tty, where the gate refuses.
+        repo.write_state()
+        seen = self._submitting(monkeypatch, tmp_path)
+        answering("no", tty=False)
+        monkeypatch.setattr("builtins.input",
+                             _raise(AssertionError("must not prompt")))
+        assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
+        assert seen == [(JOB_ID, False)]
+
+    def test_yes_without_submit_changes_nothing(self, repo, monkeypatch, tmp_path):
+        repo.write_state()
+        seen = self._submitting(monkeypatch, tmp_path)
+        assert apply_cli.main(
+            ["run", "--yes", "--rate", "0s", "--jitter", "0s"]) == 0
+        assert seen == [(JOB_ID, False)]
+
+    def _four_roles(self, repo):
+        """Four eligible roles, two of them at the same company."""
+        for job_id, company in (("aaaa1111", "Bushing Group"),
+                                 ("bbbb2222", "Bushing Group, Inc."),
+                                 ("cccc3333", "Gasket Works"),
+                                 ("dddd4444", "Sprocket Ltd")):
+            repo.write_state(job_id=job_id)
+            path = repo.pipeline / job_id / "state.yaml"
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            data["company"] = company
+            path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    def test_the_preview_is_the_queue_that_will_actually_be_walked(
+        self, repo, monkeypatch, capsys, answering, never_opens
+    ):
+        # --limit drops the fourth role; the one-per-company cap drops the
+        # second. Showing the raw queue would promise two applications that
+        # were never going to be sent.
+        self._four_roles(repo)
+        answering("no")
+        assert apply_cli.main(
+            ["run", "--submit", "--limit", "3", "--rate", "0s", "--jitter", "0s"]) == 1
+        out = capsys.readouterr().out
+        assert "About to SUBMIT 2 real application(s):" in out
+        assert "aaaa1111" in out and "cccc3333" in out
+        assert "bbbb2222" not in out, "the per-company cap drops it"
+        assert "dddd4444" not in out, "--limit drops it"
+
+    def test_the_preview_identifies_each_role(
+        self, repo, monkeypatch, capsys, answering, never_opens
+    ):
+        repo.write_state()
+        answering("no")
+        assert apply_cli.main(
+            ["run", "--submit", "--limit", "1", "--rate", "0s", "--jitter", "0s"]) == 1
+        out = capsys.readouterr().out
+        assert JOB_ID in out
+        assert "Bushing Group" in out
+        assert "Widget Engineer" in out
+        assert "greenhouse" in out
+
+    def test_the_preview_names_the_board_per_role(self, repo):
+        # A LinkedIn url is manual-apply: real, reachable, and nothing this
+        # CLI can press submit on.
+        for job_id, url in (("aaaa1111", LEVER_URL), ("bbbb2222", LINKEDIN_URL)):
+            repo.write_state(job_id=job_id, url=url)
+            path = repo.pipeline / job_id / "state.yaml"
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            data["company"] = f"Company {job_id}"
+            path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        rows = apply_cli.submission_preview(["aaaa1111", "bbbb2222"], repo.pipeline)
+        assert [r[3] for r in rows] == ["lever", "manual-apply"]

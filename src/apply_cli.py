@@ -17,11 +17,17 @@
                                     written anywhere.
   fill <job_id> [--force] [--headless] [--no-pause]
                                     fill one real form and stop; never submits.
-  run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--job-id X]
+  run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--yes] [--job-id X]
                                     walk the eligible queue (state == tailored,
                                     tailored_dirs[] non-empty). Default is
                                     fill-and-stop; --submit is required to
-                                    click. Writes
+                                    click. With --submit, --limit is required
+                                    unless --job-id names one role; the roles
+                                    to be applied to are printed and a typed
+                                    confirmation is required unless --yes is
+                                    passed; --rate is floored at 30s; and at
+                                    most one role per company is submitted per
+                                    run. Writes
                                     applications/apply_runs/<timestamp>.md.
 
 Run directly: `uv run python -m src.apply_cli plan <job_id>` or `uv run apply
@@ -53,6 +59,7 @@ from src.apply.plan import Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError
 from src.apply.domscan import DomScanError
+from src.discovery.cleaning import normalize_company
 from src.discovery.sources.ats.http import CareersError
 
 # One posting URL parser per ATS this module can submit to. `detect_ats` tries
@@ -150,9 +157,8 @@ def _playwright_available() -> bool:
 def _cmd_prepare(args: argparse.Namespace) -> int:
     """`/apply` Step 1: validate prerequisites, derive this role's
     out_dir/vertical/company_answers from state.yaml, and reset its
-    answers_override.json. Never judges (R7) — every check here is one Step 1
-    used to run inline as bash-wrapped Python; consolidated so the command
-    session issues one call instead of several.
+    answers_override.json. Never judges (R7). Consolidated into one call so
+    the command session does not issue several.
 
     Prints `key=value` lines, shell-quoted, meant for `eval` in the command
     session — not JSON, since the caller wants these straight into bash
@@ -206,7 +212,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
         candidate = APPLICATIONS / letters[-1] / "company_answers.md"
         if candidate.is_file():
             company_answers = str(candidate)
-    # A missing cover letter is NOT a hard prerequisite here. /apply's Step 2b
+    # A missing cover letter is NOT a hard prerequisite here. /apply's Step 2c
     # re-checks it against this role's actual plan, by which point it's known
     # whether any C2 question or required cover-letter upload genuinely exists.
 
@@ -559,15 +565,13 @@ def render_fill(result, plan: Plan) -> str:
 def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     """`state == tailored` with a resume on file.
 
-    A cover letter is no longer a blanket requirement here: whether one is
-    actually needed depends on what the board's form asks, which `/apply`'s
-    own plan-check (Step 2b) decides per role, before this queue is ever
-    walked. A role whose board genuinely requires a cover letter it doesn't
-    have still surfaces via `build_plan()`'s `unmapped`/`parked` outcome —
-    the same mechanism that already blocks any other missing required
-    field — rather than being pre-filtered out of the queue. Sorted by
-    job_id: the only ordering signal every eligible role is guaranteed to
-    carry, so the queue is reproducible run to run.
+    A cover letter is not required here: whether one is needed depends on what
+    the board's form asks, which `/apply`'s own plan-check (Step 2c) decides
+    per role. A role whose board requires a cover letter it doesn't have
+    surfaces via `build_plan()`'s `unmapped`/`parked` outcome, the same
+    mechanism that blocks any other missing required field. Sorted by job_id:
+    the only ordering signal every eligible role is guaranteed to carry, so
+    the queue is reproducible run to run.
 
     Defaults to the module-level `PIPELINE`, looked up at call time — a
     default *parameter value* would freeze the original `paths.PIPELINE`
@@ -584,6 +588,14 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
 _DURATION = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)?$")
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, None: 1}
 
+# Hard floor on the delay between roles, in seconds. A constant, never a config
+# key: this paces requests at third-party employer boards, so it is not the
+# operator's to turn down.
+MIN_RATE_SECONDS = 30.0
+
+# Submissions allowed per company per run.
+MAX_SUBMISSIONS_PER_COMPANY = 1
+
 
 def parse_duration(spec: str) -> float:
     """'4m' / '60s' / '90' -> seconds. Bare digits are seconds."""
@@ -594,6 +606,15 @@ def parse_duration(spec: str) -> float:
     return float(value) * _DURATION_UNITS[unit]
 
 
+def clamp_rate(seconds: float) -> float:
+    """Raise a below-floor `--rate` to `MIN_RATE_SECONDS`, warning on stderr."""
+    if seconds < MIN_RATE_SECONDS:
+        print(f"WARNING: --rate {seconds:g}s is below the {MIN_RATE_SECONDS:g}s "
+              f"floor; using {MIN_RATE_SECONDS:g}s.", file=sys.stderr)
+        return MIN_RATE_SECONDS
+    return seconds
+
+
 @dataclass(frozen=True)
 class RunOutcome:
     job_id: str
@@ -601,7 +622,7 @@ class RunOutcome:
     title: str = ""
     category: str = "failed"
     """submitted | submitted_unconfirmed | submitted_untracked | manual |
-    parked | ready | failed | expired"""
+    parked | ready | skipped | failed | expired"""
 
     detail: str = ""
     unmapped: tuple[str, ...] = dc_field(default_factory=tuple)
@@ -743,17 +764,33 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
                        detail="every field resolved; rerun with --submit to click")
 
 
+def queue_companies(job_ids: list[str], pipeline_dir: Path | None = None) -> dict[str, str]:
+    """`job_id -> company`, read from state.yaml. Empty for anything the index
+    does not carry; the per-company cap treats that as "unknown", never as a
+    match."""
+    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    return {job_id: str(idx.get(job_id, {}).get("company") or "") for job_id in job_ids}
+
+
 def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
               rate: float = 240.0, jitter: float = 60.0,
               sleeper=time.sleep, jitter_fn=random.uniform,
               answers_path: Path | None = None,
               on_outcome=None,
-              collect_into: list | None = None) -> list[RunOutcome]:
-    """Walk the queue, sleeping `rate + U(0, jitter)` seconds between roles.
+              collect_into: list | None = None,
+              companies: dict[str, str] | None = None) -> list[RunOutcome]:
+    """Walk the queue, sleeping `rate + U(0, jitter)` seconds before each
+    attempted role after the first.
 
-    `sleeper`/`jitter_fn` are injectable so tests never actually sleep or
-    depend on randomness. `answers_path` (see `_run_role`) is only meaningful
-    when `job_ids` names a single role.
+    At most `MAX_SUBMISSIONS_PER_COMPANY` role per company is submitted per
+    run: once a company's application goes out, every later role at that
+    company is reported `skipped` and never opens a browser. Only applies when
+    `submit` is set — a fill-and-stop walk sends nothing.
+
+    `companies` maps job_id to the company name the cap keys off; it defaults
+    to reading state.yaml. `sleeper`/`jitter_fn` are injectable so tests never
+    actually sleep or depend on randomness. `answers_path` (see `_run_role`) is
+    only meaningful when `job_ids` names a single role.
 
     `on_outcome` is called with the accumulated list after every role, and
     `collect_into` lets the caller own that list. Both exist for one reason:
@@ -762,11 +799,34 @@ def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
     outcome even if this function never returns.
     """
     outcomes = [] if collect_into is None else collect_into
-    for i, job_id in enumerate(job_ids):
-        if i > 0:
+    if companies is None:
+        companies = queue_companies(job_ids) if submit else {}
+    submitted_per_company: dict[str, int] = {}
+    attempted = 0
+    for job_id in job_ids:
+        known = companies.get(job_id, "")
+        key = normalize_company(known)
+        if submit and key and submitted_per_company.get(key, 0) >= MAX_SUBMISSIONS_PER_COMPANY:
+            outcomes.append(RunOutcome(
+                job_id, known, "", "skipped",
+                detail=f"{known}: already submitted to this company in this run",
+            ))
+            if on_outcome is not None:
+                on_outcome(outcomes)
+            continue
+
+        if attempted:
             sleeper(rate + jitter_fn(0, jitter))
-        outcomes.append(_run_role(job_id, submit=submit, headless=headless,
-                                   answers_path=answers_path))
+        attempted += 1
+        outcome = _run_role(job_id, submit=submit, headless=headless,
+                             answers_path=answers_path)
+        outcomes.append(outcome)
+        if outcome.category.startswith("submitted"):
+            # Count both names: the plan's is what actually went out, the
+            # index's is what the next role will be checked against.
+            for counted in {normalize_company(outcome.company), key} - {""}:
+                submitted_per_company[counted] = \
+                    submitted_per_company.get(counted, 0) + 1
         if on_outcome is not None:
             on_outcome(outcomes)
     return outcomes
@@ -776,7 +836,7 @@ def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
 
 
 _CATEGORY_ORDER = ("submitted", "submitted_unconfirmed", "submitted_untracked",
-                    "parked", "ready", "manual", "failed", "expired")
+                    "parked", "ready", "manual", "skipped", "failed", "expired")
 _CATEGORY_TITLE = {
     "submitted": "Submitted",
     "submitted_unconfirmed": "Submitted (no confirmation seen — verify by hand)",
@@ -784,6 +844,7 @@ _CATEGORY_TITLE = {
     "parked": "Parked",
     "ready": "Ready (not submitted)",
     "manual": "Manual-apply (no submit path for this board)",
+    "skipped": "Skipped (one submission per company per run)",
     "failed": "Failed",
     "expired": "Expired postings",
 }
@@ -835,11 +896,9 @@ def write_report(outcomes: list[RunOutcome], started_at: datetime,
 def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Path:
     """A report path no existing run owns.
 
-    Two runs starting in the same second used to land on the same filename and
-    the second silently overwrote the first — and this file is the only record
-    of what went out. Reserved once per run and then re-written per role, so
-    the crash-survival writes keep hitting the same file rather than racing
-    each other into new ones.
+    This file is the only record of what went out, so two runs starting in the
+    same second must not share a name. Reserved once per run and re-written
+    per role, so the crash-survival writes keep hitting the same file.
     """
     out_dir = out_dir if out_dir is not None else APPLY_RUNS
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -852,7 +911,76 @@ def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Pa
     return path
 
 
+def submission_preview(job_ids: list[str],
+                        pipeline_dir: Path | None = None) -> list[tuple[str, str, str, str]]:
+    """One `(job_id, company, title, board)` row per role `--submit` would
+    actually apply to, in queue order.
+
+    `MAX_SUBMISSIONS_PER_COMPANY` is applied here the same way `run_queue`
+    applies it, so what the confirmation prompt shows is what the walk does.
+    Reads state.yaml and clean.parquet only — no network, no browser.
+    """
+    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    rows: list[tuple[str, str, str, str]] = []
+    counted: dict[str, int] = {}
+    for job_id in job_ids:
+        state = idx.get(job_id, {}) or {}
+        company = str(state.get("company") or "")
+        key = normalize_company(company)
+        if key and counted.get(key, 0) >= MAX_SUBMISSIONS_PER_COMPANY:
+            continue
+        if key:
+            counted[key] = counted.get(key, 0) + 1
+        try:
+            board = detect_ats(resolve_url(job_id, state)) or "unknown board"
+        except ApplyCliError:
+            board = "manual-apply"
+        rows.append((job_id, company, str(state.get("title") or ""), board))
+    return rows
+
+
+# What counts as a typed yes. Anything else — a bare Enter, an empty string,
+# "n", a typo — aborts.
+_CONFIRM_YES = ("y", "yes")
+
+
+def confirm_submission(job_ids: list[str]) -> int:
+    """Print the roles `--submit` will apply to, then require a typed yes.
+
+    Returns 0 to proceed and 1 to abort. Called before a browser opens and
+    before any state is written, so an abort sends nothing. A non-tty stdin
+    fails closed: nobody can answer, so it refuses rather than proceeding.
+    """
+    rows = submission_preview(job_ids)
+    print(f"About to SUBMIT {len(rows)} real application(s):")
+    for job_id, company, title, board in rows:
+        who = f"{company} — {title}".strip(" —") or "(unknown role)"
+        print(f"  {job_id}  {who}  [{board}]")
+
+    if not sys.stdin.isatty():
+        print("ERROR: --submit needs confirmation and stdin is not a terminal. "
+              "Pass --yes to confirm when running non-interactively.",
+              file=sys.stderr)
+        return 1
+    try:
+        reply = input("\nType 'yes' to submit these applications: ")
+    except EOFError:
+        reply = ""
+    if reply.strip().lower() not in _CONFIRM_YES:
+        print("ABORTED: nothing submitted.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
+    # Checked before anything opens a browser. --job-id is exempt: one named
+    # role is already a bound of one.
+    if args.submit and args.limit is None and not args.job_id:
+        print("ERROR: --submit requires an explicit --limit (or --job-id for a "
+              "single role). Without it this walks the entire eligible queue "
+              "and applies to every role in it.", file=sys.stderr)
+        return 1
+
     if args.answers and not args.job_id:
         print("ERROR: --answers only applies to a single role — pass --job-id",
               file=sys.stderr)
@@ -878,8 +1006,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
               "tailored_dirs[] non-empty.")
         return 0
 
+    if args.submit and not args.yes:
+        rc = confirm_submission(queue)
+        if rc:
+            return rc
+
     try:
-        rate = parse_duration(args.rate)
+        rate = clamp_rate(parse_duration(args.rate))
         jitter = parse_duration(args.jitter)
     except ApplyCliError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -943,11 +1076,17 @@ def main(argv: list[str] | None = None) -> int:
     f.set_defaults(func=_cmd_fill)
 
     r = sub.add_parser("run", help="walk the eligible queue")
-    r.add_argument("--limit", type=int, default=None)
-    r.add_argument("--rate", default="4m", help="delay between roles, e.g. '4m'")
+    r.add_argument("--limit", type=int, default=None,
+                   help="most roles to walk; required with --submit unless --job-id")
+    r.add_argument("--rate", default="4m",
+                   help=f"delay between roles, e.g. '4m'; floored at "
+                        f"{MIN_RATE_SECONDS:g}s")
     r.add_argument("--jitter", default="60s", help="added on top of --rate, uniformly")
     r.add_argument("--submit", action="store_true",
                    help="click submit on every role that resolves; default is fill-and-stop")
+    r.add_argument("--yes", action="store_true",
+                   help="skip the --submit confirmation prompt; required to "
+                        "submit when stdin is not a terminal")
     r.add_argument("--job-id", default=None, help="run one specific role instead of the queue")
     r.add_argument("--answers", default=None, type=Path,
                    help="/apply's per-run Tier C overrides JSON (§15); requires --job-id")

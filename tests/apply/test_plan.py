@@ -661,7 +661,7 @@ class TestMissingArtifacts:
     ):
         # No cover_letter field at all, and no C-tier company/motivational
         # question either -- the "genuinely doesn't need one" case /apply's
-        # Step 2b relies on to skip /cover-letter and self-promote.
+        # Step 2c relies on to skip /cover-letter and self-promote.
         out = tmp_path / "empty"
         out.mkdir()
         (out / "Alex_Example_Resume.pdf").write_bytes(b"x")
