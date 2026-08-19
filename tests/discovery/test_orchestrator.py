@@ -135,6 +135,66 @@ def test_zero_rows_writes_audit_parquet(tmp_path, monkeypatch):
     assert "title" in df.columns
     assert "scraped_date" in df.columns
 
+class _AllRequestsFailedSource:
+    """Mirrors what Workday looked like on 2026-08-10: every request errored,
+    zero rows kept, but universe.update_health only strikes on a *permanent*
+    failure — so nothing above trace level flagged a wholesale outage."""
+    name = "workday"
+    def fetch(self, ctx):
+        return SourceResult([], [], ["Cog Industries [Cog Engineer]: HTTP 400: https://x"] * 5)
+
+def test_zero_rows_with_errors_logs_a_warning(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(orchestrator, "JOBS_RAW", tmp_path / "jobs" / "raw")
+    monkeypatch.setattr(orchestrator, "JOBS_RUNS", tmp_path / "jobs" / "runs")
+    monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
+
+    class MockSourceConfig:
+        enabled = True
+        pacing_seconds = 0
+
+    class MockConfig:
+        deadline_hours = 6.0
+        sources = {"workday": MockSourceConfig()}
+        location_allowlist = None
+        raw_retention_days = 30
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_AllRequestsFailedSource()])
+
+    with caplog.at_level("WARNING"):
+        main([])
+
+    assert any(
+        "workday" in r.message and "0 rows kept despite 5 error" in r.message
+        for r in caplog.records
+    )
+
+def test_zero_rows_with_no_errors_does_not_warn(tmp_path, monkeypatch, caplog):
+    """An empty crawl (nothing matched) must not be confused with a broken
+    one (everything errored) — no errors means no warning."""
+    monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(orchestrator, "JOBS_RAW", tmp_path / "jobs" / "raw")
+    monkeypatch.setattr(orchestrator, "JOBS_RUNS", tmp_path / "jobs" / "runs")
+    monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
+
+    monkeypatch.setattr("src.discovery.inbox.INBOX", tmp_path / "inbox")
+
+    class MockConfig:
+        deadline_hours = 6.0
+        sources = {}
+        location_allowlist = None
+        raw_retention_days = 30
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+
+    with caplog.at_level("WARNING"):
+        main([])
+
+    assert not any("0 rows kept despite" in r.message for r in caplog.records)
+
 # ---------------------------------------------------------------------
 # The finally-block cleaning guarantee + the mid-loop deadline break
 # ---------------------------------------------------------------------
@@ -511,3 +571,166 @@ def test_inbox_runs_to_completion_before_any_lane_starts(paths, monkeypatch):
     main([])
 
     assert order[:2] == ["manual-start", "manual-end"]
+
+
+# --- runtime override flags -------------------------------------------------
+
+
+class _CtxRecordingSource(_NamedSource):
+    """Keeps the Context it was handed so a test can read the run's effective
+    config without reaching into orchestrator internals."""
+
+    def __init__(self, name, rows=0):
+        super().__init__(name, rows=rows)
+        self.ctx = None
+
+    def fetch(self, ctx):
+        self.ctx = ctx
+        return super().fetch(ctx)
+
+
+def _override_setup(monkeypatch, config, names=("manual", "linkedin", "indeed")):
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: config)
+    sources = [_CtxRecordingSource(n) for n in names]
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: sources)
+    _spy_cleaning(monkeypatch)
+    return {s.name: s for s in sources}
+
+
+def test_deadline_hours_flag_overrides_the_config_value(paths, monkeypatch):
+    import time
+
+    srcs = _override_setup(monkeypatch, _mock_config(deadline_hours=6.0, linkedin=1))
+
+    main(["--deadline-hours", "0.5"])
+
+    assert srcs["linkedin"].ctx.config.deadline_hours == 0.5
+    # A live 0.5h budget, not the config's 6h one.
+    assert srcs["linkedin"].ctx.deadline_ts == pytest.approx(time.time() + 1800, abs=60)
+
+
+def test_deadline_hours_zero_flag_is_still_the_kill_switch(paths, monkeypatch):
+    """0 must stay the scrape-nothing switch, not become a rejected value."""
+    srcs = _override_setup(monkeypatch, _mock_config(deadline_hours=6.0, linkedin=1))
+
+    main(["--deadline-hours", "0"])
+
+    assert all(s.calls == 0 for s in srcs.values())
+    assert list((paths / "jobs" / "raw").glob("*.parquet")) == []
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "**deadline_hours == 0**" in report
+
+
+def test_negative_deadline_hours_is_rejected(paths, monkeypatch):
+    with pytest.raises(SystemExit) as e:
+        main(["--deadline-hours", "-1"])
+    assert e.value.code != 0
+
+
+def test_source_flag_runs_only_the_named_source(paths, monkeypatch):
+    srcs = _override_setup(monkeypatch, _mock_config(linkedin=1, indeed=1))
+
+    main(["--source", "indeed"])
+
+    assert srcs["indeed"].calls == 1
+    assert srcs["linkedin"].calls == 0
+    # Exhaustive: manual is excluded too, so a narrowed run cannot consume clips.
+    assert srcs["manual"].calls == 0
+    shards = sorted(p.name.split("_", 2)[-1] for p in (paths / "jobs" / "raw").glob("*.parquet"))
+    assert shards == ["indeed.parquet"]
+
+
+def test_source_flag_is_repeatable_and_keeps_report_order(paths, monkeypatch):
+    srcs = _override_setup(monkeypatch, _mock_config(linkedin=1, indeed=1))
+
+    main(["--source", "indeed", "--source", "manual"])
+
+    assert srcs["indeed"].calls == 1 and srcs["manual"].calls == 1
+    assert srcs["linkedin"].calls == 0
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert report.index("### Source: manual") < report.index("### Source: indeed")
+
+
+def test_source_flag_beats_a_disabled_config_flag(paths, monkeypatch):
+    class _Off:
+        enabled = False
+        pacing_seconds = 0
+
+    config = _mock_config(linkedin=1)
+    config.sources = {"linkedin": _Off(), "indeed": _Off()}
+    srcs = _override_setup(monkeypatch, config)
+
+    main(["--source", "linkedin"])
+
+    assert srcs["linkedin"].calls == 1
+    assert srcs["indeed"].calls == 0
+
+
+def test_unknown_source_exits_nonzero_with_the_valid_list(paths, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["--source", "monster"])
+    assert e.value.code != 0
+    message = str(e.value.code)
+    assert "monster" in message
+    for name in orchestrator.SOURCE_NAMES:
+        assert name in message
+
+
+def test_max_terms_truncates_without_reordering(paths, monkeypatch, cfg):
+    srcs = _override_setup(monkeypatch, _mock_config(linkedin=1))
+
+    main(["--max-terms", "2"])
+
+    seen = srcs["linkedin"].ctx.verticals
+    for name, vertical in cfg.verticals.items():
+        assert seen.verticals[name].search_terms == vertical.search_terms[:2]
+        assert seen.verticals[name].linkedin_terms == vertical.linkedin_terms[:2]
+    # The real config object is untouched: the cap is a copy.
+    assert len(cfg.verticals["example_primary"].search_terms) > 2
+
+
+def test_max_terms_below_one_is_rejected(paths, monkeypatch):
+    with pytest.raises(SystemExit) as e:
+        main(["--max-terms", "0"])
+    assert e.value.code != 0
+
+
+def test_no_override_flags_changes_nothing(paths, monkeypatch, cfg):
+    srcs = _override_setup(monkeypatch, _mock_config(deadline_hours=6.0, linkedin=1, indeed=1))
+
+    main([])
+
+    ctx = srcs["linkedin"].ctx
+    assert ctx.config.deadline_hours == 6.0
+    assert ctx.verticals is cfg
+    # manual plus every enabled source, exactly as before the flags existed.
+    assert all(s.calls == 1 for s in srcs.values())
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "Run overrides" not in report
+
+
+def test_the_report_names_the_overrides(paths, monkeypatch):
+    _override_setup(monkeypatch, _mock_config(linkedin=1, indeed=1))
+
+    main(["--deadline-hours", "0.5", "--source", "indeed", "--max-terms", "2"])
+
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "Run overrides" in report
+    assert "--deadline-hours 0.5" in report
+    assert "--source indeed" in report
+    assert "--max-terms 2" in report
+
+
+def test_a_resumed_run_records_its_own_overrides(paths, monkeypatch):
+    """The override line sits after the preamble, so it is appended on resume
+    instead of being lost with the rest of the header."""
+    _override_setup(monkeypatch, _mock_config(linkedin=1, indeed=1))
+    run_id = "2026-01-01_0000"
+    (paths / "jobs" / "runs").mkdir(parents=True)
+    (paths / "jobs" / "runs" / f"{run_id}.md").write_text("# Run existing\n", encoding="utf-8")
+
+    main(["--resume", run_id, "--source", "indeed"])
+
+    report = (paths / "jobs" / "runs" / f"{run_id}.md").read_text(encoding="utf-8")
+    assert "# Run existing" in report
+    assert "Run overrides: `--source indeed`" in report

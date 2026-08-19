@@ -23,6 +23,60 @@ class LocationAllowlist:
     countries: list[str] = field(default_factory=list)
     states: list[str] = field(default_factory=list)
     cities: list[str] = field(default_factory=list)
+    # Optional shorthand: "Europe" expands to every European country at
+    # compare time instead of the user typing ~44 country names by hand.
+    # Purely additive -- existing countries-only configs are unaffected.
+    continents: list[str] = field(default_factory=list)
+
+    def effective_countries(self) -> set[str]:
+        """`countries` plus whatever `continents` expands to, normalized to
+        the canonical names `location.parse_location` returns."""
+        from src.discovery import location  # local import: avoid a hard
+        # dependency on libpostal's system library for callers that never
+        # touch location filtering (e.g. pure config validation/tests).
+
+        result = {location.COUNTRY_NAMES.get(location._fold(c), c) for c in self.countries}
+        for continent in self.continents:
+            result |= set(location.CONTINENT_TO_COUNTRIES.get(continent, []))
+
+        if not result and self.states:
+            # A states-only allowlist ("just TX") with no countries/continents
+            # configured still needs a country floor: without one, a row that
+            # only resolves to a bare country ("Canada", no state text) has
+            # no `parsed.state` for the states check to test and slips through
+            # unfiltered. Scope it to whichever countries the configured
+            # states actually belong to.
+            for s in self.states:
+                subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(s), [])
+                if not subs:
+                    subs = location.SUBDIVISIONS_BY_CODE.get(s.strip().upper(), [])
+                result |= {location.CC_TO_COUNTRY.get(sub.country_code, "") for sub in subs}
+            result.discard("")
+
+        return result
+
+    def effective_states(self) -> set[str]:
+        """`states` normalized to the 2-letter subdivision codes
+        `location.parse_location` returns, accepting either a full name
+        ("Texas") or a code ("TX") -- full names used to be a silent no-op
+        because the parser only ever produced codes."""
+        from src.discovery import location
+
+        result = set()
+        for s in self.states:
+            subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(s), [])
+            if subs:
+                # A name that collides across countries (e.g. "Santa Cruz")
+                # can't be narrowed here -- there's no sibling country to
+                # check against, unlike the parser's own use of this table.
+                # Accept any of them; membership is still exact-code matched
+                # per row downstream, so this only ever widens the allowlist
+                # to cover every country that name could mean, never the
+                # wrong single one.
+                result.update(sub.code.split("-", 1)[-1] for sub in subs)
+            else:
+                result.add(s.strip())
+        return result
 
 @dataclass
 class DiscoveryConfig:
@@ -35,6 +89,7 @@ class DiscoveryConfig:
         "greenhouse": SourceConfig(True, 1.0),
         "lever": SourceConfig(True, 1.0),
         "ashby": SourceConfig(True, 2.0),
+        "workday": SourceConfig(True, 2.0),
     })
     raw_retention_days: int = 30
 
@@ -67,7 +122,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     cfg.schema_version = _SCHEMA_VERSION
 
     if "sources" in data:
-        allowed_sources = {"linkedin", "indeed", "greenhouse", "lever", "ashby"}
+        allowed_sources = {"linkedin", "indeed", "greenhouse", "lever", "ashby", "workday"}
         for k, v in data["sources"].items():
             if k not in allowed_sources:
                 raise ValueError(f"Unknown source key: {k}")
@@ -82,6 +137,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
             countries=loc.get("countries", []),
             states=loc.get("states", []),
             cities=loc.get("cities", []),
+            continents=loc.get("continents", []),
         )
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))

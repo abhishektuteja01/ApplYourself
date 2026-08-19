@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 
 from src import verticals
+from src.apply.detect import is_auto_submittable
 from src.parquet_io import write_parquet
 from src.scoring_io import SUBSCORE_AXES, to_jsonable
 from src.state_io import load_state_index
@@ -171,10 +172,19 @@ def render_shortlist_markdown(
             assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
             status = row["application_status"] if row.get("already_seen") else "new"
             kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
+            # Derived from the URL, not `source`: Workday rows often arrive
+            # labelled "indeed", and LinkedIn/Indeed/Ashby rows are
+            # manual-apply too. §12c puts all of them in the same
+            # manual-apply category, so the same predicate the queue uses
+            # decides it here.
+            manual_apply = (
+                "" if is_auto_submittable(row.get("url"))
+                else " — **manual-apply, not auto-submittable**"
+            )
             lines.append(
                 f"### {i}. {row['fit_score']} — {row['company']} — {row['title']}\n"
                 f"- **job_id:** `{row['job_id']}`\n"
-                f"- **location:** {row['location']} · **source:** {row['source']} "
+                f"- **location:** {row['location']} · **source:** {row['source']}{manual_apply} "
                 f"· **posted:** {row['posted_date']}\n"
                 f"- **fit:** {row['fit_score']} (title {sub['title']} / skills {sub['skills']} "
                 f"/ seniority {sub['seniority']} / domain {sub['domain']})\n"

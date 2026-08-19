@@ -1,0 +1,188 @@
+# TEMPLATE — copy to profile/application_answers.yaml and replace every value.
+#
+# What /apply fills a board's application form with. Read by src/apply/answers.py.
+#
+# DO NOT COMMIT YOUR FILLED COPY. profile/* is gitignored by default, and this
+# file holds your email and phone — the exact strings profile/pii_denylist.txt
+# should already carry.
+#
+# Everything submitted under your name comes from here. There is no fallback
+# and no guess: a field this file cannot answer parks the role for you to
+# handle by hand.
+
+schema_version: 1
+
+identity:
+  first_name: "Alex"
+  last_name: "Example"
+  preferred_name: "Alex"        # repeat first_name if you have no other
+  email: "alex@example.com"
+  phone: "+1 555 0100"
+  location: "Exampletown, Example State, United States"
+  country: "United States"
+
+# Answers the two questions almost every board asks, and nothing else.
+#   citizen_or_pr         authorized now, will never need sponsorship
+#   needs_sponsorship_now not authorized yet, needs sponsorship from day one
+#   time_limited          authorized now (F-1 OPT, STEM extension, ...),
+#                         will need sponsorship later
+#
+# The loader cross-checks this against the "## Work authorization" section of
+# profile/preferences.md and refuses to run if the two disagree, or if that
+# section states no status. This is a legal claim sent under your name, so it
+# is not a keyword rule and cannot be overridden by one.
+# scope_qualified_answer settles the *other* authorization question boards ask:
+# not "may you work here" but "may you work here permanently / for any employer
+# / without sponsorship". `status` cannot answer that — for time_limited it is
+# Yes to the first question and No to the second — and guessing it either way
+# sends a false statement under your name, so /apply parks these by default.
+#
+#   park  (default)  hand every such question back to you. They resolve at tier
+#                    B0, which the /apply session cannot override, so a parked
+#                    one means finishing that form by hand.
+#   "no"             the usual answer for time_limited and needs_sponsorship_now
+#   "yes"            you are unrestricted despite not being a citizen/PR
+#
+# Quote the value. Unquoted `no` is a YAML boolean and the loader refuses it
+# rather than guessing what you meant.
+#
+# This governs qualified questions only. A plain "are you authorized to work in
+# the US?" is still answered from `status`. Questions that offer the qualifier
+# as one option among several ("on a permanent or temporary basis", "with or
+# without sponsorship") stay parked whatever you set, because there the narrow
+# reading is not what is being asked.
+# `status_label` and `status_option_candidates` answer the other shape of
+# work-auth question: the ones that ask WHICH status you hold rather than yes/no.
+# "Work Authorization status (US Citizen, Green Card Holder, etc.)" as free text,
+# or a picker offering [None, US Citizen, Permanent Resident, H1, H4, F1, TN].
+# `status` cannot answer those — it groups OPT, H-1B and TN into one bucket and
+# cannot say which applies to you. Leave either one out and those questions park.
+#
+#   status_label              free text, written verbatim into a text box
+#   status_option_candidates  option spellings that are TRUE of you, in
+#                             preference order, for a picker
+#
+# Candidates are matched by exact option text, so an entry no board offers simply
+# never fires and the question parks — the failure mode is a park, never a wrong
+# claim. Add the real option text as you meet boards that ask.
+#
+# Order them narrowest-true-first. "F1" is true whether or not a STEM extension
+# has started; "STEM OPT" asserts it has. Put the one you can always stand behind
+# ahead of the more specific one.
+#
+# `nationality` answers a DIFFERENT question from everything above: not your
+# visa status, but the country itself ("What is your nationality?", "Country
+# of origin", "Please select the country you hold citizenship in"). Leave it
+# unset and those questions park — this is never guessed. It also drives
+# region/country yes-no questions ("Are you a citizen of a country in the
+# EU/EFTA?", "Are you currently a <demonym> citizen?"), answered against a
+# small built-in region/demonym table that is extended one entry at a time as
+# real boards surface a country or region it doesn't yet cover.
+# `second_nationality` answers a SECOND citizenship question ("if you hold
+# citizenship in a second country, select it, otherwise select None") — left
+# unset, that answers "None"/"No" rather than parking, since holding no
+# second nationality is itself a statable fact.
+work_authorization:
+  status: time_limited
+  scope_qualified_answer: park
+  # us_person_answer settles a DIFFERENT question from the above: not "may you
+  # work here" but "are you a U.S. person" as export-control rules (ITAR/EAR)
+  # define it -- citizen, permanent resident, refugee or asylee. A time-limited
+  # status (F-1 OPT, H-1B, ...) is authorized to work and is NOT a U.S. person.
+  # "park" (the default) always hands this to you -- it is a legal
+  # declaration, not a keyword rule, and a wrong answer has consequences past
+  # this application. Quote "yes"/"no" if you set it; a bare yes/no is a YAML
+  # boolean and the loader refuses it.
+  us_person_answer: park
+  # status_label: "F-1 STEM OPT"
+  # status_option_candidates:
+  #   - "F1"
+  #   - "STEM OPT"
+  #   - "I am authorized to work in the United States for any employer"
+  #   - "Yes, and I am currently in F-1 status (if you currently have OPT or STEM-EXT OPT or CPT, you will select this answer.)"
+  # nationality: "<the country you hold citizenship in>"
+  # second_nationality: "<a second country, if you hold one>"
+  # sponsorship_followup_text: "Currently authorized to work under F-1 STEM OPT; will require H-1B sponsorship upon its expiration."
+
+# Greenhouse renders an education block that appears in no question array. It
+# fills school--0 / degree--0 / discipline--0 / start-year--0 / end-year--0,
+# and start-month--0 / end-month--0 where the board asks for them. Everything
+# except the years is a react-select over a large remote taxonomy, so the
+# strings have to match an option it offers — /apply asserts the selection
+# stuck and parks the role if it did not.
+education:
+  school: "Example University"
+  degree: "Bachelor's Degree"
+  discipline: "Industrial Engineering"
+  start_year: 2019
+  end_year: 2022
+  # start_month: "September"
+  # end_month: "December"
+
+# Rare (1 in 60 boards) but required wherever it renders. Your current or most
+# recent role, one entry. Delete the block if you would rather park those roles
+# than answer them.
+employment:
+  company_name: "Widget Corp"
+  title: "Widget Operations Analyst"
+  start_month: "January"
+  start_year: 2023
+  end_month: "June"
+  end_year: 2025
+  current_role: false
+
+# Everything the employer wrote themselves. Matching is: normalize the question
+# label (casefold, drop punctuation), then test each keyword as a substring.
+# First rule wins, so the file order is the precedence.
+#
+# `answer` may be one string or a list tried in order. Use a list for anything
+# the board renders as a dropdown: the option labels are written per employer
+# and no single string hits them all. "How did you hear about this job" came
+# back with eight disjoint option sets across eight sampled boards.
+#
+# A rule that answers nothing the board offers parks the role rather than
+# picking something close.
+#
+# Use `exact:` instead of `match:` when the label is too short to keyword
+# safely — it compares the whole normalized label. "State" is a required
+# dropdown on 3 of 39 sampled boards, and a `state` substring also matches
+# "United States" and "please state their name". A rule may carry both.
+rules:
+  - match: [linkedin]
+    answer: "https://linkedin.com/in/example"
+  - match: [github]
+    answer: "https://github.com/example"
+  - match: [website, portfolio, personal site]
+    answer: "https://example.com"
+  - match: [salary, compensation, desired rate of pay, pay expectation]
+    answer: "Open — targeting market rate for the level."
+  - match: [start date, when can you start, earliest availability, notice period]
+    answer: "Two weeks from offer."
+  # Keep these narrow. A keyword like "referred by" also matches "If referred
+  # by a current employee, please list their name", which is free text.
+  - match: [how did you hear, how did you learn, become aware]
+    answer: ["Careers Page", "Company Website", "Other Job Board", "Other"]
+  - match: [relocate]
+    answer: ["Yes"]
+  - match: [pronouns]
+    answer: ["They/Them"]
+  # Recurring screeners. Read the real option strings off a live form before
+  # writing one of these — "Do you hold a security clearance?" is Yes/No, but
+  # "CLEARANCE ELIGIBILITY" offers three prose options.
+  - match: [at least 18]
+    answer: ["Yes"]
+  # Whole-label rules, for labels a substring keyword cannot target safely.
+  - exact: [state]
+    answer: ["Example State"]
+  # Only write this one if you actually hold the role now. The employment block
+  # above sets current_role: false, so this persona has no current employer and
+  # asserting one here would be a false statement — leave it commented and let
+  # the question park.
+  # - exact: [current company, current employer]
+  #   answer: "Widget Corp"
+
+# No rules for gender, race, veteran or disability status: those are the EEOC
+# and demographic blocks, and /apply opts out of every one of them structurally.
+#
+# No rules for sponsorship, visas or work authorization either — the loader
+# rejects those keywords. See work_authorization above.

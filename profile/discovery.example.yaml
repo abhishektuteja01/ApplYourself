@@ -4,8 +4,10 @@ schema_version: 1
 deadline_hours: 4
 location_allowlist:
   countries: ["United States"]
-  # states: ["TX", "NY"]      # optional narrowing; empty/absent = all states
+  # states: ["Texas", "NY"]   # optional narrowing; full name or code, either works
   # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
+  # continents: ["Europe"]    # optional shorthand: expands to every country on
+  #                           # the continent, unioned with `countries` above
 # Every source the loader accepts. An omitted key falls back to the code default
 # in src/discovery/config.py, so list them all to stay explicit.
 sources:
@@ -14,4 +16,5 @@ sources:
   greenhouse:    {enabled: true,  pacing_seconds: 1}
   lever:         {enabled: true,  pacing_seconds: 1}
   ashby:         {enabled: true,  pacing_seconds: 2}
+  workday:       {enabled: true,  pacing_seconds: 2}
 raw_retention_days: 30

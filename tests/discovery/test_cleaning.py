@@ -532,7 +532,7 @@ def test_project_raw_never_overrides_discovery_set_vertical():
     ("Sprocket Compliance Analyst", "example_secondary"),
     # tertiary's signals, leading and trailing
     ("Cog Engineer", "example_tertiary"),
-    ("Forward Deployed Engineer", "example_tertiary"),
+    ("Cog Deployment Engineer", "example_tertiary"),
     ("Software Engineer - Applied Cog", "example_tertiary"),
     # ORDER: primary's strong rule is first, so it wins over a secondary word
     ("Widget Sprocket Risk Analyst", "example_primary"),
@@ -963,6 +963,84 @@ def test_location_filter_drops_bare_foreign_cities():
     assert locs["kept_namesake"] == "Paris, TX"  # US namesake, not dropped
 
 
+def test_location_filter_drops_same_string_us_city_foreign_country_collisions():
+    # Regression at the exact layer the real leak (job_id 35a899e2, "Central
+    # Jakarta") happened: a small US town sharing a name with a foreign
+    # capital used to collapse the parse to unresolved and get kept past
+    # the allowlist. "Rome"/"Athens" are both real, if tiny, US cities.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["United States"])
+    )
+    df = pd.DataFrame({
+        "job_id": ["drop_rome", "drop_athens", "drop_jakarta"],
+        "location": ["Rome, Italy", "Athens, Greece", "Central Jakarta"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert len(out) == 0
+
+
+def test_location_filter_works_symmetrically_for_a_non_us_allowlist():
+    # No country is privileged in location.py itself -- an India-based
+    # user's allowlist gets the same quality of protection a US-based
+    # user's does, including the "don't guess a multi-region ambiguity"
+    # keep-for-review behavior.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["India"])
+    )
+    df = pd.DataFrame({
+        "job_id": ["kept_bangalore", "kept_mumbai", "drop_austin", "kept_ambiguous"],
+        "location": ["Bengaluru, India", "Mumbai, Maharashtra", "Austin, TX",
+                     "Bengaluru, London or New York"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"kept_bangalore", "kept_mumbai", "kept_ambiguous"}
+
+
+def test_location_filter_accepts_a_full_state_name_in_the_allowlist():
+    # Used to be a silent no-op: parse_location only ever produced a
+    # 2-letter code, so an allowlist entry of "Texas" (rather than "TX")
+    # never matched anything.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(
+            countries=["United States"], states=["Texas"],
+        )
+    )
+    df = pd.DataFrame({
+        "job_id": ["kept_austin", "drop_boston"],
+        "location": ["Austin, TX", "Boston, MA"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"kept_austin"}
+
+
+def test_location_filter_continents_shorthand():
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(continents=["Europe"])
+    )
+    df = pd.DataFrame({
+        "job_id": ["kept_berlin", "kept_lisbon", "drop_austin"],
+        "location": ["Berlin, Germany", "Lisbon, Portugal", "Austin, TX"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"kept_berlin", "kept_lisbon"}
+
+
 def test_out_of_allowlist_rows_never_enter_the_seen_ledger(tmp_path, monkeypatch):
     """The location filter runs before the seen-ledger. Otherwise a foreign row
     gets first_seen stamped while invisible, and widening the allowlist surfaces
@@ -1181,7 +1259,7 @@ def test_title_inclusion_gate_tertiary(cfg):
     from src.discovery.cleaning import apply_title_exclusion
     import pandas as pd
 
-    keep = ["Cog Engineer", "Applied Cog Engineer", "Agentic Cog Engineer"]
+    keep = ["Cog Engineer", "Applied Cog Engineer", "Flywheel Cog Engineer"]
     drop = [
         "Backend Engineer, Payments",       # no include term
         "Data Engineer",

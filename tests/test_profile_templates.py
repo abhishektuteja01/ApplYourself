@@ -44,15 +44,36 @@ _TEMPLATE_SUFFIXES = {
 }
 
 
+_BINARY_SUFFIXES = {".pyc", ".pyo", ".so", ".docx", ".png", ".jpg", ".pdf"}
+
+
+def _text_files(root: Path) -> list[Path]:
+    """Every readable text file under `root`, recursively and regardless of
+    extension. `.githooks/pre-push` has no suffix and `scripts/` may nest, so an
+    extension-keyed non-recursive glob missed real referrers."""
+    if not root.exists():
+        return []
+    return sorted(
+        p
+        for p in root.rglob("*")
+        if p.is_file()
+        and "__pycache__" not in p.parts
+        and p.suffix.lower() not in _BINARY_SUFFIXES
+    )
+
+
 def _source_groups() -> dict[str, list[Path]]:
     """The three kinds of file that can name a profile input."""
     return {
         "commands": list((REPO_ROOT / ".claude").rglob("*.md")),
         "modules": list((REPO_ROOT / "src").rglob("*.py")),
+        # Recursive, and extension-agnostic for the hook dir: .githooks/pre-push
+        # has no suffix at all, and it names profile/pii_denylist.txt plus both
+        # example .docx. A non-recursive *.sh/*.py glob saw none of it.
         "scripts": (
-            list((REPO_ROOT / "scripts").glob("*.sh"))
-            + list((REPO_ROOT / "scripts").glob("*.py"))
+            _text_files(REPO_ROOT / "scripts")
             + list((REPO_ROOT / ".github").rglob("*.yml"))
+            + _text_files(REPO_ROOT / ".githooks")
         ),
     }
 
@@ -168,6 +189,10 @@ class TestTemplateCoverage:
         found = _referenced_profile_paths()
         assert len(found) >= 10, f"reference scan found only {len(found)} paths"
         assert "profile/bullets.md" in found
+        # A second anchor on a different pipeline surface: with only the
+        # bullets.md anchor, the whole /apply config surface could drop out of
+        # the scan and every test above would stay green.
+        assert "profile/application_answers.yaml" in found
 
     def test_every_source_group_is_non_empty(self):
         """A renamed or moved directory would drop a whole group from the scan
@@ -216,6 +241,7 @@ class TestTemplateCoverage:
             "contacts.example.yaml",
             "companies.example.yaml",
             "discovery.example.yaml",
+            "application_answers.example.yaml",
             "verticals.example.yaml",
             "pii_denylist.example.txt",
             "resume_template.example.docx",
@@ -234,6 +260,38 @@ class TestExampleConfigsAreValid:
         cfg = load_verticals(PROFILE / "verticals.example.yaml")
         assert cfg.default_vertical in cfg.names
         assert cfg.classifier_rules
+
+    def test_application_answers_example_loads_through_the_real_loader(self, tmp_path):
+        """`load_answers` is the strict validator /apply hits, and existence +
+        non-empty said nothing about schema validity: a template with a bad
+        work_authorization block or an unknown top-level key shipped green.
+
+        The cross-check against preferences.md is fed a synthesized file rather
+        than preferences.example.md, which deliberately states all three
+        statuses so the new user has to choose one."""
+        from src.apply.answers import load_answers, preferences_statuses
+
+        answers_path = PROFILE / "application_answers.example.yaml"
+        declared = yaml.safe_load(answers_path.read_text(encoding="utf-8"))
+        status = declared["work_authorization"]["status"]
+
+        # Reuse the template's own wording for that status, so this stays a real
+        # cross-check rather than a hand-written stand-in.
+        lines = [
+            line
+            for line in (PROFILE / "preferences.example.md").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            if preferences_statuses(f"## Work authorization\n{line}\n") == {status}
+        ]
+        assert lines, f"preferences.example.md states no line for status {status!r}"
+        prefs = tmp_path / "preferences.md"
+        prefs.write_text("## Work authorization\n\n" + lines[0] + "\n", encoding="utf-8")
+
+        answers = load_answers(answers_path, prefs)
+        assert answers.status == status
+        assert answers.identity
+        assert answers.education
 
     @pytest.mark.parametrize(
         "name", ["contacts.example.yaml", "companies.example.yaml", "discovery.example.yaml"]

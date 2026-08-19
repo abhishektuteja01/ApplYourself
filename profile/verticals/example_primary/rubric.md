@@ -3,9 +3,11 @@
 Copy this dir to `profile/verticals/<your_vertical>/` and rewrite every tier
 around YOUR attested experience. Judges read this file IN FULL alongside the
 shared scaffold in `profile/scoring_rubric.md` and apply ONLY this vertical's
-tiers to rows whose `vertical` matches. Axis names and maxima are fixed by
-the scaffold: `title_match` 0-30, `jd_skill_overlap` 0-30, `seniority_fit`
-0-20, `domain_bonus` 0-20. Emit integer subscores only — the total is derived.
+tiers to rows whose `vertical` matches. The four axes and their maxima are
+fixed by the scaffold; the labels used below are this repo's rubric prose for
+them: `title_match` 0-30, `jd_skill_overlap` 0-30, `seniority_fit` 0-20,
+`domain_bonus` 0-20. Emit integer subscores only, under the scaffold's own
+JSON keys (`title`, `skills`, `seniority`, `domain`) — the total is derived.
 
 - `title_match` (0-30): three tiers — niche spine (29-30): "Widget Engineer"
   exact-lane titles; general spine (25-28): platform/consultant variants;

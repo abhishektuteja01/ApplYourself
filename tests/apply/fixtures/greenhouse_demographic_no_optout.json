@@ -1,0 +1,1977 @@
+{
+ "absolute_url": "https://job-boards.greenhouse.io/grommetco/jobs/4718810005",
+ "data_compliance": [
+  {
+   "type": "gdpr",
+   "requires_consent": false,
+   "requires_processing_consent": false,
+   "requires_retention_consent": false,
+   "retention_period": null,
+   "demographic_data_consent_applies": false
+  }
+ ],
+ "internal_job_id": 4445331005,
+ "location": {
+  "name": "Minneapolis, MN"
+ },
+ "metadata": [
+  {
+   "id": 4002586005,
+   "name": "Worker Category",
+   "value": "Regular Full Time",
+   "value_type": "single_select"
+  }
+ ],
+ "id": 4718810005,
+ "updated_at": "2026-08-05T09:16:03-04:00",
+ "requisition_id": null,
+ "title": "Grommet Specialist",
+ "company_name": "Grommet Co",
+ "first_published": "2026-07-29T10:19:50-04:00",
+ "language": "en",
+ "application_deadline": null,
+ "departments": [
+  {
+   "id": 4037686005,
+   "name": "Grommet Co Careers Page",
+   "child_ids": [],
+   "parent_id": null
+  }
+ ],
+ "offices": [
+  {
+   "id": 4003029005,
+   "name": "Charlotte, NC",
+   "location": "Charlotte, North Carolina, United States",
+   "child_ids": [],
+   "parent_id": null
+  },
+  {
+   "id": 4055281005,
+   "name": "Denver, CO",
+   "location": "Denver, Colorado, United States",
+   "child_ids": [],
+   "parent_id": null
+  },
+  {
+   "id": 4009245005,
+   "name": "Minneapolis, MN",
+   "location": "Minneapolis, MN",
+   "child_ids": [],
+   "parent_id": null
+  }
+ ],
+ "ai_disclaimer": null,
+ "include_ai_disclaimer": null,
+ "ai_opt_out_request_url": null,
+ "compliance": [
+  {
+   "type": "eeoc",
+   "questions": [],
+   "description": "&lt;p&gt;PUBLIC BURDEN STATEMENT: According to the Paperwork Reduction Act of 1995 no persons are required to respond to a collection of information unless such collection displays a valid OMB control number. This survey should take about 5 minutes to complete.&lt;/p&gt;\n"
+  },
+  {
+   "type": "eeoc",
+   "questions": [
+    {
+     "required": false,
+     "label": "DisabilityStatus",
+     "fields": [
+      {
+       "name": "disability_status",
+       "type": "multi_value_single_select",
+       "values": [
+        {
+         "label": "I do not want to answer",
+         "value": "3"
+        },
+        {
+         "label": "No, I do not have a disability and have not had one in the past",
+         "value": "2"
+        },
+        {
+         "label": "Yes, I have a disability, or have had one in the past",
+         "value": "1"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "description": "&lt;h3&gt;&lt;strong&gt;Voluntary Self-Identification of Disability&lt;/strong&gt;&lt;/h3&gt;\n&lt;div style=&quot;display:flex; justify-content:space-between;&quot;&gt;\n  &lt;div&gt;\n    &lt;div&gt;Form CC-305&lt;/div&gt;\n    &lt;div&gt;Page 1 of 1&lt;/div&gt;\n  &lt;/div&gt;\n  &lt;div&gt;\n    &lt;div&gt;OMB Control Number 1250-0005&lt;/div&gt;\n    &lt;div&gt;Expires 04/30/2026&lt;/div&gt;\n  &lt;/div&gt;\n&lt;/div&gt;\n&lt;br&gt;\n&lt;strong&gt;Why are you being asked to complete this form?&lt;/strong&gt;\n&lt;p&gt;We are a federal contractor or subcontractor. The law requires us to provide equal employment opportunity to qualified people with disabilities. We have a goal of having at least 7% of our workers as people with disabilities. The law says we must measure our progress towards this goal. To do this, we must ask applicants and employees if they have a disability or have ever had one. People can become disabled, so we need to ask this question at least every five years.&lt;/p&gt;\n&lt;p&gt;Completing this form is voluntary, and we hope that you will choose to do so. Your answer is confidential. No one who makes hiring decisions will see it. Your decision to complete the form and your answer will not harm you in any way. If you want to learn more about the law or this form, visit the U.S. Department of Labor\u2019s Office of Federal Contract Compliance Programs (OFCCP) website at &lt;a href=&quot;https://www.dol.gov/ofccp&quot; target=&quot;_blank&quot;&gt;www.dol.gov/ofccp&lt;/a&gt;.&lt;/p&gt;\n&lt;strong&gt;How do you know if you have a disability?&lt;/strong&gt;\n&lt;p&gt;A disability is a condition that substantially limits one or more of your \u201cmajor life activities.\u201d If you have or have ever had such a condition, you are a person with a disability. &lt;strong&gt;Disabilities include, but are not limited to:&lt;/strong&gt;&lt;/p&gt;\n&lt;ul&gt;\n  &lt;li&gt;Alcohol or other substance use disorder (not currently using drugs illegally)&lt;/li&gt;\n  &lt;li&gt;Autoimmune disorder, for example, lupus, fibromyalgia, rheumatoid arthritis, HIV/AIDS&lt;/li&gt;\n  &lt;li&gt;Blind or low vision&lt;/li&gt;\n  &lt;li&gt;Cancer (past or present)&lt;/li&gt;\n  &lt;li&gt;Cardiovascular or heart disease&lt;/li&gt;\n  &lt;li&gt;Celiac disease&lt;/li&gt;\n  &lt;li&gt;Cerebral palsy&lt;/li&gt;\n  &lt;li&gt;Deaf or serious difficulty hearing&lt;/li&gt;\n  &lt;li&gt;Diabetes&lt;/li&gt;\n  &lt;li&gt;Disfigurement, for example, disfigurement caused by burns, wounds, accidents, or congenital disorders&lt;/li&gt;\n  &lt;li&gt;Epilepsy or other seizure disorder&lt;/li&gt;\n  &lt;li&gt;Gastrointestinal disorders, for example, Crohn&#39;s Disease, irritable bowel syndrome&lt;/li&gt;\n  &lt;li&gt;Intellectual or developmental disability&lt;/li&gt;\n  &lt;li&gt;Mental Grommet conditions, for example, depression, bipolar disorder, anxiety disorder, schizophrenia, PTSD&lt;/li&gt;\n  &lt;li&gt;Missing limbs or partially missing limbs&lt;/li&gt;\n  &lt;li&gt;Mobility impairment, benefiting from the use of a wheelchair, scooter, walker, leg brace(s) and/or other supports&lt;/li&gt;\n  &lt;li&gt;Nervous system condition, for example, migraine headaches, Parkinson\u2019s disease, multiple sclerosis (MS)&lt;/li&gt;\n  &lt;li&gt;Neurodivergence, for example, attention-deficit/hyperactivity disorder (ADHD), autism spectrum disorder, dyslexia, dyspraxia, other learning disabilities&lt;/li&gt;\n  &lt;li&gt;Partial or complete paralysis (any cause)&lt;/li&gt;\n  &lt;li&gt;Pulmonary or respiratory conditions, for example, tuberculosis, asthma, emphysema&lt;/li&gt;\n  &lt;li&gt;Short stature (dwarfism)&lt;/li&gt;\n  &lt;li&gt;Traumatic brain injury&lt;/li&gt;\n&lt;/ul&gt;\n"
+  },
+  {
+   "type": "eeoc",
+   "questions": [
+    {
+     "required": false,
+     "label": "VeteranStatus",
+     "fields": [
+      {
+       "name": "veteran_status",
+       "type": "multi_value_single_select",
+       "values": [
+        {
+         "label": "I don't wish to answer",
+         "value": "3"
+        },
+        {
+         "label": "I identify as one or more of the classifications of a protected veteran",
+         "value": "2"
+        },
+        {
+         "label": "I am not a protected veteran",
+         "value": "1"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "description": "&lt;p&gt;\n  If you believe you belong to any of the categories of protected veterans listed below, please indicate by making the appropriate selection.\n  As a government contractor subject to the Vietnam Era Veterans&#39; Readjustment Assistance Act (VEVRAA), we request this information in order to measure\n  the effectiveness of the outreach and positive recruitment efforts we undertake pursuant to VEVRAA. Classification of protected categories\n  is as follows:\n&lt;/p&gt;\n&lt;p&gt;A &quot;disabled veteran&quot; is one of the following: a veteran of the U.S. military, ground, naval or air service who is entitled to compensation (or who but for the receipt of military retired pay would be entitled to compensation) under laws administered by the Secretary of Veterans Affairs; or a person who was discharged or released from active duty because of a service-connected disability.&lt;/p&gt;\n&lt;p&gt;A &quot;recently separated veteran&quot; means any veteran during the three-year period beginning on the date of such veteran&#39;s discharge or release from active duty in the U.S. military, ground, naval, or air service.&lt;/p&gt;\n&lt;p&gt;An &quot;active duty wartime or campaign badge veteran&quot; means a veteran who served on active duty in the U.S. military, ground, naval or air service during a war, or in a campaign or expedition for which a campaign badge has been authorized under the laws administered by the Department of Defense.&lt;/p&gt;\n&lt;p&gt;An &quot;Armed forces service medal veteran&quot; means a veteran who, while serving on active duty in the U.S. military, ground, naval or air service, participated in a United States military operation for which an Armed Forces service medal was awarded pursuant to Executive Order 12985.&lt;/p&gt;\n"
+  },
+  {
+   "type": "eeoc",
+   "questions": [
+    {
+     "required": false,
+     "label": "Race",
+     "fields": [
+      {
+       "name": "race",
+       "type": "multi_value_single_select",
+       "values": [
+        {
+         "label": "Decline To Self Identify",
+         "value": "8"
+        },
+        {
+         "label": "Two or More Races",
+         "value": "7"
+        },
+        {
+         "label": "Native Hawaiian or Other Pacific Islander",
+         "value": "6"
+        },
+        {
+         "label": "White",
+         "value": "5"
+        },
+        {
+         "label": "Hispanic or Latino",
+         "value": "4"
+        },
+        {
+         "label": "Black or African American",
+         "value": "3"
+        },
+        {
+         "label": "Asian",
+         "value": "2"
+        },
+        {
+         "label": "American Indian or Alaskan Native",
+         "value": "1"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "required": false,
+     "label": "Gender",
+     "fields": [
+      {
+       "name": "gender",
+       "type": "multi_value_single_select",
+       "values": [
+        {
+         "label": "Decline To Self Identify",
+         "value": "3"
+        },
+        {
+         "label": "Female",
+         "value": "2"
+        },
+        {
+         "label": "Male",
+         "value": "1"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "description": "&lt;h3&gt;&lt;strong&gt;Voluntary Self-Identification&lt;/strong&gt;&lt;/h3&gt;&lt;br/&gt;&lt;p&gt;For government reporting purposes, we ask candidates to respond to the below self-identification survey.\nCompletion of the form is entirely voluntary. Whatever your decision, it will not be considered in the hiring\nprocess or thereafter. Any information that you do provide will be recorded and maintained in a\nconfidential file.&lt;/p&gt;\n\n&lt;p&gt;As set forth in Grommet Co\u2019s Equal Employment Opportunity policy,\nwe do not discriminate on the basis of any protected group status under any applicable law.&lt;/p&gt;\n"
+  }
+ ],
+ "demographic_questions": {
+  "header": "STATE AFFIRMATIVE ACTION QUESTIONNAIRE",
+  "description": "<p>Because we are a state contractor, we are required to gather the information in this questionnaire to comply with mandatory state governmental affirmative action recordkeeping requirements. <strong>This information will be kept confidential, and will not be used in any way in connection with decisions made about your employment or your application for employment.</strong> The information requested is voluntary, and you will not be penalized for choosing not to complete the questionnaire.</p>",
+  "questions": [
+   {
+    "id": 4022572005,
+    "label": "What is your race and ethnicity? (Select as many that apply.)",
+    "required": false,
+    "type": "multi_value_multi_select",
+    "answer_options": [
+     {
+      "id": 4134405005,
+      "label": "American Indian or Alaskan Native: Individuals with origins in any of the original peoples of North, Central, and South America.",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4134406005,
+      "label": "Asian: Individuals with origins in any of the original peoples of Central or East Asia, Southeast Asia, or South Asia, such as Chinese, Asian Indian, Filipino, Vietnamese, Korean, and Japanese.",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4134407005,
+      "label": "Black or African American: Individuals with origins in any of the Black racial groups of Africa, such as African American, Jamaican, Haitian, Nigerian, Ethiopian, and Somali.",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4134408005,
+      "label": "Hispanic or Latino: Includes individuals of Mexican, Puerto Rican, Salvadoran, Cuban, Dominican, Guatemalan, and other Central or South American or Spanish culture or origin.",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4134409005,
+      "label": "Middle Eastern or North African: Individuals with origins in any of the original peoples of the Middle East or North Africa, such as Lebanese, Iranian, Egyptian, Syrian, Iraqi, and Israeli.",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4134410005,
+      "label": "Native Hawaiian or Pacific Islander: Individuals with origins in any of the original peoples of Hawaii, Guam, Samoa, or other Pacific Islands, such as Native Hawaiian, Samoan, Chamorro, Tongan, Fijian, and Marshallese.",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4134411005,
+      "label": "White: Individuals with origins in any of the original peoples of Europe, such as English, German, Irish, Italian, Polish, and Scottish.",
+      "free_form": false,
+      "decline_to_answer": false
+     }
+    ]
+   }
+  ]
+ },
+ "questions": [
+  {
+   "description": null,
+   "label": "First Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "first_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Last Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "last_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Email",
+   "required": true,
+   "fields": [
+    {
+     "name": "email",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Phone",
+   "required": true,
+   "fields": [
+    {
+     "name": "phone",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Resume/CV",
+   "required": true,
+   "fields": [
+    {
+     "name": "resume",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "resume_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Cover Letter",
+   "required": false,
+   "fields": [
+    {
+     "name": "cover_letter",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "cover_letter_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "LinkedIn URL:",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932944005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Enter Preferred Name",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_8932945005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "How did you hear about us?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932946005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Indeed.com",
+       "value": 23537790005
+      },
+      {
+       "label": "Careerbuilder.com",
+       "value": 23537791005
+      },
+      {
+       "label": "Search Engine (Google/Yahoo/Bing)",
+       "value": 23537792005
+      },
+      {
+       "label": "Glassdoor.com",
+       "value": 23537793005
+      },
+      {
+       "label": "Online/Print News",
+       "value": 23537794005
+      },
+      {
+       "label": "Radio Advertisement",
+       "value": 23537795005
+      },
+      {
+       "label": "TV Advertisement",
+       "value": 23537796005
+      },
+      {
+       "label": "Facebook",
+       "value": 23537797005
+      },
+      {
+       "label": "Alumni Network",
+       "value": 23537798005
+      },
+      {
+       "label": "Linkedin",
+       "value": 23537799005
+      },
+      {
+       "label": "Other",
+       "value": 23537800005
+      },
+      {
+       "label": "Employee Referral",
+       "value": 23537801005
+      },
+      {
+       "label": "grommetco.com",
+       "value": 23537802005
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "If \u201cother\u201d please specify how you heard about us",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_8932947005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Referring Grommet Co Employee Name (if applicable)",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_8932948005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "What is your relationship to the Referrer (if applicable)",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_8932949005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Family Member",
+       "value": 23537803005
+      },
+      {
+       "label": "Friend",
+       "value": 23537804005
+      },
+      {
+       "label": "Former Co-worker",
+       "value": 23537805005
+      },
+      {
+       "label": "Other",
+       "value": 23537806005
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Address",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_8932950005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Address Line 2",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_8932951005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "City",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932952005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "State / Province",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932953005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "I do not reside in the USA",
+       "value": 23538087005
+      },
+      {
+       "label": "Alabama",
+       "value": 23538088005
+      },
+      {
+       "label": "Alaska",
+       "value": 23538089005
+      },
+      {
+       "label": "Arizona",
+       "value": 23538090005
+      },
+      {
+       "label": "Arkansas",
+       "value": 23538091005
+      },
+      {
+       "label": "California",
+       "value": 23538092005
+      },
+      {
+       "label": "Colorado",
+       "value": 23538093005
+      },
+      {
+       "label": "Connecticut",
+       "value": 23538094005
+      },
+      {
+       "label": "Delaware",
+       "value": 23538095005
+      },
+      {
+       "label": "Florida",
+       "value": 23538096005
+      },
+      {
+       "label": "Georgia",
+       "value": 23538097005
+      },
+      {
+       "label": "Hawaii",
+       "value": 23538098005
+      },
+      {
+       "label": "Idaho",
+       "value": 23538099005
+      },
+      {
+       "label": "Illinois",
+       "value": 23538100005
+      },
+      {
+       "label": "Indiana",
+       "value": 23538101005
+      },
+      {
+       "label": "Iowa",
+       "value": 23538102005
+      },
+      {
+       "label": "Kansas",
+       "value": 23538103005
+      },
+      {
+       "label": "Kentucky",
+       "value": 23538104005
+      },
+      {
+       "label": "Louisiana",
+       "value": 23538105005
+      },
+      {
+       "label": "Maine",
+       "value": 23538106005
+      },
+      {
+       "label": "Maryland",
+       "value": 23538107005
+      },
+      {
+       "label": "Massachusetts",
+       "value": 23538108005
+      },
+      {
+       "label": "Michigan",
+       "value": 23538109005
+      },
+      {
+       "label": "Minnesota",
+       "value": 23538110005
+      },
+      {
+       "label": "Mississippi",
+       "value": 23538111005
+      },
+      {
+       "label": "Missouri",
+       "value": 23538112005
+      },
+      {
+       "label": "Montana",
+       "value": 23538113005
+      },
+      {
+       "label": "Nebraska",
+       "value": 23538114005
+      },
+      {
+       "label": "Nevada",
+       "value": 23538115005
+      },
+      {
+       "label": "New Hampshire",
+       "value": 23538116005
+      },
+      {
+       "label": "New Jersey",
+       "value": 23538117005
+      },
+      {
+       "label": "New Mexico",
+       "value": 23538118005
+      },
+      {
+       "label": "New York",
+       "value": 23538119005
+      },
+      {
+       "label": "North Carolina",
+       "value": 23538120005
+      },
+      {
+       "label": "North Dakota",
+       "value": 23538121005
+      },
+      {
+       "label": "Ohio",
+       "value": 23538122005
+      },
+      {
+       "label": "Oklahoma",
+       "value": 23538123005
+      },
+      {
+       "label": "Oregon",
+       "value": 23538124005
+      },
+      {
+       "label": "Pennsylvania",
+       "value": 23538125005
+      },
+      {
+       "label": "Rhode Island",
+       "value": 23538126005
+      },
+      {
+       "label": "South Carolina",
+       "value": 23538127005
+      },
+      {
+       "label": "South Dakota",
+       "value": 23538128005
+      },
+      {
+       "label": "Tennessee",
+       "value": 23538129005
+      },
+      {
+       "label": "Texas",
+       "value": 23538130005
+      },
+      {
+       "label": "Utah",
+       "value": 23538131005
+      },
+      {
+       "label": "Vermont",
+       "value": 23538132005
+      },
+      {
+       "label": "Virginia",
+       "value": 23538133005
+      },
+      {
+       "label": "Washington",
+       "value": 23538134005
+      },
+      {
+       "label": "West Virginia",
+       "value": 23538135005
+      },
+      {
+       "label": "Wisconsin",
+       "value": 23538136005
+      },
+      {
+       "label": "Wyoming",
+       "value": 23538137005
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Zip / Postal",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932954005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Country",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932955005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "United States",
+       "value": 23537807005
+      },
+      {
+       "label": "United Kingdom",
+       "value": 23537808005
+      },
+      {
+       "label": "Brazil",
+       "value": 23537809005
+      },
+      {
+       "label": "Afghanistan",
+       "value": 23537810005
+      },
+      {
+       "label": "Albania",
+       "value": 23537811005
+      },
+      {
+       "label": "Algeria",
+       "value": 23537812005
+      },
+      {
+       "label": "American Samoa",
+       "value": 23537813005
+      },
+      {
+       "label": "Andorra",
+       "value": 23537814005
+      },
+      {
+       "label": "Angola",
+       "value": 23537815005
+      },
+      {
+       "label": "Anguilla",
+       "value": 23537816005
+      },
+      {
+       "label": "Antarctica",
+       "value": 23537817005
+      },
+      {
+       "label": "Antigua and Barbuda",
+       "value": 23537818005
+      },
+      {
+       "label": "Argentina",
+       "value": 23537819005
+      },
+      {
+       "label": "Armenia",
+       "value": 23537820005
+      },
+      {
+       "label": "Aruba",
+       "value": 23537821005
+      },
+      {
+       "label": "Ashmore and Cartier",
+       "value": 23537822005
+      },
+      {
+       "label": "Australia",
+       "value": 23537823005
+      },
+      {
+       "label": "Austria",
+       "value": 23537824005
+      },
+      {
+       "label": "Azerbaijan",
+       "value": 23537825005
+      },
+      {
+       "label": "Bahrain",
+       "value": 23537826005
+      },
+      {
+       "label": "Baker Island",
+       "value": 23537827005
+      },
+      {
+       "label": "Bangladesh",
+       "value": 23537828005
+      },
+      {
+       "label": "Barbados",
+       "value": 23537829005
+      },
+      {
+       "label": "Bassas da India",
+       "value": 23537830005
+      },
+      {
+       "label": "Belarus",
+       "value": 23537831005
+      },
+      {
+       "label": "Belgium",
+       "value": 23537832005
+      },
+      {
+       "label": "Belize",
+       "value": 23537833005
+      },
+      {
+       "label": "Benin",
+       "value": 23537834005
+      },
+      {
+       "label": "Bermuda",
+       "value": 23537835005
+      },
+      {
+       "label": "Bhutan",
+       "value": 23537836005
+      },
+      {
+       "label": "Bolivia",
+       "value": 23537837005
+      },
+      {
+       "label": "Bosnia and Herzegovina",
+       "value": 23537838005
+      },
+      {
+       "label": "Botswana",
+       "value": 23537839005
+      },
+      {
+       "label": "Bouvet Island",
+       "value": 23537840005
+      },
+      {
+       "label": "British Indian Ocean Territory",
+       "value": 23537841005
+      },
+      {
+       "label": "British Virgin Islands",
+       "value": 23537842005
+      },
+      {
+       "label": "Brunei Darussalam",
+       "value": 23537843005
+      },
+      {
+       "label": "Bulgaria",
+       "value": 23537844005
+      },
+      {
+       "label": "Burkina Faso",
+       "value": 23537845005
+      },
+      {
+       "label": "Burma",
+       "value": 23537846005
+      },
+      {
+       "label": "Burundi",
+       "value": 23537847005
+      },
+      {
+       "label": "Cambodia",
+       "value": 23537848005
+      },
+      {
+       "label": "Cameroon",
+       "value": 23537849005
+      },
+      {
+       "label": "Canada",
+       "value": 23537850005
+      },
+      {
+       "label": "Cape Verde",
+       "value": 23537851005
+      },
+      {
+       "label": "Cayman Islands",
+       "value": 23537852005
+      },
+      {
+       "label": "Central African Republic",
+       "value": 23537853005
+      },
+      {
+       "label": "Chad",
+       "value": 23537854005
+      },
+      {
+       "label": "Chile",
+       "value": 23537855005
+      },
+      {
+       "label": "China",
+       "value": 23537856005
+      },
+      {
+       "label": "Christmas Island",
+       "value": 23537857005
+      },
+      {
+       "label": "Clipperton Island",
+       "value": 23537858005
+      },
+      {
+       "label": "Cocos (Keeling) Islands",
+       "value": 23537859005
+      },
+      {
+       "label": "Colombia",
+       "value": 23537860005
+      },
+      {
+       "label": "Comoros",
+       "value": 23537861005
+      },
+      {
+       "label": "Congo, Democratic Republic of the",
+       "value": 23537862005
+      },
+      {
+       "label": "Congo, Republic of the",
+       "value": 23537863005
+      },
+      {
+       "label": "Cook Islands",
+       "value": 23537864005
+      },
+      {
+       "label": "Coral Sea Islands",
+       "value": 23537865005
+      },
+      {
+       "label": "Costa Rica",
+       "value": 23537866005
+      },
+      {
+       "label": "Cote d\\'Ivoire",
+       "value": 23537867005
+      },
+      {
+       "label": "Croatia",
+       "value": 23537868005
+      },
+      {
+       "label": "Cuba",
+       "value": 23537869005
+      },
+      {
+       "label": "Cyprus",
+       "value": 23537870005
+      },
+      {
+       "label": "Czech Republic",
+       "value": 23537871005
+      },
+      {
+       "label": "Denmark",
+       "value": 23537872005
+      },
+      {
+       "label": "Djibouti",
+       "value": 23537873005
+      },
+      {
+       "label": "Dominica",
+       "value": 23537874005
+      },
+      {
+       "label": "Dominican Republic",
+       "value": 23537875005
+      },
+      {
+       "label": "East Timor",
+       "value": 23537876005
+      },
+      {
+       "label": "Ecuador",
+       "value": 23537877005
+      },
+      {
+       "label": "Egypt",
+       "value": 23537878005
+      },
+      {
+       "label": "El Salvador",
+       "value": 23537879005
+      },
+      {
+       "label": "Equatorial Guinea",
+       "value": 23537880005
+      },
+      {
+       "label": "Eritrea",
+       "value": 23537881005
+      },
+      {
+       "label": "Estonia",
+       "value": 23537882005
+      },
+      {
+       "label": "Ethiopia",
+       "value": 23537883005
+      },
+      {
+       "label": "Europa Island",
+       "value": 23537884005
+      },
+      {
+       "label": "Falkland Islands (Islas Malvinas)",
+       "value": 23537885005
+      },
+      {
+       "label": "Faroe Islands",
+       "value": 23537886005
+      },
+      {
+       "label": "Fiji",
+       "value": 23537887005
+      },
+      {
+       "label": "Finland",
+       "value": 23537888005
+      },
+      {
+       "label": "France",
+       "value": 23537889005
+      },
+      {
+       "label": "France, Metropolitan",
+       "value": 23537890005
+      },
+      {
+       "label": "French Guiana",
+       "value": 23537891005
+      },
+      {
+       "label": "French Polynesia",
+       "value": 23537892005
+      },
+      {
+       "label": "French Southern and Antarctic Lands",
+       "value": 23537893005
+      },
+      {
+       "label": "Gabon",
+       "value": 23537894005
+      },
+      {
+       "label": "Gaza Strip",
+       "value": 23537895005
+      },
+      {
+       "label": "Georgia",
+       "value": 23537896005
+      },
+      {
+       "label": "Germany",
+       "value": 23537897005
+      },
+      {
+       "label": "Ghana",
+       "value": 23537898005
+      },
+      {
+       "label": "Gibraltar",
+       "value": 23537899005
+      },
+      {
+       "label": "Glorioso Islands",
+       "value": 23537900005
+      },
+      {
+       "label": "Greece",
+       "value": 23537901005
+      },
+      {
+       "label": "Greenland",
+       "value": 23537902005
+      },
+      {
+       "label": "Grenada",
+       "value": 23537903005
+      },
+      {
+       "label": "Guadeloupe",
+       "value": 23537904005
+      },
+      {
+       "label": "Guam",
+       "value": 23537905005
+      },
+      {
+       "label": "Guatemala",
+       "value": 23537906005
+      },
+      {
+       "label": "Guernsey",
+       "value": 23537907005
+      },
+      {
+       "label": "Guinea",
+       "value": 23537908005
+      },
+      {
+       "label": "Guinea-Bissau",
+       "value": 23537909005
+      },
+      {
+       "label": "Guyana",
+       "value": 23537910005
+      },
+      {
+       "label": "Haiti",
+       "value": 23537911005
+      },
+      {
+       "label": "Heard Island and McDonald Islands",
+       "value": 23537912005
+      },
+      {
+       "label": "Holy See (Vatican City)",
+       "value": 23537913005
+      },
+      {
+       "label": "Honduras",
+       "value": 23537914005
+      },
+      {
+       "label": "Hong Kong (SAR)",
+       "value": 23537915005
+      },
+      {
+       "label": "Howland Island",
+       "value": 23537916005
+      },
+      {
+       "label": "Hungary",
+       "value": 23537917005
+      },
+      {
+       "label": "Iceland",
+       "value": 23537918005
+      },
+      {
+       "label": "India",
+       "value": 23537919005
+      },
+      {
+       "label": "Indonesia",
+       "value": 23537920005
+      },
+      {
+       "label": "Iran",
+       "value": 23537921005
+      },
+      {
+       "label": "Iraq",
+       "value": 23537922005
+      },
+      {
+       "label": "Ireland",
+       "value": 23537923005
+      },
+      {
+       "label": "Israel",
+       "value": 23537924005
+      },
+      {
+       "label": "Italy",
+       "value": 23537925005
+      },
+      {
+       "label": "Jamaica",
+       "value": 23537926005
+      },
+      {
+       "label": "Jan Mayen",
+       "value": 23537927005
+      },
+      {
+       "label": "Japan",
+       "value": 23537928005
+      },
+      {
+       "label": "Jarvis Island",
+       "value": 23537929005
+      },
+      {
+       "label": "Jersey",
+       "value": 23537930005
+      },
+      {
+       "label": "Johnston Atoll",
+       "value": 23537931005
+      },
+      {
+       "label": "Jordan",
+       "value": 23537932005
+      },
+      {
+       "label": "Juan de Nova Island",
+       "value": 23537933005
+      },
+      {
+       "label": "Kazakhstan",
+       "value": 23537934005
+      },
+      {
+       "label": "Kenya",
+       "value": 23537935005
+      },
+      {
+       "label": "Kingman Reef",
+       "value": 23537936005
+      },
+      {
+       "label": "Kiribati",
+       "value": 23537937005
+      },
+      {
+       "label": "Korea, North",
+       "value": 23537938005
+      },
+      {
+       "label": "Korea, South",
+       "value": 23537939005
+      },
+      {
+       "label": "Kuwait",
+       "value": 23537940005
+      },
+      {
+       "label": "Kyrgyzstan",
+       "value": 23537941005
+      },
+      {
+       "label": "Laos",
+       "value": 23537942005
+      },
+      {
+       "label": "Latvia",
+       "value": 23537943005
+      },
+      {
+       "label": "Lebanon",
+       "value": 23537944005
+      },
+      {
+       "label": "Lesotho",
+       "value": 23537945005
+      },
+      {
+       "label": "Liberia",
+       "value": 23537946005
+      },
+      {
+       "label": "Libya",
+       "value": 23537947005
+      },
+      {
+       "label": "Liechtenstein",
+       "value": 23537948005
+      },
+      {
+       "label": "Lithuania",
+       "value": 23537949005
+      },
+      {
+       "label": "Luxembourg",
+       "value": 23537950005
+      },
+      {
+       "label": "Macao",
+       "value": 23537951005
+      },
+      {
+       "label": "Macedonia, The Former Yugoslav Republic of",
+       "value": 23537952005
+      },
+      {
+       "label": "Madagascar",
+       "value": 23537953005
+      },
+      {
+       "label": "Malawi",
+       "value": 23537954005
+      },
+      {
+       "label": "Malaysia",
+       "value": 23537955005
+      },
+      {
+       "label": "Maldives",
+       "value": 23537956005
+      },
+      {
+       "label": "Mali",
+       "value": 23537957005
+      },
+      {
+       "label": "Malta",
+       "value": 23537958005
+      },
+      {
+       "label": "Man, Isle of",
+       "value": 23537959005
+      },
+      {
+       "label": "Marshall Islands",
+       "value": 23537960005
+      },
+      {
+       "label": "Martinique",
+       "value": 23537961005
+      },
+      {
+       "label": "Mauritania",
+       "value": 23537962005
+      },
+      {
+       "label": "Mauritius",
+       "value": 23537963005
+      },
+      {
+       "label": "Mayotte",
+       "value": 23537964005
+      },
+      {
+       "label": "Mexico",
+       "value": 23537965005
+      },
+      {
+       "label": "Micronesia, Federated States of",
+       "value": 23537966005
+      },
+      {
+       "label": "Midway Islands",
+       "value": 23537967005
+      },
+      {
+       "label": "Miscellaneous (French)",
+       "value": 23537968005
+      },
+      {
+       "label": "Moldova",
+       "value": 23537969005
+      },
+      {
+       "label": "Monaco",
+       "value": 23537970005
+      },
+      {
+       "label": "Mongolia",
+       "value": 23537971005
+      },
+      {
+       "label": "Montenegro",
+       "value": 23537972005
+      },
+      {
+       "label": "Montserrat",
+       "value": 23537973005
+      },
+      {
+       "label": "Morocco",
+       "value": 23537974005
+      },
+      {
+       "label": "Mozambique",
+       "value": 23537975005
+      },
+      {
+       "label": "Myanmar",
+       "value": 23537976005
+      },
+      {
+       "label": "Namibia",
+       "value": 23537977005
+      },
+      {
+       "label": "Nauru",
+       "value": 23537978005
+      },
+      {
+       "label": "Navassa Island",
+       "value": 23537979005
+      },
+      {
+       "label": "Nepal",
+       "value": 23537980005
+      },
+      {
+       "label": "Netherlands",
+       "value": 23537981005
+      },
+      {
+       "label": "Netherlands Antilles",
+       "value": 23537982005
+      },
+      {
+       "label": "New Caledonia",
+       "value": 23537983005
+      },
+      {
+       "label": "New Zealand",
+       "value": 23537984005
+      },
+      {
+       "label": "Nicaragua",
+       "value": 23537985005
+      },
+      {
+       "label": "Niger",
+       "value": 23537986005
+      },
+      {
+       "label": "Nigeria",
+       "value": 23537987005
+      },
+      {
+       "label": "Niue",
+       "value": 23537988005
+      },
+      {
+       "label": "Norfolk Island",
+       "value": 23537989005
+      },
+      {
+       "label": "Northern Mariana Islands",
+       "value": 23537990005
+      },
+      {
+       "label": "Norway",
+       "value": 23537991005
+      },
+      {
+       "label": "Oman",
+       "value": 23537992005
+      },
+      {
+       "label": "Pakistan",
+       "value": 23537993005
+      },
+      {
+       "label": "Palau",
+       "value": 23537994005
+      },
+      {
+       "label": "Palestinian Territory, Occupied",
+       "value": 23537995005
+      },
+      {
+       "label": "Palmyra Atoll",
+       "value": 23537996005
+      },
+      {
+       "label": "Panama",
+       "value": 23537997005
+      },
+      {
+       "label": "Papua New Guinea",
+       "value": 23537998005
+      },
+      {
+       "label": "Paracel Islands",
+       "value": 23537999005
+      },
+      {
+       "label": "Paraguay",
+       "value": 23538000005
+      },
+      {
+       "label": "Peru",
+       "value": 23538001005
+      },
+      {
+       "label": "Philippines",
+       "value": 23538002005
+      },
+      {
+       "label": "Pitcairn Islands",
+       "value": 23538003005
+      },
+      {
+       "label": "Poland",
+       "value": 23538004005
+      },
+      {
+       "label": "Portugal",
+       "value": 23538005005
+      },
+      {
+       "label": "Puerto Rico",
+       "value": 23538006005
+      },
+      {
+       "label": "Qatar",
+       "value": 23538007005
+      },
+      {
+       "label": "R\u00e9union",
+       "value": 23538008005
+      },
+      {
+       "label": "Romania",
+       "value": 23538009005
+      },
+      {
+       "label": "Russia",
+       "value": 23538010005
+      },
+      {
+       "label": "Rwanda",
+       "value": 23538011005
+      },
+      {
+       "label": "Saint Helena",
+       "value": 23538012005
+      },
+      {
+       "label": "Saint Kitts and Nevis",
+       "value": 23538013005
+      },
+      {
+       "label": "Saint Lucia",
+       "value": 23538014005
+      },
+      {
+       "label": "Saint Pierre and Miquelon",
+       "value": 23538015005
+      },
+      {
+       "label": "Saint Vincent and the Grenadines",
+       "value": 23538016005
+      },
+      {
+       "label": "Samoa",
+       "value": 23538017005
+      },
+      {
+       "label": "San Marino",
+       "value": 23538018005
+      },
+      {
+       "label": "S\u00e3o Tom\u00e9 and Pr\u00edncipe",
+       "value": 23538019005
+      },
+      {
+       "label": "Saudi Arabia",
+       "value": 23538020005
+      },
+      {
+       "label": "Senegal",
+       "value": 23538021005
+      },
+      {
+       "label": "Serbia",
+       "value": 23538022005
+      },
+      {
+       "label": "Serbia and Montenegro",
+       "value": 23538023005
+      },
+      {
+       "label": "Seychelles",
+       "value": 23538024005
+      },
+      {
+       "label": "Sierra Leone",
+       "value": 23538025005
+      },
+      {
+       "label": "Singapore",
+       "value": 23538026005
+      },
+      {
+       "label": "Slovakia",
+       "value": 23538027005
+      },
+      {
+       "label": "Slovenia",
+       "value": 23538028005
+      },
+      {
+       "label": "Solomon Islands",
+       "value": 23538029005
+      },
+      {
+       "label": "Somalia",
+       "value": 23538030005
+      },
+      {
+       "label": "South Africa",
+       "value": 23538031005
+      },
+      {
+       "label": "South Georgia and the South Sandwich Islands",
+       "value": 23538032005
+      },
+      {
+       "label": "Spain",
+       "value": 23538033005
+      },
+      {
+       "label": "Spratly Islands",
+       "value": 23538034005
+      },
+      {
+       "label": "Sri Lanka",
+       "value": 23538035005
+      },
+      {
+       "label": "Sudan",
+       "value": 23538036005
+      },
+      {
+       "label": "Suriname",
+       "value": 23538037005
+      },
+      {
+       "label": "Svalbard",
+       "value": 23538038005
+      },
+      {
+       "label": "Swaziland",
+       "value": 23538039005
+      },
+      {
+       "label": "Sweden",
+       "value": 23538040005
+      },
+      {
+       "label": "Switzerland",
+       "value": 23538041005
+      },
+      {
+       "label": "Syria",
+       "value": 23538042005
+      },
+      {
+       "label": "Taiwan",
+       "value": 23538043005
+      },
+      {
+       "label": "Tajikistan",
+       "value": 23538044005
+      },
+      {
+       "label": "Tanzania",
+       "value": 23538045005
+      },
+      {
+       "label": "Thailand",
+       "value": 23538046005
+      },
+      {
+       "label": "The Bahamas",
+       "value": 23538047005
+      },
+      {
+       "label": "The Gambia",
+       "value": 23538048005
+      },
+      {
+       "label": "Togo",
+       "value": 23538049005
+      },
+      {
+       "label": "Tokelau",
+       "value": 23538050005
+      },
+      {
+       "label": "Tonga",
+       "value": 23538051005
+      },
+      {
+       "label": "Trinidad and Tobago",
+       "value": 23538052005
+      },
+      {
+       "label": "Tromelin Island",
+       "value": 23538053005
+      },
+      {
+       "label": "Tunisia",
+       "value": 23538054005
+      },
+      {
+       "label": "Turkey",
+       "value": 23538055005
+      },
+      {
+       "label": "Turkmenistan",
+       "value": 23538056005
+      },
+      {
+       "label": "Turks and Caicos Islands",
+       "value": 23538057005
+      },
+      {
+       "label": "Tuvalu",
+       "value": 23538058005
+      },
+      {
+       "label": "Uganda",
+       "value": 23538059005
+      },
+      {
+       "label": "Ukraine",
+       "value": 23538060005
+      },
+      {
+       "label": "United Arab Emirates",
+       "value": 23538061005
+      },
+      {
+       "label": "United States Minor Outlying Islands",
+       "value": 23538062005
+      },
+      {
+       "label": "Uruguay",
+       "value": 23538063005
+      },
+      {
+       "label": "Uzbekistan",
+       "value": 23538064005
+      },
+      {
+       "label": "Vanuatu",
+       "value": 23538065005
+      },
+      {
+       "label": "Venezuela",
+       "value": 23538066005
+      },
+      {
+       "label": "Vietnam",
+       "value": 23538067005
+      },
+      {
+       "label": "Virgin Islands",
+       "value": 23538068005
+      },
+      {
+       "label": "Virgin Islands (UK)",
+       "value": 23538069005
+      },
+      {
+       "label": "Virgin Islands (US)",
+       "value": 23538070005
+      },
+      {
+       "label": "Wake Island",
+       "value": 23538071005
+      },
+      {
+       "label": "Wallis and Futuna",
+       "value": 23538072005
+      },
+      {
+       "label": "West Bank",
+       "value": 23538073005
+      },
+      {
+       "label": "Western Sahara",
+       "value": 23538074005
+      },
+      {
+       "label": "Western Samoa",
+       "value": 23538075005
+      },
+      {
+       "label": "World",
+       "value": 23538076005
+      },
+      {
+       "label": "Yemen",
+       "value": 23538077005
+      },
+      {
+       "label": "Yugoslavia",
+       "value": 23538078005
+      },
+      {
+       "label": "Zaire",
+       "value": 23538079005
+      },
+      {
+       "label": "Zambia",
+       "value": 23538080005
+      },
+      {
+       "label": "Zimbabwe",
+       "value": 23538081005
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "To align on salary expectations with you, please let us know what you are ideally targeting. We listed our salary expectations for this role in the job description.",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932956005",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Are you currently employed or previously employed by one of our parent companies within the last year? If yes, please indicate which one.",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932957005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Red Ventures",
+       "value": 23538138005
+      },
+      {
+       "label": "UnitedHealth Group",
+       "value": 23538139005
+      },
+      {
+       "label": "Optum",
+       "value": 23538140005
+      },
+      {
+       "label": "None",
+       "value": 23538141005
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Work Authorization",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932958005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "I am authorized to work without sponsorship or restrictions for any employer in the U.S.",
+       "value": 23538082005
+      },
+      {
+       "label": "I am ONLY allowed to work for my current employer in the U.S. and I will require sponsorship now or in the future to work in the US",
+       "value": 23538083005
+      },
+      {
+       "label": "My status to work in the U.S. is unknown",
+       "value": 23538084005
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Are you subject to a restrictive covenant, such as a non-compete, non-solicit or confidentiality agreement with a current or former employer?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932959005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "This position is a hybrid/in-office role. Are you willing to relocate to the posted location if you are not local? Relocation assistance is provided. ",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_8932960005",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 23538085005
+      },
+      {
+       "label": "No",
+       "value": 23538086005
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "location_questions": []
+}

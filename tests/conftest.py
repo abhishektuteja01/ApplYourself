@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from src import verticals
+from src.discovery import crawl_cursor
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
@@ -29,3 +30,15 @@ def cfg():
     verticals.set_config(config)
     yield config
     verticals.set_config(None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_crawl_cursor(tmp_path, monkeypatch):
+    """Keep the resume cursor out of the real `jobs/`.
+
+    `WorkdaySource.fetch` persists where it stopped, so without this a test
+    run writes real state and every later run reads it back — tests would
+    silently depend on each other's rotation position, and on whatever the
+    last real `discover` left behind.
+    """
+    monkeypatch.setattr(crawl_cursor, "CURSOR_DIR", tmp_path / "cursors")

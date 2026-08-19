@@ -1,0 +1,35 @@
+# A CRLF checkout on Windows (core.autocrlf=true) breaks the shebang line:
+# `bad interpreter: /usr/bin/env bash^M`. The pre-push PII gate then never
+# runs and reports nothing. Force LF on everything that is executed or parsed.
+
+* text=auto
+
+*.sh        text eol=lf
+.githooks/* text eol=lf
+*.py        text eol=lf
+*.toml      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.jsonl     text eol=lf
+*.md        text eol=lf
+*.plist     text eol=lf
+*.txt       text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+LICENSE     text eol=lf
+
+# Human-reviewable and grepped by scripts/pii_scan.sh, so kept as text —
+# only the genuinely non-text formats are marked binary.
+*.csv       text eol=lf
+
+*.docx    binary
+*.parquet binary
+*.pdf     binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.zip     binary
+*.gz      binary

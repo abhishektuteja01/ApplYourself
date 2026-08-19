@@ -1,0 +1,189 @@
+<!--
+  Ashby's interactive control shapes, trimmed to the structures the browser
+  driver depends on. Synthetic ids and question text in the house style; the
+  markup shape is what live boards render, including the CSS-module class
+  hashes (which change on every Ashby deploy — hence the driver matching
+  `_active_` by prefix rather than by the whole token).
+
+  Captured states that a static scan cannot show: a combobox mid-open with its
+  listbox floated to document level, and a yes/no toggle with "No" chosen.
+-->
+<html>
+<body>
+<div id="form" class="ashby-application-form-container">
+
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="_systemfield_name"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001__systemfield_name">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="_systemfield_name">Full Name</label>
+    <input placeholder="Type here..." name="_systemfield_name" required=""
+           id="_systemfield_name" type="text" class="_input_80epu_28" value="">
+  </div>
+
+  <!-- The API calls this `Number` and it maps to kind `text`, but the DOM
+       renders a numeric input, which refuses prose. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000014-0000-0000-0000-000000000014"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000014-0000-0000-0000-000000000014">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000014-0000-0000-0000-000000000014">Base compensation expectation</label>
+    <input placeholder="Type here..." name="00000014-0000-0000-0000-000000000014"
+           required="" id="00000014-0000-0000-0000-000000000014" type="number"
+           class="_input_80epu_28" value="">
+  </div>
+
+  <!-- An enumerated select. The API calls this kind `select`; above roughly a
+       half-dozen options Ashby renders it as this combobox instead of a radio
+       group, which is why the driver reads the widget off the DOM. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000010-0000-0000-0000-000000000010"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000010-0000-0000-0000-000000000010">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000010-0000-0000-0000-000000000010">Select your country of employment</label>
+    <div class="_inputContainer_d7ago_28">
+      <input class="_input_d7ago_28" placeholder="Start typing..." aria-autocomplete="list"
+             aria-expanded="true" aria-controls=":r0:" aria-haspopup="listbox"
+             role="combobox" value="">
+      <button class="_container_pjyt6_1 _toggleButton_d7ago_32"><svg height="1em"></svg></button>
+    </div>
+  </div>
+
+  <!-- The location field: same widget, but server-backed. It has no option
+       list of its own at any point, so it is only ever typed into. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="_systemfield_location"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001__systemfield_location">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="_systemfield_location">Where do you plan on working from?</label>
+    <div class="_inputContainer_d7ago_28">
+      <input class="_input_d7ago_28" placeholder="Start typing..." aria-autocomplete="list"
+             aria-expanded="false" aria-haspopup="listbox" role="combobox" value="">
+      <button class="_container_pjyt6_1 _toggleButton_d7ago_32"><svg height="1em"></svg></button>
+    </div>
+  </div>
+
+  <!-- A boolean, with "No" already chosen. The checkbox is display-only: it
+       reads false both here and when the question is untouched. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000011-0000-0000-0000-000000000011"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000011-0000-0000-0000-000000000011">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000011-0000-0000-0000-000000000011">Do you own any competing sprockets?</label>
+    <div class="_container_1svni_28 _yesno_1e3gg_148 ">
+      <button class="_container_pjyt6_1 _option_1svni_32 ">Yes</button>
+      <button class="_container_pjyt6_1 _option_1svni_32 _active_1svni_57">No</button>
+      <input type="checkbox" class="_input_1svni_78" tabindex="-1"
+             name="00000011-0000-0000-0000-000000000011">
+    </div>
+  </div>
+
+  <!-- A multi-select. Each option's own `name` is its label text, and the
+       `<label for>` repeats it. -->
+  <div data-field-path="00000012-0000-0000-0000-000000000012"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000012-0000-0000-0000-000000000012">
+    <fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28">
+      <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+             for="00000012-0000-0000-0000-000000000012">Which lanes interest you?</label>
+      <div class="_option_1258i_34">
+        <span class=" _container_1danv_28" data-disabled="false"><svg height="1em"></svg>
+          <input type="checkbox"
+                 id="00000001-0000-0000-0000-000000000001_00000012-0000-0000-0000-000000000012-labeled-checkbox-0"
+                 name="Widget Engineering"></span>
+        <label for="00000001-0000-0000-0000-000000000001_00000012-0000-0000-0000-000000000012-labeled-checkbox-0"
+               class="_label_1258i_42 ">Widget Engineering</label>
+      </div>
+      <div class="_option_1258i_34">
+        <span class=" _container_1danv_28" data-disabled="false"><svg height="1em"></svg>
+          <input type="checkbox"
+                 id="00000001-0000-0000-0000-000000000001_00000012-0000-0000-0000-000000000012-labeled-checkbox-1"
+                 name="Gizmo Operations"></span>
+        <label for="00000001-0000-0000-0000-000000000001_00000012-0000-0000-0000-000000000012-labeled-checkbox-1"
+               class="_label_1258i_42 ">Gizmo Operations</label>
+      </div>
+    </fieldset>
+  </div>
+
+  <!-- A small enumerated select: same API type as the combobox above, rendered
+       as radios because it carries few options. -->
+  <div data-field-path="00000013-0000-0000-0000-000000000013"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013">
+    <fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28">
+      <label class="_heading_f7cvd_52 ashby-application-form-question-title"
+             for="00000013-0000-0000-0000-000000000013">Have you worked remotely before?</label>
+      <div class="_option_1258i_34">
+        <span class="_container_132c8_28" data-disabled="false"><span class="_circle_132c8_77"></span>
+          <input type="radio"
+                 id="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013-labeled-radio-0"
+                 name="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013"></span>
+        <label for="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013-labeled-radio-0"
+               class="_label_1258i_42 ">Yes, fully remote</label>
+      </div>
+      <div class="_option_1258i_34">
+        <span class="_container_132c8_28" data-disabled="false"><span class="_circle_132c8_77"></span>
+          <input type="radio"
+                 id="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013-labeled-radio-1"
+                 name="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013"></span>
+        <label for="00000001-0000-0000-0000-000000000001_00000013-0000-0000-0000-000000000013-labeled-radio-1"
+               class="_label_1258i_42 ">No, always on site</label>
+      </div>
+    </fieldset>
+  </div>
+
+  <!-- A single-option `ValueSelect` (API kind "select"), rendered as a lone
+       consent checkbox with no companion toggle buttons — not the two-button
+       yes/no widget above, and not a group. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000015-0000-0000-0000-000000000015"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000015-0000-0000-0000-000000000015">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000015-0000-0000-0000-000000000015">I acknowledge the Arbitration Agreement</label>
+    <input type="checkbox" class="_input_1svni_78"
+           id="00000015-0000-0000-0000-000000000015-labeled-checkbox-0"
+           name="00000015-0000-0000-0000-000000000015">
+  </div>
+
+  <!-- A `Phone` field (API kind `text`) with an SMS-consent Yes/No radio pair
+       nested inside the same entry, sharing its `data-field-path`. The API
+       never declares this radio pair as its own field — it is a bolted-on
+       legal widget, not a second question — so it must never override the
+       phone control's own unambiguous `text` kind. -->
+  <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+       data-field-path="00000016-0000-0000-0000-000000000016"
+       data-field-entry-id="00000001-0000-0000-0000-000000000001_00000016-0000-0000-0000-000000000016">
+    <label class="_heading_f7cvd_52 _required_f7cvd_91 ashby-application-form-question-title"
+           for="00000016-0000-0000-0000-000000000016">Phone Number</label>
+    <input placeholder="1-415-555-1234..." name="00000016-0000-0000-0000-000000000016" required=""
+           id="00000016-0000-0000-0000-000000000016" type="tel" class="_input_80epu_28" value="">
+    <div class="_phoneNumberConsentLegalText_1w7z2_1 ashby-application-form-texting-consent-description">
+      <div class="_consentBody_1w7z2_8">
+        <div class="_editor_1n5m7_37">Check Yes or No to indicate your agreement to receive text
+          message updates.</div>
+      </div>
+      <div class="_container_1rwuy_1">
+        <label class="_label_1rwuy_6">
+          <input type="radio" name="00000016-0000-0000-0000-000000000016-consent">Yes</label>
+        <label class="_label_1rwuy_6">
+          <input type="radio" name="00000016-0000-0000-0000-000000000016-consent">No</label>
+      </div>
+    </div>
+  </div>
+
+  <button class="_button_zyh3g_28 _primary_zyh3g_97 ashby-application-form-submit-button">
+    Submit Application</button>
+</div>
+
+<!-- The open combobox's panel. Floated to document level by the popover
+     library, so it is NOT a descendant of the field that owns it, and its id
+     is a React useId containing colons — not a legal bare CSS id selector. -->
+<div tabindex="-1" id=":r0:" role="listbox" aria-orientation="vertical"
+     class="_floatingContainer_d7ago_103">
+  <div class="_resultContainer_d7ago_116">
+    <div role="option" id=":r3:" aria-selected="true"
+         class="_result_d7ago_107 _active_d7ago_88">United States</div>
+    <div role="option" id=":r4:" aria-selected="false" class="_result_d7ago_107">Canada</div>
+    <div role="option" id=":r5:" aria-selected="false" class="_result_d7ago_107">Ireland</div>
+  </div>
+</div>
+</body>
+</html>

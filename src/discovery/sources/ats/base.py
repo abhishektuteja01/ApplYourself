@@ -6,7 +6,6 @@ from __future__ import annotations
 import time
 
 from src.discovery import cleaning
-from src.discovery import trace
 from src.discovery import universe
 from src.discovery.sources.ats.http import CareersError, fetch_json
 from src.discovery.sources.base import Source, SourceResult
@@ -21,6 +20,10 @@ from src.discovery.sources.base import Source, SourceResult
 # documented as permanent-death-only. A decommissioned board serving an HTML
 # error page decodes as invalid JSON and arrives as CareersError instead.
 PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexError)
+
+# Per-source pacing floor, config can't go below this. Default 1.0s;
+# Greenhouse runs at 0.5s.
+MIN_PACING_SECONDS = {"greenhouse": 0.5}
 
 
 def job_items(payload, key: str) -> list[dict]:
@@ -48,7 +51,8 @@ class AtsBoardSource(Source):
         raise NotImplementedError
 
     def fetch(self, ctx) -> SourceResult:
-        pacing = max(1.0, ctx.config.sources[self.name].pacing_seconds)
+        floor = MIN_PACING_SECONDS.get(self.name, 1.0)
+        pacing = max(floor, ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
 
         rows: list[dict] = []
@@ -61,8 +65,6 @@ class AtsBoardSource(Source):
         err_other = 0
         shape_errors = 0
 
-        ticker = trace.Ticker(self.name, len(companies), every=250)
-
         for i, c in enumerate(companies):
             if ctx.deadline_reached():
                 break
@@ -71,7 +73,6 @@ class AtsBoardSource(Source):
                 time.sleep(pacing)
 
             polled += 1
-            ticker.tick(polled, ok=ok, err=err_404 + err_other)
             try:
                 payload = fetch_json(self.board_url(c.slug), deadline_ts=ctx.deadline_ts)
                 # Parsed inside the try: a malformed payload must stay a
@@ -122,8 +123,6 @@ class AtsBoardSource(Source):
 
             if c.priority:
                 report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
-
-        ticker.finish(polled, ok=ok, err=err_404 + err_other, kept=kept)
 
         summary = (f"Companies polled: {polled} | OK: {ok} | 404: {err_404} "
                    f"| Err: {err_other} | Rows kept: {kept}")

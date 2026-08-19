@@ -9,6 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from src.discovery.config import LocationAllowlist
 from src.discovery.sources import jobspy_source
 from src.discovery.sources.jobspy_source import IndeedSource, LinkedinSource
 
@@ -21,7 +22,7 @@ class _Ctx:
             pacing_seconds = 0.0
         self.config = type("Config", (), {
             "sources": {"linkedin": Src, "indeed": Src},
-            "location_allowlist": type("L", (), {"countries": list(countries)}),
+            "location_allowlist": LocationAllowlist(countries=list(countries)),
         })
         self.verticals = cfg
         self._deadline_after = deadline_after

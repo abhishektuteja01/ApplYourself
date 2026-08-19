@@ -1,0 +1,54 @@
+<form id="application-form" enctype="multipart/form-data" method="POST">
+<div class="section page-centered application-form">
+<h4>Submit your application</h4>
+<ul>
+<li class="application-question resume">
+<label><div class="application-label">Resume/CV <span class="required">✱</span>
+</div>
+<div class="application-field">
+<a href="#" class="postings-btn template-btn-utility visible-resume-upload"><svg class=" icon icon-paperclip" width="16" height="16" viewbox="0 0 16 16"><path id="Vector" d="M4 3.375C4 1.5125 5.5125 0 7.375 0C9.2375 0 10.75 1.5125 10.75 3.375V10.75C10.75 11.9937 9.74375 13 8.5 13C7.25625 13 6.25 11.9937 6.25 10.75V4.75C6.25 4.33437 6.58437 4 7 4C7.41563 4 7.75 4.33437 7.75 4.75V10.75C7.75 11.1656 8.08437 11.5 8.5 11.5C8.91563 11.5 9.25 11.1656 9.25 10.75V3.375C9.25 2.34063 8.40937 1.5 7.375 1.5C6.34063 1.5 5.5 2.34063 5.5 3.375V11.5C5.5 13.1562 6.84375 14.5 8.5 14.5C10.1562 14.5 11.5 13.1562 11.5 11.5V4.75C11.5 4.33437 11.8344 4 12.25 4C12.6656 4 13 4.33437 13 4.75V11.5C13 13.9844 10.9844 16 8.5 16C6.01562 16 4 13.9844 4 11.5V3.375Z"></path></svg><span class="filename"></span><span class="default-label">ATTACH RESUME/CV</span><input class="application-file-input invisible-resume-upload" data-qa="input-resume" id="resume-upload-input" name="resume" tabindex="-1" type="file"></a><span class="resume-upload-failure"><div class="resume-upload-label">Couldn't auto-read resume.</div></span><span class="resume-upload-working"><div class="loading-indicator"></div>
+<div class="resume-upload-label">Analyzing resume...</div></span><span class="resume-upload-success"><div class="loading-indicator completed"><svg class=" icon icon-check" width="16" height="16" viewbox="0 0 16 16"><path d="M15.6652 3.32222C16.1116 3.75184 16.1116 4.44954 15.6652 4.87916L6.52338 13.6778C6.077 14.1074 5.35208 14.1074 4.9057 13.6778L0.334784 9.27847C-0.111595 8.84885 -0.111595 8.15115 0.334784 7.72153C0.781163 7.29191 1.50608 7.29191 1.95246 7.72153L5.71633 11.3407L14.0511 3.32222C14.4975 2.89259 15.2224 2.89259 15.6688 3.32222H15.6652Z"></path></svg></div>
+<div class="resume-upload-label">Success!</div></span>
+</div></label><span class="resume-upload-oversize"><p class="error-message">File exceeds the maximum upload size of <b>100MB</b>. Please try a smaller size.</p></span>
+</li>
+<li class="application-question"><label><div class="application-label">Full name<span class="required">✱</span>
+</div>
+<div class="application-field"><input type="text" data-qa="name-input" name="name" required></div></label></li>
+<li class="application-question"><label><div class="application-label">Email<span class="required">✱</span>
+</div>
+<div class="application-field"><input name="email" data-qa="email-input" type="email" pattern="[a-zA-Z0-9.#$%&amp;'*+\/=?^_`{|}~][a-zA-Z0-9.!#$%&amp;'*+\/=?^_`{|}~-]*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*" required></div></label></li>
+<li class="application-question"><label><div class="application-label">Phone <span class="required">✱</span>
+</div>
+<div class="application-field"><input type="text" data-qa="phone-input" name="phone" required></div></label></li>
+<li class="application-question" data-qa="structured-contact-location-question"><label><div class="application-label">Current location <span class="required" data-qa="SCL-question-required-asterisk">✱</span>
+</div>
+<div class="application-field">
+<input class="location-input" data-qa="location-input" id="location-input" type="text" maxlength="100" name="location" required><input id="selected-location" type="hidden" name="selectedLocation"><div class="momentum-body flex flex-column items-start width-full height-auto bg-gray-800 text-gray-200 rounded dropdown-container">
+<div class="dropdown-results width-full cursor-pointer"></div>
+<div class="dropdown-no-results width-full break-word py1 px2 pointer-events-none">No location found. Try entering a different location</div>
+<div class="dropdown-loading-results width-full break-word height-full py1 px2 pointer-events-none"><div class="theme-inverse items-center">
+<svg class=" icon icon-loading-spinner animation-rotate-infinite animation-linear animation-duration-500ms" width="16px" height="16px" viewbox="0 0 16 16"><path opacity="0.2" d="M16 8C16 12.4183 12.4183 16 8 16C3.58172 16 0 12.4183 0 8C0 3.58172 3.58172 0 8 0C12.4183 0 16 3.58172 16 8ZM3.99687 8C3.99687 10.2109 5.78914 12.0031 8 12.0031C10.2109 12.0031 12.0031 10.2109 12.0031 8C12.0031 5.78914 10.2109 3.99687 8 3.99687C5.78914 3.99687 3.99687 5.78914 3.99687 8Z"></path><path d="M8 0C9.58225 1.88681e-08 11.129 0.469192 12.4446 1.34824C13.7602 2.22729 14.7855 3.47672 15.391 4.93853C15.9965 6.40034 16.155 8.00887 15.8463 9.56072C15.5376 11.1126 14.7757 12.538 13.6569 13.6569L10.8306 10.8306C11.3905 10.2708 11.7717 9.5575 11.9262 8.78097C12.0807 8.00444 12.0014 7.19955 11.6984 6.46807C11.3954 5.73659 10.8823 5.11139 10.224 4.67152C9.56571 4.23165 8.79174 3.99687 8 3.99687L8 0Z"></path></svg><span>Loading</span>
+</div></div>
+</div>
+</div></label></li>
+<li class="application-question"><label><div class="application-label">Current company </div>
+<div class="application-field"><input type="text" data-qa="org-input" name="org"></div></label></li>
+</ul>
+</div>
+<div class="section page-centered application-form">
+<h4>Links</h4>
+<ul>
+<li class="application-question"><label><div class="application-label">LinkedIn URL<span class="required">✱</span>
+</div>
+<div class="application-field"><input type="text" name="urls[LinkedIn]" required></div></label></li>
+<li class="application-question"><label><div class="application-label">GitHub URL</div>
+<div class="application-field"><input type="text" name="urls[GitHub]"></div></label></li>
+<li class="application-question"><label><div class="application-label">Portfolio URL</div>
+<div class="application-field"><input type="text" name="urls[Portfolio]"></div></label></li>
+<li class="application-question"><label><div class="application-label">Other website</div>
+<div class="application-field"><input type="text" name="urls[Other]"></div></label></li>
+</ul>
+</div>
+<input type="hidden" name="accountId" value="00000001-0000-0000-0000-000000000001"><input type="hidden" name="linkedInData"><input type="hidden" name="origin"><input type="hidden" name="referer"><input type="hidden" name="timezone" id="applicant-timezone" value=""><input type="hidden" name="socialReferralKey"><input type="hidden" name="socialSource"><input type="hidden" name="resumeStorageId" value=""><input id="hcaptchaResponseInput" type="hidden" name="h-captcha-response" value=""><button id="hcaptchaSubmitBtn" type="submit" class="hidden"></button><script>(function () {var tzInput = document.getElementById('applicant-timezone');if (tzInput && typeof Intl !== 'undefined') {try { tzInput.value = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}}})();</script><input type="hidden" name="source"><div id="h-captcha" class="h-captcha" data-sitekey="00000002-0000-0000-0000-000000000002"></div>
+<div class="section page-centered application-form last-section-apply"><button id="btn-submit" type="button" class="postings-btn template-btn-submit cerulean" data-qa="btn-submit" href="#">Submit application</button></div>
+</form>

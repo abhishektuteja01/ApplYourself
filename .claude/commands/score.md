@@ -19,10 +19,11 @@ internally; for a full vertical re-judge use `/rescore --vertical`.)
    - `rows_to_score=0` → skip to step 4.
    - Each `range <vertical> <A>-<B>` line is one judge to spawn.
 
-2. Spawn one Agent per `range` line, single message, parallel, model
-   sonnet, prompt exactly:
-   `/score-judge --range <A>-<B> --vertical <name>`
-   No other content in the prompt.
+2. Spawn one Agent per `range` line, single message, parallel, with
+   `subagent_type: score-judge` and prompt exactly:
+   `--range <A>-<B> --vertical <name>`
+   No other content in the prompt. The agent definition
+   (`.claude/agents/score-judge.md`) fixes its model and tools.
 
 3. `uv run python -m src.score_cli check-coverage`
    - Exit 0 → merge (3a).

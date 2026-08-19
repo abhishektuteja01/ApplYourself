@@ -6,10 +6,22 @@ This directory contains tenant lists (company slugs) for various ATS boards, use
 Seed lists cloned from [github.com/kalil0321/ats-scrapers](https://github.com/kalil0321/ats-scrapers).
 
 ## License
-MIT License.
+MIT License. Copyright (c) kalil0321 (github.com/kalil0321/ats-scrapers).
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, subject to the condition that the above
+copyright notice and this permission notice be included in all copies or
+substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 
 Slugs added since the seed clone were verified individually against the live
 board API before being committed.
+
+`workday.csv` has no ats-scrapers seed at all (§12b) — Workday's tri-part
+slug (`company|wd#|site_id`) is not a shape that source publishes, so every
+row was hand-verified against the live CXS API, one tenant at a time,
+before being committed.
 
 ## `<ats>.local.csv` — untracked overlay
 

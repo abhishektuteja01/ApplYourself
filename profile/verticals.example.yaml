@@ -48,6 +48,15 @@ verticals:
       reasoning_years: >-
         Auto-skipped by deterministic pre-screen: JD states an explicit
         minimum of 5+ years of experience.
+    # Optional, and lane-specific: only /apply's Step 4b reads this (not
+    # src/verticals.py's typed loader), and only for the vertical(s) that set
+    # it. Leave it out entirely for a vertical where the JD-first/no-flat-
+    # fallback default behavior is fine.
+    #   markup_pct  applied to the JD-stated low end of a salary range
+    #   fallback    used only when the JD states no figure at all
+    # salary_expectation:
+    #   markup_pct: 10
+    #   fallback: 110000
 
   example_secondary:
     display_name: Sprocket Compliance

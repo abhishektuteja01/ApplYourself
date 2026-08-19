@@ -1209,7 +1209,12 @@ def test_render_shortlist_row_fields(cfg):
     md = _render(cfg, {"example_primary": [_sl_row()]})
     assert "### 1. 80 — Acme — Widget Functional Consultant" in md
     assert "- **job_id:** `aaaaaaaa`" in md
-    assert "- **location:** Boston, MA · **source:** indeed · **posted:** 2026-06-01" in md
+    # `https://x/1` is not a board /apply can submit to, so the row is marked.
+    # The mark is derived from the url rather than the source name: keying it
+    # on `source == "workday"` marked no rows at all, while leaving every
+    # LinkedIn, Indeed and Ashby role silently un-submittable.
+    assert ("- **location:** Boston, MA · **source:** indeed"
+            " — **manual-apply, not auto-submittable** · **posted:** 2026-06-01") in md
     assert "- **sponsorship:** opt_ok — \"no visa sponsorship language\"" in md
     assert "- **why:** strong widget assembly overlap" in md
     assert "- **suggested:** tailor" in md
@@ -1329,3 +1334,32 @@ class TestRenderShortlistInvariants:
         rows = [_sl_row(job_id="aaaaaaaa"), _sl_row(job_id="bbbbbbbb", fit_score=10)]
         with pytest.raises(AssertionError):
             _render(cfg, {"example_primary": rows})
+
+
+def test_a_submittable_board_url_carries_no_manual_apply_mark(cfg):
+    """The mark has to discriminate, not decorate every row."""
+    md = _render(cfg, {"example_primary": [_sl_row(
+        source="greenhouse",
+        url="https://job-boards.greenhouse.io/widgetco/jobs/1000003",
+    )]})
+    assert "manual-apply" not in md
+
+
+def test_ashby_is_not_flagged_manual_now_that_it_has_a_fill_driver(cfg):
+    """The shortlist and the queue read the same flag, so a role the queue can
+    fill must not be labelled by hand here."""
+    md = _render(cfg, {"example_primary": [_sl_row(
+        source="ashby",
+        url="https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001",
+    )]})
+    assert "manual-apply, not auto-submittable" not in md
+
+
+def test_a_workday_url_is_marked_whatever_its_source_says(cfg):
+    """41 rows in clean.parquet carry a myworkdayjobs.com url under
+    `source == "indeed"`. The old source-keyed check missed every one."""
+    md = _render(cfg, {"example_primary": [_sl_row(
+        source="indeed",
+        url="https://widgetco.wd1.myworkdayjobs.com/en-US/careers/job/Widget-Engineer_R-1",
+    )]})
+    assert "manual-apply, not auto-submittable" in md

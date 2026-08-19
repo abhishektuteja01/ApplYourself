@@ -68,7 +68,7 @@ VERTICAL="${LATEST_DIR%%/*}"
 eval "$(uv run tailor-prep identity "$VERTICAL")" || exit 1
 test -n "$FILE_SLUG" || { echo "ERROR: no FILE_SLUG for vertical ${VERTICAL} -- its resume_file needs a bold name line."; exit 1; }
 
-TODAY=$(date "+%B %-d, %Y")
+TODAY=$(date "+%B %e, %Y" | tr -s ' ')
 
 # Persist the resolved values: shell state does NOT survive between Bash calls,
 # and `eval` above consumed prep's stdout so nothing printed APPLICANT_NAME or
@@ -115,24 +115,15 @@ Skip re-reading `profile/bullets.md` if it was already read in full this session
 with no change signal. The two `${OUT_DIR}` files are per-job — always read them.
 When in doubt, re-read.
 
-## Step 2b — company mission research (always attempt, never blocking)
+## Step 2b — company research (delegated)
 
-Find the company's actual focus, not its marketing tagline — specific enough to
-show you looked.
+Invoke the `company-answers` skill for `$1`. It writes
+`${OUT_DIR}/company_answers.md` (three sections: `why_company`, `why_role`,
+`what_interests_you_about_product`; `INSUFFICIENT_RESEARCH` is a valid,
+already-linted outcome per section) — `/apply`'s Tier C2 reads the same
+file. If it errors or hard-refuses, surface its output verbatim and stop.
 
-Search for it using the company name **plus a disambiguating detail
-pulled from `jd_snapshot.md`** (industry/domain phrase from the JD body,
-or HQ/location if the JD states one) — many portfolio-company and
-common-word names (e.g. "Distyl", "The Agentic Loop", "Glean") collide
-with unrelated companies on a bare-name search. If the ATS slug in
-`companies.yaml`/the job URL suggests an obvious domain (e.g.
-`boards.greenhouse.io/<slug>` → try `<slug>.com`), prefer fetching that
-company's own About/Mission page directly over a generic web search.
-
-Pull at most 1-2 concrete themes — what they build, who they serve, a stated
-focus tied to this JD's work — never the homepage tagline verbatim. If the search
-returns nothing specific, the wrong company, or only marketing copy, drop this
-step and draft without it. It never blocks Step 3.
+Non-blocking either way: continue to Step 3 once it returns.
 
 ## Step 3 — draft the letter content
 
@@ -163,6 +154,8 @@ content. Across the letter, cover:
   honest and specific, no invented scope
 - a close
 
+Just start — no filler opener announcing that this is an application.
+
 Don't hand-police structural AI-tells here (tricolons, "not only X but
 also Y", uniform rhythm, formulaic "I am writing to express my
 interest..." / "I look forward to hearing from you" openers and closers)
@@ -187,7 +180,7 @@ Write a JSON file `/tmp/cover_letter_$1_draft.json` with this shape:
 
 - `salutation`: `"Dear Hiring Manager,"` unless `--to "Name"` was passed in `$ARGUMENTS`, then `"Dear Name,"`.
 - `date`: the `TODAY` value Step 1 printed. Only needed if the template has a `{{DATE}}` placeholder — Step 1 already printed the template's actual placeholder list; use it. Omit keys from the JSON for placeholders the template doesn't have (the `{{SALUTATION}}`/`{{BODY}}` hard-refuse already happened in Step 1). If a placeholder the template DOES have (e.g. `{{CLOSING}}`) has no natural generated value, still include the key with an empty string -- the renderer blanks unfilled-but-present placeholders rather than leaving the raw `{{TOKEN}}` text in the letter, but it's cleaner for the JSON to be explicit.
-- 2-3 `body` entries is typical; aim for ~250-400 words total across them so the letter fits one page in the template's own layout.
+- 2-3 `body` entries is typical; aim for 230-300 words total across them so the letter fits one page in the template's own layout. Measured ceilings in this template: 3 paragraphs hold ~330 words, 4 hold ~300. Dropping from 4 paragraphs to 3 is the lever when a letter needs the room.
 
 ## Step 4 — no_ai_slop editing pass (before lint)
 
@@ -213,9 +206,10 @@ loop, which remains the final gate before render.
 ## Step 5 — lint loop (fully linted, no bullets.md exemption)
 
 Cover letters are fresh-generated prose, not verbatim bullet text — there
-is **no exemption** here, same as outreach. Lint
-`salutation` + every `body` entry (skip `date`/`closing`/`signoff_name` --
-they're not generated prose).
+is **no exemption** here, same as outreach. Lint `salutation` + every
+`body` entry (skip `date`/`closing`/`signoff_name` -- they're not generated
+prose). `company_answers.md` is already linted by `/company-answers`
+(Step 2b) — not re-linted here.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
@@ -259,11 +253,10 @@ list, which doesn't apply to cover letters.)
 If `violations` is non-empty: rewrite the offending field's text using
 ONLY words already in the relevant bullet's canonical text + its
 `allowable_synonyms`. The plain-language escape applies to exactly one case —
-prose that traces to NO bullet at all, such as the salutation, the closing, or
-a company-mission sentence from Step 2b. If the sentence carries any claim
-about your experience, it traces to a bullet and REPHRASE-LICENSE binds; the
-escape is not available. Update
-the JSON file, and re-run the lint above, following
+prose that traces to NO bullet at all, such as the salutation or the closing.
+If the sentence carries any claim about your experience, it traces to a bullet
+and REPHRASE-LICENSE binds; the escape is not available. Update
+`/tmp/cover_letter_$1_draft.json`, and re-run the lint above, following
 `.claude/shared/lint_loop.md` — read it; it holds the attempt cap and the
 hard-refuse rule.
 
@@ -302,8 +295,8 @@ memory — the fixed staging dir it uses is what keeps Word's sandbox grant vali
 ## Step 7 — append the dir to state.yaml.cover_letters[]
 
 This is the side-list mutation `/cover-letter` is allowed
-(same pattern as `/tailor`'s `tailored_dirs[]`). State transitions remain
-`/track`'s sole job (R10).
+(same pattern as `/tailor`'s `tailored_dirs[]`). The transition itself happens in
+Step 7b, and goes through `/track` (R10).
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
@@ -316,18 +309,35 @@ print(f'cover_letters[] now has {len(data[\"cover_letters\"])} entry/entries')
 "
 ```
 
+## Step 7b — transition `saved` -> `tailored`
+
+Both artifacts now exist, which is exactly `/apply`'s eligibility bar, so this is
+the point where the role becomes submittable.
+
+Read `.claude/shared/self_promote.md` and run its block, with `JOB_ID="$1"`
+and `NOTE="resume + cover letter on file"`.
+
 ## Step 8 — runtime assertions before reporting done
 
 Before reporting success, verify on disk:
 - [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.docx` exists and is non-empty
 - [ ] `${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf` exists and is non-empty (warn but don't fail if osascript errored)
+- [ ] `${OUT_DIR}/company_answers.md` exists and has all three `##` sections
+      (§7b) — each is either 2-4 sentences or the literal `INSUFFICIENT_RESEARCH`
 - [ ] One final lint pass returns zero violations. Step 5's Python reads
-      `/tmp/cover_letter_$1_draft.json`, so re-running it verbatim
-      re-checks the draft JSON, not the rendered docx — which is the intent
-      here, since the docx is generated FROM that JSON. Do not "fix" the path
-      to the output dir; there is no .md there to lint.
-- [ ] Body word count is within 250-400 (count the `body` entries' words; /outreach
+      `/tmp/cover_letter_$1_draft.json`, so re-running it verbatim re-checks
+      the draft, not the rendered docx — which is the intent here, since the
+      docx is generated FROM the JSON. `company_answers.md` was already
+      asserted lint-clean by `/company-answers` (Step 2b).
+- [ ] Body word count is within 230-300 (count the `body` entries' words; /outreach
       asserts its channel limit, and this letter has to fit one page the same way)
+- [ ] `pdfinfo` is installed: `command -v pdfinfo >/dev/null 2>&1 || echo "ERROR: pdfinfo not installed. Run: brew install poppler (macOS) / apt install poppler-utils (Debian/Ubuntu)"`
+- [ ] The rendered PDF is exactly one page: `pdfinfo "${OUT_DIR}/${FILE_SLUG}_Cover_Letter.pdf" | awk '/^Pages:/{print $2}'`
+      returns `1`. Word count is a guard rail, not the test — paragraph count and
+      ragged line breaks move the real boundary, so assert the page count itself.
+      If it returns 2, cut the body (or merge two paragraphs into one) and re-render.
+      Trust `pdfinfo`, not `mdls` — Spotlight metadata lags behind the file.
+      `mdls` is macOS-only; `pdfinfo` is the portable check.
 - [ ] `pipeline/$1/state.yaml.cover_letters[]` contains `${LATEST_DIR}`
 
 If any check fails, do NOT report success — diagnose and fix.
@@ -339,11 +349,14 @@ Tell the user:
 Cover letter written into: ${OUT_DIR}/
   - ${FILE_SLUG}_Cover_Letter.docx ({size} bytes)
   - ${FILE_SLUG}_Cover_Letter.pdf ({size} bytes)
+  - company_answers.md ({why_company/why_role/what_interests_you_about_product
+    status: filled or INSUFFICIENT_RESEARCH})
 
-state.yaml.cover_letters[] now references this dir.
+state.yaml.cover_letters[] now references this dir. /apply's Tier C2 will read
+company_answers.md instead of parking on the recurring "why us" questions.
 
 Next:
   1. Open ${FILE_SLUG}_Cover_Letter.docx -- confirm no fabricated claims and no
      scope-widening drift against profile/bullets.md.
-  2. Submit manually alongside ${FILE_SLUG}_Resume.docx.
+  2. Submit manually alongside ${FILE_SLUG}_Resume.docx, or run /apply.
 ```

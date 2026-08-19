@@ -1,16 +1,14 @@
 ---
-description: Judge slice for /score. Internal — spawned only, never invoked directly by the user.
-user-invocable: false
+name: score-judge
+description: Judge one range of unscored job rows against a vertical's rubric. Spawned per range by /score, /rescore and /ingest. Never invoked directly by the user.
+tools: Bash, Read, Write
 model: sonnet
 effort: medium
-allowed-tools:
-  - Bash
-  - Read
-  - Write
-argument-hint: --range <A>-<B> --vertical <name>
 ---
 
-# /score-judge --range A-B --vertical <name>
+# Judge slice
+
+You are spawned with a range and a vertical, e.g. `--range 51-100 --vertical example_primary`.
 
 Missing `--vertical`, missing `unscored_<vertical>.jsonl`, or range's
 lines don't exist → stop, report, don't improvise.
@@ -51,10 +49,11 @@ self-check on every row, `Write` to
 `--range 51-100` → `batch_<v>_006.json` through `_010.json`. Never write
 elsewhere. Never delete a batch file.
 
-This numbering is unique per judge only because every range starts on a
-10-row boundary. `src.score_cli.judge_ranges` enforces that (chunk must be
-a multiple of `JUDGE_BATCH`); ranges from any other source are invalid —
-stop and report rather than renumbering.
+This numbering is unique per judge only because every range *starts* on a
+10-row boundary. Check your start, not your length: a vertical's final
+range may be short (85 rows -> `1-85`), which is valid. What is invalid is
+a range starting off the 10-row grid (e.g. `4-83`) — stop and report that
+rather than renumbering.
 
 ## Step 4 — report
 

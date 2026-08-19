@@ -119,9 +119,9 @@ uv run python -m src.score_cli split
 
 `split` prints one `<vertical>=<n>` pair per lane. Exactly one must be `1`, and
 it must be step 2's vertical — if some other lane holds the row, that lane is
-the truth; judge it there. Spawn one Agent, model sonnet, prompt exactly — no
-other content:
-`/score-judge --range 1-1 --vertical <that vertical>`
+the truth; judge it there. Spawn one Agent with
+`subagent_type: score-judge`, prompt exactly — no other content:
+`--range 1-1 --vertical <that vertical>`
 
 ```bash
 uv run python -m src.score_cli check-coverage

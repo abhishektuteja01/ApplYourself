@@ -84,9 +84,15 @@ for line in "${push_lines[@]}"; do
     range="$remote_oid..$local_oid"
   fi
 
-  # -G greps added/removed content across the range's diffs.
-  if hits=$(git log --oneline --pickaxe-regex -i -G "$alt" "$range" 2>/dev/null) \
-     && [[ -n "$hits" ]]; then
+  # -G greps added/removed content across the range's diffs. Its argument is
+  # already a regex, so --pickaxe-regex is not just redundant but fatal: git
+  # rejects the pair outright, and a swallowed error reads as "no hits" — a
+  # green light for a scan that never ran. Abort on error instead.
+  if ! hits=$(git log --oneline -i -G "$alt" "$range" 2>&1); then
+    printf 'pre-push: FAIL — content scan could not run:\n\n%s\n\n' "$hits" >&2
+    printf 'Refusing to push on an unverified range.\n' >&2
+    status=1
+  elif [[ -n "$hits" ]]; then
     printf 'pre-push: FAIL — commits being pushed touch denylisted strings:\n\n%s\n\n' \
       "$hits" >&2
     printf 'These blobs become public on push and stay reachable by SHA.\n' >&2
@@ -99,7 +105,12 @@ for line in "${push_lines[@]}"; do
   # untouched. Author NAME is deliberately public here (LICENSE names it), so
   # this does not false-positive on every commit.
   for field in grep author committer; do
-    hits=$(git log --oneline -i -E "--$field=$alt" "$range" 2>/dev/null) || continue
+    # Same rule as above: an error is an unverified range, not a clean one.
+    if ! hits=$(git log --oneline -i -E "--$field=$alt" "$range" 2>&1); then
+      printf 'pre-push: FAIL — %s scan could not run:\n\n%s\n\n' "$field" "$hits" >&2
+      status=1
+      continue
+    fi
     [[ -n "$hits" ]] || continue
     case "$field" in
       grep)      what="commit message(s)" ;;

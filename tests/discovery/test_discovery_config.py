@@ -20,7 +20,7 @@ def test_every_default_source_is_live_and_enabled(tmp_path, monkeypatch):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     config = load_config(tmp_path / "nonexistent.yaml")
-    assert set(config.sources) == {"linkedin", "indeed", "greenhouse", "lever", "ashby"}
+    assert set(config.sources) == {"linkedin", "indeed", "greenhouse", "lever", "ashby", "workday"}
     assert all(s.enabled for s in config.sources.values())
 
 

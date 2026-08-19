@@ -1,0 +1,240 @@
+{
+  "absolute_url": "https://example.com",
+  "data_compliance": [
+    {
+      "type": "gdpr",
+      "requires_consent": false,
+      "requires_processing_consent": false,
+      "requires_retention_consent": false,
+      "retention_period": null,
+      "demographic_data_consent_applies": false
+    }
+  ],
+  "education": "education_optional",
+  "internal_job_id": 6434594002,
+  "location": {
+    "name": "Dallas, Texas, United States"
+  },
+  "metadata": [
+    {
+      "id": 4772805002,
+      "name": "Business",
+      "value": "Bushing Group",
+      "value_type": "single_select"
+    },
+    {
+      "id": 5036312002,
+      "name": "Function",
+      "value": "Client Handler",
+      "value_type": "single_select"
+    },
+    {
+      "id": 4765566002,
+      "name": "Job Title",
+      "value": "Account Director",
+      "value_type": "short_text"
+    },
+    {
+      "id": 4765567002,
+      "name": "Employment Type",
+      "value": "Full Time",
+      "value_type": "single_select"
+    },
+    {
+      "id": 4765568002,
+      "name": "Length of FTC in Months",
+      "value": "0.0",
+      "value_type": "number"
+    },
+    {
+      "id": 4765578002,
+      "name": "Job Description",
+      "value": "NA",
+      "value_type": "long_text"
+    }
+  ],
+  "id": 1000003,
+  "updated_at": "2026-07-28T10:57:12-04:00",
+  "requisition_id": "1953",
+  "title": "Account Director",
+  "company_name": "Bushing Group",
+  "first_published": "2026-07-08T15:29:42-04:00",
+  "language": "en",
+  "application_deadline": null,
+  "departments": [
+    {
+      "id": 4038169002,
+      "name": "Client Handler",
+      "child_ids": [
+        4108439002,
+        4108440002,
+        4108441002,
+        4108442002,
+        4038171002,
+        4038165002,
+        4074436002
+      ],
+      "parent_id": 4038546002
+    }
+  ],
+  "offices": [
+    {
+      "id": 4020225002,
+      "name": "Dallas",
+      "location": "Dallas, Texas, United States",
+      "child_ids": [],
+      "parent_id": 4020223002
+    }
+  ],
+  "ai_disclaimer": null,
+  "include_ai_disclaimer": null,
+  "ai_opt_out_request_url": null,
+  "compliance": null,
+  "demographic_questions": null,
+  "questions": [
+    {
+      "description": null,
+      "label": "First Name",
+      "required": true,
+      "fields": [
+        {
+          "name": "first_name",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Last Name",
+      "required": true,
+      "fields": [
+        {
+          "name": "last_name",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Preferred First Name",
+      "required": false,
+      "fields": [
+        {
+          "name": "preferred_name",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Email",
+      "required": true,
+      "fields": [
+        {
+          "name": "email",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Phone",
+      "required": true,
+      "fields": [
+        {
+          "name": "phone",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Resume/CV",
+      "required": true,
+      "fields": [
+        {
+          "name": "resume",
+          "type": "input_file",
+          "values": []
+        },
+        {
+          "name": "resume_text",
+          "type": "textarea",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Cover Letter",
+      "required": false,
+      "fields": [
+        {
+          "name": "cover_letter",
+          "type": "input_file",
+          "values": []
+        },
+        {
+          "name": "cover_letter_text",
+          "type": "textarea",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "LinkedIn Profile",
+      "required": false,
+      "fields": [
+        {
+          "name": "question_37017164002",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    }
+  ],
+  "location_questions": [
+    {
+      "description": null,
+      "label": "Longitude",
+      "required": true,
+      "fields": [
+        {
+          "name": "longitude",
+          "type": "input_hidden",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Latitude",
+      "required": true,
+      "fields": [
+        {
+          "name": "latitude",
+          "type": "input_hidden",
+          "values": []
+        }
+      ]
+    },
+    {
+      "description": null,
+      "label": "Location",
+      "required": true,
+      "fields": [
+        {
+          "name": "location",
+          "type": "input_text",
+          "values": []
+        }
+      ]
+    }
+  ]
+}

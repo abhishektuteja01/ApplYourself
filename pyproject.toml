@@ -30,6 +30,7 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.32",
     "geonamescache>=3.0.1",
+    "pycountry>=24.0",
 ]
 
 [project.urls]
@@ -43,13 +44,37 @@ score = "src.score_cli:main"
 track = "src.track_cli:main"
 tailor-prep = "src.tailor_cli:main"
 profile-extract = "src.profile_extract:main"
+onboard-scaffold = "src.onboard_scaffold:main"
 discover = "src.discovery.orchestrator:main"
 verticals-check = "src.verticals:main"
+apply = "src.apply_cli:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+]
+# Opt-in: `uv sync --group apply`. Discovery, scoring and tailoring must keep
+# working on a clone that never installs it.
+apply = [
+    "playwright>=1.47",
+]
+# Opt-in: `uv sync --group discovery`. Needed only by `uv run discover` /
+# `uv run ingest-url`; scoring and tailoring must keep working without it.
+#
+# `postal` binds to the system libpostal C library, which is NOT pip-installable
+# and has no wheel: installing this group compiles it against libpostal's
+# headers. Install libpostal first or the sync fails.
+#   macOS: `brew install libpostal`
+#   Linux: build from source (github.com/openvenues/libpostal) — no distro
+#     packages it. Needs autoconf/automake/libtool/pkgconf plus a compiler, and
+#     `make` downloads ~2GB of model data into --datadir. Export
+#     LIBPOSTAL_PREFIX (and LD_LIBRARY_PATH) if you used a non-default --prefix.
+# src/discovery/location.py imports it lazily, at the one call site, so a clone
+# without it can still import discovery — the failure is a clear message when
+# address parsing is actually reached.
+discovery = [
+    "postal>=1.1.11",
 ]
 
 [build-system]

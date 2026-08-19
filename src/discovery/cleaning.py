@@ -35,7 +35,6 @@ import yaml
 from rapidfuzz import fuzz
 
 from src import verticals
-from src.discovery.location import parse_location
 from src.discovery.config import load_config
 from src.discovery.schema import naive_datetime
 from src import paths
@@ -212,8 +211,15 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     if df.empty:
         return df.copy()
 
-    allow_countries = {c.lower() for c in cfg.location_allowlist.countries}
-    allow_states = {s.lower() for s in cfg.location_allowlist.states}
+    # Local import: location needs libpostal (optional `discovery` group), and
+    # importing this module must stay possible without it.
+    from src.discovery.location import parse_location
+
+    # effective_countries() folds in the optional `continents` shorthand;
+    # effective_states() accepts either a full name or a code, since
+    # parse_location only ever returns codes.
+    allow_countries = {c.lower() for c in cfg.location_allowlist.effective_countries()}
+    allow_states = {s.lower() for s in cfg.location_allowlist.effective_states()}
     allow_cities = {c.lower() for c in cfg.location_allowlist.cities}
 
     keep_indices = []
@@ -223,13 +229,26 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
         raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
         parsed = parse_location(raw_loc_str)
 
-        # 1. Nothing parsed, or remote-only -> KEEP
-        if not parsed.country and not parsed.state and not parsed.city:
+        # 1. Nothing parsed at all -> KEEP (conservative default, unchanged).
+        if not parsed.country and not parsed.state and not parsed.city and not parsed.candidate_countries:
             keep_indices.append(idx)
             if parsed.remote:
                 new_locations.append("Remote")
             else:
                 new_locations.append(raw_loc_str)
+            continue
+
+        # 1b. A genuine multi-region ambiguity (location.py no longer picks
+        # a winner among multiple countries itself -- that decision belongs
+        # here, against whatever the user actually configured, so an
+        # India-only allowlist gets the same "don't guess" protection a
+        # US-only one does). Overlaps the allowlist -> KEEP unresolved for
+        # review; no overlap at all -> positively excluded -> DROP.
+        if parsed.candidate_countries:
+            candidates_lower = {c.lower() for c in parsed.candidate_countries}
+            if not allow_countries or candidates_lower & allow_countries:
+                keep_indices.append(idx)
+                new_locations.append("Remote" if parsed.remote else raw_loc_str)
             continue
 
         # 2. Parsed to a place positively OUTSIDE the allowlist -> DROP
@@ -330,9 +349,17 @@ def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
         return df.copy()
     df = df.copy()
     df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
+    # Same tie-break as exact_dedupe, for the same reason: an aggregator repost
+    # wins on boilerplate by a percent or two and costs the only url that can be
+    # submitted to. Step 4 got this and step 5 did not, so a board row could win
+    # the exact pass and then lose the fuzzy one — silently, since job_id
+    # excludes url. Measured on the 2026-08-10 run: 3 applyable rows lost to a
+    # LinkedIn survivor this way.
+    df["_not_applyable"] = _not_applyable(df)
     keep_indices: list = []
     for _, group in df.groupby("company_normalized", sort=False):
-        g = group.sort_values("_jd_len", ascending=False, kind="stable")
+        g = group.sort_values(["_not_applyable", "_jd_len"],
+                               ascending=[True, False], kind="stable")
         kept: list[tuple[str, frozenset[str]]] = []
         for idx, title in zip(g.index, g["title_normalized"]):
             levels = _level_tokens(title)
@@ -341,7 +368,7 @@ def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
                 continue
             kept.append((title, levels))
             keep_indices.append(idx)
-    return df.loc[keep_indices].drop(columns="_jd_len").copy()
+    return df.loc[keep_indices].drop(columns=["_jd_len", "_not_applyable"]).copy()
 
 
 # ---------------------------------------------------------------------

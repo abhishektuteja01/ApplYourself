@@ -1,0 +1,446 @@
+{
+ "absolute_url": "https://job-boards.greenhouse.io/sprocketlabs/jobs/5188554007",
+ "data_compliance": [
+  {
+   "type": "gdpr",
+   "requires_consent": false,
+   "requires_processing_consent": false,
+   "requires_retention_consent": false,
+   "retention_period": null,
+   "demographic_data_consent_applies": false
+  }
+ ],
+ "education": "education_optional",
+ "employment": "employment_optional",
+ "internal_job_id": 4657085007,
+ "location": {
+  "name": "Munfordville, KY"
+ },
+ "metadata": [
+  {
+   "id": 7611585007,
+   "name": "Working location_HRIS Integration",
+   "value": null,
+   "value_type": "single_select"
+  },
+  {
+   "id": 7801919007,
+   "name": "Clinic/Position Location",
+   "value": "Munfordville, KY",
+   "value_type": "single_select"
+  },
+  {
+   "id": 8618760007,
+   "name": "Brand",
+   "value": "Sprocket Labs",
+   "value_type": "single_select"
+  },
+  {
+   "id": 5951656007,
+   "name": "Employment Type",
+   "value": "Part-time",
+   "value_type": "single_select"
+  },
+  {
+   "id": 6366013007,
+   "name": "Job Type",
+   "value": "Physical Therapy Assistant (PTA)",
+   "value_type": "single_select"
+  },
+  {
+   "id": 6573819007,
+   "name": "Recruiting Market Difficulty Score",
+   "value": null,
+   "value_type": "single_select"
+  }
+ ],
+ "id": 5188554007,
+ "updated_at": "2026-08-07T17:18:46-04:00",
+ "requisition_id": "16672",
+ "title": "Sprocket Technician",
+ "company_name": "Sprocket Labs",
+ "first_published": "2026-07-21T12:04:33-04:00",
+ "language": "en",
+ "application_deadline": null,
+ "departments": [
+  {
+   "id": 4035535007,
+   "name": "Region 2 IRG",
+   "child_ids": [],
+   "parent_id": 4035486007
+  }
+ ],
+ "offices": [
+  {
+   "id": 4031711007,
+   "name": "0050-2033 MUNF",
+   "location": "205 N Washington St, Munfordville, KY, 42765",
+   "child_ids": [],
+   "parent_id": 4030782007
+  }
+ ],
+ "ai_disclaimer": null,
+ "include_ai_disclaimer": null,
+ "ai_opt_out_request_url": null,
+ "compliance": null,
+ "demographic_questions": {
+  "header": "EEOC",
+  "description": "<p><strong>Voluntary Self-Identification</strong></p>\n<p>For government reporting purposes, we ask candidates to respond to the below self-identification survey. Completion of the form is entirely voluntary. Whatever your decision, it will not be considered in the hiring process or thereafter. Any information that you do provide will be recorded and maintained in a confidential file.</p>\n<p>As set forth in Upstream Rehabilitation&rsquo;s Equal Employment Opportunity policy, we do not discriminate on the basis of any protected Sprocket status under any applicable law.</p>",
+  "questions": [
+   {
+    "id": 4014076007,
+    "label": "Gender",
+    "required": true,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4084339007,
+      "label": "Male",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4084340007,
+      "label": "Female",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4084341007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": true
+     }
+    ]
+   },
+   {
+    "id": 4014077007,
+    "label": "Veteran Status",
+    "required": true,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4084342007,
+      "label": "I identify as one or more of the classifications of a protected veteran",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4084343007,
+      "label": "I am not a protected veteran",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4084344007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": true
+     }
+    ]
+   },
+   {
+    "id": 4014078007,
+    "label": "Disability Status",
+    "required": true,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4084345007,
+      "label": "Yes, I have a disability, or have had one in the past",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4084346007,
+      "label": "No, I do not have a disability and have not had one in the past",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4084347007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": true
+     }
+    ]
+   },
+   {
+    "id": 4014352007,
+    "label": "Race",
+    "required": true,
+    "type": "multi_value_single_select",
+    "answer_options": [
+     {
+      "id": 4085976007,
+      "label": "American Indian or Alaskan Native",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085977007,
+      "label": "Asian",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085978007,
+      "label": "Black or African American",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085979007,
+      "label": "Hispanic or Latino",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085980007,
+      "label": "Native Hawaii or other Pacific Island",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085981007,
+      "label": "Middle Eastern or North African",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085982007,
+      "label": "Two or more races",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4085983007,
+      "label": "White",
+      "free_form": false,
+      "decline_to_answer": false
+     },
+     {
+      "id": 4086021007,
+      "label": "I don't wish to answer",
+      "free_form": false,
+      "decline_to_answer": true
+     }
+    ]
+   }
+  ]
+ },
+ "questions": [
+  {
+   "description": null,
+   "label": "First Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "first_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Last Name",
+   "required": true,
+   "fields": [
+    {
+     "name": "last_name",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Email",
+   "required": true,
+   "fields": [
+    {
+     "name": "email",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Phone",
+   "required": true,
+   "fields": [
+    {
+     "name": "phone",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Resume/CV",
+   "required": false,
+   "fields": [
+    {
+     "name": "resume",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "resume_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Cover Letter",
+   "required": false,
+   "fields": [
+    {
+     "name": "cover_letter",
+     "type": "input_file",
+     "values": []
+    },
+    {
+     "name": "cover_letter_text",
+     "type": "textarea",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "LinkedIn Profile",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_12495353007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Website",
+   "required": false,
+   "fields": [
+    {
+     "name": "question_12495354007",
+     "type": "input_text",
+     "values": []
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Are you currently a Licensed Physical Therapist Assistant, or will you obtain a Physical Therapy Assistant license upon completion of an accredited PTA program?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_12495355007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Do you now, or in the future, require visa sponsorship for employment?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_12495356007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Have you previously been employed by Upstream Rehabilitation or its affiliates?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_12495357007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": "<p><!--StartFragment--><em>If yes, you can always opt-out by replying STOP.</em><!--EndFragment--></p>",
+   "label": "If you provided a phone number, do you consent to receiving follow-up communication via text message (or SMS message) regarding your application status?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_12495358007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": null,
+   "label": "Do you have any relatives who are currently employed by Upstream and its brand affiliates?",
+   "required": true,
+   "fields": [
+    {
+     "name": "question_12495359007",
+     "type": "multi_value_single_select",
+     "values": [
+      {
+       "label": "Yes",
+       "value": 1
+      },
+      {
+       "label": "No",
+       "value": 0
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "location_questions": []
+}

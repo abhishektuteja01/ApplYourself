@@ -41,11 +41,26 @@ class TestPlist:
         assert args[0] == "/bin/bash"
         assert args[1].endswith("/scripts/nightly_discovery.sh")
 
-    def test_runs_before_the_workday_and_after_the_pmset_wake(self):
-        """The wake is scheduled at 01:55, so the job must be later than that
-        and still overnight."""
+    def test_runs_shortly_after_the_pmset_wake_it_documents(self):
+        """A job whose time falls during sleep is skipped, not deferred, so the
+        wake must come first — and close enough that the machine is still up.
+
+        Derived from the plist rather than pinned, so rescheduling discovery
+        means editing one file, not two. What must stay true is the ordering.
+        """
+        text = PLIST.read_text(encoding="utf-8")
+        wake = re.search(r"wakeorpoweron \w+ (\d{2}):(\d{2}):\d{2}", text)
+        assert wake, "the plist must document its pmset wake"
+        wake_min = int(wake.group(1)) * 60 + int(wake.group(2))
+
         when = _filled()["StartCalendarInterval"]
-        assert when["Hour"] == 2 and when["Minute"] == 0
+        job_min = when["Hour"] * 60 + when["Minute"]
+
+        assert 0 < job_min - wake_min <= 15, (
+            f"job at {when['Hour']:02d}:{when['Minute']:02d} vs wake at "
+            f"{wake.group(1)}:{wake.group(2)} — the wake must land first, "
+            f"and within 15 minutes"
+        )
 
     def test_documents_the_pmset_wake(self):
         """Without a scheduled wake, a job whose time falls during sleep is
@@ -100,14 +115,34 @@ class TestWrapper:
         assert "__" not in WRAPPER.read_text(encoding="utf-8")
 
     def test_hardens_path_for_launchd(self):
-        """launchd's minimal PATH excludes every common uv location, so an
-        unhardened wrapper dies with 'uv: command not found'."""
+        """launchd's (and cron's) minimal PATH excludes every common uv
+        location, so an unhardened wrapper dies with 'uv: command not found'.
+        Both platforms' install dirs must be covered: uv's own standalone
+        installer, and Homebrew for a macOS `brew install uv`."""
         text = WRAPPER.read_text(encoding="utf-8")
-        assert "/opt/homebrew/bin" in text and "/usr/local/bin" in text
+        export = [ln for ln in text.splitlines() if ln.startswith("export PATH=")]
+        assert len(export) == 1, "expected exactly one PATH-hardening line"
+        line = export[0]
+        for entry in ("$HOME/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"):
+            assert entry in line, f"{entry} missing from the hardened PATH"
+        assert line.rstrip('"').endswith("$PATH"), "must extend, not replace, PATH"
         assert "exit 127" in text, "must fail loudly when uv is absent"
 
     def test_holds_sleep_off_for_the_run(self):
-        assert "caffeinate" in WRAPPER.read_text(encoding="utf-8")
+        """caffeinate is macOS-only; unguarded it exits 127 on Linux and
+        discovery never runs at all."""
+        text = WRAPPER.read_text(encoding="utf-8")
+        assert "caffeinate" in text
+        assert "command -v caffeinate" in text, "caffeinate must be guarded"
+        # The guard needs a fallback, or the guard alone still skips discovery.
+        code = "\n".join(
+            line
+            for line in text.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        assert code.count("run discover") >= 2, (
+            "guarded caffeinate needs a plain `run discover` fallback"
+        )
 
     def test_runs_only_the_deterministic_step(self):
         """R7: no LLM in an unattended job. Scoring is a slash command, so it

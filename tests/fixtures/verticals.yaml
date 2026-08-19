@@ -147,16 +147,16 @@ verticals:
     search_terms:
       - Cog Engineer
       - Applied Cog Engineer
-      - Agentic Cog Engineer
-      - Forward Deployed Engineer
+      - Flywheel Cog Engineer
+      - Cog Deployment Engineer
       - Cog Platform Engineer
     linkedin_terms:
       - Cog Engineer
-      - Forward Deployed Engineer
+      - Cog Deployment Engineer
     title_include_terms:
       - cog
-      - agentic
-      - forward deployed
+      - flywheel
+      - cog deployment
     title_exclude_terms:
       - senior
       - lead
@@ -211,14 +211,14 @@ classifier_rules:
   - vertical: example_tertiary
     pattern: "Applied Cog"
   - vertical: example_tertiary
-    pattern: "Agentic Cog"
+    pattern: "Flywheel Cog"
   - vertical: example_tertiary
     pattern: "Cog Agent"
   - vertical: example_tertiary
     pattern: "Cog Platform"
   - vertical: example_tertiary
     pattern:
-      match: "Forward Deployed"
+      match: "Cog Deployment"
       require_any: ["Engineer"]
   # Compound: bare "Cog Learning Engineer" is out-of-lane by charter; only a
   # platform/agents qualifier pulls it into the lane.
