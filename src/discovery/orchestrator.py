@@ -7,6 +7,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime
 import pandas as pd
 
@@ -39,15 +40,18 @@ RUN_ID_FMT = "%Y-%m-%d_%H%M"
 # files nothing will ever load.
 _RUN_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{4}$")
 
+# Report order and the full set of names --source accepts.
+SOURCE_NAMES = ("manual", "linkedin", "indeed", "greenhouse", "lever", "ashby", "workday")
+
 
 def current_run_id(now: datetime | None = None) -> str:
     return (now or datetime.now()).strftime(RUN_ID_FMT)
 
 class Context:
-    def __init__(self, config, deadline_ts: float):
+    def __init__(self, config, deadline_ts: float, verticals_config=None):
         self.config = config
         self.deadline_ts = deadline_ts
-        self.verticals = verticals.get_config()
+        self.verticals = verticals_config if verticals_config is not None else verticals.get_config()
 
     def deadline_reached(self) -> bool:
         if self.deadline_ts == 0.0:
@@ -137,6 +141,34 @@ def _render_source(name: str, outcome: dict) -> list[str]:
     lines.append("")
     return lines
 
+def _resolve_sources(config, only: list[str] | None) -> list[str]:
+    """Which sources run, in report order.
+
+    `--source` is exhaustive: it replaces the config's `enabled` flags *and*
+    manual's always-on default, so a narrowed run cannot quietly consume inbox
+    clips. `--source manual` names it back in.
+    """
+    if only:
+        wanted = set(only)
+        return [n for n in SOURCE_NAMES if n in wanted]
+    # manual has no config key: the inbox is local and free, so it is always on.
+    return [n for n in SOURCE_NAMES
+            if n == "manual" or (n in config.sources and config.sources[n].enabled)]
+
+
+def _cap_search_terms(verticals_config, max_terms: int):
+    """First `max_terms` terms of every lane, order preserved. Both term lists:
+    `linkedin_terms` is the same list in LinkedIn's dialect, and a cap that
+    skipped it would be a no-op for that source."""
+    capped = {
+        name: replace(v,
+                      search_terms=v.search_terms[:max_terms],
+                      linkedin_terms=v.linkedin_terms[:max_terms])
+        for name, v in verticals_config.verticals.items()
+    }
+    return replace(verticals_config, verticals=capped)
+
+
 def main(args=None):
     # asctime is load-bearing: urllib3's retry warnings propagate to root, and
     # without a timestamp on them a slow night cannot be reconstructed after
@@ -146,11 +178,31 @@ def main(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", type=str, metavar="YYYY-MM-DD_HHMM",
                         help="Resume run ID")
+    # Runtime overrides. Nothing here writes to profile/ — they last one run.
+    parser.add_argument("--deadline-hours", type=float, metavar="H",
+                        help="Override discovery.yaml deadline_hours for this run (0 scrapes nothing).")
+    parser.add_argument("--source", action="append", metavar="NAME",
+                        help=f"Run only this source, repeatable, ignoring enabled flags. "
+                             f"One of: {', '.join(SOURCE_NAMES)}.")
+    parser.add_argument("--max-terms", type=int, metavar="N",
+                        help="Use only the first N search terms of each vertical for this run.")
     parsed = parser.parse_args(args)
 
     if parsed.resume is not None and not _RUN_ID_RE.match(parsed.resume):
         sys.exit(f"ERROR: --resume {parsed.resume!r} is not a run id. "
                  "Expected YYYY-MM-DD_HHMM, as printed by the run being resumed.")
+
+    unknown = [s for s in (parsed.source or []) if s not in SOURCE_NAMES]
+    if unknown:
+        sys.exit(f"ERROR: unknown --source {', '.join(sorted(unknown))}. "
+                 f"Valid sources: {', '.join(SOURCE_NAMES)}.")
+
+    if parsed.deadline_hours is not None and parsed.deadline_hours < 0:
+        sys.exit("ERROR: --deadline-hours must be >= 0. 0 is the scrape-nothing "
+                 "kill switch: no source runs and clean.parquet is still rebuilt.")
+
+    if parsed.max_terms is not None and parsed.max_terms < 1:
+        sys.exit("ERROR: --max-terms must be >= 1.")
 
     try:
         config = load_config()
@@ -158,6 +210,24 @@ def main(args=None):
         # load_config is a library function that raises; the CLI is where a bad
         # config becomes a one-line message and a nonzero exit.
         sys.exit(f"ERROR: {e}")
+
+    # The one place overrides are applied. Everything below this point reads a
+    # normal config and a normal verticals config; the files on disk are
+    # untouched, so nothing survives the run.
+    if parsed.deadline_hours is not None:
+        config.deadline_hours = parsed.deadline_hours
+    run_sources = _resolve_sources(config, parsed.source)
+    verticals_config = verticals.get_config()
+    if parsed.max_terms is not None:
+        verticals_config = _cap_search_terms(verticals_config, parsed.max_terms)
+
+    override_notes = []
+    if parsed.deadline_hours is not None:
+        override_notes.append(f"`--deadline-hours {parsed.deadline_hours:g}`")
+    if parsed.source:
+        override_notes.append(f"`--source {' '.join(run_sources)}`")
+    if parsed.max_terms is not None:
+        override_notes.append(f"`--max-terms {parsed.max_terms}`")
 
     start_time = datetime.now()
     run_id = parsed.resume or current_run_id(start_time)
@@ -170,7 +240,7 @@ def main(args=None):
     scrape_enabled = config.deadline_hours > 0
     deadline_ts = time.time() + config.deadline_hours * 3600 if scrape_enabled else 0.0
 
-    ctx = Context(config=config, deadline_ts=deadline_ts)
+    ctx = Context(config=config, deadline_ts=deadline_ts, verticals_config=verticals_config)
 
     JOBS_RAW.mkdir(parents=True, exist_ok=True)
     JOBS_RUNS.mkdir(parents=True, exist_ok=True)
@@ -205,19 +275,18 @@ def main(args=None):
     # Everything above is the run preamble; a resume appends only what follows.
     preamble_len = len(report_lines)
 
-    sources = get_sources()
-    fixed_order = ["manual", "linkedin", "indeed", "greenhouse", "lever", "ashby", "workday"]
+    # After preamble_len, so a resumed run's report records its own overrides
+    # rather than inheriting the original run's line.
+    if override_notes:
+        report_lines.append(f"Run overrides: {', '.join(override_notes)} "
+                            "(this run only, config on disk unchanged)")
+        report_lines.append("")
 
-    enabled_sources = []
+    sources = get_sources()
+    fixed_order = list(SOURCE_NAMES)
+
     source_map = {s.name: s for s in sources}
-    for name in fixed_order:
-        if name == "manual":
-            if name in source_map:
-                enabled_sources.append(source_map[name])
-        else:
-            if name in config.sources and config.sources[name].enabled:
-                if name in source_map:
-                    enabled_sources.append(source_map[name])
+    enabled_sources = [source_map[name] for name in run_sources if name in source_map]
 
     if not scrape_enabled:
         log.info("deadline_hours == 0 — skipping every source, cleaning only.")
