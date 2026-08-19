@@ -24,7 +24,6 @@ dependencies = [
     { name = "geonamescache" },
     { name = "lxml" },
     { name = "pandas" },
-    { name = "postal" },
     { name = "pyarrow" },
     { name = "pycountry" },
     { name = "python-docx" },
@@ -42,13 +41,15 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
+discovery = [
+    { name = "postal" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "geonamescache", specifier = ">=3.0.1" },
     { name = "lxml", specifier = ">=5.0" },
     { name = "pandas", specifier = ">=2.2" },
-    { name = "postal", specifier = ">=1.1.11" },
     { name = "pyarrow", specifier = ">=15.0" },
     { name = "pycountry", specifier = ">=24.0" },
     { name = "python-docx", specifier = ">=1.1" },
@@ -64,6 +65,7 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=5.0" },
 ]
+discovery = [{ name = "postal", specifier = ">=1.1.11" }]
 
 [[package]]
 name = "beautifulsoup4"

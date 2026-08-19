@@ -35,7 +35,6 @@ import yaml
 from rapidfuzz import fuzz
 
 from src import verticals
-from src.discovery.location import parse_location
 from src.discovery.config import load_config
 from src.discovery.schema import naive_datetime
 from src import paths
@@ -211,6 +210,10 @@ def drop_stale(
 def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     if df.empty:
         return df.copy()
+
+    # Local import: location needs libpostal (optional `discovery` group), and
+    # importing this module must stay possible without it.
+    from src.discovery.location import parse_location
 
     # effective_countries() folds in the optional `continents` shorthand;
     # effective_states() accepts either a full name or a code, since

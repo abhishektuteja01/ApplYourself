@@ -9,13 +9,51 @@ on:
     branches: [master]
   pull_request:
 
+env:
+  LIBPOSTAL_REF: v1.1.4
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+
+      # `postal` is optional (the `discovery` group) and the core sync no
+      # longer needs it — but the suite does: tests/discovery/test_location.py
+      # and the cleaning location-filter tests exercise the real parser, with
+      # no stub. It compiles against the libpostal C library, which no
+      # Debian/Ubuntu package ships, so build it once and cache the install
+      # prefix (the ~2GB model data lives in it too).
+      - name: Cache libpostal
+        id: libpostal
+        uses: actions/cache@v4
+        with:
+          path: ~/libpostal
+          key: libpostal-${{ runner.os }}-${{ env.LIBPOSTAL_REF }}
+
+      - name: Build libpostal
+        if: steps.libpostal.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkgconf curl
+          git clone --depth 1 --branch "$LIBPOSTAL_REF" \
+            https://github.com/openvenues/libpostal.git /tmp/libpostal
+          cd /tmp/libpostal
+          ./bootstrap.sh
+          ./configure --prefix="$HOME/libpostal" --datadir="$HOME/libpostal/data"
+          make -j"$(nproc)"
+          make install
+
+      - name: Expose libpostal to the build and to the tests
+        run: |
+          echo "LIBPOSTAL_PREFIX=$HOME/libpostal" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$HOME/libpostal/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$HOME/libpostal/lib" >> "$GITHUB_ENV"
+
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --frozen
+      - run: uv sync --frozen --group discovery
       # Also proves the suite runs in a non-UTF-8 locale, which is how a bare
       # container and a cron job both run it.
       - run: uv run pytest tests -q

@@ -7,7 +7,40 @@ from dataclasses import dataclass, field
 
 import geonamescache
 import pycountry
-from postal.parser import parse_address
+
+# libpostal is an optional install (`uv sync --group discovery`) because the
+# `postal` binding is sdist-only and compiles against a C library no distro
+# packages. Only address parsing needs it, so the import is deferred to the
+# one call site: importing this module -- and therefore cleaning, the
+# orchestrator and every ATS source -- stays possible without it, and /score
+# and /tailor keep working on a clone that never installs it.
+_POSTAL_MISSING = (
+    "libpostal is required to parse job locations during discovery, and it "
+    "is not installed.\n"
+    "  1. Install the C library: `brew install libpostal` (macOS), or build "
+    "from source on Linux (github.com/openvenues/libpostal) -- no distro "
+    "packages it.\n"
+    "  2. Install the Python binding: `uv sync --group discovery`.\n"
+    "Only the discovery/scraping path needs this; /score, /tailor and the "
+    "rest of the pipeline run without it."
+)
+
+_parse_address = None
+
+
+def _get_parse_address():
+    """Resolve `postal.parser.parse_address` on first use, converting the
+    ModuleNotFoundError a clone without libpostal would otherwise hit into an
+    actionable message. No fallback parser: a degraded parse would silently
+    change which rows survive the location allowlist."""
+    global _parse_address
+    if _parse_address is None:
+        try:
+            from postal.parser import parse_address
+        except ImportError as exc:  # pragma: no cover - needs postal absent
+            raise RuntimeError(_POSTAL_MISSING) from exc
+        _parse_address = parse_address
+    return _parse_address
 
 
 def _fold(s: str) -> str:
@@ -478,7 +511,7 @@ def _mine_segment_signals(segment: str):
     for pattern, full_name in _PRE_PARSE_EXPANSIONS:
         segment = pattern.sub(full_name, segment)
 
-    components = parse_address(segment)
+    components = _get_parse_address()(segment)
 
     # Repair: libpostal occasionally folds a known city+region pair into a
     # single component that still contains a comma (observed: "Paris, TX",
