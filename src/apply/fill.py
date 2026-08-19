@@ -1429,15 +1429,20 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
         attempt_requests: list[str] = []
         driver.watch_submit_requests(plan.ats, attempt_requests)
         driver.click_submit(plan.submit_selector)
-        # The click is the irreversible act. Record it before anything else
-        # runs: a captcha timeout, a driver error, a navigation hiccup — none
-        # of them may erase the fact that an application went out.
-        result.submitted = True
         if plan.requires_captcha:
-            # Lever renders hCaptcha on every form (§12a) — the click above
-            # only opened the challenge. Block for a human to solve it; there
-            # is no bypass and none is in scope (§12c).
+            # Lever's submit is a JS-driven type="button", not a native form
+            # submit (see lever.py) — the click above only opens the hCaptcha
+            # challenge; the real POST fires from the captcha's own success
+            # callback. So on a captcha board the click is NOT yet the
+            # irreversible act: if the captcha is abandoned or times out,
+            # nothing was sent (acea77ed: a timed-out captcha was recorded as
+            # applied when the board never received anything).
             driver.wait_for_captcha()
+        # The irreversible act: on a non-captcha board, the click itself; on
+        # a captcha board, a captcha just solved. Record it before anything
+        # else runs — a driver error or navigation hiccup past this point
+        # must not erase the fact that an application went out.
+        result.submitted = True
         # Judged only after the board has had time to answer. Reading straight
         # off the click caught pages mid-navigation and reported a perfectly
         # good submission as unconfirmed.
@@ -1612,10 +1617,12 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
                     # still False and nothing went out.
                     result.submit_error = str(exc)
                 except Exception as exc:  # noqa: BLE001
-                    # Anything else may have fired after the click. `submit`
-                    # sets `result.submitted` the instant the click returns, so
-                    # that flag — not this handler — decides whether an
-                    # application went out.
+                    # Anything else may have fired after the click (or, on a
+                    # captcha board, after the captcha resolved). `submit`
+                    # already set `result.submitted` at the point the
+                    # application actually went out, so that flag — not this
+                    # handler — decides whether one did. A captcha that never
+                    # resolves raises here with `submitted` still False.
                     result.submit_error = f"{type(exc).__name__}: {exc}"
             if after is not None:
                 try:

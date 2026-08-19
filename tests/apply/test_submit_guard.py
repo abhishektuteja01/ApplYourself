@@ -299,15 +299,17 @@ class TestStaticSubmitSelectorBoundary:
 
 
 
-class TestTheClickIsRecordedBeforeAnythingElseCanFail:
-    """A submission that goes out must never read as "not submitted".
-
-    If an exception after the click leaves `submitted` False, `_run_role`
-    skips the `track_cli` transition, the role stays `tailored`, and the next
-    `--submit` run applies to the same board a second time.
+class TestACaptchaNeverSolvedIsNeverSubmitted:
+    """On a captcha board the click only opens the challenge (lever.py: Lever's
+    submit is a JS-driven `type="button"`, not a native form submit) — the
+    real POST fires from the captcha's own success callback. So unlike a
+    non-captcha board, the click alone is not the irreversible act: if the
+    captcha is abandoned or times out, nothing was sent, and `submitted` must
+    stay False (acea77ed: a timed-out captcha was recorded as `applied` when
+    the board never received anything).
     """
 
-    def test_a_captcha_timeout_after_the_click_still_records_the_submission(self):
+    def test_a_captcha_timeout_after_the_click_leaves_it_unsubmitted(self):
         class CaptchaExplodes(FakeSubmitDriver):
             def wait_for_captcha(self):
                 raise TimeoutError("hCaptcha never solved")
@@ -320,9 +322,9 @@ class TestTheClickIsRecordedBeforeAnythingElseCanFail:
             submit(p, result, d)
 
         assert d.clicked == [p.submit_selector]
-        assert result.submitted is True, "the click landed; losing it re-applies next run"
+        assert result.submitted is False, "the captcha was never solved; nothing was sent"
 
-    def test_run_one_keeps_submitted_true_when_the_post_click_wait_explodes(
+    def test_run_one_reports_unsubmitted_when_the_captcha_wait_explodes(
         self, monkeypatch
     ):
         class CaptchaExplodes(FakeSubmitDriver):
@@ -352,7 +354,7 @@ class TestTheClickIsRecordedBeforeAnythingElseCanFail:
 
         result = run_one(p, submit_after=True)
 
-        assert result.submitted is True
+        assert result.submitted is False
         assert "TimeoutError" in result.submit_error
 
     def test_a_guard_refusal_is_raised_before_the_click_so_submitted_stays_false(self):

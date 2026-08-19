@@ -70,6 +70,7 @@ applications/
 shortlist/
 pipeline.md
 top_scored_unapplied.md
+top_scored_unapplied.csv
 # Nightly discovery logs (scheduler job). The directory itself is committed via
 # .gitkeep: launchd will not create the intermediate directory for
 # StandardOutPath, so a fresh clone without logs/ means the agent fails to spawn
