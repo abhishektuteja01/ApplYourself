@@ -1,6 +1,6 @@
 # Shared: the lint loop contract
 
-Read by `/tailor`, `/cover-letter` and `/outreach`.
+Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply` and `/outreach`.
 
 Tier 1 (mechanical: dashes, smart quotes, ellipsis, NBSP, zero-width) is applied
 automatically and is never a violation you resolve — `src/lint.py` fixes it and

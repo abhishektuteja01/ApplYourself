@@ -109,8 +109,9 @@ The user-facing workflow is the slash commands (`/onboarding`, `/score`,
 `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 `/track`, `/standup`,
 `/new-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`, `/ingest`), defined in
-`.claude/commands/*.md`. `score-judge.md` also lives there but is spawned by
-`/score`, never invoked directly. `/company-answers <job_id>` drafts that
+`.claude/commands/*.md`. The judge is a subagent, not a command:
+`.claude/agents/score-judge.md`, spawned by `/score`, `/rescore` and `/ingest`,
+never invoked directly. `/company-answers <job_id>` drafts that
 role's `company_answers.md` into its `/tailor` output dir; `/apply` calls it
 directly for roles that need no full cover letter. `/ingest <url> <vertical> [resume]
 [cover-letter]` is the single-URL fast path: it chains `ingest-url` → a

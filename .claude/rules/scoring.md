@@ -15,8 +15,10 @@ ranges. It never judges a row itself, and its context stays counts-only — the 
 exception is the recovery path, where it reads and repairs the specific batch rows
 a corrupt-JSON or merge-validation error names.
 
-Judging is a **separate command file**, `score-judge.md`, spawned per range
-(`--range A-B --vertical V`). A judge reads lines A–B of
+Judging is a **subagent definition**, `.claude/agents/score-judge.md`, spawned
+per range with `subagent_type: score-judge` and the prompt
+`--range A-B --vertical V`. Its tools and model are fixed by that definition
+rather than requested in prose. A judge reads lines A–B of
 `jobs/scored.staging/unscored_<vertical>.jsonl`, writes batch files, and never
 merges.
 

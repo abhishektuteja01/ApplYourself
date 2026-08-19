@@ -1,6 +1,6 @@
 # Shared: the no-fabrication rules
 
-Read by `/tailor`, `/cover-letter` and `/suggest-synonyms`.
+Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply` and `/suggest-synonyms`.
 
 - **NO-FAB** — never introduce a tool, metric, scope, date, or claim absent from
   the source (a canonical bullet, or the vertical's résumé for frozen/summary
