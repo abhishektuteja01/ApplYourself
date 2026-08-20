@@ -713,6 +713,68 @@ class TestLeverCardRadios:
         assert d.checked_radio_label("cards[x][field9]") == "Yes"
 
 
+class TestLeverConsentCheckbox:
+    """Lever pairs a lone checkbox with a hidden `value="0"` input under the
+    same name so an unchecked box still posts. The base driver's `.first`
+    resolved to the hidden decoy: "Not a checkbox or radio button"."""
+
+    class FakeInput:
+        def __init__(self, type_, value):
+            self.type, self.value = type_, value
+            self.checked = None
+
+        def get_attribute(self, name):
+            return {"type": self.type, "value": self.value}.get(name)
+
+        def check(self):
+            if self.type != "checkbox":
+                raise AssertionError("Not a checkbox or radio button")
+            self.checked = True
+
+        def uncheck(self):
+            if self.type != "checkbox":
+                raise AssertionError("Not a checkbox or radio button")
+            self.checked = False
+
+    def _driver(self, inputs):
+        class Group:
+            def count(self_inner):
+                return len(inputs)
+
+            def nth(self_inner, i):
+                return inputs[i]
+
+            @property
+            def first(self_inner):
+                return inputs[0]
+
+        class FakePage:
+            def locator(self_inner, selector):
+                return Group()
+        return F.LeverBrowserDriver(FakePage())
+
+    def test_checks_the_real_box_and_skips_the_hidden_decoy(self):
+        hidden = self.FakeInput("hidden", "0")
+        real = self.FakeInput("checkbox", "1")
+        self._driver([hidden, real]).set_checkbox("consent[marketing]", True)
+        assert (hidden.checked, real.checked) == (None, True)
+
+    def test_unchecks_the_real_box_too(self):
+        hidden = self.FakeInput("hidden", "0")
+        real = self.FakeInput("checkbox", "1")
+        self._driver([hidden, real]).set_checkbox("consent[marketing]", False)
+        assert (hidden.checked, real.checked) == (None, False)
+
+    def test_a_lone_real_checkbox_still_works(self):
+        real = self.FakeInput("checkbox", "1")
+        self._driver([real]).set_checkbox("consent[marketing]", True)
+        assert real.checked is True
+
+    def test_a_name_carrying_no_checkbox_at_all_fails_loudly(self):
+        with pytest.raises(F.FillError, match="no checkbox input"):
+            self._driver([self.FakeInput("hidden", "0")]).set_checkbox("x", True)
+
+
 class TestCaptchaWait:
     def test_submit_waits_for_captcha_when_the_plan_requires_it(self):
         d = FakeDriver()

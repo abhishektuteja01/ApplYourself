@@ -721,6 +721,20 @@ class LeverBrowserDriver(BrowserDriver):
                 return
         raise FillError(f"{field_id}: no radio labelled {label!r}")
 
+    def set_checkbox(self, field_id: str, checked: bool) -> None:
+        """Lever pairs a lone checkbox with a hidden `value="0"` input under the
+        same name, so an unchecked box still posts a value. The base
+        implementation's `.first` resolves to that hidden decoy and Playwright
+        refuses it with "Not a checkbox or radio button". Take the real input.
+        """
+        boxes = self._locator(field_id)
+        for i in range(boxes.count()):
+            box = boxes.nth(i)
+            if (box.get_attribute("type") or "") == "checkbox":
+                box.check() if checked else box.uncheck()
+                return
+        raise FillError(f"{field_id}: no checkbox input")
+
 
 class AshbyBrowserDriver(BrowserDriver):
     """Ashby renders none of Greenhouse's markup, so most selectors change.
