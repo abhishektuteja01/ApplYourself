@@ -58,6 +58,11 @@ dev = [
 # working on a clone that never installs it.
 apply = [
     "playwright>=1.47",
+    # Drop-in Playwright fork that patches the CDP-side automation leaks the
+    # stock driver cannot hide from a form's bot scoring. Selected by
+    # `browser.driver` in profile/application_answers.yaml; the stock driver
+    # stays installed and stays the fallback.
+    "patchright>=1.0",
 ]
 # Opt-in: `uv sync --group discovery`. Needed only by `uv run discover` /
 # `uv run ingest-url`; scoring and tailoring must keep working without it.

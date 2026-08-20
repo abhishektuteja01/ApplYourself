@@ -1060,3 +1060,126 @@ class TestParsedSalary:
         assert r.action == "fill"
         assert r.value == "Open to conversation"
         assert r.tier == "B"
+
+
+class TestLocationAlternates:
+    """Boards do not agree on how to spell a place: one abbreviates state and
+    country where another spells both out, and the chooser is exact-match, so
+    one config string cannot answer both. `identity.location_alternates` states
+    the other spellings; nothing is inferred.
+    """
+
+    LOCATION = "Exampletown, Example State, United States"
+    ALTERNATE = "Exampletown, ES, USA"
+
+    def _answers(self, tmp_path, alternates=None):
+        import yaml as _yaml
+        data = _yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+        data["identity"]["location"] = self.LOCATION
+        if alternates is not None:
+            data["identity"]["location_alternates"] = alternates
+        path = tmp_path / "application_answers.yaml"
+        path.write_text(_yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        return load_answers(path, PREFS)
+
+    def _field(self, field_id, options):
+        from src.apply.reconcile import MergedField, MergedOption
+        return MergedField(
+            id=field_id, name=field_id, label="Current location", required=True,
+            kind="react_select", section="questions", multi=False,
+            options=tuple(MergedOption(label=o, value=o) for o in options),
+        )
+
+    def test_an_alternate_answers_a_board_that_words_it_differently(self, tmp_path):
+        from src.apply.answers import resolve
+        a = self._answers(tmp_path, [self.ALTERNATE])
+        r = resolve(self._field("location", (self.ALTERNATE,)), a)
+        assert (r.action, r.value) == ("fill", self.ALTERNATE)
+
+    def test_the_primary_location_still_wins_where_it_is_offered(self, tmp_path):
+        from src.apply.answers import resolve
+        a = self._answers(tmp_path, [self.ALTERNATE])
+        r = resolve(self._field("candidate-location",
+                                (self.LOCATION, self.ALTERNATE)), a)
+        assert r.value == self.LOCATION, \
+            "the configured location is the first candidate, not an alternate"
+
+    def test_a_board_offering_neither_parks_rather_than_guessing(self, tmp_path):
+        """A measured board offered five same-named cities in five countries.
+        A near-miss here sends the application out naming the wrong one."""
+        from src.apply.answers import resolve
+        a = self._answers(tmp_path, [self.ALTERNATE])
+        r = resolve(self._field("location", ("Exampletown, Otherprovince, GTM",
+                                             "Exampletown, Otherstate, VEN")), a)
+        assert r.action == "park"
+
+    def test_the_key_is_optional(self, tmp_path):
+        from src.apply.answers import resolve
+        a = self._answers(tmp_path)
+        assert a.identity.get("location_alternates") is None
+        r = resolve(self._field("location", (self.LOCATION,)), a)
+        assert r.action == "fill"
+
+    def test_alternates_do_not_leak_into_other_identity_fields(self, tmp_path):
+        from src.apply.answers import _identity_candidates
+        a = self._answers(tmp_path, [self.ALTERNATE])
+        assert _identity_candidates("email", a.identity["email"], a, "email") == \
+            (a.identity["email"],)
+
+    def test_a_non_list_is_refused(self, tmp_path):
+        from src.apply.answers import AnswersError
+        with pytest.raises(AnswersError, match="location_alternates"):
+            self._answers(tmp_path, self.ALTERNATE)
+
+    def test_an_empty_string_entry_is_refused(self, tmp_path):
+        from src.apply.answers import AnswersError
+        with pytest.raises(AnswersError, match="location_alternates"):
+            self._answers(tmp_path, [""])
+
+
+class TestSelfIdSignature:
+    """The self-identification form attests who filled it in, and the board
+    states the rule itself: "Name and date are only required if you filled out
+    Disability status." We answer the disability question, so both become
+    required — and neither is an opt-out question, so the option matching in
+    `_resolve_eeoc` had nothing to match and skipped them. The browser's own
+    constraint validation then refused the whole form: the submit click fired
+    no request, the page never navigated, and the role was recorded applied on
+    a submission the board never received.
+    """
+
+    def _field(self, field_id, **kw):
+        return field(id=field_id, name=field_id, section="eeoc", kind="text", **kw)
+
+    def test_the_signature_is_the_configured_name(self, tmp_path):
+        a = load_answers(write_config(tmp_path), PREFS)
+        r = resolve(self._field("eeo[disabilitySignature]", required=True), a)
+        expected = f"{a.identity['first_name']} {a.identity['last_name']}"
+        assert (r.action, r.value) == ("fill", expected)
+
+    def test_the_date_is_today_in_the_boards_format(self, tmp_path, monkeypatch):
+        import src.apply.answers as A
+        from datetime import date as _date
+        monkeypatch.setattr(A, "_today", lambda: _date(2026, 8, 19))
+        a = load_answers(write_config(tmp_path), PREFS)
+        r = resolve(self._field("eeo[disabilitySignatureDate]", required=True), a)
+        assert (r.action, r.value) == ("fill", "08/19/2026")
+
+    def test_greenhouses_spelling_of_the_same_two_fields_resolves(self, tmp_path):
+        a = load_answers(write_config(tmp_path), PREFS)
+        assert resolve(self._field("disability_signature"), a).action == "fill"
+        assert resolve(self._field("disability_signature_date"), a).action == "fill"
+
+    def test_the_opt_out_questions_are_untouched(self, tmp_path):
+        """The signature branch must not swallow the four questions that do
+        have an opt-out to pick."""
+        a = load_answers(write_config(tmp_path), PREFS)
+        r = resolve(field(id="eeo[disability]", name="eeo[disability]", section="eeoc",
+                          kind="select", required=False,
+                          options=["Yes, I have a disability, or have had one in the past",
+                                   "I do not want to answer"]), a)
+        assert (r.action, r.value) == ("fill", "I do not want to answer")
+
+    def test_it_is_tier_a2_like_the_rest_of_the_eeoc_block(self, tmp_path):
+        a = load_answers(write_config(tmp_path), PREFS)
+        assert resolve(self._field("eeo[disabilitySignature]"), a).tier == "A2"

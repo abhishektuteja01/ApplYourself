@@ -147,6 +147,20 @@ def _is_eeoc(question_el) -> bool:
     return False
 
 
+#: The hidden input a structured autocomplete resolves into. Its presence in
+#: the same question is what separates Lever's location search box from a
+#: plain text field.
+STRUCTURED_PARTNER = "selectedLocation"
+
+
+def _has_structured_partner(question_el) -> bool:
+    return bool(
+        question_el.xpath(
+            f'.//input[@type="hidden" and @name="{STRUCTURED_PARTNER}"]'
+        )
+    )
+
+
 def _select_options(select_el) -> tuple[MergedOption, ...]:
     options = []
     for opt in select_el.xpath("./option"):
@@ -232,7 +246,20 @@ def _scan_question(question_el) -> MergedField | None:
         if raw == "file":
             kind, options = "file", ()
         elif raw in _INPUT_TEXT_TYPES:
-            kind, options = "text", ()
+            # The location question looks like a text input and is not one: it
+            # is a search box over a place taxonomy, and the board posts the
+            # structured `selectedLocation` its suggestion click resolves,
+            # not the typed text. Typing alone leaves that hidden partner
+            # empty and the submission is refused. `react_select` is the kind
+            # fill.py drives as type-and-pick; the Lever driver supplies the
+            # selectors, since Lever renders no react-select markup (§12a).
+            #
+            # Detected by the hidden partner rather than by the field's name,
+            # so a board that renames the visible input still resolves.
+            if _has_structured_partner(question_el):
+                kind, options = "react_select", ()
+            else:
+                kind, options = "text", ()
         else:
             raise LeverScanError(f"unknown input type {raw!r} on name={name!r}")
 

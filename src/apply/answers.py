@@ -52,6 +52,11 @@ IDENTITY_KEYS = (
     "location",
     "country",
 )
+#: Optional, list-valued. The same location as a board's own taxonomy words it —
+#: one ATS abbreviates state and country where another spells both out, and an
+#: exact-match chooser takes neither for the other. Tried in order after
+#: `location`.
+IDENTITY_LIST_KEYS = ("location_alternates",)
 EDUCATION_KEYS = ("school", "degree", "discipline", "start_year", "end_year")
 EDUCATION_OPTIONAL_KEYS = ("start_month", "end_month")
 EMPLOYMENT_KEYS = (
@@ -68,6 +73,10 @@ EMPLOYMENT_FLAGS = ("current_role", "only_when_required")
 TOP_LEVEL_KEYS = (
     "schema_version", "identity", "work_authorization", "education",
     "employment", "rules",
+    # Not an answer: which browser drives the form. Owned and validated by
+    # src/apply/browser.py, listed here only so the top-level check above does
+    # not reject a key it does not parse.
+    "browser",
 )
 
 # A `match:` keyword this short matches almost any label. Punctuation is
@@ -142,6 +151,34 @@ _EEOC_OPT_OUT = {
     "disability_status": ("I do not want to answer",),
     "eeo[disability]": ("I do not want to answer",),
 }
+# The self-identification form attests who filled it in, and both fields become
+# required the moment the disability question is answered at all — the board
+# says so in as many words: "Name and date are only required if you filled out
+# Disability status." Neither is an opt-out question, so `_resolve_eeoc`'s
+# option matching has nothing to match and both were skipped, which left the
+# browser's own constraint validation refusing the form: the submit click
+# fired no request at all and the role was recorded as applied anyway.
+#
+# Both values are already known — the configured name and the clock. Nothing
+# here is a judgment call.
+#: Every date this module writes. Not a formatting preference: verified live
+#: against a real board's picker, where ISO (`YYYY-MM-DD`) silently misparsed
+#: by a day and `DD/MM/YYYY` silently swapped month and day — both with no
+#: error shown. See `_resolve_date`. No ATS declares a format: Ashby's GraphQL
+#: gives the type (`Date`) and not the shape, Greenhouse's question API the
+#: same, and Lever has no API at all — its only signal is the DOM placeholder,
+#: which reads MM/DD/YYYY on every board observed.
+DATE_FORMAT = "%m/%d/%Y"
+
+_EEOC_SIGNATURE_IDS = frozenset({
+    "eeo[disabilitySignature]",
+    "disability_signature",
+})
+_EEOC_SIGNATURE_DATE_IDS = frozenset({
+    "eeo[disabilitySignatureDate]",
+    "disability_signature_date",
+})
+
 # hispanic_ethnicity is DOM-only: no API question, so nothing here has an option
 # list to match against and it parks. That is not a policy of leaving it blank —
 # opened in a browser it offers Yes / No / Decline To Self Identify, so the
@@ -808,7 +845,8 @@ def _require_str(value, where: str) -> str:
 
 
 def _parse_block(data, key: str, required: tuple[str, ...],
-                 optional: tuple[str, ...] = ()) -> dict[str, str]:
+                 optional: tuple[str, ...] = (),
+                 list_keys: tuple[str, ...] = ()) -> dict[str, str]:
     block = data.get(key)
     if not isinstance(block, dict):
         raise AnswersError(f"{key}: missing, or not a mapping")
@@ -818,12 +856,26 @@ def _parse_block(data, key: str, required: tuple[str, ...],
     for field_key in optional:
         if block.get(field_key) is not None:
             out[field_key] = _require_str(block[field_key], f"{key}.{field_key}")
+    # A list-valued key holds alternate spellings of the same answer, for a
+    # board whose taxonomy words it differently. Stored as a tuple, so a
+    # consumer can offer them in order.
+    for field_key in list_keys:
+        raw = block.get(field_key)
+        if raw is None:
+            continue
+        if not isinstance(raw, list) or not raw:
+            raise AnswersError(f"{key}.{field_key}: must be a non-empty list")
+        if not all(isinstance(v, str) and v.strip() for v in raw):
+            raise AnswersError(
+                f"{key}.{field_key}: every entry must be a non-empty string"
+            )
+        out[field_key] = tuple(v.strip() for v in raw)
     # The two boolean flags belong to `employment` alone. Subtracting them
     # unconditionally let `identity: {current_role: true}` and
     # `education: {only_when_required: true}` load clean and be discarded --
     # exactly the silently-missing-answer typo the unknown-key check exists
     # to catch.
-    allowed = set(required) | set(optional)
+    allowed = set(required) | set(optional) | set(list_keys)
     if key == "employment":
         allowed |= set(EMPLOYMENT_FLAGS)
     unknown = set(block) - allowed
@@ -1000,7 +1052,8 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
             f"(expected {sorted(TOP_LEVEL_KEYS)})"
         )
 
-    identity = _parse_block(data, "identity", IDENTITY_KEYS)
+    identity = _parse_block(data, "identity", IDENTITY_KEYS,
+                            list_keys=IDENTITY_LIST_KEYS)
     education = _parse_block(data, "education", EDUCATION_KEYS, EDUCATION_OPTIONAL_KEYS)
 
     employment = None
@@ -1186,15 +1239,12 @@ def _resolve_date(field: MergedField) -> Resolution | None:
     silently clears the input if it cannot — a Tier B sentence like
     "Immediately." reads back fine right after `fill()` (before blur fires)
     and then vanishes, leaving the board showing its empty picker with no
-    error anywhere. `MM/DD/YYYY` is the one format verified live against a
-    real board's picker: ISO (`YYYY-MM-DD`) silently misparsed by a day
-    (timezone rounding) and `DD/MM/YYYY` silently swapped month and day —
-    both wrong with no error either, so this is not a formatting preference,
-    it is the one format observed to survive unchanged.
+    error anywhere. The format is `DATE_FORMAT`, which is where the evidence
+    for it is recorded.
     """
     if field.kind != "date":
         return None
-    return _fill(date.today().strftime("%m/%d/%Y"), "A")
+    return _fill(_today().strftime(DATE_FORMAT), "A")
 
 
 def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None:
@@ -1220,7 +1270,7 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
             )
         return _fill(picked, "A")
     if field.kind == "react_select":
-        return _resolve_choice(field, _identity_candidates(field.id, value, answers),
+        return _resolve_choice(field, _identity_candidates(field.id, value, answers, key),
                                "A", f"identity.{key}")
     return _fill(value, "A")
 
@@ -1233,7 +1283,8 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
 _COUNTRY_FALLBACK_IDS = frozenset({"_systemfield_location"})
 
 
-def _identity_candidates(field_id: str, value: str, answers: Answers) -> tuple[str, ...]:
+def _identity_candidates(field_id: str, value: str, answers: Answers,
+                         key: str = "") -> tuple[str, ...]:
     """The values to offer a chooser for this identity field, best first.
 
     Only Ashby's location field has more than one, because that id is two
@@ -1250,6 +1301,18 @@ def _identity_candidates(field_id: str, value: str, answers: Answers) -> tuple[s
     Keyed on the DOM id, never on the label: `identity.country` also feeds
     Greenhouse's phone dial-code widget, which is not a country question.
     """
+    if key == "location":
+        # Configured alternates first-class, not a fuzzy match: a board whose
+        # taxonomy words the same place differently is answered from config,
+        # and a board offering none of them still parks rather than guessing.
+        # Guessing here is how an application goes out naming the wrong place —
+        # city names repeat across countries, and a live board was measured
+        # offering five same-named cities in five of them.
+        alternates = answers.identity.get("location_alternates") or ()
+        candidates = (value, *(a for a in alternates if a != value))
+        if field_id in _COUNTRY_FALLBACK_IDS:
+            candidates = (*candidates, answers.identity["country"])
+        return candidates
     if field_id in _COUNTRY_FALLBACK_IDS:
         return (value, answers.identity["country"])
     return (value,)
@@ -1284,7 +1347,17 @@ def _resolve_repeating(field: MergedField, block: dict[str, str] | None, ids: di
     return _fill(str(value), "A")
 
 
-def _resolve_eeoc(field: MergedField) -> Resolution:
+def _today() -> date:
+    """Indirected so a test can pin the date without freezing the clock."""
+    return date.today()
+
+
+def _resolve_eeoc(field: MergedField, answers: Answers) -> Resolution:
+    if field.id in _EEOC_SIGNATURE_IDS:
+        first, last = answers.identity["first_name"], answers.identity["last_name"]
+        return _fill(f"{first} {last}".strip(), "A2")
+    if field.id in _EEOC_SIGNATURE_DATE_IDS:
+        return _fill(_today().strftime(DATE_FORMAT), "A2")
     preferred = _EEOC_OPT_OUT.get(field.id, ())
     candidates = preferred + tuple(o for o in _OPT_OUT_FALLBACKS if o not in preferred)
     picked = _pick_option(field, candidates) if field.options else None
@@ -1575,7 +1648,7 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
     """Resolve one reconciled field. Never raises on content — an unanswerable
     field comes back parked (required) or skipped (optional)."""
     if field.section == "eeoc":
-        return _resolve_eeoc(field)
+        return _resolve_eeoc(field, answers)
     if field.section == "demographic":
         return _resolve_demographic(field)
     if field.section == "education":

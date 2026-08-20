@@ -12,6 +12,20 @@
 
 schema_version: 1
 
+# Which browser /apply drives a real form with. Read by src/apply/browser.py.
+#
+# driver: patchright | playwright
+#   Some boards score the browser before they let a field work at all. Lever
+#   locks its Current Location dropdown until its captcha is satisfied, and the
+#   stock driver is scored as automation on sight. `patchright` patches the
+#   CDP-side leaks; `playwright` is the stock driver.
+# stealth:
+#   Drops --enable-automation and disables the AutomationControlled blink
+#   feature, so navigator.webdriver reads false instead of true.
+browser:
+  driver: patchright
+  stealth: true
+
 identity:
   first_name: "Alex"
   last_name: "Example"
@@ -19,6 +33,12 @@ identity:
   email: "alex@example.com"
   phone: "+1 555 0100"
   location: "Exampletown, Example State, United States"
+  # Optional. The same place as another board's taxonomy words it — boards do
+  # not agree on spelling ("Exampletown, ES, USA"). Tried in order after
+  # `location`, exact-match only; a board offering none of them parks the role
+  # rather than guessing at a same-named place somewhere else.
+  # location_alternates:
+  #   - "Exampletown, ES, USA"
   country: "United States"
 
 # Answers the two questions almost every board asks, and nothing else.
