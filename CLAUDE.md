@@ -121,7 +121,7 @@ The user-facing workflow is the slash commands (`/onboarding`, `/score`,
 `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 `/track`, `/standup`,
 `/new-vertical`, `/tune-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`,
-`/ingest`), defined in
+`/ingest`, `/interview`), defined in
 `.claude/commands/*.md`. The judge is a subagent, not a command:
 `.claude/agents/score-judge.md`, spawned by `/score`, `/rescore` and `/ingest`,
 never invoked directly. `/new-vertical <name>` writes the loader's minimum for a
@@ -134,9 +134,17 @@ directly for roles that need no full cover letter. `/ingest <url> <vertical> [re
 [cover-letter]` is the single-URL fast path: it chains `ingest-url` → a
 one-row `score dump --job-id --no-prescreen` + one judge → `/tailor` →
 `/cover-letter`, spawning the existing commands rather than reimplementing
-them, and stops at `saved` because `/track` alone writes transitions. `.claude/shared/` holds the includes several
-commands read: `no_fab.md` (defines `NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`,
-`SKILLS-SOURCE`), `lint_loop.md` (the rewrite-loop attempt cap),
+them, and stops at `saved` because `/track` alone writes transitions.
+`/interview <job_id | vertical>` is the prep half: it drills the user on the claims
+their own resume makes, depth-first, and persists `interview/gap_report.md` — a
+worklist of claims that did not hold, which every later session reads first. In role
+mode its targets come from that role's `trace.md` — what landed, which words were
+rephrased under license, and the `source=UNATTRIBUTED` lines that no bullet attests at
+all — cross-read against `keywords_to_mirror.md` for what the JD actually demands.
+It writes only under `interview/` (gitignored): never `profile/`, never `state.yaml`.
+`.claude/shared/` holds the includes several commands read: `no_fab.md` (defines
+`NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`, `SKILLS-SOURCE`), `lint_loop.md` (the
+rewrite-loop attempt cap),
 `render_pdf.md` (the docx->pdf block), and `self_promote.md` (the guarded
 `saved -> tailored` transition `/apply` and `/cover-letter` both fire). There is no
 `extract` module in `src/`, and no LLM *judging* in `src/` — but the deterministic

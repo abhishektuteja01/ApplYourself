@@ -35,6 +35,7 @@ dependencies = [
 
 [package.dev-dependencies]
 apply = [
+    { name = "patchright" },
     { name = "playwright" },
 ]
 dev = [
@@ -60,7 +61,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-apply = [{ name = "playwright", specifier = ">=1.47" }]
+apply = [
+    { name = "patchright", specifier = ">=1.0" },
+    { name = "playwright", specifier = ">=1.47" },
+]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=5.0" },
@@ -278,6 +282,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/de/8b1895b107277d52f2b42d3a6806e69cfef0d5cf1d0ba343470b9d8e0a04/pandas-2.3.3-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:a68e15f780eddf2b07d242e17a04aa187a7ee12b40b930bfdd78070556550e98", size = 12771002, upload-time = "2025-09-29T23:20:26.76Z" },
     { url = "https://files.pythonhosted.org/packages/87/21/84072af3187a677c5893b170ba2c8fbe450a6ff911234916da889b698220/pandas-2.3.3-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:371a4ab48e950033bcf52b6527eccb564f52dc826c02afd9a1bc0ab731bba084", size = 13450971, upload-time = "2025-09-29T23:20:41.344Z" },
     { url = "https://files.pythonhosted.org/packages/86/41/585a168330ff063014880a80d744219dbf1dd7a1c706e75ab3425a987384/pandas-2.3.3-cp312-cp312-win_amd64.whl", hash = "sha256:a16dcec078a01eeef8ee61bf64074b4e524a2a3f4b3be9326420cabe59c4778b", size = 10992722, upload-time = "2025-09-29T23:20:54.139Z" },
+]
+
+[[package]]
+name = "patchright"
+version = "1.62.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "greenlet" },
+    { name = "pyee" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/8b/459c7bdafd2e9e6e87db9f2fad69c98ec46a26e5ecc5f7e86ea597478fde/patchright-1.62.1-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:b57fe7074bcd501f269bc80c57980b6895a26d3a765a1852df682f68d6ff4068", size = 43724271, upload-time = "2026-08-17T19:09:29.217Z" },
+    { url = "https://files.pythonhosted.org/packages/50/38/57c1bb35858238295c6c78cd7460ea16dd9f9215e57860a1cc37980cca5d/patchright-1.62.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:c826cadbca1298cdcf6641a51c5e9d74fe5a11139f3569a2bed37471ac36cbbf", size = 42503020, upload-time = "2026-08-17T19:09:33.453Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/e4/82cd1d55045ca56d105dcfa6a44aed84974d84978396cb4c5f2b9cd5ff6c/patchright-1.62.1-py3-none-macosx_11_0_universal2.whl", hash = "sha256:699b5c7d8c671ca6d807817fc3debdecfe518dab504e595dc203e65723a0899f", size = 43724271, upload-time = "2026-08-17T19:09:37.439Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/94/7b367bd063fe665461758402b7bb1560ce686d116536ca0e5d8445e9bea4/patchright-1.62.1-py3-none-manylinux1_x86_64.whl", hash = "sha256:ae908d0a69885f344bc36404a02bbfd772fc64c281f9bb77957dbc51be395592", size = 47741107, upload-time = "2026-08-17T19:09:41.769Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/b9/d27d47400b9b77bf8600fd71f68049d4f1f838e297595f1af0111d22f9e0/patchright-1.62.1-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8f1e63d5099f586ddd4b6af56d624c72b0b561c6cf85e8a473d8d7bb962b0f54", size = 47433602, upload-time = "2026-08-17T19:09:46.089Z" },
+    { url = "https://files.pythonhosted.org/packages/70/7b/196310c6b82ca0047a86da4733c127b8f20611e63a057be521dc29ab9ab5/patchright-1.62.1-py3-none-win32.whl", hash = "sha256:85fa54f292412f0e184fd38d991224cc7209d826a310b74ac947966db9a2dc4e", size = 38156638, upload-time = "2026-08-17T19:09:49.927Z" },
+    { url = "https://files.pythonhosted.org/packages/84/d8/53680cf0313fc3d0c4fb028c39c9c752241eea03c7d3ada0837b144a7ada/patchright-1.62.1-py3-none-win_amd64.whl", hash = "sha256:ad8a13859e775f6204b786785f8ccc1de60ea078c45485834025c827761dba2e", size = 38156646, upload-time = "2026-08-17T19:09:53.7Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/55/64867b8a201dfb314ccfa5d94667ee851dc6eaaf87b44b1e47eababda313/patchright-1.62.1-py3-none-win_arm64.whl", hash = "sha256:60e1e4cb56905a84597c83fe458bed3406092c3fa170138170ed175b8ce5fae2", size = 34201057, upload-time = "2026-08-17T19:09:57.403Z" },
 ]
 
 [[package]]

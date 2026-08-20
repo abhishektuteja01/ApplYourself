@@ -39,15 +39,30 @@ def unmapped(id="why_us", required=True) -> Unmapped:
 
 
 class FakeSubmitDriver:
-    def __init__(self, *, disabled=False, confirms=False):
+    def __init__(self, *, disabled=False, confirms=False, invalid=()):
         self.disabled = disabled
+        self.invalid = tuple(invalid)
         self.confirms = confirms
         self.clicked: list[str] = []
         self._ats = None
         self._sink: list[str] | None = None
+        #: Ordered record of the captcha handshake, so a test can assert the
+        #: stale token is cleared *before* the wait rather than after.
+        self.captcha_calls: list[str] = []
+
+    def clear_captcha_token(self):
+        self.captcha_calls.append("clear")
+
+    def wait_for_captcha(self):
+        self.captcha_calls.append("wait")
 
     def submit_disabled_now(self, selector):
         return self.disabled
+
+    def invalid_fields(self):
+        """A valid form by default. `invalid` names the controls the browser
+        would refuse, which blocks the click before it happens."""
+        return tuple(self.invalid)
 
     def click_submit(self, selector):
         self.clicked.append(selector)
@@ -439,12 +454,12 @@ class TestACaptchaNeverSolvedIsNeverSubmitted:
 
 class TestConfirmationIsPositiveEvidenceOnly:
     def test_no_confirmation_marker_is_unconfirmed_not_failed(self):
-        # Lever carries no measured request marker either (§1), so this is
-        # the genuine "nothing to go on but page text" case the test means to
-        # cover — greenhouse's own marker would confirm it on its own now.
+        # A board with no measured request marker is the genuine "nothing to go
+        # on but page text" case this covers — every measured board's marker
+        # would confirm it on its own. Lever was this case until cae17aa7.
         d = FakeSubmitDriver(confirms=False)
         result = FillResult(form_url="x")
-        submit(replace(plan(), ats="lever"), result, d)
+        submit(replace(plan(), ats="unmeasured_board"), result, d)
         assert result.submitted is True
         assert result.confirmed is False
 
@@ -454,3 +469,184 @@ class TestConfirmationIsPositiveEvidenceOnly:
         submit(plan(), result, d)
         assert result.submitted is True
         assert result.confirmed is True
+
+
+class TestTheBrowserItselfCanRefuseTheForm:
+    """Constraint validation runs before any of the board's own script, so a
+    form the browser refuses cannot submit: the click fires, nothing leaves the
+    browser, the page does not navigate, and the only signal is a validation
+    bubble no capture reads. That was recorded as "submitted, no confirmation
+    seen" and transitioned to applied on a form the board never received
+    (387c1801: the self-ID date was required-when-answered and left empty).
+    """
+
+    def test_an_invalid_form_is_never_clicked(self):
+        d = FakeSubmitDriver(invalid=["eeo[disabilitySignatureDate]"])
+        result = FillResult(form_url="x")
+        with pytest.raises(F.SubmitGuardError, match="disabilitySignatureDate"):
+            submit(plan(), result, d)
+        assert d.clicked == [], "nothing may be clicked on a form the browser refuses"
+        assert result.submitted is False
+
+    def test_the_guard_names_every_offending_field(self):
+        d = FakeSubmitDriver(invalid=["eeo[disabilitySignature]",
+                                      "eeo[disabilitySignatureDate]"])
+        with pytest.raises(F.SubmitGuardError) as exc:
+            submit(plan(), FillResult(form_url="x"), d)
+        assert "eeo[disabilitySignature]" in str(exc.value)
+        assert "eeo[disabilitySignatureDate]" in str(exc.value)
+        assert "are required" in str(exc.value)
+
+    def test_a_single_offender_reads_as_singular(self):
+        d = FakeSubmitDriver(invalid=["eeo[disabilitySignatureDate]"])
+        with pytest.raises(F.SubmitGuardError, match="is required"):
+            submit(plan(), FillResult(form_url="x"), d)
+
+    def test_a_valid_form_still_clicks(self):
+        d = FakeSubmitDriver()
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert d.clicked == [plan().submit_selector]
+        assert result.submitted is True
+
+    def test_a_board_with_no_form_element_is_not_treated_as_invalid(self):
+        """Ashby renders no <form> at all — nothing to check is not the same as
+        something invalid."""
+        d = FakeSubmitDriver(invalid=())
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert result.submitted is True
+        assert d.clicked == [plan().submit_selector]
+
+
+class TestTheAllRequestsDiagnostic:
+    """A board with no marker cannot be measured any other way, so this flag
+    logs what a real submission actually does. It is how Lever's marker was
+    measured: its form posts to the same URL the page was fetched from, so
+    nothing short of a live capture could distinguish the submit from the page
+    load. The flag must never become a confirmation signal — a marker matched
+    too broadly is how a click that did nothing gets reported as a submission.
+    """
+
+    class FakePage:
+        def __init__(self):
+            self.handlers = []
+
+        def on(self, event, handler):
+            self.handlers.append((event, handler))
+
+    class FakeResponse:
+        def __init__(self, method, url, status=200):
+            self.status, self.url = status, url
+            self.request = type("R", (), {"method": method})()
+
+    def _driver(self, monkeypatch, *, enabled):
+        if enabled:
+            monkeypatch.setenv(F.LOG_ALL_REQUESTS_ENV, "1")
+        else:
+            monkeypatch.delenv(F.LOG_ALL_REQUESTS_ENV, raising=False)
+        page = self.FakePage()
+        return F.BrowserDriver(page), page
+
+    def test_off_by_default_on_an_unmarked_board(self, monkeypatch):
+        driver, page = self._driver(monkeypatch, enabled=False)
+        sink = []
+        driver.watch_submit_requests("unmeasured_board", sink)
+        assert page.handlers == [], "no watcher at all on an unmarked board"
+
+    def test_the_flag_attaches_a_watcher_to_an_unmarked_board(self, monkeypatch):
+        driver, page = self._driver(monkeypatch, enabled=True)
+        driver.watch_submit_requests("unmeasured_board", [])
+        assert [e for e, _ in page.handlers] == ["response"]
+
+    def test_it_never_feeds_the_confirmation_sink(self, monkeypatch, caplog):
+        """The whole point: an unmeasured board must not acquire a submission
+        signal by being watched loosely."""
+        driver, page = self._driver(monkeypatch, enabled=True)
+        sink = []
+        driver.watch_submit_requests("unmeasured_board", sink)
+        _, handler = page.handlers[0]
+        with caplog.at_level("INFO"):
+            handler(self.FakeResponse("POST", "https://jobs.lever.co/x/y/apply"))
+        assert sink == [], "the diagnostic must not populate submit_requests"
+        assert "jobs.lever.co/x/y/apply" in caplog.text
+
+    def test_gets_are_not_logged(self, monkeypatch, caplog):
+        driver, page = self._driver(monkeypatch, enabled=True)
+        driver.watch_submit_requests("unmeasured_board", [])
+        _, handler = page.handlers[0]
+        with caplog.at_level("INFO"):
+            handler(self.FakeResponse("GET", "https://jobs.lever.co/x/y/apply"))
+        assert "jobs.lever.co" not in caplog.text
+
+    def test_a_marked_board_still_gets_its_real_watcher_too(self, monkeypatch):
+        driver, page = self._driver(monkeypatch, enabled=True)
+        sink = []
+        driver.watch_submit_requests("greenhouse", sink)
+        assert len(page.handlers) == 2, "the diagnostic must not replace the marker"
+
+
+class TestTheLeverSubmitMarker:
+    """Measured off a real submission (cae17aa7):
+
+        REQUEST POST 302 https://jobs.lever.co/thinkahead/<id>/apply
+
+    Two things that measurement settled. The form posts to the same URL the
+    page was fetched from, so only the method separates the submit from the
+    page load. And it answers **302**, not 2xx — the 2xx-only rule dropped the
+    one response that proves the submission landed, which is why every Lever
+    run reported `submit_requests: []` even when it succeeded.
+    """
+
+    class FakePage:
+        def __init__(self):
+            self.handler = None
+
+        def on(self, event, handler):
+            self.handler = handler
+
+    def _response(self, method, url, status):
+        return type("Resp", (), {
+            "status": status, "url": url,
+            "request": type("R", (), {"method": method})(),
+        })()
+
+    def _sink_for(self, method, url, status, ats="lever"):
+        page = self.FakePage()
+        driver, sink = F.BrowserDriver(page), []
+        driver.watch_submit_requests(ats, sink)
+        page.handler(self._response(method, url, status))
+        return sink
+
+    FORM = "https://jobs.lever.co/thinkahead/cb488cff/apply"
+
+    def test_the_measured_redirect_counts_as_the_submission(self):
+        assert self._sink_for("POST", self.FORM, 302) == [f"302 {self.FORM}"]
+
+    def test_a_2xx_on_the_same_endpoint_also_counts(self):
+        assert self._sink_for("POST", self.FORM, 200) == [f"200 {self.FORM}"]
+
+    def test_the_page_load_is_not_mistaken_for_a_submission(self):
+        """Same URL, different method — the only thing telling them apart."""
+        assert self._sink_for("GET", self.FORM, 200) == []
+
+    def test_a_refusal_is_not_recorded_as_a_submission(self):
+        assert self._sink_for("POST", self.FORM, 400) == []
+        assert self._sink_for("POST", self.FORM, 500) == []
+
+    def test_the_captcha_and_third_party_posts_are_not_the_submission(self):
+        """Measured alongside the submit: these fire on their own hosts."""
+        for url in ("https://api.hcaptcha.com/getcaptcha/e33f87f8",
+                    "https://www.linkedin.com/li/track",
+                    "https://www.linkedin.com/talentwidgets/apply-with-linkedin"):
+            assert self._sink_for("POST", url, 200) == [], url
+
+    def test_the_redirect_allowance_is_not_global(self):
+        """For the XHR boards a 3xx is a shape nothing has measured, so
+        treating one as success there would be a guess."""
+        assert "ashby" not in F.SUBMIT_REQUEST_REDIRECT_OK
+        assert "greenhouse" not in F.SUBMIT_REQUEST_REDIRECT_OK
+        assert self._sink_for(
+            "POST", "https://jobs.ashbyhq.com/api/non-user-graphql", 302,
+            ats="ashby",
+        ) == []

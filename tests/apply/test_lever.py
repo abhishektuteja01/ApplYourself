@@ -364,3 +364,61 @@ class TestCheckboxes:
         before = len(scan_lever_form(load_html("form_lever_full")).fields)
         after = len(scan_lever_form(self._form(inner)).fields)
         assert after == before + 1
+
+
+class TestStructuredLocation:
+    """Lever's Current Location renders as `input[type=text]` and is not a text
+    field: it searches a place taxonomy, and the board posts the structured
+    `selectedLocation` the suggestion click resolves. Scanned as plain text, the
+    fill typed the string, never picked a suggestion, left the hidden partner
+    empty, and the board answered "there was an error verifying your
+    application".
+    """
+
+    def _form(self, inner: str) -> str:
+        html = load_html("form_lever_full")
+        return html.replace(
+            '<li class="application-question resume">',
+            f'<li class="application-question">{inner}</li>'
+            '<li class="application-question resume">',
+            1,
+        )
+
+    LOCATION = (
+        '<label><div class="application-label">Current location '
+        '<span class="required">\u271f</span></div>'
+        '<div class="application-field">'
+        '<input class="location-input" id="location-input" type="text" '
+        'maxlength="100" name="location" required="">'
+        '<input id="selected-location" type="hidden" name="selectedLocation">'
+        '</div></label>'
+    )
+
+    def test_a_location_with_a_hidden_partner_is_type_and_pick(self):
+        reconciled = scan_lever_form(self._form(self.LOCATION))
+        f = next(f for f in reconciled.fields if f.id == "location")
+        assert f.kind == "react_select", (
+            "a location scanned as `text` gets typed but never resolved"
+        )
+        assert f.required is True
+
+    def test_a_plain_text_field_stays_text(self):
+        inner = (
+            '<label><div class="application-label">Current company</div>'
+            '<div class="application-field">'
+            '<input type="text" name="org"></div></label>'
+        )
+        reconciled = scan_lever_form(self._form(inner))
+        assert next(f for f in reconciled.fields if f.id == "org").kind == "text"
+
+    def test_the_partner_decides_it_not_the_field_name(self):
+        """Detected structurally, so a board that renames the visible input
+        still resolves as type-and-pick."""
+        renamed = self.LOCATION.replace('name="location"', 'name="whereabouts"')
+        reconciled = scan_lever_form(self._form(renamed))
+        f = next(f for f in reconciled.fields if f.id == "whereabouts")
+        assert f.kind == "react_select"
+
+    def test_the_hidden_partner_is_not_itself_a_fillable_field(self):
+        reconciled = scan_lever_form(self._form(self.LOCATION))
+        assert not [f for f in reconciled.fields if f.id == "selectedLocation"]

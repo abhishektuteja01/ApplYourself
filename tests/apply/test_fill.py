@@ -194,8 +194,14 @@ class FakeDriver:
     def submit_disabled_now(self, selector):
         return False
 
+    def invalid_fields(self):
+        return tuple(getattr(self, "invalid", ()))
+
     def click_submit(self, selector):
         self.calls.append(("click_submit", selector))
+
+    def clear_captcha_token(self):
+        self.calls.append(("clear_captcha_token",))
 
     def wait_for_captcha(self):
         self.calls.append(("wait_for_captcha",))
@@ -713,6 +719,68 @@ class TestLeverCardRadios:
         assert d.checked_radio_label("cards[x][field9]") == "Yes"
 
 
+class TestLeverConsentCheckbox:
+    """Lever pairs a lone checkbox with a hidden `value="0"` input under the
+    same name so an unchecked box still posts. The base driver's `.first`
+    resolved to the hidden decoy: "Not a checkbox or radio button"."""
+
+    class FakeInput:
+        def __init__(self, type_, value):
+            self.type, self.value = type_, value
+            self.checked = None
+
+        def get_attribute(self, name):
+            return {"type": self.type, "value": self.value}.get(name)
+
+        def check(self):
+            if self.type != "checkbox":
+                raise AssertionError("Not a checkbox or radio button")
+            self.checked = True
+
+        def uncheck(self):
+            if self.type != "checkbox":
+                raise AssertionError("Not a checkbox or radio button")
+            self.checked = False
+
+    def _driver(self, inputs):
+        class Group:
+            def count(self_inner):
+                return len(inputs)
+
+            def nth(self_inner, i):
+                return inputs[i]
+
+            @property
+            def first(self_inner):
+                return inputs[0]
+
+        class FakePage:
+            def locator(self_inner, selector):
+                return Group()
+        return F.LeverBrowserDriver(FakePage())
+
+    def test_checks_the_real_box_and_skips_the_hidden_decoy(self):
+        hidden = self.FakeInput("hidden", "0")
+        real = self.FakeInput("checkbox", "1")
+        self._driver([hidden, real]).set_checkbox("consent[marketing]", True)
+        assert (hidden.checked, real.checked) == (None, True)
+
+    def test_unchecks_the_real_box_too(self):
+        hidden = self.FakeInput("hidden", "0")
+        real = self.FakeInput("checkbox", "1")
+        self._driver([hidden, real]).set_checkbox("consent[marketing]", False)
+        assert (hidden.checked, real.checked) == (None, False)
+
+    def test_a_lone_real_checkbox_still_works(self):
+        real = self.FakeInput("checkbox", "1")
+        self._driver([real]).set_checkbox("consent[marketing]", True)
+        assert real.checked is True
+
+    def test_a_name_carrying_no_checkbox_at_all_fails_loudly(self):
+        with pytest.raises(F.FillError, match="no checkbox input"):
+            self._driver([self.FakeInput("hidden", "0")]).set_checkbox("x", True)
+
+
 class TestCaptchaWait:
     def test_submit_waits_for_captcha_when_the_plan_requires_it(self):
         d = FakeDriver()
@@ -727,6 +795,26 @@ class TestCaptchaWait:
         d = FakeDriver()
         F.submit(plan(fields=[]), FillResult(form_url="x"), d)
         assert ("wait_for_captcha",) not in d.calls
+
+    def test_a_stale_token_is_cleared_before_the_wait(self):
+        """A Lever board pops its challenge mid-fill, so a token is already
+        banked by the time submit runs. Waiting on "non-empty" alone returned
+        instantly on that spent token and the board refused the submission.
+        """
+        d = FakeDriver()
+        from dataclasses import replace
+        captcha_plan = replace(plan(fields=[]), requires_captcha=True)
+        F.submit(captcha_plan, FillResult(form_url="x"), d)
+
+        names = [c[0] for c in d.calls]
+        assert names.index("clear_captcha_token") < names.index("click_submit"), \
+            "the token must be cleared before the click that asks for a new one"
+        assert names.index("clear_captcha_token") < names.index("wait_for_captcha")
+
+    def test_the_token_is_not_cleared_on_a_board_with_no_captcha(self):
+        d = FakeDriver()
+        F.submit(plan(fields=[]), FillResult(form_url="x"), d)
+        assert ("clear_captcha_token",) not in d.calls
 
 
 class TestAttachments:
@@ -801,18 +889,36 @@ class TestDriverGuards:
         ]
         assert found, "the AST predicate must match a real offending import"
 
-    def test_the_import_guard_explains_how_to_install(self, monkeypatch):
+    @pytest.mark.parametrize("driver", ["playwright", "patchright"])
+    def test_the_import_guard_explains_how_to_install(self, monkeypatch, driver):
+        """Either driver can be the configured one, so either missing import
+        has to produce the install message. Blocking only `playwright` passed
+        while the configured driver was `patchright` and importable.
+        """
         import builtins
         real_import = builtins.__import__
 
-        def no_playwright(name, *args, **kwargs):
-            if name.startswith("playwright"):
+        def no_driver(name, *args, **kwargs):
+            if name.startswith(driver):
                 raise ImportError("nope")
             return real_import(name, *args, **kwargs)
 
-        monkeypatch.setattr(builtins, "__import__", no_playwright)
+        monkeypatch.setattr(builtins, "__import__", no_driver)
         with pytest.raises(SystemExit, match="uv sync --group apply"):
-            F._require_playwright()
+            F._require_playwright(driver)
+
+    def test_the_install_message_names_the_configured_driver(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+
+        def no_patchright(name, *args, **kwargs):
+            if name.startswith("patchright"):
+                raise ImportError("nope")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_patchright)
+        with pytest.raises(SystemExit, match="patchright not installed"):
+            F._require_playwright("patchright")
 
     def test_the_profile_dir_is_not_the_users_chrome(self):
         assert F.USER_DATA_DIR.name == ".apply_profile"
@@ -1457,13 +1563,15 @@ class TestTheSubmitRequestIsTheRealConfirmation:
 
     def test_an_unwatched_board_still_falls_back_to_page_text(self, tmp_path,
                                                               monkeypatch):
-        # Lever has no measured marker yet. It must keep the old
-        # behaviour — assume submitted — or every Lever role breaks.
+        # A board whose submit request has never been measured must keep the
+        # old behaviour — assume submitted — or every role on it breaks.
+        # Lever was this case until its marker was measured off cae17aa7.
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
-        assert "lever" not in F.SUBMIT_REQUEST_MARKERS
+        unmeasured = "unmeasured_board"
+        assert unmeasured not in F.SUBMIT_REQUEST_MARKERS
         d = FakeDriver()
         result = FillResult(form_url="x")
-        F.submit(plan(), result, d)
+        F.submit(replace(plan(), ats=unmeasured), result, d)
         assert result.submitted is True
 
     def test_greenhouse_is_measured_too(self, tmp_path, monkeypatch):
@@ -1730,3 +1838,236 @@ class TestTeardownAndReportingNeverLoseALandedSubmit:
         assert called == [True], "the callback must actually have run"
         assert ("click_submit", plan().submit_selector) in driver.calls
         assert result.submitted is True
+
+
+class TestLeverLocationAutocomplete:
+    """Lever renders no react-select markup, so the base driver's option
+    selectors (`.select__option`) match nothing on a Lever board: the
+    suggestion list lives in `.dropdown-results`. `click_option` could
+    therefore never pick a location, and the hidden `selectedLocation` the
+    board actually posts stayed empty.
+    """
+
+    class Node:
+        def __init__(self, text):
+            self.text, self.clicked = text, False
+
+        def inner_text(self):
+            return self.text
+
+        def click(self):
+            self.clicked = True
+
+    class Input:
+        def __init__(self, value=""):
+            self.value = value
+
+        def input_value(self):
+            return self.value
+
+    def _page(self, *, options=(), location="", selected="", banner=None):
+        outer = self
+
+        class Group:
+            def __init__(self, items):
+                self.items = list(items)
+
+            def count(self):
+                return len(self.items)
+
+            def nth(self, i):
+                return self.items[i]
+
+            @property
+            def first(self):
+                return self.items[0]
+
+        class FakePage:
+            def __init__(self):
+                self.selectors = []
+                self.waited = []
+
+            def locator(self, selector):
+                self.selectors.append(selector)
+                if selector == F.LEVER_OPTION:
+                    return Group(options)
+                if selector == F.LEVER_SELECTED_LOCATION:
+                    return Group([outer.Input(selected)] if selected is not None else [])
+                if selector == F.COOKIE_ACCEPT:
+                    return Group([banner] if banner is not None else [])
+                return Group([outer.Input(location)])
+
+            def wait_for_selector(self, selector, timeout=None):
+                self.waited.append(selector)
+                if not options:
+                    raise RuntimeError("no suggestions")
+
+        return FakePage()
+
+    def test_click_option_reads_the_dropdown_results_not_select_option(self):
+        page = self._page(options=[self.Node("Exampletown, Example State, United States")])
+        driver = F.LeverBrowserDriver(page)
+
+        assert driver.click_option("Exampletown, Example State, United States") is True
+        assert F.LEVER_OPTION in page.selectors
+        assert F.SELECT_OPTION not in page.selectors, \
+            "react-select's class never appears on a Lever board"
+
+    def test_click_option_reports_a_miss_rather_than_clicking_the_wrong_place(self):
+        page = self._page(options=[self.Node("Othertown, Example State, United States")])
+        assert F.LeverBrowserDriver(page).click_option("Exampletown") is False
+
+    def test_visible_options_lists_the_suggestions(self):
+        nodes = [self.Node("Exampletown, Example State, United States"),
+                 self.Node("South Exampletown, Example State, United States")]
+        driver = F.LeverBrowserDriver(self._page(options=nodes))
+        assert driver.visible_options() == (
+            "Exampletown, Example State, United States",
+            "South Exampletown, Example State, United States",
+        )
+
+    def test_an_empty_suggestion_list_is_an_answer_not_a_crash(self):
+        assert F.LeverBrowserDriver(self._page()).visible_options() == ()
+
+    def test_typed_text_with_no_structured_partner_set_reads_as_unselected(self):
+        """The exact failure: the visible box shows the location, the hidden
+        partner is empty, and the board refuses the submission. Reporting the
+        visible text here would call that field filled."""
+        page = self._page(location="Exampletown, Example State, United States",
+                          selected="")
+        assert F.LeverBrowserDriver(page).selected_label("location") == ""
+
+    def test_a_resolved_location_reads_back(self):
+        page = self._page(location="Exampletown, Example State, United States",
+                          selected='{"id":"abc"}')
+        assert F.LeverBrowserDriver(page).selected_label("location") == \
+            "Exampletown, Example State, United States"
+
+    def test_a_field_with_no_hidden_partner_reads_straight_off_the_input(self):
+        page = self._page(location="Example University", selected=None)
+        assert F.LeverBrowserDriver(page).selected_label("org") == \
+            "Example University"
+
+
+class TestLeverCookieBanner:
+    """A consent banner's buttons render over the form's own first questions,
+    so a click on a field underneath lands on the banner instead. A warmed
+    profile has already dismissed it; a fresh one has not."""
+
+    class Button:
+        def __init__(self, visible=True):
+            self.clicked, self.visible = False, visible
+
+        def is_visible(self):
+            return self.visible
+
+        def click(self, timeout=None):
+            if not self.visible:
+                raise RuntimeError("element is not visible")
+            self.clicked = True
+
+    def _page(self, buttons):
+        class Group:
+            def count(self):
+                return len(buttons)
+
+            def nth(self, i):
+                return buttons[i]
+
+        class FakePage:
+            def locator(self_inner, selector):
+                assert selector == F.COOKIE_ACCEPT
+                return Group()
+        return FakePage()
+
+    def test_accepts_the_banner_when_one_is_up(self):
+        b = self.Button()
+        assert F.LeverBrowserDriver(self._page([b])).dismiss_cookie_banner() is True
+        assert b.clicked is True
+
+    def test_no_banner_is_the_normal_case_not_an_error(self):
+        assert F.LeverBrowserDriver(self._page([])).dismiss_cookie_banner() is False
+
+    def test_skips_the_hidden_copy_of_a_duplicated_banner(self):
+        """Measured live: the board renders the banner twice (a wide and a
+        narrow variant) and only one copy is displayed. Clicking `.first`
+        waited out the full timeout on an element that never becomes visible.
+        """
+        hidden, shown = self.Button(visible=False), self.Button(visible=True)
+        driver = F.LeverBrowserDriver(self._page([hidden, shown]))
+        assert driver.dismiss_cookie_banner() is True
+        assert hidden.clicked is False
+        assert shown.clicked is True
+
+    def test_an_all_hidden_banner_is_not_a_failure(self):
+        hidden = self.Button(visible=False)
+        assert F.LeverBrowserDriver(self._page([hidden])).dismiss_cookie_banner() is False
+
+
+class TestLeverCheckboxGroupIgnoresNonCheckboxes:
+    """A shared `name` is not a shared type. Lever's pronouns group renders ten
+    checkboxes plus a free-text `customPronounsTextField` under the one name,
+    and `is_checked()` on that text input raises "Not a checkbox or radio
+    button" — which failed the whole role at fill time (cae17aa7).
+    """
+
+    class Box:
+        def __init__(self, kind, value, checked=False):
+            self.kind, self.value, self.checked = kind, value, checked
+
+        def get_attribute(self, name):
+            if name == "type":
+                return self.kind
+            if name == "value":
+                return self.value
+            return None
+
+        def is_checked(self):
+            if self.kind != "checkbox":
+                raise RuntimeError("Not a checkbox or radio button")
+            return self.checked
+
+        def check(self):
+            if self.kind != "checkbox":
+                raise RuntimeError("Not a checkbox or radio button")
+            self.checked = True
+
+    def _driver(self, boxes):
+        class Group:
+            def count(self_inner):
+                return len(boxes)
+
+            def nth(self_inner, i):
+                return boxes[i]
+
+        class FakePage:
+            def locator(self_inner, selector):
+                return Group()
+        return F.LeverBrowserDriver(FakePage())
+
+    def _group(self):
+        return [
+            self.Box("checkbox", "He/him"),
+            self.Box("checkbox", "They/them"),
+            self.Box("text", None),        # customPronounsTextField
+        ]
+
+    def test_reading_back_does_not_explode_on_the_text_input(self):
+        boxes = self._group()
+        boxes[1].checked = True
+        driver = self._driver(boxes)
+        assert driver.checked_group_labels("pronouns") == ("They/them",)
+
+    def test_the_text_input_is_not_offered_as_an_option(self):
+        driver = self._driver(self._group())
+        assert [label for _, label in driver._checkbox_options("pronouns")] == \
+            ["He/him", "They/them"]
+
+    def test_ticking_still_works(self):
+        boxes = self._group()
+        self._driver(boxes).check_group_option("pronouns", "He/him")
+        assert [b.checked for b in boxes] == [True, False, False]
+
+    def test_an_unmatched_label_still_reports_a_miss(self):
+        with pytest.raises(F.FillError, match="pronouns"):
+            self._driver(self._group()).check_group_option("pronouns", "Xe/xem")

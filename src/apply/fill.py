@@ -23,6 +23,7 @@ is the only module in `src/` that names the driver.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field as dc_field, replace
@@ -47,6 +48,20 @@ FIELD_BY_NAME = '{form} [name="{id}"]'
 
 # react-select's rendered parts, as they appear on every board sampled.
 SELECT_OPTION = ".select__option"
+#: Lever renders no react-select at all: its location autocomplete drops
+#: suggestions into this container. `.select__option` never appears on a Lever
+#: board, so the base driver's option selectors can only ever come back empty
+#: there.
+LEVER_OPTION = ".dropdown-results > *"
+#: The field Lever actually posts for a location: the visible text input is a
+#: search box, and this hidden input holds the structured place the suggestion
+#: click resolved to. Text with no suggestion picked leaves it empty, and the
+#: board rejects the submission ("error verifying your application").
+LEVER_SELECTED_LOCATION = "#selected-location"
+#: Lever boards can carry a cookie-consent banner whose buttons overlay the
+#: form's own fields. A warmed profile has already dismissed it; a fresh one
+#: has it sitting on top of the first few questions.
+COOKIE_ACCEPT = ".cc-window .cc-allow"
 SELECT_SINGLE_VALUE = ".select__single-value"
 SELECT_MULTI_VALUE = ".select__multi-value__label"
 
@@ -128,12 +143,33 @@ SUBMIT_REQUEST_MARKERS = {
     # prefix, not a different path), so the URL alone is not unique. Gated by
     # SUBMIT_REQUEST_METHOD below.
     "greenhouse": ("boards.greenhouse.io/embed/",),
+    # Measured off a real submission (cae17aa7): the form carries
+    # `method="POST"` and no `action`, so it posts to the very URL the page was
+    # fetched from. The path cannot tell the submit from the page load, which
+    # is why this is gated on POST below — the page load is a GET. Measured at
+    # the same time: the only POST to this host around the click was the
+    # submit itself; the captcha and any board-embedded widgets post to their
+    # own hosts.
+    "lever": ("jobs.lever.co/",),
 }
+#: Set to log every non-GET response around the submit click, for a board with
+#: no marker yet. How the `lever` marker above was measured; keep it for the
+#: next unmarked board rather than guessing one.
+LOG_ALL_REQUESTS_ENV = "APPLY_LOG_ALL_REQUESTS"
+
 # Per-ats method a matched marker must also carry.
 SUBMIT_REQUEST_METHOD = {
     "ashby": "POST",
     "greenhouse": "POST",
+    "lever": "POST",
 }
+#: Boards whose submit is answered with a redirect rather than a 2xx body.
+#: Lever's is a native form POST and returns **302** to its own /thanks page,
+#: so the 2xx-only rule dropped the one response that proves the submission
+#: landed. Kept per-ats and not relaxed globally: for the XHR boards a 3xx is
+#: not a shape anything has measured, and treating one as success there would
+#: be a guess.
+SUBMIT_REQUEST_REDIRECT_OK = frozenset({"lever"})
 # How long to let the board answer the click before reading the page.
 SUBMIT_SETTLE_MS = 5000
 # Extra time to keep polling for the submit-endpoint request once
@@ -416,13 +452,18 @@ class BrowserDriver:
         click did anything. A board nobody has watched yet has no marker, so
         the sink stays empty and confirmation falls back to page text.
         """
+        if os.environ.get(LOG_ALL_REQUESTS_ENV):
+            self._log_all_responses()
+
         markers = SUBMIT_REQUEST_MARKERS.get(ats, ())
         if not markers:
             return
         required_method = SUBMIT_REQUEST_METHOD.get(ats)
 
+        ceiling = 400 if ats in SUBMIT_REQUEST_REDIRECT_OK else 300
+
         def on_response(response) -> None:
-            if response.status >= 300:
+            if response.status >= ceiling:
                 return
             if not any(marker in response.url for marker in markers):
                 return
@@ -434,6 +475,36 @@ class BrowserDriver:
             self.page.on("response", on_response)
         except Exception:  # noqa: BLE001 - a driver without events is not a failure
             log.debug("could not watch responses for %s", ats)
+
+    def _log_all_responses(self) -> None:
+        """Log every non-GET response, for measuring an unmarked board.
+
+        Logs only. Nothing here reaches the `sink` that `result.submit_requests`
+        is built from, and that separation is the whole point: an unmeasured
+        board must not acquire a confirmation signal by being watched loosely.
+        A marker matched too broadly is how a click that did nothing gets
+        reported as a submission.
+        """
+        # Nothing in this package configures logging (printing belongs to
+        # apply_cli), so an unconfigured root logger would swallow every line
+        # this flag exists to produce. Self-sufficient rather than depending on
+        # a caller to raise the level.
+        if not any(isinstance(h, logging.StreamHandler) for h in log.handlers):
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(message)s"))
+            log.addHandler(handler)
+        log.setLevel(logging.INFO)
+
+        def on_any(response) -> None:
+            method = response.request.method
+            if method == "GET":
+                return
+            log.info("REQUEST %s %s %s", method, response.status, response.url)
+
+        try:
+            self.page.on("response", on_any)
+        except Exception:  # noqa: BLE001 - a driver without events is not a failure
+            log.debug("could not attach the all-requests logger")
 
     def wait(self, ms: int) -> None:
         """Let the page act. Separate from `settle` because a board answering a
@@ -596,11 +667,30 @@ class BrowserDriver:
                 return text
         return ""
 
+    def clear_captcha_token(self) -> None:
+        """Empty the hidden response token before the click that asks for a new
+        one. Without this, a token from an earlier solve is still sitting there
+        and `wait_for_captcha` returns immediately on it."""
+        self.page.evaluate(
+            "() => { const el = document.getElementById('hcaptchaResponseInput');"
+            " if (el) el.value = ''; }"
+        )
+
     def wait_for_captcha(self, timeout_ms: int = 600_000) -> None:
         """Block until a human solves the hCaptcha challenge Lever's own JS
         just opened — proxied by the hidden response token going non-empty.
         Unattended submission is not possible on a board that renders one
-        (§12a, §12c): this is the wait, not a bypass."""
+        (§12a, §12c): this is the wait, not a bypass.
+
+        Only ever called after `clear_captcha_token`, because "non-empty" is
+        not the same question as "freshly solved". An hCaptcha token is
+        single-use and expires about two minutes after it is minted, and a
+        Lever board pops its challenge mid-fill — the moment the location
+        search box is touched — so by the time the form is finished the token
+        from that solve is spent. Waiting on non-empty alone returned at once
+        and the dead token was posted, which the board rejects with "there was
+        an error verifying your application".
+        """
         self.page.wait_for_function(
             "document.getElementById('hcaptchaResponseInput')?.value?.length > 0",
             timeout=timeout_ms,
@@ -652,6 +742,33 @@ class BrowserDriver:
     def close(self) -> None:
         self.page.keyboard.press("Escape")
 
+    def invalid_fields(self) -> tuple[str, ...]:
+        """Required controls the browser itself already refuses, by name.
+
+        Constraint validation runs before any of the board's own script, so a
+        form in this state cannot submit: the click fires, nothing leaves the
+        browser, and the page does not even navigate. Read through the form's
+        own `checkValidity()` rather than guessed from the plan — a field the
+        plan calls optional can be `required` in the DOM the moment another
+        answer makes it so (a self-ID signature becomes required as soon as the
+        disability question is answered).
+
+        An empty tuple on a board with no `<form>` element: nothing to check is
+        not the same as something invalid, and Ashby renders no form at all.
+        """
+        return tuple(
+            self.page.evaluate(
+                """(sel) => {
+                    const form = document.querySelector(sel);
+                    if (!form || form.checkValidity()) return [];
+                    return [...form.elements]
+                        .filter(el => el.willValidate && !el.checkValidity())
+                        .map(el => el.name || el.id || el.tagName);
+                }""",
+                FORM_SELECTOR,
+            )
+        )
+
     def submit_disabled_now(self, selector: str) -> bool:
         """Re-read `aria-disabled` live — `plan.submit_disabled` is a scan-time
         snapshot and every field write since then can have changed it."""
@@ -673,10 +790,20 @@ class LeverBrowserDriver(BrowserDriver):
         the checkboxes themselves, so the base implementation's
         `.locator('input[type=checkbox]')` searches *inside* an <input> and
         finds nothing. Match on the option's own value/label instead.
+
+        Only the checkboxes, because a shared `name` is not a shared type: the
+        pronouns group renders ten checkboxes plus a free-text
+        `customPronounsTextField` under that one name, and `is_checked()` on
+        the text input raises "Not a checkbox or radio button" — which failed
+        the whole role. The same decoy problem `set_checkbox` handles, on the
+        group path. `scan_lever_form` already reads options from
+        `input[@type="checkbox"]` alone, so the plan never names the text one.
         """
         boxes = self._locator(field_id)
         for i in range(boxes.count()):
             box = boxes.nth(i)
+            if (box.get_attribute("type") or "") != "checkbox":
+                continue
             value = box.get_attribute("value") or ""
             text = ""
             box_id = box.get_attribute("id")
@@ -720,6 +847,95 @@ class LeverBrowserDriver(BrowserDriver):
                 radio.check()
                 return
         raise FillError(f"{field_id}: no radio labelled {label!r}")
+
+    def set_checkbox(self, field_id: str, checked: bool) -> None:
+        """Lever pairs a lone checkbox with a hidden `value="0"` input under the
+        same name, so an unchecked box still posts a value. The base
+        implementation's `.first` resolves to that hidden decoy and Playwright
+        refuses it with "Not a checkbox or radio button". Take the real input.
+        """
+        boxes = self._locator(field_id)
+        for i in range(boxes.count()):
+            box = boxes.nth(i)
+            if (box.get_attribute("type") or "") == "checkbox":
+                box.check() if checked else box.uncheck()
+                return
+        raise FillError(f"{field_id}: no checkbox input")
+
+    def goto(self, url: str) -> None:
+        """Base navigation, then clear the cookie banner before anything is
+        written. Its buttons render *over* the first questions, so a click on a
+        field underneath lands on the banner instead."""
+        super().goto(url)
+        self.dismiss_cookie_banner()
+
+    def dismiss_cookie_banner(self) -> bool:
+        """Accept the consent banner if one is up. Returns whether it clicked.
+        No banner is the normal case on a warmed profile, not an error.
+
+        The visible button, not the first one: a board renders the banner's
+        markup more than once (a wide and a narrow variant), and only one copy
+        is displayed. `.first` resolved to a hidden copy and the click waited
+        out its whole timeout on an element that would never be visible.
+        """
+        buttons = self.page.locator(COOKIE_ACCEPT)
+        for i in range(buttons.count()):
+            button = buttons.nth(i)
+            try:
+                if not button.is_visible():
+                    continue
+                button.click(timeout=OPTION_TIMEOUT)
+            except Exception:  # noqa: BLE001 - a banner we cannot click is not fatal
+                continue
+            return True
+        return False
+
+    # --- location autocomplete ------------------------------------------------
+    # Lever's location field is a search box over a place taxonomy, not a text
+    # field: the visible input filters, and the click on a suggestion is what
+    # populates the hidden `selectedLocation` the board actually posts. None of
+    # the base driver's option selectors match here (see LEVER_OPTION).
+
+    def visible_options(self) -> tuple[str, ...]:
+        try:
+            self.page.wait_for_selector(LEVER_OPTION, timeout=OPTION_TIMEOUT)
+        except Exception:  # noqa: BLE001 - an empty suggestion list is an answer
+            return ()
+        nodes = self.page.locator(LEVER_OPTION)
+        return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
+
+    def click_option(self, label: str) -> bool:
+        options = self.page.locator(LEVER_OPTION)
+        for i in range(options.count()):
+            node = options.nth(i)
+            if node.inner_text().strip().casefold() == label.strip().casefold():
+                node.click()
+                return True
+        return False
+
+    def is_expanded(self, field_id: str) -> bool:
+        """No `aria-expanded` on this widget — the suggestion container holding
+        children is the only signal that it is still open."""
+        return self.page.locator(LEVER_OPTION).count() > 0
+
+    def selected_label(self, field_id: str) -> str:
+        """The chosen location, but only once it is structurally chosen.
+
+        Returns "" while the hidden `selectedLocation` is empty even though the
+        visible input already shows the typed text, so `_select`'s own
+        verification is what catches a location that was typed but never
+        resolved — rather than this reporting a filled field the board will
+        refuse. Fields other than the location have no hidden partner and read
+        straight off the input.
+        """
+        el = self._locator(field_id).first
+        shown = (el.input_value() or "").strip()
+        hidden = self.page.locator(LEVER_SELECTED_LOCATION)
+        if not hidden.count():
+            return shown
+        if not (hidden.first.input_value() or "").strip():
+            return ""
+        return shown
 
 
 class AshbyBrowserDriver(BrowserDriver):
@@ -1420,6 +1636,20 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
         # every retry attempt too — a drift caught and fixed on attempt 1 is
         # not evidence attempt 2 is still safe.
         _reverify_fields(driver, plan)
+        # Asked of the browser, immediately before the click, because this is
+        # the one refusal that leaves no trace: constraint validation blocks
+        # the form before the board's own script runs, so the click fires no
+        # request, the page does not navigate, and the only signal is a
+        # validation bubble no capture reads. Recorded as "submitted, no
+        # confirmation seen" and transitioned to applied on a form the board
+        # never received (387c1801: an unfilled self-ID date).
+        invalid = driver.invalid_fields()
+        if invalid:
+            raise SubmitGuardError(
+                "the browser refuses this form: "
+                f"{', '.join(invalid)} {'is' if len(invalid) == 1 else 'are'} "
+                "required and empty. Nothing was clicked."
+            )
         # Registered fresh, right here, never earlier: Ashby's location combobox
         # queries the same GraphQL gateway on every keystroke (§12a), and
         # `_reverify_fields` above — or a prior attempt's post-refusal
@@ -1431,6 +1661,11 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
         # click can only ever catch traffic the click itself caused.
         attempt_requests: list[str] = []
         driver.watch_submit_requests(plan.ats, attempt_requests)
+        if plan.requires_captcha:
+            # Before the click, not after: the click is what opens the
+            # challenge, and the wait below has to be able to tell this
+            # solve's token from one an earlier interaction already banked.
+            driver.clear_captcha_token()
         driver.click_submit(plan.submit_selector)
         if plan.requires_captcha:
             # Lever's submit is a JS-driven type="button", not a native form
