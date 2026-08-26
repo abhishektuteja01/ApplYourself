@@ -846,8 +846,12 @@ def run(
     blank_company = df["company_normalized"].fillna("").str.strip() == "" if not df.empty else None
     dropped_blank_company = int(blank_company.sum()) if blank_company is not None else 0
     if dropped_blank_company:
-        for c, t in zip(df.loc[blank_company, "company"], df.loc[blank_company, "title"]):
-            log.warning("dropping row with unusable company: company=%r title=%r", c, t)
+        for s, c, t in zip(
+            df.loc[blank_company, "source"],
+            df.loc[blank_company, "company"],
+            df.loc[blank_company, "title"],
+        ):
+            log.warning("dropping row with unusable company: source=%r company=%r title=%r", s, c, t)
         df = df[~blank_company].copy()
     after_blank_company = len(df)
     # step 2

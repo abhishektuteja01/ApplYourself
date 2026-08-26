@@ -72,6 +72,9 @@ pipeline.md
 # interview/ — mock-interview transcripts and the gap report. They carry real
 # spoken claims, employer names, and the specific ways an answer fell apart.
 interview/
+# research/ — market analyses run against jobs/*.parquet and profile/. They carry
+# scraped JD text and which of the user's own claims lack evidence.
+/research/
 /top_scored_open.csv
 # Nightly discovery logs (scheduler job). The directory itself is committed via
 # .gitkeep: launchd will not create the intermediate directory for

@@ -589,11 +589,17 @@ $JOB_ID — <category from the run report>
 
 <the report's detail line for this role, verbatim>
 
+Command: uv run apply run --job-id <job_id> --answers <OUT_DIR>/answers_override.json --yes [--submit]
+
 Overrides applied this run: <list of field ids resolved at C1/C2/JD/B0-LLM/AUDIT, with tier>
 <if Step 2c called a Skill this run: "Also ran: company-answers|cover-letter">
 <if a Tier B rule was written back: "Also added a reusable rule to
 profile/application_answers.yaml for: \"<label>\"">
 ```
+
+`Command:` is Step 7's invocation with every variable substituted — it must
+paste into a terminal and run. On `ready` or `parked`, add a rerun line: same
+command, `--submit` only for `ready`, and drop `--yes` (the user has a tty).
 
 If the category is `submitted_untracked`, lead with the report's banner —
 `SUBMITTED BUT NOT TRACKED — fix state.yaml by hand` — and name the job_id.
