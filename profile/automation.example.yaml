@@ -1,0 +1,12 @@
+schema_version: 1
+# Overnight score -> tailor -> apply-prep chain, run by three Claude Desktop
+# local routines after nightly discovery finishes. Each routine reads this
+# file instead of hardcoding times/thresholds in its own prompt text.
+
+score_threshold: 85
+csv_path: top_scored_open.csv
+
+schedule:
+  score_time: "00:00"    # routine 1: /score, gated on discovery's completion line
+  tailor_time: "01:00"   # routine 2: filter + /tailor + PDF check
+  apply_time: "04:00"    # routine 3: apply fill + submittable/parked triage

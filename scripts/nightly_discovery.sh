@@ -32,14 +32,25 @@ cd "$REPO" || { echo "FATAL: cannot cd to $REPO" >&2; exit 1; }
 
 echo "=== discovery start $STAMP (repo=$REPO uv=$UV) ===" | tee -a "$LOG"
 # caffeinate -s: hold off system sleep on AC power. -i: hold off idle sleep.
-# Released as soon as discovery exits, so the Mac can sleep again. macOS-only —
-# elsewhere it does not exist, and an unguarded call would exit 127 without ever
-# running discovery, so fall through to a plain run.
+# -t 32400 (9h): covers discovery plus the score/tailor/apply-prep Desktop
+# routines chained after it (through ~4:30 AM), not just the discover call —
+# those routines run hours after this script exits, and idle sleep would
+# otherwise resume the moment discovery finishes. Expires on its own; nothing
+# else needs to kill it. macOS-only — elsewhere it does not exist, and an
+# unguarded call would exit 127 without ever running discovery, so fall
+# through to a plain run.
 if command -v caffeinate >/dev/null 2>&1; then
-  caffeinate -s -i "$UV" run discover >>"$LOG" 2>&1
-else
-  "$UV" run discover >>"$LOG" 2>&1
+  caffeinate -s -i -t 32400 &
 fi
+"$UV" run discover >>"$LOG" 2>&1
 CODE=$?
 echo "=== discovery end code=$CODE $(date +%Y-%m-%d_%H%M%S) ===" | tee -a "$LOG"
+
+# Open Claude Desktop the moment discovery is actually done, rather than
+# guessing a clock time it should be done by — the score routine's own
+# completion check still gates /score regardless of when the app opens.
+if [[ "$CODE" -eq 0 ]] && command -v open >/dev/null 2>&1; then
+  open -a "Claude"
+fi
+
 exit "$CODE"
