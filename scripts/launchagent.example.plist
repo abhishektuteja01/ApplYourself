@@ -20,7 +20,7 @@
   minutes before it (see /onboarding's "Nightly discovery (macOS only)"
   section):
 
-    sudo pmset repeat wakeorpoweron MTWRFSU 22:25:00
+    sudo pmset repeat wakeorpoweron MTWRFSU 19:55:00
 
   Verify:  launchctl print gui/$(id -u)/__LABEL__
   Remove:  launchctl bootout gui/$(id -u)/__LABEL__
@@ -37,13 +37,13 @@
     <string>__REPO__/scripts/nightly_discovery.sh</string>
   </array>
 
-  <!-- 22:30 daily, five minutes after the pmset wake above. -->
+  <!-- 20:00 daily, five minutes after the pmset wake above. -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>22</integer>
+    <integer>20</integer>
     <key>Minute</key>
-    <integer>30</integer>
+    <integer>0</integer>
   </dict>
 
   <!-- launchd's own capture of the wrapper's stdout/stderr. The wrapper writes

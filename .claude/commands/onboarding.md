@@ -508,7 +508,7 @@ mkdir -p logs ~/Library/LaunchAgents
 sed -e "s|__LABEL__|$LABEL|g" -e "s|__REPO__|$PWD|g" \
     scripts/launchagent.example.plist > ~/Library/LaunchAgents/$LABEL.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/$LABEL.plist
-sudo pmset repeat wakeorpoweron MTWRFSU 22:25:00
+sudo pmset repeat wakeorpoweron MTWRFSU 19:55:00
 launchctl print gui/$(id -u)/$LABEL | head -20
 ```
 
@@ -517,9 +517,9 @@ launchctl print gui/$(id -u)/$LABEL | head -20
 Replacing an existing agent: `launchctl bootout gui/$(id -u)/$LABEL` first;
 copying the plist alone changes nothing. After the first night, read the newest
 `logs/discovery_<timestamp>.log`. Four ways an empty morning happens: asleep at
-22:30 with no wake scheduled (a job whose time falls during sleep is skipped,
-not deferred); idle sleep took the Mac back down before 22:30 (move the wake to
-22:29 if `pmset sleep` is under 5 minutes — `caffeinate` is inside the job); shut
+20:00 with no wake scheduled (a job whose time falls during sleep is skipped,
+not deferred); idle sleep took the Mac back down before 20:00 (move the wake to
+19:59 if `pmset sleep` is under 5 minutes — `caffeinate` is inside the job); shut
 down or on battery (`wakeorpoweron` boots to the login window, where the `gui/`
 domain is not loaded); or `sudo pmset repeat` replaced an existing schedule.
 
