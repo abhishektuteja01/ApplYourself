@@ -98,7 +98,8 @@ ls -la interview/gap_report.md 2>/dev/null || echo "no gap report — first sess
 
 If it exists, read it. Then **reconcile every row against the profile** before using it:
 
-- Row keyed on a `B-` id no longer present in `profile/bullets.md` → delete the row
+- Row keyed on a `B-` id no longer present in `profile/bullets.md`, or an `S-` id no
+  longer present in `profile/stories.md` → delete the row
   silently. The bullet is gone; the finding is moot.
 - Row whose `claim` snippet is no longer a substring of that bullet's `canonical` →
   set verdict `stale` and clear `history`. The old verdict is about text that no longer
@@ -160,14 +161,20 @@ Open gaps outrank fresh targets, always. Fill the rest of the session from the m
   `trace.md` instead and say so rather than manufacturing an `X-` row.
 - `jd_snapshot.md` — the posting itself, for the seniority framing and the domain.
 
-**Vertical mode.** Read `profile/bullets.md` and `profile/skills_master.md`:
+**Vertical mode.** Read `profile/bullets.md`, `profile/skills_master.md` and
+`profile/stories.md` if it exists (optional file):
 
 - Bullets whose `tags` fit the lane.
 - Plus bullets named in the `evidence:` of any `SKILL-*` whose `vertical_lean` includes
   the lane. Bullets carry no `vertical_lean` of their own — only `tags`; the lean field
   lives on `skills_master.md`.
-- Bias hard toward ids absent from the coverage ledger. A never-drilled bullet outranks
-  a bullet that already held once.
+- Plus `S-` entries from `stories.md` whose `anchors:` name any bullet already in the
+  pool. A story is drilled as a claim in its own right: press on the mechanism in its
+  `action`, the number in its `outcome`, and whether the `retrospect` survives being
+  asked what it would cost. A story whose anchor bullet held but whose own mechanism
+  does not is exactly the gap this file exists to catch.
+- Bias hard toward ids absent from the coverage ledger. A never-drilled bullet or story
+  outranks one that already held once.
 
 Read the lane's `rubric.md` in both modes for what that vertical weights and its target
 seniority band — it tells you the altitude to pitch at. A lane targeting analyst level
@@ -194,7 +201,8 @@ Classify each closed thread with exactly one verdict:
 | `undefended` | Could not back the claim with specifics. The claim itself is at risk. |
 | `delivery` | Claim is sound and anchored; the answer buried it. Wording, not substance. |
 | `drift` | Resume rephrased this bullet under license and the user cannot hold the conversation in the rephrased vocabulary. |
-| `no-anchor` | What the user said to defend it is not in `bullets.md` at all. Feeds the unlocks file. |
+| `no-anchor` | What the user said to defend it is not in `bullets.md` or `stories.md` at all. Feeds the unlocks file. |
+| `story-thin` | An `S-` row only. The story's situation and outcome hold, but the mechanism in `action` or the cost in `retrospect` does not. The story is at risk, not the bullet it anchors to. |
 | `held` | Defended cleanly. One `held` is luck; two closes the row. |
 
 `stale` is set by reconciliation in Step 1, never by a thread.
@@ -250,11 +258,13 @@ sessions_run: <n>
 lap: <n>
 
 **history** — verdicts BEFORE the current one, oldest first, max 3, single letters
-(`F`=undefended `D`=delivery `R`=drift `N`=no-anchor `H`=held). Older is discarded.
+(`F`=undefended `D`=delivery `R`=drift `N`=no-anchor `T`=story-thin `H`=held). Older is
+discarded.
 
 ## Drill next
 
 Worst-first: `stale`, then `no-anchor` on a JD headline demand, then `undefended`,
+then `story-thin`,
 then `drift`, then `delivery`. Max 20 rows.
 
 | key | claim (<=6 words from canonical) | verdict | history | last drilled | vertical | note |
@@ -363,7 +373,8 @@ substance. The next session needs what was and was not demonstrated, not a recor
 
 Write it only when the session actually surfaced undocumented work. This is the
 memory-unlock half of the command, and it follows `/suggest-synonyms`' discipline: you
-never write to `profile/bullets.md` or `profile/skills_master.md` — the user does,
+never write to `profile/bullets.md`, `profile/skills_master.md` or
+`profile/stories.md` — the user does,
 after reviewing.
 
 Deliberately a separate file from `/suggest-synonyms`' own draft. That one is driven by

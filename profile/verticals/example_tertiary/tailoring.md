@@ -10,6 +10,12 @@ carry roughly equal weight.
 **Project ordering default:** Project A (1) > Project B (2) > Project C (3).
 JD fine-tune allowed within the default.
 
+**C1 story priority:** Project A > Project B > Project C. Applies to Tier C1
+application-form answers only, not resume bullets. A story in
+profile/stories.md whose `kind` matches the question beats a
+higher-priority project whose `kind` does not; remaining ties break on
+`keywords_to_mirror` overlap.
+
 **Summary framing:** lead with the stack the JD names, backed by the employer
 scope that proves it.
 

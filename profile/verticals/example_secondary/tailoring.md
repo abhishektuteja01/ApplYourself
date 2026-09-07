@@ -11,6 +11,12 @@ toward this vertical's domain using their existing `allowable_synonyms`.
 **Project ordering default:** Project B (1) > Project C (2) > Project A (3).
 JD fine-tune allowed within the default.
 
+**C1 story priority:** Project B > Project C > Project A. Applies to Tier C1
+application-form answers only, not resume bullets. A story in
+profile/stories.md whose `kind` matches the question beats a
+higher-priority project whose `kind` does not; remaining ties break on
+`keywords_to_mirror` overlap.
+
 **Summary framing:** lead with the project/domain evidence; mention the
 employer experience secondarily as supporting professional experience.
 

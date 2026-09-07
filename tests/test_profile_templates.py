@@ -237,6 +237,7 @@ class TestTemplateCoverage:
             "skills_master.example.md",
             "preferences.example.md",
             "voice_samples.example.md",
+            "stories.example.md",
             "scoring_rubric.example.md",
             "contacts.example.yaml",
             "companies.example.yaml",
@@ -415,3 +416,97 @@ def test_committed_de_ai_rules_ships_the_diction_gate_off():
     canonical bullets skip Tier-2 diction linting before they have read them."""
     rules = yaml.safe_load((PROFILE / "de_ai_rules.yaml").read_text(encoding="utf-8"))
     assert rules["bullets_diction_pass_completed"] is False
+
+
+class TestStoriesTemplate:
+    """profile/stories.md is /apply's only source for a Tier C1 question about a
+    decision, a mistake or the hardest thing the user has done. bullets.md
+    cannot answer those, so a malformed template is a silent fallback to
+    drafting a story out of a bullet, which is fabrication."""
+
+    KEYS = (
+        "source:",
+        "kind:",
+        "anchors:",
+        "situation:",
+        "action:",
+        "outcome:",
+        "retrospect:",
+        "tags:",
+        "allowable_synonyms:",
+    )
+    KINDS = {
+        "bug_caught",
+        "judgment_call",
+        "reversal",
+        "negative_result",
+        "hardest",
+        "conflict",
+        "failure",
+    }
+
+    @staticmethod
+    def _entries() -> list[str]:
+        text = (PROFILE / "stories.example.md").read_text(encoding="utf-8")
+        return re.split(r"^## ", text, flags=re.M)[1:]
+
+    def test_the_scan_actually_finds_entries(self):
+        assert self._entries(), "stories.example.md defines no entries"
+
+    def test_every_entry_id_is_story_shaped(self):
+        for entry in self._entries():
+            entry_id = entry.split("\n", 1)[0].strip()
+            assert entry_id.startswith("S-"), f"{entry_id} is not an S- id"
+
+    def test_every_entry_has_every_key(self):
+        for entry in self._entries():
+            entry_id = entry.split("\n", 1)[0].strip()
+            for key in self.KEYS:
+                assert key in entry, f"story {entry_id} missing {key}"
+
+    def test_every_kind_is_in_the_allowed_set(self):
+        for entry in self._entries():
+            entry_id = entry.split("\n", 1)[0].strip()
+            kind = re.search(r"^kind: (.+)$", entry, re.M).group(1).strip()
+            assert kind in self.KINDS, f"story {entry_id} has unknown kind {kind!r}"
+
+    def test_every_anchor_resolves_to_a_template_bullet(self):
+        defined = set(
+            re.findall(
+                r"^## (B-\S+)",
+                (PROFILE / "bullets.example.md").read_text(encoding="utf-8"),
+                re.M,
+            )
+        )
+        for entry in self._entries():
+            entry_id = entry.split("\n", 1)[0].strip()
+            anchors = re.search(r"^anchors: \[(.*)\]$", entry, re.M).group(1)
+            for anchor in (a.strip() for a in anchors.split(",") if a.strip()):
+                assert anchor in defined, (
+                    f"story {entry_id} anchors {anchor!r}, which bullets.example.md "
+                    f"does not define"
+                )
+
+    def test_every_anchored_bullet_is_a_real_id_shape(self):
+        """An anchor typo that still looks like an id would pass the resolve
+        check only because bullets.example.md happens to define it. Pin the
+        shape too, so a lowercase or unprefixed anchor fails here."""
+        for entry in self._entries():
+            anchors = re.search(r"^anchors: \[(.*)\]$", entry, re.M).group(1)
+            for anchor in (a.strip() for a in anchors.split(",") if a.strip()):
+                assert re.fullmatch(r"B-[A-Z]+-\d+", anchor), f"malformed anchor {anchor!r}"
+
+    def test_the_template_covers_more_than_one_kind(self):
+        """One kind means /apply's routing has nothing to choose between and a
+        new user learns the wrong shape from the template."""
+        kinds = {
+            re.search(r"^kind: (.+)$", e, re.M).group(1).strip() for e in self._entries()
+        }
+        assert len(kinds) > 1, f"template only demonstrates {kinds}"
+
+    def test_stories_is_optional_in_the_scaffolder(self):
+        """A new user should not have to write behavioral stories before their
+        first scored job."""
+        from src.onboard_scaffold import OPTIONAL_TEMPLATES
+
+        assert "stories.example.md" in OPTIONAL_TEMPLATES

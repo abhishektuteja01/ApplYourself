@@ -53,6 +53,7 @@ REPO_ROOT = paths.REPO_ROOT
 # Gated out of the default path — see the module docstring.
 OPTIONAL_TEMPLATES = (
     "voice_samples.example.md",
+    "stories.example.md",
     "contacts.example.yaml",
     "companies.example.yaml",
     "pii_denylist.example.txt",

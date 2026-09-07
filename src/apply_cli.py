@@ -247,7 +247,7 @@ def load_overrides(path: Path, job_id: str | None = None,
     Parsing only; no judgment lives here (R7) — the command file decided
     every value before this ever runs.
 
-    `tier` is `"C1"` (drafted from bullets.md), `"C2"` (drafted from
+    `tier` is `"C1"` (drafted from bullets.md or stories.md), `"C2"` (from
     company_answers.md), `"JD"` (a figure read from the role's own
     jd_snapshot.md — supersedes a static Tier B `rules:` match, since a
     salary figure the JD itself states should win over a generic configured

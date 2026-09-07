@@ -360,16 +360,45 @@ asks for — from `profile/bullets.md` (C1-shaped) or `$COMPANY_ANSWERS`
 
 ## Step 5 — resolve C1: draft, and maybe write back a reusable rule
 
-For each C1 question, draft an answer under NO-FAB / REPHRASE-LICENSE (same
-discipline as `/tailor`): every claim about your experience traces to a
-specific `profile/bullets.md` bullet's canonical text or its
-`allowable_synonyms`. No invented tools, metrics, scopes, or dates. Keep it
-short — these are form fields, not letter paragraphs; 1-3 sentences. If the
-question carries a `"description"`, follow it (e.g. a length cap or a
-"don't use AI" instruction) same as the label itself.
+Two sources, and the question decides which. `profile/bullets.md` attests what
+you built; `profile/stories.md` attests how you decided. A question asking for
+a decision, a mistake, a disagreement or the hardest thing you have done is
+answerable only from `stories.md` — `bullets.md` has no such claim in it, and
+drafting one from a bullet is fabrication.
+
+**Read first:** `profile/stories.md`, the `C1 story priority` line in
+`profile/verticals/${VERTICAL}/tailoring.md`, and `${OUT_DIR}/keywords_to_mirror.md`.
+If `profile/stories.md` does not exist, skip straight to the bullets-only path
+below; it is an optional profile file.
+
+**Route each C1 question:**
+
+1. Classify the label to a `kind` — `bug_caught`, `judgment_call`, `reversal`,
+   `negative_result`, `hardest`, `conflict`, `failure`. A label that maps to no
+   kind takes the bullets-only path.
+2. Collect every `stories.md` entry with that `kind`. If exactly one, use it.
+3. If several, rank by the lane's `C1 story priority`, then by how many of the
+   entry's `tags` and `allowable_synonyms` appear in `keywords_to_mirror.md`.
+   A `kind` match always beats a higher-priority project whose `kind` does not
+   match — priority breaks ties within a kind, it does not override the kind.
+4. If no entry has that kind, take the bullets-only path and say so in the
+   Step 7 report rather than reaching for a story of a different kind.
+
+**Drafting, either path.** NO-FAB / REPHRASE-LICENSE, same discipline as
+`/tailor`. From a story: every claim traces to that entry's
+`situation`/`action`/`outcome`/`retrospect` text or its `allowable_synonyms`.
+From a bullet: to that bullet's canonical text or its `allowable_synonyms`. A
+bullet's `evidence:` line is attestation for the user and licenses nothing —
+never draft from it. No invented tools, metrics, scopes, or dates, and no
+mixing two stories into one answer. Keep it short — these are form fields, not
+letter paragraphs; 1-3 sentences. If the question carries a `"description"`,
+follow it (e.g. a length cap or a "don't use AI" instruction) same as the label
+itself.
 
 Add `"<field_id>": {"value": "<drafted text>", "tier": "C1"}` to
 `$OVERRIDES_FILE` for every one, keeping the existing `job_id` key, regardless of what happens next.
+**Also add `"source_id"`** to each C1 entry — the `S-` id or `B-` id the answer
+drafted from, so a run is auditable after the fact. It is a record, not a tier.
 
 **Then, separately, decide whether the question itself — not the drafted
 prose — is a reusable fact worth a permanent Tier B rule.** This is a much
