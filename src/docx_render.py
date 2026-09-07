@@ -50,6 +50,10 @@ class TemplateError(ValueError):
     """Template exists but violates the docx_render contract."""
 
 
+class ResumeContentError(ValueError):
+    """Resume markdown violates a render contract the template depends on."""
+
+
 class Run(TypedDict, total=False):
     text: str
     bold: bool
@@ -81,6 +85,7 @@ def render_resume(md_content: str, template_path: Path, out_path: Path) -> None:
     _validate_template(doc, template_path)
     _clear_body(doc)
     blocks = parse_resume_md(md_content)
+    _validate_job_headers(blocks)
     _write_blocks(doc, blocks)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
@@ -154,6 +159,33 @@ def parse_resume_md(md: str) -> list[Block]:
 # =====================================================================
 # Internals
 # =====================================================================
+
+_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?"
+_DATE_RANGE_RE = re.compile(
+    rf"{_MONTH}\s+\d{{4}}\s*[-\u2013\u2014]\s*(?:{_MONTH}\s+\d{{4}}|Present)"
+)
+
+
+def _validate_job_headers(blocks: list[Block]) -> None:
+    """A job header carrying a date range must put a tab before the date.
+
+    The template's only tab stop is a right-aligned one on Resume Job Header,
+    so a header without the tab renders its date inline mid-line instead of
+    flush right. Headers with no date range are unaffected."""
+    bad = [
+        b.get("text", "") for b in blocks
+        if b.get("type") == "job_header"
+        and "\t" not in b.get("text", "")
+        and _DATE_RANGE_RE.search(b.get("text", ""))
+    ]
+    if bad:
+        listing = "\n".join(f"  {text}" for text in bad)
+        raise ResumeContentError(
+            f"ERROR: {len(bad)} job header line(s) carry a date range with no "
+            f"tab before it. The date would render inline instead of flush "
+            f"right. Insert a literal tab before the date:\n{listing}"
+        )
+
 
 def _validate_template(doc, path: Path) -> None:
     style_names = {s.name for s in doc.styles}

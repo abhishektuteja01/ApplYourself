@@ -16,6 +16,7 @@ from src.docx_cover_letter import (
 )
 from src.docx_render import (
     REQUIRED_STYLES,
+    ResumeContentError,
     TemplateError,
     TemplateMissingError,
     parse_resume_md,
@@ -100,7 +101,7 @@ A short summary paragraph.
 
 **WORK EXPERIENCE**
 
-**Advisory Analyst** - Acme Corp | May 2022 – Jul 2024
+**Advisory Analyst** - Acme Corp	May 2022 – Jul 2024
 
 * Owned the daily report.
 """
@@ -665,3 +666,67 @@ def test_cover_letter_placeholders_inside_a_table_cell_are_filled(tmp_path):
         for p in cell.paragraphs
     ]
     assert cell_texts == ["Dear Hiring Manager,", "First para.", "Second para."]
+
+
+# ---------- job header date-range tab guard ----------
+
+@pytest.mark.parametrize("header", [
+    "**Advisory Analyst** - Deloitte Bengaluru, IN | May 2022 - Jul 2024",
+    "**CapTrack** Dec 2025 - Feb 2026",
+    "**APPLYOURSELF** | Jul 2026 - Present",
+    "**Master of Science in Computer Science** Sep 2024 \u2013 May 2026",
+])
+def test_job_header_date_range_without_tab_is_rejected(tmp_path, header):
+    """The template's sole tab stop is a right-aligned one on Resume Job
+    Header; a dated header with no tab renders the date inline."""
+    template = _make_template(tmp_path / "t.docx")
+    out = tmp_path / "resume.docx"
+    with pytest.raises(ResumeContentError) as exc:
+        render_resume(f"**Name**\n\n{header}", template, out)
+    msg = str(exc.value)
+    assert "tab" in msg
+    assert header in msg          # names the offending line
+    assert not out.exists()       # fails before writing anything
+
+
+@pytest.mark.parametrize("header", [
+    "**Advisory Analyst** - Deloitte\tBengaluru, IN | May 2022 - Jul 2024",
+    "**CapTrack**\tDec 2025 - Feb 2026",
+    "**APPLYOURSELF**\tJul 2026 - Present",
+    "**Employer** — Title",                      # no date range at all
+    "**Degree**, Institution — Mon YYYY",        # single date, not a range
+])
+def test_job_header_is_accepted_when_tabbed_or_undated(tmp_path, header):
+    template = _make_template(tmp_path / "t.docx")
+    out = tmp_path / "resume.docx"
+    render_resume(f"**Name**\n\n{header}", template, out)
+    assert out.exists()
+
+
+def test_guard_reports_every_offending_line(tmp_path):
+    template = _make_template(tmp_path / "t.docx")
+    md = ("**Name**\n\n**CapTrack** Dec 2025 - Feb 2026\n\n"
+          "**PROVA** Mar 2026 - May 2026\n\n**Ok**\tJan 2025 - Feb 2025")
+    with pytest.raises(ResumeContentError) as exc:
+        render_resume(md, template, tmp_path / "r.docx")
+    msg = str(exc.value)
+    assert "2 job header line(s)" in msg
+    assert "CapTrack" in msg and "PROVA" in msg
+    assert "**Ok**" not in msg
+
+
+def test_every_configured_vertical_resume_passes_the_tab_guard():
+    """The scoring resumes are /tailor's verbatim source for header lines, so
+    a missing tab there propagates into every tailored docx for that lane."""
+    from src import verticals
+    cfg = verticals.get_config()
+    checked = 0
+    for name, block in cfg.verticals.items():
+        path = verticals.REPO_ROOT / block.resume_file
+        if not path.exists():
+            continue
+        blocks = parse_resume_md(path.read_text(encoding="utf-8"))
+        from src.docx_render import _validate_job_headers
+        _validate_job_headers(blocks)   # raises ResumeContentError on regression
+        checked += 1
+    assert checked > 0
