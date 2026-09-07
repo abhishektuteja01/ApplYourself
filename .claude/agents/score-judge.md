@@ -49,11 +49,12 @@ self-check on every row, `Write` to
 `--range 51-100` → `batch_<v>_006.json` through `_010.json`. Never write
 elsewhere. Never delete a batch file.
 
-This numbering is unique per judge only because every range *starts* on a
-10-row boundary. Check your start, not your length: a vertical's final
-range may be short (85 rows -> `1-85`), which is valid. What is invalid is
-a range starting off the 10-row grid (e.g. `4-83`) — stop and report that
-rather than renumbering.
+`NNN` is unique per judge only when your range's first row number
+satisfies `first_row_number % 10 == 1` (1, 11, 21, ...). Check that one
+condition and nothing else. Length is never a reason to stop: `1-4`,
+`1-1` and `1-85` are all valid, and a range under 10 rows is just one
+short batch. Stop and report only if the start is off that grid (e.g.
+`4-83`) — never renumber.
 
 ## Step 4 — report
 
