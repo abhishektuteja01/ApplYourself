@@ -130,29 +130,45 @@ class TestWrapper:
 
     def test_holds_sleep_off_for_the_run(self):
         """caffeinate is macOS-only; unguarded it exits 127 on Linux and
-        discovery never runs at all."""
+        discovery never runs at all. The guard holds sleep off as a background
+        job, so discovery must sit OUTSIDE it and run on either platform."""
         text = WRAPPER.read_text(encoding="utf-8")
         assert "caffeinate" in text
         assert "command -v caffeinate" in text, "caffeinate must be guarded"
-        # The guard needs a fallback, or the guard alone still skips discovery.
-        code = "\n".join(
+        lines = [
             line
             for line in text.splitlines()
             if not line.lstrip().startswith("#")
+        ]
+        caffeinate_calls = [ln for ln in lines if "caffeinate -" in ln]
+        assert caffeinate_calls, "no caffeinate invocation found"
+        for call in caffeinate_calls:
+            assert call.rstrip().endswith("&"), (
+                f"caffeinate must background itself or it blocks discovery: {call!r}"
+            )
+        discover = [ln for ln in lines if "run discover" in ln]
+        assert len(discover) == 1, (
+            f"expected exactly one `run discover` call, found {len(discover)}"
         )
-        assert code.count("run discover") >= 2, (
-            "guarded caffeinate needs a plain `run discover` fallback"
+        assert discover[0] == discover[0].lstrip(), (
+            "`run discover` is indented, so it is inside the macOS-only "
+            "caffeinate guard and will not run on Linux"
         )
 
     def test_runs_only_the_deterministic_step(self):
-        """R7: no LLM in an unattended job. Scoring is a slash command, so it
-        must not appear in anything the wrapper executes. Comments may mention
-        it, hence the comment strip."""
+        """R7: no LLM in an unattended job. Scoring is a slash command, so
+        nothing the wrapper executes may invoke one. Launching the desktop app
+        is not an invocation — it opens a window for the user, and the score
+        routine still gates /score on a human. Comments may mention any of
+        this, hence the comment strip."""
         code = "\n".join(
             line
             for line in WRAPPER.read_text(encoding="utf-8").splitlines()
             if not line.lstrip().startswith("#")
         ).lower()
         assert "run discover" in code
-        assert "claude" not in code
         assert "/score" not in code
+        # A headless Claude Code run is the thing R7 forbids here. `open -a
+        # "Claude"` is allowed; `claude -p ...` is not.
+        for banned in ("claude -p", "claude --print", "claude run", "| claude"):
+            assert banned not in code, f"wrapper invokes a model: {banned!r}"
