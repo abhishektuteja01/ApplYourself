@@ -9,6 +9,8 @@ carry roughly equal weight.
 
 **Project ordering default:** Project A (1) > Project B (2) > Project C (3).
 JD fine-tune allowed within the default.
+Within a project, bullet order is canonical: the JD fine-tunes which
+bullets appear, not their sequence.
 
 **C1 story priority:** Project A > Project B > Project C. Applies to Tier C1
 application-form answers only, not resume bullets. A story in

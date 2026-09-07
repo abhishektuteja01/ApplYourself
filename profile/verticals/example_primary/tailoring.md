@@ -11,6 +11,8 @@ experience is this vertical's primary evidence.
 **Project ordering default:** Project A > Project B > Project C, 2/2/1
 bullets. JD fine-tune: a JD leaning hard on Project B's domain may lead
 with it.
+Within a project, bullet order is canonical: the JD fine-tunes which
+bullets appear, not their sequence.
 
 **C1 story priority:** Project A > Project B > Project C. Applies to Tier C1
 application-form answers only, not resume bullets. A story in

@@ -103,6 +103,9 @@ below from it — zero keywords is a drop candidate, several is a priority keep.
   where a synonym genuinely re-packages the same claim
 - **`drop`** — not relevant to this JD; omit
 
+`keywords_to_mirror` drives keep/drop and rephrase, never sequence. Within a
+project, the kept bullets render in canonical `B-<PROJ>-NN` order.
+
 **3c — budget & projects (VERT-DEFAULT).** The vertical's `tailoring.md` sets the
 bullet mix and section order; JD content fills the floor, never lowers it.
 - **Floor** = `max(tailoring.md`'s total-bullet floor`, 10)`. Below it, expand
@@ -134,9 +137,9 @@ under different headers in different verticals. Per line:
 JD content may fine-tune order WITHIN a line only.
 
 **Tailoring scope:**
-- **Editable:** Summary; employer bullets; project bullets (order + selection +
+- **Editable:** Summary; employer bullets; project bullets (selection +
   rephrase); Skills section (select + order per 3e)
-- **Frozen:** Education, contact, all dates
+- **Frozen:** Education, contact, all dates; bullet order within a project
 
 **3f — commit the plan before drafting.** Write the full plan as a table — one row
 per bullet, plus one for the Summary:
