@@ -281,6 +281,19 @@ def find_phrase_violations(
                             phrase=m.group(), category=category,
                         ))
                     continue
+                # filler_starters are sentence-openers, not substrings that can
+                # appear anywhere — check the start of the (stripped) line only,
+                # else "Indeed" the job-board name plus a trailing comma
+                # anywhere mid-sentence would false-positive on "Indeed,".
+                if category == "filler_starters":
+                    lstripped = line.lstrip()
+                    offset = len(line) - len(lstripped)
+                    if lstripped.lower().startswith(phrase.lower()):
+                        violations.append(Violation(
+                            line=lineno, column=offset + 1,
+                            phrase=phrase, category=category,
+                        ))
+                    continue
                 pat = re.escape(phrase.lower())
                 # Word-boundary only when phrase starts AND ends with a word char.
                 # Phrases ending in punctuation (e.g. "Notably,") would never match

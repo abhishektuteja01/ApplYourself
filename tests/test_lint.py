@@ -200,6 +200,14 @@ def test_find_phrase_violations_filler_starters():
     assert any(x["category"] == "filler_starters" for x in v)
 
 
+def test_find_phrase_violations_filler_starters_not_mid_sentence():
+    v = find_phrase_violations(
+        "The board is called Notably, not a filler word here.",
+        context="resume", rules=_rules(),
+    )
+    assert not any(x["category"] == "filler_starters" for x in v)
+
+
 def test_find_phrase_violations_hedges():
     v = find_phrase_violations("This may improve outcomes.", context="resume", rules=_rules())
     assert any(x["phrase"] == "may" and x["category"] == "hedges_when_softening_own_work" for x in v)
