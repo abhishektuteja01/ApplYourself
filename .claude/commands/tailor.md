@@ -12,6 +12,8 @@ argument-hint: <job_id>
 # /tailor — generate a tailored, audited resume
 
 Tailor the real-bullets-only resume for one role. `$1` = the 8-hex `job_id`.
+Run all steps through to done without pausing for confirmation (overrides
+CLAUDE.md #3 for this command) — needed for unattended/background runs.
 
 ## Invariants (govern every step; stated once here)
 
@@ -421,6 +423,12 @@ Verify on disk; if any check fails, do NOT report success — diagnose and fix.
       `cp`, or change both paths to `${OUT_DIR}/resume.md` when re-running.
 - [ ] `pipeline/$1/state.yaml.tailored_dirs[]` contains `${DIRNAME}`
 - [ ] Every rendered Skills item traces to a `skills_master.md` `name`/`allowable_synonyms` (spot-check SKILLS-SOURCE)
+
+## Step 10 — clean up /tmp scratch (only after Step 9 passes)
+
+```bash
+rm -f /tmp/tailor_$1_row.json /tmp/tailor_$1_draft_resume.md /tmp/tailor_$1_env.sh
+```
 
 ## Step 10 — report and remind
 

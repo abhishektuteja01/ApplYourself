@@ -4,7 +4,7 @@ schema_version: 1
 # file instead of hardcoding times/thresholds in its own prompt text.
 
 score_threshold: 85
-csv_path: top_scored_open.csv
+table_path: top_scored_open.xlsx
 
 schedule:
   score_time: "00:00"    # routine 1: /score, gated on discovery's completion line
