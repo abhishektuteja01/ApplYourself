@@ -21,15 +21,21 @@ def parse_inbox_file(path: Path) -> dict | None:
     except OSError as e:
         log.error("Unreadable inbox file %s: %s", path, e)
         return None
-    if not text.startswith("---"):
+    lines = text.split("\n")
+    if lines[0].strip() != "---":
         log.error("Inbox %s missing YAML frontmatter delimiter", path.name)
         return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
+    # The closing delimiter is a line that is exactly "---". Splitting on the
+    # bare string instead would cut inside a value that happens to contain one
+    # -- a Workday url with a "---" in its slug truncates the url and spills
+    # the rest of the frontmatter into the body.
+    end = next((i for i, ln in enumerate(lines[1:], start=1)
+                if ln.strip() == "---"), None)
+    if end is None:
         log.error("Inbox %s frontmatter not closed", path.name)
         return None
     try:
-        meta = yaml.safe_load(parts[1]) or {}
+        meta = yaml.safe_load("\n".join(lines[1:end])) or {}
     except yaml.YAMLError as e:
         log.error("Inbox %s YAML error: %s", path.name, e)
         return None
@@ -41,7 +47,7 @@ def parse_inbox_file(path: Path) -> dict | None:
         if not isinstance(v, str) or not v.strip():
             log.error("Inbox %s missing required field: %s", path.name, required)
             return None
-    body = parts[2].lstrip("\n")
+    body = "\n".join(lines[end + 1:]).lstrip("\n")
     title = meta["title"].strip()
     vertical = meta.get("vertical") or cleaning.classify_vertical_from_title(title)
     return {
