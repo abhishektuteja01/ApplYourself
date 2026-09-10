@@ -134,3 +134,32 @@ def test_only_the_pushed_range_is_scanned(tmp_path):
     good = _commit(repo, "docs: ordinary")
     result = _push(repo, good, remote_sha=bad)
     assert result.returncode == 0, result.stderr
+
+
+def test_a_new_branch_does_not_rescan_what_the_remote_already_has(tmp_path):
+    """The new-branch case used to scan the branch's whole history, so a
+    denylisted string in already-published metadata blocked every future
+    branch push — and rewriting it would not unpublish it. Only the commits no
+    remote-tracking ref has are this push's business."""
+    repo = _repo(tmp_path)
+    bad = _commit(repo, "docs: thanks Quimby")
+    # Stand in for the published state: a remote-tracking ref holding `bad`.
+    _git(repo, "update-ref", "refs/remotes/origin/master", bad)
+    good = _commit(repo, "docs: ordinary")
+
+    result = _push(repo, good, remote_sha=ZERO)
+    assert result.returncode == 0, result.stderr
+    assert "Quimby" not in result.stderr
+
+
+def test_a_new_branch_still_catches_its_own_commits(tmp_path):
+    """The narrower range must not become a hole: a bad commit that is only on
+    the branch is still this push's business."""
+    repo = _repo(tmp_path)
+    published = _commit(repo, "docs: ordinary")
+    _git(repo, "update-ref", "refs/remotes/origin/master", published)
+    bad = _commit(repo, "docs: thanks Quimby")
+
+    result = _push(repo, bad, remote_sha=ZERO)
+    assert result.returncode == 1
+    assert "Quimby" in result.stderr
