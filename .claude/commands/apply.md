@@ -53,13 +53,22 @@ here") gets silently half-answered and nothing re-checks it once it's
 correction is tagged `"AUDIT"`, the one tag that can supersede either tier,
 not restricted to one category the way `"JD"`/`"B0-LLM"` are (Step 4d).
 
-All five land in a **per-run answers override**
+A sixth case is the one that parks the most roles: a question the board
+renders as a **choice**, where nothing configured equals any option it
+offers. A Tier B rule matched the label and its candidates missed; or no rule
+matched at all and the question is Tier C with an option list. Either way the
+employer already wrote every permissible answer, so the resolution is to pick
+the true one rather than to draft anything — tagged `"PICK"` (Step 4e), which
+supersedes a Tier B or Tier C park and nothing else.
+
+All six land in a **per-run answers override**
 (`${OUT_DIR}/answers_override.json`, next to the role's other artifacts) —
 never in `profile/application_answers.yaml`. That file is per-role; a
 company's "why us" answer or a one-off drafted sentence must never leak into
-another role's run. The one exception, a separate and much narrower path,
-is §15's Tier B writeback (Step 5 below) — and that only ever carries a
-reusable *fact*, never drafted prose.
+another role's run. Anything worth keeping past
+this role goes to the agent-owned learned store instead (Step 7c) — a board
+wording, an option spelling, or a veto, never drafted prose. Nothing here
+edits `profile/application_answers.yaml`.
 
 ---
 
@@ -110,6 +119,7 @@ is that confirmation.
 ```bash
 cd "$(git rev-parse --show-toplevel)" && uv run apply plan "$1" --json > /tmp/apply_$1_plan.json
 echo "exit code: $?"
+cd "$(git rev-parse --show-toplevel)" && uv run apply plan "$1" --questions
 ```
 
 - Exit `2` → the posting expired. Report `EXPIRED: <message>` to the user
@@ -117,6 +127,15 @@ echo "exit code: $?"
   — suggest `/track $1 skip` and stop here.
 - Exit `1` → a config or fetch error. Report the message verbatim and stop.
   Do not attempt to work around it.
+The `--questions` view is the same plan grouped by who answers each question
+rather than by what `fill.py` does with it: **FACTS** (answered from config,
+each showing the rule keyword that answered it and the options it was chosen
+from), **QUESTIONS** (need judgment), **BLOCKING** (required and unanswered,
+with the reason and the offered options). Read it first — it is the fastest
+way to see a wrong answer, which the JSON shows only if you compare `value`
+against `options` field by field. The JSON stays the source for every
+field id you write into `$OVERRIDES_FILE`.
+
 - Exit `0` → read `/tmp/apply_$1_plan.json` and continue to Step 2c
   regardless of `"parked"`/`"draftable"` — even a role with nothing
   outstanding in Tier C still needs Step 2c's self-promotion check (a role
@@ -152,7 +171,10 @@ exactly the case it exists to handle. Note each such field's `"id"` and
 the salary-shaped ones above) for a label asking more than one thing, or
 asking something its `"value"` doesn't actually cover — the compounding
 failure the intro describes. Note each flagged field's `"id"`/`"label"`/
-`"value"` for Step 4d. This is not about re-litigating an answer that is
+`"value"`/`"source"`/`"options"` for Step 4d. `"source"` is the rule keyword
+that answered it and `"options"` is what the widget offered — a value that
+matched on one keyword of a long label, or that is one of several offered
+options, is exactly the shape that flags. This is not about re-litigating an answer that is
 merely not the wording you'd have chosen — only one the value gets wrong or
 leaves part of the question unaddressed.
 
@@ -352,13 +374,88 @@ invisible.
 
 **If Step 2c flagged nothing, skip this step entirely.**
 
+Every field this step reads was already answered. A Tier B answer is a
+keyword match against prose the employer wrote, and `"source"` names the one
+keyword that matched — so the audit is: does that keyword's answer actually
+answer *this* label? Three failure shapes, all seen live:
+
+- **Half-answered.** The label asks two things and the value covers one. Seen
+  live: `"We encourage employees to bring their whole selves to work — share
+  your preferred name and pronouns"` matched on `preferred name` and answered
+  with the name alone, saying nothing about pronouns.
+- **Backwards.** The keyword is in the label but the value states the
+  opposite of what was asked. A rule for an AI-policy acknowledgment
+  (`source: "ai policy"`, answer `"Yes"`) also matches *"Did you use AI to
+  prepare this application?"* — where `"Yes"` is a claim the user never made.
+  Check the polarity against the label every time, never the keyword.
+- **Wrong of several offered.** `"options"` now reaches the plan JSON for
+  filled fields too. Where a value was picked from a list, confirm it is the
+  right one of those options and not merely a matching string.
+
 For each flagged field, draft the FULL answer: keep whatever part its
 existing `"value"` already got right, and add whatever the label separately
 asks for — from `profile/bullets.md` (C1-shaped) or `$COMPANY_ANSWERS`
 (C2-shaped), same discipline as Steps 4/5. Add `"<field_id>": {"value":
 "<full corrected answer>", "tier": "AUDIT"}` to `$OVERRIDES_FILE`.
 
-## Step 5 — resolve C1: draft, and maybe write back a reusable rule
+Where the correction is simply a different one of the board's own options,
+use `"tier": "PICK"` instead and keep `"AUDIT"` for a rewritten answer — the
+two tags read differently in the run report, and the distinction is what
+makes a wrong pick traceable later.
+
+## Step 4e — resolve a parked choice from the options the board offers
+
+**Scope:** `"unmapped"` entries with `"tier"` `"B"` or `"C"` that carry a
+non-empty `"options"` list. Nothing else. A Tier B0 entry is Step 4c's, and a
+Tier A or A2 park is neither step's — `build_plan()` will drop the override
+and name it in `"ignored_overrides"`.
+
+This is the "park only as a last resort" step. Measured over the 237-board
+harvest, 189 required parks are option-bearing questions of exactly this
+shape: the board wrote every permissible answer itself, and the role parked
+because no configured string equalled one of them.
+
+A Tier B entry here means a rule matched the label — `"source"` names the
+keyword — and then offered nothing the widget takes. The board's own option
+text is the answer; `"source"` is also the group a learned option spelling
+belongs to (Step 7c).
+
+For each in-scope entry, resolve it **only** from something already on disk.
+The categories that came out of the harvest, and what each may draw on:
+
+| the question is | answer from | example |
+|---|---|---|
+| a fact about where you live or your history | `application_answers.yaml`, `profile/preferences.md` | "Do you currently live in San Francisco?" |
+| a claim about your experience | `profile/bullets.md` / `skills_master.md`, under NO-FAB | "Have you used Python professionally?" |
+| a known value that needs bucketing | the same file the value came from | "How many years... 0-2 / 2-5 / 5+" |
+| an instruction to follow | the label and `"description"` | "select the SECOND option" |
+| an acknowledgment with one permissible answer | the option itself | "GDPR Disclosure" -> "Acknowledge/Confirm" |
+
+And the three that **stay parked**, however obvious a guess looks:
+
+- **A consent decision** — "we may use AI notetakers: Yes, I consent / No, I
+  do not consent". Consent is the user's to give, and no file on disk states
+  it. Park it and say so; if they want it answered every time, that is a
+  named key in `profile/preferences.md`, not a judgment here.
+- **A preference between the employer's own alternatives** — "which office
+  location do you prefer, Atlanta or Houston?" Park unless
+  `profile/preferences.md` settles it.
+- **Nothing offered is true** — "Active Security Clearance(s)" listing eight
+  clearance levels and no "None". Picking the least-false option would state
+  a qualification the user does not hold. This park is correct behavior.
+
+Resolve an in-scope entry to `"<field_id>": {"value": "<the board's exact
+option text>", "tier": "PICK"}` in `$OVERRIDES_FILE`. The value must be one
+of the strings in that entry's `"options"`, verbatim — `build_plan()` re-checks
+it against the widget and parks the field again if it is not, so an
+approximation fails loudly rather than quietly.
+
+`"PICK"` is deliberately separate from `"AUDIT"`: it only ever names an
+option the employer wrote, and it only ever reaches a question nothing else
+could answer. Multi-select entries (`"multi": true`) take a list of option
+strings; pick every one that is true and no more.
+
+## Step 5 — resolve C1: draft from what the profile attests
 
 Two sources, and the question decides which. `profile/bullets.md` attests what
 you built; `profile/stories.md` attests how you decided. A question asking for
@@ -400,66 +497,23 @@ Add `"<field_id>": {"value": "<drafted text>", "tier": "C1"}` to
 **Also add `"source_id"`** to each C1 entry — the `S-` id or `B-` id the answer
 drafted from, so a run is auditable after the fact. It is a record, not a tier.
 
-**Then, separately, decide whether the question itself — not the drafted
-prose — is a reusable fact worth a permanent Tier B rule.** This is a much
-narrower question than "did I answer it": a rule is only for a question whose
-*answer is a stable fact independent of company* ("years of experience with
-Python", "willing to relocate", "do you hold a valid driver's license") that
-slipped through only because no existing rule's `match:` covers its exact
-wording. **Never** write back a rule for a question that needed drafted
-prose to answer, or one that is subtly company-flavored despite passing as
-C1 — when in doubt, skip the writeback and keep only the per-run override
-(§15: "Never auto-append a rule whose answer came from Tier C1 drafting").
+**Then, separately, note whether the question itself — not the drafted prose
+— is a reusable fact.** If it is, Step 7c records it in the learned store;
+nothing is written here. This step's only output is `$OVERRIDES_FILE`.
 
-If, and only if, you judge a specific question worth it:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-cp profile/application_answers.yaml /tmp/apply_$1_answers_yaml.bak
-```
-
-`Edit` `profile/application_answers.yaml`: append ONE new entry under
-`rules:` (never touch an existing entry), narrow `match:` keywords drawn from
-the question's own label, a short factual `answer:`, and a trailing comment
-naming its source:
-
-```yaml
-  - match: [<narrow keywords from the label>]
-    answer: "<short factual answer>"
-    # added by /apply from: "<verbatim question label>"
-```
-
-Then re-validate immediately:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-uv run python -c "
-from src.apply.answers import load_answers, AnswersError
-try:
-    load_answers()
-    print('OK')
-except AnswersError as exc:
-    print(f'INVALID: {exc}')
-"
-```
-
-If it prints anything other than `OK` (overlap with an existing rule, a
-work-authorization keyword, or any other validation failure): **revert the
-append immediately**
-
-```bash
-cp /tmp/apply_$1_answers_yaml.bak profile/application_answers.yaml
-```
-
-and rely on the per-run override alone for this run — do not leave the file
-in a state that blocks every future run over one bad append.
+Nothing in this command ever edits `profile/application_answers.yaml`. That
+file holds what the user stated — their identity, their work-authorization
+status, their real preferences — and it is the file a person reads when an
+answer looks wrong. Everything learned goes to `profile/.apply_learned.jsonl`
+instead (Step 7c), which is append-only, validated against the same loader,
+and deletable one line at a time.
 
 ## Step 5b — no_ai_slop editing pass (before re-plan)
 
 Run the `no_ai_slop` skill in **edit** mode over every C1, C2 and AUDIT value
-this run wrote into `$OVERRIDES_FILE` (skip `"JD"`- and `"B0-LLM"`-tagged
-entries — a bare figure or a board's own option text verbatim, neither
-drafted prose) — the same deep pass `/cover-letter` Step 4 runs over its
+this run wrote into `$OVERRIDES_FILE` (skip `"JD"`-, `"B0-LLM"`- and
+`"PICK"`-tagged entries — a bare figure or a board's own option text
+verbatim, neither drafted prose) — the same deep pass `/cover-letter` Step 4 runs over its
 drafted paragraphs, for the same structural AI-tells the banned-phrase
 linter can't catch (binary contrasts, colon reveals, importance puffery,
 robotic rhythm).
@@ -532,6 +586,13 @@ one, so it never shows up in this diff. Instead, confirm each flagged field's
 `"value"` in the second plan JSON's `"fields"` list is the corrected answer,
 not the original one.
 
+**Then check `"ignored_overrides"` in the second plan JSON.** A non-empty list
+means an entry was written into `$OVERRIDES_FILE`, validated, and then dropped
+because its tier cannot supersede that field's resolution tier — a `"PICK"`
+aimed at a Tier B0 work-authorization field, or any override aimed at Tier A
+or A2. The plan looks correct in every other respect, so nothing else in this
+step catches it. Report each one and do not treat that question as resolved.
+
 If `"parked"` is still `true` (some Tier C question genuinely could not be
 resolved, or it's a non-Tier-C park this command has no business touching),
 report the remaining unmapped questions verbatim and stop. Do not open a
@@ -542,8 +603,8 @@ browser for a role that will not submit.
 Step 6 is this command checking its own work. This step is the user checking
 it. Nothing drafted here goes out under their name unconfirmed.
 
-Show the user, in the conversation, every `"C1"`, `"C2"`, `"AUDIT"`, `"JD"`
-and `"B0-LLM"` entry this run wrote into `$OVERRIDES_FILE` — the question
+Show the user, in the conversation, every `"C1"`, `"C2"`, `"AUDIT"`, `"JD"`,
+`"B0-LLM"` and `"PICK"` entry this run wrote into `$OVERRIDES_FILE` — the question
 label, the field id, the tier, and the **full value verbatim**, never a
 summary or a truncation:
 
@@ -564,26 +625,73 @@ user's reply**.
 If `$OVERRIDES_FILE` holds no drafted entries this run (nothing but the
 `job_id` key), there is nothing to confirm — say so and continue to Step 7.
 
-## Step 7 — fill (and submit, if asked)
+## Step 7 — fill, check the finished form, then submit
+
+Everything before this step reasoned about the form from its *schema*. This
+step is the first time anyone sees the form itself, and two classes of problem
+exist only here:
+
+- A value the page holds that nobody planned — a board default, or its own
+  resume parser writing into a field after the upload. On a **parked**
+  question that means an answer is already sitting there under the user's
+  name, and until the manifest existed nothing ever read those fields back.
+- A select whose real option list exists nowhere but the DOM (Greenhouse's
+  `candidate-location`, Ashby's comboboxes, Lever's location box). At plan
+  time `"options"` is empty for these and any value is accepted blind.
+
+### 7a — fill and read the form back
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-SUBMIT_FLAG=""
-# if --submit was in $ARGUMENTS:
-# SUBMIT_FLAG="--submit"
-uv run apply run --job-id "$1" --answers "$OVERRIDES_FILE" --yes $SUBMIT_FLAG
+MANIFEST="${OUT_DIR}/form_manifest.json"
+uv run apply run --job-id "$1" --answers "$OVERRIDES_FILE" --yes --manifest "$MANIFEST"
 ```
 
-Only run this step once Step 6b's confirmation is in hand. `--yes` stands in
-for the CLI's own submit prompt, which this session (no tty) could not answer.
-
-Without `--submit` this fills the form and stops — the browser stays open for
-review per `apply run`'s existing behavior. **A no-submit run is not a dry
-run: filling UPLOADS the resume and the cover letter to the ATS**
+No `--submit`: this fills and stops. **A no-submit run is not a dry run —
+filling UPLOADS the resume and the cover letter to the ATS**
 (`src/apply/fill.py` attaches every planned file before touching any field),
 so the documents have already left the machine before any submit decision is
-made. The same holds for `uv run apply fill`. Say this to the user when they
-ask for a fill-only run.
+made. Say that to the user whenever they ask for a fill-only run.
+
+`Read` `$MANIFEST`. One row per question, with `planned` against `actual`,
+plus `prefilled`, `invalid` (the browser's own `checkValidity()` verdict) and
+`options` (preferring what the browser actually read). Check three things:
+
+1. **`matches: false` on a `group: "filled"` row** — the page holds something
+   other than what was planned. Nothing downstream catches this; the submit
+   guard's own re-verify silently re-writes some kinds and skips others.
+2. **A non-empty `actual` on a `group` of `"parked"`, `"left blank"` or
+   `"skipped"`** — an unanswered question the page already has a value for.
+   This is the case that sends a wrong answer while every other check passes.
+   If that value is wrong, correct it; if it is right, still resolve the
+   question explicitly (Step 4e) so the record says so.
+3. **`options` on a row whose plan-time list was empty** — now that the real
+   list is known, a question parked for want of it may be resolvable at Step
+   4e after all.
+
+For anything found, add or correct the entry in `$OVERRIDES_FILE` — same tiers
+and same rules as Steps 4–5 (`PICK` for one of the board's own options,
+`AUDIT` for a corrected answer). Then re-run Step 6, show the user the change
+under Step 6b, and come back here. **Two rounds at most**: if the same field
+still disagrees after a second fill, stop and report it — something is
+rewriting that field and one more attempt will not settle it.
+
+### 7b — submit
+
+Only with `--submit` in `$ARGUMENTS`, and only once Step 6b's confirmation is
+in hand:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+uv run apply run --job-id "$1" --answers "$OVERRIDES_FILE" --yes --submit \
+  --manifest "${OUT_DIR}/form_manifest.submit.json"
+```
+
+This fills the form a second time and clicks. The second manifest is the
+record of what was on screen at the moment of the click. `--yes` stands in for
+the CLI's own submit prompt, which this session (no tty) could not answer.
+
+Without `--submit` in `$ARGUMENTS`, stop after 7a and report `ready`.
 
 With `--submit`, a successful click transitions the role to `applied` through
 `/track` automatically (R10; `apply_cli` never touches `state.yaml` itself).
@@ -610,6 +718,57 @@ hand`. An unreported one means the role is still eligible next run and gets a
 duplicate application. `submitted_untracked` and `failed` are the two
 categories that exit non-zero.
 
+## Step 7c — learn from this form
+
+**After 7a (and 7b, if it ran), and only for what the user confirmed in Step
+6b.** This is the step that makes the next form easier. It writes to
+`profile/.apply_learned.jsonl` — the agent-owned store — and **never** to
+`profile/application_answers.yaml`, which holds only what the user stated.
+
+Run `uv run apply learn --list` first: it prints every rule group, its
+keywords, its candidate answers, and what has already been learned into it.
+Learn into an existing group wherever one fits. A new group is the last resort,
+not the first move — the store's whole point is that the file grows with the
+number of *questions*, not the number of boards.
+
+Four record kinds, and the question decides which:
+
+| what happened this run | record | example |
+|---|---|---|
+| a Tier B rule matched but no candidate was offered, and Step 4e picked the board's own option | `option`, into the group `"source"` named | `--kind option --group "how did you hear" --option "careers site" --mode contains` |
+| a question Step 4e resolved that no rule matched at all, whose answer is a stable fact | `answer` | `--kind answer --wording "have you deployed production grade applications" --answer Yes` |
+| a group's keyword matched a label it answers *wrongly*, and Step 4d corrected it | `veto` | `--kind veto --group "ai policy" --wording "did you use ai to prepare this application"` |
+| a question a group already answers, worded in a way its keywords miss | `wording` | `--kind wording --group "how did you hear" --wording "where did you come across this role"` |
+
+Always pass `--job-id "$1"` and `--board <the plan's board>` so the record
+names the form that taught it.
+
+**Prefer the generic string over the company-specific one.** An option like
+`"<Company> Careers Site"` teaches one employer; `"careers site"` with
+`--mode contains` teaches every board that prefixes its own name, and 83% of
+labels in the 237-board harvest appear on exactly one board — a
+company-specific record earns almost nothing.
+
+**Never learn:**
+- anything that needed drafted prose to answer (C1/C2). Those are per-role by
+  construction and belong in `$OVERRIDES_FILE` alone.
+- a company-specific answer of any kind, even one that passed as C1.
+- a work-authorization fact. The loader rejects those keywords outright, and
+  `apply learn` will refuse the record.
+- a consent decision or a preference the user has not stated. If Step 4e
+  parked one of those, the fix is a named key in `profile/preferences.md`,
+  proposed to the user — not a learned record.
+
+Run each record with `--dry-run` first and read what it prints: the group's
+keywords and candidates *after* the record would be folded in. `apply learn`
+validates by loading the entire answer config with the record in place, so an
+overlap with an existing rule, a work-auth keyword or a too-short wording
+fails with the loader's own message and nothing is written. If a record is
+refused, report it and move on — a refused record is never worth working
+around.
+
+Show the user what was learned in the Step 8 report, one line per record.
+
 ## Step 8 — report
 
 Tell the user:
@@ -618,12 +777,13 @@ $JOB_ID — <category from the run report>
 
 <the report's detail line for this role, verbatim>
 
-Command: uv run apply run --job-id <job_id> --answers <OUT_DIR>/answers_override.json --yes [--submit]
+Command: uv run apply run --job-id <job_id> --answers <OUT_DIR>/answers_override.json --yes --manifest <OUT_DIR>/form_manifest.json [--submit]
 
-Overrides applied this run: <list of field ids resolved at C1/C2/JD/B0-LLM/AUDIT, with tier>
+Overrides applied this run: <list of field ids resolved at C1/C2/JD/B0-LLM/AUDIT/PICK, with tier>
 <if Step 2c called a Skill this run: "Also ran: company-answers|cover-letter">
-<if a Tier B rule was written back: "Also added a reusable rule to
-profile/application_answers.yaml for: \"<label>\"">
+<if Step 7c learned anything: "Learned for next time:" then one line per
+record — kind, group, and the wording or option, e.g.
+"option -> group 'how did you hear': \"careers site\" (contains)">
 ```
 
 `Command:` is Step 7's invocation with every variable substituted — it must
@@ -634,7 +794,9 @@ If the category is `submitted_untracked`, lead with the report's banner —
 `SUBMITTED BUT NOT TRACKED — fix state.yaml by hand` — and name the job_id.
 If it is `submitted_unconfirmed`, tell the user to verify on the board.
 
-The overrides file at `$OVERRIDES_FILE` (`${OUT_DIR}/answers_override.json`)
+`${OUT_DIR}/form_manifest.json` stays on disk too — the read-back of what the
+form actually held, which is the only record of the page as opposed to the
+plan. The overrides file at `$OVERRIDES_FILE` (`${OUT_DIR}/answers_override.json`)
 stays on disk after this run — an audit trail of what was submitted and why,
 next to the role's other artifacts. Each run overwrites it fresh (Step 1),
 so it always reflects only the most recent run's decisions.

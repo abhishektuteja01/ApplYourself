@@ -2071,3 +2071,81 @@ class TestLeverCheckboxGroupIgnoresNonCheckboxes:
     def test_an_unmatched_label_still_reports_a_miss(self):
         with pytest.raises(F.FillError, match="pronouns"):
             self._driver(self._group()).check_group_option("pronouns", "Xe/xem")
+
+
+class TestFormManifest:
+    """The read-back of the finished form, taken after the fill and before any
+    click. Three things nothing else in this module records: the questions
+    `fill_plan` never touches, planned-versus-actual for the ones it did, and
+    the real option list of a select whose options exist nowhere but the DOM.
+    """
+
+    def _plan_with_parks(self):
+        from src.apply.plan import Unmapped
+        return replace(
+            plan(fields=[field(id="q1", value="Yes", kind="yesno")]),
+            unmapped=(Unmapped(id="q9", label="Did you use AI for this application?",
+                                required=True, kind="react_select",
+                                section="questions", tier="C",
+                                reason="no rule matches this question"),),
+        )
+
+    def test_it_pairs_planned_against_what_the_page_holds(self):
+        p = plan(fields=[field(id="q1", value="Two weeks from offer.")])
+        driver = FakeDriver(values={"q1": "Two weeks from offer."})
+        result = F.FillResult(form_url=p.form_url)
+        rows = F.form_manifest(driver, p, result)
+        assert [r["id"] for r in rows] == ["q1"]
+        assert rows[0]["planned"] == "Two weeks from offer."
+        assert rows[0]["actual"] == "Two weeks from offer."
+        assert rows[0]["matches"] is True
+
+    def test_a_field_the_page_disagrees_with_is_flagged(self):
+        """The board (or its resume parser) wrote something else after the
+        fill. `FieldOutcome` records `after` but never the planned value, so
+        nothing could compare the two."""
+        p = plan(fields=[field(id="q1", value="Immediately.")])
+        driver = FakeDriver(values={"q1": "September 2026"})
+        rows = F.form_manifest(driver, p, F.FillResult(form_url=""))
+        assert rows[0]["matches"] is False
+        assert rows[0]["actual"] == "September 2026"
+
+    def test_it_reads_back_a_parked_question_too(self):
+        """A parked question is still a live field. A board that prefills one
+        has put an answer there under the user's name, and until now nothing
+        ever looked."""
+        p = self._plan_with_parks()
+        driver = FakeDriver(values={"q1": "Yes"})
+        driver._selected["q9"] = "Yes"
+        rows = F.form_manifest(driver, p, F.FillResult(form_url=""))
+        parked = next(r for r in rows if r["id"] == "q9")
+        assert parked["group"] == "parked"
+        assert parked["actual"] == "Yes"
+        assert parked["label"].startswith("Did you use AI")
+
+    def test_it_carries_the_options_only_the_browser_ever_saw(self):
+        """A DOM-only select declares no options in the API or the served HTML,
+        so the plan's list is empty and any value is accepted blind."""
+        p = plan(fields=[field(id="loc", kind="react_select", value="San Francisco")])
+        result = F.FillResult(form_url="")
+        result.observed_options["loc"] = ("San Francisco", "New York")
+        rows = F.form_manifest(FakeDriver(), p, result)
+        assert rows[0]["options"] == ["San Francisco", "New York"]
+
+    def test_it_records_the_browsers_own_validity_verdict(self):
+        """`submit()` computes this and throws it away."""
+        p = plan(fields=[field(id="q1", value="v")])
+        driver = FakeDriver(values={"q1": "v"})
+        driver.invalid = ("q1",)
+        rows = F.form_manifest(driver, p, F.FillResult(form_url=""))
+        assert rows[0]["invalid"] is True
+
+    def test_an_unreadable_field_leaves_a_gap_rather_than_raising(self):
+        class Exploding(FakeDriver):
+            def value_of(self, field_id):
+                raise RuntimeError("detached")
+
+        p = plan(fields=[field(id="q1", value="v")])
+        rows = F.form_manifest(Exploding(), p, F.FillResult(form_url=""))
+        assert rows[0]["actual"] == ""
+        assert rows[0]["matches"] is False

@@ -33,6 +33,20 @@ def cfg():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_learned_store(tmp_path, monkeypatch):
+    """Keep the user's real `profile/.apply_learned.jsonl` out of every test.
+
+    `load_answers` folds that store into `rules:` by default, so without this a
+    record learned from one live board would silently change what the fixture
+    boards resolve to — and the failure would land in whichever test happened
+    to share a keyword. Tests that exercise the store pass an explicit path.
+    """
+    from src.apply import learned
+
+    monkeypatch.setattr(learned, "DEFAULT_LEARNED_PATH", tmp_path / "no-store.jsonl")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_crawl_cursor(tmp_path, monkeypatch):
     """Keep the resume cursor out of the real `jobs/`.
 

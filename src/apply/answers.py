@@ -704,14 +704,33 @@ class Rule:
     exact: tuple[str, ...] = () # normalized labels, matched whole
     mode: str = "exact"         # "exact" (default) or "contains" — see _pick_option
 
-    def matches(self, label: str) -> bool:
-        """Whole-label first, then substring.
+    @property
+    def group(self) -> str:
+        """The name the learned store points at this rule by — its first
+        `match:` keyword, else its first `exact:` label."""
+        if self.match:
+            return self.match[0]
+        return self.exact[0] if self.exact else ""
+
+    def matched_key(self, label: str) -> str | None:
+        """The keyword that answered this label, or None. Whole-label first,
+        then substring.
 
         Some questions have labels too short to keyword safely: "State" is a
         required dropdown on 3 of 39 boards, and a `state` substring also hits
         "United States" and "please state their name". Those need `exact`.
+
+        Returns the keyword rather than a bool so a resolution can name what
+        answered it: a label matched on one keyword of a nine-keyword rule is
+        the shape that half-answers a compound question, and the /apply session
+        cannot audit what it cannot see.
         """
-        return label in self.exact or any(k in label for k in self.match)
+        if label in self.exact:
+            return label
+        for keyword in self.match:
+            if keyword in label:
+                return keyword
+        return None
 
 
 @dataclass(frozen=True)
@@ -721,6 +740,19 @@ class Answers:
     employment: dict[str, str] | None
     status: str
     rules: tuple[Rule, ...]
+    vetoes: tuple[tuple[str, str], ...] = ()
+    """`(rule group, normalized whole label)` pairs the learned store says must
+    not match. The one thing the store can do that config cannot: a keyword
+    like `ai policy` correctly answers an acknowledgment "Yes" and answers
+    "did you use AI to prepare this application?" backwards, and no keyword
+    edit fixes one without breaking the other. Matched on the whole label, not
+    a substring — a veto is about one question, not a family of them."""
+
+    learned_warnings: tuple[str, ...] = ()
+    """Records the store could not use, for the CLI to print. The store is a
+    convenience over a config file that is complete without it, so a stale
+    record is a warning and never an error."""
+
     scope_qualified_answer: str = "park"
     """How to answer an authorization question that narrows the scope —
     permanence, employer-independence, freedom from sponsorship. `park` (the
@@ -814,22 +846,28 @@ class Resolution:
     value: str | tuple[str, ...] | bool | None = None
     tier: str = ""
     reason: str = ""
+    source: str = ""
+    """What answered it, within the tier: the `match:`/`exact:` keyword for a
+    Tier B rule, `how_heard` for the discovery-source resolver, `override:<tier>`
+    for an `--answers` entry. Empty where the tier is the whole story (identity,
+    EEOC, the repeating blocks). Carried so the /apply session can audit a
+    keyword match it would otherwise have to reverse-engineer from the label."""
 
     @property
     def parked(self) -> bool:
         return self.action == "park"
 
 
-def _fill(value, tier: str) -> Resolution:
-    return Resolution("fill", value=value, tier=tier)
+def _fill(value, tier: str, source: str = "") -> Resolution:
+    return Resolution("fill", value=value, tier=tier, source=source)
 
 
 def _skip(reason: str, tier: str = "") -> Resolution:
     return Resolution("skip", tier=tier, reason=reason)
 
 
-def _park(reason: str, tier: str = "") -> Resolution:
-    return Resolution("park", tier=tier, reason=reason)
+def _park(reason: str, tier: str = "", source: str = "") -> Resolution:
+    return Resolution("park", tier=tier, reason=reason, source=source)
 
 
 # ---------------------------------------------------------------- loading
@@ -884,8 +922,15 @@ def _parse_block(data, key: str, required: tuple[str, ...],
     return out
 
 
-def _parse_rules(data) -> tuple[Rule, ...]:
-    raw = data.get("rules")
+def _parse_rules(data, raw=None) -> tuple[Rule, ...]:
+    """`raw` overrides `data["rules"]` — that is how the learned store's
+    records reach the same validation the hand-written file gets (see
+    `src/apply/learned.py`). Passing the merged list here rather than
+    validating it separately is deliberate: the overlap check, the keyword
+    minimum and the work-authorization keyword ban must all apply to a learned
+    wording exactly as they do to a configured one."""
+    if raw is None:
+        raw = data.get("rules")
     if raw is None:
         raw = []
     if not isinstance(raw, list):
@@ -1028,8 +1073,19 @@ def _check_preferences(status: str, preferences_path: Path) -> None:
         )
 
 
-def load_answers(path: Path | None = None, preferences_path: Path | None = None) -> Answers:
-    """Load and validate the answer config. Fails loud on anything ambiguous."""
+def load_answers(path: Path | None = None, preferences_path: Path | None = None,
+                 learned_path: Path | None = None) -> Answers:
+    """Load and validate the answer config. Fails loud on anything ambiguous.
+
+    `learned_path` is the agent-owned store (`src/apply/learned.py`), folded
+    into `rules:` before validation so a learned wording is held to every
+    check a hand-written one is. Pass `False` to skip it entirely; the default
+    reads `profile/.apply_learned.jsonl` if it exists and is a no-op if it does
+    not. The two files fail differently on purpose: this one is fail-closed,
+    because a wrong answer here is sent under the user's name, while the store
+    is fail-open, because it is a convenience and one stale line must never
+    block a submission.
+    """
     p = Path(path) if path is not None else DEFAULT_PATH
     if not p.exists():
         raise AnswersError(f"{p} missing. Copy {EXAMPLE_PATH} and fill it in.")
@@ -1132,12 +1188,34 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None)
         status, Path(preferences_path) if preferences_path is not None else PREFERENCES_PATH
     )
 
+    # The learned store, folded into `rules:` *before* validation so a learned
+    # wording is held to every check a hand-written one is — the overlap check
+    # above all, which is why a wording is absorbed into the rule it belongs to
+    # rather than appended as a rule of its own.
+    folded_rules: list | None = None
+    vetoes: tuple = ()
+    learned_warnings: list[str] = []
+    if learned_path is not False:
+        from src.apply import learned as learned_store
+
+        records, learned_warnings = learned_store.read_records(
+            None if learned_path is None else Path(learned_path)
+        )
+        if records:
+            raw_rules = data.get("rules") or []
+            if isinstance(raw_rules, list):
+                folded_rules, vetoes, fold_warnings = learned_store.fold(
+                    raw_rules, records)
+                learned_warnings = [*learned_warnings, *fold_warnings]
+
     return Answers(
         identity=identity,
         education=education,
         employment=employment,
         status=status,
-        rules=_parse_rules(data),
+        rules=_parse_rules(data, folded_rules),
+        vetoes=tuple(vetoes),
+        learned_warnings=tuple(learned_warnings),
         scope_qualified_answer=scope_qualified,
         status_label=status_label.strip(),
         status_option_candidates=tuple(c.strip() for c in raw_candidates),
@@ -1200,12 +1278,13 @@ def match_option(field: MergedField, candidate: str) -> str | None:
 
 
 def _resolve_choice(field: MergedField, candidates: tuple[str, ...], tier: str,
-                    what: str, mode: str = "exact") -> Resolution:
+                    what: str, mode: str = "exact", source: str = "") -> Resolution:
     picked = _pick_option(field, candidates, mode=mode)
     if picked is None:
         offered = [o.label for o in field.options]
-        return _park(f"{what}: none of {list(candidates)} is offered ({offered})", tier)
-    return _fill((picked,) if field.multi else picked, tier)
+        return _park(f"{what}: none of {list(candidates)} is offered ({offered})",
+                     tier, source=source)
+    return _fill((picked,) if field.multi else picked, tier, source=source)
 
 
 def _pick_country(field: MergedField, value: str) -> str | None:
@@ -1603,7 +1682,7 @@ def _resolve_how_heard(field: MergedField, answers: Answers) -> Resolution | Non
     else:
         return None
     picked = _pick_option(field, candidates, mode="contains")
-    return _fill(picked, "B") if picked is not None else None
+    return _fill(picked, "B", source="how_heard") if picked is not None else None
 
 
 def _resolve_parsed_salary(field: MergedField, answers: Answers) -> Resolution | None:
@@ -1633,14 +1712,20 @@ def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
     if how_heard is not None:
         return how_heard
     for rule in answers.rules:
-        if rule.matches(label):
+        key = rule.matched_key(label)
+        if key is not None:
+            if (rule.group, label) in answers.vetoes:
+                # This label is on record as one this rule gets wrong. Fall
+                # through to the next rule rather than answering it.
+                continue
             if field.kind == "file":
-                return (_park("a rule cannot answer a file upload", "B")
+                return (_park("a rule cannot answer a file upload", "B", source=key)
                         if field.required
                         else _skip("optional file upload, no rule can fill it", "B"))
             if field.options or field.kind == "react_select":
-                return _resolve_choice(field, rule.answers, "B", "rule", mode=rule.mode)
-            return _fill(rule.answers[0], "B")
+                return _resolve_choice(field, rule.answers, "B", "rule",
+                                       mode=rule.mode, source=key)
+            return _fill(rule.answers[0], "B", source=key)
     return None
 
 

@@ -200,6 +200,54 @@ class TestRuleValidation:
             load_answers(write_config(tmp_path, rules=rules), PREFS)
 
 
+class TestResolutionProvenance:
+    """A resolution names what answered it, not just which tier did.
+
+    A Tier B answer is a keyword match against employer-authored prose, and the
+    keyword that matched is the difference between an answer and a coincidence:
+    a nine-keyword rule that hit on one word of a compound label half-answers
+    the question and reads, from the value alone, exactly like a correct
+    answer. The /apply session audits these, and it cannot audit what it
+    cannot see.
+    """
+
+    def test_a_rule_names_the_keyword_that_matched(self, tmp_path):
+        rules = [{"match": ["portfolio", "personal site"], "answer": "https://x.example"}]
+        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        resolution = resolve(field(label="Link to your personal site"), answers)
+        assert resolution.tier == "B"
+        assert resolution.source == "personal site"
+
+    def test_an_exact_rule_names_the_whole_label(self, tmp_path):
+        rules = [{"exact": ["state"], "answer": ["Example State"]}]
+        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        resolution = resolve(field(label="State", options=["Example State"]), answers)
+        assert resolution.source == "state"
+
+    def test_a_parked_choice_still_names_its_rule(self, tmp_path):
+        """The park that most needs explaining: a rule matched the label and
+        then offered the board nothing it takes. Without the keyword, the next
+        pass cannot tell which rule to teach."""
+        rules = [{"match": ["how did you hear"], "answer": ["Careers Page"]}]
+        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        resolution = resolve(
+            field(label="How did you hear about this job?", required=True,
+                  kind="select", options=["Acme Careers Site", "LinkedIn"]),
+            answers,
+        )
+        assert resolution.action == "park"
+        assert resolution.source == "how did you hear"
+
+    def test_a_structural_tier_leaves_the_source_empty(self, answers, merged):
+        """Identity and EEOC are matched on DOM id and section, so the tier is
+        already the whole story."""
+        reconciled = merged("form_minimal")
+        email = next(f for f in reconciled.fields if f.id == "email")
+        resolution = resolve(email, answers)
+        assert resolution.tier == "A"
+        assert resolution.source == ""
+
+
 class TestRuleMatchMode:
     """`mode: contains` — an opt-in match mode for a Tier B rule whose
     candidate answers are short affirmations that a board's real option

@@ -82,6 +82,22 @@ class FieldPlan:
     """`MergedField.description`, carried through so Step 4d's audit can weigh
     a board's own instructional text, not just its label."""
 
+    options: tuple[str, ...] = ()
+    """What the widget offered. Held on a *filled* field, not just a parked one:
+    an answer can only be audited against the alternatives it beat, and a
+    keyword rule that picked the wrong one of nine options looks identical to a
+    right one when all you can see is the value. Empty for free text and for
+    every DOM-only select, whose real list exists only once a browser has
+    opened it (`fill.py`'s `observed_options`)."""
+
+    source: str = ""
+    """`Resolution.source` — which rule keyword, or which resolver, answered
+    this."""
+
+    reason: str = ""
+    """`Resolution.reason`, previously discarded on the fill path. A filled
+    field can carry a caveat worth reading."""
+
     @property
     def needs_selection_assert(self) -> bool:
         """react-select accepts a typed string that matches no option and ends
@@ -133,6 +149,12 @@ class Unmapped:
     explain briefly" or "don't write AI slop" is not classified or drafted
     off the label alone."""
 
+    source: str = ""
+    """`Resolution.source`. On a Tier B park this is the keyword whose rule
+    matched the label and then offered nothing the board takes — the single
+    most useful fact for resolving it, and the group a learned option spelling
+    belongs to."""
+
 
 @dataclass(frozen=True)
 class Skipped:
@@ -167,6 +189,13 @@ class Plan:
     """Lever renders hCaptcha on every form (§12a). Unattended submission is
     not possible on one of these — `submit()` blocks for a human to solve it
     rather than clicking blind."""
+    ignored_overrides: tuple[str, ...] = ()
+    """`--answers` entries that named a real field and were then dropped,
+    because the tier gate in `build_plan` does not let that override tier
+    supersede that resolution tier. Reported rather than swallowed: the
+    override file is how every judged answer reaches the form, so one that
+    silently does nothing is indistinguishable from one that worked."""
+
     work_authorization: dict = field(default_factory=dict)
     """The derived work-authorization facts (`_work_authorization_facts()`),
     exposed so `/apply`'s Step 4c can judge a board's full-sentence option
@@ -291,17 +320,18 @@ def _override_resolution(field: MergedField, value, tier: str) -> Resolution:
     if not field.options:
         # DOM-only select or free text: nothing to validate against, and
         # fill.py's post-selection assert is the real check (§9).
-        return Resolution("fill", value=value, tier=tier)
+        return Resolution("fill", value=value, tier=tier, source=f"override:{tier}")
 
     picked = tuple(p for p in (match_option(field, c) for c in candidates) if p)
     if len(picked) != len(candidates):
         missing = [c for c in candidates if match_option(field, c) is None]
         return Resolution(
-            "park", tier=tier,
+            "park", tier=tier, source=f"override:{tier}",
             reason=f"override {missing!r} matches none of the options this widget "
                    f"offers ({list(o.label for o in field.options)!r})",
         )
-    return Resolution("fill", value=picked if multi else picked[0], tier=tier)
+    return Resolution("fill", value=picked if multi else picked[0], tier=tier,
+                      source=f"override:{tier}")
 
 
 def _work_authorization_facts(answers: Answers) -> dict[str, object]:
@@ -340,6 +370,7 @@ def _unmapped(field: MergedField, resolution: Resolution, reason: str = "") -> U
         options=tuple(o.label for o in field.options),
         multi=field.multi,
         description=field.description,
+        source=resolution.source,
     )
 
 
@@ -406,6 +437,7 @@ def build_plan(
     unmapped: list[Unmapped] = []
     draftable: list[Unmapped] = []
     skipped: list[Skipped] = []
+    ignored: list[str] = []
 
     for field in reconciled.fields:
         if field.section == "employment" and not fill_employment:
@@ -434,9 +466,21 @@ def build_plan(
             # that never reaches "park" with an unmatched-candidates reason
             # in the first place.
             if (resolution.tier == "C"
-                    or (resolution.tier == "B" and override_tier in ("JD", "AUDIT"))
+                    or (resolution.tier == "B"
+                        and override_tier in ("JD", "AUDIT", "PICK"))
                     or (resolution.tier == "B0" and override_tier in ("B0-LLM", "AUDIT"))):
                 resolution = _override_resolution(field, value, override_tier)
+            else:
+                # Loaded, validated, and then aimed at a field this gate does
+                # not open. Silence here cost a real correction: an override on
+                # an identity or EEOC field was dropped without a word, and the
+                # re-plan diff /apply checks its own work with showed nothing
+                # wrong, because nothing *was* wrong with the plan — the
+                # correction simply never applied.
+                ignored.append(
+                    f"{field.id}: tier {override_tier} cannot supersede a tier "
+                    f"{resolution.tier} resolution"
+                )
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))
@@ -499,6 +543,9 @@ def build_plan(
             value=resolution.value,
             tier=resolution.tier,
             description=field.description,
+            options=tuple(o.label for o in field.options),
+            source=resolution.source,
+            reason=resolution.reason,
         ))
 
     plan = Plan(
@@ -520,6 +567,7 @@ def build_plan(
         ats=ats,
         requires_captcha=requires_captcha,
         work_authorization=_work_authorization_facts(answers),
+        ignored_overrides=tuple(ignored),
     )
     _assert_accounted_for(reconciled, plan)
     return plan

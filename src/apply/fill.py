@@ -239,6 +239,17 @@ class FillResult:
     submit guard has to subtract these from the plan's unmapped[], or a role
     parks over a question that is now answered."""
 
+    manifest: list[dict] = dc_field(default_factory=list)
+    """`form_manifest()` — every question and what the page actually held for
+    it, read after the fill and before any click. Published on the result (and
+    so through `sink`) rather than returned, so it survives the same
+    exceptions `submitted` does."""
+
+    landed_url: str = ""
+    title: str = ""
+    """Where the fill ended up. The browser knows both and nothing recorded
+    them outside the post-submit evidence file."""
+
     submitted: bool = False
     """The submit button was clicked. Set the instant the click returns, before
     anything post-click can fail — an exception after the click must not lose
@@ -1520,6 +1531,159 @@ def blocking_questions(plan: Plan, result: FillResult) -> tuple[str, ...]:
     return tuple(u.id for u in plan.unmapped if u.id not in recovered)
 
 
+def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
+    """The same questions as `blocking_questions`, as rows a report can read.
+
+    A bare field id names nothing a person can act on — `d08327ab-…` is the
+    whole of what a parked role's report line said, while the label, the reason
+    it parked and the options the widget offered were all sitting in
+    `plan.unmapped`. Kept as a sibling rather than a wider return type because
+    `blocking_questions` is also the submit guard's own check (§9), where the
+    ids are exactly right.
+
+    `options` prefers what the browser actually read (`observed_options`) over
+    the plan's list: for a DOM-only select the plan's list is empty, and the
+    real one only exists once the widget has been opened.
+    """
+    recovered = set(result.recovered)
+    rows = []
+    for u in plan.unmapped:
+        if u.id in recovered:
+            continue
+        rows.append({
+            "id": u.id,
+            "label": u.label,
+            "tier": u.tier,
+            "reason": u.reason,
+            "source": u.source,
+            "options": list(result.observed_options.get(u.id) or u.options),
+            "description": u.description,
+        })
+    return tuple(rows)
+
+
+def read_back(driver, field_id: str, planned_kind: str) -> str:
+    """What the page shows in one field right now, as a string.
+
+    The per-kind read half of `_reverify_fields`, factored out so something
+    other than the drift check can use it. Reads against the *live* kind, for
+    the same reason `_reverify_fields` does: Ashby declares `select` and then
+    renders a radio group, a combobox or a lone checkbox.
+
+    Best-effort by construction — an unreadable field returns `""`, because a
+    manifest that raises is worse than a manifest with a gap in it.
+    """
+    try:
+        kind = driver.resolve_kind(field_id, planned_kind)
+        if kind == "yesno":
+            return driver.selected_label(field_id)
+        if kind == "radio_group":
+            return driver.checked_radio_label(field_id)
+        if kind == "checkbox_group":
+            return ", ".join(driver.checked_group_labels(field_id))
+        if kind == "select":
+            return driver.selected_option_label(field_id)
+        if kind == "react_select":
+            return driver.selected_label(field_id)
+        return driver.value_of(field_id)
+    except Exception:  # noqa: BLE001 - a read must never fail a run
+        return ""
+
+
+def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
+    """Every question on the form and what the page actually holds for it, read
+    back after the fill and before any click.
+
+    Three things make this different from `render_fill`'s per-field report,
+    and each one is a failure it exists to catch:
+
+    - It covers the questions nothing else reads back — `unmapped`,
+      `draftable` and `skipped`. A parked question is still a field on a live
+      form, and a board that prefilled it (or a resume parser that did) has
+      already put an answer there under the user's name.
+    - It pairs planned against actual, which `FieldOutcome` alone cannot: it
+      records `after` but not what was intended, so nothing could compare them
+      without re-joining against the plan.
+    - It carries the real option list for a DOM-only select. Greenhouse's
+      `candidate-location`, Ashby's comboboxes and Lever's location box declare
+      no options anywhere in the API or the served HTML, so at plan time the
+      list is empty and any value is accepted blind. `observed_options` is the
+      only place the true list ever exists.
+
+    `invalid` is the browser's own `checkValidity()` verdict, which `submit()`
+    computes and then discards.
+    """
+    invalid = set()
+    try:
+        invalid = set(driver.invalid_fields())
+    except Exception:  # noqa: BLE001
+        pass
+
+    outcomes = {o.id: o for o in result.outcomes}
+    rows: list[dict] = []
+
+    def row(field_id, label, kind, planned, group, **extra):
+        outcome = outcomes.get(field_id)
+        actual = read_back(driver, field_id, kind)
+        # Popped unconditionally: computing it inside the dict display let the
+        # `or` short-circuit skip the pop, and `**extra` then put the plan's
+        # empty list back over the options the browser had just read.
+        planned_options = extra.pop("options", ())
+        return {
+            "id": field_id,
+            "label": label,
+            "kind": kind,
+            "group": group,
+            "planned": planned,
+            "actual": actual,
+            "matches": _same(planned, actual),
+            "prefilled": bool(outcome.was_prefilled) if outcome else False,
+            "before": outcome.before if outcome else "",
+            "invalid": field_id in invalid,
+            "options": list(result.observed_options.get(field_id) or planned_options),
+            **extra,
+        }
+
+    for f in plan.fields:
+        rows.append(row(f.id, f.label, f.kind, _planned_text(f.value), "filled",
+                        options=f.options, tier=f.tier, source=f.source))
+    for u in plan.unmapped:
+        rows.append(row(u.id, u.label, u.kind, "", "parked",
+                        options=u.options, tier=u.tier, reason=u.reason))
+    for d in plan.draftable:
+        rows.append(row(d.id, d.label, d.kind, "", "left blank",
+                        options=d.options, tier=d.tier))
+    for s in plan.skipped:
+        rows.append(row(s.id, s.label, "text", "", "skipped", tier=s.tier))
+    for f in plan.files:
+        attached = None
+        try:
+            attached = driver.attached_files(f.id)
+        except Exception:  # noqa: BLE001
+            pass
+        rows.append({
+            "id": f.id, "label": f.label, "kind": "file", "group": "attached",
+            "planned": f.path.name,
+            "actual": ", ".join(attached) if attached else "",
+            "matches": bool(attached) and f.path.name in attached,
+            "prefilled": False, "before": "", "invalid": f.id in invalid,
+            "options": [],
+        })
+    return rows
+
+
+def _planned_text(value) -> str:
+    if isinstance(value, tuple):
+        return ", ".join(str(v) for v in value)
+    if isinstance(value, bool):
+        return str(value)
+    return str(value)
+
+
+def _same(planned: str, actual: str) -> bool:
+    return planned.strip().casefold() == actual.strip().casefold()
+
+
 def _reverify_fields(driver, plan: Plan) -> None:
     """Re-check every field immediately before the click, and re-apply any
     that drifted since `fill_plan` set it.
@@ -1839,6 +2003,14 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
         try:
             driver = _driver_for(plan.ats, page)
             fill_plan(plan, driver, answers, result=result)
+            # After the fill, before any click: the one moment the page holds
+            # the finished form and nothing irreversible has happened.
+            try:
+                result.manifest = form_manifest(driver, plan, result)
+                result.landed_url = page.url
+                result.title = page.title()
+            except Exception as exc:  # noqa: BLE001 - never block a submit
+                log.warning("reading the form manifest failed: %s", exc)
             if submit_after:
                 try:
                     submit(plan, result, driver, answers)

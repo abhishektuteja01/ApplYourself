@@ -9,7 +9,7 @@
                                     JOB_ID/STATE/OUT_DIR/VERTICAL/
                                     COMPANY_ANSWERS/OVERRIDES_FILE=value lines
                                     meant for `eval` in the command session.
-  plan <job_id> [--json] [--url URL] [--out-dir DIR]
+  plan <job_id> [--json] [--questions] [--url URL] [--out-dir DIR]
                                     fetch the board's rendered form and its
                                     question schema, resolve every field against
                                     profile/application_answers.yaml, and print
@@ -17,8 +17,17 @@
                                     anywhere; no browser either, except on Ashby,
                                     which opens one headless page for field text
                                     the API does not carry.
-  fill <job_id> [--force] [--headless] [--no-pause]
+  fill <job_id> [--force] [--headless] [--no-pause] [--manifest PATH]
                                     fill one real form and stop; never submits.
+                                    --manifest dumps what the page actually
+                                    holds for every field, read after the fill.
+  learn [--list] [--kind K --group G ...] [--dry-run]
+                                    read or extend the learned answer store,
+                                    profile/.apply_learned.jsonl — the board
+                                    wordings and option spellings /apply has
+                                    picked up, kept out of the hand-written
+                                    config. Validated by loading the whole
+                                    answer config with the record in place.
   run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--yes] [--job-id X]
                                     walk the eligible queue (state == tailored,
                                     tailored_dirs[] non-empty). Default is
@@ -43,6 +52,7 @@ import random
 import re
 import shlex
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field as dc_field, replace
 from datetime import datetime
@@ -54,8 +64,8 @@ import yaml
 from src import paths, state_io, track_cli
 from src.apply import ashby, lever
 from src.apply.answers import DEFAULT_PATH, EXAMPLE_PATH, Answers, AnswersError, load_answers
-from src.apply.fill import (SubmitGuardError, _require_playwright, blocking_questions,
-                             fill, has_driver, run_one)
+from src.apply.fill import (SubmitGuardError, _require_playwright, blocking_details,
+                             blocking_questions, fill, has_driver, run_one)
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
 from src.apply.plan import Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
@@ -75,6 +85,10 @@ CLEAN = paths.CLEAN
 PIPELINE = paths.PIPELINE
 APPLICATIONS = paths.APPLICATIONS
 APPLY_RUNS = APPLICATIONS / "apply_runs"
+
+# Tiers an `--answers` entry may claim. `plan.py` decides which of them may
+# supersede which deterministic resolution; this is only the set that parses.
+OVERRIDE_TIERS = ("C1", "C2", "JD", "B0-LLM", "AUDIT", "PICK")
 
 
 class ApplyCliError(Exception):
@@ -254,9 +268,17 @@ def load_overrides(path: Path, job_id: str | None = None,
     default), `"B0-LLM"` (which of a work-authorization field's full-sentence
     options is true given `plan["work_authorization"]` — supersedes a Tier
     B0 park whose `status_option_candidates` matched none of this board's
-    exact wording), or `"AUDIT"` (an already-resolved Tier B/B0 field the
+    exact wording), `"AUDIT"` (an already-resolved Tier B/B0 field the
     audit step judged wrong or incomplete — e.g. a compound label a keyword
-    match only half-answered).
+    match only half-answered), or `"PICK"` (a parked Tier B/C choice resolved
+    to one of the options the board itself offers).
+
+    `PICK` is deliberately narrower than `AUDIT` and separate from it. It only
+    ever names an option the widget already renders, so the claim it makes was
+    written by the employer rather than drafted here, and it can only reach a
+    field nothing else could answer. Keeping it distinct is what lets a run
+    report say which answers came from a constrained choice rather than from
+    judgment about an existing one.
 
     The `job_id` key binds the file to one role. Tier C2 answers are
     company-specific by construction ("why do you want to work at X"), so a
@@ -285,10 +307,10 @@ def load_overrides(path: Path, job_id: str | None = None,
         if not isinstance(entry, dict):
             raise ApplyCliError(f"{path}: {field_id!r} must be an object")
         tier = entry.get("tier")
-        if tier not in ("C1", "C2", "JD", "B0-LLM", "AUDIT"):
+        if tier not in OVERRIDE_TIERS:
             raise ApplyCliError(
-                f"{path}: {field_id!r} has tier {tier!r}, want C1, C2, JD, "
-                f"B0-LLM or AUDIT"
+                f"{path}: {field_id!r} has tier {tier!r}, want "
+                f"{', '.join(OVERRIDE_TIERS)}"
             )
         value = entry.get("value")
         if isinstance(value, list):
@@ -400,25 +422,31 @@ def as_dict(plan: Plan) -> dict:
         "submittable": plan.submittable,
         "work_authorization": plan.work_authorization,
         "fields": [
-            {"id": f.id, "label": f.label, "kind": f.kind, "section": f.section,
-             "required": f.required, "multi": f.multi, "tier": f.tier,
+            {"id": f.id, "name": f.name, "label": f.label, "kind": f.kind,
+             "section": f.section, "required": f.required, "multi": f.multi,
+             "tier": f.tier,
              "value": list(f.value) if isinstance(f.value, tuple) else f.value,
-             "assert_selected": f.needs_selection_assert, "description": f.description}
+             "assert_selected": f.needs_selection_assert, "description": f.description,
+             "options": list(f.options), "source": f.source, "reason": f.reason}
             for f in plan.fields
         ],
         "files": [
-            {"id": f.id, "label": f.label, "required": f.required, "path": str(f.path)}
+            {"id": f.id, "name": f.name, "label": f.label, "required": f.required,
+             "path": str(f.path)}
             for f in plan.files
         ],
         "unmapped": [
             {"id": u.id, "label": u.label, "required": u.required, "kind": u.kind,
              "section": u.section, "tier": u.tier, "reason": u.reason,
-             "options": list(u.options), "description": u.description}
+             "options": list(u.options), "description": u.description,
+             "multi": u.multi, "source": u.source}
             for u in plan.unmapped
         ],
         "draftable": [
             {"id": d.id, "label": d.label, "kind": d.kind, "section": d.section,
-             "options": list(d.options), "description": d.description}
+             "options": list(d.options), "description": d.description,
+             "required": d.required, "tier": d.tier, "reason": d.reason,
+             "multi": d.multi, "source": d.source}
             for d in plan.draftable
         ],
         "skipped": [
@@ -426,7 +454,18 @@ def as_dict(plan: Plan) -> dict:
             for s in plan.skipped
         ],
         "api_only": list(plan.api_only),
+        "ats": plan.ats,
+        "requires_captcha": plan.requires_captcha,
+        "ignored_overrides": list(plan.ignored_overrides),
     }
+
+
+def _ignored_override_lines(plan: Plan) -> list[str]:
+    if not plan.ignored_overrides:
+        return []
+    return ["", f"OVERRIDES IGNORED ({len(plan.ignored_overrides)}) — supplied, "
+                "validated, and not applied:",
+            *(f"  - {note}" for note in plan.ignored_overrides)]
 
 
 def render(plan: Plan) -> str:
@@ -486,6 +525,77 @@ def render(plan: Plan) -> str:
         lines.append("READY: every rendered field resolved. --submit would click.")
     if plan.api_only:
         lines.append(f"(declared by the API, rendered nowhere: {', '.join(plan.api_only)})")
+    lines.extend(_ignored_override_lines(plan))
+    return "\n".join(lines)
+
+
+# One question, one line, in the two groups a person actually sorts a form into:
+# what the config already knows, and what somebody has to decide. `plan.fields`
+# is the first group by construction — every entry got there by matching config.
+_JUDGMENT_TIERS = frozenset({"C"})
+
+
+def _offered(options: tuple[str, ...], limit: int = 6) -> str:
+    if not options:
+        return ""
+    shown = ", ".join(options[:limit])
+    return shown if len(options) <= limit else f"{shown}, +{len(options) - limit} more"
+
+
+def render_questions(plan: Plan) -> str:
+    """The form as two lists plus the blockers.
+
+    `render()` groups by what /apply does mechanically (fill / attach / skip /
+    unmapped), which splits one question's fate across four sections and hides
+    the thing the session most needs: a filled field and a parked one can be
+    the same question, one keyword apart. This groups by who answers it.
+    """
+    lines = [
+        f"{plan.company or '(unknown company)'} — {plan.title or '(unknown title)'}",
+        f"job_id {plan.job_id}   {plan.ats}/{plan.board}   {len(plan.fields)} filled, "
+        f"{len(plan.files)} attached, {len(plan.unmapped)} unanswered",
+        "",
+    ]
+
+    lines.append(f"FACTS — answered from config ({len(plan.fields)})")
+    for f in plan.fields:
+        flag = "*" if f.required else " "
+        via = f"  via {f.source}" if f.source else ""
+        lines.append(f"  {flag} [{f.tier}] {f.label}")
+        lines.append(f"      -> {_value(f.value)}{via}")
+        if f.options:
+            lines.append(f"      of {len(f.options)} offered: {_offered(f.options)}")
+        if f.reason:
+            lines.append(f"      note: {f.reason}")
+
+    judgment = [*plan.draftable, *(u for u in plan.unmapped if u.tier in _JUDGMENT_TIERS)]
+    lines.append("")
+    lines.append(f"QUESTIONS — need judgment ({len(judgment)})")
+    for q in judgment:
+        flag = "*" if q.required else " "
+        fate = "parks the role" if q.required else "left blank"
+        lines.append(f"  {flag} [{q.tier}] {q.label}")
+        lines.append(f"      {q.kind}, unresolved -> {fate}")
+        if q.options:
+            lines.append(f"      choose from: {_offered(q.options, limit=10)}")
+        if q.description:
+            lines.append(f"      note: {q.description}")
+
+    blockers = [u for u in plan.unmapped if u.required]
+    lines.append("")
+    lines.append(f"BLOCKING — required and unanswered ({len(blockers)})")
+    for u in blockers:
+        lines.append(f"    [{u.tier}] {u.label}")
+        lines.append(f"      {u.reason}")
+        if u.source:
+            lines.append(f"      matched on: {u.source}")
+        if u.options:
+            lines.append(f"      offers: {_offered(u.options, limit=10)}")
+
+    lines.append("")
+    lines.append("PARKED: nothing would be submitted." if plan.parked
+                 else "READY: every rendered field resolved. --submit would click.")
+    lines.extend(_ignored_override_lines(plan))
     return "\n".join(lines)
 
 
@@ -503,7 +613,114 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(as_dict(plan), indent=2) if args.json else render(plan))
+    if args.json:
+        print(json.dumps(as_dict(plan), indent=2))
+    elif getattr(args, "questions", False):
+        print(render_questions(plan))
+    else:
+        print(render(plan))
+    return 0
+
+
+def _cmd_learn(args: argparse.Namespace) -> int:
+    """Read or extend the learned answer store (`src/apply/learned.py`).
+
+    The store's only writer. Validation is the real thing rather than a
+    lookalike: the candidate record is folded into a copy of the store, the
+    whole answer config is loaded through `load_answers` over it, and the
+    record is written only if that succeeds. So an overlap with an existing
+    rule, a work-authorization keyword, or a keyword under the length floor
+    fails here with the loader's own message instead of at the next run.
+    """
+    from src.apply import learned as store
+
+    path = Path(args.path) if args.path else store.DEFAULT_LEARNED_PATH
+
+    if args.list:
+        try:
+            answers = load_answers()
+        except AnswersError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        records, warnings = store.read_records(path)
+        print(f"{len(answers.rules)} rule group(s), {len(records)} learned "
+              f"record(s) from {path}\n")
+        learned_by_group: dict[str, list] = {}
+        for record in records:
+            learned_by_group.setdefault(record.group.casefold(), []).append(record)
+        for rule in answers.rules:
+            learned = learned_by_group.get(rule.group.casefold(), [])
+            mark = f"  (+{len(learned)} learned)" if learned else ""
+            print(f"{rule.group!r}{mark}")
+            print(f"    matches: {', '.join(rule.match) or '(exact only)'}")
+            if rule.exact:
+                print(f"    exact:   {', '.join(rule.exact)}")
+            print(f"    answers: {', '.join(rule.answers)}   [mode: {rule.mode}]")
+        orphans = [r for r in records
+                   if r.kind in ("wording", "option", "veto")
+                   and r.group.casefold() not in {ru.group.casefold()
+                                                   for ru in answers.rules}]
+        if orphans:
+            print(f"\n{len(orphans)} record(s) naming no existing group:")
+            for record in orphans:
+                print(f"  - [{record.kind}] group {record.group!r}")
+        if answers.vetoes:
+            print(f"\n{len(answers.vetoes)} veto(es):")
+            for group, wording in answers.vetoes:
+                print(f"  - {wording!r} must not match {group!r}")
+        for warning in [*warnings, *answers.learned_warnings]:
+            print(f"WARNING: {warning}", file=sys.stderr)
+        return 0
+
+    if not args.kind:
+        print("ERROR: pass --list, or --kind with the record to add",
+              file=sys.stderr)
+        return 1
+
+    record = store.new_record(
+        args.kind, wording=args.wording or "", group=args.group or "",
+        option=args.option or "", answer=tuple(args.answer or ()),
+        mode=args.mode or "", job_id=args.job_id or "", board=args.board or "",
+        note=args.note or "",
+    )
+    try:
+        store.validate(record)
+    except store.LearnedError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    # Load the whole config with this record in place before writing it.
+    existing, _ = store.read_records(path)
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                      encoding="utf-8") as handle:
+        for prior in existing:
+            handle.write(json.dumps(prior.as_json(), ensure_ascii=False) + "\n")
+        handle.write(json.dumps(record.as_json(), ensure_ascii=False) + "\n")
+        trial = Path(handle.name)
+    try:
+        merged = load_answers(learned_path=trial)
+    except AnswersError as exc:
+        print(f"ERROR: this record would break the answer config — {exc}",
+              file=sys.stderr)
+        return 1
+    finally:
+        trial.unlink(missing_ok=True)
+
+    target = next((r for r in merged.rules
+                   if r.group.casefold() == record.group.casefold()), None)
+    print(json.dumps(record.as_json(), ensure_ascii=False))
+    if target is not None:
+        print(f"group {target.group!r} would match: {', '.join(target.match)}")
+        print(f"                     and answer: {', '.join(target.answers)}")
+    if record.kind == "veto":
+        print(f"veto: {record.wording!r} would stop matching {record.group!r}")
+
+    if args.dry_run:
+        print("\n--dry-run: nothing written.")
+        return 0
+
+    written = store.append(record, path)
+    print(f"\nappended to {written}")
     return 0
 
 
@@ -533,6 +750,8 @@ def _cmd_fill(args: argparse.Namespace) -> int:
             input("\nreview the form in the browser, then press Enter to close: ")
 
     result = fill(plan, answers, headless=args.headless, after=review)
+    if args.manifest:
+        print(f"manifest: {write_manifest(result, plan, Path(args.manifest))}")
     return 0 if result.ok else 1
 
 
@@ -554,6 +773,20 @@ def render_fill(result, plan: Plan) -> str:
         )
     if result.prefilled:
         lines.append(f"\nPrefilled before we wrote (upload parse?): {list(result.prefilled)}")
+    drifted = [r for r in result.manifest if not r["matches"] and r["group"] == "filled"]
+    if drifted:
+        lines.append(f"\n{len(drifted)} FIELD(S) THE PAGE DISAGREES WITH:")
+        for row in drifted:
+            lines.append(f"  - {row['id']}: planned {row['planned']!r}, "
+                         f"page holds {row['actual']!r}")
+    occupied = [r for r in result.manifest
+                if r["group"] in ("parked", "left blank", "skipped") and r["actual"]]
+    if occupied:
+        lines.append(f"\n{len(occupied)} UNANSWERED QUESTION(S) THE PAGE ALREADY "
+                     f"HAS A VALUE FOR:")
+        for row in occupied:
+            lines.append(f"  - {row['id']} [{row['group']}]: {row['actual']!r} "
+                         f"— {row['label'][:60]}")
     if result.failures:
         lines.append(f"\n{len(result.failures)} FAILURE(S):")
         lines.extend(f"  - {f}" for f in result.failures)
@@ -626,7 +859,11 @@ class RunOutcome:
     parked | ready | skipped | failed | expired"""
 
     detail: str = ""
-    unmapped: tuple[str, ...] = dc_field(default_factory=tuple)
+    unmapped: tuple[dict, ...] = dc_field(default_factory=tuple)
+    """One row per still-unanswered required question — `fill.blocking_details`,
+    not bare ids. The report is the only place a parked role explains itself,
+    and the next /apply pass starts by reading it."""
+
     evidence: Path | None = None
     """The post-submit capture. Named in the report because a submission whose
     confirmation nothing recognised is exactly the one someone has to go look
@@ -647,7 +884,8 @@ def _track_applied(job_id: str, plan) -> tuple[int, str]:
 
 
 def _run_role(job_id: str, *, submit: bool, headless: bool,
-              answers_path: Path | None = None) -> RunOutcome:
+              answers_path: Path | None = None,
+              manifest_path: Path | None = None) -> RunOutcome:
     """One role, start to finish. Never raises — every failure mode this CLI
     knows about comes back as a category on the outcome, so one bad role
     cannot stop the queue.
@@ -711,6 +949,13 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
                           sink=sink, after=None if submit else review)
     except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
         landed = sink[0] if sink else None
+        # The manifest is read before the click, so a crash after it still has
+        # one worth keeping — it is the only record of what the form held.
+        if manifest_path is not None and landed is not None and landed.manifest:
+            try:
+                write_manifest(landed, plan, Path(manifest_path))
+            except OSError:
+                pass
         if landed is not None and landed.submitted:
             rc, exc_note = _track_applied(job_id, plan)
             if rc:
@@ -733,6 +978,12 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
                                detail=f"{type(exc).__name__}: {exc}")
         raise
 
+    if manifest_path is not None:
+        try:
+            write_manifest(result, plan, Path(manifest_path))
+        except OSError as exc:
+            print(f"WARNING: could not write the manifest: {exc}", file=sys.stderr)
+
     if result.submitted:
         rc, exc_note = _track_applied(job_id, plan)
         if rc:
@@ -754,10 +1005,11 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
             evidence=result.evidence,
         )
 
-    blocking = blocking_questions(plan, result)
+    blocking = blocking_details(plan, result)
     if blocking:
         return RunOutcome(job_id, plan.company, plan.title, "parked",
-                           detail="required question(s) unresolved", unmapped=blocking)
+                           detail=f"{len(blocking)} required question(s) unresolved",
+                           unmapped=blocking)
     if result.failures:
         return RunOutcome(job_id, plan.company, plan.title, "failed",
                            detail="; ".join(result.failures))
@@ -784,6 +1036,7 @@ def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
               rate: float = 240.0, jitter: float = 60.0,
               sleeper=time.sleep, jitter_fn=random.uniform,
               answers_path: Path | None = None,
+              manifest_path: Path | None = None,
               on_outcome=None,
               collect_into: list | None = None,
               companies: dict[str, str] | None = None) -> list[RunOutcome]:
@@ -827,7 +1080,8 @@ def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
             sleeper(rate + jitter_fn(0, jitter))
         attempted += 1
         outcome = _run_role(job_id, submit=submit, headless=headless,
-                             answers_path=answers_path)
+                             answers_path=answers_path,
+                             manifest_path=manifest_path)
         outcomes.append(outcome)
         if outcome.category.startswith("submitted"):
             # Count both names: the plan's is what actually went out, the
@@ -880,8 +1134,15 @@ def render_report(outcomes: list[RunOutcome], started_at: datetime) -> str:
             lines.append(f"- `{o.job_id}` {who}")
             if o.detail:
                 lines.append(f"  - {o.detail}")
-            if o.unmapped:
-                lines.append(f"  - unmapped: {', '.join(o.unmapped)}")
+            for row in o.unmapped:
+                lines.append(f"  - `{row['id']}` [{row['tier']}] {row['label']}")
+                lines.append(f"    - {row['reason']}")
+                if row.get("source"):
+                    lines.append(f"    - matched on: {row['source']}")
+                if row.get("options"):
+                    lines.append(f"    - offers: {', '.join(row['options'])}")
+                if row.get("description"):
+                    lines.append(f"    - note: {row['description']}")
             if o.evidence:
                 lines.append(f"  - what the board showed after the click: "
                              f"`{o.evidence}`")
@@ -898,6 +1159,29 @@ def write_report(outcomes: list[RunOutcome], started_at: datetime,
     out_dir.mkdir(parents=True, exist_ok=True)
     path = path or reserve_report_path(started_at, out_dir)
     path.write_text(render_report(outcomes, started_at), encoding="utf-8")
+    return path
+
+
+def write_manifest(result, plan: Plan, path: Path) -> Path:
+    """The post-fill read-back, as JSON, at a path the caller named.
+
+    Only ever written when `--manifest` asked for it, and only for a run that
+    actually opened a browser — an unasked-for artifact next to the run report
+    would make "no run was started, so no report exists" untrue.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "job_id": plan.job_id,
+        "company": plan.company,
+        "title": plan.title,
+        "form_url": plan.form_url,
+        "landed_url": result.landed_url,
+        "page_title": result.title,
+        "submitted": result.submitted,
+        "failures": list(result.failures),
+        "recovered": list(result.recovered),
+        "fields": result.manifest,
+    }, indent=2), encoding="utf-8")
     return path
 
 
@@ -994,6 +1278,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
 
+    # One path, one role: a queue walk would have every role overwrite the
+    # previous role's read-back at the same filename.
+    if args.manifest and not args.job_id:
+        print("ERROR: --manifest writes one file, so it only applies to a "
+              "single role — pass --job-id", file=sys.stderr)
+        return 1
+
     if args.job_id:
         queue = eligible_queue()
         if args.job_id not in queue:
@@ -1036,6 +1327,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         run_queue(queue, submit=args.submit, headless=args.headless,
                    rate=rate, jitter=jitter, answers_path=args.answers,
+                   manifest_path=args.manifest,
                    collect_into=outcomes,
                    on_outcome=lambda done: write_report(done, started, path=path))
     finally:
@@ -1062,6 +1354,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("plan", help="print the fill plan for one role")
     p.add_argument("job_id")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--questions", action="store_true",
+                   help="group the form by who answers it (config vs judgment) "
+                        "instead of by what fill.py does with it")
     p.add_argument("--url", default=None,
                    help="posting URL override, when the stored one is stale")
     p.add_argument("--out-dir", default=None, type=Path,
@@ -1079,6 +1374,9 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--force", action="store_true",
                    help="fill even though the role parks")
     f.add_argument("--headless", action="store_true")
+    f.add_argument("--manifest", default=None, type=Path,
+                   help="write the post-fill read-back of every field to this "
+                        "path as JSON (planned vs. what the page actually holds)")
     f.add_argument("--no-pause", action="store_true",
                    help="close the browser without waiting for review")
     f.set_defaults(func=_cmd_fill)
@@ -1098,8 +1396,37 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--job-id", default=None, help="run one specific role instead of the queue")
     r.add_argument("--answers", default=None, type=Path,
                    help="/apply's per-run Tier C overrides JSON (§15); requires --job-id")
+    r.add_argument("--manifest", default=None, type=Path,
+                   help="write the post-fill read-back of every field to this "
+                        "path as JSON; requires --job-id")
+
     r.add_argument("--headless", action="store_true")
     r.set_defaults(func=_cmd_run)
+
+    lrn = sub.add_parser("learn", help="read or extend the learned answer store")
+    lrn.add_argument("--list", action="store_true",
+                     help="print every rule group and what has been learned into it")
+    lrn.add_argument("--kind", default=None, choices=("wording", "option", "veto", "answer"),
+                     help="wording: another phrasing of a question this group "
+                          "answers; option: a spelling of an answer some board "
+                          "offers; veto: a label this group must NOT match; "
+                          "answer: a question no group covers, with its answer")
+    lrn.add_argument("--group", default=None,
+                     help="the rule this record belongs to, named by its first "
+                          "match: keyword (see --list)")
+    lrn.add_argument("--wording", default=None, help="the board's label, normalized")
+    lrn.add_argument("--option", default=None, help="the board's own option text")
+    lrn.add_argument("--answer", action="append", default=None,
+                     help="a candidate answer; repeatable, in preference order")
+    lrn.add_argument("--mode", default=None, choices=("exact", "contains"))
+    lrn.add_argument("--job-id", default=None, help="the role that taught this")
+    lrn.add_argument("--board", default=None, help="the board that taught this")
+    lrn.add_argument("--note", default=None, help="why, in one line")
+    lrn.add_argument("--path", default=None, type=Path,
+                     help="override the store path (tests, dry runs)")
+    lrn.add_argument("--dry-run", action="store_true",
+                     help="validate and print, write nothing")
+    lrn.set_defaults(func=_cmd_learn)
 
     args = parser.parse_args(argv)
     return args.func(args)

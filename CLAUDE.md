@@ -103,12 +103,26 @@ uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load,
 uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
 # /apply plumbing (needs `uv sync --group apply`).
 uv run apply prepare <job_id>         # validate prereqs, resolve out dir/vertical/answers
-uv run apply plan <job_id> [--json] [--url U] [--out-dir D] [--answers F]
+uv run apply plan <job_id> [--json] [--questions] [--url U] [--out-dir D] [--answers F]
                                       # print the fill plan, no browser
                                       # (Ashby opens a headless one for DOM-only field text)
-uv run apply fill <job_id> [--url U] [--out-dir D] [--answers F] [--force] [--headless] [--no-pause]
+                                      # --questions groups the form by who
+                                      # answers it: FACTS (from config, each
+                                      # naming the rule keyword and the options
+                                      # it beat), QUESTIONS (need judgment),
+                                      # BLOCKING (required and unanswered)
+uv run apply learn [--list] [--kind wording|option|veto|answer --group G ...] [--dry-run]
+                                      # read or extend profile/.apply_learned.jsonl,
+                                      # the agent-owned store of board wordings and
+                                      # option spellings. Sole writer of that file;
+                                      # validates by loading the whole answer config
+                                      # with the record folded in
+uv run apply fill <job_id> [--url U] [--out-dir D] [--answers F] [--force] [--headless] [--no-pause] [--manifest F]
                                       # fill one real form and stop; never submits
-uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers F] [--headless] [--submit] [--yes]
+                                      # --manifest dumps the post-fill read-back:
+                                      # planned vs what the page actually holds,
+                                      # every question incl. the parked ones
+uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers F] [--manifest F] [--headless] [--submit] [--yes]
                                       # walk the eligible queue; --submit needs --limit
                                       #   (unless --job-id names one role),
                                       # --submit prompts for a typed confirmation unless --yes,

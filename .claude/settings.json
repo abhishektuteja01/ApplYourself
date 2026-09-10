@@ -10,6 +10,7 @@
       "Bash(uv run profile-extract:*)",
       "Bash(uv run apply prepare:*)",
       "Bash(uv run apply plan:*)",
+      "Bash(uv run apply learn:*)",
       "Bash(uv run python -m src.score_cli:*)",
       "Bash(uv run python -m src.track_cli:*)",
       "Bash(./scripts/pii_scan.sh)",
