@@ -190,9 +190,9 @@ MISSING_FIELD_PATTERN = re.compile(
 # Wait between field writes. A board can debounce its own answered/validation
 # state, and a fill fast enough to outrun that gets a varying subset of
 # correctly-written fields reported missing at submit. Applied to every board:
-# one second a field is cheap next to a false "missing" on an irreversible
+# two seconds a field is cheap next to a false "missing" on an irreversible
 # click.
-FIELD_PACE_MS = 1000
+FIELD_PACE_MS = 2000
 # How often to re-check a server-backed listbox while waiting for its results.
 _OPTION_POLL_MS = 250
 # How long to let a react-select's chosen value land before calling it stuck.
