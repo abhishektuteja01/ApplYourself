@@ -88,7 +88,10 @@ APPLY_RUNS = APPLICATIONS / "apply_runs"
 
 # Tiers an `--answers` entry may claim. `plan.py` decides which of them may
 # supersede which deterministic resolution; this is only the set that parses.
-OVERRIDE_TIERS = ("C1", "C2", "JD", "B0-LLM", "AUDIT", "PICK")
+# "FILE" is not a text/select answer at all — its `value` is a path to attach
+# to a `kind: file` question nothing else can answer (a board-specific upload
+# like a transcript), resolved relative to the role's own /tailor out_dir.
+OVERRIDE_TIERS = ("C1", "C2", "JD", "B0-LLM", "AUDIT", "PICK", "FILE")
 
 
 class ApplyCliError(Exception):

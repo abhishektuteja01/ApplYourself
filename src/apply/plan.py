@@ -448,9 +448,37 @@ def build_plan(
             ))
             continue
 
+        if field.kind == "file" and field.id in overrides:
+            # A file question's override is a path, not text — the generic
+            # tier-gate below assumes `resolution.value` is fillable, and a
+            # rule can never answer a file upload (see `_resolve_rule`), so
+            # this never reaches that gate at all. Resolved here, once,
+            # against the same /tailor out_dir every other attachment reads
+            # from, so a bare filename in the override (like the fixtures
+            # ARTIFACT_STEMS matches by convention) still resolves.
+            value, override_tier = overrides[field.id]
+            if override_tier != "FILE" or not isinstance(value, str):
+                ignored.append(
+                    f"{field.id}: a file question's override must be "
+                    f"tier FILE with a string path, got tier {override_tier!r}"
+                )
+            else:
+                candidate = Path(value)
+                if not candidate.is_absolute():
+                    candidate = out_dir / candidate
+                if candidate.is_file():
+                    files.append(FilePlan(
+                        id=field.id, name=field.name, label=field.label,
+                        required=field.required, path=candidate,
+                    ))
+                    continue
+                ignored.append(f"{field.id}: override path {candidate} does not exist")
+            # Falls through to the normal park below when the override
+            # itself could not be used, same as any other ignored override.
+
         resolution = resolve(field, answers)
 
-        if field.id in overrides:
+        if field.kind != "file" and field.id in overrides:
             value, override_tier = overrides[field.id]
             # C1/C2 only ever supersede a Tier C outcome — a drafted answer
             # must never silently clobber an identity/EEOC/work-authorization

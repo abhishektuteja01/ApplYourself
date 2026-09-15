@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -77,6 +77,8 @@ TOP_LEVEL_KEYS = (
     # src/apply/browser.py, listed here only so the top-level check above does
     # not reject a key it does not parse.
     "browser",
+    # Opt-in escape hatch for `_resolve_eeoc`. See `demographics_no_decline_fallback`.
+    "demographics",
 )
 
 # A `match:` keyword this short matches almost any label. Punctuation is
@@ -814,6 +816,16 @@ class Answers:
     `_MONEY_DOMAIN`-shaped question outright and supersedes a static
     `rules:` default, since a number this role's own posting states should
     always win over a generic configured fallback."""
+    demographics_no_decline_fallback: dict[str, str] = field(default_factory=dict)
+    """Per-field-id real answer for `_resolve_eeoc`, tried only after every
+    decline-to-answer wording has been tried and failed to match. Empty (the
+    default) parks the question, same as always — a board offering no
+    opt-out is rare enough that guessing at a policy for it by default would
+    be wrong. Keyed by the board's own field id (`hispanic_ethnicity`,
+    `gender`, `veteran_status`, `disability_status`, or an `eeo[...]`
+    variant), since the label is employer-authored and varies. Set this only
+    for a field id where you have decided in advance what you want answered
+    if no decline option ever shows up — never let this module invent one."""
 
     @property
     def employment_only_when_required(self) -> bool:
@@ -1188,6 +1200,27 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None,
         status, Path(preferences_path) if preferences_path is not None else PREFERENCES_PATH
     )
 
+    demographics_block = data.get("demographics")
+    demographics_no_decline_fallback: dict[str, str] = {}
+    if demographics_block is not None:
+        if not isinstance(demographics_block, dict):
+            raise AnswersError("demographics: must be a mapping")
+        unknown_demo = set(demographics_block) - {"no_decline_fallback"}
+        if unknown_demo:
+            raise AnswersError(
+                f"demographics: unknown keys {sorted(unknown_demo)} "
+                f"(expected ['no_decline_fallback'])"
+            )
+        fallback_raw = demographics_block.get("no_decline_fallback") or {}
+        if not isinstance(fallback_raw, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in fallback_raw.items()
+        ):
+            raise AnswersError(
+                "demographics.no_decline_fallback: must be a mapping of "
+                "field id (string) to answer (string)"
+            )
+        demographics_no_decline_fallback = dict(fallback_raw)
+
     # The learned store, folded into `rules:` *before* validation so a learned
     # wording is held to every check a hand-written one is — the overlap check
     # above all, which is why a wording is absorbed into the rule it belongs to
@@ -1223,6 +1256,7 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None,
         second_nationality=second_nationality.strip(),
         sponsorship_followup_text=sponsorship_followup_text.strip(),
         us_person_answer=us_person_answer,
+        demographics_no_decline_fallback=demographics_no_decline_fallback,
     )
 
 
@@ -1440,6 +1474,9 @@ def _resolve_eeoc(field: MergedField, answers: Answers) -> Resolution:
     preferred = _EEOC_OPT_OUT.get(field.id, ())
     candidates = preferred + tuple(o for o in _OPT_OUT_FALLBACKS if o not in preferred)
     picked = _pick_option(field, candidates) if field.options else None
+    if picked is None:
+        fallback = answers.demographics_no_decline_fallback.get(field.id)
+        picked = _pick_option(field, (fallback,)) if fallback and field.options else None
     if picked is None:
         return (_park(f"{field.id}: no opt-out option offered", "A2")
                 if field.required else _skip("no opt-out option offered", "A2"))
