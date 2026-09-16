@@ -77,6 +77,38 @@ def test_validate_frame_strips_timezone():
     assert out["date_posted"].iloc[0] == pd.Timestamp("2026-08-01 10:00:00")
 
 
+def test_validate_frame_normalizes_scraped_date():
+    for value, expected in (
+        ("2026-08-01", pd.Timestamp("2026-08-01")),
+        ("2026-08-01T10:00:00-05:00", pd.Timestamp("2026-08-01 15:00:00")),
+        (pd.Timestamp("2026-08-01T10:00:00Z"), pd.Timestamp("2026-08-01 10:00:00")),
+        (pd.Timestamp("2026-08-01"), pd.Timestamp("2026-08-01")),
+    ):
+        row = make_row()
+        row["ingested_run_id"] = "1"
+        row["scraped_date"] = value
+        out = validate_frame(pd.DataFrame([row]))
+        assert out["scraped_date"].dtype == "datetime64[ns]"
+        assert out["scraped_date"].iloc[0] == expected
+
+
+def test_validate_frame_scraped_date_none_becomes_nat():
+    row = make_row()
+    row["ingested_run_id"] = "1"
+    row["scraped_date"] = None
+    out = validate_frame(pd.DataFrame([row]))
+    assert out["scraped_date"].dtype == "datetime64[ns]"
+    assert out["scraped_date"].isna().all()
+
+
+def test_validate_frame_accepts_zero_row_frame():
+    df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
+    out = validate_frame(df)
+    assert out.empty
+    assert out["scraped_date"].dtype == "datetime64[ns]"
+    assert out["date_posted"].dtype == "datetime64[ns]"
+
+
 def test_validate_frame_coerces_amounts():
     row = make_row(min_amount=None, max_amount=None)
     row["ingested_run_id"] = "1"

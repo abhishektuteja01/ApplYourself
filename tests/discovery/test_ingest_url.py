@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from src.discovery import cleaning, ingest_url
-from src.discovery.schema import make_row
 from src import ats_http as http
+from src.discovery.schema import make_row, validate_frame
 from src.discovery.ingest_url import (
     IngestError,
     fetch_row,
@@ -199,6 +199,33 @@ class TestIngest:
         ingest("https://y", vertical="example_primary", **dirs)
         clean = pd.read_parquet(tmp_path / "jobs" / "clean.parquet")
         assert len(clean) == 2  # both survive the same-minute raw file
+
+    def test_shard_is_validate_frame_clean(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
+        ingest("https://x", vertical="example_primary", **_dirs(tmp_path))
+        shard, = (tmp_path / "jobs" / "raw").glob("*.parquet")
+        df = pd.read_parquet(shard)
+        assert df["scraped_date"].dtype.kind == "M"
+        assert validate_frame(df) is not None
+
+    def test_collision_merge_shard_stays_valid(self, tmp_path, monkeypatch):
+        dirs = _dirs(tmp_path)
+        monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
+        ingest("https://x", vertical="example_primary", **dirs)
+        # a prior shard written with scraped_date as object, as the orchestrator
+        # leaves a zero-row shard
+        shard, = (dirs["raw_dir"]).glob("*.parquet")
+        prior = pd.read_parquet(shard)
+        prior["scraped_date"] = prior["scraped_date"].astype(str).astype(object)
+        prior.to_parquet(shard, index=False)
+        monkeypatch.setattr(ingest_url, "fetch_row",
+                            lambda *a, **k: _row(company="Other Co",
+                                                 title="Widget Assembly Lead"))
+        ingest("https://y", vertical="example_primary", **dirs)
+        df = pd.read_parquet(shard)
+        assert len(df) == 2
+        assert df["scraped_date"].dtype.kind == "M"
+        assert validate_frame(df) is not None
 
     def test_near_duplicate_reports_winner(self, tmp_path, monkeypatch):
         dirs = _dirs(tmp_path)

@@ -76,5 +76,6 @@ def validate_frame(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # shards must be naive before they are concatenated
-    df["date_posted"] = naive_datetime(df["date_posted"])
+    for col in ("date_posted", "scraped_date"):
+        df[col] = naive_datetime(df[col])
     return df
