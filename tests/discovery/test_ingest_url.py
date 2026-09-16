@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from src.discovery import cleaning, ingest_url
-from src.discovery.sources.ats import http
 from src.discovery.schema import make_row
+from src import ats_http as http
 from src.discovery.ingest_url import (
     IngestError,
     fetch_row,

@@ -63,7 +63,7 @@ from src.discovery.crawl_cursor import load_cursor, save_cursor
 from src.discovery.htmlutil import html_to_text
 from src.discovery.schema import make_row
 from src.discovery.sources.ats.base import PAYLOAD_SHAPE_ERRORS
-from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_post
+from src.ats_http import CareersError, fetch_json, fetch_json_post
 from src.discovery.sources.base import Source, SourceResult
 
 #

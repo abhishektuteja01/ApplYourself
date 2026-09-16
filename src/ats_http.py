@@ -1,3 +1,7 @@
+"""Retrying HTTP fetchers shared by two consumers: discovery's ATS board
+scrapers and `src/apply/`'s live application-form fetching. The retry and
+timeout constants below govern both — a change here reaches live forms.
+"""
 from __future__ import annotations
 
 import logging

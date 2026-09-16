@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.discovery.sources.ats.http import fetch_json
+from src.ats_http import fetch_json
 
 QUESTIONS_URL = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}?questions=true"
 

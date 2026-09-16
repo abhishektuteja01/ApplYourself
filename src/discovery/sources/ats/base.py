@@ -7,7 +7,7 @@ import time
 
 from src.discovery import cleaning
 from src.discovery import universe
-from src.discovery.sources.ats.http import CareersError, fetch_json
+from src.ats_http import CareersError, fetch_json
 from src.discovery.sources.base import Source, SourceResult
 
 # A 200 can decode to anything: [], a JSON string, {"error": ...}. Raised out of

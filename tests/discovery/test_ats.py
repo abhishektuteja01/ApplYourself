@@ -11,7 +11,7 @@ from src.discovery.sources.ats import base
 from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
-from src.discovery.sources.ats import http
+from src import ats_http as http
 
 def test_html_to_text_strips_tags_and_keeps_structure():
     html = "<div><h2>Requirements</h2><ul><li>Widgets</li><li>Gizmos</li></ul></div>"

@@ -34,8 +34,9 @@ from src import verticals
 from src.discovery import cleaning
 from src.discovery import htmlutil
 from src.discovery.config import load_config
-from src.discovery.sources.ats import http, greenhouse, lever, ashby
 from src.discovery.schema import make_row, naive_datetime
+from src import ats_http as http
+from src.discovery.sources.ats import greenhouse, lever, ashby
 from src.parquet_io import write_parquet
 from src.discovery.orchestrator import (
     JOBS_RAW,

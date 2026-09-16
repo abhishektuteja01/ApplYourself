@@ -68,7 +68,7 @@ from src.apply.browser import launch, require_playwright
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
-from src.discovery.sources.ats.http import CareersError, fetch_json_post, fetch_text
+from src.ats_http import CareersError, fetch_json_post, fetch_text
 
 log = logging.getLogger(__name__)
 

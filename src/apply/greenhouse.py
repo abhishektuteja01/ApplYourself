@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 from src.apply.domscan import FormScan, scan_form
 from src.apply.reconcile import Reconciled, reconcile
 from src.apply.schema import BoardSchema, fetch_questions
-from src.discovery.sources.ats.http import CareersError, fetch_text
+from src.ats_http import CareersError, fetch_text
 
 EMBED_URL = "https://boards.greenhouse.io/embed/job_app?token={token}"
 

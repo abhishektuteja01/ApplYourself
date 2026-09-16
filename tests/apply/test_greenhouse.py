@@ -23,7 +23,7 @@ from src.apply.greenhouse import (
     slug_from_form,
 )
 from src.apply.schema import parse_schema
-from src.discovery.sources.ats.http import CareersError
+from src.ats_http import CareersError
 
 from .conftest import FORM_FIXTURES, load_fixture, load_html
 

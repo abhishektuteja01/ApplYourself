@@ -243,7 +243,7 @@ class TestWorkdaySourceFetch:
         assert any("Broken Co" in e for e in res.errors)
 
     def test_a_detail_fetch_failure_does_not_lose_other_survivors(self, monkeypatch):
-        from src.discovery.sources.ats.http import CareersError
+        from src.ats_http import CareersError
 
         monkeypatch.setattr(
             universe, "load",
@@ -319,7 +319,7 @@ class TestWorkdaySourceFetch:
         assert any("malformed detail" in e for e in res.errors)
 
     def test_list_endpoint_failure_is_a_per_company_error(self, monkeypatch):
-        from src.discovery.sources.ats.http import CareersError
+        from src.ats_http import CareersError
 
         monkeypatch.setattr(universe, "load", lambda ats: [
             UniverseCompany("Broken Co", "workday", "badco|wd3|Site"),

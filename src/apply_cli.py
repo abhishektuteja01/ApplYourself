@@ -72,7 +72,7 @@ from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError
 from src.apply.domscan import DomScanError
 from src.discovery.cleaning import normalize_company
-from src.discovery.sources.ats.http import CareersError
+from src.ats_http import CareersError
 
 # One posting URL parser per ATS this module can submit to. `detect_ats` tries
 # each in turn — cheap, since they're pure regex matches, no network.
