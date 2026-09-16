@@ -1766,6 +1766,12 @@ def _reverify_fields(driver, plan: Plan) -> None:
                 continue
             try:
                 driver.fill_text(field.id, want)
+                if kind == "date":
+                    # Ashby's react-datepicker opens on focus, which fill()
+                    # triggers; nothing else ever dismisses it, so the
+                    # leftover calendar overlay intercepts clicks on every
+                    # field filled after this one.
+                    driver.close()
             except FillError:
                 continue
 

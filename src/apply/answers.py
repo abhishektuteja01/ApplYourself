@@ -1719,7 +1719,9 @@ def _resolve_how_heard(field: MergedField, answers: Answers) -> Resolution | Non
     else:
         return None
     picked = _pick_option(field, candidates, mode="contains")
-    return _fill(picked, "B", source="how_heard") if picked is not None else None
+    if picked is None:
+        return None
+    return _fill((picked,) if field.multi else picked, "B", source="how_heard")
 
 
 def _resolve_parsed_salary(field: MergedField, answers: Answers) -> Resolution | None:
