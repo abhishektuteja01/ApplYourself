@@ -58,8 +58,12 @@ class HealthLedger:
     A full read-modify-write per company cost ~4.3 ms and ~12,500 file rewrites
     a night. Marks are held here and applied in a single `flush()`.
 
-    `known_slugs` is the lane's current universe. Slugs absent from it are
-    dropped on flush; pass None to keep every row.
+    `known_slugs` is the lane's current universe, and must come from
+    `universe_slugs()`, never from `load()`: `load()` hides a board for 14 days
+    after it was pruned, so a ledger built from it deletes exactly the rows
+    whose `pruned_at` caused the hiding, resetting the cooldown and the strike
+    count every run. Slugs absent from `known_slugs` are dropped on flush;
+    pass None to keep every row.
     """
 
     def __init__(self, ats: str, known_slugs=None):
@@ -170,7 +174,9 @@ def _load_csv(csv_path, ats: str, out: dict) -> None:
         log.warning("universe: error reading %s: %s", csv_path, e)
 
 
-def load(ats: str) -> list[UniverseCompany]:
+def _universe_dict(ats: str) -> dict:
+    """Every company this lane's CSVs and watchlist name, keyed by slug, with
+    no health filtering at all."""
     companies_dict = {}
 
     # 1. Load CSVs, least authoritative first: on a slug in both files the
@@ -198,6 +204,22 @@ def load(ats: str) -> list[UniverseCompany]:
                                 companies_dict[slug] = UniverseCompany(name=name, ats=ats, slug=slug, priority=True)
         except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
             log.warning("universe: error reading watchlist: %s", e)
+
+    return companies_dict
+
+
+def universe_slugs(ats: str) -> set[str]:
+    """Every slug this lane's universe names, unfiltered.
+
+    The only correct `known_slugs` for a `HealthLedger`. `load()` is a poll
+    list, not a membership test: it hides boards in their post-prune cooldown,
+    and a ledger told that list deletes their health as orphan.
+    """
+    return set(_universe_dict(ats))
+
+
+def load(ats: str) -> list[UniverseCompany]:
+    companies_dict = _universe_dict(ats)
 
     # 3. Filter and Sort via Health Ledger
     today = pd.Timestamp.today().normalize()
@@ -260,9 +282,9 @@ def select_for_run(companies, cursor, today=None,
     `rotation_runs` runs.
 
     Watchlist companies stay in the fixed head and never rotate, matching
-    `workday.py`. The caller keeps the *full* list for its `HealthLedger`:
-    handing the ledger this slice would prune every unvisited board's health
-    as an orphan.
+    `workday.py`. The `HealthLedger` is built from `universe_slugs()`, not from
+    this slice and not from `companies`: either one would prune health the run
+    simply did not visit.
     """
     companies = list(companies)
     if today is None:

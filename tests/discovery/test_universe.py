@@ -396,3 +396,60 @@ def test_a_ledger_written_before_last_kept_at_existed_still_loads(tmp_path, monk
     assert df.loc[0, "last_kept_at"] == pd.Timestamp.today().normalize()
     # The strike counter came back as a number, not NaN + 1.
     assert df.loc[0, "consecutive_404s"] == 0
+
+
+def _seed_universe(tmp_path, monkeypatch, slugs):
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    (tmp_path / "csv").mkdir(exist_ok=True)
+    (tmp_path / "csv" / "greenhouse.csv").write_text(
+        "name,slug\n" + "".join(f"Co {s},{s}\n" for s in slugs), encoding="utf-8")
+
+
+def test_universe_slugs_includes_a_board_load_is_hiding(tmp_path, monkeypatch):
+    """`load()` is a poll list, not a membership test."""
+    _seed_universe(tmp_path, monkeypatch, ["alive", "cooling"])
+    today = pd.Timestamp.today().normalize()
+    pd.DataFrame([
+        {"ats": "greenhouse", "slug": "alive", "consecutive_404s": 0,
+         "last_ok": today, "last_yield": 1, "pruned_at": pd.NaT,
+         "last_kept_at": today},
+        {"ats": "greenhouse", "slug": "cooling", "consecutive_404s": 3,
+         "last_ok": pd.NaT, "last_yield": 0, "pruned_at": today,
+         "last_kept_at": pd.NaT},
+    ]).to_parquet(universe.health_path("greenhouse"))
+
+    assert {c.slug for c in universe.load("greenhouse")} == {"alive"}
+    assert universe.universe_slugs("greenhouse") == {"alive", "cooling"}
+
+
+def test_a_cooling_board_keeps_its_health_row_through_a_flush(tmp_path, monkeypatch):
+    """The 14-day cooldown is self-erasing if the ledger is built from
+    `load()`: the hidden row is an orphan, gets deleted, and with it the
+    `pruned_at` and the strike count that retired the board."""
+    slugs = [f"co{i:02d}" for i in range(14)]
+    _seed_universe(tmp_path, monkeypatch, slugs)
+    today = pd.Timestamp.today().normalize()
+    rows = []
+    for i, s in enumerate(slugs):
+        cooling = i % 7 == 0  # two of the fourteen are mid-cooldown
+        rows.append({"ats": "greenhouse", "slug": s,
+                     "consecutive_404s": 3 if cooling else 0,
+                     "last_ok": pd.NaT if cooling else today,
+                     "last_yield": 0,
+                     "pruned_at": today if cooling else pd.NaT,
+                     "last_kept_at": pd.NaT})
+    pd.DataFrame(rows).to_parquet(universe.health_path("greenhouse"))
+
+    # One run's worth of marks: only the boards `load()` would hand the loop.
+    ledger = universe.HealthLedger("greenhouse", universe.universe_slugs("greenhouse"))
+    for c in universe.load("greenhouse")[:2]:
+        ledger.mark_ok(c.slug, 0)
+    ledger.flush()
+
+    after = pd.read_parquet(universe.health_path("greenhouse"))
+    assert len(after) == 14, "a board mid-cooldown lost its health row"
+    cooled = after[after["pruned_at"].notna()]
+    assert set(cooled["slug"]) == {"co00", "co07"}
+    assert set(cooled["consecutive_404s"]) == {3}

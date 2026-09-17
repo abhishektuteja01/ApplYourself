@@ -66,10 +66,11 @@ class AtsBoardSource(Source):
     def fetch(self, ctx) -> SourceResult:
         pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
         universe_companies = universe.load(self.name)
-        # The *full* universe, not tonight's slice: the ledger prunes every
-        # slug it is not told about, so handing it the slice would delete the
-        # health of every cold board this run happens not to visit.
-        ledger = universe.HealthLedger(self.name, (c.slug for c in universe_companies))
+        # The unfiltered universe, not tonight's slice and not `load()`: the
+        # ledger prunes every slug it is not told about, and `load()` hides a
+        # board for 14 days after it was pruned, so either narrower list
+        # deletes health the run merely did not visit.
+        ledger = universe.HealthLedger(self.name, universe.universe_slugs(self.name))
 
         cursor = load_cursor(self.name)
         selection = universe.select_for_run(universe_companies, cursor)

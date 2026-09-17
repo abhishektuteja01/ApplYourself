@@ -309,6 +309,9 @@ class TestHealthLedgerOnlyCountsDeadBoards:
         monkeypatch.setattr(http.time, "sleep", lambda _: None)
         monkeypatch.setattr(universe, "load",
                             lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
+        # The ledger's membership test is a separate seam from the poll list,
+        # deliberately: see test_a_board_in_its_prune_cooldown_keeps_its_health_row.
+        monkeypatch.setattr(universe, "universe_slugs", lambda ats: {"acmeai"})
 
         def run(response_factory):
             monkeypatch.setattr(http.requests, "get",
@@ -368,6 +371,7 @@ def test_deadline_break_still_flushes_the_health_ledger(monkeypatch):
         UniverseCompany("Acme AI", "greenhouse", "acmeai"),
         UniverseCompany("Beta Co", "greenhouse", "beta"),
     ])
+    monkeypatch.setattr(universe, "universe_slugs", lambda ats: {"acmeai", "beta"})
     monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board())
 
     class CutAfterFirst(MockContext):
@@ -481,6 +485,7 @@ def test_the_ledger_sees_the_whole_universe_not_tonights_slice(monkeypatch, tmp_
 
     cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]
     monkeypatch.setattr(universe, "load", lambda ats: list(cold))
+    monkeypatch.setattr(universe, "universe_slugs", lambda ats: {c.slug for c in cold})
 
     # Seed health for every cold board, as a run before the split would have.
     seeded = universe.HealthLedger("greenhouse", [c.slug for c in cold])
@@ -535,3 +540,38 @@ def test_the_summary_names_the_universe_not_just_the_slice(monkeypatch, tmp_path
 
     assert res.report_lines[0].startswith(
         "Companies polled: 3 of 15 (1 hot, 2 of 14 cold)")
+
+
+def test_a_board_in_its_prune_cooldown_keeps_its_health_row(monkeypatch, tmp_path):
+    """The real `load()`, not a stub: it hides a board for 14 days after the
+    board was pruned, so a ledger built from it deletes exactly the rows whose
+    `pruned_at` did the hiding -- resetting the cooldown and the strike count
+    every run, and putting dead boards back in tomorrow's poll list."""
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+
+    slugs = [f"co{i:02d}" for i in range(14)]
+    (tmp_path / "csv").mkdir()
+    (tmp_path / "csv" / "greenhouse.csv").write_text(
+        "name,slug\n" + "".join(f"Co {s},{s}\n" for s in slugs), encoding="utf-8")
+
+    today = pd.Timestamp.today().normalize()
+    pd.DataFrame([
+        {"ats": "greenhouse", "slug": s,
+         "consecutive_404s": 3 if i % 7 == 0 else 0,
+         "last_ok": pd.NaT if i % 7 == 0 else today, "last_yield": 0,
+         "pruned_at": today if i % 7 == 0 else pd.NaT,
+         "last_kept_at": today if i % 7 else pd.NaT}
+        for i, s in enumerate(slugs)
+    ]).to_parquet(universe.health_path("greenhouse"))
+
+    monkeypatch.setattr(http.requests, "get",
+                        lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
+    GreenhouseSource().fetch(MockContext())
+
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert len(df) == 14, "a board mid-prune-cooldown lost its health row"
+    assert set(df.loc[df["pruned_at"].notna(), "slug"]) == {"co00", "co07"}

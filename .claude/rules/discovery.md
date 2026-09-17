@@ -70,10 +70,13 @@ as `sources.<name>.<key>`, never silently ignored.
 
 ## The board universe is split, not crawled whole
 
-`universe.load()` returns the full universe and is the only thing a
-`HealthLedger` may be built from — `flush` prunes every slug it was not told
-about, so handing it a slice deletes the health of every board that slice
-missed. `select_for_run` chooses tonight's boards from that list: hot (watchlist
+`universe.universe_slugs()` — the unfiltered CSV + watchlist slug set — is the
+only thing a `HealthLedger` may be built from. `flush` prunes every slug it was
+not told about, and `load()` is a *poll list*, not a membership test: it hides a
+board for 14 days after that board was pruned, so a ledger built from `load()`
+deletes exactly the rows whose `pruned_at` caused the hiding, resetting the
+cooldown and the strike count every run. `select_for_run` chooses tonight's
+boards from `load()`: hot (watchlist
 `priority`, or kept a row within `HOT_WINDOW_DAYS`) every run, plus one rotating
 `1/COLD_ROTATION_RUNS` slice of the cold remainder. The slice rounds up, or a
 cold list shorter than the divisor would never be polled at all.

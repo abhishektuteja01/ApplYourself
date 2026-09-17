@@ -230,7 +230,10 @@ class WorkdaySource(Source):
     def fetch(self, ctx) -> SourceResult:
         pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
-        ledger = universe.HealthLedger(self.name, (c.slug for c in companies))
+        # `universe_slugs`, not `companies`: `load()` hides a board for 14 days
+        # after it was pruned, and the ledger deletes any slug it was not told
+        # about -- including the row whose `pruned_at` did the hiding.
+        ledger = universe.HealthLedger(self.name, universe.universe_slugs(self.name))
         terms = search_terms(ctx.verticals)
 
         rows: list[dict] = []
