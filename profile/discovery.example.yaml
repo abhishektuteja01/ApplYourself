@@ -15,6 +15,9 @@ location_allowlist:
 # search_locations: ["Germany", "Netherlands", "United Kingdom"]
 # Every source the loader accepts. An omitted key falls back to the code default
 # in src/discovery/config.py, so list them all to stay explicit.
+# `cadence` is optional and defaults to daily. One of: daily, weekdays, weekly
+# (Monday), every_n_days:N. A skipped night writes no shard and reports as
+# SKIPPED, which the digest excludes from its medians and alarms.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3}
   indeed:        {enabled: true,  pacing_seconds: 2}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 import yaml
 from src import verticals
@@ -20,6 +21,7 @@ _TOP_LEVEL_KEYS = frozenset({
     "raw_retention_days", "board_max_age_days", "search_locations",
 })
 _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
+_SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence"})
 
 # Ceiling on the locations the jobspy lanes may query when `search_locations`
 # is absent and the allowlist is the fallback. Each location multiplies the
@@ -39,10 +41,63 @@ def pacing_floor(source_name: str) -> float:
     return MIN_PACING_SECONDS.get(source_name, DEFAULT_MIN_PACING_SECONDS)
 
 
+# How often a source runs. `daily` is the historical behaviour and the
+# default; the rest exist because board novelty is 2-3% a night and near zero
+# at the weekend, so polling every board every night buys almost nothing.
+# `weekly` anchors on Monday: the weekend's backlog lands on the first
+# productive night rather than being spread across two dead ones.
+CADENCE_DAILY = "daily"
+CADENCE_WEEKDAYS = "weekdays"
+CADENCE_WEEKLY = "weekly"
+_EVERY_N_DAYS = "every_n_days:"
+_WEEKLY_ANCHOR = 0  # Monday, as datetime.weekday() numbers it.
+
+
+def parse_cadence(value: str) -> str:
+    """The normalized cadence, or raise ValueError naming what was wrong.
+
+    Kept separate from `due_today` so a bad value fails at config load, next
+    to `Unknown source key`, rather than silently never running a lane.
+    """
+    v = str(value).strip().lower()
+    if v in (CADENCE_DAILY, CADENCE_WEEKDAYS, CADENCE_WEEKLY):
+        return v
+    if v.startswith(_EVERY_N_DAYS):
+        n = v[len(_EVERY_N_DAYS):].strip()
+        if n.isdigit() and int(n) >= 1:
+            return f"{_EVERY_N_DAYS}{int(n)}"
+        raise ValueError(
+            f"cadence {value!r}: every_n_days needs a whole number >= 1, got {n!r}")
+    raise ValueError(
+        f"unknown cadence {value!r}. One of: {CADENCE_DAILY}, {CADENCE_WEEKDAYS}, "
+        f"{CADENCE_WEEKLY}, {_EVERY_N_DAYS}N")
+
+
+def due_today(cadence: str, run_date) -> bool:
+    """Whether a source on `cadence` runs on `run_date` (a date or datetime).
+
+    `every_n_days:N` keys off the proleptic ordinal rather than a stored
+    last-run date: no state file to lose, and a missed night does not shift
+    the whole schedule.
+    """
+    if cadence == CADENCE_DAILY:
+        return True
+    if cadence == CADENCE_WEEKDAYS:
+        return run_date.weekday() < 5
+    if cadence == CADENCE_WEEKLY:
+        return run_date.weekday() == _WEEKLY_ANCHOR
+    if cadence.startswith(_EVERY_N_DAYS):
+        return run_date.toordinal() % int(cadence[len(_EVERY_N_DAYS):]) == 0
+    # parse_cadence rejects everything else at load; an unparsed value here
+    # means a hand-built SourceConfig, and running is the safe reading.
+    return True
+
+
 @dataclass
 class SourceConfig:
     enabled: bool
     pacing_seconds: float
+    cadence: str = CADENCE_DAILY
 
 def _continent_countries(continent: str) -> list[str]:
     """Countries on `continent`, matched case- and whitespace-insensitively.
@@ -296,9 +351,16 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         for k, v in data["sources"].items():
             if k not in allowed_sources:
                 raise ValueError(f"Unknown source key: {k}")
+            cfg.unknown_keys += [f"sources.{k}.{sub}"
+                                 for sub in v if sub not in _SOURCE_KEYS]
+            try:
+                cadence = parse_cadence(v.get("cadence", CADENCE_DAILY))
+            except ValueError as e:
+                raise ValueError(f"sources.{k}: {e}") from None
             cfg.sources[k] = SourceConfig(
                 enabled=bool(v.get("enabled", True)),
-                pacing_seconds=float(v.get("pacing_seconds", 1.0))
+                pacing_seconds=float(v.get("pacing_seconds", 1.0)),
+                cadence=cadence,
             )
 
     if "location_allowlist" in data:
@@ -348,8 +410,19 @@ def main() -> int:
           + ("" if cfg.search_locations else "  (from the allowlist)"))
 
     enabled = [(n, s) for n, s in cfg.sources.items() if s.enabled]
-    print("sources:   " + (", ".join(f"{n} ({s.pacing_seconds:g}s)" for n, s in enabled)
+
+    def _source(name, src):
+        # Cadence is shown only when it is not the default, so the common line
+        # stays readable and an unusual schedule stands out.
+        suffix = "" if src.cadence == CADENCE_DAILY else f", {src.cadence}"
+        return f"{name} ({src.pacing_seconds:g}s{suffix})"
+
+    print("sources:   " + (", ".join(_source(n, s) for n, s in enabled)
                            if enabled else "(none enabled)"))
+    today = date.today()
+    not_due = [n for n, s in enabled if not due_today(s.cadence, today)]
+    if not_due:
+        print(f"           not due today ({today:%a}): {', '.join(not_due)}")
     print(f"deadline_hours: {cfg.deadline_hours:g}")
 
     problems = cfg.validate()

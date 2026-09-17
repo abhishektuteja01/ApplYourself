@@ -833,3 +833,116 @@ def test_load_raw_window_reads_a_partial_shard(paths, monkeypatch):
     assert len(list(raw.glob("*_partial.parquet"))) == 1
     window = real_cleaning.load_raw_window(raw)
     assert len(window) == 3
+
+
+# --- cadence ---------------------------------------------------------------
+
+def _freeze_weekday(monkeypatch, target_date):
+    """Pin the run's start date. Cadence resolves against it, and the run id
+    is derived from the same value, so both move together."""
+    import datetime as _dt
+
+    class _Frozen(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.combine(target_date, _dt.time(2, 0))
+
+    monkeypatch.setattr(orchestrator, "datetime", _Frozen)
+
+
+def _cadence_config(**cadences):
+    cfg = _config(deadline_hours=6.0, sources={
+        name: SourceConfig(True, 0, cadence) for name, cadence in cadences.items()
+    })
+    return cfg
+
+
+def test_a_source_not_due_tonight_is_not_polled(paths, monkeypatch):
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))  # a Saturday
+    srcs = _override_setup(monkeypatch,
+                           _cadence_config(linkedin="daily", indeed="weekdays"))
+
+    main([])
+
+    assert srcs["linkedin"].calls == 1
+    assert srcs["indeed"].calls == 0
+
+
+def test_a_cadence_skip_writes_no_shard_but_does_report_itself(paths, monkeypatch):
+    """The distinction the digest depends on: a skipped lane is not a zero-row
+    lane, so it needs a section saying why and no shard to clean."""
+    from datetime import date
+
+    from src.discovery.run_report import SourceStatus, parse_report
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))  # a Saturday
+    _override_setup(monkeypatch, _cadence_config(linkedin="daily", indeed="weekly"))
+
+    main([])
+
+    shards = sorted(p.name.split("_", 2)[-1] for p in (paths / "jobs" / "raw").glob("*.parquet"))
+    assert "indeed.parquet" not in shards
+
+    report_path = next((paths / "jobs" / "runs").glob("*.md"))
+    parsed = parse_report(report_path.read_text(encoding="utf-8"))
+    assert parsed.sources["indeed"].status is SourceStatus.SKIPPED
+    assert "weekly" in parsed.sources["indeed"].detail
+    # The contrast that matters: linkedin polled and found nothing, which
+    # is an alarm the digest counts; indeed was never asked, which is not.
+    assert parsed.sources["linkedin"].status is SourceStatus.ZERO
+
+
+def test_the_skip_section_keeps_report_order(paths, monkeypatch):
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))
+    _override_setup(monkeypatch, _cadence_config(linkedin="weekly", indeed="daily"))
+
+    main([])
+
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert report.index("### Source: manual") < report.index("### Source: linkedin")
+    assert report.index("### Source: linkedin") < report.index("### Source: indeed")
+
+
+def test_source_flag_overrides_cadence(paths, monkeypatch):
+    """Naming a source is the explicit instruction to run it tonight."""
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))  # a Saturday
+    srcs = _override_setup(monkeypatch, _cadence_config(linkedin="weekdays"))
+
+    main(["--source", "linkedin"])
+
+    assert srcs["linkedin"].calls == 1
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "SKIPPED" not in report
+
+
+def test_manual_has_no_config_entry_and_is_never_cadence_skipped(paths, monkeypatch):
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))
+    srcs = _override_setup(monkeypatch, _cadence_config(linkedin="weekly"))
+
+    main([])
+
+    assert srcs["manual"].calls == 1
+
+
+def test_a_resume_does_not_repeat_the_skip_sections(paths, monkeypatch):
+    """The resume appends to the original report rather than rewriting it, so
+    re-rendering a skip would leave two sections for one lane."""
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))
+    _override_setup(monkeypatch, _cadence_config(linkedin="daily", indeed="weekly"))
+
+    main([])
+    run_id = next((paths / "jobs" / "runs").glob("*.md")).stem
+    main(["--resume", run_id])
+
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert report.count("SKIPPED (cadence: weekly)") == 1

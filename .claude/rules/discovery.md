@@ -52,6 +52,22 @@ A location that is exactly a region acronym (`EMEA`, `EMEIA`, `APAC`, `LATAM`,
 overlap drops it. The list is closed. Blank, `Worldwide`, `Anywhere` and `Remote`
 say nothing about country and stay keeps.
 
+## Cadence
+
+`cadence` on a source block is `daily | weekdays | weekly | every_n_days:N`,
+default `daily`; `weekly` anchors on Monday and `every_n_days` keys off the
+date's ordinal, so neither needs a stored last-run date. A bad value raises at
+load — a cadence that silently fell back would either poll nightly or never
+again. `--source` overrides it: naming a source is the instruction to run it
+tonight.
+
+A cadence skip is not a failure and not a zero-row night. It writes no shard and
+renders `### Source: <name>` + `SKIPPED (cadence: …)`. A disabled source is
+absent from the report entirely.
+
+Source blocks are key-checked against `_SOURCE_KEYS`: a misspelling is reported
+as `sources.<name>.<key>`, never silently ignored.
+
 ## Cleaning step order is the spec
 
 The numbered list in `cleaning.py`'s module docstring is normative; steps 0–3b are
@@ -97,9 +113,9 @@ cleaning writer and add its label to `_FUNNEL_KEYS` in the same change.
 
 Parsing degrades, never raises: a truncated report, a missing `## Cleaning`
 half, a zero-byte file and an unknown section all yield a partial record plus a
-`parse_notes` entry. `SourceStatus.SKIPPED` is representable ahead of a writer
-for it, and is excluded from every median and every alarm — a cadence skip is
-not a failure. A zero-row lane is an alarm only when it recorded no error and
+`parse_notes` entry. `SourceStatus.SKIPPED` is written by the orchestrator for a
+cadence skip, and is excluded from every median and every alarm — a cadence skip
+is not a failure. A zero-row lane is an alarm only when it recorded no error and
 its own median is above zero.
 
 New-`job_id` counts are not in the report, so the digest cannot show them.

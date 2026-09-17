@@ -335,3 +335,74 @@ def test_every_runtime_sleep_reads_the_shared_floor():
         assert "pacing_floor(self.name)" in text, rel
         assert "max(0.5," not in text, rel
         assert "max(1.0," not in text, rel
+
+
+# --- cadence ---------------------------------------------------------------
+
+def test_cadence_defaults_to_daily_and_round_trips(tmp_path, monkeypatch):
+    cfg = _load(tmp_path, monkeypatch, {"sources": {
+        "linkedin": {"enabled": True},
+        "lever": {"enabled": True, "cadence": "weekly"},
+        "workday": {"enabled": True, "cadence": "EVERY_N_DAYS: 3"},
+    }})
+    assert cfg.sources["linkedin"].cadence == "daily"
+    assert cfg.sources["lever"].cadence == "weekly"
+    # Normalized: case folded, whitespace stripped, N re-rendered as an int.
+    assert cfg.sources["workday"].cadence == "every_n_days:3"
+
+
+@pytest.mark.parametrize("bad", ["hourly", "every_n_days:", "every_n_days:0",
+                                 "every_n_days:-2", "every_n_days:1.5", ""])
+def test_a_bad_cadence_fails_at_load_not_silently(tmp_path, monkeypatch, bad):
+    """It has to raise. A cadence that silently fell back to daily would be
+    invisible, and one that fell back to never would stop a lane for good."""
+    with pytest.raises(ValueError, match="lever"):
+        _load(tmp_path, monkeypatch, {"sources": {"lever": {"cadence": bad}}})
+
+
+def test_an_unknown_key_inside_a_source_block_is_flagged(tmp_path, monkeypatch):
+    """The trap `cadence` itself nearly fell into: source blocks read only the
+    keys they know, so a misspelling used to be a silent no-op."""
+    cfg = _load(tmp_path, monkeypatch, {"sources": {"lever": {"cadance": "weekly"}}})
+    assert "sources.lever.cadance" in cfg.unknown_keys
+    assert any("sources.lever.cadance" in p for p in cfg.validate())
+
+
+def test_due_today_truth_table():
+    from datetime import date
+
+    from src.discovery.config import due_today
+
+    monday, friday, saturday, sunday = (date(2026, 9, 14), date(2026, 9, 18),
+                                        date(2026, 9, 19), date(2026, 9, 20))
+    for day in (monday, friday, saturday, sunday):
+        assert due_today("daily", day) is True
+    assert [due_today("weekdays", d) for d in (monday, friday, saturday, sunday)] \
+        == [True, True, False, False]
+    # Monday is the anchor: weekend novelty is near zero, so the weekly sweep
+    # lands on the first productive night.
+    assert [due_today("weekly", d) for d in (monday, friday, saturday, sunday)] \
+        == [True, False, False, False]
+
+
+def test_every_n_days_is_periodic_and_never_stalls():
+    from datetime import date, timedelta
+
+    from src.discovery.config import due_today
+
+    for n in (1, 2, 3, 7, 30):
+        days = [date(2026, 1, 1) + timedelta(days=i) for i in range(90)]
+        due = [d for d in days if due_today(f"every_n_days:{n}", d)]
+        # Phase depends on where the window starts, so the count is the
+        # floor or the ceiling; the gap below is the real invariant.
+        assert len(due) in (90 // n, 90 // n + 1)
+        gaps = {(b - a).days for a, b in zip(due, due[1:])}
+        assert gaps <= {n}, (n, gaps)
+
+
+def test_an_unparsed_cadence_runs_rather_than_never_running():
+    from datetime import date
+
+    from src.discovery.config import due_today
+
+    assert due_today("nonsense that load_config would have rejected", date(2026, 9, 19))
