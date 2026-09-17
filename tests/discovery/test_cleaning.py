@@ -22,6 +22,8 @@ from src.discovery import cleaning
 from src.discovery.cleaning import (
     CLEAN_COLUMNS,
     apply_state_yaml,
+    backfill_company_from_url,
+    company_from_url,
     classify_vertical_from_title,
     coerce_schema,
     compute_job_id,
@@ -527,6 +529,111 @@ def test_blank_company_rows_are_dropped_not_collapsed(tmp_path):
     assert list(out["company_normalized"]) == ["acme"]
     report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
     assert "after blank-company drop: 1 (dropped 2)" in report
+
+
+# ---------- step 0b: recover a blank company from the board tenant slug ----------
+
+_ASHBY_URL = "https://jobs.ashbyhq.com/absentia-labs/f8cb711d-1234-4c8d-b5c3-c75a6f95eb3b"
+
+
+@pytest.mark.parametrize("url,expected", [
+    (_ASHBY_URL, "Absentia Labs"),
+    # percent-encoded and mixed-case slugs: decoded, capitals left as written
+    ("https://jobs.ashbyhq.com/Edison%20Scientific/a510a899-a4a3-4c8d-b5c3-c75a6f95eb3b",
+     "Edison Scientific"),
+    ("https://jobs.lever.co/mojave-energy-systems/f8cb711d-1234-4c8d-b5c3-c75a6f95eb3b",
+     "Mojave Energy Systems"),
+    # Workday's tenant is the host label, not a path segment
+    ("https://genpact.wd108.myworkdayjobs.com/External_Careers/job/USA/Engineer_JR-1",
+     "Genpact"),
+    # no board named -> nothing recovered
+    ("https://www.indeed.com/viewjob?jk=abc123", ""),
+    ("https://recruiting.paylocity.com/recruiting/jobs/Details/1234/Engineer", ""),
+    ("https://example.com/job/1", ""),
+    ("", ""),
+    # a careers page identified only by ?gh_jid= has no tenant slug, and its
+    # host is as likely an unlisted ATS as the employer
+    ("https://careers.example.com/openings?gh_jid=4400614009", ""),
+    # too short to trust as a name
+    ("https://nc.wd108.myworkdayjobs.com/NC_Careers/job/Wake-County/Analyst_JR-1", ""),
+])
+def test_company_from_url(url, expected):
+    assert company_from_url(url) == expected
+
+
+def test_backfill_leaves_a_row_that_already_has_a_company():
+    df = project_raw(pd.DataFrame([_raw_row(company="Acme Inc", job_url_direct=_ASHBY_URL)]))
+    out, recovered = backfill_company_from_url(df)
+    assert recovered == 0
+    assert list(out["company"]) == ["Acme Inc"]
+
+
+def test_blank_company_recovered_from_a_board_url(tmp_path):
+    raw_dir = _make_raw_parquet(tmp_path, [
+        {"company": None, "job_url_direct": _ASHBY_URL},
+        # unlisted ATS host: no tenant we can trust, dropped as before
+        {"company": None, "title": "Widget Data Consultant",
+         "job_url_direct": "https://recruiting.paylocity.com/recruiting/jobs/Details/1/W"},
+        # indeed's own page carries no employer, dropped as before
+        {"company": None, "title": "Widget Cloud Consultant",
+         "job_url_direct": "https://www.indeed.com/viewjob?jk=abc123"},
+        {"company": "Acme Inc", "title": "Widget Platform Consultant"},
+    ])
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    assert set(out["company_normalized"]) == {"absentia labs", "acme"}
+    report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
+    assert "after blank-company drop: 2 (dropped 2)" in report
+
+
+def test_recovery_does_not_move_an_existing_job_id(tmp_path):
+    """The recovered row is new; the row that already had a company keeps the
+    job_id it had before step 0b existed."""
+    rows = [
+        {"company": "Acme Inc", "title": "Widget Platform Consultant",
+         "job_url_direct": _ASHBY_URL},
+        {"company": None, "title": "Widget Functional Consultant",
+         "job_url_direct": _ASHBY_URL.replace("f8cb711d", "a1cb711d")},
+    ]
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=_make_raw_parquet(tmp_path, rows),
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    by_company = dict(zip(out["company_normalized"], out["job_id"]))
+    assert by_company["acme"] == compute_job_id("acme", "widget platform consultant")
+    assert by_company["absentia labs"] == compute_job_id(
+        "absentia labs", "widget functional consultant")
+
+
+def test_blank_company_drop_logs_one_summary_not_one_line_per_row(tmp_path, caplog):
+    rows = [
+        {"company": None, "title": f"Widget Functional Consultant {i}",
+         "job_url_direct": "https://www.indeed.com/viewjob?jk=%d" % i}
+        for i in range(5)
+    ] + [{"company": None, "job_url_direct": _ASHBY_URL}]
+    raw_dir = _make_raw_parquet(tmp_path, rows)
+    with caplog.at_level(logging.WARNING, logger="src.discovery.cleaning"):
+        cleaning.run(
+            run_id="2026-06-06_1000",
+            raw_dir=raw_dir,
+            clean_dir=tmp_path / "jobs",
+            runs_dir=tmp_path / "jobs" / "runs",
+            pipeline_dir=tmp_path / "pipeline",
+            today=pd.Timestamp("2026-06-06"),
+        )
+    summaries = [r.getMessage() for r in caplog.records if "blank company" in r.getMessage()]
+    assert summaries == ["blank company: recovered 1 from board tenant slugs, "
+                         "dropped 5 (manual=5)"]
 
 
 # ---------- T9: end-to-end clean schema is exactly the canonical schema ----------

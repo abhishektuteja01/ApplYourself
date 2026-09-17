@@ -5,6 +5,9 @@ Operations execute in this exact step order. Steps 0-3b are row-local, so they
 run per raw shard inside load_filtered_window rather than once on the
 concatenated window; steps 5+ need the whole window and run after the concat.
   0. Per-vertical title gate (apply_title_exclusion), before everything else
+  0b. Backfill a blank company from the board tenant slug in the row's url
+     (registry.parse_posting_url). Before step 1 so the recovered name goes
+     through the same normalizer as a scraped one
   1. Normalize company / title fields (seniority preserved)
   1b. Drop rows with a blank company_normalized — job_id would key on title alone
   2. Drop rows where jd_text < 200 chars
@@ -45,6 +48,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 import pandas as pd
 
@@ -80,7 +84,9 @@ CLEAN_COLUMNS: list[str] = [
 # Career-board sources: presence on the company's own board
 # this run IS the liveness signal, so the posted_date staleness cutoff does
 # not apply; a board row's pipeline lifetime is governed by the seen-ledger.
-from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES, is_applyable
+from src.discovery.sources.ats.registry import (
+    ATS_SOURCE_NAMES, is_applyable, parse_posting_url,
+)
 CAREER_SOURCES: tuple[str, ...] = tuple(ATS_SOURCE_NAMES)
 
 # "manual" joins them for a different reason: an inbox clip or a URL ingest is
@@ -741,18 +747,73 @@ def load_raw_window(
     return _concat_raw_frames(frames)
 
 
-def drop_blank_company(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Step 1b. A blank company makes job_id a function of the title alone, so
-    two rows from different employers collide and dedupe deletes one."""
-    if df.empty:
-        return df.copy(), 0
-    blank = df["company_normalized"].fillna("").str.strip() == ""
-    dropped = int(blank.sum())
-    if not dropped:
+_SLUG_SEP_RE = re.compile(r"[-_+]+")
+# Shortest tenant slug trusted as a company name. Below it a slug is an
+# internal abbreviation ("nc"), and a wrong company mints a wrong job_id and a
+# wrong pipeline/<job_id>/ — worse than a dropped row.
+MIN_COMPANY_SLUG_CHARS = 3
+
+
+def company_from_url(url: str) -> str:
+    """Step 0b. The employer named by a board posting URL's tenant slug, or ""
+    when the URL names no tenant we trust.
+
+    Board identity comes only from sources/ats/registry.py — never a second
+    hostname list. A posting recognized with an *empty* slug (a company careers
+    page carrying `?gh_jid=`) recovers nothing: that host is as likely an
+    unlisted ATS as the employer, and nothing here can tell which. Aggregator
+    URLs (indeed's own pages) name no board and stay dropped.
+    """
+    hit = parse_posting_url(url)
+    if hit is None or not hit.slug:
+        return ""
+    name = _WS_RE.sub(" ", _SLUG_SEP_RE.sub(" ", unquote(hit.slug))).strip()
+    if len(name) < MIN_COMPANY_SLUG_CHARS or not any(c.isalpha() for c in name):
+        return ""
+    # Most boards lowercase the slug; title-case those and leave one that
+    # already carries capitals ("Edison Scientific") as the tenant wrote it.
+    # Either spelling normalizes the same way, so job_id does not depend on it.
+    return name.title() if name == name.lower() else name
+
+
+def backfill_company_from_url(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Step 0b, applied. Fills only a blank company, and only from the row's
+    own board URL; a row whose tenant is not recoverable reaches step 1b blank
+    and is dropped there exactly as before."""
+    if df.empty or "company" not in df.columns:
         return df, 0
-    for s, c, t in zip(df.loc[blank, "source"], df.loc[blank, "company"], df.loc[blank, "title"]):
-        log.warning("dropping row with unusable company: source=%r company=%r title=%r", s, c, t)
-    return df[~blank].copy(), dropped
+    blank = df["company"].fillna("").astype(str).str.strip() == ""
+    if not blank.any():
+        return df, 0
+    df = df.copy()
+    urls = df.loc[blank, "url"].fillna("").astype(str) if "url" in df.columns else None
+    if urls is None:
+        return df, 0
+    recovered = urls.apply(company_from_url)
+    hits = recovered != ""
+    df.loc[recovered[hits].index, "company"] = recovered[hits]
+    return df, int(hits.sum())
+
+
+def drop_blank_company(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Step 1b. A blank company makes job_id a function of the title alone, so
+    two rows from different employers collide and dedupe deletes one.
+
+    Returns the per-source drop counts; the caller logs one summary per run
+    rather than a line per row."""
+    if df.empty:
+        return df.copy(), {}
+    blank = df["company_normalized"].fillna("").str.strip() == ""
+    if not blank.any():
+        return df, {}
+    by_source = {
+        str(s): int(n) for s, n in df.loc[blank, "source"].value_counts().items()
+    }
+    if log.isEnabledFor(logging.DEBUG):
+        sample = df.loc[blank, ["source", "title", "url"]].head(3)
+        for s, t, u in sample.itertuples(index=False):
+            log.debug("blank company: source=%r title=%r url=%r", s, t, u)
+    return df[~blank].copy(), by_source
 
 
 def _new_window_stats() -> dict:
@@ -761,7 +822,9 @@ def _new_window_stats() -> dict:
         "after_exclusion": 0,
         "drops_per_vertical": {},
         "per_source_raw": {},
+        "recovered_company": 0,
         "dropped_blank_company": 0,
+        "blank_company_by_source": {},
         "after_blank_company": 0,
         "after_short": 0,
         "after_stale": 0,
@@ -789,6 +852,10 @@ def _filter_shard(
     for name, count in drops_per_vertical.items():
         stats["drops_per_vertical"][name] = stats["drops_per_vertical"].get(name, 0) + count
     stats["after_exclusion"] += len(df)
+    # step 0b — before the normalizer, so a recovered name is normalized like
+    # any scraped one
+    df, recovered = backfill_company_from_url(df)
+    stats["recovered_company"] += recovered
     # step 1
     df["company_normalized"] = df["company"].apply(normalize_company)
     df["title_normalized"] = df["title"].apply(normalize_title)
@@ -798,8 +865,12 @@ def _filter_shard(
         for src, count in df["source"].value_counts().items():
             stats["per_source_raw"][src] = stats["per_source_raw"].get(src, 0) + int(count)
     # step 1b
-    df, dropped_blank = drop_blank_company(df)
-    stats["dropped_blank_company"] += dropped_blank
+    df, blank_by_source = drop_blank_company(df)
+    for src, count in blank_by_source.items():
+        stats["blank_company_by_source"][src] = (
+            stats["blank_company_by_source"].get(src, 0) + count
+        )
+    stats["dropped_blank_company"] += sum(blank_by_source.values())
     stats["after_blank_company"] += len(df)
     # step 2
     df = drop_short_jd(df)
@@ -841,7 +912,24 @@ def load_filtered_window(
         # No shard at all still has to produce the canonical column set, the
         # same way project_raw(pd.DataFrame()) did when run projected the concat.
         frames = [_filter_shard(pd.DataFrame(), _new_window_stats(), cfg, vcfg, tracked_ids, today)]
+    _log_blank_company_summary(stats)
     return _concat_raw_frames(frames), stats
+
+
+def _log_blank_company_summary(stats: dict) -> None:
+    """One line per run for step 1b, not one per row."""
+    dropped = stats.get("dropped_blank_company", 0)
+    recovered = stats.get("recovered_company", 0)
+    if not dropped and not recovered:
+        return
+    by_source = stats.get("blank_company_by_source", {})
+    breakdown = ", ".join(
+        f"{s}={n}" for s, n in sorted(by_source.items(), key=lambda kv: -kv[1])
+    ) or "none"
+    log.warning(
+        "blank company: recovered %d from board tenant slugs, dropped %d (%s)",
+        recovered, dropped, breakdown,
+    )
 
 
 def _concat_raw_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
