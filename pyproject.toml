@@ -49,6 +49,7 @@ onboard-scaffold = "src.onboard_scaffold:main"
 discover = "src.discovery.orchestrator:main"
 verticals-check = "src.verticals:main"
 discovery-check = "src.discovery.config:main"
+discover-digest = "src.discovery.run_report:main"
 apply = "src.apply_cli:main"
 
 [dependency-groups]

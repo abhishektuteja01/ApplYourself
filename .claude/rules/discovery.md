@@ -82,3 +82,24 @@ unjudged, not bad.
 
 Discovery reads `pipeline/*/state.yaml` and never writes it (R10). A row with a
 state.yaml is exempt from both the staleness cutoff and expiry.
+
+## Reading the run report back
+
+`run_report.py` is the only reader of `jobs/runs/*.md`, and it is a reader: it
+never writes and it imports stdlib only, so a digest works without the
+`discovery` dependency group. Every trend number the `/discover` digest shows is
+computed there; the command session renders and does not recompute.
+
+Two cleaning formats parse to the same `after_dedupe` / `dropped_dedupe` keys —
+the current single `after dedupe: N (merged M)` line and the older
+`after exact dedupe` + `after near dedupe` pair. Add a funnel line to the
+cleaning writer and add its label to `_FUNNEL_KEYS` in the same change.
+
+Parsing degrades, never raises: a truncated report, a missing `## Cleaning`
+half, a zero-byte file and an unknown section all yield a partial record plus a
+`parse_notes` entry. `SourceStatus.SKIPPED` is representable ahead of a writer
+for it, and is excluded from every median and every alarm — a cadence skip is
+not a failure. A zero-row lane is an alarm only when it recorded no error and
+its own median is above zero.
+
+New-`job_id` counts are not in the report, so the digest cannot show them.
