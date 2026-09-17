@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import gettext
 import re
 import unicodedata
@@ -53,7 +54,8 @@ def _fold(s: str) -> str:
     ).lower().strip()
 
 
-@dataclass
+# frozen: instances are returned by reference out of a cached parse_location.
+@dataclass(frozen=True)
 class LocationParse:
     country: str
     state: str
@@ -628,6 +630,7 @@ def _mine_segment_signals(segment: str):
     return countries, states, cities
 
 
+@functools.lru_cache(maxsize=50_000)
 def parse_location(raw: str) -> LocationParse:
     if not raw:
         return LocationParse("", "", "", False)

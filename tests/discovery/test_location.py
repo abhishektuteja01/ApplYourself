@@ -681,3 +681,30 @@ def test_curated_city_name_aliases_resolve_the_local_or_common_spelling(raw, cou
 ])
 def test_native_language_country_names_resolve_via_pycountrys_own_locale_data(raw, country):
     assert parse_location(raw).country == country
+
+
+# --- lru_cache on parse_location (D4.4) ---
+
+def test_cache_is_transparent_first_call_equals_cached_call():
+    parse_location.cache_clear()
+    cold = parse_location("Austin, TX")
+    warm = parse_location("Austin, TX")
+    assert warm == cold
+    assert parse_location.cache_info().hits == 1
+
+    parse_location.cache_clear()
+    recomputed = parse_location("Austin, TX")
+    assert recomputed == cold
+
+
+def test_a_primed_cache_entry_does_not_survive_into_the_next_test():
+    # Pairs with the test below: primes the cache under the real tables, so a
+    # missing conftest cache_clear would serve this stale answer there.
+    assert parse_location("Germany").country == "Germany"
+
+
+def test_monkeypatched_country_table_is_honoured(monkeypatch):
+    from src.discovery import location
+
+    monkeypatch.setitem(location.COUNTRY_NAMES, "germany", "Zzyzxland")
+    assert parse_location("Germany").country == "Zzyzxland"
