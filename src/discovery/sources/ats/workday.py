@@ -20,8 +20,9 @@ few dozen under `searchText="AI Engineer"`, at every offset, not just page
 paginating every posting a tenant has. This trades recall (a role Workday's
 search does not surface under any configured term is never seen, even if its
 title would classify) for a page count small enough to be affordable across
-90+ tenants; `classify_vertical_from_title` still runs on every result as the
-authoritative filter, since search hits are not assumed relevant.
+90+ tenants; `classify_vertical_from_title` plus cleaning's title gate
+(`gate.passing_titles`) still run on every result as the authoritative filter,
+since search hits are not assumed relevant.
 
 `search_terms()` scopes to the default vertical's first configured term only
 (sourced from `profile/verticals.yaml`, never hardcoded — R7's
@@ -58,6 +59,7 @@ import time
 from datetime import date, timedelta
 
 from src.discovery import cleaning
+from src.discovery import gate
 from src.discovery import universe
 from src.discovery.crawl_cursor import load_cursor, save_cursor
 from src.discovery.htmlutil import html_to_text
@@ -300,6 +302,10 @@ class WorkdaySource(Source):
                 # exists for.
                 next_frontier = frontier
                 pages_read = 0
+                # Per (company, term) — `shape_errors` is counted per term, so
+                # counting attempts per company puts the escalation ratio above
+                # 1.0 as soon as there is more than one term.
+                list_attempts += 1
                 try:
                     for offset in offsets:
                         if ctx.deadline_reached():
@@ -356,7 +362,6 @@ class WorkdaySource(Source):
                         f"{type(e).__name__}: {e}")
                     break
 
-            list_attempts += 1
             if fatal is not None:
                 universe.update_health(self.name, c.slug, success=False)
                 if c.priority or fatal.status != 404:
@@ -366,6 +371,16 @@ class WorkdaySource(Source):
                 completed += 1
                 continue
             _escalate_if_systemic(shape_errors, list_attempts, "list")
+
+            # Cleaning's title gate, run before the paced detail fetch rather
+            # than hours later: a survivor it drops is one whose detail fetch
+            # would have been thrown away.
+            verdicts = gate.passing_titles(
+                [(item.get("title") or "", vertical)
+                 for vertical, item in survivors.values()],
+                ctx.verticals, self.name)
+            survivors = {path: v for (path, v), ok
+                         in zip(list(survivors.items()), verdicts) if ok}
 
             c_kept = 0
             for path, (vertical, item) in survivors.items():
@@ -396,7 +411,7 @@ class WorkdaySource(Source):
             ok += 1
             kept += c_kept
             completed += 1
-            universe.update_health(self.name, c.slug, success=True, rows=c_fetched)
+            universe.update_health(self.name, c.slug, success=True, rows=c_kept)
             if c.priority:
                 report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
 

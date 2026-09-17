@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from datetime import date
 from src.discovery.htmlutil import html_to_text
+from src import verticals as verticals_module
 from src.discovery import universe
 from src.discovery.universe import UniverseCompany
 # fetch_json and the pacing sleep now live in the shared base, so that is where
@@ -33,10 +34,18 @@ class MockConfigSources:
     pacing_seconds = 0
 
 class MockContext:
+    """Mirrors orchestrator.Context, including `.verticals` — the injected
+    synthetic fixture (conftest's autouse fixture) is what the title gate
+    reads, same as production."""
     class Config:
         sources = {"greenhouse": MockConfigSources, "lever": MockConfigSources, "ashby": MockConfigSources}
     config = Config
     deadline_ts = 0.0
+
+    @property
+    def verticals(self):
+        return verticals_module.get_config()
+
     def deadline_reached(self): return False
 
 def test_greenhouse_rows_shape(monkeypatch):
@@ -153,6 +162,46 @@ def test_scrape_boards_isolates_per_company_failures(monkeypatch):
     assert len(res.errors) == 1
     assert "Broken Co" in res.errors[0]
     assert len(res.rows) == 1
+
+def _two_job_board(n_off_lane=0):
+    """One gate-passing title, one that classifies and then trips a
+    title_exclude_term, optionally one that classifies as nothing at all."""
+    jobs = [
+        {"title": "Widget Assembly Consultant", "absolute_url": "https://x/1",
+         "content": "a" * 250},
+        {"title": "Senior Widget Consultant", "absolute_url": "https://x/2",
+         "content": "a" * 250},
+    ]
+    jobs += [{"title": "Definitely Not A Match Zzz", "absolute_url": "https://x/3",
+              "content": "a" * 250}] * n_off_lane
+    return {"jobs": jobs}
+
+
+def test_a_gate_failing_title_never_reaches_the_shard(monkeypatch):
+    """Cleaning's `apply_title_exclusion` runs here too, not only hours later:
+    no HTTP saved on a single-call board, but the raw shard stays ~5x smaller."""
+    monkeypatch.setattr(universe, "load",
+                        lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board())
+
+    rows = GreenhouseSource().fetch(MockContext()).rows
+    assert [r["title"] for r in rows] == ["Widget Assembly Consultant"]
+
+
+def test_health_records_the_kept_count_not_the_fetched_count(monkeypatch):
+    """`universe.load` sorts by `last_yield`, so it has to mean "postings
+    relevant to this profile", not "postings on the board"."""
+    monkeypatch.setattr(universe, "load",
+                        lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board(n_off_lane=1))
+    recorded = []
+    monkeypatch.setattr(universe, "update_health",
+                        lambda ats, slug, success, rows=0: recorded.append((success, rows)))
+
+    res = GreenhouseSource().fetch(MockContext())
+    assert len(res.rows) == 1
+    assert recorded == [(True, 1)]
+
 
 class TestMalformedPayloadStaysPerCompany:
     """fetch_json returns whatever a 200 decodes to. Before the row parse moved

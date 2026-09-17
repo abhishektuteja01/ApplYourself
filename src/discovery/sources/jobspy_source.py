@@ -11,7 +11,7 @@ from jobspy.model import Country, DescriptionFormat, ScraperInput, Site
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.discovery.cleaning import apply_title_exclusion
+from src.discovery.gate import gate_passing_urls
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
 
@@ -182,7 +182,7 @@ class JobSpySource(Source):
         A URL found under two verticals keeps both rows and both get the same
         backfill, so what lands in the shard is row-for-row what an inline
         fetch would have produced."""
-        wanted = _gate_passing_urls(rows, ctx, self.name)
+        wanted = gate_passing_urls(rows, ctx, self.name)
         by_url: dict[str, list[dict]] = defaultdict(list)
         for row in rows:
             if row["job_url"] in wanted:
@@ -246,22 +246,6 @@ class JobSpySource(Source):
             lines.append("**DEADLINE REACHED** during detail fetch — "
                          "remaining rows keep search-card fields only")
         return lines
-
-
-def _gate_passing_urls(rows, ctx, source_name: str) -> set[str]:
-    """job_urls whose row passes the per-vertical title gate.
-
-    The gate is cleaning's own `apply_title_exclusion`, which runs at cleaning
-    step 0 — before the <200-char check — so a URL skipped here belongs to a
-    row cleaning was going to drop on its title regardless of description.
-    Regex over titles, no LLM: R7 holds."""
-    frame = pd.DataFrame([
-        {"title": row["title"], "vertical": row["vertical"],
-         "job_url": row["job_url"], "source": source_name}
-        for row in rows
-    ])
-    kept, _ = apply_title_exclusion(frame, ctx.verticals)
-    return {url for url in kept["job_url"] if url}
 
 
 class LinkedinSource(JobSpySource):

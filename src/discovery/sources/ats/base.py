@@ -6,6 +6,7 @@ from __future__ import annotations
 import time
 
 from src.discovery import cleaning
+from src.discovery import gate
 from src.discovery import universe
 from src.ats_http import CareersError, fetch_json
 from src.discovery.sources.base import Source, SourceResult
@@ -107,19 +108,28 @@ class AtsBoardSource(Source):
                 continue
 
             c_fetched = 0
-            c_kept = 0
+            classified: list[dict] = []
             for row in company_rows:
                 c_fetched += 1
                 vertical = cleaning.classify_vertical_from_title(row["title"])
                 if not vertical:
                     continue
-                c_kept += 1
                 row["vertical"] = vertical
-                rows.append(row)
+                classified.append(row)
+
+            # Cleaning's stricter title gate, run here rather than hours later.
+            # No HTTP saved on a single-call board — it keeps the raw shard to
+            # the rows that survive cleaning.
+            verdicts = gate.passing_titles(
+                [(r["title"], r["vertical"]) for r in classified],
+                ctx.verticals, self.name)
+            company_kept = [r for r, ok_ in zip(classified, verdicts) if ok_]
+            c_kept = len(company_kept)
+            rows.extend(company_kept)
 
             ok += 1
             kept += c_kept
-            universe.update_health(self.name, c.slug, success=True, rows=c_fetched)
+            universe.update_health(self.name, c.slug, success=True, rows=c_kept)
 
             if c.priority:
                 report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
