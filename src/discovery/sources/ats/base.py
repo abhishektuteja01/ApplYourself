@@ -7,6 +7,7 @@ import time
 
 from src.discovery import cleaning
 from src.discovery.config import pacing_floor
+from src.discovery.crawl_cursor import load_cursor, save_cursor
 from src.discovery import gate
 from src.discovery import universe
 from src.ats_http import CareersError, fetch_json
@@ -41,7 +42,8 @@ def job_items(payload, key: str) -> list[dict]:
 
 
 class AtsBoardSource(Source):
-    """One paced pass over `universe.load(self.name)`."""
+    """One paced pass over tonight's slice of `universe.load(self.name)`:
+    every hot board plus one rotating seventh of the cold tail."""
 
     def board_url(self, slug: str) -> str:
         raise NotImplementedError
@@ -49,10 +51,29 @@ class AtsBoardSource(Source):
     def parse_rows(self, payload, company: str) -> list[dict]:
         raise NotImplementedError
 
+    @staticmethod
+    def _save_rotation(cursor, selection, completed: int) -> None:
+        """Resume the cold rotation after the last cold board reached.
+
+        The hot head is polled every run and is subtracted out, matching
+        `workday.py`: counting it would advance the cursor past cold boards
+        this run never touched.
+        """
+        cursor.advance(selection.cold, max(0, completed - len(selection.hot)),
+                       key=lambda c: c.slug, attr="cold_slug")
+        save_cursor(cursor)
+
     def fetch(self, ctx) -> SourceResult:
         pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
-        companies = universe.load(self.name)
-        ledger = universe.HealthLedger(self.name, (c.slug for c in companies))
+        universe_companies = universe.load(self.name)
+        # The *full* universe, not tonight's slice: the ledger prunes every
+        # slug it is not told about, so handing it the slice would delete the
+        # health of every cold board this run happens not to visit.
+        ledger = universe.HealthLedger(self.name, (c.slug for c in universe_companies))
+
+        cursor = load_cursor(self.name)
+        selection = universe.select_for_run(universe_companies, cursor)
+        companies = selection.to_poll
 
         rows: list[dict] = []
         errors: list[str] = []
@@ -64,11 +85,15 @@ class AtsBoardSource(Source):
         err_other = 0
         shape_errors = 0
 
+        completed = 0
         for i, c in enumerate(companies):
             if ctx.deadline_reached():
-                # A truncated run must not lose the health it learned.
+                # A truncated run must not lose the health it learned, or the
+                # cold rotation it got through.
+                self._save_rotation(cursor, selection, completed)
                 ledger.flush()
                 break
+            completed += 1
 
             if i > 0:
                 time.sleep(pacing)
@@ -134,9 +159,16 @@ class AtsBoardSource(Source):
             if c.priority:
                 report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
 
+        else:
+            self._save_rotation(cursor, selection, completed)
         ledger.flush()
 
-        summary = (f"Companies polled: {polled} | OK: {ok} | 404: {err_404} "
+        # The universe size is in the line because `polled` is now a slice of
+        # it, and a run report that only showed the slice would read like the
+        # crawl had collapsed.
+        summary = (f"Companies polled: {polled} of {len(universe_companies)} "
+                   f"({len(selection.hot)} hot, {len(companies) - len(selection.hot)} "
+                   f"of {len(selection.cold)} cold) | OK: {ok} | 404: {err_404} "
                    f"| Err: {err_other} | Rows kept: {kept}")
         report_summary = [summary, ""]
         if report_lines:

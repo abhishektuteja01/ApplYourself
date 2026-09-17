@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import yaml
 import pandas as pd
 import csv
@@ -23,7 +23,19 @@ CSV_DIR = REPO_ROOT / "data" / "universe"
 HEALTH_DIR = REPO_ROOT / "jobs"
 _SCHEMA_VERSION = 1
 
-HEALTH_COLUMNS = ["ats", "slug", "consecutive_404s", "last_ok", "last_yield", "pruned_at"]
+# `last_kept_at` is the hot/cold split's whole input: a board that kept a row
+# recently is worth polling every run, one that has not is worth a seventh of
+# one. Distinct from `last_ok`, which only says the board answered, and from
+# `last_yield`, which is overwritten to 0 by the next empty poll and so cannot
+# say when a board last produced anything.
+HEALTH_COLUMNS = ["ats", "slug", "consecutive_404s", "last_ok", "last_yield",
+                  "pruned_at", "last_kept_at"]
+# A board counts as hot for this long after the last row it kept.
+HOT_WINDOW_DAYS = 30
+# The cold tail is polled a slice at a time: full coverage every this many runs.
+COLD_ROTATION_RUNS = 7
+_NEW_HEALTH_ROW = {"consecutive_404s": 0, "last_ok": pd.NaT, "last_yield": 0,
+                   "pruned_at": pd.NaT, "last_kept_at": pd.NaT}
 
 
 def health_path(ats: str):
@@ -35,6 +47,10 @@ class UniverseCompany:
     ats: str
     slug: str
     priority: bool = False
+    last_kept_at: object = None
+    """When this board last kept a row, from the health ledger. `None` for a
+    board never polled, or one polled only before the column existed -- both
+    read as cold, which costs a board one rotation and nothing more."""
 
 class HealthLedger:
     """One ATS lane's health ledger, accumulated in memory and written once.
@@ -70,7 +86,16 @@ class HealthLedger:
 
         path = health_path(self.ats)
         if path.exists():
-            df = pd.read_parquet(path)
+            # Reindexed, because a ledger written before a column existed is
+            # still on disk and every read below addresses columns by name.
+            df = pd.read_parquet(path).reindex(columns=HEALTH_COLUMNS)
+            # A column the file predates arrives all-NaN and typed float64.
+            # The counters would read NaN into `+ 1`; the date columns would
+            # reject a Timestamp assignment as an incompatible dtype.
+            for col in ("consecutive_404s", "last_yield"):
+                df[col] = df[col].fillna(0)
+            for col in ("last_ok", "pruned_at", "last_kept_at"):
+                df[col] = pd.to_datetime(df[col], errors="coerce")
         elif self._marks:
             df = pd.DataFrame(columns=HEALTH_COLUMNS)
         else:
@@ -85,10 +110,7 @@ class HealthLedger:
         new_rows = []
         for slug in self._marks:
             if not ((df["ats"] == self.ats) & (df["slug"] == slug)).any():
-                new_rows.append({
-                    "ats": self.ats, "slug": slug, "consecutive_404s": 0,
-                    "last_ok": pd.NaT, "last_yield": 0, "pruned_at": pd.NaT,
-                })
+                new_rows.append({"ats": self.ats, "slug": slug, **_NEW_HEALTH_ROW})
         if new_rows:
             # Concatenating onto an all-empty frame is deprecated in pandas and
             # errors under filterwarnings.
@@ -102,6 +124,10 @@ class HealthLedger:
                 df.at[idx, "pruned_at"] = pd.NaT
                 df.at[idx, "last_ok"] = today
                 df.at[idx, "last_yield"] = rows
+                if rows:
+                    # Only a kept row moves this. An answering board with
+                    # nothing for us is exactly what the cold tail is for.
+                    df.at[idx, "last_kept_at"] = today
             else:
                 c = df.at[idx, "consecutive_404s"] + 1
                 df.at[idx, "consecutive_404s"] = c
@@ -183,9 +209,13 @@ def load(ats: str) -> list[UniverseCompany]:
             # mis-split migration writing foreign rows into a lane's ledger.
             df_ats = df[df["ats"] == ats]
             for _, row in df_ats.iterrows():
+                # .get, not [...]: a ledger written before the column existed
+                # is still on disk and is read every night until it is rewritten.
+                last_kept = row.get("last_kept_at")
                 health_dict[row["slug"]] = {
                     "last_yield": row["last_yield"] if pd.notna(row["last_yield"]) else 0,
-                    "pruned_at": row["pruned_at"] if pd.notna(row["pruned_at"]) else None
+                    "pruned_at": row["pruned_at"] if pd.notna(row["pruned_at"]) else None,
+                    "last_kept_at": last_kept if pd.notna(last_kept) else None,
                 }
         except (OSError, ValueError, KeyError) as e:
             log.warning("universe: error reading health ledger: %s", e)
@@ -197,7 +227,7 @@ def load(ats: str) -> list[UniverseCompany]:
         if pd.notna(pruned_at):
             if (today - pruned_at) < timedelta(days=14):
                 continue  # skip, it's pruned and not old enough to retry
-        valid_companies.append(co)
+        valid_companies.append(replace(co, last_kept_at=h.get("last_kept_at")))
 
     # Priority sort: watchlist (priority=True), then last_yield > 0, then rest
     def sort_key(c: UniverseCompany):
@@ -207,3 +237,50 @@ def load(ats: str) -> list[UniverseCompany]:
 
     valid_companies.sort(key=sort_key, reverse=True)
     return valid_companies
+
+
+@dataclass(frozen=True)
+class RunSelection:
+    """What one run polls, and the cold list its cursor advances over."""
+
+    to_poll: list
+    hot: list
+    cold: list
+
+
+def select_for_run(companies, cursor, today=None,
+                   rotation_runs: int = COLD_ROTATION_RUNS) -> RunSelection:
+    """Split `companies` into the boards worth polling tonight.
+
+    98% of polled boards never contribute a row to `clean.parquet`, and board
+    novelty is 2-3% a night, so polling all of them every night is almost all
+    waste. Hot boards -- watchlist entries, plus anything that kept a row in
+    the last `HOT_WINDOW_DAYS` -- are polled every run. The cold remainder is
+    polled one rotating slice at a time, so it is still covered in full every
+    `rotation_runs` runs.
+
+    Watchlist companies stay in the fixed head and never rotate, matching
+    `workday.py`. The caller keeps the *full* list for its `HealthLedger`:
+    handing the ledger this slice would prune every unvisited board's health
+    as an orphan.
+    """
+    companies = list(companies)
+    if today is None:
+        today = pd.Timestamp.today().normalize()
+    cutoff = today - timedelta(days=HOT_WINDOW_DAYS)
+
+    def is_hot(c) -> bool:
+        if c.priority:
+            return True
+        return c.last_kept_at is not None and pd.Timestamp(c.last_kept_at) >= cutoff
+
+    hot = [c for c in companies if is_hot(c)]
+    cold = [c for c in companies if not is_hot(c)]
+    if not cold:
+        return RunSelection(to_poll=hot, hot=hot, cold=[])
+
+    # Round up, so a cold list shorter than `rotation_runs` still advances by
+    # one board a run rather than by none.
+    slice_size = -(-len(cold) // max(1, rotation_runs))
+    rotated = cursor.rotate(cold, key=lambda c: c.slug, attr="cold_slug")
+    return RunSelection(to_poll=hot + rotated[:slice_size], hot=hot, cold=rotated)

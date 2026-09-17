@@ -3,8 +3,19 @@ import requests
 import pandas as pd
 from datetime import date
 from src import verticals as verticals_module
+
+_HOT = pd.Timestamp.today().normalize()
 from src.discovery import universe
-from src.discovery.universe import UniverseCompany
+from src.discovery.universe import UniverseCompany as _UniverseCompany
+
+
+def UniverseCompany(name, ats, slug, priority=False, last_kept_at=_HOT):
+    """Hot by default. These tests exercise the shared fetch loop, not the
+    hot/cold split — a board with no health is cold, and a two-board cold
+    universe rotates one board a run, so the second would never be polled.
+    The split itself is tested in test_universe.py."""
+    return _UniverseCompany(name, ats, slug, priority, last_kept_at)
+
 # fetch_json and the pacing sleep now live in the shared base, so that is where
 # the seam is patched.
 from src.discovery.sources.ats import base
@@ -458,3 +469,69 @@ class TestRegistryIsApplyable:
             "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com")
         assert registry.ATS_SOURCE_NAMES == (
             "greenhouse", "lever", "ashby", "workday")
+
+
+def test_the_ledger_sees_the_whole_universe_not_tonights_slice(monkeypatch, tmp_path):
+    """The trap the split introduces: HealthLedger.flush prunes every slug it
+    was not told about, so handing it the polled slice would delete the health
+    of every cold board this run happens not to visit."""
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+
+    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]
+    monkeypatch.setattr(universe, "load", lambda ats: list(cold))
+
+    # Seed health for every cold board, as a run before the split would have.
+    seeded = universe.HealthLedger("greenhouse", [c.slug for c in cold])
+    for c in cold:
+        seeded.mark_ok(c.slug, 0)
+    seeded.flush()
+
+    monkeypatch.setattr(http.requests, "get",
+                        lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
+    GreenhouseSource().fetch(MockContext())
+
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert len(df) == 14, "an unvisited cold board lost its health row"
+
+
+def test_the_cold_rotation_advances_across_runs(monkeypatch, tmp_path):
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+
+    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]
+    monkeypatch.setattr(universe, "load", lambda ats: list(cold))
+
+    polled = []
+
+    def fake_get(url, timeout=None, headers=None):
+        polled.append(url)
+        return _JsonResponse({"jobs": []})
+
+    monkeypatch.setattr(http.requests, "get", fake_get)
+
+    GreenhouseSource().fetch(MockContext())
+    first = list(polled)
+    polled.clear()
+    GreenhouseSource().fetch(MockContext())
+
+    assert len(first) == 2 and len(polled) == 2
+    assert not set(first) & set(polled)
+
+
+def test_the_summary_names_the_universe_not_just_the_slice(monkeypatch, tmp_path):
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    monkeypatch.setattr(universe, "load", lambda ats: (
+        [UniverseCompany("Hot Co", "greenhouse", "hot")]
+        + [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]))
+    monkeypatch.setattr(http.requests, "get",
+                        lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
+
+    res = GreenhouseSource().fetch(MockContext())
+
+    assert res.report_lines[0].startswith(
+        "Companies polled: 3 of 15 (1 hot, 2 of 14 cold)")

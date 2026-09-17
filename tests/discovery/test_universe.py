@@ -264,3 +264,135 @@ def test_universe_empty_name_or_slug_skipped(tmp_path, monkeypatch, caplog):
     assert len(res) == 1
     assert res[0].slug == "slug3"
     assert "empty name or slug" in caplog.text.lower()
+
+
+# --- the hot/cold split ----------------------------------------------------
+
+TODAY = pd.Timestamp("2026-09-16")
+
+
+def _co(slug, *, priority=False, kept_days_ago=None):
+    return universe.UniverseCompany(
+        name=slug.title(), ats="greenhouse", slug=slug, priority=priority,
+        last_kept_at=None if kept_days_ago is None else TODAY - timedelta(days=kept_days_ago))
+
+
+def _cursor():
+    from src.discovery.crawl_cursor import CrawlCursor
+
+    return CrawlCursor(ats="greenhouse")
+
+
+def test_a_board_that_kept_a_row_recently_is_polled_every_run():
+    companies = [_co("fresh", kept_days_ago=1), _co("edge", kept_days_ago=30),
+                 _co("stale", kept_days_ago=31), _co("never")]
+
+    sel = universe.select_for_run(companies, _cursor(), today=TODAY)
+
+    # The window is inclusive: exactly HOT_WINDOW_DAYS ago still counts.
+    assert {c.slug for c in sel.hot} == {"fresh", "edge"}
+    assert {c.slug for c in sel.cold} == {"stale", "never"}
+
+
+def test_a_watchlist_company_is_pinned_hot_however_barren():
+    companies = [_co("watched", priority=True), _co("other")]
+
+    sel = universe.select_for_run(companies, _cursor(), today=TODAY)
+
+    assert [c.slug for c in sel.hot] == ["watched"]
+    assert "watched" in {c.slug for c in sel.to_poll}
+
+
+def test_the_cold_tail_is_fully_covered_in_one_rotation():
+    """The property that makes the slice safe: no board is starved, and none
+    is polled twice before every other has been polled once."""
+    companies = [_co(f"c{i:02d}") for i in range(70)]
+    cursor = _cursor()
+
+    visits = {}
+    for run in range(universe.COLD_ROTATION_RUNS):
+        sel = universe.select_for_run(companies, cursor, today=TODAY)
+        assert len(sel.to_poll) == 10
+        for c in sel.to_poll:
+            visits[c.slug] = visits.get(c.slug, 0) + 1
+        cursor.advance(sel.cold, len(sel.to_poll), key=lambda c: c.slug, attr="cold_slug")
+
+    assert len(visits) == 70
+    assert set(visits.values()) == {1}
+
+
+def test_a_cold_list_shorter_than_the_rotation_still_advances():
+    """Rounding down would give a slice of zero and poll nothing, forever."""
+    companies = [_co("a"), _co("b")]
+    cursor = _cursor()
+
+    first = universe.select_for_run(companies, cursor, today=TODAY)
+    assert len(first.to_poll) == 1
+    cursor.advance(first.cold, 1, key=lambda c: c.slug, attr="cold_slug")
+    second = universe.select_for_run(companies, cursor, today=TODAY)
+
+    assert {c.slug for c in first.to_poll} != {c.slug for c in second.to_poll}
+
+
+def test_the_two_rotations_do_not_seek_each_other():
+    """Workday rotates `next_slug` over its tenants and the board lanes rotate
+    `cold_slug` over their cold tail. One writer each."""
+    cursor = _cursor()
+    companies = [_co(f"c{i}") for i in range(14)]
+
+    cursor.next_slug = "c9"
+    sel = universe.select_for_run(companies, cursor, today=TODAY)
+    cursor.advance(sel.cold, len(sel.to_poll), key=lambda c: c.slug, attr="cold_slug")
+
+    assert cursor.next_slug == "c9"
+    assert cursor.cold_slug == "c2"
+
+
+def test_last_kept_at_survives_a_round_trip_through_the_ledger(tmp_path, monkeypatch):
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+    (tmp_path / "csv").mkdir()
+    (tmp_path / "csv" / "greenhouse.csv").write_text(
+        "name,slug\nKept Co,kept\nEmpty Co,empty\n", encoding="utf-8")
+
+    ledger = universe.HealthLedger("greenhouse", ["kept", "empty"])
+    ledger.mark_ok("kept", 3)
+    ledger.mark_ok("empty", 0)  # answered, but had nothing for us
+    ledger.flush()
+
+    by_slug = {c.slug: c for c in universe.load("greenhouse")}
+    assert by_slug["kept"].last_kept_at == pd.Timestamp.today().normalize()
+    assert by_slug["empty"].last_kept_at is None
+
+    sel = universe.select_for_run(by_slug.values(), _cursor())
+    assert [c.slug for c in sel.hot] == ["kept"]
+
+
+def test_a_ledger_written_before_last_kept_at_existed_still_loads(tmp_path, monkeypatch):
+    """The migration case: the parquet on disk predates the column, and the
+    read, the update and the split all have to tolerate that."""
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+    (tmp_path / "csv").mkdir()
+    (tmp_path / "csv" / "greenhouse.csv").write_text("name,slug\nOld Co,old\n", encoding="utf-8")
+
+    old_columns = ["ats", "slug", "consecutive_404s", "last_ok", "last_yield", "pruned_at"]
+    pd.DataFrame([{"ats": "greenhouse", "slug": "old", "consecutive_404s": 1,
+                   "last_ok": pd.Timestamp("2026-09-01"), "last_yield": 4,
+                   "pruned_at": pd.NaT}])[old_columns].to_parquet(
+        universe.health_path("greenhouse"))
+
+    loaded = universe.load("greenhouse")
+    assert [c.last_kept_at for c in loaded] == [None]
+
+    ledger = universe.HealthLedger("greenhouse", ["old"])
+    ledger.mark_ok("old", 2)
+    ledger.flush()
+
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert list(df.columns) == universe.HEALTH_COLUMNS
+    assert df.loc[0, "last_kept_at"] == pd.Timestamp.today().normalize()
+    # The strike counter came back as a number, not NaN + 1.
+    assert df.loc[0, "consecutive_404s"] == 0

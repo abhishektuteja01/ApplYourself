@@ -68,6 +68,25 @@ absent from the report entirely.
 Source blocks are key-checked against `_SOURCE_KEYS`: a misspelling is reported
 as `sources.<name>.<key>`, never silently ignored.
 
+## The board universe is split, not crawled whole
+
+`universe.load()` returns the full universe and is the only thing a
+`HealthLedger` may be built from — `flush` prunes every slug it was not told
+about, so handing it a slice deletes the health of every board that slice
+missed. `select_for_run` chooses tonight's boards from that list: hot (watchlist
+`priority`, or kept a row within `HOT_WINDOW_DAYS`) every run, plus one rotating
+`1/COLD_ROTATION_RUNS` slice of the cold remainder. The slice rounds up, or a
+cold list shorter than the divisor would never be polled at all.
+
+`last_kept_at` is what the split reads, and only a *kept* row moves it —
+`last_ok` says the board answered and `last_yield` is overwritten by the next
+empty poll. A ledger predating the column is reindexed on read, with the
+counters filled and the date columns re-typed.
+
+The two rotations have one writer each: `next_slug` is Workday's tenant
+rotation, `cold_slug` is the board lanes' cold slice. The hot head is subtracted
+before advancing, or the cursor skips cold boards the run never reached.
+
 ## Cleaning step order is the spec
 
 The numbered list in `cleaning.py`'s module docstring is normative; steps 0–3b are
