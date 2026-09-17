@@ -74,12 +74,15 @@ from src.apply.domscan import DomScanError
 from src.discovery.cleaning import normalize_company
 from src.ats_http import CareersError
 
-# One posting URL parser per ATS this module can submit to. `detect_ats` tries
-# each in turn — cheap, since they're pure regex matches, no network.
-# Both live in `src.apply.detect` so `shortlist.py` can ask "can /apply submit
-# to this?" without importing this CLI. Re-exported here because callers and
-# tests already reach for `apply_cli.detect_ats`.
-from src.apply.detect import _ATS_PARSERS, detect_ats, is_auto_submittable  # noqa: E402
+# Board identity comes from the shared table in
+# `discovery/sources/ats/registry.py`, wrapped by `src.apply.detect` so
+# `shortlist.py` can ask "can /apply submit to this?" without importing this
+# CLI. Re-exported here because callers and tests already reach for
+# `apply_cli.detect_ats`. `detect_ats` recognizes Workday too, so every
+# submission path gates on SUBMITTABLE_ATS, not on "not None".
+from src.apply.detect import (  # noqa: E402
+    _ATS_PARSERS, SUBMITTABLE_ATS, detect_ats, is_auto_submittable,
+)
 
 CLEAN = paths.CLEAN
 PIPELINE = paths.PIPELINE
@@ -132,7 +135,9 @@ def resolve_url(job_id: str, state: dict | None) -> str:
             f"{job_id} is in neither clean.parquet nor pipeline/{job_id}/state.yaml"
         )
     for _, url in candidates:
-        if detect_ats(url) is not None:
+        # submittable, not merely recognized: Workday parses cleanly and is
+        # still manual-apply.
+        if is_auto_submittable(url):
             return url
 
     seen = "; ".join(f"{where}: {url or '(empty)'}" for where, url in candidates)
@@ -377,7 +382,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     overrides = load_overrides(Path(answers_path), job_id) if answers_path else None
 
     ats = detect_ats(posting_url)
-    if ats is None:
+    if ats not in SUBMITTABLE_ATS:
         raise ApplyCliError(f"{posting_url}: not a Greenhouse, Lever or Ashby posting URL")
     if ats == "lever":
         board = lever.load_board(posting_url)

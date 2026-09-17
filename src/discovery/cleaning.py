@@ -70,7 +70,7 @@ CLEAN_COLUMNS: list[str] = [
 # Career-board sources: presence on the company's own board
 # this run IS the liveness signal, so the posted_date staleness cutoff does
 # not apply; a board row's pipeline lifetime is governed by the seen-ledger.
-from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES, ATS_URL_MARKERS
+from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES, is_applyable
 CAREER_SOURCES: tuple[str, ...] = tuple(ATS_SOURCE_NAMES)
 
 # "manual" joins them for a different reason: an inbox clip or a URL ingest is
@@ -349,8 +349,10 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 def _not_applyable(df: pd.DataFrame) -> pd.Series:
     """False for rows whose url leads to a board application form. Sorted
     ascending, so those rows win their group."""
-    url = df["url"].fillna("").astype(str) if "url" in df.columns else pd.Series("", index=df.index)
-    return ~url.str.contains("|".join(re.escape(m) for m in ATS_URL_MARKERS), case=False, regex=True)
+    if "url" not in df.columns:
+        return pd.Series(True, index=df.index)
+    url = df["url"].fillna("").astype(str)
+    return ~url.map(is_applyable)
 
 
 def exact_dedupe(df: pd.DataFrame) -> pd.DataFrame:

@@ -370,3 +370,91 @@ def test_deadline_break_still_flushes_the_health_ledger(monkeypatch):
     GreenhouseSource().fetch(CutAfterFirst())
     df = pd.read_parquet(universe.health_path("greenhouse"))
     assert list(df["slug"]) == ["acmeai"]
+
+
+# ---------------------------------------------------------------------
+# registry.py — the one board table discovery and src/apply both read
+# ---------------------------------------------------------------------
+
+from src.discovery.sources.ats import registry  # noqa: E402
+
+_UUID = "12345678-abcd-4bcd-8bcd-1234567890ab"
+
+
+class TestRegistryBoardSlug:
+    @pytest.mark.parametrize("url,slug", [
+        ("https://job-boards.greenhouse.io/acme/jobs/4567", "acme"),
+        ("https://boards.greenhouse.io/embed/job_app/acme/jobs/4567", "acme"),
+        ("https://boards.greenhouse.io/embed/job_app?for=acme&token=99", "acme"),
+        (f"https://jobs.lever.co/acme/{_UUID}", "acme"),
+        (f"https://jobs.ashbyhq.com/acme/{_UUID}", "acme"),
+        # Workday's tenant is the first host label, not a path segment.
+        ("https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US-CA/Eng_JR1", "acme"),
+        ("https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/AcmeCareers/jobs", "acme"),
+    ])
+    def test_slug(self, url, slug):
+        assert registry.board_slug(url) == slug
+
+    def test_non_board_url_has_no_slug(self):
+        assert registry.board_slug("https://www.linkedin.com/jobs/view/1") == ""
+        assert registry.board_slug("") == ""
+
+    def test_workday_pod_and_site_id(self):
+        hit = registry.parse_posting_url(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US-CA/Eng_JR1")
+        assert (hit.source, hit.slug, hit.pod, hit.site_id, hit.posting_id) == \
+            ("workday", "acme", "wd5", "AcmeCareers", "Eng_JR1")
+
+
+class TestRegistryDetectSource:
+    def test_eu_lever_is_plain_lever(self):
+        # region never rides along in the source name
+        assert registry.detect_source(f"https://jobs.eu.lever.co/acme/{_UUID}") == "lever"
+        assert registry.parse_posting_url(
+            f"https://jobs.eu.lever.co/acme/{_UUID}").region == "eu"
+
+    def test_eu_greenhouse_hosts(self):
+        for host in ("boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"):
+            assert registry.detect_source(f"https://{host}/acme/jobs/1") == "greenhouse"
+
+    def test_gh_jid_on_an_arbitrary_careers_host(self):
+        assert registry.detect_source(
+            "https://careers.acme.com/jobs?gh_jid=8044460") == "greenhouse"
+
+    def test_two_different_gh_jids_are_unresolvable(self):
+        assert registry.detect_source(
+            "https://careers.acme.com/jobs?gh_jid=1&gh_jid=2") is None
+        # the same id twice is real and does resolve
+        assert registry.detect_source(
+            "https://careers.acme.com/jobs?gh_jid=1&gh_jid=1") == "greenhouse"
+
+    def test_workday_is_detected_but_not_submittable(self):
+        assert registry.detect_source(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US/X_JR1") == "workday"
+        assert "workday" not in registry.SUBMITTABLE_SOURCES
+        assert "workday" not in registry.DRIVER_NAMES
+
+    def test_aggregator_is_not_a_board(self):
+        assert registry.detect_source("https://www.linkedin.com/jobs/view/1") is None
+
+
+class TestRegistryIsApplyable:
+    def test_lookalike_host_is_not_a_board(self):
+        # substring-over-URL matching would call this Greenhouse
+        assert not registry.is_applyable("https://evilgreenhouse.io.example.com/acme/jobs/1")
+        assert not registry.is_applyable("https://example.com/?x=greenhouse.io")
+
+    def test_board_host_without_a_posting_id_still_counts(self):
+        assert registry.is_applyable("https://boards.greenhouse.io/acme")
+
+    def test_gh_jid_careers_page_counts(self):
+        assert registry.is_applyable("https://stripe.com/jobs/search?gh_jid=8044460")
+
+    def test_aggregator_does_not(self):
+        assert not registry.is_applyable("https://www.linkedin.com/jobs/view/1")
+
+    def test_markers_stay_exported_for_back_compat(self):
+        assert registry.ATS_URL_MARKERS == (
+            "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com")
+        assert registry.ATS_SOURCE_NAMES == (
+            "greenhouse", "lever", "ashby", "workday")

@@ -38,13 +38,12 @@ from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
 from src.ats_http import CareersError, fetch_text
+from src.discovery.sources.ats import registry as ats_registry
 
 FORM_ID = "application-form"
 
-_URL = re.compile(
-    r"^https?://jobs\.lever\.co/(?P<slug>[^/?#]+)/(?P<posting_id>[0-9a-f-]+)",
-    re.IGNORECASE,
-)
+# Shared board table: host variants and posting shape live in one place.
+_URL = ats_registry.get_source("lever").posting_url_re
 
 _INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
 _WS = re.compile(r"\s+")
@@ -58,6 +57,7 @@ class LeverScanError(DomScanError):
 class Posting:
     slug: str
     posting_id: str
+    region: str = ""   # "eu" for jobs.eu.lever.co; the form lives on that host
 
     @property
     def token(self) -> str:
@@ -67,7 +67,8 @@ class Posting:
 
     @property
     def form_url(self) -> str:
-        return f"https://jobs.lever.co/{self.slug}/{self.posting_id}/apply"
+        host = "jobs.eu.lever.co" if self.region == "eu" else "jobs.lever.co"
+        return f"https://{host}/{self.slug}/{self.posting_id}/apply"
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,8 @@ def parse_posting(url: str) -> Posting:
         if "lever.co" in (urlparse(text).hostname or ""):
             raise ApplyUrlError(f"Lever URL with no posting id: {text}")
         raise ApplyUrlError(f"not a Lever posting URL: {text}")
-    return Posting(slug=match.group("slug"), posting_id=match.group("posting_id"))
+    return Posting(slug=match.group("slug"), posting_id=match.group("posting_id"),
+                   region=(match.group("region") or "").lower())
 
 
 def _text(el) -> str:

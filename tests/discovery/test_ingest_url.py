@@ -57,6 +57,16 @@ class TestParseAtsUrl:
         assert parse_ats_url(f"https://jobs.ashbyhq.com/acme/{uuid}") == \
             ("ashby", "acme", uuid)
 
+    def test_greenhouse_eu_hosts(self):
+        # .eu boards are applyable; ingest used to reject them outright
+        for host in ("boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"):
+            assert parse_ats_url(f"https://{host}/acme/jobs/4567") == \
+                ("greenhouse", "acme", "4567")
+
+    def test_workday_is_not_ingestable(self):
+        assert parse_ats_url(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US/X_JR1") is None
+
     def test_unrecognized(self):
         assert parse_ats_url("https://careers.example.com/job/42") is None
         assert parse_ats_url("https://jobs.lever.co/acme") is None

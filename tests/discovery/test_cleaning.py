@@ -418,6 +418,47 @@ def test_exact_dedupe_recognises_each_board_host(applyable):
     assert exact_dedupe(df)["url"].iloc[0] == applyable
 
 
+def test_exact_dedupe_gh_jid_careers_page_beats_an_aggregator():
+    # A Greenhouse posting on the company's own careers host: no board
+    # hostname, but ?gh_jid= makes it auto-submittable all the same.
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator " * 80, "url": "https://www.linkedin.com/jobs/view/1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board " * 5, "url": "https://acme.com/jobs/search?gh_jid=8044460"},
+    ])
+    assert exact_dedupe(df)["url"].iloc[0] == "https://acme.com/jobs/search?gh_jid=8044460"
+
+
+@pytest.mark.parametrize("applyable", [
+    "https://boards.eu.greenhouse.io/acme/jobs/1",
+    "https://job-boards.eu.greenhouse.io/acme/jobs/1",
+    "https://jobs.eu.lever.co/acme/12345678-abcd-4bcd-8bcd-1234567890ab",
+])
+def test_exact_dedupe_recognises_eu_board_hosts(applyable):
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator " * 80, "url": "https://www.indeed.com/viewjob?jk=1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board " * 5, "url": applyable},
+    ])
+    assert exact_dedupe(df)["url"].iloc[0] == applyable
+
+
+def test_exact_dedupe_does_not_match_a_lookalike_host():
+    # The old substring test read "greenhouse.io" anywhere in the URL, so a
+    # spoofed host outranked the real aggregator row.
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "spoof " * 5,
+         "url": "https://evilgreenhouse.io.example.com/acme/jobs/1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "longer aggregator body " * 60,
+         "url": "https://www.linkedin.com/jobs/view/1"},
+    ])
+    assert exact_dedupe(df)["url"].iloc[0] == "https://www.linkedin.com/jobs/view/1"
+
+
 def test_exact_dedupe_falls_back_to_jd_len_when_neither_is_applyable():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",

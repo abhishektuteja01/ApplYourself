@@ -25,7 +25,6 @@ import logging
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 import requests
@@ -35,7 +34,7 @@ from src.discovery import cleaning
 from src.discovery import htmlutil
 from src.discovery.config import load_config
 from src import ats_http as http
-from src.discovery.sources.ats import greenhouse, lever, ashby
+from src.discovery.sources.ats import greenhouse, lever, ashby, registry
 from src.discovery.schema import make_row, naive_datetime, validate_frame
 from src.parquet_io import write_parquet
 from src.discovery.orchestrator import (
@@ -47,12 +46,6 @@ from src.discovery.orchestrator import (
 )
 
 log = logging.getLogger(__name__)
-
-_UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-
-_GH_PATH_RE = re.compile(r"^/(?:embed/job_app/)?([^/]+)/jobs/(\d+)")
-_LEVER_PATH_RE = re.compile(r"^/([^/]+)/(" + _UUID + r")")
-_ASHBY_PATH_RE = re.compile(r"^/([^/]+)/(" + _UUID + r")")
 
 
 class IngestError(Exception):
@@ -78,37 +71,17 @@ def _slug_to_name(slug: str) -> str:
 
 def parse_ats_url(url: str) -> tuple[str, str, str] | None:
     """Recognize a per-posting ATS URL. Returns (ats, board_slug, posting_id)
-    or None (generic URL)."""
-    try:
-        parts = urlparse(url)
-    except ValueError:
+    or None (generic URL). Board identity comes from the shared registry.
+
+    Lever's region rides along in the ats field ("lever:eu") so the fetch hits
+    the right API host; the row's `site` stays "lever" either way. Greenhouse's
+    .eu boards are served by the same boards-api host, so they carry no suffix.
+    """
+    hit = registry.parse_posting_url(url)
+    if hit is None or hit.source == "workday" or not (hit.slug and hit.posting_id):
         return None
-    host = (parts.hostname or "").lower()
-    path = parts.path or ""
-    if host in ("boards.greenhouse.io", "job-boards.greenhouse.io"):
-        m = _GH_PATH_RE.match(path)
-        if m:
-            return ("greenhouse", m.group(1), m.group(2))
-        # embed form: .../embed/job_app?for=<slug>&token=<id>
-        qs = parse_qs(parts.query)
-        slug, token = qs.get("for", [""])[0], qs.get("token", [""])[0]
-        if slug and token.isdigit():
-            return ("greenhouse", slug, token)
-        return None
-    if host in ("jobs.lever.co", "jobs.eu.lever.co"):
-        m = _LEVER_PATH_RE.match(path)
-        if m:
-            region = "eu." if host == "jobs.eu.lever.co" else ""
-            # region rides along in the ats field so the fetch hits the
-            # right API host; the row's `site` stays "lever" either way
-            return (f"lever{':eu' if region else ''}", m.group(1), m.group(2))
-        return None
-    if host == "jobs.ashbyhq.com":
-        m = _ASHBY_PATH_RE.match(path)
-        if m:
-            return ("ashby", m.group(1), m.group(2))
-        return None
-    return None
+    ats = "lever:eu" if hit.source == "lever" and hit.region == "eu" else hit.source
+    return (ats, hit.slug, hit.posting_id)
 
 
 # ---------------------------------------------------------------------

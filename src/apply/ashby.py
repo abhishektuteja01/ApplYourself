@@ -69,6 +69,7 @@ from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
 from src.ats_http import CareersError, fetch_json_post, fetch_text
+from src.discovery.sources.ats import registry as ats_registry
 
 log = logging.getLogger(__name__)
 
@@ -153,10 +154,7 @@ _EDUCATION_SUBFIELDS = {
 }
 _EDUCATION_SUBFIELD_ORDER = ("schoolName", "degree", "major", "startDate", "endDate")
 
-_URL = re.compile(
-    r"^https?://jobs\.ashbyhq\.com/(?P<slug>[^/?#]+)/(?P<job_id>[0-9a-f-]+)",
-    re.IGNORECASE,
-)
+_URL = ats_registry.get_source("ashby").posting_url_re
 
 _FIELD_ENTRY_PREFIX = re.compile(r"^_fieldEntry_")
 _REQUIRED_PREFIX = re.compile(r"^_required_")
@@ -250,7 +248,7 @@ def parse_posting(url: str) -> Posting:
         if "ashbyhq.com" in (urlparse(text).hostname or ""):
             raise ApplyUrlError(f"Ashby URL with no job id: {text}")
         raise ApplyUrlError(f"not an Ashby posting URL: {text}")
-    return Posting(slug=match.group("slug"), job_id=match.group("job_id"))
+    return Posting(slug=match.group("slug"), job_id=match.group("posting_id"))
 
 
 def _classes(el) -> list[str]:

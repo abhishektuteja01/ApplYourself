@@ -24,17 +24,14 @@ from src.apply.domscan import FormScan, scan_form
 from src.apply.reconcile import Reconciled, reconcile
 from src.apply.schema import BoardSchema, fetch_questions
 from src.ats_http import CareersError, fetch_text
+from src.discovery.sources.ats import registry as ats_registry
 
 EMBED_URL = "https://boards.greenhouse.io/embed/job_app?token={token}"
 
-# job-boards.greenhouse.io/<slug>/jobs/<token> and the older boards.greenhouse.io
-# spelling, .eu included. The slug is captured for cross-checking only.
-_PATH_URL = re.compile(
-    r"^https?://(?:job-boards|boards)(?:\.eu)?\.greenhouse\.io/"
-    r"(?P<slug>[^/?#]+)/jobs/(?P<token>\d+)",
-    re.IGNORECASE,
-)
-_GREENHOUSE_HOST = re.compile(r"(?:^|\.)greenhouse\.io$", re.IGNORECASE)
+# Shared board table: host variants (.eu included) and posting shape live in
+# one place. The slug is captured for cross-checking only.
+_GH = ats_registry.get_source("greenhouse")
+_PATH_URL = _GH.posting_url_re
 # The slug as it appears in the rendered form's action. `&` arrives escaped.
 _FORM_ACTION = re.compile(
     r'<form[^>]*\baction="/embed/job_app\?for=(?P<slug>[^&"]+)&(?:amp;)?token=(?P<token>\d+)"',
@@ -85,14 +82,14 @@ def parse_posting(url: str) -> Posting:
 
     match = _PATH_URL.match(text)
     if match:
-        return Posting(token=match.group("token"), url_slug=match.group("slug"))
+        return Posting(token=match.group("posting_id"), url_slug=match.group("slug"))
 
     parsed = urlparse(text)
     query = parse_qs(parsed.query)
     # Duplicated params are real: one live row spells ?gh_jid=X&gh_jid=X.
     tokens = {t.strip() for t in query.get("gh_jid", []) if t.strip()}
     if not tokens:
-        if _GREENHOUSE_HOST.search(parsed.hostname or ""):
+        if _GH.matches_host((parsed.hostname or "").lower()):
             raise ApplyUrlError(f"Greenhouse URL with no job token: {text}")
         raise ApplyUrlError(f"not a Greenhouse posting URL: {text}")
     if len(tokens) > 1:

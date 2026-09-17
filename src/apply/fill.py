@@ -36,6 +36,7 @@ from src.apply.answers import Answers, resolve
 from src.apply.browser import USER_DATA_DIR, launch as _launch, require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.apply.reconcile import MergedField, MergedOption
+from src.discovery.sources.ats.registry import DRIVER_NAMES
 
 log = logging.getLogger(__name__)
 
@@ -1230,11 +1231,8 @@ class AshbyBrowserDriver(BrowserDriver):
             self.page.keyboard.press("Enter")
 
 
-_DRIVER_NAMES = {
-    "greenhouse": "BrowserDriver",
-    "lever": "LeverBrowserDriver",
-    "ashby": "AshbyBrowserDriver",
-}
+#: Board -> driver class name, from the shared board table.
+_DRIVER_NAMES = dict(DRIVER_NAMES)
 
 
 def has_driver(ats: str) -> bool:

@@ -2,9 +2,10 @@
 
 Read-only discovery, no submission (§12b). Workday roles are always
 manual-apply: nothing here is imported by `src/apply/`, and `registry.py`'s
-`ATS_URL_MARKERS` (which decides which URL survives dedupe, not which one
-`apply_cli.py` can submit to) is the only other place this source's boards
-are named outside this module.
+workday entry (`submittable=False`, no driver) is the only other place this
+source's boards are named outside this module. Its host suffix is still in
+the shared table, because that decides which URL survives dedupe — a human
+needs the real board URL, not an aggregator repost.
 
 Unlike Greenhouse/Lever/Ashby's single list call, Workday's list endpoint
 returns title/location/`postedOn` only — no description — and is paginated
