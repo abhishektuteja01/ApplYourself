@@ -13,10 +13,46 @@ REPO_ROOT = paths.REPO_ROOT
 DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "discovery.yaml"
 _SCHEMA_VERSION = 1
 
+# The loader's whole surface. A key outside these sets never applies, so it is
+# collected as an unknown key rather than ignored -- see DiscoveryConfig.validate.
+_TOP_LEVEL_KEYS = frozenset({
+    "schema_version", "deadline_hours", "location_allowlist", "sources",
+    "raw_retention_days", "board_max_age_days",
+})
+_ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
+
 @dataclass
 class SourceConfig:
     enabled: bool
     pacing_seconds: float
+
+def _continent_countries(continent: str) -> list[str]:
+    """Countries on `continent`, matched case- and whitespace-insensitively.
+    `CONTINENT_TO_COUNTRIES` is keyed by display name ("Europe"), so a raw
+    `.get()` made `continents: ["europe"]` a silent no-op -- which emptied the
+    allowlist and turned location filtering off entirely."""
+    from src.discovery import location
+
+    by_fold = {location._fold(k): v for k, v in location.CONTINENT_TO_COUNTRIES.items()}
+    return by_fold.get(location._fold(continent), [])
+
+
+def _subdivisions_for(state: str) -> list:
+    """Subdivisions a configured `states:` entry names, by full name first and
+    bare ISO 3166-2 code second. A bare code is not globally unique, so the
+    code branch applies `location._disambiguate_subdivisions`' conventional
+    tie-break: "CA" means California, not Burundi's Cayanza, because a job
+    posting written in English that abbreviates a subdivision to two letters
+    is using one of the countries that are conventionally written that way."""
+    from src.discovery import location
+
+    subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(state), [])
+    if subs:
+        return subs
+    subs = location.SUBDIVISIONS_BY_CODE.get(state.strip().upper(), [])
+    conventional = [s for s in subs if s.country_code in location._COMMONLY_ABBREVIATED_CC]
+    return conventional or subs
+
 
 @dataclass
 class LocationAllowlist:
@@ -37,7 +73,7 @@ class LocationAllowlist:
 
         result = {location.COUNTRY_NAMES.get(location._fold(c), c) for c in self.countries}
         for continent in self.continents:
-            result |= set(location.CONTINENT_TO_COUNTRIES.get(continent, []))
+            result |= set(_continent_countries(continent))
 
         if not result and self.states:
             # A states-only allowlist ("just TX") with no countries/continents
@@ -47,13 +83,39 @@ class LocationAllowlist:
             # unfiltered. Scope it to whichever countries the configured
             # states actually belong to.
             for s in self.states:
-                subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(s), [])
-                if not subs:
-                    subs = location.SUBDIVISIONS_BY_CODE.get(s.strip().upper(), [])
-                result |= {location.CC_TO_COUNTRY.get(sub.country_code, "") for sub in subs}
+                result |= {location.CC_TO_COUNTRY.get(sub.country_code, "")
+                           for sub in _subdivisions_for(s)}
             result.discard("")
 
         return result
+
+    def unresolved(self) -> list[str]:
+        """Configured entries that name nothing the parser can ever produce.
+        Each one is silent at runtime -- a typo'd country drops every row, a
+        typo'd continent disables filtering -- so they are reported, not
+        guessed at."""
+        from src.discovery import location
+
+        problems = []
+        for c in self.countries:
+            if location._fold(c) not in location.COUNTRY_NAMES:
+                problems.append(f"location_allowlist.countries: {c!r} is not a country name")
+        for c in self.continents:
+            if not _continent_countries(c):
+                names = ", ".join(sorted(location.CONTINENT_TO_COUNTRIES))
+                problems.append(
+                    f"location_allowlist.continents: {c!r} is not a continent (one of: {names})")
+        for s in self.states:
+            if not _subdivisions_for(s):
+                problems.append(
+                    f"location_allowlist.states: {s!r} is not a state/province name or code")
+        for city in self.cities:
+            if location._city_lookup(city) is None:
+                problems.append(f"location_allowlist.cities: {city!r} is not a known city")
+        return problems
+
+    def configured(self) -> bool:
+        return any((self.countries, self.states, self.cities, self.continents))
 
     def effective_states(self) -> set[str]:
         """`states` normalized to the 2-letter subdivision codes
@@ -94,6 +156,27 @@ class DiscoveryConfig:
     raw_retention_days: int = 16
     # Age cap for the staleness-exempt board sources (step 3). 0 = off.
     board_max_age_days: int = 0
+    # Keys the loader did not recognise, recorded rather than dropped so
+    # validate() can name them. A typo'd key is otherwise indistinguishable
+    # from a setting that silently never applied.
+    unknown_keys: list[str] = field(default_factory=list)
+
+    def validate(self) -> list[str]:
+        """Every problem with this config, in human-readable form. Empty list
+        means the config is usable. Reads what the user configured and reports
+        it back; it holds no opinion about what they *should* have configured."""
+        problems = [f"unknown config key: {k}" for k in self.unknown_keys]
+
+        allow = self.location_allowlist
+        if allow is not None:
+            problems.extend(allow.unresolved())
+            effective = (allow.effective_countries() | allow.effective_states()
+                         | {c for c in allow.cities if c.strip()})
+            if allow.configured() and not effective:
+                problems.append(
+                    "location_allowlist resolves to nothing: every scraped row would "
+                    "be dropped, or location filtering skipped entirely")
+        return problems
 
 def load_config(path: Path | None = None) -> DiscoveryConfig:
     try:
@@ -117,6 +200,12 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         raise ValueError("Config must be a dictionary")
 
     cfg = DiscoveryConfig()
+
+    cfg.unknown_keys = [k for k in data if k not in _TOP_LEVEL_KEYS]
+    if isinstance(data.get("location_allowlist"), dict):
+        cfg.unknown_keys += [f"location_allowlist.{k}"
+                             for k in data["location_allowlist"]
+                             if k not in _ALLOWLIST_KEYS]
 
     version = data.get("schema_version", _SCHEMA_VERSION)
     if version != _SCHEMA_VERSION:
@@ -150,3 +239,39 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         raise ValueError(f"{p}: board_max_age_days must be >= 0, got {cfg.board_max_age_days}")
 
     return cfg
+
+
+def main() -> int:
+    """`discovery-check` -- print what discovery.yaml actually resolves to and
+    every problem with it. The counterpart to `verticals-check`."""
+    try:
+        cfg = load_config()
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    allow = cfg.location_allowlist
+    if allow is not None:
+        def _fmt(values):
+            return ", ".join(sorted(values)) if values else "(any)"
+        print(f"countries: {_fmt(allow.effective_countries())}")
+        print(f"states:    {_fmt(allow.effective_states())}")
+        print(f"cities:    {_fmt(allow.cities)}")
+
+    enabled = [(n, s) for n, s in cfg.sources.items() if s.enabled]
+    print("sources:   " + (", ".join(f"{n} ({s.pacing_seconds:g}s)" for n, s in enabled)
+                           if enabled else "(none enabled)"))
+    print(f"deadline_hours: {cfg.deadline_hours:g}")
+
+    problems = cfg.validate()
+    if problems:
+        print("\nERROR: discovery config problems:")
+        for problem in problems:
+            print(f"  {problem}")
+        return 1
+    print("\nOK")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

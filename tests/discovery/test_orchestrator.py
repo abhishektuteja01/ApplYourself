@@ -306,9 +306,11 @@ def test_deadline_spent_before_the_lanes_start_skips_them(paths, monkeypatch):
     assert second.calls == 0
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**DEADLINE REACHED** before linkedin started" in report
-    # the inbox's shard is still banked; the lane's is not, so --resume retries it
-    assert len(list((paths / "jobs" / "raw").glob("*_manual.parquet"))) == 1
-    assert list((paths / "jobs" / "raw").glob("*_linkedin.parquet")) == []
+    # The inbox's rows are still banked, under the _partial name -- it finished
+    # its work but the clock was gone by then, which is the same signal the
+    # report prints. The lane wrote nothing, so --resume retries it either way.
+    assert len(list((paths / "jobs" / "raw").glob("*_manual_partial.parquet"))) == 1
+    assert list((paths / "jobs" / "raw").glob("*_linkedin*.parquet")) == []
 
 
 def test_deadline_spent_by_a_crashing_inbox_still_skips_the_lanes(paths, monkeypatch):
@@ -485,7 +487,9 @@ def test_a_truncated_lane_keeps_its_shard_and_is_marked_partial(paths, monkeypat
 
     main([])
 
-    assert len(list((paths / "jobs" / "raw").glob("*_linkedin.parquet"))) == 1
+    # Banked under the _partial name, which is what makes --resume retry it.
+    assert list((paths / "jobs" / "raw").glob("*_linkedin.parquet")) == []
+    assert len(list((paths / "jobs" / "raw").glob("*_linkedin_partial.parquet"))) == 1
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**DEADLINE REACHED** — partial shard" in report
 
@@ -695,3 +699,137 @@ def test_a_resumed_run_records_its_own_overrides(paths, monkeypatch):
     report = (paths / "jobs" / "runs" / f"{run_id}.md").read_text(encoding="utf-8")
     assert "# Run existing" in report
     assert "Run overrides: `--source indeed`" in report
+
+
+# ---------------------------------------------------------------------
+# Preflight (D0.1) and truncated-shard resume (D2.5)
+# ---------------------------------------------------------------------
+
+def test_a_missing_libpostal_exits_before_any_source_is_fetched(paths, monkeypatch):
+    """D0.1: the probe used to happen inside cleaning, in main's finally —
+    i.e. after a whole night of scraping."""
+    from src.discovery import location
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", _mock_config)
+    spy = _NamedSource("manual")
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [spy])
+    calls = _spy_cleaning(monkeypatch)
+    monkeypatch.setattr(location, "_get_parse_address",
+                        lambda: (_ for _ in ()).throw(RuntimeError(location._POSTAL_MISSING)))
+
+    with pytest.raises(SystemExit) as e:
+        main([])
+
+    assert e.value.code != 0
+    assert "libpostal is required" in str(e.value)
+    assert spy.calls == 0
+    assert calls == []
+
+
+def test_the_libpostal_probe_runs_even_with_deadline_hours_zero(paths, monkeypatch):
+    """Cleaning still runs in the kill-switch mode, so it still needs the parser."""
+    from src.discovery import location
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", _mock_config)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_NamedSource("manual")])
+    _spy_cleaning(monkeypatch)
+    monkeypatch.setattr(location, "_get_parse_address",
+                        lambda: (_ for _ in ()).throw(RuntimeError(location._POSTAL_MISSING)))
+
+    with pytest.raises(SystemExit):
+        main(["--deadline-hours", "0"])
+
+
+def test_an_invalid_allowlist_exits_before_any_source_is_fetched(paths, monkeypatch):
+    from src.discovery.config import LocationAllowlist
+
+    cfg = _mock_config()
+    cfg.location_allowlist = LocationAllowlist(countries=["Untied States"])
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
+    spy = _NamedSource("manual")
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [spy])
+    calls = _spy_cleaning(monkeypatch)
+
+    with pytest.raises(SystemExit) as e:
+        main([])
+
+    assert "Untied States" in str(e.value)
+    assert spy.calls == 0
+    assert calls == []
+
+
+def _truncate_after_submit(monkeypatch):
+    """Let one lane start, then report the deadline as blown, so it writes a
+    partial shard the way a real cut-short lane does."""
+    started = {"v": False}
+    real = orchestrator.Context.deadline_reached
+
+    def fake(self):
+        if not started["v"]:
+            started["v"] = True
+            return False
+        return real(self)
+
+    monkeypatch.setattr(orchestrator.Context, "deadline_reached", fake)
+
+
+def test_resume_retries_a_truncated_lane_and_skips_the_completed_ones(paths, monkeypatch):
+    """D2.5: a partial shard is a file, and `pending()` used to read any file
+    as 'this lane is done'."""
+    run_id = "2026-01-01_0000"
+    raw = paths / "jobs" / "raw"
+    raw.mkdir(parents=True)
+    # linkedin finished last run; indeed was cut short.
+    pd.DataFrame([{"site": "linkedin"}]).to_parquet(raw / f"{run_id}_linkedin.parquet")
+    pd.DataFrame([{"site": "indeed"}]).to_parquet(raw / f"{run_id}_indeed_partial.parquet")
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1, indeed=1))
+    done, cut = _NamedSource("linkedin"), _NamedSource("indeed")
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [done, cut])
+    _spy_cleaning(monkeypatch)
+
+    main(["--resume", run_id])
+
+    assert done.calls == 0
+    assert cut.calls == 1
+    # The retry completed, so the stale partial is gone and a full shard stands.
+    assert not (raw / f"{run_id}_indeed_partial.parquet").exists()
+    assert (raw / f"{run_id}_indeed.parquet").exists()
+
+
+def test_a_second_truncation_still_leaves_only_one_partial_shard(paths, monkeypatch):
+    run_id = "2026-01-01_0000"
+    raw = paths / "jobs" / "raw"
+    raw.mkdir(parents=True)
+    pd.DataFrame([{"site": "indeed"}]).to_parquet(raw / f"{run_id}_indeed_partial.parquet")
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(deadline_hours=1e-9, indeed=1))
+    _truncate_after_submit(monkeypatch)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_NamedSource("indeed")])
+    _spy_cleaning(monkeypatch)
+
+    main(["--resume", run_id])
+
+    assert sorted(p.name for p in raw.glob("*.parquet")) == [f"{run_id}_indeed_partial.parquet"]
+
+
+def test_load_raw_window_reads_a_partial_shard(paths, monkeypatch):
+    """The _partial name is an underscore suffix precisely so
+    cleaning._RAW_FILENAME_RE still matches it — a `.partial` extension would
+    make the banked rows invisible."""
+    from src.discovery import cleaning as real_cleaning
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(deadline_hours=1e-9, linkedin=1))
+    _truncate_after_submit(monkeypatch)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_NamedSource("linkedin", rows=3)])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    raw = paths / "jobs" / "raw"
+    assert len(list(raw.glob("*_partial.parquet"))) == 1
+    window = real_cleaning.load_raw_window(raw)
+    assert len(window) == 3
