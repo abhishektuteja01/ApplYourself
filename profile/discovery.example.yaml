@@ -17,4 +17,7 @@ sources:
   lever:         {enabled: true,  pacing_seconds: 1}
   ashby:         {enabled: true,  pacing_seconds: 2}
   workday:       {enabled: true,  pacing_seconds: 2}
-raw_retention_days: 30
+raw_retention_days: 16
+# Ceiling on the career-board staleness exemption, in days. 0 = off: a posting
+# still listed on the company's own board is live regardless of age.
+board_max_age_days: 0

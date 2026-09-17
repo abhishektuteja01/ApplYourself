@@ -793,6 +793,48 @@ def test_drop_stale_tracked_exemption_is_per_row():
     assert set(out["title_normalized"]) == {"kept", "fresh"}
 
 
+def test_board_max_age_days_zero_drops_nothing():
+    """The default is off: an ancient board row still survives."""
+    today = pd.Timestamp("2026-07-15")
+    df = pd.DataFrame([
+        {"source": "greenhouse", "posted_date": pd.Timestamp("2023-05-30")},
+        {"source": "lever", "posted_date": pd.Timestamp("2024-03-22")},
+    ])
+    out = drop_stale(df, today=today, board_max_age_days=0)
+    assert len(out) == 2
+
+
+def test_board_max_age_days_caps_exempt_sources_only():
+    today = pd.Timestamp("2026-07-15")
+    df = pd.DataFrame([
+        {"source": "greenhouse", "posted_date": pd.Timestamp("2025-01-01")},  # past the cap
+        {"source": "greenhouse", "posted_date": pd.Timestamp("2026-04-01")},  # within it
+        {"source": "manual", "posted_date": pd.Timestamp("2025-01-01")},      # past the cap
+        {"source": "greenhouse", "posted_date": pd.NaT},                      # undated, kept
+        {"source": "linkedin", "posted_date": pd.Timestamp("2026-07-10")},    # never exempt anyway
+    ])
+    out = drop_stale(df, today=today, board_max_age_days=365)
+    assert list(out["posted_date"]) == [
+        pd.Timestamp("2026-04-01"), pd.NaT, pd.Timestamp("2026-07-10"),
+    ]
+
+
+def test_board_max_age_days_never_drops_a_tracked_row():
+    today = pd.Timestamp("2026-07-15")
+    tracked = compute_job_id("acme", "tracked role")
+    df = _clean_df([
+        {"source": "greenhouse", "title_normalized": "tracked role",
+         "posted_date": pd.Timestamp("2023-05-30")},
+        {"source": "greenhouse", "title_normalized": "untracked role",
+         "posted_date": pd.Timestamp("2023-05-30")},
+    ])
+    out = drop_stale(
+        df, today=today, board_max_age_days=365,
+        tracked_ids=frozenset({tracked}),
+    )
+    assert set(out["title_normalized"]) == {"tracked role"}
+
+
 # ---------- T13: seen-ledger ----------
 
 def _ledger(rows: list[dict]) -> pd.DataFrame:
@@ -863,11 +905,11 @@ def test_update_seen_ledger_purged_id_resurfaces_as_new(tmp_path):
 def test_apply_expiry_tiers_and_tracked_exemption():
     today = pd.Timestamp("2026-07-15")
     ledger = _ledger([
-        {"job_id": "low11111", "first_seen": "2026-06-01"},                    # 44d, low tier -> expired
+        {"job_id": "low11111", "first_seen": "2026-06-01", "last_score": 40.0},  # 44d, low tier -> expired
         {"job_id": "high1111", "first_seen": "2026-06-01", "last_score": 85.0},  # 44d, high tier -> visible
-        {"job_id": "trak1111", "first_seen": "2026-06-01"},                    # expired but tracked
-        {"job_id": "manu1111", "first_seen": "2026-06-01"},                    # expired but re-added by hand
-        {"job_id": "new11111", "first_seen": "2026-07-10"},                    # 5d -> visible
+        {"job_id": "trak1111", "first_seen": "2026-06-01", "last_score": 40.0},  # expired but tracked
+        {"job_id": "manu1111", "first_seen": "2026-06-01", "last_score": 40.0},  # expired but re-added by hand
+        {"job_id": "new11111", "first_seen": "2026-07-10", "last_score": 40.0},  # 5d -> visible
     ])
     df = _clean_df([
         {"job_id": "low11111", "title_normalized": "a", "source": "linkedin"},
@@ -879,6 +921,24 @@ def test_apply_expiry_tiers_and_tracked_exemption():
     ])
     out = cleaning.apply_expiry(df, ledger, today)
     assert sorted(out["job_id"]) == ["high1111", "manu1111", "new11111", "trak1111"]
+
+
+def test_apply_expiry_never_scored_gets_the_high_tier():
+    """NaN last_score means never judged, not judged badly: the row stays
+    visible past the low tier, but only to RETENTION_HIGH_DAYS."""
+    today = pd.Timestamp("2026-07-15")
+    ledger = _ledger([
+        {"job_id": "unsc1111", "first_seen": "2026-06-25"},                     # 20d, unscored
+        {"job_id": "scor1111", "first_seen": "2026-06-25", "last_score": 40.0},  # 20d, scored low
+        {"job_id": "oldu1111", "first_seen": "2026-05-06"},                     # 70d, unscored
+    ])
+    df = _clean_df([
+        {"job_id": "unsc1111", "title_normalized": "a", "source": "linkedin"},
+        {"job_id": "scor1111", "title_normalized": "b", "source": "linkedin"},
+        {"job_id": "oldu1111", "title_normalized": "c", "source": "linkedin"},
+    ])
+    out = cleaning.apply_expiry(df, ledger, today)
+    assert sorted(out["job_id"]) == ["unsc1111"]
 
 
 def test_load_raw_window_shards(tmp_path):
@@ -995,7 +1055,8 @@ def test_project_raw_remote_flag_no_future_warning():
 
 def test_apply_expiry_boundary_day_still_visible():
     # visible THROUGH first_seen + 15d; dropped strictly after
-    ledger = _ledger([{"job_id": "edge1111", "first_seen": "2026-07-01"}])
+    ledger = _ledger([{"job_id": "edge1111", "first_seen": "2026-07-01",
+                       "last_score": 40.0}])
     df = _clean_df([{"job_id": "edge1111", "source": "linkedin"}])
     assert len(cleaning.apply_expiry(df, ledger, pd.Timestamp("2026-07-16"))) == 1
     assert len(cleaning.apply_expiry(df, ledger, pd.Timestamp("2026-07-17"))) == 0

@@ -9,7 +9,7 @@ def test_missing_file(tmp_path, monkeypatch):
     monkeypatch.setattr(verticals, "get_config", lambda: None)
 
     config = load_config(tmp_path / "nonexistent.yaml")
-    assert config.deadline_hours == 6.0
+    assert config.deadline_hours == 4.0
     assert "linkedin" in config.sources
 
 def test_every_default_source_is_live_and_enabled(tmp_path, monkeypatch):
@@ -117,3 +117,24 @@ def test_the_cli_turns_a_bad_config_into_a_message_and_an_exit(tmp_path, monkeyp
     with pytest.raises(SystemExit) as e:
         orchestrator.main([])
     assert "ERROR: boom" in str(e.value)
+
+
+def test_board_max_age_days_defaults_off(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+
+    assert load_config(tmp_path / "nonexistent.yaml").board_max_age_days == 0
+
+    p = tmp_path / "d.yaml"
+    p.write_text(yaml.dump({"schema_version": 1, "board_max_age_days": 365}), encoding="utf-8")
+    assert load_config(p).board_max_age_days == 365
+
+
+def test_board_max_age_days_rejects_negative(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+
+    p = tmp_path / "d.yaml"
+    p.write_text(yaml.dump({"schema_version": 1, "board_max_age_days": -1}), encoding="utf-8")
+    with pytest.raises(ValueError, match="board_max_age_days"):
+        load_config(p)

@@ -7,6 +7,14 @@ from src.discovery.orchestrator import main
 from src.discovery import orchestrator
 from src.discovery.schema import make_row
 from src.discovery.sources.base import SourceResult
+from src.discovery.config import DiscoveryConfig, SourceConfig
+
+
+def _config(**overrides):
+    """The real DiscoveryConfig, so these tests cannot drift from its fields."""
+    overrides.setdefault("location_allowlist", None)
+    return DiscoveryConfig(**overrides)
+
 
 def test_resume_skips_existing_shard(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
@@ -20,13 +28,8 @@ def test_resume_skips_existing_shard(tmp_path, monkeypatch):
     # mock a shard for 'manual'
     pd.DataFrame([{"site": "manual"}]).to_parquet(tmp_path / "jobs" / "raw" / f"{today_str}_manual.parquet")
 
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     # Run with resume
     main(["--resume", today_str])
@@ -43,13 +46,8 @@ def test_deadline_hours_zero_no_fetch(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
     monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
 
-    class MockConfig:
-        deadline_hours = 0.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=0.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     main([])
 
@@ -76,17 +74,8 @@ def test_crashing_source_does_not_stop_later_sources(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
     monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
 
-    class MockSourceConfig:
-        enabled = True
-        pacing_seconds = 0
-
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {"linkedin": MockSourceConfig()}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={"linkedin": SourceConfig(True, 0)})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
     monkeypatch.setattr(orchestrator, "get_sources",
                         lambda: [_CrashingSource(), _WorkingSource()])
 
@@ -116,13 +105,8 @@ def test_zero_rows_writes_audit_parquet(tmp_path, monkeypatch):
     # Empty inbox, will return 0 rows for manual
     monkeypatch.setattr("src.discovery.inbox.INBOX", tmp_path / "inbox")
 
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     main([])
 
@@ -150,17 +134,8 @@ def test_zero_rows_with_errors_logs_a_warning(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
     monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
 
-    class MockSourceConfig:
-        enabled = True
-        pacing_seconds = 0
-
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {"workday": MockSourceConfig()}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={"workday": SourceConfig(True, 0)})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
     monkeypatch.setattr(orchestrator, "get_sources", lambda: [_AllRequestsFailedSource()])
 
     with caplog.at_level("WARNING"):
@@ -182,13 +157,8 @@ def test_zero_rows_with_no_errors_does_not_warn(tmp_path, monkeypatch, caplog):
 
     monkeypatch.setattr("src.discovery.inbox.INBOX", tmp_path / "inbox")
 
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     with caplog.at_level("WARNING"):
         main([])
@@ -211,17 +181,10 @@ def paths(tmp_path, monkeypatch):
 
 
 def _mock_config(deadline_hours=6.0, **sources):
-    class MockSourceConfig:
-        enabled = True
-        pacing_seconds = 0
-
-    class MockConfig:
-        location_allowlist = None
-        raw_retention_days = 30
-
-    MockConfig.deadline_hours = deadline_hours
-    MockConfig.sources = {name: MockSourceConfig() for name in sources or {"linkedin": 1}}
-    return MockConfig()
+    return _config(
+        deadline_hours=deadline_hours,
+        sources={name: SourceConfig(True, 0) for name in sources or {"linkedin": 1}},
+    )
 
 
 class _NamedSource:

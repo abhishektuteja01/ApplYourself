@@ -6,7 +6,8 @@ Operations execute in this exact step order:
   1. Normalize company / title fields (seniority preserved)
   2. Drop rows where jd_text < 200 chars
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
-     career-board sources exempt — board presence is the liveness signal;
+     career-board sources exempt — board presence is the liveness signal,
+     capped by board_max_age_days when that config key is non-zero;
      rows with a pipeline/<job_id>/state.yaml exempt too, matching step 9
   3b. Drop rows outside the location allowlist
   4. Exact dedupe on (company_normalized, title_normalized), longest jd_text wins
@@ -19,7 +20,8 @@ Operations execute in this exact step order:
      scored.parquet (deterministic READ of Claude's sidecar — R7 intact),
      purge rows RESURFACE_AFTER_DAYS past expiry, stamp first_seen for new ids
   8. Glob pipeline/*/state.yaml -> set already_seen + application_status
-  9. Drop expired rows per the seen-ledger tiers (tracked rows never expire)
+  9. Drop expired rows per the seen-ledger tiers (tracked rows never expire;
+     never-scored rows get the high tier — NaN means unjudged, not bad)
   10. Initialize Claude-owned columns with defaults
   11. Write clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
 """
@@ -184,6 +186,7 @@ def drop_stale(
     max_age_days: int = MAX_AGE_DAYS,
     exempt_sources: tuple[str, ...] = STALENESS_EXEMPT_SOURCES,
     tracked_ids: frozenset[str] = frozenset(),
+    board_max_age_days: int = 0,
 ) -> pd.DataFrame:
     df = df.copy()
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
@@ -201,7 +204,13 @@ def drop_stale(
     if source is not None:
         # Career boards and manual adds: an old-but-listed posting is live by
         # definition; lifetime is governed by the seen-ledger, not age.
-        keep = keep | source.isin(exempt_sources)
+        exempt = source.isin(exempt_sources)
+        if board_max_age_days > 0:
+            # Opt-in ceiling on that exemption. 0 (the default) keeps it
+            # unbounded.
+            board_cutoff = today - pd.Timedelta(days=board_max_age_days)
+            exempt &= posted.isna() | (posted >= board_cutoff)
+        keep = keep | exempt
     if tracked_ids:
         # A row with a state.yaml outlives its posted_date, the same rule
         # apply_expiry states at step 9. Without it a dated source drops the
@@ -479,11 +488,17 @@ def apply_expiry(
     source="manual" is exempt for the same reason it is exempt from
     drop_stale: an inbox clip or a URL ingest is a deliberate user add, and
     expiry is keyed on ledger first_seen, so re-adding a role last seen past
-    its retention window would drop the row the user just asked for."""
+    its retention window would drop the row the user just asked for.
+
+    A NaN last_score means never judged, not judged badly, so it gets
+    RETENTION_HIGH_DAYS — visible until scoring gets to it, but still bounded
+    if scoring is abandoned."""
     if df.empty or ledger is None or not len(ledger):
         return df.copy()
     today = pd.Timestamp(today).normalize()
-    lifetimes = ledger["last_score"].apply(_lifetime_days)
+    lifetimes = ledger["last_score"].apply(_lifetime_days).where(
+        ledger["last_score"].notna(), RETENTION_HIGH_DAYS
+    )
     expires_at = ledger["first_seen"] + pd.to_timedelta(lifetimes, unit="D")
     expired_ids = set(ledger.loc[today > expires_at, "job_id"])
     if not expired_ids:
@@ -874,6 +889,7 @@ def run(
     df = drop_stale(
         df, today=today,
         tracked_ids=frozenset(load_state_index(pipeline_dir)),
+        board_max_age_days=cfg.board_max_age_days,
     )
     after_stale = len(df)
     # step 3b — location filter. Runs before dedupe so the survivor of a

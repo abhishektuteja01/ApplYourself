@@ -81,7 +81,7 @@ class LocationAllowlist:
 @dataclass
 class DiscoveryConfig:
     schema_version: int = _SCHEMA_VERSION
-    deadline_hours: float = 6.0
+    deadline_hours: float = 4.0
     location_allowlist: LocationAllowlist = field(default_factory=lambda: LocationAllowlist(["United States"]))
     sources: dict[str, SourceConfig] = field(default_factory=lambda: {
         "linkedin": SourceConfig(True, 3.0),
@@ -91,7 +91,9 @@ class DiscoveryConfig:
         "ashby": SourceConfig(True, 2.0),
         "workday": SourceConfig(True, 2.0),
     })
-    raw_retention_days: int = 30
+    raw_retention_days: int = 16
+    # Age cap for the staleness-exempt board sources (step 3). 0 = off.
+    board_max_age_days: int = 0
 
 def load_config(path: Path | None = None) -> DiscoveryConfig:
     try:
@@ -142,5 +144,9 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
     cfg.raw_retention_days = int(data.get("raw_retention_days", cfg.raw_retention_days))
+
+    cfg.board_max_age_days = int(data.get("board_max_age_days", cfg.board_max_age_days))
+    if cfg.board_max_age_days < 0:
+        raise ValueError(f"{p}: board_max_age_days must be >= 0, got {cfg.board_max_age_days}")
 
     return cfg
