@@ -309,3 +309,29 @@ def test_the_real_and_example_configs_validate(monkeypatch):
         p = root / name
         if p.exists():
             assert load_config(p).validate() == [], name
+
+
+def test_pacing_floor_is_the_one_home_for_every_lane_floor():
+    """The four copies this replaced: ats/base.py's dict + 1.0 default,
+    jobspy_source.py's 0.5, workday.py's 1.0, and the estimator's 0.5."""
+    from src.discovery.config import pacing_floor
+
+    assert pacing_floor("greenhouse") == 0.5
+    assert pacing_floor("linkedin") == 0.5
+    assert pacing_floor("indeed") == 0.5
+    assert pacing_floor("lever") == 1.0
+    assert pacing_floor("ashby") == 1.0
+    assert pacing_floor("workday") == 1.0
+    assert pacing_floor("a source that does not exist") == 1.0
+
+
+def test_every_runtime_sleep_reads_the_shared_floor():
+    """A fifth copy would not fail any behavioural test, since config sits
+    above every floor today. Assert on the source text instead."""
+    root = Path(__file__).resolve().parents[2] / "src" / "discovery"
+    for rel in ("sources/ats/base.py", "sources/ats/workday.py",
+                "sources/jobspy_source.py"):
+        text = (root / rel).read_text(encoding="utf-8")
+        assert "pacing_floor(self.name)" in text, rel
+        assert "max(0.5," not in text, rel
+        assert "max(1.0," not in text, rel

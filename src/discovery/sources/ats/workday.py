@@ -59,6 +59,7 @@ import re
 import time
 
 from src.discovery import cleaning
+from src.discovery.config import pacing_floor
 from src.discovery.dates import relative_posted_date
 from src.discovery import gate
 from src.discovery import universe
@@ -210,7 +211,7 @@ class WorkdaySource(Source):
     name = "workday"
 
     def fetch(self, ctx) -> SourceResult:
-        pacing = max(1.0, ctx.config.sources[self.name].pacing_seconds)
+        pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
         ledger = universe.HealthLedger(self.name, (c.slug for c in companies))
         terms = search_terms(ctx.verticals)

@@ -26,6 +26,19 @@ _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
 # query count, and the pacing sleep alone can outrun `deadline_hours`.
 MAX_SEARCH_LOCATIONS = 5
 
+# The pacing floor config cannot go below, per source. Default 1.0s; the three
+# lanes below tolerate 0.5s. One home for what used to be four copies of the
+# same two numbers -- the runtime sleeps in `ats/base.py`, `jobspy_source.py`
+# and `workday.py`, plus the cost estimator here, which must model the same
+# floor the lanes will actually sleep.
+DEFAULT_MIN_PACING_SECONDS = 1.0
+MIN_PACING_SECONDS = {"greenhouse": 0.5, "linkedin": 0.5, "indeed": 0.5}
+
+
+def pacing_floor(source_name: str) -> float:
+    return MIN_PACING_SECONDS.get(source_name, DEFAULT_MIN_PACING_SECONDS)
+
+
 @dataclass
 class SourceConfig:
     enabled: bool
@@ -176,7 +189,7 @@ def _jobspy_query_cost(cfg: "DiscoveryConfig", n_locations: int) -> tuple[int, f
         terms = sum(len(getattr(v, attr, ()) or ()) for v in lanes.values())
         n = terms * n_locations * 2
         queries += n
-        seconds += n * max(0.5, source.pacing_seconds)
+        seconds += n * max(pacing_floor(name), source.pacing_seconds)
     return queries, seconds
 
 

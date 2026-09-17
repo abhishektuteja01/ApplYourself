@@ -11,6 +11,7 @@ from jobspy.model import Country, DescriptionFormat, ScraperInput, Site
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.discovery.config import pacing_floor
 from src.discovery.gate import gate_passing_urls
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
@@ -102,8 +103,8 @@ class JobSpySource(Source):
         errors = []
         report_lines = []
 
-        pacing = ctx.config.sources[self.name].pacing_seconds
-        pacing = max(0.5, pacing)
+        pacing = max(pacing_floor(self.name),
+                     ctx.config.sources[self.name].pacing_seconds)
 
         # Where we search, which is not the same as what cleaning accepts:
         # `search_locations` when configured, else the allowlist's effective

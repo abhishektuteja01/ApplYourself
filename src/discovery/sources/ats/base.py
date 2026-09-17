@@ -6,6 +6,7 @@ from __future__ import annotations
 import time
 
 from src.discovery import cleaning
+from src.discovery.config import pacing_floor
 from src.discovery import gate
 from src.discovery import universe
 from src.ats_http import CareersError, fetch_json
@@ -22,9 +23,6 @@ from src.discovery.sources.base import Source, SourceResult
 # error page decodes as invalid JSON and arrives as CareersError instead.
 PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexError)
 
-# Per-source pacing floor, config can't go below this. Default 1.0s;
-# Greenhouse runs at 0.5s.
-MIN_PACING_SECONDS = {"greenhouse": 0.5}
 
 
 def job_items(payload, key: str) -> list[dict]:
@@ -52,8 +50,7 @@ class AtsBoardSource(Source):
         raise NotImplementedError
 
     def fetch(self, ctx) -> SourceResult:
-        floor = MIN_PACING_SECONDS.get(self.name, 1.0)
-        pacing = max(floor, ctx.config.sources[self.name].pacing_seconds)
+        pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
         ledger = universe.HealthLedger(self.name, (c.slug for c in companies))
 
