@@ -17,7 +17,7 @@ from src.discovery.sources.base import Source, SourceResult
 # company polled before the bad one, which can be hours of paced fetching.
 #
 # No health strike on this path: it means valid JSON of an unexpected shape,
-# which points at an API change rather than a dead board, and update_health is
+# which points at an API change rather than a dead board, and mark_dead is
 # documented as permanent-death-only. A decommissioned board serving an HTML
 # error page decodes as invalid JSON and arrives as CareersError instead.
 PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexError)
@@ -55,6 +55,7 @@ class AtsBoardSource(Source):
         floor = MIN_PACING_SECONDS.get(self.name, 1.0)
         pacing = max(floor, ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
+        ledger = universe.HealthLedger(self.name, (c.slug for c in companies))
 
         rows: list[dict] = []
         errors: list[str] = []
@@ -68,6 +69,8 @@ class AtsBoardSource(Source):
 
         for i, c in enumerate(companies):
             if ctx.deadline_reached():
+                # A truncated run must not lose the health it learned.
+                ledger.flush()
                 break
 
             if i > 0:
@@ -87,7 +90,7 @@ class AtsBoardSource(Source):
                     err_other += 1
                 errors.append(f"{c.name}: {e}")
                 if e.permanent:
-                    universe.update_health(self.name, c.slug, success=False)
+                    ledger.mark_dead(c.slug)
                 if c.priority or not is_404:
                     report_lines.append(
                         f"| {c.name} | ERROR | 0 | 0 | {str(e).replace('|', '\\|')[:80]} |")
@@ -129,10 +132,12 @@ class AtsBoardSource(Source):
 
             ok += 1
             kept += c_kept
-            universe.update_health(self.name, c.slug, success=True, rows=c_kept)
+            ledger.mark_ok(c.slug, c_kept)
 
             if c.priority:
                 report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
+
+        ledger.flush()
 
         summary = (f"Companies polled: {polled} | OK: {ok} | 404: {err_404} "
                    f"| Err: {err_other} | Rows kept: {kept}")

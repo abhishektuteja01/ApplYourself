@@ -178,8 +178,8 @@ def test_health_records_the_kept_count_not_the_fetched_count(monkeypatch):
                         lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
     monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board(n_off_lane=1))
     recorded = []
-    monkeypatch.setattr(universe, "update_health",
-                        lambda ats, slug, success, rows=0: recorded.append((success, rows)))
+    monkeypatch.setattr(universe.HealthLedger, "mark_ok",
+                        lambda self, slug, kept=0: recorded.append((True, kept)))
 
     res = GreenhouseSource().fetch(MockContext())
     assert len(res.rows) == 1
@@ -348,3 +348,25 @@ class _JsonResponse:
     headers: dict = {}
     def __init__(self, payload): self._payload = payload
     def json(self): return self._payload
+
+
+def test_deadline_break_still_flushes_the_health_ledger(monkeypatch):
+    """D2.4: health is batched now, so a run cut by the deadline would lose
+    everything it learned unless the break flushes."""
+    monkeypatch.setattr(universe, "load", lambda ats: [
+        UniverseCompany("Acme AI", "greenhouse", "acmeai"),
+        UniverseCompany("Beta Co", "greenhouse", "beta"),
+    ])
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board())
+
+    class CutAfterFirst(MockContext):
+        polled = 0
+
+        def deadline_reached(self):
+            hit = self.polled >= 1
+            self.polled += 1
+            return hit
+
+    GreenhouseSource().fetch(CutAfterFirst())
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert list(df["slug"]) == ["acmeai"]

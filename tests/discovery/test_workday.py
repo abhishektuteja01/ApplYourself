@@ -254,8 +254,8 @@ class TestWorkdaySourceFetch:
 
         recorded = []
         monkeypatch.setattr(
-            universe, "update_health",
-            lambda ats, slug, success, rows=0: recorded.append((success, rows)))
+            universe.HealthLedger, "mark_ok",
+            lambda self, slug, kept=0: recorded.append((True, kept)))
 
         res = WorkdaySource().fetch(MockContext())
         assert len(res.rows) == 1
@@ -667,3 +667,43 @@ class TestTheCrawlResumesAcrossRuns:
         self._stub(monkeypatch, self._companies(2), seen)
         WorkdaySource().fetch(MockContext())
         assert seen, "a bad cursor must mean 'start from the top', not a crash"
+
+
+class TestPerTenantReportTable:
+    """D2.9: the table was only ever appended for `c.priority` tenants, and
+    `companies.yaml` has no workday entries — so it never rendered."""
+
+    def _tenants(self, monkeypatch, counts: dict[str, int]):
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany(name, "workday", f"{name.lower()}|wd3|Site")
+                         for name in counts],
+        )
+
+        def fake_list(company, wd, site_id, offset, term, **kw):
+            if offset:
+                return {"total": 0, "jobPostings": []}
+            n = counts[company.capitalize()] if company.capitalize() in counts \
+                else counts[company]
+            return {"total": n, "jobPostings": [
+                {**LIST_ITEM, "externalPath": f"/job/{company}/{i}"}
+                for i in range(n)]}
+
+        monkeypatch.setattr(workday, "list_page", fake_list)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+    def test_table_renders_for_non_priority_tenants(self, monkeypatch):
+        self._tenants(monkeypatch, {"Acme": 1, "Beta": 3, "Gamma": 2})
+        lines = WorkdaySource().fetch(MockContext()).report_lines
+        assert "| company | status | fetched | kept | error |" in lines
+        rows = [ln for ln in lines if ln.startswith("| ") and " OK " in ln]
+        assert [ln.split(" | ")[0].lstrip("| ") for ln in rows] == \
+            ["Beta", "Gamma", "Acme"]
+
+    def test_only_the_top_n_tenants_are_listed(self, monkeypatch):
+        monkeypatch.setattr(workday, "REPORT_TOP_TENANTS", 2)
+        self._tenants(monkeypatch, {"Acme": 1, "Beta": 3, "Gamma": 2})
+        lines = WorkdaySource().fetch(MockContext()).report_lines
+        rows = [ln for ln in lines if ln.startswith("| ") and " OK " in ln]
+        assert [ln.split(" | ")[0].lstrip("| ") for ln in rows] == ["Beta", "Gamma"]

@@ -77,6 +77,10 @@ LIST_LIMIT = 20
 # term cannot consume a whole run's deadline. `crawl_cursor` persists where
 # each pair stopped, so pages past the cap are reached on a later run.
 MAX_PAGES_PER_TERM = 6
+# How many tenants the run report's per-tenant table lists, busiest first.
+# Report presentation only — it changes nothing about what is crawled or kept,
+# so it is a constant here rather than a config key.
+REPORT_TOP_TENANTS = 20
 
 _POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)
 _POSTED_YESTERDAY = re.compile(r"posted\s+yesterday", re.IGNORECASE)
@@ -219,11 +223,15 @@ class WorkdaySource(Source):
     def fetch(self, ctx) -> SourceResult:
         pacing = max(1.0, ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
+        ledger = universe.HealthLedger(self.name, (c.slug for c in companies))
         terms = search_terms(ctx.verticals)
 
         rows: list[dict] = []
         errors: list[str] = []
-        report_lines: list[str] = []
+        error_lines: list[str] = []
+        # (priority, kept, fetched, name) per polled tenant; the table shows
+        # every watchlist tenant, then the busiest of the rest.
+        ok_tenants: list[tuple[bool, int, int, str]] = []
         kept = 0
         polled = 0
         ok = 0
@@ -240,9 +248,9 @@ class WorkdaySource(Source):
         # run. Only the deep-page frontier (`offsets`) is live — see
         # `crawl_cursor`'s docstring.
         cursor = load_cursor(self.name)
-        # Priority tenants stay at a fixed head; only the tail rotates. No
-        # workday entries in `profile/companies.yaml`, so `head` is empty and
-        # the split is inert today.
+        # Priority tenants stay at a fixed head so they are crawled every run;
+        # only the tail rotates. No workday entries in `profile/companies.yaml`,
+        # so `head` is empty and the split is inert today.
         companies = list(companies)
         head = [c for c in companies if c.priority]
         tail = cursor.rotate([c for c in companies if not c.priority],
@@ -252,6 +260,8 @@ class WorkdaySource(Source):
 
         for c in companies:
             if ctx.deadline_reached():
+                # A truncated run must not lose the health it learned.
+                ledger.flush()
                 break
             try:
                 company, wd, site_id = parse_slug(c.slug)
@@ -361,9 +371,9 @@ class WorkdaySource(Source):
                     break
 
             if fatal is not None:
-                universe.update_health(self.name, c.slug, success=False)
+                ledger.mark_dead(c.slug)
                 if c.priority or fatal.status != 404:
-                    report_lines.append(
+                    error_lines.append(
                         f"| {c.name} | ERROR | 0 | 0 | "
                         f"{str(fatal).replace('|', '\\|')[:80]} |")
                 completed += 1
@@ -409,18 +419,22 @@ class WorkdaySource(Source):
             ok += 1
             kept += c_kept
             completed += 1
-            universe.update_health(self.name, c.slug, success=True, rows=c_kept)
-            if c.priority:
-                report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
+            ledger.mark_ok(c.slug, c_kept)
+            ok_tenants.append((c.priority, c_kept, c_fetched, c.name))
 
         # Persisted even on a deadline cut — that is the case it exists for.
         # Only the rotated tail advances; the fixed head is crawled every run.
         cursor.advance(tail, max(0, completed - len(head)), key=lambda c: c.slug)
         save_cursor(cursor)
+        ledger.flush()
 
         summary = (f"Companies polled: {polled} | OK: {ok} | Err: {err_other} "
                    f"| Rows kept: {kept}")
         report_summary = [summary, ""]
+        top = sorted(ok_tenants, key=lambda t: t[:3],
+                     reverse=True)[:REPORT_TOP_TENANTS]
+        report_lines = [f"| {name} | OK | {fetched} | {kept_} | |"
+                        for _, kept_, fetched, name in top] + error_lines
         if report_lines:
             report_summary.extend([
                 "| company | status | fetched | kept | error |",
