@@ -1258,6 +1258,77 @@ def test_location_filter_continents_shorthand():
     assert set(out["job_id"]) == {"kept_berlin", "kept_lisbon"}
 
 
+def test_location_allowlist_cities_filter_outside_the_us():
+    # `cities` used to be a silent no-op for non-US rows: parse_location
+    # erased the city text, so the cities branch never fired.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["Germany"], cities=["Berlin"])
+    )
+    df = pd.DataFrame({
+        "job_id": ["kept_berlin", "drop_munich", "drop_hamburg"],
+        "location": ["Berlin, Germany", "Munich, Germany", "Hamburg, Germany"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"kept_berlin"}
+    # A city with no state canonicalizes as "city, country".
+    assert list(out["location"]) == ["Berlin, Germany"]
+
+
+def test_us_canonical_location_text_is_unchanged():
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["United States"]))
+    df = pd.DataFrame({
+        "job_id": ["austin", "portland", "remote_austin"],
+        "location": ["Austin, TX", "Portland, OR", "Remote - Austin, TX"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert list(out["location"]) == ["Austin, TX", "Portland, OR", "Remote - Austin, TX"]
+
+
+def test_region_token_rows_are_dropped_or_kept_by_the_allowlist():
+    # `EMEA` is a positive statement that the role is not in the US, so it
+    # goes through the candidate_countries branch rather than "nothing
+    # parsed -> keep".
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    df = pd.DataFrame({
+        "job_id": ["emea", "apac", "latam", "anz"],
+        "location": ["EMEA", "APAC", "LATAM", "ANZ"],
+    })
+
+    us_only = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["United States"]))
+    assert list(filter_and_canonicalize_location(df, us_only)["job_id"]) == []
+
+    eu = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["Germany"]))
+    assert set(filter_and_canonicalize_location(df, eu)["job_id"]) == {"emea"}
+
+
+def test_ambiguous_location_strings_are_still_kept():
+    # Blank / Worldwide / Anywhere / Remote say nothing about the country,
+    # so the conservative keep stands.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["United States"]))
+    df = pd.DataFrame({
+        "job_id": ["blank", "worldwide", "anywhere", "remote"],
+        "location": ["", "Worldwide", "Anywhere", "Remote"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"blank", "worldwide", "anywhere", "remote"}
+    assert out["_loc_unresolved"].all()
+
+
 def test_out_of_allowlist_rows_never_enter_the_seen_ledger(tmp_path, monkeypatch):
     """The location filter runs before the seen-ledger. Otherwise a foreign row
     gets first_seen stamped while invisible, and widening the allowlist surfaces

@@ -314,7 +314,9 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
                 new_locations.append(raw_loc_str)
             continue
 
-        # 1b. A genuine multi-region ambiguity (location.py no longer picks
+        # 1b. A genuine multi-region ambiguity, or a region acronym like
+        # `EMEA` that location.py expanded to its constituent countries
+        # (location.py no longer picks
         # a winner among multiple countries itself -- that decision belongs
         # here, against whatever the user actually configured, so an
         # India-only allowlist gets the same "don't guess" protection a
@@ -344,6 +346,8 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
             canon = ""
             if parsed.city and parsed.state:
                 canon = f"{parsed.city}, {parsed.state}"
+            elif parsed.city and parsed.country:
+                canon = f"{parsed.city}, {parsed.country}"
             elif parsed.state:
                 canon = parsed.state
             elif parsed.country:

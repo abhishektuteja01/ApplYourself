@@ -204,6 +204,46 @@ for _cc, _data in _GC_COUNTRIES.items():
         CONTINENT_TO_COUNTRIES.setdefault(_cont, []).append(_country_name)
 
 # ---------------------------------------------------------------------
+# Region tokens — acronyms that name a multi-country region rather than a
+# place. A segment that is exactly one of these expands to its constituent
+# countries, so a token-only string resolves to candidate_countries and the
+# caller's allowlist decides keep-vs-drop. Closed list: an acronym not
+# listed here is parsed as ordinary text.
+# ---------------------------------------------------------------------
+
+_MIDDLE_EAST_CC = frozenset({
+    "AE", "BH", "IL", "IQ", "IR", "JO", "KW", "LB", "OM",
+    "PS", "QA", "SA", "SY", "TR", "YE",
+})
+# Latin America outside the South American continent code.
+_LATAM_EXTRA_CC = frozenset({
+    "MX", "GT", "BZ", "SV", "HN", "NI", "CR", "PA",
+    "CU", "DO", "PR", "HT",
+})
+
+
+def _countries_from_cc(codes) -> set[str]:
+    return {name for cc in codes if (name := CC_TO_COUNTRY.get(cc))}
+
+
+def _continents(*names) -> set[str]:
+    out: set[str] = set()
+    for name in names:
+        out |= set(CONTINENT_TO_COUNTRIES.get(name, []))
+    return out
+
+
+_EMEA = _continents("Europe", "Africa") | _countries_from_cc(_MIDDLE_EAST_CC)
+
+REGION_TOKEN_COUNTRIES: dict[str, frozenset[str]] = {
+    "emea": frozenset(_EMEA),
+    "emeia": frozenset(_EMEA | _countries_from_cc({"IN"})),
+    "apac": frozenset(_continents("Asia", "Oceania")),
+    "latam": frozenset(_continents("South America") | _countries_from_cc(_LATAM_EXTRA_CC)),
+    "anz": frozenset(_countries_from_cc({"AU", "NZ"})),
+}
+
+# ---------------------------------------------------------------------
 # Cities — worldwide (not filtered to any one country). Used only as a
 # last-resort "lone place name -> what country/city is this" convenience;
 # never used to inject a phantom country signal from a substring the way
@@ -644,6 +684,12 @@ def parse_location(raw: str) -> LocationParse:
     found_cities: set[tuple[str, str, str]] = set()
 
     for seg in segments:
+        region = REGION_TOKEN_COUNTRIES.get(_fold(seg))
+        if region:
+            # Checked before mining: some of these acronyms are also a real
+            # small place name ("Apac", Uganda).
+            found_countries |= region
+            continue
         c, s, ci = _mine_segment_signals(seg)
         if not (c or s or ci) and _AND_SPLIT_RE.search(seg):
             # Ordinary mining found nothing at all -- see _AND_SPLIT_RE's
@@ -693,18 +739,14 @@ def parse_location(raw: str) -> LocationParse:
         elif len(cities_for_country) == 1:
             name, admin1 = cities_for_country[0]
             city = name
+            # State is inferred from a city's admin1 code for the United
+            # States only; other countries' admin1 codes are not consistently
+            # shaped. City text itself is returned for every country.
             if country == "United States" and admin1:
                 state = admin1
         else:
             # Multiple distinct cities, no state to disambiguate -> a
             # multi-site listing within one country, kept for review.
             return LocationParse("", "", "", remote)
-
-    # City display text is only ever populated for the United States, same
-    # convenience the old design offered (US-only geonames admin1 codes are
-    # what make the "fill state from city" trick reliable; other countries'
-    # admin1 codes aren't consistently shaped the same way).
-    if country != "United States":
-        city = ""
 
     return LocationParse(country, state, city, remote)
