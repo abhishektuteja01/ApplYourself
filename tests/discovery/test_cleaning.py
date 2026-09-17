@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import re
 import warnings
 from pathlib import Path
@@ -1664,3 +1665,46 @@ def test_streamed_window_never_holds_the_whole_window(tmp_path):
     assert len(seen) == 4          # the 2026-05-01 shard is out of window
     assert max(seen) == 4          # the largest single shard, not the 8-row window
     assert sum(seen) == 8
+
+
+def test_job_id_collision_drops_the_pair_and_names_both_roles(caplog):
+    """Two distinct roles sharing a job_id must not both reach clean.parquet."""
+    df = pd.DataFrame(
+        {
+            "job_id": ["dead", "dead", "safe"],
+            "company_normalized": ["acme", "globex", "initech"],
+            "title_normalized": ["data engineer", "ml engineer", "analyst"],
+        }
+    )
+    with caplog.at_level(logging.ERROR, logger=cleaning.__name__):
+        kept, named = cleaning.drop_job_id_collisions(df)
+
+    assert kept["job_id"].tolist() == ["safe"]
+    assert named == ["dead acme | data engineer", "dead globex | ml engineer"]
+    assert "job_id collision" in caplog.text
+
+
+def test_same_role_twice_is_not_a_job_id_collision():
+    """One (company, title) on two boards shares an id legitimately."""
+    df = pd.DataFrame(
+        {
+            "job_id": ["same", "same"],
+            "company_normalized": ["acme", "acme"],
+            "title_normalized": ["data engineer", "data engineer"],
+        }
+    )
+    kept, named = cleaning.drop_job_id_collisions(df)
+    assert len(kept) == 2
+    assert named == []
+
+
+def test_job_id_collision_is_reported_and_absent_when_clean(tmp_path):
+    report = tmp_path / "report.md"
+    report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(report, "r1", {"job_id_collisions": ["dead acme | x"]})
+    assert "### job_id collision" in report.read_text(encoding="utf-8")
+
+    clean_report = tmp_path / "clean.md"
+    clean_report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(clean_report, "r1", {})
+    assert "### job_id collision" not in clean_report.read_text(encoding="utf-8")

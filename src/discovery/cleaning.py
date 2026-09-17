@@ -171,6 +171,38 @@ def compute_job_id(company_normalized: str, title_normalized: str) -> str:
     return hashlib.sha1(key).hexdigest()[:8]
 
 
+def drop_job_id_collisions(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Drop rows whose job_id is shared by a different (company, title) pair.
+
+    8 hex chars is 32 bits, so a birthday collision is a matter of time. A
+    collision would cross-wire two unrelated roles' pipeline/<job_id>/state.yaml
+    and applications/<dir>, so every row involved is dropped rather than written.
+    The blast radius is the colliding pair, not the run: losing the night's
+    clean.parquet costs more than losing two rows.
+    """
+    if df.empty:
+        return df, []
+    pairs = df["company_normalized"].astype(str) + "|" + df["title_normalized"].astype(str)
+    distinct_pairs = pairs.groupby(df["job_id"]).nunique()
+    colliding = set(distinct_pairs[distinct_pairs > 1].index)
+    if not colliding:
+        return df, []
+    hit = df["job_id"].isin(colliding)
+    named = sorted(
+        f"{i} {c} | {t}"
+        for i, c, t in zip(
+            df.loc[hit, "job_id"],
+            df.loc[hit, "company_normalized"],
+            df.loc[hit, "title_normalized"],
+        )
+    )
+    log.error(
+        "job_id collision: %d rows across %d ids dropped — %s",
+        int(hit.sum()), len(colliding), "; ".join(named),
+    )
+    return df[~hit].copy(), named
+
+
 # ---------------------------------------------------------------------
 # Step 2 — drop short JD
 # ---------------------------------------------------------------------
@@ -934,6 +966,14 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         lines += [f"- {row}" for row in near_dropped]
         lines.append("")
 
+    # A collision cross-wires two unrelated roles' state.yaml and applications
+    # dir, so every colliding row is dropped and every one of them is named.
+    collisions = stats.get("job_id_collisions", [])
+    if collisions:
+        lines += ["### job_id collision", ""]
+        lines += [f"- {row}" for row in collisions]
+        lines.append("")
+
     with report_path.open("a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -1011,6 +1051,7 @@ def run(
         compute_job_id(c, t)
         for c, t in zip(df["company_normalized"], df["title_normalized"])
     ]
+    df, collisions = drop_job_id_collisions(df)
     # step 7 — seen-ledger
     today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     ledger_path = clean_dir / "seen.parquet"
@@ -1054,6 +1095,7 @@ def run(
         "after_near_dedupe": after_near,
         "dropped_near": after_exact - after_near,
         "near_dropped": near_dropped,
+        "job_id_collisions": collisions,
         "after_expiry": after_expiry,
         "dropped_expired": after_near - after_expiry,
         "final_rows": len(df),
