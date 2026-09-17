@@ -3,7 +3,7 @@
 No LLM calls (R7). Reads pipeline/*/state.yaml but never writes there.
 Operations execute in this exact step order. Steps 0-3b are row-local, so they
 run per raw shard inside load_filtered_window rather than once on the
-concatenated window; steps 4+ need the whole window and run after the concat.
+concatenated window; steps 5+ need the whole window and run after the concat.
   0. Per-vertical title gate (apply_title_exclusion), before everything else
   1. Normalize company / title fields (seniority preserved)
   1b. Drop rows with a blank company_normalized — job_id would key on title alone
@@ -13,22 +13,28 @@ concatenated window; steps 4+ need the whole window and run after the concat.
      capped by board_max_age_days when that config key is non-zero;
      rows with a pipeline/<job_id>/state.yaml exempt too, matching step 9
   3b. Drop rows outside the location allowlist
-  4. Exact dedupe on (company_normalized, title_normalized): a url that leads to
-     a board application form wins, longest jd_text only breaks the tie
-  5. Near dedupe within company via rapidfuzz.WRatio >= 90, between titles that
-     share the same level tokens; same tie-break as step 4
-  6. job_id = sha1(company_normalized|title_normalized)[:8]
+  4. job_id = sha1(company_normalized|title_normalized)[:8]
      url and jd_text deliberately excluded so job_id is stable across re-scrapes.
      Flipping the hash on a URL change would silently orphan
-     pipeline/<job_id>/state.yaml and applications/<dir> keys.
-  7. Update jobs/seen.parquet: refresh last_score from
+     pipeline/<job_id>/state.yaml and applications/<dir> keys. Assigned before
+     dedupe because the merge group's surviving id is picked from the ids its
+     own members already carry.
+  5. Dedupe — one evidence-based pass (discovery/dedupe.py). Candidate pairs are
+     blocked on url, board slug, squashed company key, company-name containment
+     and identical title; a pair merges only on an identical url, a shared board
+     tenant plus a near-identical title, or a near-identical title with a close
+     company name AND similar jd_text. The survivor is the applyable url, then
+     the in-allowlist location, then the longest jd_text; its id comes from
+     aliases.select_sticky_id and every merged company spelling is pinned in the
+     append-only jobs/company_aliases.parquet.
+  6. Update jobs/seen.parquet: refresh last_score from
      scored.parquet (deterministic READ of Claude's sidecar — R7 intact),
      purge rows RESURFACE_AFTER_DAYS past expiry, stamp first_seen for new ids
-  8. Glob pipeline/*/state.yaml -> set already_seen + application_status
-  9. Drop expired rows per the seen-ledger tiers (tracked rows never expire;
+  7. Glob pipeline/*/state.yaml -> set already_seen + application_status
+  8. Drop expired rows per the seen-ledger tiers (tracked rows never expire;
      never-scored rows get the high tier — NaN means unjudged, not bad)
-  10. Initialize Claude-owned columns with defaults
-  11. coerce_schema (raises KeyError on a missing column), prune_raw_files
+  9. Initialize Claude-owned columns with defaults
+  10. coerce_schema (raises KeyError on a missing column), prune_raw_files
       (deletes raw shards older than raw_retention_days), then write
       clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
 """
@@ -41,9 +47,10 @@ import re
 from pathlib import Path
 
 import pandas as pd
-from rapidfuzz import fuzz
 
 from src import verticals
+from src.discovery import aliases
+from src.discovery import dedupe as dedupe_mod
 from src.discovery.config import load_config
 from src.discovery.schema import naive_datetime
 from src import paths
@@ -59,6 +66,7 @@ CLEAN_COLUMNS: list[str] = [
     "title", "title_normalized", "location", "remote_flag",
     "posted_date", "posted_date_missing", "scraped_date",
     "url", "jd_text",
+    "location_count", "all_locations",
     "salary_min", "salary_max", "salary_currency",
     "employment_type", "seniority_raw", "ingested_run_id",
     "vertical",  # a profile/verticals.yaml name | "" — Python-owned, set at fetch time
@@ -96,6 +104,7 @@ MIN_JD_CHARS = 200
 
 PREVIEW_COLUMNS = [
     "job_id", "source", "company", "title", "location",
+    "location_count", "all_locations",
     "posted_date", "url", "vertical", "fit_score", "sponsorship_label",
 ]
 
@@ -107,7 +116,7 @@ PREVIEW_COLUMNS = [
 #      from inbox.parse_inbox_file.
 #   2. Legacy raw rows from before this column existed, or any row that
 #      otherwise reaches project_raw with vertical="" — backfilled below so
-#      a stale empty-vertical row never wins exact_dedupe over a freshly
+#      a stale empty-vertical row never wins the dedupe tie-break over a freshly
 #      re-scraped, correctly-tagged duplicate by virtue of a longer jd_text.
 # The rules live in profile/verticals.yaml `classifier_rules`:
 # an ORDERED list where first match wins, so rule order encodes the locked
@@ -163,7 +172,7 @@ def normalize_title(s: str | None) -> str:
 
 
 # ---------------------------------------------------------------------
-# Step 6 — job_id (defined early; reused elsewhere)
+# Step 4 — job_id (defined early; reused elsewhere)
 # ---------------------------------------------------------------------
 
 def compute_job_id(company_normalized: str, title_normalized: str) -> str:
@@ -269,7 +278,9 @@ def drop_stale(
 
 def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     if df.empty:
-        return df.copy()
+        out = df.copy()
+        out["_loc_unresolved"] = pd.Series(dtype=bool)
+        return out
 
     # Local import: location needs libpostal (optional `discovery` group), and
     # importing this module must stay possible without it.
@@ -284,6 +295,10 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 
     keep_indices = []
     new_locations = []
+    # A conservative keep (nothing parsed, or a multi-region ambiguity that
+    # merely overlaps the allowlist) loses the dedupe tie-break to a row that
+    # positively resolved inside it.
+    unresolved = []
 
     for idx, raw_loc in zip(df.index, df["location"]):
         raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
@@ -292,6 +307,7 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
         # 1. Nothing parsed at all -> KEEP (conservative default, unchanged).
         if not parsed.country and not parsed.state and not parsed.city and not parsed.candidate_countries:
             keep_indices.append(idx)
+            unresolved.append(True)
             if parsed.remote:
                 new_locations.append("Remote")
             else:
@@ -308,6 +324,7 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
             candidates_lower = {c.lower() for c in parsed.candidate_countries}
             if not allow_countries or candidates_lower & allow_countries:
                 keep_indices.append(idx)
+                unresolved.append(True)
                 new_locations.append("Remote" if parsed.remote else raw_loc_str)
             continue
 
@@ -323,6 +340,7 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 
         if not drop:
             keep_indices.append(idx)
+            unresolved.append(False)
             canon = ""
             if parsed.city and parsed.state:
                 canon = f"{parsed.city}, {parsed.state}"
@@ -339,11 +357,12 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 
     filtered = df.loc[keep_indices].copy()
     filtered["location"] = new_locations
+    filtered["_loc_unresolved"] = unresolved
     return filtered
 
 
 # ---------------------------------------------------------------------
-# Step 4 — exact dedupe
+# Step 5 — dedupe (the decision lives in discovery/dedupe.py)
 # ---------------------------------------------------------------------
 
 def _not_applyable(df: pd.DataFrame) -> pd.Series:
@@ -355,86 +374,32 @@ def _not_applyable(df: pd.DataFrame) -> pd.Series:
     return ~url.map(is_applyable)
 
 
-def exact_dedupe(df: pd.DataFrame) -> pd.DataFrame:
+def dedupe(
+    df: pd.DataFrame,
+    ledger: pd.DataFrame | None = None,
+    state_index: dict | None = None,
+    seen_ids=(),
+) -> tuple[pd.DataFrame, list[dict]]:
+    """One evidence-based pass over the whole window.
+
+    Applyability outranks jd_text length in the survivor tie-break: an
+    aggregator repost wins on appended boilerplate by a percent or two and
+    costs the only url that can be submitted to.
+    """
     if df.empty:
-        return df.copy()
-    df = df.copy()
-    df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
-    # Applyability outranks jd_text length: an aggregator repost wins on
-    # appended boilerplate by a percent or two and costs the only url that can
-    # be submitted to. Both rows share company_normalized and title_normalized,
-    # so job_id is identical either way and no tracked role is orphaned.
-    df["_not_applyable"] = _not_applyable(df)
-    df = df.sort_values(["_not_applyable", "_jd_len"], ascending=[True, False], kind="stable")
-    df = df.drop_duplicates(subset=["company_normalized", "title_normalized"], keep="first")
-    return df.drop(columns=["_jd_len", "_not_applyable"])
+        return dedupe_mod.resolve(df)
+    work = df.copy()
+    work["_not_applyable"] = _not_applyable(work)
+    return dedupe_mod.resolve(
+        work,
+        canonical=aliases.canonical_map(ledger) if ledger is not None else {},
+        state_index=state_index or {},
+        seen_ids=seen_ids,
+    )
 
 
 # ---------------------------------------------------------------------
-# Step 5 — near dedupe within company
-# ---------------------------------------------------------------------
-
-# Level, seniority and track tokens, in canonical spelling. Two titles in one
-# company that disagree on these are different roles however close their ratio:
-# a level-numbered pair scores 98 on title alone, so ratio by itself deletes a
-# real posting.
-LEVEL_TOKENS = frozenset({
-    "i", "ii", "iii", "iv",
-    "intern", "coop", "trainee", "apprentice",
-    "junior", "entry", "graduate", "associate",
-    "senior", "staff", "principal", "distinguished", "fellow",
-    "lead", "manager", "director", "head", "vp", "chief", "president",
-})
-
-# Compared as canonical sets, never raw tokens: the same level is routinely
-# spelled two ways across boards, and treating the spellings as different
-# levels would exempt a genuine duplicate from collapsing.
-_LEVEL_SYNONYMS = {
-    "jr": "junior", "sr": "senior",
-    "mgr": "manager", "mgmt": "manager", "management": "manager",
-    "interns": "intern", "internship": "intern", "internships": "intern",
-    "grad": "graduate", "apprenticeship": "apprentice",
-    "1": "i", "2": "ii", "3": "iii", "4": "iv",
-    "vice": "vp",
-}
-# normalize_title turns "Co-op" into two tokens, so rejoin it before matching.
-_CO_OP_RE = re.compile(r"\bco op\b")
-
-
-def _level_tokens(title: str) -> frozenset[str]:
-    tokens = (_LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title).split())
-    return frozenset(LEVEL_TOKENS.intersection(tokens))
-
-
-def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
-    if df.empty:
-        return df.copy()
-    df = df.copy()
-    df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
-    # Same tie-break as exact_dedupe, for the same reason: an aggregator repost
-    # wins on boilerplate by a percent or two and costs the only url that can be
-    # submitted to. Step 4 got this and step 5 did not, so a board row could win
-    # the exact pass and then lose the fuzzy one — silently, since job_id
-    # excludes url. Measured on the 2026-08-10 run: 3 applyable rows lost to a
-    # LinkedIn survivor this way.
-    df["_not_applyable"] = _not_applyable(df)
-    keep_indices: list = []
-    for _, group in df.groupby("company_normalized", sort=False):
-        g = group.sort_values(["_not_applyable", "_jd_len"],
-                               ascending=[True, False], kind="stable")
-        kept: list[tuple[str, frozenset[str]]] = []
-        for idx, title in zip(g.index, g["title_normalized"]):
-            levels = _level_tokens(title)
-            if any(levels == kept_levels and fuzz.WRatio(title, kt) >= ratio_threshold
-                   for kt, kept_levels in kept):
-                continue
-            kept.append((title, levels))
-            keep_indices.append(idx)
-    return df.loc[keep_indices].drop(columns=["_jd_len", "_not_applyable"]).copy()
-
-
-# ---------------------------------------------------------------------
-# Step 7 — seen-ledger (jobs/seen.parquet)
+# Step 6 — seen-ledger (jobs/seen.parquet)
 # ---------------------------------------------------------------------
 
 def _lifetime_days(score: float) -> int:
@@ -492,7 +457,7 @@ def update_seen_ledger(
 
 
 # ---------------------------------------------------------------------
-# Step 8 — state.yaml glob
+# Step 7 — state.yaml glob
 # ---------------------------------------------------------------------
 
 def apply_state_yaml(df: pd.DataFrame, pipeline_dir: Path) -> pd.DataFrame:
@@ -512,7 +477,7 @@ def apply_state_yaml(df: pd.DataFrame, pipeline_dir: Path) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------
-# Step 9 — seen-ledger expiry
+# Step 8 — seen-ledger expiry
 # ---------------------------------------------------------------------
 
 def apply_expiry(
@@ -550,7 +515,7 @@ def apply_expiry(
 
 
 # ---------------------------------------------------------------------
-# Step 10 — Claude-owned defaults
+# Step 9 — Claude-owned defaults
 # ---------------------------------------------------------------------
 
 def init_claude_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -770,7 +735,7 @@ def load_raw_window(
 
 def drop_blank_company(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Step 1b. A blank company makes job_id a function of the title alone, so
-    two rows from different employers collide and exact_dedupe deletes one."""
+    two rows from different employers collide and dedupe deletes one."""
     if df.empty:
         return df.copy(), 0
     blank = df["company_normalized"].fillna("").str.strip() == ""
@@ -931,10 +896,8 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"(dropped {stats.get('dropped_stale', 0)})",
         f"- after location filter: {stats.get('after_location', 0)} "
         f"(dropped {stats.get('dropped_location', 0)})",
-        f"- after exact dedupe: {stats.get('after_exact_dedupe', 0)} "
-        f"(dropped {stats.get('dropped_exact', 0)})",
-        f"- after near dedupe (WRatio>=90): {stats.get('after_near_dedupe', 0)} "
-        f"(dropped {stats.get('dropped_near', 0)})",
+        f"- after dedupe: {stats.get('after_dedupe', 0)} "
+        f"(merged {stats.get('dropped_dedupe', 0)})",
         f"- after seen-ledger expiry: {stats.get('after_expiry', 0)} "
         f"(dropped {stats.get('dropped_expired', 0)})",
         f"- final rows: {stats.get('final_rows', 0)}",
@@ -960,12 +923,12 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         lines.append("(no rows)")
     lines.append("")
 
-    # Named, because a near-dup drop is the one silent way a tracked role
-    # leaves clean.parquet.
-    near_dropped = stats.get("near_dropped", [])
-    if near_dropped:
-        lines += ["### Near-dup rows dropped", ""]
-        lines += [f"- {row}" for row in near_dropped]
+    # Named, because a merge is the one silent way a tracked role leaves
+    # clean.parquet under an id other than its own.
+    merged_rows = stats.get("merged_rows", [])
+    if merged_rows:
+        lines += ["### Merge groups", ""]
+        lines += [f"- {row}" for row in merged_rows]
         lines.append("")
 
     # A collision cross-wires two unrelated roles' state.yaml and applications
@@ -1032,46 +995,61 @@ def run(
     after_short = window_stats["after_short"]
     after_stale = window_stats["after_stale"]
     after_location = window_stats["after_location"]
-    # step 4
-    df = exact_dedupe(df)
-    after_exact = len(df)
-    # step 5
-    before_near = df
-    df = near_dedupe(df)
-    after_near = len(df)
-    # A near-dup drop is the one silent way a role being actively tracked
-    # leaves clean.parquet, so name the casualties in the run report.
-    near_dropped = [
-        f"{compute_job_id(c, t)} {c} | {t}"
-        for c, t in zip(
-            before_near.loc[before_near.index.difference(df.index), "company_normalized"],
-            before_near.loc[before_near.index.difference(df.index), "title_normalized"],
-        )
-    ]
-    # step 6
+    today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
+    ledger_path = clean_dir / "seen.parquet"
+    alias_path = clean_dir / "company_aliases.parquet"
+    # step 4 — assigned before the dedupe, which picks the surviving id from
+    # the ids its own group members already carry.
     df["job_id"] = [
         compute_job_id(c, t)
         for c, t in zip(df["company_normalized"], df["title_normalized"])
     ]
     df, collisions = drop_job_id_collisions(df)
-    # step 7 — seen-ledger
-    today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
-    ledger_path = clean_dir / "seen.parquet"
-
+    # step 5
+    alias_ledger = aliases.load_ledger(alias_path)
+    seen_ids = frozenset(
+        pd.read_parquet(ledger_path)["job_id"]
+    ) if ledger_path.exists() else frozenset()
+    df, merges = dedupe(
+        df,
+        ledger=alias_ledger,
+        state_index=load_state_index(pipeline_dir),
+        seen_ids=seen_ids,
+    )
+    after_dedupe = len(df)
+    # A merge is the one silent way a role being actively tracked leaves
+    # clean.parquet under a different id, so name every group in the report.
+    merged_rows = [
+        f"{m['job_id']} <- {' + '.join(m['job_ids'])} ({m['canonical']})"
+        for m in merges
+    ]
+    aliases.write_ledger(
+        aliases.append_aliases(
+            alias_ledger,
+            [
+                (variant, m["canonical"], origin)
+                for m in merges
+                for variant, origin in m["origins"].items()
+            ],
+            today_ts,
+        ),
+        alias_path,
+    )
+    # step 6 — seen-ledger
     ledger = update_seen_ledger(
         df["job_id"].tolist(),
         ledger_path,
         clean_dir / "scored.parquet",
         today_ts,
     )
-    # step 8
+    # step 7
     df = apply_state_yaml(df, pipeline_dir)
-    # step 9 — retention expiry (tracked rows exempt)
+    # step 8 — retention expiry (tracked rows exempt)
     df = apply_expiry(df, ledger, today_ts)
     after_expiry = len(df)
-    # step 10
+    # step 9
     df = init_claude_columns(df)
-    # step 11
+    # step 10
     df = coerce_schema(df)
     per_source_final = df["source"].value_counts().to_dict() if not df.empty else {}
     per_source = {
@@ -1092,14 +1070,14 @@ def run(
         "dropped_stale": after_short - after_stale,
         "after_location": after_location,
         "dropped_location": after_stale - after_location,
-        "after_exact_dedupe": after_exact,
-        "dropped_exact": after_location - after_exact,
-        "after_near_dedupe": after_near,
-        "dropped_near": after_exact - after_near,
-        "near_dropped": near_dropped,
         "job_id_collisions": collisions,
+        "after_dedupe": after_dedupe,
+        # Chains off after_location like every other stage; a job_id
+        # collision drop is named separately rather than counted here.
+        "dropped_dedupe": after_location - after_dedupe,
+        "merged_rows": merged_rows,
         "after_expiry": after_expiry,
-        "dropped_expired": after_near - after_expiry,
+        "dropped_expired": after_dedupe - after_expiry,
         "final_rows": len(df),
         "per_source": per_source,
     }

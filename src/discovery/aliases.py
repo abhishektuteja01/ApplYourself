@@ -34,11 +34,12 @@ ALIAS_COLUMNS = (
 #: A company's own ATS is authoritative for how it spells its name.
 SOURCE_RANK = {"board": 2, "manual": 1, "aggregator": 0}
 
-#: Later state wins the sticky id. The four the migration actually sees are
-#: applied > tailored > saved > skip; the rest keep the pipeline's own order.
+#: Later state wins the sticky id. ghosted/withdrawn/rejected outrank saved and
+#: tailored because all three imply an application already went out.
 _STATE_ORDER = (
-    "skip", "ghosted", "withdrawn", "rejected", "saved", "tailored",
-    "applied", "recruiter_contact", "screen", "interview", "offer",
+    "skip", "saved", "tailored", "applied",
+    "ghosted", "withdrawn", "rejected",
+    "recruiter_contact", "screen", "interview", "offer",
 )
 STATE_PRECEDENCE = {s: i for i, s in enumerate(_STATE_ORDER)}
 

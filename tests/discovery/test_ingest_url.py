@@ -204,8 +204,11 @@ class TestIngest:
         monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
         ingest("https://x", vertical="example_primary", **dirs)
         monkeypatch.setattr(ingest_url, "fetch_row",
-                            lambda *a, **k: _row(company="Other Co",
-                                                 title="Widget Assembly Lead"))
+                            lambda *a, **k: _row(
+                                company="Other Co", title="Widget Assembly Lead",
+                                # A distinct posting needs a distinct url: an
+                                # identical one is a merge on its own now.
+                                url="https://boards.greenhouse.io/otherco/jobs/456"))
         ingest("https://y", vertical="example_primary", **dirs)
         clean = pd.read_parquet(tmp_path / "jobs" / "clean.parquet")
         assert len(clean) == 2  # both survive the same-minute raw file
@@ -229,8 +232,11 @@ class TestIngest:
         prior["scraped_date"] = prior["scraped_date"].astype(str).astype(object)
         prior.to_parquet(shard, index=False)
         monkeypatch.setattr(ingest_url, "fetch_row",
-                            lambda *a, **k: _row(company="Other Co",
-                                                 title="Widget Assembly Lead"))
+                            lambda *a, **k: _row(
+                                company="Other Co", title="Widget Assembly Lead",
+                                # A distinct posting needs a distinct url: an
+                                # identical one is a merge on its own now.
+                                url="https://boards.greenhouse.io/otherco/jobs/456"))
         ingest("https://y", vertical="example_primary", **dirs)
         df = pd.read_parquet(shard)
         assert len(df) == 2

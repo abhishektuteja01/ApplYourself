@@ -27,8 +27,6 @@ from src.discovery.cleaning import (
     compute_job_id,
     drop_short_jd,
     drop_stale,
-    exact_dedupe,
-    near_dedupe,
     normalize_company,
     normalize_title,
     project_raw,
@@ -37,6 +35,22 @@ from src.discovery.cleaning import (
 
 
 # ---------- helpers ----------
+
+_DEFAULT_JOB_URL = "https://example.com/job/1"
+
+
+def _distinct_urls(df: pd.DataFrame, salt: str = "") -> pd.DataFrame:
+    """An identical url is evidence enough to merge on its own, so the shared
+    placeholder gets a per-row suffix. Keyed on position, so the same role
+    re-scraped into a second shard under the same salt keeps its url."""
+    if df.empty:
+        return df
+    df["job_url"] = [
+        f"{url}/{salt}{i}" if url == _DEFAULT_JOB_URL else url
+        for i, url in enumerate(df["job_url"])
+    ]
+    return df
+
 
 def _raw_row(**overrides) -> dict:
     base = {
@@ -47,7 +61,7 @@ def _raw_row(**overrides) -> dict:
         "is_remote": False,
         "date_posted": pd.Timestamp("2026-06-01"),
         "scraped_date": pd.Timestamp("2026-06-06"),
-        "job_url": "https://example.com/job/1",
+        "job_url": _DEFAULT_JOB_URL,
         "job_url_direct": "",
         "description": "x" * 250,
         "min_amount": float("nan"),
@@ -59,6 +73,11 @@ def _raw_row(**overrides) -> dict:
     }
     base.update(overrides)
     return base
+
+
+def _dedupe(df: pd.DataFrame) -> pd.DataFrame:
+    """Survivors only — the merge report is asserted separately."""
+    return cleaning.dedupe(df)[0]
 
 
 def _clean_df(rows: list[dict]) -> pd.DataFrame:
@@ -107,7 +126,7 @@ def _make_raw_parquet(
 ) -> Path:
     raw_dir = tmp_path / "jobs" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame([_raw_row(**r) for r in rows])
+    df = _distinct_urls(pd.DataFrame([_raw_row(**r) for r in rows]))
     df.to_parquet(raw_dir / f"{run_id}.parquet", index=False)
     return raw_dir
 
@@ -176,7 +195,7 @@ def test_job_id_url_independent():
         {"company_normalized": company_norm, "title_normalized": title_norm,
          "url": "https://board-b.example.com/job/9", "jd_text": "longer " * 200},
     ])
-    deduped = exact_dedupe(df)
+    deduped = _dedupe(df)
     assert len(deduped) == 1
     assert deduped.iloc[0]["job_id"] == compute_job_id(company_norm, title_norm)
 
@@ -216,7 +235,7 @@ def test_normalize_title_seniority_preserved():
     assert "principal" in normalize_title("Principal Business Analyst")
 
 
-# ---------- T5: rapidfuzz near-dedupe boundary + longest-jd wins ----------
+# ---------- T5: dedupe title boundary + longest-jd wins ----------
 
 def test_rapidfuzz_dedupe_boundary():
     collapse_a = "widget functional consultant"
@@ -237,7 +256,7 @@ def test_rapidfuzz_dedupe_boundary():
         {"company_normalized": "beta", "title_normalized": keep_b,
          "jd_text": "b" * 300},
     ])
-    out = near_dedupe(df)
+    out = _dedupe(df)
     acme = out[out["company_normalized"] == "acme"]
     beta = out[out["company_normalized"] == "beta"]
     assert len(acme) == 1, "near-dupes within a company must collapse"
@@ -255,13 +274,13 @@ def test_rapidfuzz_dedupe_boundary():
     ("data engineer", "lead data engineer"),
     ("widget consultant", "senior widget consultant"),
 ])
-def test_near_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
+def test_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
     assert fuzz.WRatio(title_a, title_b) >= 90, "pair must be a ratio near-dup"
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": title_a, "jd_text": "a" * 300},
         {"company_normalized": "acme", "title_normalized": title_b, "jd_text": "a" * 500},
     ])
-    out = near_dedupe(df)
+    out = _dedupe(df)
     assert sorted(out["title_normalized"]) == sorted([title_a, title_b])
 
 
@@ -278,16 +297,16 @@ def test_near_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
     ("data analyst intern", "data analyst internship"),
     ("widget engineer co op", "widget engineer coop"),
 ])
-def test_near_dedupe_collapses_abbreviated_spellings_of_one_level(title_a, title_b):
+def test_dedupe_collapses_abbreviated_spellings_of_one_level(title_a, title_b):
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": title_a, "jd_text": "a" * 300},
         {"company_normalized": "acme", "title_normalized": title_b, "jd_text": "a" * 500},
     ])
     assert fuzz.WRatio(title_a, title_b) >= 90, "pair must be a ratio near-dup"
-    assert len(near_dedupe(df)) == 1
+    assert len(_dedupe(df)) == 1
 
 
-def test_near_dedupe_still_collapses_when_levels_match():
+def test_dedupe_still_collapses_when_levels_match():
     """The guard compares level tokens, so two titles that share one still
     collapse on ratio."""
     df = _clean_df([
@@ -296,7 +315,7 @@ def test_near_dedupe_still_collapses_when_levels_match():
         {"company_normalized": "acme", "title_normalized": "senior widget consultants",
          "jd_text": "a" * 500},
     ])
-    assert len(near_dedupe(df)) == 1
+    assert len(_dedupe(df)) == 1
 
 
 # ---------- T6: drop_short_jd at exactly 200 chars ----------
@@ -361,22 +380,22 @@ def test_drop_stale_survives_mixed_offset_strings():
     assert set(out["title_normalized"]) == {"utc", "est"}
 
 
-# ---------- T8: exact_dedupe keeps longest jd_text ----------
+# ---------- T8: dedupe keeps longest jd_text ----------
 
-def test_exact_dedupe_keeps_longest_jd():
+def test_dedupe_keeps_longest_jd():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "short " * 40, "url": "https://example.com/short"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "longer description text " * 60, "url": "https://example.com/long"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert len(out) == 1
     assert "longer" in out["jd_text"].iloc[0]
     assert out["url"].iloc[0] == "https://example.com/long"
 
 
-def test_exact_dedupe_prefers_applyable_url_over_longer_jd():
+def test_dedupe_prefers_applyable_url_over_longer_jd():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator copy with boilerplate " * 60,
@@ -385,19 +404,19 @@ def test_exact_dedupe_prefers_applyable_url_over_longer_jd():
          "jd_text": "board copy " * 50,
          "url": "https://job-boards.greenhouse.io/acme/jobs/456"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert len(out) == 1
     assert out["url"].iloc[0] == "https://job-boards.greenhouse.io/acme/jobs/456"
 
 
-def test_exact_dedupe_applyable_preference_does_not_change_job_id():
+def test_dedupe_applyable_preference_does_not_change_job_id():
     rows = [
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator " * 80, "url": "https://www.linkedin.com/jobs/view/123"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "board " * 10, "url": "https://jobs.lever.co/acme/789"},
     ]
-    out = exact_dedupe(_clean_df(rows))
+    out = _dedupe(_clean_df(rows))
     assert compute_job_id("acme", "widget functional consultant") == compute_job_id(
         out["company_normalized"].iloc[0], out["title_normalized"].iloc[0])
 
@@ -408,17 +427,17 @@ def test_exact_dedupe_applyable_preference_does_not_change_job_id():
     "https://jobs.lever.co/acme/abc",
     "https://jobs.ashbyhq.com/acme/abc",
 ])
-def test_exact_dedupe_recognises_each_board_host(applyable):
+def test_dedupe_recognises_each_board_host(applyable):
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator " * 80, "url": "https://www.indeed.com/viewjob?jk=1"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "board " * 5, "url": applyable},
     ])
-    assert exact_dedupe(df)["url"].iloc[0] == applyable
+    assert _dedupe(df)["url"].iloc[0] == applyable
 
 
-def test_exact_dedupe_gh_jid_careers_page_beats_an_aggregator():
+def test_dedupe_gh_jid_careers_page_beats_an_aggregator():
     # A Greenhouse posting on the company's own careers host: no board
     # hostname, but ?gh_jid= makes it auto-submittable all the same.
     df = _clean_df([
@@ -427,7 +446,7 @@ def test_exact_dedupe_gh_jid_careers_page_beats_an_aggregator():
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "board " * 5, "url": "https://acme.com/jobs/search?gh_jid=8044460"},
     ])
-    assert exact_dedupe(df)["url"].iloc[0] == "https://acme.com/jobs/search?gh_jid=8044460"
+    assert _dedupe(df)["url"].iloc[0] == "https://acme.com/jobs/search?gh_jid=8044460"
 
 
 @pytest.mark.parametrize("applyable", [
@@ -435,17 +454,17 @@ def test_exact_dedupe_gh_jid_careers_page_beats_an_aggregator():
     "https://job-boards.eu.greenhouse.io/acme/jobs/1",
     "https://jobs.eu.lever.co/acme/12345678-abcd-4bcd-8bcd-1234567890ab",
 ])
-def test_exact_dedupe_recognises_eu_board_hosts(applyable):
+def test_dedupe_recognises_eu_board_hosts(applyable):
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator " * 80, "url": "https://www.indeed.com/viewjob?jk=1"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "board " * 5, "url": applyable},
     ])
-    assert exact_dedupe(df)["url"].iloc[0] == applyable
+    assert _dedupe(df)["url"].iloc[0] == applyable
 
 
-def test_exact_dedupe_does_not_match_a_lookalike_host():
+def test_dedupe_does_not_match_a_lookalike_host():
     # The old substring test read "greenhouse.io" anywhere in the URL, so a
     # spoofed host outranked the real aggregator row.
     df = _clean_df([
@@ -456,21 +475,21 @@ def test_exact_dedupe_does_not_match_a_lookalike_host():
          "jd_text": "longer aggregator body " * 60,
          "url": "https://www.linkedin.com/jobs/view/1"},
     ])
-    assert exact_dedupe(df)["url"].iloc[0] == "https://www.linkedin.com/jobs/view/1"
+    assert _dedupe(df)["url"].iloc[0] == "https://www.linkedin.com/jobs/view/1"
 
 
-def test_exact_dedupe_falls_back_to_jd_len_when_neither_is_applyable():
+def test_dedupe_falls_back_to_jd_len_when_neither_is_applyable():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "short " * 10, "url": "https://www.linkedin.com/jobs/view/1"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "much longer body " * 60, "url": "https://www.indeed.com/viewjob?jk=2"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert out["url"].iloc[0] == "https://www.indeed.com/viewjob?jk=2"
 
 
-def test_exact_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
+def test_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
     # An indeed-sourced row whose job_url_direct resolved to a board: url is
     # what is ranked, not source.
     df = _clean_df([
@@ -481,14 +500,14 @@ def test_exact_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
          "jd_text": "indeed copy " * 5, "url": "https://job-boards.greenhouse.io/acme/jobs/9",
          "source": "indeed"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert out["source"].iloc[0] == "indeed"
 
 
 def test_blank_company_rows_are_dropped_not_collapsed(tmp_path):
     """A null company from JobSpy normalizes to "", so job_id becomes a function
     of the title alone and two rows from different employers collide — one is
-    then silently deleted by exact_dedupe."""
+    then silently deleted by dedupe."""
     raw_dir = _make_raw_parquet(tmp_path, [
         {"company": None, "title": "Widget Functional Consultant",
          "description": "x" * 300, "date_posted": pd.Timestamp("2026-06-01")},
@@ -741,7 +760,7 @@ def test_report_dropped_stats_chain_off_predecessor(tmp_path):
         """Return (after, dropped) for a report line."""
         line = next(ln for ln in report.splitlines() if ln.startswith(f"- {label}"))
         after = int(re.search(r":\s*(\d+)", line).group(1))
-        dropped = int(re.search(r"\(dropped (\d+)\)", line).group(1))
+        dropped = int(re.search(r"\((?:dropped|merged) (\d+)\)", line).group(1))
         return after, dropped
 
     raw_rows = int(re.search(r"- raw rows loaded: (\d+)", report).group(1))
@@ -758,8 +777,8 @@ def test_report_dropped_stats_chain_off_predecessor(tmp_path):
 
     # Whole chain must telescope: each dropped == predecessor_after - after.
     prev = short_after
-    for label in ("after stale drop", "after exact dedupe", "after near dedupe",
-                  "after seen-ledger expiry", "after location filter"):
+    for label in ("after stale drop", "after location filter", "after dedupe",
+                  "after seen-ledger expiry"):
         after, dropped = stage(label)
         assert dropped == prev - after, f"{label}: {dropped} != {prev} - {after}"
         prev = after
@@ -1616,8 +1635,8 @@ def _write_window_shards(raw_dir: Path) -> None:
         ],
     }
     for run_id, rows in shards.items():
-        df = (pd.DataFrame([_raw_row(**r) for r in rows]) if rows
-              else pd.DataFrame(columns=list(_raw_row().keys())))
+        df = (_distinct_urls(pd.DataFrame([_raw_row(**r) for r in rows]), salt=f"{run_id}-")
+              if rows else pd.DataFrame(columns=list(_raw_row().keys())))
         df.to_parquet(raw_dir / f"{run_id}.parquet", index=False)
 
 
@@ -1672,12 +1691,12 @@ def test_streamed_window_matches_the_concatenated_window(tmp_path, monkeypatch):
     # The fixture has to actually exercise every step, or equality is vacuous.
     for line in ("after blank-company drop", "after short-JD drop",
                  "after stale drop", "after location filter",
-                 "after exact dedupe", "after near dedupe"):
+                 "after dedupe"):
         assert line in streamed_report
     assert re.search(r"after blank-company drop: \d+ \(dropped 1\)", streamed_report)
     assert re.search(r"after short-JD drop \(<200 chars\): \d+ \(dropped 1\)", streamed_report)
     assert re.search(r"after location filter: \d+ \(dropped 1\)", streamed_report)
-    assert re.search(r"after exact dedupe: \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after dedupe: \d+ \(merged 1\)", streamed_report)
     # the tracked stale row survived step 3 despite a January posted_date
     assert stale_id in set(streamed["job_id"])
 
