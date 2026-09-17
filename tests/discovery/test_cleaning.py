@@ -328,8 +328,23 @@ def test_drop_short_jd():
         {"title_normalized": "t2", "jd_text": "x" * 200},
         {"title_normalized": "t3", "jd_text": "x" * 201},
     ])
-    out = drop_short_jd(df)
+    out, empty_by_source = drop_short_jd(df)
     assert set(out["title_normalized"]) == {"t2", "t3"}
+    # all three had text, so the empty-description tally stays empty
+    assert empty_by_source == {}
+
+
+def test_drop_short_jd_tallies_empty_descriptions():
+    df = _clean_df([
+        {"title_normalized": "t1", "jd_text": ""},
+        {"title_normalized": "t2", "jd_text": None},
+        {"title_normalized": "t3", "jd_text": "x" * 199},
+        {"title_normalized": "t4", "jd_text": "x" * 200},
+    ])
+    out, empty_by_source = drop_short_jd(df)
+    assert set(out["title_normalized"]) == {"t4"}
+    # t3 was short but fetched; only the two blank ones are counted
+    assert empty_by_source == {"manual": 2}
 
 
 # ---------- T7: drop_stale + posted_date_missing flag ----------
@@ -1983,3 +1998,67 @@ def test_job_id_collision_is_reported_and_absent_when_clean(tmp_path):
     clean_report.write_text("# run\n", encoding="utf-8")
     cleaning._append_cleaning_section(clean_report, "r1", {})
     assert "### job_id collision" not in clean_report.read_text(encoding="utf-8")
+
+
+# ---------- report: per-source table + the empty-description line ----------
+
+def test_per_source_table_renders_three_columns_and_round_trips(tmp_path):
+    """`raw` is the true pre-title-gate count; `after gate` is what survived
+    step 0. Both have to survive a trip through the report reader."""
+    from src.discovery import run_report
+
+    report = tmp_path / "r.md"
+    report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(report, "r1", {
+        "per_source": {"indeed": (126929, 13476, 597),
+                       "greenhouse": (400, 400, 60)},
+    })
+    text = report.read_text(encoding="utf-8")
+    assert "| source | raw | after gate | final |" in text
+    assert "| indeed | 126929 | 13476 | 597 |" in text
+
+    parsed = run_report.parse_report(text, run_id="r1")
+    src = parsed.sources["indeed"]
+    assert (src.raw_count, src.after_gate_count, src.final_count) == (126929, 13476, 597)
+
+
+def test_empty_description_line_renders_and_round_trips(tmp_path):
+    from src.discovery import run_report
+
+    report = tmp_path / "r.md"
+    report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(report, "r1", {
+        "after_blank_company": 2000, "after_short_jd": 899, "dropped_short": 1101,
+        "dropped_empty_jd": 1101,
+        "empty_jd_by_source": {"linkedin": 1090, "indeed": 11},
+    })
+    text = report.read_text(encoding="utf-8")
+    assert "- of which empty description: 1101" in text
+    assert "empty description by source: linkedin=1090, indeed=11" in text
+
+    parsed = run_report.parse_report(text, run_id="r1")
+    assert parsed.funnel["dropped_empty_jd"] == 1101
+    # the by-source detail line is not a funnel key and must not become one
+    assert "linkedin" not in parsed.funnel
+
+
+def test_empty_descriptions_are_reported_apart_from_short_ones(tmp_path):
+    """End to end: one empty JD and one merely short one land in different
+    numbers in the report."""
+    raw_dir = tmp_path / "jobs" / "raw"
+    raw_dir.mkdir(parents=True)
+    rows = [
+        _raw_row(company="Acme", title="Widget Functional Consultant",
+                 description="", site="linkedin"),
+        _raw_row(company="Beta", title="Widget Functional Consultant",
+                 description="tiny", site="linkedin"),
+        _raw_row(company="Gamma", title="Widget Functional Consultant",
+                 description="g" * 400, site="linkedin"),
+    ]
+    _distinct_urls(pd.DataFrame(rows)).to_parquet(
+        raw_dir / "2026-06-06_0100.parquet", index=False)
+
+    _, report = _run_into(tmp_path, raw_dir, "out")
+    assert re.search(r"after short-JD drop \(<200 chars\): \d+ \(dropped 2\)", report)
+    assert "- of which empty description: 1" in report
+    assert "empty description by source: linkedin=1" in report

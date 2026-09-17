@@ -69,6 +69,9 @@ class SourceRun:
     detail: str = ""
     crash_traceback: str = ""
     raw_count: int | None = None
+    # Rows surviving the per-vertical title gate. None on an older report,
+    # whose per-source table had no such column.
+    after_gate_count: int | None = None
     final_count: int | None = None
     # True once a `### Source:` header was seen. A name known only from
     # the cleaning per-source table never ran a lane this report.
@@ -124,7 +127,13 @@ _FUNNEL_RE = re.compile(
     r"(?:\s*\((?P<verb>dropped|merged)\s+(?P<delta>-?[0-9]+)\))?\s*$"
 )
 _PRUNED_RE = re.compile(r"^-\s+pruned\s+([0-9]+)\s+raw files")
-_TABLE_ROW_RE = re.compile(r"^\|\s*([^|]+?)\s*\|\s*([0-9]+)\s*\|\s*([0-9]+)\s*\|")
+# Two per-source table formats: the current `raw | after gate | final` and the
+# older two-column `raw | final`. The third count is optional, so a report
+# already on disk keeps parsing.
+_TABLE_ROW_RE = re.compile(
+    r"^\|\s*([^|]+?)\s*\|\s*([0-9]+)\s*\|\s*([0-9]+)\s*\|"
+    r"(?:\s*([0-9]+)\s*\|)?"
+)
 
 # Funnel label -> (value key, delta key). The two dedupe spellings collapse
 # onto one pair; `dropped_dedupe` accumulates so the old format's exact+near
@@ -134,6 +143,7 @@ _FUNNEL_KEYS = {
     "after classification/exclusion": ("after_exclusion", "dropped_exclusion"),
     "after blank-company drop": ("after_blank_company", "dropped_blank_company"),
     "after short-jd drop": ("after_short_jd", "dropped_short"),
+    "of which empty description": ("dropped_empty_jd", None),
     "after stale drop": ("after_stale", "dropped_stale"),
     "after location filter": ("after_location", "dropped_location"),
     "after exact dedupe": ("after_dedupe", "dropped_dedupe"),
@@ -307,7 +317,11 @@ def _parse_cleaning_line(report: RunReport, line: str, subsection: str) -> None:
         if m and m.group(1).lower() != "source":
             src = report.sources.setdefault(m.group(1), SourceRun(name=m.group(1)))
             src.raw_count = int(m.group(2))
-            src.final_count = int(m.group(3))
+            if m.group(4) is None:      # old two-column report
+                src.final_count = int(m.group(3))
+            else:
+                src.after_gate_count = int(m.group(3))
+                src.final_count = int(m.group(4))
 
 
 def _as_float(value) -> float | None:

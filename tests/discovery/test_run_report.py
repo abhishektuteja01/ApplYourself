@@ -4,7 +4,8 @@ Fixtures under `fixtures/runs/` are real report shapes, smallest that pin the
 behaviour:
 
 - `2026-01-01_0200` normal run, OLD cleaning format (exact + near dedupe lines)
-- `2026-01-02_0200` normal run, CURRENT cleaning format (one `after dedupe` line)
+- `2026-01-02_0200` normal run, CURRENT cleaning format (one `after dedupe` line,
+  three-column per-source table, empty-description line)
 - `2026-01-03_0200` crashed lane, skipped lane, silent zero, error spike,
   truncated lane, a lane that never started
 - `2026-01-04_0200` truncated mid-report: a source header with no status line
@@ -48,9 +49,24 @@ def test_normal_run_parses_sources_and_funnel():
 
 
 def test_per_source_table_attaches_raw_and_final_counts():
+    """An OLD two-column table: no gate column to read."""
     rep = load("2026-01-01_0200")
-    assert (rep.sources["linkedin"].raw_count, rep.sources["linkedin"].final_count) == (1000, 140)
-    assert (rep.sources["greenhouse"].raw_count, rep.sources["greenhouse"].final_count) == (500, 60)
+    lin, gh = rep.sources["linkedin"], rep.sources["greenhouse"]
+    assert (lin.raw_count, lin.after_gate_count, lin.final_count) == (1000, None, 140)
+    assert (gh.raw_count, gh.after_gate_count, gh.final_count) == (500, None, 60)
+
+
+def test_per_source_table_reads_the_gate_column():
+    rep = load("2026-01-02_0200")
+    lin, gh = rep.sources["linkedin"], rep.sources["greenhouse"]
+    assert (lin.raw_count, lin.after_gate_count, lin.final_count) == (1000, 500, 148)
+    assert (gh.raw_count, gh.after_gate_count, gh.final_count) == (500, 400, 62)
+
+
+def test_empty_description_line_parses():
+    assert load("2026-01-02_0200").funnel["dropped_empty_jd"] == 7
+    # Absent from an older report rather than reported as zero.
+    assert "dropped_empty_jd" not in load("2026-01-01_0200").funnel
 
 
 def test_old_cleaning_format_sums_both_dedupe_drops():

@@ -10,7 +10,9 @@ concatenated window; steps 5+ need the whole window and run after the concat.
      through the same normalizer as a scraped one
   1. Normalize company / title fields (seniority preserved)
   1b. Drop rows with a blank company_normalized — job_id would key on title alone
-  2. Drop rows where jd_text < 200 chars
+  2. Drop rows where jd_text < 200 chars; the share whose description was
+     completely empty is counted separately, since a never-fetched JD is a
+     different loss from a thin one
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
      career-board sources exempt — board presence is the liveness signal,
      capped by board_max_age_days when that config key is non-zero;
@@ -224,11 +226,19 @@ def drop_job_id_collisions(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 # Step 2 — drop short JD
 # ---------------------------------------------------------------------
 
-def drop_short_jd(df: pd.DataFrame, min_chars: int = MIN_JD_CHARS) -> pd.DataFrame:
+def drop_short_jd(
+    df: pd.DataFrame, min_chars: int = MIN_JD_CHARS
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Returns the survivors plus the per-source count of dropped rows whose
+    description was *completely empty*, not merely short: a JD nobody ever
+    fetched, distinct from one that came back thin. The caller logs one
+    summary per run rather than a line per row."""
     if df.empty:
-        return df.copy()
+        return df.copy(), {}
     lens = df["jd_text"].fillna("").astype(str).str.strip().str.len()
-    return df[lens >= min_chars].copy()
+    empty_by_source: dict[str, int] = {}
+    _tally_by_source(df[lens == 0], empty_by_source)
+    return df[lens >= min_chars].copy(), empty_by_source
 
 
 # ---------------------------------------------------------------------
@@ -816,12 +826,23 @@ def drop_blank_company(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
     return df[~blank].copy(), by_source
 
 
+def _tally_by_source(df: pd.DataFrame, acc: dict) -> None:
+    """Accumulate per-source row counts into `acc`, in place."""
+    if df.empty:
+        return
+    for src, count in df["source"].value_counts().items():
+        acc[str(src)] = acc.get(str(src), 0) + int(count)
+
+
 def _new_window_stats() -> dict:
     return {
         "raw_rows": 0,
         "after_exclusion": 0,
         "drops_per_vertical": {},
+        "per_source_pregate": {},
         "per_source_raw": {},
+        "empty_jd_by_source": {},
+        "dropped_empty_jd": 0,
         "recovered_company": 0,
         "dropped_blank_company": 0,
         "blank_company_by_source": {},
@@ -847,6 +868,9 @@ def _filter_shard(
     unchanged."""
     stats["raw_rows"] += len(raw)
     df = project_raw(raw)
+    # True per-source raw, before the title gate — the single largest drop
+    # stage, invisible while the table's `raw` column was the post-gate tally.
+    _tally_by_source(df, stats["per_source_pregate"])
     # step 0
     df, drops_per_vertical = apply_title_exclusion(df, vcfg)
     for name, count in drops_per_vertical.items():
@@ -859,11 +883,9 @@ def _filter_shard(
     # step 1
     df["company_normalized"] = df["company"].apply(normalize_company)
     df["title_normalized"] = df["title"].apply(normalize_title)
-    # Counted before any drop below it, so the per-source table's raw column
-    # still reconciles against after_exclusion.
-    if not df.empty:
-        for src, count in df["source"].value_counts().items():
-            stats["per_source_raw"][src] = stats["per_source_raw"].get(src, 0) + int(count)
+    # Counted before any drop below it, so the per-source table's `after gate`
+    # column still reconciles against after_exclusion.
+    _tally_by_source(df, stats["per_source_raw"])
     # step 1b
     df, blank_by_source = drop_blank_company(df)
     for src, count in blank_by_source.items():
@@ -873,7 +895,10 @@ def _filter_shard(
     stats["dropped_blank_company"] += sum(blank_by_source.values())
     stats["after_blank_company"] += len(df)
     # step 2
-    df = drop_short_jd(df)
+    df, empty_by_source = drop_short_jd(df)
+    for src, count in empty_by_source.items():
+        stats["empty_jd_by_source"][src] = stats["empty_jd_by_source"].get(src, 0) + count
+    stats["dropped_empty_jd"] += sum(empty_by_source.values())
     stats["after_short"] += len(df)
     # step 3 — needs company_normalized/title_normalized (it recomputes job_id)
     # and tracked_ids, which is why both are resolved above the loop.
@@ -913,7 +938,19 @@ def load_filtered_window(
         # same way project_raw(pd.DataFrame()) did when run projected the concat.
         frames = [_filter_shard(pd.DataFrame(), _new_window_stats(), cfg, vcfg, tracked_ids, today)]
     _log_blank_company_summary(stats)
+    _log_empty_jd_summary(stats)
     return _concat_raw_frames(frames), stats
+
+
+def _log_empty_jd_summary(stats: dict) -> None:
+    """One line per run for the empty-description share of step 2, not one per
+    row. A source that fetches JDs lazily can accept a row at scrape time and
+    lose it here with a description nobody ever fetched."""
+    dropped = stats.get("dropped_empty_jd", 0)
+    if not dropped:
+        return
+    breakdown = _by_source_text(stats.get("empty_jd_by_source", {}))
+    log.warning("short-JD drop: %d had an empty description (%s)", dropped, breakdown)
 
 
 def _log_blank_company_summary(stats: dict) -> None:
@@ -922,10 +959,7 @@ def _log_blank_company_summary(stats: dict) -> None:
     recovered = stats.get("recovered_company", 0)
     if not dropped and not recovered:
         return
-    by_source = stats.get("blank_company_by_source", {})
-    breakdown = ", ".join(
-        f"{s}={n}" for s, n in sorted(by_source.items(), key=lambda kv: -kv[1])
-    ) or "none"
+    breakdown = _by_source_text(stats.get("blank_company_by_source", {}))
     log.warning(
         "blank company: recovered %d from board tenant slugs, dropped %d (%s)",
         recovered, dropped, breakdown,
@@ -974,6 +1008,12 @@ def prune_raw_files(raw_dir: Path, cfg, today: pd.Timestamp) -> int:
     return pruned_count
 
 
+def _by_source_text(by_source: dict) -> str:
+    return ", ".join(
+        f"{s}={n}" for s, n in sorted(by_source.items(), key=lambda kv: -kv[1])
+    ) or "none"
+
+
 def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> None:
     lines = [
         "",
@@ -988,6 +1028,9 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"(dropped {stats.get('dropped_blank_company', 0)})",
         f"- after short-JD drop (<{MIN_JD_CHARS} chars): {stats.get('after_short_jd', 0)} "
         f"(dropped {stats.get('dropped_short', 0)})",
+        f"- of which empty description: {stats.get('dropped_empty_jd', 0)}",
+        "  - empty description by source: "
+        + _by_source_text(stats.get("empty_jd_by_source", {})),
         f"- after stale drop (>{MAX_AGE_DAYS}d): {stats.get('after_stale', 0)} "
         f"(dropped {stats.get('dropped_stale', 0)})",
         f"- after location filter: {stats.get('after_location', 0)} "
@@ -999,7 +1042,7 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"- final rows: {stats.get('final_rows', 0)}",
         f"- pruned {stats.get('pruned_raw', 0)} raw files",
         "",
-        "### Per-source counts (raw -> final)",
+        "### Per-source counts (raw -> after gate -> final)",
         "",
     ]
 
@@ -1010,11 +1053,11 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
 
     src_counts = stats.get("per_source", {})
     if src_counts:
-        lines.append("| source | raw | final |")
-        lines.append("|---|---|---|")
+        lines.append("| source | raw | after gate | final |")
+        lines.append("|---|---|---|---|")
         for src in sorted(src_counts):
-            raw, final = src_counts[src]
-            lines.append(f"| {src} | {raw} | {final} |")
+            raw, after_gate, final = src_counts[src]
+            lines.append(f"| {src} | {raw} | {after_gate} | {final} |")
     else:
         lines.append("(no rows)")
     lines.append("")
@@ -1085,7 +1128,8 @@ def run(
     raw_rows = window_stats["raw_rows"]
     after_exclusion = window_stats["after_exclusion"]
     drops_per_vertical = window_stats["drops_per_vertical"]
-    per_source_raw = window_stats["per_source_raw"]
+    per_source_pregate = window_stats["per_source_pregate"]
+    per_source_after_gate = window_stats["per_source_raw"]
     dropped_blank_company = window_stats["dropped_blank_company"]
     after_blank_company = window_stats["after_blank_company"]
     after_short = window_stats["after_short"]
@@ -1149,8 +1193,11 @@ def run(
     df = coerce_schema(df)
     per_source_final = df["source"].value_counts().to_dict() if not df.empty else {}
     per_source = {
-        src: (per_source_raw.get(src, 0), per_source_final.get(src, 0))
-        for src in set(per_source_raw) | set(per_source_final)
+        src: (per_source_pregate.get(src, 0),
+              per_source_after_gate.get(src, 0),
+              per_source_final.get(src, 0))
+        for src in set(per_source_pregate) | set(per_source_after_gate)
+        | set(per_source_final)
     }
     stats = {
         "raw_rows": raw_rows,
@@ -1160,6 +1207,8 @@ def run(
         "after_blank_company": after_blank_company,
         "dropped_blank_company": dropped_blank_company,
         "after_short_jd": after_short,
+        "dropped_empty_jd": window_stats["dropped_empty_jd"],
+        "empty_jd_by_source": window_stats["empty_jd_by_source"],
         # Every dropped_* chains off its predecessor, never raw_rows.
         "dropped_short": after_blank_company - after_short,
         "after_stale": after_stale,

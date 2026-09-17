@@ -133,6 +133,12 @@ the current single `after dedupe: N (merged M)` line and the older
 `after exact dedupe` + `after near dedupe` pair. Add a funnel line to the
 cleaning writer and add its label to `_FUNNEL_KEYS` in the same change.
 
+The per-source table has two formats too — the current
+`raw | after gate | final` and the older `raw | final`, whose third count is
+absent rather than zero. `raw` is the true pre-title-gate count; `after gate`
+is what survived step 0 and is the column that reconciles with
+`after_exclusion`.
+
 Parsing degrades, never raises: a truncated report, a missing `## Cleaning`
 half, a zero-byte file and an unknown section all yield a partial record plus a
 `parse_notes` entry. `SourceStatus.SKIPPED` is written by the orchestrator for a
