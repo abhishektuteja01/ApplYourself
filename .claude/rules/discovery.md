@@ -30,6 +30,24 @@ construction — the hash already says so — so dedupe merges them unconditiona
 whatever the JD evidence says. A blank `company_normalized` is dropped at step 1b
 rather than hashed, because it would key the id on the title alone.
 
+## Searching is not accepting
+
+`location_allowlist` is what cleaning accepts; `search_locations` is what the
+jobspy lanes query. The ATS sources crawl globally and filter at cleaning, so the
+allowlist may be as wide as you like. Absent, `search_locations` falls back to
+`effective_countries()` and is capped at `MAX_SEARCH_LOCATIONS`; `validate()`
+errors above the cap.
+
+`parse_location` returns `city` for every country; only the admin1 -> state
+inference is US-only, so `location_allowlist.cities` filters worldwide. A city
+with no state canonicalizes as `"City, Country"`.
+
+A location that is exactly a region acronym (`EMEA`, `EMEIA`, `APAC`, `LATAM`,
+`ANZ`) expands to its constituent countries and goes through the
+`candidate_countries` branch: overlap with the allowlist keeps it for review, no
+overlap drops it. The list is closed. Blank, `Worldwide`, `Anywhere` and `Remote`
+say nothing about country and stay keeps.
+
 ## Cleaning step order is the spec
 
 The numbered list in `cleaning.py`'s module docstring is normative; steps 0–3b are
