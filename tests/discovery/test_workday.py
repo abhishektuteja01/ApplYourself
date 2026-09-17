@@ -3,8 +3,6 @@ ATS sources, list and detail are separate endpoints and list is paginated, so
 this does not reuse `AtsBoardSource` — `fetch_json`/`fetch_json_post` are
 patched on `workday` directly rather than on `base`.
 """
-from datetime import date
-
 import pytest
 
 from src import verticals as verticals_module
@@ -15,7 +13,6 @@ from src.discovery.sources.ats.workday import (
     WorkdaySlugError,
     WorkdaySource,
     parse_slug,
-    relative_posted_date,
     search_terms,
 )
 
@@ -76,27 +73,6 @@ class TestParseSlug:
     def test_malformed_slugs_raise(self, bad):
         with pytest.raises(WorkdaySlugError):
             parse_slug(bad)
-
-
-class TestRelativePostedDate:
-    def test_today(self):
-        assert relative_posted_date("Posted Today", today=date(2026, 7, 10)) == date(2026, 7, 10)
-
-    def test_yesterday(self):
-        assert relative_posted_date("Posted Yesterday", today=date(2026, 7, 10)) == date(2026, 7, 9)
-
-    def test_n_days_ago(self):
-        assert relative_posted_date("Posted 19 Days Ago", today=date(2026, 7, 10)) == date(2026, 6, 21)
-
-    def test_n_plus_days_ago(self):
-        assert relative_posted_date("Posted 30+ Days Ago", today=date(2026, 7, 10)) == date(2026, 6, 10)
-
-    def test_unrecognized_text_is_none(self):
-        assert relative_posted_date("Some other phrasing") is None
-
-    def test_missing_is_none(self):
-        assert relative_posted_date(None) is None
-        assert relative_posted_date("") is None
 
 
 class TestSearchTerms:

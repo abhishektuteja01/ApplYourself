@@ -57,9 +57,9 @@ from __future__ import annotations
 import random
 import re
 import time
-from datetime import date, timedelta
 
 from src.discovery import cleaning
+from src.discovery.dates import relative_posted_date
 from src.discovery import gate
 from src.discovery import universe
 from src.discovery.crawl_cursor import load_cursor, save_cursor
@@ -89,11 +89,6 @@ MAX_FRONTIER_OFFSET = 1000
 # so it is a constant here rather than a config key.
 REPORT_TOP_TENANTS = 20
 
-_POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)
-_POSTED_YESTERDAY = re.compile(r"posted\s+yesterday", re.IGNORECASE)
-_POSTED_N_DAYS_AGO = re.compile(r"posted\s+(\d+)\+?\s+days?\s+ago", re.IGNORECASE)
-
-
 class WorkdaySlugError(ValueError):
     """A universe.csv slug is not the tri-part company|wd#|site_id shape."""
 
@@ -106,21 +101,6 @@ def parse_slug(slug: str) -> tuple[str, str, str]:
     if not re.fullmatch(r"wd\d+", wd, re.IGNORECASE):
         raise WorkdaySlugError(f"expected wd<N> for the pod, got {wd!r} in {slug!r}")
     return company, wd, site_id
-
-
-def relative_posted_date(text: str, today: date | None = None) -> date | None:
-    """Workday's `postedOn` is always relative text, never a timestamp."""
-    if not isinstance(text, str) or not text.strip():
-        return None
-    today = today or date.today()
-    if _POSTED_TODAY.search(text):
-        return today
-    if _POSTED_YESTERDAY.search(text):
-        return today - timedelta(days=1)
-    match = _POSTED_N_DAYS_AGO.search(text)
-    if match:
-        return today - timedelta(days=int(match.group(1)))
-    return None
 
 
 def _base_url(company: str, wd: str) -> str:

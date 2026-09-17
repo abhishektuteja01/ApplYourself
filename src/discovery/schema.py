@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.discovery.dates import naive_datetime
+
 COLUMNS: list[str] = [
     "site",
     "company",
@@ -21,17 +23,6 @@ COLUMNS: list[str] = [
     "found_by_term",
     "found_by_remote",
 ]
-
-def naive_datetime(values) -> pd.Series:
-    """Parse to tz-naive UTC. Both keywords are load-bearing on a column that
-    concatenated shards have left as object dtype: without utc=True a single
-    tz-aware value coerces every naive one to NaT, and without format="mixed"
-    the format inferred from the first element does the same to every element
-    that doesn't share it."""
-    return pd.to_datetime(
-        values, errors="coerce", utc=True, format="mixed"
-    ).dt.tz_localize(None)
-
 
 def make_row(**kwargs) -> dict:
     row = {

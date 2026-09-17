@@ -35,7 +35,8 @@ from src.discovery import htmlutil
 from src.discovery.config import load_config
 from src import ats_http as http
 from src.discovery.sources.ats import greenhouse, lever, ashby, registry
-from src.discovery.schema import make_row, naive_datetime, validate_frame
+from src.discovery.dates import naive_datetime
+from src.discovery.schema import make_row, validate_frame
 from src.parquet_io import write_parquet
 from src.discovery.orchestrator import (
     JOBS_RAW,

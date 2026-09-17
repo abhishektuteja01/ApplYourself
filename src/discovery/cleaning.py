@@ -52,7 +52,7 @@ from src import verticals
 from src.discovery import aliases
 from src.discovery import dedupe as dedupe_mod
 from src.discovery.config import load_config
-from src.discovery.schema import naive_datetime
+from src.discovery.dates import naive_datetime
 from src import paths
 from src.parquet_io import write_parquet
 from src.state_io import load_state_index

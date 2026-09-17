@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime
 import requests
 
 log = logging.getLogger(__name__)
@@ -148,19 +147,3 @@ def fetch_text(
         return text
 
     return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts)
-
-def iso_date(value) -> date | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-    except ValueError:
-        return None
-
-def ms_date(value) -> date | None:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return None
-    try:
-        return datetime.fromtimestamp(value / 1000).date()
-    except (ValueError, OSError, OverflowError):
-        return None

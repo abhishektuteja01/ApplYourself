@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.discovery.sources.ats.base import AtsBoardSource
-from src.ats_http import ms_date
+from src.discovery.dates import ms_date
 from src.discovery.htmlutil import html_to_text
 from src.discovery.schema import make_row
 
