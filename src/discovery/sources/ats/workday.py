@@ -44,7 +44,7 @@ regardless. Pagination here stops only on a short page
 "Posted 30+ Days Ago") at both the list and detail level, never an absolute
 timestamp — `relative_posted_date` converts it to an approximate date, or
 `None` if it does not recognize the phrasing. `workday` is in
-`CAREER_SOURCES`/`STALENESS_EXEMPT_SOURCES` (registry.py), so an approximate
+`CAREER_SOURCES`/`STALENESS_EXEMPT_SOURCES` (cleaning.py), so an approximate
 or missing date does not cost a row its place in the window.
 
 Slug is a tri-part pipe-joined string, `company|wd#|site_id` — one company
@@ -234,17 +234,15 @@ class WorkdaySource(Source):
         detail_shape_errors = 0
         first_request = True
 
-        # Resume where the last run stopped. 55 tenants x 48 terms is 2,640
-        # list requests before a single posting is read, which does not fit
-        # one run's deadline — so a run covers a slice and the rotation makes
-        # the whole space cycle. Without it the deadline cut the same
-        # alphabetical tail every run and those tenants were never crawled.
+        # Resume where the last run stopped, so a deadline cut does not drop
+        # the same alphabetical tail every run. Dormant at one search term:
+        # every tenant completes, so the rotation starts at the same slug each
+        # run. Only the deep-page frontier (`offsets`) is live — see
+        # `crawl_cursor`'s docstring.
         cursor = load_cursor(self.name)
-        # Priority tenants are never rotated out. `universe.load()` sorts them
-        # first for a reason, and rotating the whole list demoted them to
-        # ~40% of runs in simulation — the priority flag became nearly inert
-        # and the priority-only report rows vanished on truncated runs. Head
-        # stays fixed; only the tail rotates.
+        # Priority tenants stay at a fixed head; only the tail rotates. No
+        # workday entries in `profile/companies.yaml`, so `head` is empty and
+        # the split is inert today.
         companies = list(companies)
         head = [c for c in companies if c.priority]
         tail = cursor.rotate([c for c in companies if not c.priority],

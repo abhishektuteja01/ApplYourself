@@ -4,14 +4,17 @@ No LLM calls (R7). Reads pipeline/*/state.yaml but never writes there.
 Operations execute in this exact step order:
   0. Per-vertical title gate (apply_title_exclusion), before everything else
   1. Normalize company / title fields (seniority preserved)
+  1b. Drop rows with a blank company_normalized — job_id would key on title alone
   2. Drop rows where jd_text < 200 chars
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
      career-board sources exempt — board presence is the liveness signal,
      capped by board_max_age_days when that config key is non-zero;
      rows with a pipeline/<job_id>/state.yaml exempt too, matching step 9
   3b. Drop rows outside the location allowlist
-  4. Exact dedupe on (company_normalized, title_normalized), longest jd_text wins
-  5. Near dedupe within company via rapidfuzz.WRatio >= 90, longest jd_text wins
+  4. Exact dedupe on (company_normalized, title_normalized): a url that leads to
+     a board application form wins, longest jd_text only breaks the tie
+  5. Near dedupe within company via rapidfuzz.WRatio >= 90, between titles that
+     share the same level tokens; same tie-break as step 4
   6. job_id = sha1(company_normalized|title_normalized)[:8]
      url and jd_text deliberately excluded so job_id is stable across re-scrapes.
      Flipping the hash on a URL change would silently orphan
@@ -23,7 +26,9 @@ Operations execute in this exact step order:
   9. Drop expired rows per the seen-ledger tiers (tracked rows never expire;
      never-scored rows get the high tier — NaN means unjudged, not bad)
   10. Initialize Claude-owned columns with defaults
-  11. Write clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
+  11. coerce_schema (raises KeyError on a missing column), prune_raw_files
+      (deletes raw shards older than raw_retention_days), then write
+      clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
 """
 from __future__ import annotations
 
@@ -860,7 +865,7 @@ def run(
     raw = load_raw_window(raw_dir, today=today)
     raw_rows = len(raw)
     df = project_raw(raw)
-    # step 1 exclusion
+    # step 0
     df, drops_per_vertical = apply_title_exclusion(df, verticals.get_config())
     after_exclusion = len(df)
     # step 1

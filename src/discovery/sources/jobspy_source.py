@@ -15,17 +15,18 @@ from src.discovery.gate import gate_passing_urls
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
 
-# A/B: results_wanted 100 over 50 roughly doubled rows/run with no 429s.
+# 100 over 50 gives materially more rows per query without tripping 429s.
+# Whether a higher cap is safe is untested: every query now saturates at 100.
 RESULTS_WANTED = 100
 HOURS_OLD = 336
 DESCRIPTION_FORMAT = "markdown"
 
 # LinkedIn job descriptions live on a separate page, one GET per row. jobspy
 # will fetch them inline (linkedin_fetch_description=True) but only ever per
-# row, unpaced, before anything has filtered the rows — ~2.7x duplicate URLs
-# across search terms and ~half of the unique ones failing the title gate. We
-# fetch them ourselves after the term loop instead: once per unique job_url
-# that will actually survive cleaning, paced.
+# row, unpaced, and before anything has filtered the rows — most of which are
+# duplicates across search terms or fail the title gate. We fetch them
+# ourselves after the term loop instead: once per unique job_url that will
+# actually survive cleaning, paced.
 DETAIL_PACING_SECONDS = 1.0
 DETAIL_JITTER_SECONDS = 0.5
 

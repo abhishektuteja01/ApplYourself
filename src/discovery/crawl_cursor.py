@@ -1,28 +1,28 @@
 """Where a paged, search-scoped crawl left off, persisted across runs.
 
-Workday is the first source whose cost scales as tenants x search terms rather
-than tenants. With 55 tenants and 48 distinct terms that is 2,640 list
-requests as a *floor* — one page each, before a single posting is looked at —
-which at the configured pacing does not fit a run's deadline. Two separate
-problems come out of that, and this module holds the state for both:
+Workday is the only caller. Its cost scales as tenants x search terms rather
+than tenants, so this holds two pieces of resume state, one live and one
+dormant.
 
-**The floor.** A run cannot visit every (tenant, term) pair, so it visits a
-slice and the next run resumes after it. `next_slug` is that resume point.
-Without it a deadline cut drops the same alphabetical tail every run,
-forever — the tenants at the end of the CSV would never be crawled at all.
+**`offsets` — the deep-page frontier (live).** `MAX_PAGES_PER_TERM` bounds one
+(tenant, term) pair's pagination. With every run starting at offset 0, pages
+past that cap would never be read on any run. `offsets` records each pair's
+frontier so later pages are eventually reached, and resets to 0 when a pair
+runs out of results.
 
-**The ceiling.** `MAX_PAGES_PER_TERM` bounds one pair's pagination. The claim
-that "a page never reached is read again from page 0 next run, so nothing is
-lost" was only true of deadline truncation, not of the cap: with every run
-starting at offset 0, pages past the cap were never read on any run.
-`offsets` records each pair's deep frontier so later pages are eventually
-reached, and resets to 0 when a pair runs out of results.
+The frontier is the *second* page a run reads, never the first. Workday's list
+endpoint takes no sort parameter and defaults to newest-first, so skipping
+offset 0 to resume deep would blind the crawl to new postings — the one thing
+it is for. `workday.py` reads page 0 every run and uses this only to continue
+past it.
 
-Note the frontier is the *second* page a run reads, never the first. Workday's
-list endpoint takes no sort parameter and defaults to newest-first, so
-skipping offset 0 to resume deep would blind the crawl to new postings — the
-one thing it is for. `workday.py` reads page 0 every run and uses this only
-to continue past it.
+**`next_slug` — the tenant rotation (dormant).** For a run that cannot visit
+every (tenant, term) pair, `next_slug` is where the next run resumes, so a
+deadline cut does not drop the same alphabetical tail forever. At the current
+93 tenants x 1 search term a run completes every tenant, so `advance()` always
+wraps to the head and `rotate()` returns the same order every run. The
+rotation becomes live again if the term list widens or runs start truncating;
+until then treat it as untried in production, not as proven code.
 
 Deliberately not a column on `universe_health_*.parquet`: that schema is read
 by existing files on disk, and this state is per (slug, term) rather than per
