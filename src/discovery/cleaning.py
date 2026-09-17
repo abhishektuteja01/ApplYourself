@@ -1,7 +1,9 @@
 """Deterministic cleaning.
 
 No LLM calls (R7). Reads pipeline/*/state.yaml but never writes there.
-Operations execute in this exact step order:
+Operations execute in this exact step order. Steps 0-3b are row-local, so they
+run per raw shard inside load_filtered_window rather than once on the
+concatenated window; steps 4+ need the whole window and run after the concat.
   0. Per-vertical title gate (apply_title_exclusion), before everything else
   1. Normalize company / title fields (seniority preserved)
   1b. Drop rows with a blank company_normalized — job_id would key on title alone
@@ -694,16 +696,17 @@ def _parse_run_ts_from_filename(name: str) -> pd.Timestamp | None:
         return None
 
 
-def load_raw_window(
+def _iter_raw_shards(
     raw_dir: Path,
     today: pd.Timestamp | None = None,
     max_age_days: int = MAX_AGE_DAYS,
-) -> pd.DataFrame:
+):
+    """Yield one raw shard frame per in-window parquet, oldest filename first.
+    Sole place the window cutoff and the filename convention are applied."""
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     cutoff = today - pd.Timedelta(days=max_age_days)
     if not raw_dir.exists():
-        return pd.DataFrame()
-    frames: list[pd.DataFrame] = []
+        return
     for path in sorted(raw_dir.glob("*.parquet")):
         ts = _parse_run_ts_from_filename(path.name)
         if ts is None:
@@ -712,12 +715,126 @@ def load_raw_window(
         if ts.normalize() < cutoff:
             continue
         try:
-            frames.append(pd.read_parquet(path))
+            yield pd.read_parquet(path)
         except (OSError, ValueError, KeyError) as e:
             log.error("Failed to read %s: %s", path, e)
+
+
+def load_raw_window(
+    raw_dir: Path,
+    today: pd.Timestamp | None = None,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> pd.DataFrame:
+    """The whole window concatenated, unfiltered. `run` uses
+    load_filtered_window instead — this stays for callers that want the raw
+    frame."""
+    frames = list(_iter_raw_shards(raw_dir, today=today, max_age_days=max_age_days))
     if not frames:
         return pd.DataFrame()
     return _concat_raw_frames(frames)
+
+
+def drop_blank_company(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Step 1b. A blank company makes job_id a function of the title alone, so
+    two rows from different employers collide and exact_dedupe deletes one."""
+    if df.empty:
+        return df.copy(), 0
+    blank = df["company_normalized"].fillna("").str.strip() == ""
+    dropped = int(blank.sum())
+    if not dropped:
+        return df, 0
+    for s, c, t in zip(df.loc[blank, "source"], df.loc[blank, "company"], df.loc[blank, "title"]):
+        log.warning("dropping row with unusable company: source=%r company=%r title=%r", s, c, t)
+    return df[~blank].copy(), dropped
+
+
+def _new_window_stats() -> dict:
+    return {
+        "raw_rows": 0,
+        "after_exclusion": 0,
+        "drops_per_vertical": {},
+        "per_source_raw": {},
+        "dropped_blank_company": 0,
+        "after_blank_company": 0,
+        "after_short": 0,
+        "after_stale": 0,
+        "after_location": 0,
+    }
+
+
+def _filter_shard(
+    raw: pd.DataFrame,
+    stats: dict,
+    cfg,
+    vcfg,
+    tracked_ids: frozenset[str],
+    today: pd.Timestamp | None,
+) -> pd.DataFrame:
+    """Steps 0-3b for one shard. Every filter here is row-local, so running it
+    per shard is identical to running it once on the concatenated window — and
+    keeps 14 days of full shards from ever being resident at once. Each stats
+    counter accumulates, so the run report's chained `dropped_*` arithmetic is
+    unchanged."""
+    stats["raw_rows"] += len(raw)
+    df = project_raw(raw)
+    # step 0
+    df, drops_per_vertical = apply_title_exclusion(df, vcfg)
+    for name, count in drops_per_vertical.items():
+        stats["drops_per_vertical"][name] = stats["drops_per_vertical"].get(name, 0) + count
+    stats["after_exclusion"] += len(df)
+    # step 1
+    df["company_normalized"] = df["company"].apply(normalize_company)
+    df["title_normalized"] = df["title"].apply(normalize_title)
+    # Counted before any drop below it, so the per-source table's raw column
+    # still reconciles against after_exclusion.
+    if not df.empty:
+        for src, count in df["source"].value_counts().items():
+            stats["per_source_raw"][src] = stats["per_source_raw"].get(src, 0) + int(count)
+    # step 1b
+    df, dropped_blank = drop_blank_company(df)
+    stats["dropped_blank_company"] += dropped_blank
+    stats["after_blank_company"] += len(df)
+    # step 2
+    df = drop_short_jd(df)
+    stats["after_short"] += len(df)
+    # step 3 — needs company_normalized/title_normalized (it recomputes job_id)
+    # and tracked_ids, which is why both are resolved above the loop.
+    df = drop_stale(
+        df, today=today,
+        tracked_ids=tracked_ids,
+        board_max_age_days=cfg.board_max_age_days,
+    )
+    stats["after_stale"] += len(df)
+    # step 3b — location filter. Runs before dedupe so the survivor of a
+    # company+title group is picked among eligible rows only, and before the
+    # seen-ledger so an allowlist change isn't masked by stale first_seen.
+    df = filter_and_canonicalize_location(df, cfg)
+    stats["after_location"] += len(df)
+    return df
+
+
+def load_filtered_window(
+    raw_dir: Path,
+    cfg,
+    pipeline_dir: Path,
+    today: pd.Timestamp | None = None,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> tuple[pd.DataFrame, dict]:
+    """Stream the window: read one shard, apply steps 0-3b, keep only the
+    survivors. Returns (frame ready for dedupe, accumulated stats)."""
+    stats = _new_window_stats()
+    vcfg = verticals.get_config()
+    # Hoisted above the loop: one state.yaml glob for the whole window.
+    tracked_ids = frozenset(load_state_index(pipeline_dir))
+    frames = [
+        _filter_shard(raw, stats, cfg, vcfg, tracked_ids, today)
+        for raw in _iter_raw_shards(raw_dir, today=today, max_age_days=max_age_days)
+    ]
+    if not frames:
+        # No shard at all still has to produce the canonical column set, the
+        # same way project_raw(pd.DataFrame()) did when run projected the concat.
+        frames = [_filter_shard(pd.DataFrame(), _new_window_stats(), cfg, vcfg, tracked_ids, today)]
+    return _concat_raw_frames(frames), stats
 
 
 def _concat_raw_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
@@ -861,46 +978,18 @@ def run(
 ) -> pd.DataFrame:
     runs_dir.mkdir(parents=True, exist_ok=True)
     cfg = load_config()
-    raw = load_raw_window(raw_dir, today=today)
-    raw_rows = len(raw)
-    df = project_raw(raw)
-    # step 0
-    df, drops_per_vertical = apply_title_exclusion(df, verticals.get_config())
-    after_exclusion = len(df)
-    # step 1
-    df["company_normalized"] = df["company"].apply(normalize_company)
-    df["title_normalized"] = df["title"].apply(normalize_title)
-    # Counted before any drop below it, so the per-source table's raw column
-    # still reconciles against after_exclusion.
-    per_source_raw = df["source"].value_counts().to_dict() if not df.empty else {}
-    # A blank company makes job_id a function of the title alone, so two rows
-    # from different employers collide and exact_dedupe deletes one.
-    blank_company = df["company_normalized"].fillna("").str.strip() == "" if not df.empty else None
-    dropped_blank_company = int(blank_company.sum()) if blank_company is not None else 0
-    if dropped_blank_company:
-        for s, c, t in zip(
-            df.loc[blank_company, "source"],
-            df.loc[blank_company, "company"],
-            df.loc[blank_company, "title"],
-        ):
-            log.warning("dropping row with unusable company: source=%r company=%r title=%r", s, c, t)
-        df = df[~blank_company].copy()
-    after_blank_company = len(df)
-    # step 2
-    df = drop_short_jd(df)
-    after_short = len(df)
-    # step 3
-    df = drop_stale(
-        df, today=today,
-        tracked_ids=frozenset(load_state_index(pipeline_dir)),
-        board_max_age_days=cfg.board_max_age_days,
-    )
-    after_stale = len(df)
-    # step 3b — location filter. Runs before dedupe so the survivor of a
-    # company+title group is picked among eligible rows only, and before the
-    # seen-ledger so an allowlist change isn't masked by stale first_seen.
-    df = filter_and_canonicalize_location(df, cfg)
-    after_location = len(df)
+    # steps 0-3b, streamed one raw shard at a time. Dedupe and the seen-ledger
+    # below still need the whole window, so they stay here.
+    df, window_stats = load_filtered_window(raw_dir, cfg, pipeline_dir, today=today)
+    raw_rows = window_stats["raw_rows"]
+    after_exclusion = window_stats["after_exclusion"]
+    drops_per_vertical = window_stats["drops_per_vertical"]
+    per_source_raw = window_stats["per_source_raw"]
+    dropped_blank_company = window_stats["dropped_blank_company"]
+    after_blank_company = window_stats["after_blank_company"]
+    after_short = window_stats["after_short"]
+    after_stale = window_stats["after_stale"]
+    after_location = window_stats["after_location"]
     # step 4
     df = exact_dedupe(df)
     after_exact = len(df)

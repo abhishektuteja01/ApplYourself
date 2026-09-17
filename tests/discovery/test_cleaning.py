@@ -1503,3 +1503,164 @@ def test_compound_classified_titles_survive_the_title_gate(cfg):
     assert "Cog Learning Platform Engineer" in titles
     # ...but a bare "Cog Learning" title is still out-of-lane by charter.
     assert "Cog Learning Engineer" not in titles
+
+
+# ---------- D3.1: the streamed window equals the concatenated one ----------
+
+def _legacy_load_filtered_window(raw_dir, cfg_, pipeline_dir, today=None,
+                                 max_age_days=cleaning.MAX_AGE_DAYS):
+    """The pre-D3.1 order: concatenate the whole 14-day window first, then run
+    steps 0-3b once over it. Same filters, same functions — only the number of
+    frames they see differs, which is exactly what this test pins."""
+    from src import verticals as _verticals
+    from src.state_io import load_state_index as _load_state_index
+
+    stats = cleaning._new_window_stats()
+    raw = cleaning.load_raw_window(raw_dir, today=today, max_age_days=max_age_days)
+    df = cleaning._filter_shard(
+        raw, stats, cfg_, _verticals.get_config(),
+        frozenset(_load_state_index(pipeline_dir)), today,
+    )
+    return df, stats
+
+
+def _write_window_shards(raw_dir: Path) -> None:
+    """Five shards spread across the window, each carrying rows that different
+    steps drop, plus a duplicate pair that only survives to dedupe because
+    dedupe still sees the whole window."""
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    shards = {
+        # in-window, all keepers + one cross-shard duplicate
+        "2026-06-02_0100": [
+            {"company": "Acme Inc", "title": "Widget Functional Consultant",
+             "description": "a" * 400, "date_posted": pd.Timestamp("2026-06-01"),
+             "location": "Austin, TX", "site": "linkedin",
+             "job_url": "https://www.linkedin.com/jobs/view/1"},
+            {"company": "Beta LLC", "title": "Gizmo Business Analyst",
+             "description": "b" * 400, "date_posted": pd.Timestamp("2026-06-01"),
+             "location": "New York, NY", "site": "indeed"},
+        ],
+        # every row here is dropped by one filter or another -> shard empties out
+        "2026-06-03_0100": [
+            {"company": None, "title": "Widget Functional Consultant",
+             "description": "c" * 400, "date_posted": pd.Timestamp("2026-06-02"),
+             "location": "Austin, TX", "site": "linkedin"},
+            {"company": "Gamma Corp", "title": "Widget Functional Consultant",
+             "description": "short", "date_posted": pd.Timestamp("2026-06-02"),
+             "location": "Austin, TX", "site": "linkedin"},
+            {"company": "Delta Ltd", "title": "Widget Functional Consultant",
+             "description": "d" * 400, "date_posted": pd.Timestamp("2026-01-02"),
+             "location": "Austin, TX", "site": "linkedin"},
+            {"company": "Epsilon", "title": "Widget Functional Consultant",
+             "description": "e" * 400, "date_posted": pd.Timestamp("2026-06-02"),
+             "location": "Berlin, Germany", "site": "linkedin"},
+        ],
+        # a zero-row shard
+        "2026-06-04_0100": [],
+        # the other half of the cross-shard duplicate, plus a near-dup title
+        "2026-06-05_0100": [
+            {"company": "Acme, Inc.", "title": "Widget Functional Consultant",
+             "description": "a" * 800, "date_posted": pd.Timestamp("2026-06-04"),
+             "location": "Austin, TX", "site": "indeed"},
+            {"company": "Beta LLC", "title": "Gizmo Business Analyst II",
+             "description": "b" * 500, "date_posted": pd.Timestamp("2026-06-04"),
+             "location": "New York, NY", "site": "indeed"},
+        ],
+        # out of the window entirely
+        "2026-05-01_0100": [
+            {"company": "Zeta", "title": "Widget Functional Consultant",
+             "description": "z" * 400, "date_posted": pd.Timestamp("2026-05-01"),
+             "location": "Austin, TX", "site": "linkedin"},
+        ],
+    }
+    for run_id, rows in shards.items():
+        df = (pd.DataFrame([_raw_row(**r) for r in rows]) if rows
+              else pd.DataFrame(columns=list(_raw_row().keys())))
+        df.to_parquet(raw_dir / f"{run_id}.parquet", index=False)
+
+
+def _run_into(tmp_path: Path, raw_dir: Path, name: str) -> tuple[pd.DataFrame, str]:
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / name,
+        runs_dir=tmp_path / name / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    report = (tmp_path / name / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
+    return out, report
+
+
+def test_streamed_window_matches_the_concatenated_window(tmp_path, monkeypatch):
+    """D3.1: filtering per shard at load must produce a byte-identical
+    clean.parquet and an identical run report to filtering once on the
+    concatenated 14-day frame."""
+    # One raw dir per run: prune_raw_files deletes the out-of-window shard, so
+    # a shared dir would give the second run a different `pruned` count.
+    streamed_raw = tmp_path / "streamed_jobs" / "raw"
+    legacy_raw = tmp_path / "legacy_jobs" / "raw"
+    _write_window_shards(streamed_raw)
+    _write_window_shards(legacy_raw)
+    # A tracked role that drop_stale must exempt — the one step in the loop
+    # that needs state read from outside the shard.
+    pipeline_dir = tmp_path / "pipeline"
+    stale_id = compute_job_id("delta", "widget functional consultant")
+    (pipeline_dir / stale_id).mkdir(parents=True)
+    (pipeline_dir / stale_id / "state.yaml").write_text(
+        yaml.safe_dump({"job_id": stale_id, "state": "saved"}), encoding="utf-8"
+    )
+
+    streamed, streamed_report = _run_into(tmp_path, streamed_raw, "streamed")
+
+    monkeypatch.setattr(cleaning, "load_filtered_window", _legacy_load_filtered_window)
+    legacy, legacy_report = _run_into(tmp_path, legacy_raw, "legacy")
+
+    # The residual index is an artifact of when the concat happens and is
+    # never written out; row content and order are what must match.
+    pd.testing.assert_frame_equal(
+        streamed.reset_index(drop=True), legacy.reset_index(drop=True)
+    )
+    assert streamed_report == legacy_report
+    assert ((tmp_path / "streamed" / "clean.parquet").read_bytes()
+            == (tmp_path / "legacy" / "clean.parquet").read_bytes())
+    assert ((tmp_path / "streamed" / "clean.preview.jsonl").read_text(encoding="utf-8")
+            == (tmp_path / "legacy" / "clean.preview.jsonl").read_text(encoding="utf-8"))
+
+    # The fixture has to actually exercise every step, or equality is vacuous.
+    for line in ("after blank-company drop", "after short-JD drop",
+                 "after stale drop", "after location filter",
+                 "after exact dedupe", "after near dedupe"):
+        assert line in streamed_report
+    assert re.search(r"after blank-company drop: \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after short-JD drop \(<200 chars\): \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after location filter: \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after exact dedupe: \d+ \(dropped 1\)", streamed_report)
+    # the tracked stale row survived step 3 despite a January posted_date
+    assert stale_id in set(streamed["job_id"])
+
+
+def test_streamed_window_never_holds_the_whole_window(tmp_path):
+    """The point of D3.1: _filter_shard sees one shard at a time. If a future
+    edit reintroduces a concat-first load, the biggest frame it hands the
+    filters would be the whole window, not the largest shard."""
+    raw_dir = tmp_path / "jobs" / "raw"
+    _write_window_shards(raw_dir)
+    seen: list[int] = []
+    real = cleaning._filter_shard
+
+    def spy(raw, *a, **kw):
+        seen.append(len(raw))
+        return real(raw, *a, **kw)
+
+    cleaning._filter_shard = spy
+    try:
+        cleaning.load_filtered_window(
+            raw_dir, cleaning.load_config(), tmp_path / "pipeline",
+            today=pd.Timestamp("2026-06-06"),
+        )
+    finally:
+        cleaning._filter_shard = real
+    assert len(seen) == 4          # the 2026-05-01 shard is out of window
+    assert max(seen) == 4          # the largest single shard, not the 8-row window
+    assert sum(seen) == 8
