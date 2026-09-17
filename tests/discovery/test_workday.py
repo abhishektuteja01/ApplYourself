@@ -688,6 +688,102 @@ class TestTheCrawlResumesAcrossRuns:
         assert seen, "a bad cursor must mean 'start from the top', not a crash"
 
 
+class TestTheFrontierIsCapped:
+    """The list endpoint never reports exhaustion past page 0, so an uncapped
+    frontier walks forever — two tenants reached offsets 3,220 and 3,420,
+    pages 161-176 of a single query."""
+
+    def _company(self):
+        return [UniverseCompany("Acme AI", "workday", "acme|wd1|Site")]
+
+    def _stub_full_pages(self, monkeypatch, calls):
+        full = [dict(LIST_ITEM, externalPath=f"/job/{i}")
+                for i in range(workday.LIST_LIMIT)]
+
+        def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            calls.append(offset)
+            return {"total": 0, "jobPostings": full}
+
+        monkeypatch.setattr(universe, "load", lambda ats: self._company())
+        monkeypatch.setattr(workday, "list_page", always_full)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+    def _seed(self, slug, offset):
+        from src.discovery import crawl_cursor as cc
+        cursor = cc.CrawlCursor(ats="workday")
+        for term in search_terms(verticals_module.get_config()):
+            cursor.set_offset(slug, term, offset)
+        cc.save_cursor(cursor)
+        return cc
+
+    def test_a_run_that_would_cross_the_cap_restarts_at_the_head(self, monkeypatch):
+        slug = self._company()[0].slug
+        cc = self._seed(slug, workday.MAX_FRONTIER_OFFSET - workday.LIST_LIMIT)
+        calls: list[int] = []
+        self._stub_full_pages(monkeypatch, calls)
+
+        WorkdaySource().fetch(MockContext())
+
+        assert max(calls) > workday.MAX_FRONTIER_OFFSET - workday.LIST_LIMIT
+        term = search_terms(verticals_module.get_config())[0]
+        assert cc.load_cursor("workday").offset_for(slug, term) == 0
+
+    def test_a_pair_already_past_the_cap_wraps_instead_of_walking_on(self, monkeypatch):
+        slug = self._company()[0].slug
+        self._seed(slug, 3220)
+        calls: list[int] = []
+        self._stub_full_pages(monkeypatch, calls)
+
+        WorkdaySource().fetch(MockContext())
+
+        assert calls[0] == 0
+        assert max(calls) <= workday.MAX_PAGES_PER_TERM * workday.LIST_LIMIT
+        assert 3220 not in calls
+
+    def test_the_short_page_reset_still_wins(self, monkeypatch):
+        """An exhausted pair restarts at the head whatever the cap says."""
+        slug = self._company()[0].slug
+        cc = self._seed(slug, 100)
+        monkeypatch.setattr(universe, "load", lambda ats: self._company())
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 0, "jobPostings": [LIST_ITEM]})
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        WorkdaySource().fetch(MockContext())
+
+        term = search_terms(verticals_module.get_config())[0]
+        assert cc.load_cursor("workday").offset_for(slug, term) == 0
+
+
+class TestListYieldCounters:
+    """Three buckets, not two: whether deep pages contribute anything has to be
+    answerable from the report."""
+
+    def test_new_repeat_and_unclassified_paths_are_counted_separately(self, monkeypatch):
+        matched = [dict(LIST_ITEM, externalPath=f"/job/m{i}") for i in range(10)]
+        unmatched = [dict(LIST_ITEM, title="Definitely Not A Match Zzz",
+                          externalPath=f"/job/u{i}") for i in range(10)]
+        page = matched + unmatched
+
+        def fake_list(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            if offset in (0, workday.LIST_LIMIT):
+                return {"total": 0, "jobPostings": page}
+            return {"total": 0, "jobPostings": []}
+
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd1|Site")])
+        monkeypatch.setattr(workday, "list_page", fake_list)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        lines = WorkdaySource().fetch(MockContext()).report_lines
+        assert ("List paths: 10 new+classified | 10 new, no vertical "
+                "| 20 repeat") in lines
+
+
 class TestPerTenantReportTable:
     """D2.9: the table was only ever appended for `c.priority` tenants, and
     `companies.yaml` has no workday entries — so it never rendered."""

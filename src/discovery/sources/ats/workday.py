@@ -78,6 +78,12 @@ LIST_LIMIT = 20
 # term cannot consume a whole run's deadline. `crawl_cursor` persists where
 # each pair stopped, so pages past the cap are reached on a later run.
 MAX_PAGES_PER_TERM = 6
+# Where the deep frontier wraps back to the head. The list endpoint never
+# reports exhaustion past page 0, so a pair whose searchText-scoped result set
+# is a few dozen postings still reads full pages forever: two tenants had
+# walked to offsets 3,220 and 3,420. 1,000 is ~50 pages, far past any observed
+# scoped result set, and bounds one pair's full cycle to ten runs.
+MAX_FRONTIER_OFFSET = 1000
 # How many tenants the run report's per-tenant table lists, busiest first.
 # Report presentation only — it changes nothing about what is crawled or kept,
 # so it is a constant here rather than a config key.
@@ -241,6 +247,12 @@ class WorkdaySource(Source):
         err_other = 0
         shape_errors = 0
         list_attempts = 0
+        # List-page yield, split three ways: a path never seen before that
+        # classified into a vertical, one already returned by an earlier page
+        # or term, and a new path no vertical claimed.
+        new_matched_paths = 0
+        repeat_paths = 0
+        new_unmatched_paths = 0
         detail_attempts = 0
         detail_shape_errors = 0
         first_request = True
@@ -283,6 +295,9 @@ class WorkdaySource(Source):
             # than one search term, and must be detail-fetched only once — the
             # first term that finds it is the one recorded as `found_by_term`.
             survivors: dict[str, tuple[str, dict, str]] = {}
+            # Every path this tenant's list pages have returned, matched or
+            # not, so a repeat is a repeat whether or not it classified.
+            seen_paths: set[str] = set()
             fatal: CareersError | None = None
             # Per TERM, not per tenant. One transient 503 on term 3 of 4 used
             # to discard every survivor terms 1-2 had already found and skip
@@ -302,6 +317,8 @@ class WorkdaySource(Source):
                 # Head first, frontier second: freshness every run, depth
                 # still advancing.
                 frontier = cursor.offset_for(c.slug, term) or LIST_LIMIT
+                if frontier > MAX_FRONTIER_OFFSET:
+                    frontier = LIST_LIMIT
                 offsets = [0] + [frontier + k * LIST_LIMIT
                                   for k in range(MAX_PAGES_PER_TERM - 1)]
                 # Seeded with the frontier this run inherited, so a run that
@@ -333,11 +350,18 @@ class WorkdaySource(Source):
                             c_fetched += 1
                             title = item.get("title") or ""
                             path = item.get("externalPath") or ""
-                            if not title or not path or path in survivors:
+                            if not title or not path:
                                 continue
+                            if path in seen_paths:
+                                repeat_paths += 1
+                                continue
+                            seen_paths.add(path)
                             vertical = cleaning.classify_vertical_from_title(title)
                             if vertical:
+                                new_matched_paths += 1
                                 survivors[path] = (vertical, item, term)
+                            else:
+                                new_unmatched_paths += 1
                         # `total` cannot be trusted past page 0 (module
                         # docstring) — a short or empty page is the only
                         # reliable "no more results" signal.
@@ -358,6 +382,8 @@ class WorkdaySource(Source):
                     # sending a deep pair back to the head on every truncated
                     # run, the exact permanent blind spot the cursor exists to
                     # remove.
+                    if next_frontier > MAX_FRONTIER_OFFSET:
+                        next_frontier = 0
                     if pages_read:
                         cursor.set_offset(c.slug, term, next_frontier)
                 except CareersError as e:
@@ -434,7 +460,10 @@ class WorkdaySource(Source):
 
         summary = (f"Companies polled: {polled} | OK: {ok} | Err: {err_other} "
                    f"| Rows kept: {kept}")
-        report_summary = [summary, ""]
+        yield_line = (f"List paths: {new_matched_paths} new+classified "
+                      f"| {new_unmatched_paths} new, no vertical "
+                      f"| {repeat_paths} repeat")
+        report_summary = [summary, yield_line, ""]
         top = sorted(ok_tenants, key=lambda t: t[:3],
                      reverse=True)[:REPORT_TOP_TENANTS]
         report_lines = [f"| {name} | OK | {fetched} | {kept_} | |"
