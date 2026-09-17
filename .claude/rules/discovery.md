@@ -18,6 +18,10 @@ report under `jobs/runs/` is a log. Nothing downstream may read `jobs/raw/`.
 a missing column. Add a column there and to `PREVIEW_COLUMNS` in the same change,
 or the judge cannot see it.
 
+`found_by_term` / `found_by_remote` record the query that surfaced a row: the
+jobspy lanes stamp the search term and the query's remote flag, Workday the term
+that first found the posting. Every other source leaves the defaults `""` / False.
+
 ## `job_id`
 
 `job_id = sha1(company_normalized + "|" + title_normalized)[:8]`. The hash inputs

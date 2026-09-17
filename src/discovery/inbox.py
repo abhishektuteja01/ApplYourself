@@ -65,6 +65,8 @@ def parse_inbox_file(path: Path) -> dict | None:
         "job_type": meta.get("employment_type") or "",
         "job_level": meta.get("seniority") or "",
         "vertical": vertical,
+        "found_by_term": "",
+        "found_by_remote": False,
     }
 
 

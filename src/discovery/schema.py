@@ -18,6 +18,8 @@ COLUMNS: list[str] = [
     "job_type",
     "job_level",
     "vertical",
+    "found_by_term",
+    "found_by_remote",
 ]
 
 def naive_datetime(values) -> pd.Series:
@@ -48,6 +50,8 @@ def make_row(**kwargs) -> dict:
         "job_type": "",
         "job_level": "",
         "vertical": "",
+        "found_by_term": "",
+        "found_by_remote": False,
     }
 
     for k, v in kwargs.items():

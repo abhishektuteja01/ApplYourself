@@ -11,6 +11,28 @@ def test_make_row_defaults():
     assert row["job_url_direct"] == ""
     assert row["min_amount"] is None
 
+def test_make_row_carries_search_term_attribution():
+    """Both columns are in COLUMNS and in make_row's literal dict — make_row
+    copies only keys already present there, so one without the other is a
+    silently dropped kwarg."""
+    assert COLUMNS[-2:] == ["found_by_term", "found_by_remote"]
+    row = make_row()
+    assert row["found_by_term"] == ""
+    assert row["found_by_remote"] is False
+    stamped = make_row(found_by_term="ai engineer", found_by_remote=True)
+    assert stamped["found_by_term"] == "ai engineer"
+    assert stamped["found_by_remote"] is True
+
+
+def test_validate_frame_accepts_the_attribution_columns():
+    row = make_row(found_by_term="ai engineer", found_by_remote=True)
+    row["ingested_run_id"] = "1"
+    row["scraped_date"] = pd.Timestamp("2026-06-06")
+    out = validate_frame(pd.DataFrame([row]))
+    assert out["found_by_term"].iloc[0] == "ai engineer"
+    assert bool(out["found_by_remote"].iloc[0]) is True
+
+
 def test_make_row_job_url_direct_fallback():
     row = make_row(job_url="http://example.com")
     assert row["job_url"] == "http://example.com"

@@ -281,6 +281,25 @@ class TestWorkdaySourceFetch:
         assert len(res.rows) == 1
         assert len(detail_calls) == 1
 
+    def test_rows_record_the_term_that_found_them(self, monkeypatch):
+        """The term is known in the list loop and out of scope by the row
+        build — `survivors` has to carry it across."""
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
+        )
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM],
+        })
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        term = search_terms(verticals_module.get_config())[0]
+        assert [r["found_by_term"] for r in res.rows] == [term]
+        # Workday never queries a remote-only variant.
+        assert all(r["found_by_remote"] is False for r in res.rows)
+
     def test_a_malformed_slug_is_a_per_company_error_not_a_crash(self, monkeypatch):
         monkeypatch.setattr(universe, "load", lambda ats: [
             UniverseCompany("Broken Co", "workday", "not-a-triple"),

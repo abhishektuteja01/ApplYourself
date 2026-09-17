@@ -43,6 +43,17 @@ def test_parse_valid_clip(tmp_path, cfg):
     assert row["description"] == "We need someone to build model pipelines.\n"
 
 
+def test_parse_emits_every_schema_column(tmp_path, cfg):
+    """The clip row is hand-written, not built by `make_row`, so a column
+    added to COLUMNS and not here fails `validate_frame` on the inbox lane."""
+    from src.discovery.schema import COLUMNS
+
+    row = inbox.parse_inbox_file(write(tmp_path, "a.md", VALID))
+    assert set(row) == set(COLUMNS)
+    assert row["found_by_term"] == ""
+    assert row["found_by_remote"] is False
+
+
 def test_parse_frontmatter_vertical_wins_over_classifier(tmp_path, cfg):
     """An explicit vertical: is taken verbatim, even when the title would
     classify elsewhere or not at all."""

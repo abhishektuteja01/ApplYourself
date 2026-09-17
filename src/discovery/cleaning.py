@@ -70,6 +70,8 @@ CLEAN_COLUMNS: list[str] = [
     "salary_min", "salary_max", "salary_currency",
     "employment_type", "seniority_raw", "ingested_run_id",
     "vertical",  # a profile/verticals.yaml name | "" — Python-owned, set at fetch time
+    # which search query surfaced the row; "" / False where the source has none
+    "found_by_term", "found_by_remote",
     "already_seen", "application_status",
     "fit_score", "fit_subscores",
     "sponsorship_label", "sponsorship_evidence", "shortlist_rank",
@@ -572,6 +574,7 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
         "salary_currency": "", "employment_type": "", "seniority_raw": "",
         "location": "", "source": "", "ingested_run_id": "",
         "company": "", "title": "", "jd_text": "", "url": "", "vertical": "",
+        "found_by_term": "",
     }
     for col, default in string_defaults.items():
         if col not in df.columns:
@@ -586,14 +589,15 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[needs_fallback, "vertical"] = (
             df.loc[needs_fallback, "title"].apply(classify_vertical_from_title)
         )
-    if "remote_flag" not in df.columns:
-        df["remote_flag"] = False
-    else:
-        # .where, not .fillna — fillna on an object column downcasts, and the
-        # trailing astype already fixes the type. NaN is truthy, so the null
-        # fill has to happen before the cast, not via astype alone.
-        flag = df["remote_flag"]
-        df["remote_flag"] = flag.where(flag.notna(), False).astype(bool)
+    for col in ("remote_flag", "found_by_remote"):
+        if col not in df.columns:
+            df[col] = False
+        else:
+            # .where, not .fillna — fillna on an object column downcasts, and the
+            # trailing astype already fixes the type. NaN is truthy, so the null
+            # fill has to happen before the cast, not via astype alone.
+            flag = df[col]
+            df[col] = flag.where(flag.notna(), False).astype(bool)
     if "scraped_date" not in df.columns:
         df["scraped_date"] = pd.Timestamp.today().normalize()
     df["scraped_date"] = naive_datetime(df["scraped_date"])

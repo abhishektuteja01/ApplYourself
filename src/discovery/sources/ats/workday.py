@@ -176,7 +176,8 @@ def search_terms(verticals_config) -> tuple[str, ...]:
 
 
 def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
-                 list_item: dict, vertical: str, deadline_ts: float | None = None) -> dict | None:
+                 list_item: dict, vertical: str, term: str = "",
+                 deadline_ts: float | None = None) -> dict | None:
     detail = fetch_json(_detail_url(company, wd, site_id, path), deadline_ts=deadline_ts)
     info = detail.get("jobPostingInfo") if isinstance(detail, dict) else None
     if not isinstance(info, dict):
@@ -194,6 +195,7 @@ def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
         location=info.get("location") or list_item.get("locationsText") or "",
         date_posted=relative_posted_date(info.get("postedOn") or list_item.get("postedOn")),
         vertical=vertical,
+        found_by_term=term,
     )
 
 
@@ -278,8 +280,9 @@ class WorkdaySource(Source):
 
             c_fetched = 0
             # Keyed by externalPath: the same posting can surface under more
-            # than one search term, and must be detail-fetched only once.
-            survivors: dict[str, tuple[str, dict]] = {}
+            # than one search term, and must be detail-fetched only once — the
+            # first term that finds it is the one recorded as `found_by_term`.
+            survivors: dict[str, tuple[str, dict, str]] = {}
             fatal: CareersError | None = None
             # Per TERM, not per tenant. One transient 503 on term 3 of 4 used
             # to discard every survivor terms 1-2 had already found and skip
@@ -334,7 +337,7 @@ class WorkdaySource(Source):
                                 continue
                             vertical = cleaning.classify_vertical_from_title(title)
                             if vertical:
-                                survivors[path] = (vertical, item)
+                                survivors[path] = (vertical, item, term)
                         # `total` cannot be trusted past page 0 (module
                         # docstring) — a short or empty page is the only
                         # reliable "no more results" signal.
@@ -386,20 +389,20 @@ class WorkdaySource(Source):
             # would have been thrown away.
             verdicts = gate.passing_titles(
                 [(item.get("title") or "", vertical)
-                 for vertical, item in survivors.values()],
+                 for vertical, item, _ in survivors.values()],
                 ctx.verticals, self.name)
             survivors = {path: v for (path, v), ok
                          in zip(list(survivors.items()), verdicts) if ok}
 
             c_kept = 0
-            for path, (vertical, item) in survivors.items():
+            for path, (vertical, item, term) in survivors.items():
                 if ctx.deadline_reached():
                     break
                 _relaxed_sleep(pacing)
                 detail_attempts += 1
                 try:
                     row = _detail_row(company, c.name, wd, site_id, path, item, vertical,
-                                       deadline_ts=ctx.deadline_ts)
+                                       term, deadline_ts=ctx.deadline_ts)
                 except CareersError as e:
                     errors.append(f"{c.name}: {item.get('title', '')!r}: {e}")
                     continue

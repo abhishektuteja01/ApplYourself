@@ -164,6 +164,10 @@ class JobSpySource(Source):
                 records = df.to_dict("records")
                 for record in records:
                     record["vertical"] = vertical
+                    record["found_by_term"] = term
+                    # The QUERY's remote flag, not JobSpy's per-row `is_remote`:
+                    # this records which query surfaced the row.
+                    record["found_by_remote"] = is_remote
                     rows.append(make_row(**record))
                 # A query returning the full RESULTS_WANTED was truncated by
                 # the cap, not exhausted: there are more rows we never saw.

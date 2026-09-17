@@ -189,6 +189,23 @@ def test_rows_are_stamped_with_the_vertical_that_found_them(cfg, monkeypatch):
         assert row["vertical"] == term_to_vertical[row["company"]]
 
 
+def test_rows_record_the_query_that_found_them(cfg, monkeypatch):
+    """Per-row attribution: the search term, and the QUERY's remote flag —
+    not JobSpy's per-row is_remote, which says something else."""
+    monkeypatch.setattr(
+        jobspy_source, "scrape_jobs",
+        lambda **kw: _df(company=f"{kw['search_term']}|{kw['is_remote']}"))
+    res = IndeedSource().fetch(_Ctx(cfg))
+    assert res.rows
+    terms = {t for v in cfg.verticals.values() for t in v.search_terms}
+    for row in res.rows:
+        term, remote = row["company"].split("|")
+        assert row["found_by_term"] == term
+        assert row["found_by_remote"] is (remote == "True")
+    assert {row["found_by_term"] for row in res.rows} == terms
+    assert {row["found_by_remote"] for row in res.rows} == {False, True}
+
+
 def test_one_failing_term_does_not_lose_the_others(cfg, monkeypatch):
     all_terms = sorted({t for v in cfg.verticals.values() for t in v.search_terms})
     doomed = all_terms[0]

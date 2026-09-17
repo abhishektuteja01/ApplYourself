@@ -559,6 +559,43 @@ def test_coerce_schema_raises_on_a_missing_column():
     assert list(out.columns) == CLEAN_COLUMNS
 
 
+# ---------- search-term attribution: passthrough + legacy backfill ----------
+
+def test_project_raw_backfills_the_attribution_columns_on_legacy_shards():
+    """`_raw_row` is the pre-column shard shape: neither column exists. The
+    archive is 100% such shards, and cleaning must not raise on them."""
+    raw = pd.DataFrame([_raw_row()])
+    assert "found_by_term" not in raw.columns
+    assert "found_by_remote" not in raw.columns
+    out = project_raw(raw)
+    assert out["found_by_term"].iloc[0] == ""
+    assert out["found_by_remote"].dtype == bool
+    assert bool(out["found_by_remote"].iloc[0]) is False
+
+
+def test_project_raw_keeps_the_attribution_a_scrape_already_set():
+    out = project_raw(pd.DataFrame([
+        _raw_row(found_by_term="ai engineer", found_by_remote=True)]))
+    assert out["found_by_term"].iloc[0] == "ai engineer"
+    assert bool(out["found_by_remote"].iloc[0]) is True
+
+
+def test_project_raw_nulls_in_found_by_remote_become_false_not_true():
+    """The boolean path, not `string_defaults`: NaN is truthy, so the null
+    fill has to happen before the cast."""
+    out = project_raw(pd.DataFrame([
+        _raw_row(found_by_remote=None),
+        _raw_row(found_by_remote=True, title="Gizmo Business Analyst"),
+    ]))
+    assert out["found_by_remote"].dtype == bool
+    assert list(out["found_by_remote"]) == [False, True]
+
+
+def test_attribution_columns_are_in_the_closed_clean_schema():
+    assert "found_by_term" in CLEAN_COLUMNS
+    assert "found_by_remote" in CLEAN_COLUMNS
+
+
 # ---------- vertical column: discovery-set passthrough + legacy backfill ----------
 
 def test_project_raw_backfills_missing_vertical_from_title():
