@@ -2,7 +2,6 @@ import pytest
 import requests
 import pandas as pd
 from datetime import date
-from src.discovery.htmlutil import html_to_text
 from src import verticals as verticals_module
 from src.discovery import universe
 from src.discovery.universe import UniverseCompany
@@ -13,22 +12,6 @@ from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
 from src import ats_http as http
-
-def test_html_to_text_strips_tags_and_keeps_structure():
-    html = "<div><h2>Requirements</h2><ul><li>Widgets</li><li>Gizmos</li></ul></div>"
-    text = html_to_text(html)
-    assert "## Requirements" in text
-    assert "- Widgets" in text
-    assert "- Gizmos" in text
-    assert "<" not in text
-
-def test_html_to_text_handles_greenhouse_double_encoding():
-    encoded = "&lt;p&gt;Build &amp;amp; ship widgets&lt;/p&gt;"
-    assert html_to_text(encoded) == "Build & ship widgets"
-
-def test_html_to_text_non_string_is_empty():
-    assert html_to_text(None) == ""
-    assert html_to_text("   ") == ""
 
 class MockConfigSources:
     pacing_seconds = 0

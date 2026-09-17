@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-ATS_SOURCE_NAMES = {"greenhouse", "lever", "ashby", "workday"}
+# Tuple, not a set: iterated to build ordered output.
+ATS_SOURCE_NAMES = ("greenhouse", "lever", "ashby", "workday")
 
 # Host fragments identifying a URL that leads to the board's own application
 # form. Matched against the row's resolved url, not its source: an aggregator

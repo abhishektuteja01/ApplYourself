@@ -22,6 +22,7 @@ from src.discovery.cleaning import (
     CLEAN_COLUMNS,
     apply_state_yaml,
     classify_vertical_from_title,
+    coerce_schema,
     compute_job_id,
     drop_short_jd,
     drop_stale,
@@ -487,6 +488,14 @@ def test_clean_schema_closed(tmp_path):
     assert list(out.columns) == CLEAN_COLUMNS
     written = pd.read_parquet(tmp_path / "jobs" / "clean.parquet")
     assert list(written.columns) == CLEAN_COLUMNS
+
+
+def test_coerce_schema_raises_on_a_missing_column():
+    full = pd.DataFrame([{c: "" for c in CLEAN_COLUMNS}])
+    with pytest.raises(KeyError, match="sponsorship_label"):
+        coerce_schema(full.drop(columns=["sponsorship_label"]))
+    out = coerce_schema(full.assign(_scratch=1)[["_scratch", *reversed(CLEAN_COLUMNS)]])
+    assert list(out.columns) == CLEAN_COLUMNS
 
 
 # ---------- vertical column: discovery-set passthrough + legacy backfill ----------

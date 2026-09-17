@@ -138,7 +138,7 @@ def load(ats: str) -> list[UniverseCompany]:
                     "last_yield": row["last_yield"] if pd.notna(row["last_yield"]) else 0,
                     "pruned_at": row["pruned_at"] if pd.notna(row["pruned_at"]) else None
                 }
-        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+        except (OSError, ValueError, KeyError) as e:
             log.warning("universe: error reading health ledger: %s", e)
 
     valid_companies = []

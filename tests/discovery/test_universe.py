@@ -1,8 +1,6 @@
-import pytest
 import pandas as pd
 from datetime import timedelta
 from src.discovery import universe
-from src.discovery.universe import UniverseCompany
 
 def test_universe_priority_ordering(tmp_path, monkeypatch):
     monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")

@@ -1,7 +1,5 @@
 import pytest
 import pandas as pd
-from pathlib import Path
-import json
 
 from src.discovery.orchestrator import main
 from src.discovery import orchestrator
