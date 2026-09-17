@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.discovery.config import LocationAllowlist
+from src.discovery.config import DiscoveryConfig, LocationAllowlist
 from src.discovery.sources import jobspy_source
 from src.discovery.sources.jobspy_source import IndeedSource, LinkedinSource
 
@@ -17,13 +17,14 @@ from src.discovery.sources.jobspy_source import IndeedSource, LinkedinSource
 class _Ctx:
     """Minimal orchestrator context: what fetch() actually reads."""
 
-    def __init__(self, cfg, countries=("United States",), deadline_after=None):
-        class Src:
-            pacing_seconds = 0.0
-        self.config = type("Config", (), {
-            "sources": {"linkedin": Src, "indeed": Src},
-            "location_allowlist": LocationAllowlist(countries=list(countries)),
-        })
+    def __init__(self, cfg, countries=("United States",), deadline_after=None,
+                 search_locations=()):
+        self.config = DiscoveryConfig(
+            location_allowlist=LocationAllowlist(countries=list(countries)),
+            search_locations=list(search_locations),
+        )
+        for source in self.config.sources.values():
+            source.pacing_seconds = 0.0
         self.verticals = cfg
         self._deadline_after = deadline_after
         self.calls = 0
@@ -102,6 +103,63 @@ def test_queries_every_term_location_and_remote_flag(cfg, monkeypatch):
     # Every term is queried against both locations and both remote flags.
     assert len(seen) == len(expected_terms) * 2 * 2
     assert {r for _, _, r in seen} == {False, True}
+
+
+def test_search_locations_override_the_allowlist(cfg, monkeypatch):
+    """Where we search is decoupled from what cleaning accepts: a wide
+    allowlist no longer multiplies the query count."""
+    seen = []
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: seen.append(kw["location"]) or _df())
+    IndeedSource().fetch(_Ctx(cfg, countries=("United States", "Canada", "France"),
+                              search_locations=("Germany", "Netherlands")))
+    assert set(seen) == {"Germany", "Netherlands"}
+
+
+def test_absent_search_locations_queries_the_allowlist_countries(cfg, monkeypatch):
+    """The no-key default is byte-identical to the previous behaviour:
+    sorted(effective_countries()), each queried against both remote flags."""
+    seen = []
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: seen.append(kw["location"]) or _df())
+    ctx = _Ctx(cfg, countries=("United States", "Canada"))
+    IndeedSource().fetch(ctx)
+
+    expected = sorted(ctx.config.location_allowlist.effective_countries())
+    assert expected == ["Canada", "United States"]
+    assert sorted(set(seen)) == expected
+    n_terms = len({t for v in cfg.verticals.values() for t in v.search_terms})
+    assert len(seen) == n_terms * len(expected) * 2
+
+
+def test_no_allowlist_at_all_still_falls_back_to_the_united_states(cfg, monkeypatch):
+    seen = []
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: seen.append(kw["location"]) or _df())
+    IndeedSource().fetch(_Ctx(cfg, countries=()))
+    assert set(seen) == {"United States"}
+
+
+class TestSaturation:
+    """RESULTS_WANTED truncates a query silently; the report has to say so."""
+
+    def _report(self, cfg, monkeypatch, n_rows):
+        frame = pd.concat([_df(job_url=f"https://www.linkedin.com/jobs/view/{i}")
+                           for i in range(n_rows)], ignore_index=True)
+        monkeypatch.setattr(jobspy_source, "scrape_jobs", lambda **kw: frame)
+        return IndeedSource().fetch(_Ctx(cfg)).report_lines
+
+    def test_a_full_result_set_is_marked(self, cfg, monkeypatch):
+        lines = self._report(cfg, monkeypatch, jobspy_source.RESULTS_WANTED)
+        rows = [line for line in lines if line.startswith("- term=")]
+        assert rows and all("SATURATED" in line for line in rows)
+        assert f"Saturated queries: {len(rows)} of {len(rows)}" in lines
+
+    def test_one_row_short_is_not(self, cfg, monkeypatch):
+        lines = self._report(cfg, monkeypatch, jobspy_source.RESULTS_WANTED - 1)
+        rows = [line for line in lines if line.startswith("- term=")]
+        assert rows and not any("SATURATED" in line for line in rows)
+        assert f"Saturated queries: 0 of {len(rows)}" in lines
 
 
 def test_linkedin_uses_linkedin_terms_and_defers_descriptions(cfg, monkeypatch):

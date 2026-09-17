@@ -17,9 +17,14 @@ _SCHEMA_VERSION = 1
 # collected as an unknown key rather than ignored -- see DiscoveryConfig.validate.
 _TOP_LEVEL_KEYS = frozenset({
     "schema_version", "deadline_hours", "location_allowlist", "sources",
-    "raw_retention_days", "board_max_age_days",
+    "raw_retention_days", "board_max_age_days", "search_locations",
 })
 _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
+
+# Ceiling on the locations the jobspy lanes may query when `search_locations`
+# is absent and the allowlist is the fallback. Each location multiplies the
+# query count, and the pacing sleep alone can outrun `deadline_hours`.
+MAX_SEARCH_LOCATIONS = 5
 
 @dataclass
 class SourceConfig:
@@ -140,6 +145,41 @@ class LocationAllowlist:
                 result.add(s.strip())
         return result
 
+def _fmt_duration(seconds: float) -> str:
+    if seconds >= 3600:
+        return f"{seconds / 3600:.1f}h"
+    if seconds >= 60:
+        return f"{seconds / 60:.0f}m"
+    return f"{seconds:.0f}s"
+
+
+def _jobspy_query_cost(cfg: "DiscoveryConfig", n_locations: int) -> tuple[int, float]:
+    """(queries, pacing seconds) the enabled jobspy lanes would spend on
+    `n_locations`. Each lane runs terms x locations x (on-site, remote) and
+    sleeps `pacing_seconds` between queries -- see jobspy_source.fetch."""
+    try:
+        vcfg = verticals.get_config()
+    except (FileNotFoundError, ValueError):
+        # load_config() resolves verticals.yaml before any caller can reach
+        # validate(), and raises there. Reaching this means a hand-built
+        # config: report the cap without a cost estimate rather than raising
+        # a second time from inside a problem-reporting method.
+        vcfg = None
+    lanes = getattr(vcfg, "verticals", None) or {}
+
+    queries = 0
+    seconds = 0.0
+    for name, attr in (("linkedin", "linkedin_terms"), ("indeed", "search_terms")):
+        source = cfg.sources.get(name)
+        if source is None or not source.enabled:
+            continue
+        terms = sum(len(getattr(v, attr, ()) or ()) for v in lanes.values())
+        n = terms * n_locations * 2
+        queries += n
+        seconds += n * max(0.5, source.pacing_seconds)
+    return queries, seconds
+
+
 @dataclass
 class DiscoveryConfig:
     schema_version: int = _SCHEMA_VERSION
@@ -156,10 +196,24 @@ class DiscoveryConfig:
     raw_retention_days: int = 16
     # Age cap for the staleness-exempt board sources (step 3). 0 = off.
     board_max_age_days: int = 0
+    # Where the jobspy lanes *search*, as against the allowlist, which is what
+    # cleaning *accepts*. Empty = fall back to the allowlist's countries.
+    search_locations: list[str] = field(default_factory=list)
     # Keys the loader did not recognise, recorded rather than dropped so
     # validate() can name them. A typo'd key is otherwise indistinguishable
     # from a setting that silently never applied.
     unknown_keys: list[str] = field(default_factory=list)
+
+    def effective_search_locations(self) -> list[str]:
+        """The `location=` values the jobspy lanes query, in query order.
+        `search_locations` when set, else the allowlist's effective countries.
+        The ATS sources are unaffected: they crawl globally and filter at
+        cleaning, so a wide allowlist costs them nothing."""
+        if self.search_locations:
+            return sorted(self.search_locations)
+        allow = self.location_allowlist
+        countries = sorted(allow.effective_countries()) if allow is not None else []
+        return countries or ["United States"]
 
     def validate(self) -> list[str]:
         """Every problem with this config, in human-readable form. Empty list
@@ -176,6 +230,18 @@ class DiscoveryConfig:
                 problems.append(
                     "location_allowlist resolves to nothing: every scraped row would "
                     "be dropped, or location filtering skipped entirely")
+
+        if not self.search_locations:
+            n = len(self.effective_search_locations())
+            if n > MAX_SEARCH_LOCATIONS:
+                queries, seconds = _jobspy_query_cost(self, n)
+                cost = (f"the jobspy lanes would run ~{queries} queries, "
+                        f"~{_fmt_duration(seconds)} of pacing sleep alone. "
+                        if queries else "")
+                problems.append(
+                    f"location_allowlist expands to {n} search locations "
+                    f"(max {MAX_SEARCH_LOCATIONS} without an explicit search_locations): "
+                    f"{cost}Set search_locations to the countries to query.")
         return problems
 
 def load_config(path: Path | None = None) -> DiscoveryConfig:
@@ -231,6 +297,12 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
             continents=loc.get("continents", []),
         )
 
+    if "search_locations" in data:
+        raw_locations = data["search_locations"] or []
+        if not isinstance(raw_locations, list):
+            raise ValueError(f"{p}: search_locations must be a list of location names")
+        cfg.search_locations = [str(s).strip() for s in raw_locations if str(s).strip()]
+
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
     cfg.raw_retention_days = int(data.get("raw_retention_days", cfg.raw_retention_days))
 
@@ -257,6 +329,10 @@ def main() -> int:
         print(f"countries: {_fmt(allow.effective_countries())}")
         print(f"states:    {_fmt(allow.effective_states())}")
         print(f"cities:    {_fmt(allow.cities)}")
+
+    searched = cfg.effective_search_locations()
+    print(f"search in: {', '.join(searched)}"
+          + ("" if cfg.search_locations else "  (from the allowlist)"))
 
     enabled = [(n, s) for n, s in cfg.sources.items() if s.enabled]
     print("sources:   " + (", ".join(f"{n} ({s.pacing_seconds:g}s)" for n, s in enabled)

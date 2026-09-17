@@ -105,11 +105,10 @@ class JobSpySource(Source):
         pacing = ctx.config.sources[self.name].pacing_seconds
         pacing = max(0.5, pacing)
 
-        # effective_countries() folds in the `continents` shorthand; a
-        # countries-only config would otherwise search "United States" here
-        # while cleaning.py filters everything down to (say) Europe-only,
-        # silently returning zero rows. Sorted for deterministic query order.
-        locations = sorted(ctx.config.location_allowlist.effective_countries()) or ["United States"]
+        # Where we search, which is not the same as what cleaning accepts:
+        # `search_locations` when configured, else the allowlist's effective
+        # countries. Sorted for deterministic query order.
+        locations = ctx.config.effective_search_locations()
 
         # Materialized up front only so the deadline can break one loop rather
         # than four. Iteration order is unchanged: vertical, term, location,
@@ -123,6 +122,7 @@ class JobSpySource(Source):
         ]
 
         total_queries = 0
+        saturated_queries = 0
         deadline_hit = False
 
         for vertical, term, location, is_remote in queries:
@@ -165,10 +165,19 @@ class JobSpySource(Source):
                 for record in records:
                     record["vertical"] = vertical
                     rows.append(make_row(**record))
-                report_lines.append(f"- term='{term}' remote={is_remote}: {len(df)} rows")
+                # A query returning the full RESULTS_WANTED was truncated by
+                # the cap, not exhausted: there are more rows we never saw.
+                saturated = len(df) >= RESULTS_WANTED
+                saturated_queries += saturated
+                suffix = " (SATURATED — more results exist)" if saturated else ""
+                report_lines.append(
+                    f"- term='{term}' remote={is_remote}: {len(df)} rows{suffix}")
 
         if not deadline_hit:
             report_lines.append(f"Queries made: {total_queries}")
+        if total_queries:
+            report_lines.append(
+                f"Saturated queries: {saturated_queries} of {total_queries}")
 
         if self.name == "linkedin" and rows:
             report_lines.extend(self._backfill_descriptions(rows, ctx, errors))

@@ -86,7 +86,8 @@ uv run discover [--resume <run_id>] [--deadline-hours H] [--source NAME] [--max-
                                       # needs `uv sync --group discovery` (libpostal)
 uv run verticals-check                # validate config + rubric/tailoring dirs
 uv run discovery-check                # resolve + validate the discovery config:
-                                      # prints the effective location allowlist and
+                                      # prints the effective location allowlist,
+                                      # the jobspy search locations and the
                                       # enabled sources, exits 1 on any problem.
                                       # `discover` runs it as preflight
 uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited

@@ -8,6 +8,11 @@ location_allowlist:
   # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
   # continents: ["Europe"]    # optional shorthand: expands to every country on
   #                           # the continent, unioned with `countries` above
+# Where the linkedin/indeed lanes search, as against the allowlist above, which
+# is what cleaning accepts. Absent = the allowlist's countries. Capped at 5
+# locations when absent: each one multiplies the query count and the pacing
+# sleep. Set it to query fewer places than you accept.
+# search_locations: ["Germany", "Netherlands", "United Kingdom"]
 # Every source the loader accepts. An omitted key falls back to the code default
 # in src/discovery/config.py, so list them all to stay explicit.
 sources:

@@ -1,7 +1,9 @@
+import re
+
 import pytest
 import yaml
 from pathlib import Path
-from src.discovery.config import load_config, DiscoveryConfig
+from src.discovery.config import MAX_SEARCH_LOCATIONS, load_config, DiscoveryConfig
 
 def test_missing_file(tmp_path, monkeypatch):
     # Mock verticals.get_config so it doesn't fail
@@ -166,8 +168,24 @@ def test_a_lowercase_continent_resolves_instead_of_disabling_the_filter(tmp_path
     allowlist and turn location filtering off entirely."""
     cfg = _load(tmp_path, monkeypatch,
                 {"location_allowlist": {"continents": ["europe"]}})
-    assert cfg.validate() == []
+    # The only remaining problem is the search-location cap, which is about
+    # query cost, not about the continent failing to resolve.
+    assert [p for p in cfg.validate() if "search locations" not in p] == []
+    # What this test exists to prove: the continent resolved, so the allowlist
+    # is non-empty and location filtering is still on.
     assert "France" in cfg.location_allowlist.effective_countries()
+    assert cfg.location_allowlist.configured()
+
+
+def test_a_wide_continent_with_explicit_search_locations_is_clean(tmp_path, cfg):
+    """The pair of the test above: a continent-wide allowlist is only a
+    problem while it is also the search list."""
+    loaded = _load_costed(tmp_path, {
+        "location_allowlist": {"continents": ["europe"]},
+        "search_locations": ["Germany", "Netherlands"],
+    })
+    assert loaded.validate() == []
+    assert "France" in loaded.location_allowlist.effective_countries()
 
 
 def test_an_unknown_continent_is_flagged(tmp_path, monkeypatch):
@@ -216,6 +234,71 @@ def test_a_good_config_has_no_problems(tmp_path, monkeypatch):
         "sources": {"linkedin": {"enabled": True, "pacing_seconds": 3}},
     })
     assert cfg.validate() == []
+
+
+# ---------------------------------------------------------------------
+# search_locations -- where we query, as against what we accept (D0.3)
+# ---------------------------------------------------------------------
+
+SIX_COUNTRIES = ["United States", "Canada", "France", "Germany", "Spain", "Italy"]
+
+
+def _load_costed(tmp_path, data):
+    """Like _load, but leaves verticals.get_config alone: the cap's query
+    estimate reads the fixture lanes' term counts."""
+    p = tmp_path / "search.yaml"
+    p.write_text(yaml.dump({"schema_version": 1, **data}), encoding="utf-8")
+    return load_config(p)
+
+
+def test_a_wide_allowlist_with_no_search_locations_is_an_error(tmp_path, cfg):
+    """The failure mode was silent: the pacing sleep alone outruns
+    deadline_hours and the shard lands near-empty."""
+    loaded = _load_costed(tmp_path, {"location_allowlist": {"countries": SIX_COUNTRIES}})
+    problems = [p for p in loaded.validate() if "search locations" in p]
+    assert len(problems) == 1, loaded.validate()
+    message = problems[0]
+
+    linkedin_terms = sum(len(v.linkedin_terms) for v in cfg.verticals.values())
+    indeed_terms = sum(len(v.search_terms) for v in cfg.verticals.values())
+    queries = (linkedin_terms + indeed_terms) * len(SIX_COUNTRIES) * 2
+    assert queries > 0
+    assert f"{len(SIX_COUNTRIES)} search locations" in message
+    assert f"~{queries} queries" in message
+    # and a sleep estimate, so the failure explains its own cost
+    assert re.search(r"~[\d.]+[hms] of pacing sleep", message), message
+
+
+def test_at_the_cap_there_is_no_problem(tmp_path, cfg):
+    loaded = _load_costed(
+        tmp_path, {"location_allowlist": {"countries": SIX_COUNTRIES[:MAX_SEARCH_LOCATIONS]}})
+    assert loaded.validate() == []
+    assert len(loaded.effective_search_locations()) == MAX_SEARCH_LOCATIONS
+
+
+def test_an_explicit_search_locations_passes_however_wide_the_allowlist(tmp_path, cfg):
+    """The allowlist is what cleaning accepts; search_locations is what jobspy
+    queries. A continent-wide allowlist is free once they are decoupled."""
+    loaded = _load_costed(tmp_path, {
+        "location_allowlist": {"continents": ["Europe"]},
+        "search_locations": ["Germany", "Netherlands", "United Kingdom"],
+    })
+    assert loaded.validate() == []
+    assert loaded.effective_search_locations() == [
+        "Germany", "Netherlands", "United Kingdom"]
+    # ...and the allowlist still resolves wide, for cleaning to filter on.
+    assert len(loaded.location_allowlist.effective_countries()) > MAX_SEARCH_LOCATIONS
+
+
+def test_absent_search_locations_falls_back_to_the_allowlist(tmp_path, cfg):
+    loaded = _load_costed(tmp_path, {"location_allowlist": {"countries": ["Canada"]}})
+    assert loaded.search_locations == []
+    assert loaded.effective_search_locations() == ["Canada"]
+
+
+def test_a_non_list_search_locations_is_rejected(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="search_locations must be a list"):
+        _load(tmp_path, monkeypatch, {"search_locations": "Germany"})
 
 
 def test_the_real_and_example_configs_validate(monkeypatch):
