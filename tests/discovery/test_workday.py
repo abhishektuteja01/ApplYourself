@@ -76,14 +76,41 @@ class TestParseSlug:
 
 
 class TestSearchTerms:
-    def test_returns_exactly_one_term(self):
-        terms = search_terms(verticals_module.get_config())
-        assert len(terms) == 1
-
-    def test_the_term_is_the_default_verticals_first_search_term(self):
+    def test_one_term_per_vertical_not_the_union(self):
+        """Tenant x term is the cost. One term per lane makes the other lanes
+        reachable at all; the union would multiply the crawl by the term list."""
         cfg = verticals_module.get_config()
-        default = cfg.verticals[cfg.default_vertical]
-        assert search_terms(cfg) == (default.search_terms[0],)
+        terms = search_terms(cfg)
+        assert len(terms) == len(cfg.verticals)
+        assert set(terms) == {v.search_terms[0] for v in cfg.verticals.values()}
+
+    def test_the_default_vertical_leads(self):
+        """A deadline cut has to starve the other lanes before the main one."""
+        cfg = verticals_module.get_config()
+        assert search_terms(cfg)[0] == cfg.verticals[cfg.default_vertical].search_terms[0]
+
+    def test_a_term_shared_by_two_lanes_is_crawled_once(self):
+        from dataclasses import replace
+
+        cfg = verticals_module.get_config()
+        shared = cfg.verticals[cfg.default_vertical].search_terms[0]
+        collided = replace(cfg, verticals={
+            name: (v if name == cfg.default_vertical
+                   else replace(v, search_terms=[shared] + list(v.search_terms)))
+            for name, v in cfg.verticals.items()
+        })
+        assert search_terms(collided) == (shared,)
+
+    def test_a_lane_with_no_search_terms_is_skipped_not_fatal(self):
+        from dataclasses import replace
+
+        cfg = verticals_module.get_config()
+        other = next(n for n in cfg.verticals if n != cfg.default_vertical)
+        thinned = replace(cfg, verticals={
+            name: (replace(v, search_terms=[]) if name == other else v)
+            for name, v in cfg.verticals.items()
+        })
+        assert len(search_terms(thinned)) == len(cfg.verticals) - 1
 
 
 class TestWorkdaySourceFetch:
@@ -756,8 +783,11 @@ class TestListYieldCounters:
         monkeypatch.setattr(workday.time, "sleep", lambda _: None)
 
         lines = WorkdaySource().fetch(MockContext()).report_lines
-        assert ("List paths: 10 new+classified | 10 new, no vertical "
-                "| 20 repeat") in lines
+        # Two pages x 20 items x one term per vertical. Only the first term
+        # sees a path as new; every later term re-sees the same 40 as repeats.
+        terms = len(verticals_module.get_config().verticals)
+        assert (f"List paths: 10 new+classified | 10 new, no vertical "
+                f"| {40 * terms - 20} repeat") in lines
 
 
 class TestPerTenantReportTable:

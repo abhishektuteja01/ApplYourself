@@ -25,14 +25,15 @@ title would classify) for a page count small enough to be affordable across
 (`gate.passing_titles`) still run on every result as the authoritative filter,
 since search hits are not assumed relevant.
 
-`search_terms()` scopes to the default vertical's first configured term only
-(sourced from `profile/verticals.yaml`, never hardcoded — R7's
-company/vertical-agnostic rule extends to search terms too), not the union
-across every vertical. One term per tenant costs one page in the common case
-(a tenant with a handful of matches never fills `LIST_LIMIT`, so pagination
-stops at page 0). Workday therefore surfaces default-vertical roles only; the
-other configured verticals stay covered by LinkedIn/Indeed and the other
-board sources.
+`search_terms()` takes each vertical's first configured term (sourced from
+`profile/verticals.yaml`, never hardcoded — R7's company/vertical-agnostic
+rule extends to search terms too), default vertical first. One per lane, not
+the union across every lane: tenant x term is what this crawl costs, and one
+term per tenant costs one page in the common case (a tenant with a handful of
+matches never fills `LIST_LIMIT`, so pagination stops at page 0). The earlier
+single-term scoping meant Workday structurally could not surface a role in any
+lane but the default; capping the detail fetches and the page frontier paid
+for the widening.
 
 **`total` cannot be trusted past page 0.** Confirmed live: NVIDIA's `total`
 reads 2000 at `offset=0`, then 0 at every later offset checked, including
@@ -152,14 +153,30 @@ def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str
 
 
 def search_terms(verticals_config) -> tuple[str, ...]:
-    """The default vertical's first configured search term — the only source
-    of a Workday search term (R7: never hardcoded here). Scoped to one term
-    (not the union across every vertical) so tenant x term stays affordable;
-    see the module docstring for why."""
-    default = verticals_config.verticals[verticals_config.default_vertical]
-    if not default.search_terms:
-        return ()
-    return (default.search_terms[0],)
+    """Every vertical's first configured search term — the only source of a
+    Workday search term (R7: never hardcoded here).
+
+    One per vertical, not the union: tenant x term is what this crawl costs,
+    and the union would multiply it by the whole term list. One term total was
+    the earlier scoping, and it meant Workday structurally could not surface a
+    role in any lane but the default. Capping the detail fetches paid for the
+    widening.
+
+    The default vertical leads, so a deadline cut starves the other lanes
+    before it starves that one. Duplicates across lanes collapse.
+    """
+    order = [verticals_config.default_vertical]
+    order += [n for n in verticals_config.verticals if n != verticals_config.default_vertical]
+
+    terms: list[str] = []
+    for name in order:
+        vertical = verticals_config.verticals.get(name)
+        if vertical is None or not vertical.search_terms:
+            continue
+        term = vertical.search_terms[0]
+        if term not in terms:
+            terms.append(term)
+    return tuple(terms)
 
 
 def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
