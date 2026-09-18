@@ -59,6 +59,11 @@ IDENTITY_KEYS = (
 IDENTITY_LIST_KEYS = ("location_alternates",)
 EDUCATION_KEYS = ("school", "degree", "discipline", "start_year", "end_year")
 EDUCATION_OPTIONAL_KEYS = ("start_month", "end_month")
+# Same job as `location_alternates`: how a board's own taxonomy words this
+# school. Ashby's combobox stacks name/country/domain into one option label and
+# offers several same-named schools, so an exact spelling is the only safe
+# match — a first-line match would pick between campuses in two countries.
+EDUCATION_LIST_KEYS = ("school_alternates",)
 EMPLOYMENT_KEYS = (
     "company_name",
     "title",
@@ -1122,7 +1127,9 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None,
 
     identity = _parse_block(data, "identity", IDENTITY_KEYS,
                             list_keys=IDENTITY_LIST_KEYS)
-    education = _parse_block(data, "education", EDUCATION_KEYS, EDUCATION_OPTIONAL_KEYS)
+    education = _parse_block(
+        data, "education", EDUCATION_KEYS, EDUCATION_OPTIONAL_KEYS, EDUCATION_LIST_KEYS
+    )
 
     employment = None
     if data.get("employment") is not None:
@@ -1456,7 +1463,12 @@ def _resolve_repeating(field: MergedField, block: dict[str, str] | None, ids: di
         return (_park(f"{config_key}.{key}: required by this board, not set", "A")
                 if field.required else _skip(f"{config_key}.{key} not set", "A"))
     if field.kind == "react_select":
-        return _resolve_choice(field, (str(value),), "A", f"{config_key}.{key}")
+        # Configured alternates, in order, same rule as the location ones: the
+        # first spelling the board offers wins, and a board offering none of
+        # them parks rather than guessing between similar options.
+        alternates = block.get(f"{key}_alternates") or ()
+        candidates = (str(value), *(a for a in alternates if a != value))
+        return _resolve_choice(field, candidates, "A", f"{config_key}.{key}")
     return _fill(str(value), "A")
 
 

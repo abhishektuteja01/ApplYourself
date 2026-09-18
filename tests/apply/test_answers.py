@@ -489,6 +489,48 @@ class TestEducationAndEmployment:
         thin = load_answers(write_config(tmp_path, education=education), PREFS)
         assert resolve(merged("form_education").by_id("start-month--0"), thin).action == "skip"
 
+    def test_a_school_alternate_is_offered_when_the_board_words_it_differently(
+        self, tmp_path, answers
+    ):
+        """Ashby stacks name/country/domain into one option label."""
+        listed = "Example University\nUnited States\nexample.edu"
+        education = dict(answers.education, school_alternates=[listed])
+        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        f = field(id="school--0", section="education", kind="react_select",
+                  required=True, options=[listed, "Example University\nChina\nex.cn"])
+        assert resolve(f, loaded).value == listed
+
+    def test_the_configured_school_still_wins_when_the_board_offers_it(
+        self, tmp_path, answers
+    ):
+        education = dict(answers.education,
+                         school_alternates=["Example University\nUnited States\nexample.edu"])
+        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        f = field(id="school--0", section="education", kind="react_select",
+                  required=True, options=["Example University"])
+        assert resolve(f, loaded).value == "Example University"
+
+    def test_a_board_offering_no_configured_spelling_parks(self, tmp_path, answers):
+        """Never a guess between two same-named schools in two countries."""
+        education = dict(answers.education,
+                         school_alternates=["Example University\nUnited States\nexample.edu"])
+        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        f = field(id="school--0", section="education", kind="react_select",
+                  required=True, options=["Example University\nChina\nex.cn"])
+        assert resolve(f, loaded).action == "park"
+
+    def test_school_alternates_stay_optional(self, merged, answers):
+        """The key is absent from the fixture config and nothing breaks."""
+        assert "school_alternates" not in answers.education
+        assert resolve(merged("form_education").by_id("school--0"), answers).value == (
+            "Example University"
+        )
+
+    def test_an_empty_school_alternates_list_is_refused(self, tmp_path, answers):
+        education = dict(answers.education, school_alternates=[])
+        with pytest.raises(AnswersError):
+            load_answers(write_config(tmp_path, education=education), PREFS)
+
     def test_the_employment_block_fills_including_the_checkbox(self, merged, answers):
         r = merged("form_employment")
         assert resolve(r.by_id("company-name-0"), answers).value == "Widget Corp"

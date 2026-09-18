@@ -154,6 +154,18 @@ _EDUCATION_SUBFIELDS = {
 }
 _EDUCATION_SUBFIELD_ORDER = ("schoolName", "degree", "major", "startDate", "endDate")
 
+# Which control inside the block's one `data-field-path`. schoolName is a
+# combobox carrying no id; the other two carry `<path>-<sub>`.
+_EDUCATION_CONTROLS = {
+    "schoolName": 'input[role="combobox"]',
+    "degree": '[id="{path}-degree"]',
+    "major": '[id="{path}-major"]',
+}
+
+# Ashby renders schoolName as a combobox and the other two as plain text —
+# Greenhouse makes all three selects. Typed text alone clears on blur.
+_EDUCATION_KINDS = {"schoolName": "react_select"}
+
 _URL = ats_registry.get_source("ashby").posting_url_re
 
 _FIELD_ENTRY_PREFIX = re.compile(r"^_fieldEntry_")
@@ -536,7 +548,12 @@ def _education_history_fields(field: dict, path: str) -> list[MergedField]:
             name=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
             label=f"{field.get('title') or 'Education'}: {sub}",
             required=required,
-            kind="text",
+            kind=_EDUCATION_KINDS.get(sub, "text"),
+            # `id` above is Greenhouse's, for `answers.py`. Ashby renders the
+            # whole block under one path, so the DOM lookup needs the real
+            # one plus which control in it.
+            dom_path=path,
+            dom_control=_EDUCATION_CONTROLS.get(sub, "").format(path=path),
             # `resolve` dispatches the repeating blocks on section, not on id,
             # so this is what routes these to `answers.education` rather than
             # leaving them to the keyword rules.

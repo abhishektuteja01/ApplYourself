@@ -94,6 +94,12 @@ class FieldPlan:
     """`Resolution.source` — which rule keyword, or which resolver, answered
     this."""
 
+    dom_path: str = ""
+    """`MergedField.dom_path` — the real selector when `id` is an alias."""
+
+    dom_control: str = ""
+    """`MergedField.dom_control` — which control inside `dom_path`."""
+
     reason: str = ""
     """`Resolution.reason`, previously discarded on the fill path. A filled
     field can carry a caveat worth reading."""
@@ -574,6 +580,8 @@ def build_plan(
             options=tuple(o.label for o in field.options),
             source=resolution.source,
             reason=resolution.reason,
+            dom_path=field.dom_path,
+            dom_control=field.dom_control,
         ))
 
     plan = Plan(

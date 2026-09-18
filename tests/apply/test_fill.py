@@ -91,6 +91,12 @@ class FakeDriver:
         self._page = FakePage()                # what the post-submit capture reads
         self.refusals: list[str] = []          # the board's refusal, per click
         self.named_missing: list[list[str]] = []  # labels named missing, per refusal
+        self._dom_paths: dict[str, str] = {}
+        self._dom_controls: dict[str, str] = {}
+
+    # The real implementation, not a stub: what the fill teaches a driver about
+    # aliased ids is the thing under test.
+    learn_dom_aliases = F.BrowserDriver.learn_dom_aliases
 
     def goto(self, url):
         self.calls.append(("goto", url))
@@ -2264,3 +2270,24 @@ class TestDatePickerIsDismissed:
         p = plan(fields=[field(id="start", kind="date", value="Immediately.")])
         result = fill_plan(p, Clearing())
         assert result.ok is False
+
+
+class TestDomAliasesReachTheDriver:
+    """An `id` that answers.py needs is not always an id the DOM has."""
+
+    def test_the_plan_teaches_the_driver_where_a_field_really_is(self):
+        p = plan(fields=[field(
+            id="school--0", value="Northeastern University",
+            dom_path="_systemfield_education_history",
+            dom_control='input[role="combobox"]',
+        )])
+        d = FakeDriver()
+        fill_plan(p, d)
+        assert d._dom_paths == {"school--0": "_systemfield_education_history"}
+        assert d._dom_controls == {"school--0": 'input[role="combobox"]'}
+
+    def test_a_field_with_no_alias_teaches_nothing(self):
+        d = FakeDriver()
+        fill_plan(plan(fields=[field(id="phone", value="+1 555 0100")]), d)
+        assert d._dom_paths == {}
+        assert d._dom_controls == {}

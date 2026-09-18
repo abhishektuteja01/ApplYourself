@@ -364,6 +364,18 @@ class BrowserDriver:
 
     def __init__(self, page):
         self.page = page
+        # field id -> where it really is, for the ids that are aliases
+        # (`MergedField.dom_path`). Only Ashby's driver reads these.
+        self._dom_paths: dict[str, str] = {}
+        self._dom_controls: dict[str, str] = {}
+
+    def learn_dom_aliases(self, plan: Plan) -> None:
+        """Take the plan's `dom_path`/`dom_control` before the fill starts."""
+        for field in plan.fields:
+            if field.dom_path:
+                self._dom_paths[field.id] = field.dom_path
+            if field.dom_control:
+                self._dom_controls[field.id] = field.dom_control
 
     def _locator(self, field_id: str):
         return self.page.locator(FIELD.format(form=FORM_SELECTOR, id=field_id))
@@ -1054,13 +1066,16 @@ class AshbyBrowserDriver(BrowserDriver):
     def _entry(self, field_id: str):
         """The field-entry wrapper — what a group or a combobox is found under.
 
-        `field_id` must already be the DOM's own `data-field-path`. The two
-        file fields are aliased to the canonical `resume` / `cover_letter`
-        ids everywhere else in the pipeline, so callers that upload a file
-        pass `FilePlan.name` — the real path `ashby.py` carried through —
-        rather than `.id`.
+        `field_id` is the DOM's own `data-field-path`, unless the plan gave
+        this field a `dom_path` — the education sub-fields are aliased to
+        Greenhouse ids that match no Ashby element. The two file fields are
+        aliased to the canonical `resume` / `cover_letter` ids everywhere else
+        in the pipeline, so callers that upload a file pass `FilePlan.name` —
+        the real path `ashby.py` carried through — rather than `.id`.
         """
-        return self.page.locator(self.ENTRY.format(id=field_id)).first
+        return self.page.locator(
+            self.ENTRY.format(id=self._dom_paths.get(field_id, field_id))
+        ).first
 
     def _upload_group(self, field_id: str):
         """Ashby's field entry doubles as the upload widget — a landed file
@@ -1076,7 +1091,12 @@ class AshbyBrowserDriver(BrowserDriver):
         going through the entry works for every kind including the combobox,
         which carries neither `id` nor `name`.
         """
-        return self._entry(field_id).locator(self.CONTROL)
+        return self._entry(field_id).locator(self._control_for(field_id))
+
+    def _control_for(self, field_id: str) -> str:
+        """`dom_control` when the plan named one, else every control in the
+        entry. The education block is one entry holding eight."""
+        return self._dom_controls.get(field_id) or self.CONTROL
 
     def goto(self, url: str) -> None:
         """No `<form>` to wait for — the base would time out on every board.
@@ -1496,6 +1516,8 @@ def fill_plan(plan: Plan, driver, answers: Answers | None = None,
     can rewrite fields. Everything else is then written over whatever is there.
     """
     result = result if result is not None else FillResult(form_url=plan.form_url)
+    if hasattr(driver, "learn_dom_aliases"):
+        driver.learn_dom_aliases(plan)
     driver.goto(plan.form_url)
 
     # `goto` waits only for the form element, but an upload widget is driven by
