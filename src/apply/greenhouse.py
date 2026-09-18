@@ -69,12 +69,19 @@ class BoardForm:
     reconciled: Reconciled
 
 
+def _query_values(query: dict[str, list[str]], keys: tuple[str, ...]) -> set[str]:
+    """Non-empty values under any of `keys`, deduped across all of them."""
+    return {v.strip() for k in keys for v in query.get(k, []) if v.strip()}
+
+
 def parse_posting(url: str) -> Posting:
     """Pull the job token out of a posting URL.
 
-    Two shapes, both live in clean.parquet: the board path form, and a company
-    careers page carrying `?gh_jid=`. A `board=` query param is read as the slug
-    where present, but nothing depends on it.
+    Three shapes, all live in clean.parquet: the board path form, a company
+    careers page carrying `?gh_jid=`, and the embed form `?for=<slug>&token=<id>`.
+    The query-param spellings come from the shared registry rather than being
+    named here, so detection and parsing cannot drift. The slug is read where
+    present, but nothing depends on it.
     """
     text = (url or "").strip()
     if not text:
@@ -87,18 +94,18 @@ def parse_posting(url: str) -> Posting:
     parsed = urlparse(text)
     query = parse_qs(parsed.query)
     # Duplicated params are real: one live row spells ?gh_jid=X&gh_jid=X.
-    tokens = {t.strip() for t in query.get("gh_jid", []) if t.strip()}
+    tokens = _query_values(query, _GH.id_query_keys)
     if not tokens:
         if _GH.matches_host((parsed.hostname or "").lower()):
             raise ApplyUrlError(f"Greenhouse URL with no job token: {text}")
         raise ApplyUrlError(f"not a Greenhouse posting URL: {text}")
     if len(tokens) > 1:
-        raise ApplyUrlError(f"URL carries {len(tokens)} different gh_jid values: {text}")
+        raise ApplyUrlError(f"URL carries {len(tokens)} different job tokens: {text}")
     token = tokens.pop()
     if not _TOKEN.match(token):
-        raise ApplyUrlError(f"gh_jid is not numeric ({token!r}): {text}")
+        raise ApplyUrlError(f"job token is not numeric ({token!r}): {text}")
 
-    boards = {b.strip() for b in query.get("board", []) if b.strip()}
+    boards = _query_values(query, _GH.slug_query_keys)
     return Posting(token=token, url_slug=boards.pop() if len(boards) == 1 else None)
 
 
