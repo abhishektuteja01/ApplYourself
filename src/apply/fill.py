@@ -299,6 +299,62 @@ def _is_numeric(value: str) -> bool:
     return True
 
 
+def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
+    """The field names to report from one `invalid_fields` DOM read.
+
+    `rows` is every validating control in the form, each as
+    `{name, type, checked, valueMissing, invalid, fallback}`. Pure, so the
+    suite can cover the grouping the browser read cannot.
+
+    A required checkbox *group* is satisfied by one tick, but Greenhouse marks
+    every box in the group `required`, so the seven unticked siblings stay
+    `valueMissing` and the raw read refuses a form the board would accept.
+    Such a group is dropped. Three conditions narrow that, each guarding a
+    case where dropping would hide a real refusal:
+
+    - Only on a shared non-empty `name`. `el.name || el.id || el.tagName`
+      keys every nameless control to the same "", so grouping on that would
+      let one ticked nameless box clear unrelated empty fields.
+    - Only when every reported member is a checkbox. A shared name is not a
+      shared type: Lever's pronouns group is ten checkboxes plus a free-text
+      `customPronounsTextField` (§`LeverBrowserDriver._checkbox_options`), and
+      that text input being required-and-empty must still refuse.
+    - Only for `valueMissing`. A pattern or `type=email` failure is not an
+      unticked sibling and is never satisfied by one.
+
+    Names are deduped, first-seen order kept: the raw read repeats a group's
+    name once per unticked box.
+    """
+    checked_names = {
+        r["name"] for r in rows
+        if r.get("name") and r.get("type") == "checkbox" and r.get("checked")
+    }
+    reported: dict[str, list[dict]] = {}
+    for row in rows:
+        if not row.get("invalid"):
+            continue
+        key = row.get("name") or ""
+        reported.setdefault(key, []).append(row)
+
+    out: list[str] = []
+    for key, members in reported.items():
+        satisfied_group = (
+            key
+            and key in checked_names
+            and all(
+                m.get("type") == "checkbox" and m.get("valueMissing")
+                for m in members
+            )
+        )
+        if satisfied_group:
+            continue
+        for member in members:
+            label = member.get("name") or member.get("fallback") or ""
+            if label and label not in out:
+                out.append(label)
+    return tuple(out)
+
+
 class BrowserDriver:
     """Everything the fill sequence does to a page, in one swappable object.
 
@@ -767,19 +823,30 @@ class BrowserDriver:
 
         An empty tuple on a board with no `<form>` element: nothing to check is
         not the same as something invalid, and Ashby renders no form at all.
+
+        The DOM read returns rows, not names: a required checkbox group's
+        unticked siblings are `valueMissing` even once the group is answered,
+        and deciding that needs the ticked sibling's state too. Grouping lives
+        in `refused_field_names`, which is pure and covered by the suite.
         """
-        return tuple(
-            self.page.evaluate(
-                """(sel) => {
-                    const form = document.querySelector(sel);
-                    if (!form || form.checkValidity()) return [];
-                    return [...form.elements]
-                        .filter(el => el.willValidate && !el.checkValidity())
-                        .map(el => el.name || el.id || el.tagName);
-                }""",
-                FORM_SELECTOR,
-            )
+        rows = self.page.evaluate(
+            """(sel) => {
+                const form = document.querySelector(sel);
+                if (!form) return [];
+                return [...form.elements]
+                    .filter(el => el.willValidate)
+                    .map(el => ({
+                        name: el.name || "",
+                        type: el.type || "",
+                        checked: !!el.checked,
+                        valueMissing: !!(el.validity && el.validity.valueMissing),
+                        invalid: !el.checkValidity(),
+                        fallback: el.id || el.tagName,
+                    }));
+            }""",
+            FORM_SELECTOR,
         )
+        return refused_field_names(rows)
 
     def submit_disabled_now(self, selector: str) -> bool:
         """Re-read `aria-disabled` live — `plan.submit_disabled` is a scan-time
