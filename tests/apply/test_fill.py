@@ -2233,3 +2233,34 @@ class TestRefusedFieldNames:
             row(name="b", valueMissing=True, invalid=True),
         ]
         assert F.refused_field_names(rows) == ("b", "a")
+
+
+class TestDatePickerIsDismissed:
+    """Ashby's calendar overlay intercepts every later field (§`_apply_field`)."""
+
+    def test_a_date_is_closed_before_the_read_back(self):
+        p = plan(fields=[field(id="start", kind="date", value="2026-09-18")])
+        d = FakeDriver()
+        assert fill_plan(p, d).ok is True
+        assert ("fill", "start", "2026-09-18") in d.calls
+        assert ("close",) in d.calls
+        assert d.calls.index(("close",)) > d.calls.index(("fill", "start", "2026-09-18"))
+
+    def test_a_plain_text_field_is_not_closed(self):
+        """Escape on a normal field would dismiss whatever else is open."""
+        p = plan(fields=[field(id="phone", kind="text", value="+1 555 0100")])
+        d = FakeDriver()
+        assert fill_plan(p, d).ok is True
+        assert ("close",) not in d.calls
+
+    def test_a_date_the_widget_clears_is_a_failure(self):
+        """The picker clears an unparseable value on blur; closing before the
+        read-back is what catches it instead of reporting a filled field."""
+        class Clearing(FakeDriver):
+            def close(self):
+                super().close()
+                self.values["start"] = ""
+
+        p = plan(fields=[field(id="start", kind="date", value="Immediately.")])
+        result = fill_plan(p, Clearing())
+        assert result.ok is False

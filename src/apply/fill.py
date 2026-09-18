@@ -1440,6 +1440,13 @@ def _apply_field(driver, field: FieldPlan, result: FillResult,
         return FieldOutcome(field.id, "filled", before, ", ".join(labels))
 
     driver.fill_text(field.id, str(field.value))
+    if field.kind == "date":
+        # Ashby's react-datepicker opens on focus and nothing else dismisses
+        # it, so the overlay intercepts the click on every later field.
+        # Closed before the read-back, not after: the widget clears an
+        # unparseable value on blur, so only a value that survives the close
+        # is really there.
+        driver.close()
     after = driver.value_of(field.id)
     if after.strip() != str(field.value).strip():
         raise FillError(f"{field.id}: wrote {field.value!r} but the field reads {after!r}")
