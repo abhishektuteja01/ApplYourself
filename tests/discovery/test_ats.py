@@ -483,7 +483,10 @@ def test_the_ledger_sees_the_whole_universe_not_tonights_slice(monkeypatch, tmp_
     monkeypatch.setattr(http.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
 
-    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]
+    # Sized off the rotation so the slice is 2 whatever the divisor is set to.
+    n_cold = 2 * universe.COLD_ROTATION_RUNS
+    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i)
+            for i in range(n_cold)]
     monkeypatch.setattr(universe, "load", lambda ats: list(cold))
     monkeypatch.setattr(universe, "universe_slugs", lambda ats: {c.slug for c in cold})
 
@@ -498,7 +501,7 @@ def test_the_ledger_sees_the_whole_universe_not_tonights_slice(monkeypatch, tmp_
     GreenhouseSource().fetch(MockContext())
 
     df = pd.read_parquet(universe.health_path("greenhouse"))
-    assert len(df) == 14, "an unvisited cold board lost its health row"
+    assert len(df) == n_cold, "an unvisited cold board lost its health row"
 
 
 def test_the_cold_rotation_advances_across_runs(monkeypatch, tmp_path):
@@ -506,7 +509,10 @@ def test_the_cold_rotation_advances_across_runs(monkeypatch, tmp_path):
     monkeypatch.setattr(http.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
 
-    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]
+    # Sized off the rotation so the slice is 2 whatever the divisor is set to.
+    n_cold = 2 * universe.COLD_ROTATION_RUNS
+    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i)
+            for i in range(n_cold)]
     monkeypatch.setattr(universe, "load", lambda ats: list(cold))
 
     polled = []
@@ -530,16 +536,19 @@ def test_the_summary_names_the_universe_not_just_the_slice(monkeypatch, tmp_path
     monkeypatch.setattr(base.time, "sleep", lambda _: None)
     monkeypatch.setattr(http.time, "sleep", lambda _: None)
     monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    # Sized off the rotation so the slice is 2 whatever the divisor is set to.
+    n_cold = 2 * universe.COLD_ROTATION_RUNS
     monkeypatch.setattr(universe, "load", lambda ats: (
         [UniverseCompany("Hot Co", "greenhouse", "hot")]
-        + [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i) for i in range(14)]))
+        + [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i)
+           for i in range(n_cold)]))
     monkeypatch.setattr(http.requests, "get",
                         lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
 
     res = GreenhouseSource().fetch(MockContext())
 
     assert res.report_lines[0].startswith(
-        "Companies polled: 3 of 15 (1 hot, 2 of 14 cold)")
+        f"Companies polled: 3 of {n_cold + 1} (1 hot, 2 of {n_cold} cold)")
 
 
 def test_a_board_in_its_prune_cooldown_keeps_its_health_row(monkeypatch, tmp_path):

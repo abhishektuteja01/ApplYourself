@@ -306,18 +306,20 @@ def test_a_watchlist_company_is_pinned_hot_however_barren():
 def test_the_cold_tail_is_fully_covered_in_one_rotation():
     """The property that makes the slice safe: no board is starved, and none
     is polled twice before every other has been polled once."""
-    companies = [_co(f"c{i:02d}") for i in range(70)]
+    per_run = 10
+    total = per_run * universe.COLD_ROTATION_RUNS
+    companies = [_co(f"c{i:02d}") for i in range(total)]
     cursor = _cursor()
 
     visits = {}
     for run in range(universe.COLD_ROTATION_RUNS):
         sel = universe.select_for_run(companies, cursor, today=TODAY)
-        assert len(sel.to_poll) == 10
+        assert len(sel.to_poll) == per_run
         for c in sel.to_poll:
             visits[c.slug] = visits.get(c.slug, 0) + 1
         cursor.advance(sel.cold, len(sel.to_poll), key=lambda c: c.slug, attr="cold_slug")
 
-    assert len(visits) == 70
+    assert len(visits) == total
     assert set(visits.values()) == {1}
 
 
@@ -338,14 +340,17 @@ def test_the_two_rotations_do_not_seek_each_other():
     """Workday rotates `next_slug` over its tenants and the board lanes rotate
     `cold_slug` over their cold tail. One writer each."""
     cursor = _cursor()
-    companies = [_co(f"c{i}") for i in range(14)]
+    # 5 per run, so the "c9" below is always a real slug the rotation could hit.
+    total = 5 * universe.COLD_ROTATION_RUNS
+    companies = [_co(f"c{i}") for i in range(total)]
+    slice_size = -(-total // universe.COLD_ROTATION_RUNS)
 
     cursor.next_slug = "c9"
     sel = universe.select_for_run(companies, cursor, today=TODAY)
     cursor.advance(sel.cold, len(sel.to_poll), key=lambda c: c.slug, attr="cold_slug")
 
     assert cursor.next_slug == "c9"
-    assert cursor.cold_slug == "c2"
+    assert cursor.cold_slug == f"c{slice_size}"
 
 
 def test_last_kept_at_survives_a_round_trip_through_the_ledger(tmp_path, monkeypatch):

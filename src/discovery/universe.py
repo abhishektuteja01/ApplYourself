@@ -33,7 +33,7 @@ HEALTH_COLUMNS = ["ats", "slug", "consecutive_404s", "last_ok", "last_yield",
 # A board counts as hot for this long after the last row it kept.
 HOT_WINDOW_DAYS = 30
 # The cold tail is polled a slice at a time: full coverage every this many runs.
-COLD_ROTATION_RUNS = 7
+COLD_ROTATION_RUNS = 3
 _NEW_HEALTH_ROW = {"consecutive_404s": 0, "last_ok": pd.NaT, "last_yield": 0,
                    "pruned_at": pd.NaT, "last_kept_at": pd.NaT}
 
