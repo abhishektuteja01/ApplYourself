@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import random
+import threading
 import time
 from collections import defaultdict
 
+import jobspy
 import pandas as pd
 from jobspy import scrape_jobs
 from jobspy.linkedin import LinkedIn
@@ -11,7 +14,7 @@ from jobspy.model import Country, DescriptionFormat, ScraperInput, Site
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.discovery.config import pacing_floor
+from src.discovery.config import MIN_PAGE_DELAY_SECONDS, pacing_floor
 from src.discovery.gate import gate_passing_urls
 from src.discovery.sources.base import Source, SourceResult
 from src.discovery.schema import make_row
@@ -36,7 +39,125 @@ DETAIL_JITTER_SECONDS = 0.5
 DETAIL_FIELDS = ("description", "job_level", "job_type", "job_url_direct")
 
 
-def _linkedin_detail_client() -> LinkedIn:
+class HttpTally:
+    """Per-request counters for one LinkedIn phase.
+
+    jobspy's session mounts `Retry(total=3, backoff_factor=5,
+    status_forcelist=[..., 429])`, which retries a rate-limit silently and
+    sleeps 5s, 10s, 20s while doing it. A throttled night therefore looks
+    identical to a slow one in the report — the only visible symptom is the
+    lane taking three times as long for no stated reason. These counters make
+    the difference legible: requests made, seconds actually spent in HTTP, and
+    how many of those responses were 429s.
+
+    Thread-safe because the lanes run concurrently and a future caller may
+    share one tally across workers.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.requests = 0
+        self.seconds = 0.0
+        self.rate_limited = 0
+        self.errors = 0
+
+    def record(self, seconds: float, status: int | None) -> None:
+        with self._lock:
+            self.requests += 1
+            self.seconds += seconds
+            if status is None:
+                self.errors += 1
+            elif status == 429:
+                self.rate_limited += 1
+
+    def report_lines(self, phase: str, sleep_seconds: float) -> list[str]:
+        """The tally as report prose. `sleep_seconds` is the phase's deliberate
+        pacing, passed in rather than measured so the split between 'waiting on
+        purpose' and 'waiting on LinkedIn' is explicit."""
+        if not self.requests:
+            return []
+        lines = [
+            f"- {phase} http: {self.requests} requests, {self.seconds:.1f}s "
+            f"({self.seconds / self.requests:.2f}s/req), "
+            f"{sleep_seconds:.1f}s deliberate sleep",
+        ]
+        if self.rate_limited:
+            # Loud: this is the number that decides whether the page delay
+            # goes down further or back up.
+            lines.append(
+                f"- **RATE LIMITED** {phase}: {self.rate_limited} of "
+                f"{self.requests} responses were 429. jobspy retried them "
+                f"silently (backoff 5/10/20s); the page delay is too low.")
+        if self.errors:
+            lines.append(f"- {phase} transport errors: {self.errors}")
+        return lines
+
+
+class _TallyingAdapter(HTTPAdapter):
+    """An HTTPAdapter that times every response and hands it to a tally.
+
+    Sits at the adapter layer, below urllib3's Retry, so a silently-retried
+    429 is counted as the response it was rather than vanishing into the
+    eventual 200.
+    """
+
+    def __init__(self, tally: HttpTally, **kwargs) -> None:
+        self._tally = tally
+        super().__init__(**kwargs)
+
+    def send(self, request, **kwargs):
+        t0 = time.time()
+        try:
+            response = super().send(request, **kwargs)
+        except Exception:
+            self._tally.record(time.time() - t0, None)
+            raise
+        self._tally.record(time.time() - t0, response.status_code)
+        return response
+
+    def build_response(self, req, resp):
+        # urllib3 swallows retried responses inside one `send`, so `send` only
+        # ever sees the last one. The retry history is the rest of the story.
+        response = super().build_response(req, resp)
+        history = getattr(getattr(resp, "retries", None), "history", ()) or ()
+        for attempt in history:
+            if attempt.status is not None:
+                self._tally.record(0.0, attempt.status)
+        return response
+
+
+def paced_linkedin(page_delay: float, band: float, tally: HttpTally):
+    """A `LinkedIn` subclass with a configured inter-page delay and a tallying
+    adapter, plus the class-name patch that makes `scrape_jobs` pick it up.
+
+    `scrape_jobs` builds its `SCRAPER_MAPPING` from the `jobspy.LinkedIn`
+    module global on every call, so rebinding that one name is enough. Scoped
+    to a context manager and restored on exit: the other lanes run on their
+    own threads at the same time, and they resolve different names.
+    """
+
+    class PacedLinkedIn(LinkedIn):
+        delay = page_delay
+        band_delay = band
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.session.mount("https://", _TallyingAdapter(
+                tally, max_retries=self.session.adapters["https://"].max_retries))
+
+    @contextlib.contextmanager
+    def patched():
+        original = jobspy.LinkedIn
+        jobspy.LinkedIn = PacedLinkedIn
+        try:
+            yield PacedLinkedIn
+        finally:
+            jobspy.LinkedIn = original
+
+    return patched()
+
+
+def _linkedin_detail_client(tally: HttpTally | None = None) -> LinkedIn:
     """A LinkedIn scraper wired for detail fetches only.
 
     Reusing the instance inherits jobspy's session: browser-shaped headers,
@@ -49,10 +170,13 @@ def _linkedin_detail_client() -> LinkedIn:
         site_type=[Site.LINKEDIN],
         description_format=DescriptionFormat(DESCRIPTION_FORMAT),
     )
-    client.session.mount("https://", HTTPAdapter(max_retries=Retry(
+    retries = Retry(
         total=1, connect=1, status=1,
         status_forcelist=[500, 502, 503, 504, 429], backoff_factor=1,
-    )))
+    )
+    client.session.mount("https://", HTTPAdapter(max_retries=retries)
+                         if tally is None
+                         else _TallyingAdapter(tally, max_retries=retries))
     return client
 
 
@@ -103,8 +227,12 @@ class JobSpySource(Source):
         errors = []
         report_lines = []
 
-        pacing = max(pacing_floor(self.name),
-                     ctx.config.sources[self.name].pacing_seconds)
+        source_cfg = ctx.config.sources[self.name]
+        pacing = max(pacing_floor(self.name), source_cfg.pacing_seconds)
+        page_delay = max(MIN_PAGE_DELAY_SECONDS, source_cfg.page_delay_seconds)
+        page_band = max(0.0, source_cfg.page_delay_band_seconds)
+        search_tally = HttpTally()
+        query_sleep = 0.0
 
         # Where we search, which is not the same as what cleaning accepts:
         # `search_locations` when configured, else the allowlist's effective
@@ -126,63 +254,81 @@ class JobSpySource(Source):
         saturated_queries = 0
         deadline_hit = False
 
-        for vertical, term, location, is_remote in queries:
-            if ctx.deadline_reached():
-                deadline_hit = True
-                break
+        # Scoped for the whole term loop rather than per query: `scrape_jobs`
+        # re-reads the name every call, so entering once covers all of them.
+        # ExitStack rather than a `with` block so the loop below keeps its
+        # indentation and stays diff-legible.
+        stack = contextlib.ExitStack()
+        if self.name == "linkedin":
+            stack.enter_context(paced_linkedin(page_delay, page_band, search_tally))
 
-            if total_queries > 0:
-                time.sleep(pacing)
+        with stack:
+            for vertical, term, location, is_remote in queries:
+                if ctx.deadline_reached():
+                    deadline_hit = True
+                    break
 
-            total_queries += 1
+                if total_queries > 0:
+                    time.sleep(pacing)
+                    query_sleep += pacing
 
-            try:
-                df = scrape_jobs(
-                    site_name=self.name,
-                    search_term=term,
-                    location=location,
-                    is_remote=is_remote,
-                    results_wanted=RESULTS_WANTED,
-                    hours_old=HOURS_OLD,
-                    country_indeed=_country_indeed_value(location),
-                    description_format=DESCRIPTION_FORMAT,
-                    # Deferred to _backfill_descriptions below; see the module
-                    # comment on DETAIL_PACING_SECONDS.
-                    linkedin_fetch_description=False,
-                    verbose=1,
-                )
-                if df is None:
+                total_queries += 1
+
+                try:
+                    df = scrape_jobs(
+                        site_name=self.name,
+                        search_term=term,
+                        location=location,
+                        is_remote=is_remote,
+                        results_wanted=RESULTS_WANTED,
+                        hours_old=HOURS_OLD,
+                        country_indeed=_country_indeed_value(location),
+                        description_format=DESCRIPTION_FORMAT,
+                        # Deferred to _backfill_descriptions below; see the module
+                        # comment on DETAIL_PACING_SECONDS.
+                        linkedin_fetch_description=False,
+                        verbose=1,
+                    )
+                    if df is None:
+                        df = pd.DataFrame()
+                # Broad on purpose: jobspy raises anything from any
+                # site, and one bad query must not cost the run.
+                except Exception as e:  # noqa: BLE001
+                    msg = f"{type(e).__name__}: {e}"
+                    errors.append(f"{self.name} term='{term}' remote={is_remote}: {msg}")
                     df = pd.DataFrame()
-            # Broad on purpose: jobspy raises anything from any
-            # site, and one bad query must not cost the run.
-            except Exception as e:  # noqa: BLE001
-                msg = f"{type(e).__name__}: {e}"
-                errors.append(f"{self.name} term='{term}' remote={is_remote}: {msg}")
-                df = pd.DataFrame()
 
-            if not df.empty:
-                df = df.where(pd.notnull(df), None)
-                records = df.to_dict("records")
-                for record in records:
-                    record["vertical"] = vertical
-                    record["found_by_term"] = term
-                    # The QUERY's remote flag, not JobSpy's per-row `is_remote`:
-                    # this records which query surfaced the row.
-                    record["found_by_remote"] = is_remote
-                    rows.append(make_row(**record))
-                # A query returning the full RESULTS_WANTED was truncated by
-                # the cap, not exhausted: there are more rows we never saw.
-                saturated = len(df) >= RESULTS_WANTED
-                saturated_queries += saturated
-                suffix = " (SATURATED — more results exist)" if saturated else ""
-                report_lines.append(
-                    f"- term='{term}' remote={is_remote}: {len(df)} rows{suffix}")
+                if not df.empty:
+                    df = df.where(pd.notnull(df), None)
+                    records = df.to_dict("records")
+                    for record in records:
+                        record["vertical"] = vertical
+                        record["found_by_term"] = term
+                        # The QUERY's remote flag, not JobSpy's per-row `is_remote`:
+                        # this records which query surfaced the row.
+                        record["found_by_remote"] = is_remote
+                        rows.append(make_row(**record))
+                    # A query returning the full RESULTS_WANTED was truncated by
+                    # the cap, not exhausted: there are more rows we never saw.
+                    saturated = len(df) >= RESULTS_WANTED
+                    saturated_queries += saturated
+                    suffix = " (SATURATED — more results exist)" if saturated else ""
+                    report_lines.append(
+                        f"- term='{term}' remote={is_remote}: {len(df)} rows{suffix}")
 
         if not deadline_hit:
             report_lines.append(f"Queries made: {total_queries}")
         if total_queries:
             report_lines.append(
                 f"Saturated queries: {saturated_queries} of {total_queries}")
+
+        if self.name == "linkedin":
+            # Stated every night, tuned or not: the night's timings are only
+            # interpretable against the pacing that produced them.
+            report_lines.append(
+                f"Page delay: {page_delay:g}-{page_delay + page_band:g}s "
+                f"between pages, {pacing:g}s between queries")
+            report_lines.extend(search_tally.report_lines("search", query_sleep))
 
         if self.name == "linkedin" and rows:
             report_lines.extend(self._backfill_descriptions(rows, ctx, errors))
@@ -203,9 +349,11 @@ class JobSpySource(Source):
             if row["job_url"] in wanted:
                 by_url[row["job_url"]].append(row)
 
-        client = _linkedin_detail_client()
+        tally = HttpTally()
+        client = _linkedin_detail_client(tally)
         filled = empty = unparsed = 0
         elapsed = 0.0
+        detail_sleep = 0.0
         stopped = False
 
         for i, (url, group) in enumerate(by_url.items()):
@@ -219,8 +367,9 @@ class JobSpySource(Source):
                 continue
 
             if i > 0:
-                time.sleep(DETAIL_PACING_SECONDS
-                           + random.uniform(0, DETAIL_JITTER_SECONDS))
+                nap = DETAIL_PACING_SECONDS + random.uniform(0, DETAIL_JITTER_SECONDS)
+                time.sleep(nap)
+                detail_sleep += nap
 
             t0 = time.time()
             try:
@@ -257,6 +406,7 @@ class JobSpySource(Source):
         if attempted:
             lines.append(f"- detail time: {elapsed:.1f}s total, "
                          f"{elapsed / attempted:.2f}s/page")
+        lines.extend(tally.report_lines("detail", detail_sleep))
         if stopped:
             lines.append("**DEADLINE REACHED** during detail fetch — "
                          "remaining rows keep search-card fields only")

@@ -78,7 +78,8 @@ class _FakeDetails:
 
 def _fake_details(monkeypatch, empty_for=()):
     client = _FakeDetails(empty_for)
-    monkeypatch.setattr(jobspy_source, "_linkedin_detail_client", lambda: client)
+    monkeypatch.setattr(jobspy_source, "_linkedin_detail_client",
+                        lambda *a, **k: client)
     return client
 
 
@@ -324,7 +325,8 @@ class TestDeferredDescriptions:
                 return out
 
         client = _Overreaching()
-        monkeypatch.setattr(jobspy_source, "_linkedin_detail_client", lambda: client)
+        monkeypatch.setattr(jobspy_source, "_linkedin_detail_client",
+                        lambda *a, **k: client)
 
         res = LinkedinSource().fetch(_Ctx(cfg))
 
@@ -387,3 +389,107 @@ def test_jobspy_still_exposes_the_private_detail_api():
     assert callable(LinkedIn._get_job_details)
     assert list(inspect.signature(LinkedIn._get_job_details).parameters) == [
         "self", "job_id"]
+
+
+# ---------------------------------------------------------------------
+# Page pacing + the HTTP tally
+#
+# The inter-page sleep jobspy hardcodes is the largest single line item in the
+# LinkedIn lane, and a 429 it earns is retried silently. These cover both: the
+# configured delay actually reaches the scraper class, and the tally sees the
+# statuses the retry layer hides.
+# ---------------------------------------------------------------------
+
+class _FakeResponse:
+    def __init__(self, status_code=200, history=()):
+        self.status_code = status_code
+        self.raw = type("Raw", (), {
+            "retries": type("R", (), {"history": history})()})()
+
+
+def test_paced_linkedin_sets_delay_and_restores_the_name():
+    import jobspy
+
+    original = jobspy.LinkedIn
+    tally = jobspy_source.HttpTally()
+    with jobspy_source.paced_linkedin(2.0, 1.5, tally) as cls:
+        assert jobspy.LinkedIn is cls
+        assert cls.delay == 2.0
+        assert cls.band_delay == 1.5
+        # A subclass, so every other jobspy behaviour is inherited unchanged.
+        assert issubclass(cls, original)
+    assert jobspy.LinkedIn is original
+
+
+def test_paced_linkedin_restores_the_name_after_a_raise():
+    import jobspy
+
+    original = jobspy.LinkedIn
+    with pytest.raises(RuntimeError):
+        with jobspy_source.paced_linkedin(1.0, 0.0, jobspy_source.HttpTally()):
+            raise RuntimeError("boom")
+    assert jobspy.LinkedIn is original
+
+
+def test_tally_counts_requests_and_flags_429s():
+    tally = jobspy_source.HttpTally()
+    tally.record(0.5, 200)
+    tally.record(0.3, 200)
+    tally.record(0.0, 429)
+
+    assert (tally.requests, tally.rate_limited) == (3, 1)
+    text = "\n".join(tally.report_lines("search", sleep_seconds=10.0))
+    assert "3 requests" in text
+    assert "10.0s deliberate sleep" in text
+    assert "**RATE LIMITED**" in text
+
+
+def test_tally_is_quiet_when_nothing_was_rate_limited():
+    tally = jobspy_source.HttpTally()
+    tally.record(0.4, 200)
+    text = "\n".join(tally.report_lines("search", sleep_seconds=3.0))
+    assert "RATE LIMITED" not in text
+    assert "transport errors" not in text
+
+
+def test_tally_counts_a_transport_error():
+    tally = jobspy_source.HttpTally()
+    tally.record(1.0, None)
+    assert tally.errors == 1
+    assert "transport errors: 1" in "\n".join(tally.report_lines("detail", 0.0))
+
+
+def test_adapter_counts_retried_429s_the_retry_layer_hides(monkeypatch):
+    """urllib3 retries a 429 internally and `send` only ever returns the final
+    200, so without the history walk a throttled night reports zero 429s."""
+    tally = jobspy_source.HttpTally()
+    adapter = jobspy_source._TallyingAdapter(tally)
+
+    attempt = type("Attempt", (), {"status": 429})()
+    monkeypatch.setattr(jobspy_source.HTTPAdapter, "build_response",
+                        lambda self, req, resp: _FakeResponse())
+    adapter.build_response(None, _FakeResponse(history=(attempt, attempt)).raw)
+
+    assert tally.rate_limited == 2
+
+
+def test_fetch_reports_the_page_delay_it_used(cfg, monkeypatch):
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: _df(title=NO_VERTICAL))
+    ctx = _Ctx(cfg)
+    ctx.config.sources["linkedin"].page_delay_seconds = 2.0
+    ctx.config.sources["linkedin"].page_delay_band_seconds = 1.0
+
+    result = LinkedinSource().fetch(ctx)
+
+    assert any("Page delay: 2-3s between pages" in line
+               for line in result.report_lines)
+
+
+def test_indeed_reports_no_page_delay_line(cfg, monkeypatch):
+    """Only the LinkedIn lane is paced and tallied; the others are untouched."""
+    monkeypatch.setattr(jobspy_source, "scrape_jobs", lambda **kw: _df())
+
+    result = IndeedSource().fetch(_Ctx(cfg))
+
+    assert not any("Page delay" in line for line in result.report_lines)

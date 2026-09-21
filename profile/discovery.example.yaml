@@ -18,8 +18,15 @@ location_allowlist:
 # `cadence` is optional and defaults to daily. One of: daily, weekdays, weekly
 # (Monday), every_n_days:N. A skipped night writes no shard and reports as
 # SKIPPED, which the digest excludes from its medians and alarms.
+# `page_delay_seconds` / `page_delay_band_seconds` pace the gap between PAGES
+# of one query, as against `pacing_seconds` which paces the gap between
+# queries. Only the paginating jobspy lanes read them. jobspy hardcodes 3/4,
+# which is what they default to; at 100 results and 10 cards a page that is
+# nine sleeps averaging 5s per query, and it dominates the LinkedIn lane.
+# Lower them to trade rate-limit headroom for wall time; the run report prints
+# the delay used and counts any 429s it earned.
 sources:
-  linkedin:      {enabled: true,  pacing_seconds: 3}
+  linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   indeed:        {enabled: true,  pacing_seconds: 2}
   greenhouse:    {enabled: true,  pacing_seconds: 1}
   lever:         {enabled: true,  pacing_seconds: 1}

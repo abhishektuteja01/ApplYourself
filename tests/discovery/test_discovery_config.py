@@ -406,3 +406,77 @@ def test_an_unparsed_cadence_runs_rather_than_never_running():
     from src.discovery.config import due_today
 
     assert due_today("nonsense that load_config would have rejected", date(2026, 9, 19))
+
+
+# ---------------------------------------------------------------------
+# Page pacing: the inter-page delay the jobspy lanes hand to the scraper.
+# ---------------------------------------------------------------------
+
+def test_page_delay_defaults_to_jobspys_own_values(tmp_path, monkeypatch):
+    """An unset config must behave exactly as before the key existed."""
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+    p = tmp_path / "discovery.yaml"
+    p.write_text(yaml.dump({
+        "schema_version": 1,
+        "sources": {"linkedin": {"enabled": True, "pacing_seconds": 3}},
+    }), encoding="utf-8")
+
+    src = load_config(p).sources["linkedin"]
+    assert src.page_delay_seconds == 3.0
+    assert src.page_delay_band_seconds == 4.0
+
+
+def test_page_delay_is_read_from_config(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+    p = tmp_path / "discovery.yaml"
+    p.write_text(yaml.dump({
+        "schema_version": 1,
+        "sources": {"linkedin": {"enabled": True, "pacing_seconds": 3,
+                                 "page_delay_seconds": 2,
+                                 "page_delay_band_seconds": 2}},
+    }), encoding="utf-8")
+
+    src = load_config(p).sources["linkedin"]
+    assert (src.page_delay_seconds, src.page_delay_band_seconds) == (2.0, 2.0)
+
+
+def test_page_delay_below_the_floor_is_rejected(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+    p = tmp_path / "discovery.yaml"
+    p.write_text(yaml.dump({
+        "schema_version": 1,
+        "sources": {"linkedin": {"enabled": True, "pacing_seconds": 3,
+                                 "page_delay_seconds": 0}},
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="page_delay_seconds must be >="):
+        load_config(p)
+
+
+def test_negative_page_delay_band_is_rejected(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+    p = tmp_path / "discovery.yaml"
+    p.write_text(yaml.dump({
+        "schema_version": 1,
+        "sources": {"linkedin": {"enabled": True, "pacing_seconds": 3,
+                                 "page_delay_band_seconds": -1}},
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="page_delay_band_seconds must be >= 0"):
+        load_config(p)
+
+
+def test_misspelled_page_delay_key_is_reported_not_ignored(tmp_path, monkeypatch):
+    from src import verticals
+    monkeypatch.setattr(verticals, "get_config", lambda: None)
+    p = tmp_path / "discovery.yaml"
+    p.write_text(yaml.dump({
+        "schema_version": 1,
+        "sources": {"linkedin": {"enabled": True, "page_delay": 2}},
+    }), encoding="utf-8")
+
+    assert "sources.linkedin.page_delay" in load_config(p).unknown_keys

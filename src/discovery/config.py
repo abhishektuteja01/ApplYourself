@@ -21,7 +21,8 @@ _TOP_LEVEL_KEYS = frozenset({
     "raw_retention_days", "board_max_age_days", "search_locations",
 })
 _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
-_SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence"})
+_SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence",
+                          "page_delay_seconds", "page_delay_band_seconds"})
 
 # Ceiling on the locations the jobspy lanes may query when `search_locations`
 # is absent and the allowlist is the fallback. Each location multiplies the
@@ -39,6 +40,19 @@ MIN_PACING_SECONDS = {"greenhouse": 0.5, "linkedin": 0.5, "indeed": 0.5}
 
 def pacing_floor(source_name: str) -> float:
     return MIN_PACING_SECONDS.get(source_name, DEFAULT_MIN_PACING_SECONDS)
+
+
+# Page-level pacing, distinct from the inter-query `pacing_seconds` above.
+# A paginating source sleeps `uniform(page_delay, page_delay + band)` between
+# pages of ONE query; jobspy hardcodes 3/4 on its LinkedIn scraper. At
+# results_wanted=100 the guest endpoint returns 10 cards a page, so that is 9
+# sleeps -- ~45s of the ~54s a query costs, and the largest single line item
+# in the whole nightly run. Configurable so it can be walked down (and back
+# up) without a code change; the floor is here because it is mechanism, while
+# the chosen value is user policy and lives in discovery.yaml.
+DEFAULT_PAGE_DELAY_SECONDS = 3.0
+DEFAULT_PAGE_DELAY_BAND_SECONDS = 4.0
+MIN_PAGE_DELAY_SECONDS = 0.5
 
 
 # How often a source runs. `daily` is the historical behaviour and the
@@ -98,6 +112,11 @@ class SourceConfig:
     enabled: bool
     pacing_seconds: float
     cadence: str = CADENCE_DAILY
+    # Only the paginating jobspy lanes read these; every other source ignores
+    # them. Defaults reproduce jobspy's own hardcoded values, so an unset
+    # config behaves exactly as before.
+    page_delay_seconds: float = DEFAULT_PAGE_DELAY_SECONDS
+    page_delay_band_seconds: float = DEFAULT_PAGE_DELAY_BAND_SECONDS
 
 def _continent_countries(continent: str) -> list[str]:
     """Countries on `continent`, matched case- and whitespace-insensitively.
@@ -357,10 +376,24 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 cadence = parse_cadence(v.get("cadence", CADENCE_DAILY))
             except ValueError as e:
                 raise ValueError(f"sources.{k}: {e}") from None
+            page_delay = float(v.get("page_delay_seconds",
+                                     DEFAULT_PAGE_DELAY_SECONDS))
+            page_band = float(v.get("page_delay_band_seconds",
+                                    DEFAULT_PAGE_DELAY_BAND_SECONDS))
+            if page_delay < MIN_PAGE_DELAY_SECONDS:
+                raise ValueError(
+                    f"{p}: sources.{k}.page_delay_seconds must be >= "
+                    f"{MIN_PAGE_DELAY_SECONDS}, got {page_delay}")
+            if page_band < 0:
+                raise ValueError(
+                    f"{p}: sources.{k}.page_delay_band_seconds must be >= 0, "
+                    f"got {page_band}")
             cfg.sources[k] = SourceConfig(
                 enabled=bool(v.get("enabled", True)),
                 pacing_seconds=float(v.get("pacing_seconds", 1.0)),
                 cadence=cadence,
+                page_delay_seconds=page_delay,
+                page_delay_band_seconds=page_band,
             )
 
     if "location_allowlist" in data:
@@ -415,6 +448,13 @@ def main() -> int:
         # Cadence is shown only when it is not the default, so the common line
         # stays readable and an unusual schedule stands out.
         suffix = "" if src.cadence == CADENCE_DAILY else f", {src.cadence}"
+        # Page delay shown only when tuned off jobspy's own default, for the
+        # same reason as cadence: the common line stays readable and a
+        # non-stock value is exactly what you want to notice.
+        if (src.page_delay_seconds, src.page_delay_band_seconds) != (
+                DEFAULT_PAGE_DELAY_SECONDS, DEFAULT_PAGE_DELAY_BAND_SECONDS):
+            suffix += (f", pages {src.page_delay_seconds:g}"
+                       f"-{src.page_delay_seconds + src.page_delay_band_seconds:g}s")
         return f"{name} ({src.pacing_seconds:g}s{suffix})"
 
     print("sources:   " + (", ".join(_source(n, s) for n, s in enabled)
