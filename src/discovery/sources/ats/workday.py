@@ -55,21 +55,29 @@ usually a conference/contractor/internal portal, not the main board.
 """
 from __future__ import annotations
 
+import logging
 import random
 import re
 import time
+from urllib.parse import urlsplit
 
+import pandas as pd
+
+from src import paths
 from src.discovery import cleaning
 from src.discovery.config import pacing_floor
 from src.discovery.dates import relative_posted_date
 from src.discovery import gate
 from src.discovery import universe
 from src.discovery.crawl_cursor import load_cursor, save_cursor
+from src.discovery.crawl_trace import CrawlTrace
 from src.discovery.htmlutil import html_to_text
 from src.discovery.schema import make_row
 from src.discovery.sources.ats.base import PAYLOAD_SHAPE_ERRORS
-from src.ats_http import CareersError, fetch_json, fetch_json_post
+from src.ats_http import CareersError, fetch_json, fetch_json_post, observe
 from src.discovery.sources.base import Source, SourceResult
+
+log = logging.getLogger(__name__)
 
 #
 # The `Search/jobs` endpoint 400s on any `limit` above 20 — 21 fails, 20
@@ -90,6 +98,9 @@ MAX_FRONTIER_OFFSET = 1000
 # Report presentation only — it changes nothing about what is crawled or kept,
 # so it is a constant here rather than a config key.
 REPORT_TOP_TENANTS = 20
+# Module-level so tests can point them at a tmp dir.
+RAW_DIR = paths.JOBS_RAW
+RUNS_DIR = paths.JOBS_RUNS
 
 class WorkdaySlugError(ValueError):
     """A universe.csv slug is not the tri-part company|wd#|site_id shape."""
@@ -123,7 +134,7 @@ def _public_url(company: str, wd: str, site_id: str, path: str) -> str:
     return f"https://{company}.{wd}.myworkdayjobs.com/{site_id}{path}"
 
 
-def _relaxed_sleep(pacing: float) -> None:
+def _relaxed_sleep(pacing: float, spread: float = 3.0) -> float:
     """Sleep a random multiple of `pacing`, skewed slower rather than metronomic.
 
     Workday sits behind Cloudflare (confirmed live: `cf-ray`/`__cf_bm` on every
@@ -131,10 +142,16 @@ def _relaxed_sleep(pacing: float) -> None:
     against the deadline the audit worried about, since `LIST_LIMIT=20` only
     triples the request count, not the wall-clock budget's order of magnitude.
     Occasional longer pause mimics a human reading a results page.
+    `spread` (config `pacing_spread`) sets the top of the range. Returns the
+    seconds slept, for the trace.
     """
-    time.sleep(random.uniform(pacing, pacing * 3))
+    slept = random.uniform(pacing, pacing * spread)
+    time.sleep(slept)
     if random.random() < 0.05:
-        time.sleep(random.uniform(5.0, 15.0))
+        pause = random.uniform(5.0, 15.0)
+        time.sleep(pause)
+        slept += pause
+    return slept
 
 
 def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str = "",
@@ -203,6 +220,66 @@ def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
     )
 
 
+def _posting_key(host: str, path: str) -> tuple[str, str] | None:
+    """(host, "/job/...") — what a list item's externalPath and a saved row's
+    job_url have in common. None when the path carries no `/job/` segment."""
+    i = path.find("/job/")
+    if i < 0:
+        return None
+    return host.lower(), path[i:]
+
+
+def load_saved_details(max_age_days: int, raw_dir=None,
+                       today: pd.Timestamp | None = None) -> dict:
+    """Descriptions this source already fetched within `max_age_days`, keyed
+    by `_posting_key`, newest shard winning. Empty when reuse is off."""
+    if max_age_days <= 0:
+        return {}
+    raw_dir = RAW_DIR if raw_dir is None else raw_dir
+    today = pd.Timestamp.today().normalize() if today is None else today
+    cutoff = today - pd.Timedelta(days=max_age_days)
+    saved: dict = {}
+    if not raw_dir.exists():
+        return saved
+    cols = ["job_url", "title", "location", "description"]
+    for path in sorted(raw_dir.glob("*_workday*.parquet")):
+        ts = cleaning._parse_run_ts_from_filename(path.name)
+        if ts is None or ts.normalize() < cutoff:
+            continue
+        try:
+            df = pd.read_parquet(path, columns=cols)
+        except (OSError, ValueError, KeyError) as e:
+            log.warning("workday: cannot read %s for description reuse: %s", path.name, e)
+            continue
+        for rec in df.to_dict("records"):
+            desc = rec.get("description")
+            url = rec.get("job_url")
+            if not isinstance(desc, str) or not desc.strip() or not isinstance(url, str):
+                continue
+            parts = urlsplit(url)
+            key = _posting_key(parts.netloc, parts.path)
+            if key is not None:
+                saved[key] = rec
+    return saved
+
+
+def _reused_row(saved: dict, name: str, list_item: dict, vertical: str,
+                term: str) -> dict:
+    """A row built from a saved description plus tonight's list item, in
+    place of a detail fetch."""
+    return make_row(
+        site="workday",
+        company=name,
+        title=list_item.get("title") or saved.get("title") or "",
+        job_url=saved["job_url"],
+        description=saved["description"],
+        location=saved.get("location") or list_item.get("locationsText") or "",
+        date_posted=relative_posted_date(list_item.get("postedOn")),
+        vertical=vertical,
+        found_by_term=term,
+    )
+
+
 # A systemic parse failure means the API shape changed and the whole source is
 # broken; a couple of bad postings mean two bad postings. The old check was
 # `errors > 1 and errors == attempts` — order-dependent, not rate-based: two
@@ -228,7 +305,22 @@ class WorkdaySource(Source):
     name = "workday"
 
     def fetch(self, ctx) -> SourceResult:
-        pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
+        run_id = getattr(ctx, "run_id", None)
+        trace = CrawlTrace(RUNS_DIR / f"{run_id}_workday_trace.jsonl" if run_id else None)
+        try:
+            with observe(trace.on_http):
+                return self._crawl(ctx, trace)
+        finally:
+            trace.close()
+
+    def _crawl(self, ctx, trace: CrawlTrace) -> SourceResult:
+        src_cfg = ctx.config.sources[self.name]
+        pacing = max(pacing_floor(self.name), src_cfg.pacing_seconds)
+        spread = src_cfg.pacing_spread
+        saved_details = load_saved_details(src_cfg.detail_reuse_days)
+
+        def sleep() -> None:
+            trace.add_sleep(_relaxed_sleep(pacing, spread))
         companies = universe.load(self.name)
         # `universe_slugs`, not `companies`: `load()` hides a board for 14 days
         # after it was pruned, and the ledger deletes any slug it was not told
@@ -256,6 +348,11 @@ class WorkdaySource(Source):
         new_unmatched_paths = 0
         detail_attempts = 0
         detail_shape_errors = 0
+        details_reused = 0
+        head_pages = 0
+        deep_pages = 0
+        early_stops = 0
+        cold_head_only = 0
         first_request = True
 
         # Hot tenants (kept a row in the last `HOT_WINDOW_DAYS`, or on the
@@ -266,8 +363,11 @@ class WorkdaySource(Source):
         universe_size = len(companies)
         selection = universe.select_for_run(
             companies, cursor,
-            rotation_runs=ctx.config.sources[self.name].cold_rotation_runs)
+            rotation_runs=src_cfg.cold_rotation_runs)
         companies = selection.to_poll
+        # Cold tenants read the head page only: they kept nothing in 30 days,
+        # and a deep page holds older postings than the head.
+        hot_slugs = {c.slug for c in selection.hot}
         completed = 0
 
         for c in companies:
@@ -286,6 +386,7 @@ class WorkdaySource(Source):
                 continue
 
             polled += 1
+            is_hot = c.slug in hot_slugs
 
             c_fetched = 0
             # Keyed by externalPath: the same posting can surface under more
@@ -316,8 +417,9 @@ class WorkdaySource(Source):
                 frontier = cursor.offset_for(c.slug, term) or LIST_LIMIT
                 if frontier > MAX_FRONTIER_OFFSET:
                     frontier = LIST_LIMIT
-                offsets = [0] + [frontier + k * LIST_LIMIT
-                                  for k in range(MAX_PAGES_PER_TERM - 1)]
+                offsets = [0] + ([frontier + k * LIST_LIMIT
+                                   for k in range(MAX_PAGES_PER_TERM - 1)]
+                                  if is_hot else [])
                 # Seeded with the frontier this run inherited, so a run that
                 # reads page 0 and then stops leaves it exactly where it was.
                 # Starting at 0 walked it BACKWARDS: page 0 coming back full
@@ -328,6 +430,8 @@ class WorkdaySource(Source):
                 # exists for.
                 next_frontier = frontier
                 pages_read = 0
+                stop = "cap" if is_hot else "cold_head"
+                before = (new_matched_paths, repeat_paths, new_unmatched_paths)
                 # Per (company, term) — `shape_errors` is counted per term, so
                 # counting attempts per company puts the escalation ratio above
                 # 1.0 as soon as there is more than one term.
@@ -335,13 +439,19 @@ class WorkdaySource(Source):
                 try:
                     for offset in offsets:
                         if ctx.deadline_reached():
+                            stop = "deadline"
                             break
                         if not first_request:
-                            _relaxed_sleep(pacing)
+                            sleep()
                         first_request = False
                         payload = list_page(company, wd, site_id, offset, term,
                                              deadline_ts=ctx.deadline_ts)
                         pages_read += 1
+                        if offset:
+                            deep_pages += 1
+                        else:
+                            head_pages += 1
+                        page_matched_before = new_matched_paths
                         postings = [p for p in payload["jobPostings"] if isinstance(p, dict)]
                         for item in postings:
                             c_fetched += 1
@@ -364,11 +474,19 @@ class WorkdaySource(Source):
                         # reliable "no more results" signal.
                         if len(postings) < LIST_LIMIT:
                             next_frontier = 0   # exhausted; restart at the head
+                            stop = "short"
                             break
                         if offset:
                             # Page 0 is the freshness read, not the frontier
                             # read. Only a deep page may advance it.
                             next_frontier = offset + LIST_LIMIT
+                            # A full deep page with no new match: later pages
+                            # are older still. The frontier has already moved
+                            # past it, so the next run reads deeper.
+                            if new_matched_paths == page_matched_before:
+                                early_stops += 1
+                                stop = "early"
+                                break
                     # Where the next run resumes its DEEP reading. Page 0 is
                     # unconditional, so a 0 here only means "start over",
                     # never "skip the head".
@@ -386,6 +504,7 @@ class WorkdaySource(Source):
                 except CareersError as e:
                     err_other += 1
                     errors.append(f"{c.name} [{term}]: {e}")
+                    stop = "error"
                     if e.permanent:
                         fatal = e
                         break
@@ -395,7 +514,17 @@ class WorkdaySource(Source):
                     errors.append(
                         f"{c.name} [{term}]: malformed board payload: "
                         f"{type(e).__name__}: {e}")
+                    stop = "error"
                     break
+                finally:
+                    trace.record(
+                        "term", company=c.slug, term=term, hot=is_hot,
+                        pages=pages_read, stop=stop, frontier=next_frontier,
+                        new_matched=new_matched_paths - before[0],
+                        repeat=repeat_paths - before[1],
+                        unmatched=new_unmatched_paths - before[2])
+                if stop == "cold_head":
+                    cold_head_only += 1
 
             if fatal is not None:
                 ledger.mark_dead(c.slug)
@@ -418,10 +547,21 @@ class WorkdaySource(Source):
                          in zip(list(survivors.items()), verdicts) if ok}
 
             c_kept = 0
+            c_reused = 0
+            kept_by_term: dict[str, int] = {}
+            host = f"{company}.{wd}.myworkdayjobs.com"
             for path, (vertical, item, term) in survivors.items():
                 if ctx.deadline_reached():
                     break
-                _relaxed_sleep(pacing)
+                key = _posting_key(host, path)
+                saved = saved_details.get(key) if key is not None else None
+                if saved is not None:
+                    rows.append(_reused_row(saved, c.name, item, vertical, term))
+                    c_kept += 1
+                    c_reused += 1
+                    kept_by_term[term] = kept_by_term.get(term, 0) + 1
+                    continue
+                sleep()
                 detail_attempts += 1
                 try:
                     row = _detail_row(company, c.name, wd, site_id, path, item, vertical,
@@ -442,7 +582,11 @@ class WorkdaySource(Source):
                 if row is not None:
                     rows.append(row)
                     c_kept += 1
+                    kept_by_term[term] = kept_by_term.get(term, 0) + 1
 
+            details_reused += c_reused
+            trace.record("tenant", company=c.slug, name=c.name, hot=is_hot,
+                         kept=c_kept, reused=c_reused, kept_by_term=kept_by_term)
             ok += 1
             kept += c_kept
             completed += 1
@@ -463,7 +607,10 @@ class WorkdaySource(Source):
         yield_line = (f"List paths: {new_matched_paths} new+classified "
                       f"| {new_unmatched_paths} new, no vertical "
                       f"| {repeat_paths} repeat")
-        report_summary = [summary, yield_line, ""]
+        pages_line = (f"Pages: {head_pages} head | {deep_pages} deep "
+                      f"| {early_stops} early stops | {cold_head_only} cold head-only "
+                      f"| Descriptions: {detail_attempts} fetched, {details_reused} reused")
+        report_summary = [summary, yield_line, pages_line, *trace.summary_lines(), ""]
         top = sorted(ok_tenants, key=lambda t: t[:3],
                      reverse=True)[:REPORT_TOP_TENANTS]
         report_lines = [f"| {name} | OK | {fetched} | {kept_} | |"

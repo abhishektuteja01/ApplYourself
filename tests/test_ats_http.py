@@ -198,3 +198,46 @@ def test_status_404_is_not_inferred_from_a_url_containing_404(responses, sleeps)
         fetch_json("https://x/boards/acme-404/jobs")
     assert exc_info.value.status == 500
     assert exc_info.value.permanent is False
+
+
+def test_an_observer_sees_every_attempt_including_the_retry(responses, sleeps):
+    responses([FakeResponse(429, headers={"Retry-After": "2", "cf-mitigated": "challenge"}),
+               FakeResponse(200, {"ok": 1})])
+    events = []
+    with http.observe(events.append):
+        assert fetch_json("https://x/board") == {"ok": 1}
+    assert [(e["status"], e["attempt"]) for e in events] == [(429, 1), (200, 2)]
+    assert events[0]["retry_after"] == "2"
+    assert events[0]["cf_mitigated"] == "challenge"
+    assert all(e["secs"] >= 0 for e in events)
+
+
+def test_an_observer_sees_a_network_error(responses, sleeps):
+    responses([requests.ConnectionError("down"), FakeResponse(200, {})])
+    events = []
+    with http.observe(events.append):
+        fetch_json("https://x/board")
+    assert events[0]["status"] is None
+    assert events[0]["error"] == "ConnectionError"
+
+
+def test_a_failing_observer_does_not_fail_the_fetch(responses, sleeps):
+    responses([FakeResponse(200, {"ok": 1})])
+
+    def broken(event):
+        raise RuntimeError("trace bug")
+    with http.observe(broken):
+        assert fetch_json("https://x/board") == {"ok": 1}
+
+
+def test_the_observer_is_per_thread_and_unset_after_the_block(responses, sleeps):
+    import threading
+
+    responses([FakeResponse(200, {})])
+    events = []
+    with http.observe(events.append):
+        t = threading.Thread(target=lambda: fetch_json("https://x/other-thread"))
+        t.start()
+        t.join()
+    fetch_json("https://x/after")
+    assert events == []

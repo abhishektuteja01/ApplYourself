@@ -23,11 +23,18 @@ _TOP_LEVEL_KEYS = frozenset({
 _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
 _SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence",
                           "page_delay_seconds", "page_delay_band_seconds",
-                          "cold_rotation_runs"})
+                          "cold_rotation_runs", "pacing_spread",
+                          "detail_reuse_days"})
 
 # Runs to cover an ATS lane's cold tail once, when a source sets no
 # `cold_rotation_runs`.
 DEFAULT_COLD_ROTATION_RUNS = 3
+
+# Workday's inter-request sleep is uniform(pacing, pacing * pacing_spread).
+DEFAULT_PACING_SPREAD = 3.0
+# Days a saved Workday description may be reused instead of re-fetched.
+# 0 = always fetch.
+DEFAULT_DETAIL_REUSE_DAYS = 0
 
 # Ceiling on the locations the jobspy lanes may query when `search_locations`
 # is absent and the allowlist is the fallback. Each location multiplies the
@@ -125,6 +132,9 @@ class SourceConfig:
     # Only the ATS board lanes and Workday read this: their cold tail is
     # polled one slice a run, covered in full every this many runs.
     cold_rotation_runs: int = DEFAULT_COLD_ROTATION_RUNS
+    # Only Workday reads these two.
+    pacing_spread: float = DEFAULT_PACING_SPREAD
+    detail_reuse_days: int = DEFAULT_DETAIL_REUSE_DAYS
 
 def _continent_countries(continent: str) -> list[str]:
     """Countries on `continent`, matched case- and whitespace-insensitively.
@@ -401,6 +411,17 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 raise ValueError(
                     f"{p}: sources.{k}.cold_rotation_runs must be an integer >= 1, "
                     f"got {rotation!r}")
+            spread = v.get("pacing_spread", DEFAULT_PACING_SPREAD)
+            if (isinstance(spread, bool) or not isinstance(spread, (int, float))
+                    or spread < 1):
+                raise ValueError(
+                    f"{p}: sources.{k}.pacing_spread must be a number >= 1, "
+                    f"got {spread!r}")
+            reuse = v.get("detail_reuse_days", DEFAULT_DETAIL_REUSE_DAYS)
+            if isinstance(reuse, bool) or not isinstance(reuse, int) or reuse < 0:
+                raise ValueError(
+                    f"{p}: sources.{k}.detail_reuse_days must be an integer >= 0, "
+                    f"got {reuse!r}")
             cfg.sources[k] = SourceConfig(
                 enabled=bool(v.get("enabled", True)),
                 pacing_seconds=float(v.get("pacing_seconds", 1.0)),
@@ -408,6 +429,8 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 page_delay_seconds=page_delay,
                 page_delay_band_seconds=page_band,
                 cold_rotation_runs=rotation,
+                pacing_spread=float(spread),
+                detail_reuse_days=reuse,
             )
 
     if "location_allowlist" in data:
@@ -469,6 +492,10 @@ def main() -> int:
                 DEFAULT_PAGE_DELAY_SECONDS, DEFAULT_PAGE_DELAY_BAND_SECONDS):
             suffix += (f", pages {src.page_delay_seconds:g}"
                        f"-{src.page_delay_seconds + src.page_delay_band_seconds:g}s")
+        if src.pacing_spread != DEFAULT_PACING_SPREAD:
+            suffix += f", sleep {src.pacing_seconds:g}-{src.pacing_seconds * src.pacing_spread:g}s"
+        if src.detail_reuse_days != DEFAULT_DETAIL_REUSE_DAYS:
+            suffix += f", reuse JD {src.detail_reuse_days}d"
         return f"{name} ({src.pacing_seconds:g}s{suffix})"
 
     print("sources:   " + (", ".join(_source(n, s) for n, s in enabled)

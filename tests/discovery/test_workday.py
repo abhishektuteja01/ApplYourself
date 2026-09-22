@@ -22,6 +22,8 @@ class MockConfigSources:
     pacing_seconds = 0
     # Every tenant every run: these tests are about the crawl, not the rotation.
     cold_rotation_runs = 1
+    pacing_spread = 3.0
+    detail_reuse_days = 0
 
 
 class MockContext:
@@ -58,6 +60,18 @@ DETAIL_PAYLOAD = {
         "externalUrl": "https://acme.wd3.myworkdayjobs.com/AcmeExternalCareerSite/job/1",
     }
 }
+
+
+def _hot(name="Acme AI", slug="acme|wd3|Site"):
+    """A watchlist tenant: hot every run, so it reads deep pages."""
+    return UniverseCompany(name, "workday", slug, priority=True)
+
+
+def _unique_full_page(search_text, offset):
+    """A full page whose postings no other page or term repeats, so the
+    no-new-match early stop never fires."""
+    return [dict(LIST_ITEM, externalPath=f"/job/{search_text}-{offset}-{i}")
+            for i in range(workday.LIST_LIMIT)]
 
 
 class TestParseSlug:
@@ -162,10 +176,7 @@ class TestWorkdaySourceFetch:
         """`total` is unreliable past page 0 (module docstring, confirmed
         live) — a full page of length LIST_LIMIT keeps paginating regardless
         of what `total` claims, and only a short page ends it."""
-        monkeypatch.setattr(
-            universe, "load",
-            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
-        )
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot()])
         calls = []
         full_page = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
 
@@ -194,16 +205,12 @@ class TestWorkdaySourceFetch:
     def test_a_full_page_does_not_loop_forever(self, monkeypatch):
         """Every page returned is exactly LIST_LIMIT long — MAX_PAGES_PER_TERM
         must still cap the crawl for a single term."""
-        monkeypatch.setattr(
-            universe, "load",
-            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
-        )
-        full_page = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot()])
         calls = {"n": 0}
 
         def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
             calls["n"] += 1
-            return {"total": 0, "jobPostings": full_page}
+            return {"total": 0, "jobPostings": _unique_full_page(search_text, offset)}
 
         monkeypatch.setattr(workday, "list_page", fake_list_page)
         monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
@@ -529,8 +536,9 @@ class TestTheCrawlResumesAcrossRuns:
     A run cannot cover that, so it covers a slice and the next one continues.
     """
 
-    def _companies(self, n=6):
-        return [UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site") for i in range(n)]
+    def _companies(self, n=6, hot=False):
+        return [UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site", priority=hot)
+                for i in range(n)]
 
     def _stub(self, monkeypatch, companies, seen):
         monkeypatch.setattr(universe, "load", lambda ats: companies)
@@ -594,13 +602,12 @@ class TestTheCrawlResumesAcrossRuns:
 
         So: page 0 every run, then continue from the frontier.
         """
-        companies = self._companies(1)
-        full = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
+        companies = self._companies(1, hot=True)
         calls: list[int] = []
 
         def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
             calls.append(offset)
-            return {"total": 0, "jobPostings": full}
+            return {"total": 0, "jobPostings": _unique_full_page(search_text, offset)}
 
         monkeypatch.setattr(universe, "load", lambda ats: companies)
         monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
@@ -636,7 +643,7 @@ class TestTheCrawlResumesAcrossRuns:
         """
         from src.discovery import crawl_cursor as cc
 
-        companies = self._companies(1)
+        companies = self._companies(1, hot=True)
         slug = companies[0].slug
         terms = search_terms(verticals_module.get_config())
         full = [dict(LIST_ITEM, externalPath=f"/job/{i}")
@@ -700,15 +707,12 @@ class TestTheFrontierIsCapped:
     pages 161-176 of a single query."""
 
     def _company(self):
-        return [UniverseCompany("Acme AI", "workday", "acme|wd1|Site")]
+        return [_hot(slug="acme|wd1|Site")]
 
     def _stub_full_pages(self, monkeypatch, calls):
-        full = [dict(LIST_ITEM, externalPath=f"/job/{i}")
-                for i in range(workday.LIST_LIMIT)]
-
         def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
             calls.append(offset)
-            return {"total": 0, "jobPostings": full}
+            return {"total": 0, "jobPostings": _unique_full_page(search_text, offset)}
 
         monkeypatch.setattr(universe, "load", lambda ats: self._company())
         monkeypatch.setattr(workday, "list_page", always_full)
@@ -778,9 +782,7 @@ class TestListYieldCounters:
                 return {"total": 0, "jobPostings": page}
             return {"total": 0, "jobPostings": []}
 
-        monkeypatch.setattr(
-            universe, "load",
-            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd1|Site")])
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot(slug="acme|wd1|Site")])
         monkeypatch.setattr(workday, "list_page", fake_list)
         monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
         monkeypatch.setattr(workday.time, "sleep", lambda _: None)
@@ -841,6 +843,8 @@ class TestHotColdSelection:
         class Src:
             pacing_seconds = 0
             cold_rotation_runs = rotation_runs
+            pacing_spread = 3.0
+            detail_reuse_days = 0
 
         class Ctx(MockContext):
             class Config:
@@ -900,3 +904,231 @@ class TestHotColdSelection:
         ctx.deadline_reached = lambda: False
         WorkdaySource().fetch(ctx)
         assert order[0] == "cold1"
+
+
+class TestRelaxedSleep:
+    def test_sleep_stays_between_pacing_and_pacing_times_spread(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(workday.time, "sleep", slept.append)
+        monkeypatch.setattr(workday.random, "random", lambda: 1.0)  # no long pause
+        for _ in range(200):
+            got = workday._relaxed_sleep(1.0, 2.0)
+            assert 1.0 <= got <= 2.0
+        assert all(1.0 <= s <= 2.0 for s in slept)
+
+    def test_the_long_pause_is_added_and_returned(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(workday.time, "sleep", slept.append)
+        monkeypatch.setattr(workday.random, "random", lambda: 0.0)
+        got = workday._relaxed_sleep(1.0, 2.0)
+        assert len(slept) == 2 and got == sum(slept)
+        assert 5.0 <= slept[1] <= 15.0
+
+
+def _stub_details(monkeypatch):
+    calls = []
+
+    def fake_detail(url, **kw):
+        calls.append(url)
+        return DETAIL_PAYLOAD
+    monkeypatch.setattr(workday, "fetch_json", fake_detail)
+    monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+    return calls
+
+
+class TestColdTenantsReadTheHeadOnly:
+    def test_a_cold_tenant_reads_page_zero_only_and_keeps_its_frontier(self, monkeypatch):
+        from src.discovery import crawl_cursor as cc
+
+        cold = UniverseCompany("Acme AI", "workday", "acme|wd3|Site")
+        terms = search_terms(verticals_module.get_config())
+        cursor = cc.CrawlCursor(ats="workday")
+        for term in terms:
+            cursor.set_offset(cold.slug, term, 200)
+        cc.save_cursor(cursor)
+
+        offsets = []
+
+        def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            offsets.append(offset)
+            return {"total": 0, "jobPostings": _unique_full_page(search_text, offset)}
+
+        monkeypatch.setattr(universe, "load", lambda ats: [cold])
+        monkeypatch.setattr(workday, "list_page", always_full)
+        _stub_details(monkeypatch)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert offsets == [0] * len(terms)
+        assert cc.load_cursor("workday").offset_for(cold.slug, terms[0]) == 200
+        assert any(f"{len(terms)} cold head-only" in line for line in res.report_lines)
+
+    def test_a_hot_tenant_still_reads_deep(self, monkeypatch):
+        offsets = []
+
+        def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            offsets.append(offset)
+            return {"total": 0, "jobPostings": _unique_full_page(search_text, offset)}
+
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot()])
+        monkeypatch.setattr(workday, "list_page", always_full)
+        _stub_details(monkeypatch)
+
+        WorkdaySource().fetch(MockContext())
+        assert any(o > 0 for o in offsets)
+
+
+class TestEarlyStop:
+    def test_a_full_deep_page_with_no_new_match_ends_the_term(self, monkeypatch):
+        """Page 20 repeats page 0, so it brings nothing new: stop there, and
+        still move the frontier past it."""
+        from src.discovery import crawl_cursor as cc
+
+        monkeypatch.setattr(workday, "search_terms", lambda cfg: ("term-a",))
+        page = [dict(LIST_ITEM, externalPath=f"/job/{i}") for i in range(workday.LIST_LIMIT)]
+        offsets = []
+
+        def repeating(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            offsets.append(offset)
+            return {"total": 0, "jobPostings": page}
+
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot()])
+        monkeypatch.setattr(workday, "list_page", repeating)
+        _stub_details(monkeypatch)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert offsets == [0, workday.LIST_LIMIT]
+        assert cc.load_cursor("workday").offset_for("acme|wd3|Site", "term-a") == \
+            2 * workday.LIST_LIMIT
+        assert any("1 early stops" in line for line in res.report_lines)
+
+    def test_a_deep_page_of_only_unclassified_titles_also_stops(self, monkeypatch):
+        monkeypatch.setattr(workday, "search_terms", lambda cfg: ("term-a",))
+        offsets = []
+
+        def fake(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            offsets.append(offset)
+            if offset == 0:
+                return {"total": 0, "jobPostings": _unique_full_page("a", 0)}
+            return {"total": 0, "jobPostings": [
+                dict(LIST_ITEM, title="Definitely Not A Match Zzz",
+                     externalPath=f"/job/u{offset}-{i}")
+                for i in range(workday.LIST_LIMIT)]}
+
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot()])
+        monkeypatch.setattr(workday, "list_page", fake)
+        _stub_details(monkeypatch)
+
+        WorkdaySource().fetch(MockContext())
+        assert offsets == [0, workday.LIST_LIMIT]
+
+
+class TestDescriptionReuse:
+    HOST_URL = "https://acme.wd3.myworkdayjobs.com/Site"
+
+    def _saved_shard(self, raw_dir, run_id, path=LIST_ITEM["externalPath"],
+                     description="saved description " + "y" * 200):
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{
+            "job_url": self.HOST_URL + path, "title": "Widget Assembly Consultant",
+            "location": "Saved City", "description": description,
+        }]).to_parquet(raw_dir / f"{run_id}_workday.parquet")
+
+    def _ctx(self, days):
+        class Src(MockConfigSources):
+            detail_reuse_days = days
+
+        class Ctx(MockContext):
+            class Config:
+                sources = {"workday": Src}
+            config = Config
+        return Ctx()
+
+    def _run(self, monkeypatch, tmp_path, days):
+        monkeypatch.setattr(workday, "RAW_DIR", tmp_path / "raw")
+        monkeypatch.setattr(workday, "search_terms", lambda cfg: ("term-a",))
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("Acme AI", "workday", "acme|wd3|Site")])
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM]})
+        calls = _stub_details(monkeypatch)
+        return WorkdaySource().fetch(self._ctx(days)), calls
+
+    def _today_run_id(self, days_ago=0):
+        return (pd.Timestamp.today() - pd.Timedelta(days=days_ago)).strftime("%Y-%m-%d_2000")
+
+    def test_a_saved_description_skips_the_detail_fetch(self, monkeypatch, tmp_path):
+        self._saved_shard(tmp_path / "raw", self._today_run_id(2))
+        res, calls = self._run(monkeypatch, tmp_path, days=14)
+        assert calls == []
+        assert len(res.rows) == 1
+        row = res.rows[0]
+        assert row["description"].startswith("saved description")
+        assert row["job_url"] == self.HOST_URL + LIST_ITEM["externalPath"]
+        assert row["location"] == "Saved City"
+        assert row["found_by_term"] == "term-a"
+        assert row["date_posted"] is not None
+        assert any("0 fetched, 1 reused" in line for line in res.report_lines)
+
+    def test_a_saved_description_older_than_the_window_is_fetched_again(
+            self, monkeypatch, tmp_path):
+        self._saved_shard(tmp_path / "raw", self._today_run_id(20))
+        res, calls = self._run(monkeypatch, tmp_path, days=14)
+        assert len(calls) == 1
+        assert "xxx" in res.rows[0]["description"]
+
+    def test_reuse_off_always_fetches(self, monkeypatch, tmp_path):
+        self._saved_shard(tmp_path / "raw", self._today_run_id(1))
+        _, calls = self._run(monkeypatch, tmp_path, days=0)
+        assert len(calls) == 1
+
+    def test_a_blank_saved_description_is_fetched_again(self, monkeypatch, tmp_path):
+        self._saved_shard(tmp_path / "raw", self._today_run_id(1), description="  ")
+        _, calls = self._run(monkeypatch, tmp_path, days=14)
+        assert len(calls) == 1
+
+    def test_another_tenants_posting_is_not_reused(self, monkeypatch, tmp_path):
+        raw = tmp_path / "raw"
+        raw.mkdir()
+        pd.DataFrame([{
+            "job_url": "https://other.wd3.myworkdayjobs.com/Site" + LIST_ITEM["externalPath"],
+            "title": "x", "location": "", "description": "someone else's",
+        }]).to_parquet(raw / f"{self._today_run_id(1)}_workday.parquet")
+        _, calls = self._run(monkeypatch, tmp_path, days=14)
+        assert len(calls) == 1
+
+
+class TestRunTrace:
+    def test_the_trace_file_records_terms_and_tenants(self, monkeypatch, tmp_path):
+        import json
+
+        monkeypatch.setattr(workday, "RUNS_DIR", tmp_path)
+        monkeypatch.setattr(workday, "search_terms", lambda cfg: ("term-a",))
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany("Acme AI", "workday", "acme|wd3|Site")])
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM]})
+        _stub_details(monkeypatch)
+
+        ctx = MockContext()
+        ctx.run_id = "2026-01-01_2000"
+        res = WorkdaySource().fetch(ctx)
+
+        path = tmp_path / "2026-01-01_2000_workday_trace.jsonl"
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        term = next(r for r in records if r["kind"] == "term")
+        assert term["term"] == "term-a" and term["stop"] == "short"
+        assert term["new_matched"] == 1 and term["pages"] == 1
+        tenant = next(r for r in records if r["kind"] == "tenant")
+        assert tenant["kept"] == 1 and tenant["kept_by_term"] == {"term-a": 1}
+        assert any(line.startswith("HTTP: ") for line in res.report_lines)
+        assert any(line.startswith("Trace: ") for line in res.report_lines)
+
+    def test_no_run_id_writes_no_file(self, monkeypatch, tmp_path):
+        runs = tmp_path / "runs"
+        monkeypatch.setattr(workday, "RUNS_DIR", runs)
+        monkeypatch.setattr(universe, "load", lambda ats: [_hot()])
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM]})
+        _stub_details(monkeypatch)
+        WorkdaySource().fetch(MockContext())
+        assert not runs.exists()

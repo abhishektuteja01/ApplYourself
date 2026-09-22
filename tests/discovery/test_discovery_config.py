@@ -498,3 +498,30 @@ def test_cold_rotation_runs_is_read_and_is_not_an_unknown_key(tmp_path, monkeypa
 def test_cold_rotation_runs_rejects_a_non_positive_integer(tmp_path, monkeypatch, bad):
     with pytest.raises(ValueError, match="cold_rotation_runs"):
         _load(tmp_path, monkeypatch, {"sources": {"workday": {"cold_rotation_runs": bad}}})
+
+
+def test_pacing_spread_and_detail_reuse_days_default_to_current_behaviour(tmp_path, monkeypatch):
+    cfg = _load(tmp_path, monkeypatch, {"sources": {"workday": {"pacing_seconds": 2}}})
+    assert cfg.sources["workday"].pacing_spread == 3.0
+    assert cfg.sources["workday"].detail_reuse_days == 0
+
+
+def test_pacing_spread_and_detail_reuse_days_are_read_not_unknown(tmp_path, monkeypatch):
+    cfg = _load(tmp_path, monkeypatch, {"sources": {"workday": {
+        "pacing_seconds": 1, "pacing_spread": 2, "detail_reuse_days": 14}}})
+    assert cfg.sources["workday"].pacing_spread == 2.0
+    assert cfg.sources["workday"].detail_reuse_days == 14
+    assert not any(k.endswith(("pacing_spread", "detail_reuse_days"))
+                   for k in cfg.unknown_keys)
+
+
+@pytest.mark.parametrize("bad", [0.5, 0, -1, "2", True])
+def test_pacing_spread_rejects_below_one(tmp_path, monkeypatch, bad):
+    with pytest.raises(ValueError, match="pacing_spread"):
+        _load(tmp_path, monkeypatch, {"sources": {"workday": {"pacing_spread": bad}}})
+
+
+@pytest.mark.parametrize("bad", [-1, 1.5, "14", True])
+def test_detail_reuse_days_rejects_a_non_integer_or_negative(tmp_path, monkeypatch, bad):
+    with pytest.raises(ValueError, match="detail_reuse_days"):
+        _load(tmp_path, monkeypatch, {"sources": {"workday": {"detail_reuse_days": bad}}})

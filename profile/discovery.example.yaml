@@ -28,6 +28,12 @@ location_allowlist:
 # `cold_rotation_runs` (greenhouse, lever, ashby, workday; default 3): boards
 # that kept no row in 30 days are polled a slice a run, the whole cold tail
 # once every this many runs.
+# `pacing_spread` (workday; default 3): the sleep between requests is a random
+# pacing_seconds x 1..spread. `detail_reuse_days` (workday; default 0 = off):
+# reuse a description saved in the last N days instead of fetching it again.
+# Each Workday run writes jobs/runs/<run_id>_workday_trace.jsonl and reports
+# its HTTP status counts and the first 429/403, so a pacing change can be
+# checked against what it earned.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   indeed:        {enabled: true,  pacing_seconds: 2}

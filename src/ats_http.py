@@ -5,7 +5,9 @@ timeout constants below govern both — a change here reaches live forms.
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from contextlib import contextmanager
 import requests
 
 log = logging.getLogger(__name__)
@@ -16,6 +18,32 @@ REQUEST_TIMEOUT = 30
 # Retry-After is remote input; a board asking for an hour gets skipped instead.
 MAX_RETRY_AFTER = 60
 _HEADERS = {"User-Agent": "job-search-pipeline (personal job-search pipeline)"}
+
+# One observer per thread: discovery runs its lanes on separate threads, so a
+# lane that traces sees only its own requests. Unset, nothing is recorded.
+_local = threading.local()
+
+
+@contextmanager
+def observe(fn):
+    """Call `fn(event)` after every request attempt made on this thread."""
+    prev = getattr(_local, "observer", None)
+    _local.observer = fn
+    try:
+        yield
+    finally:
+        _local.observer = prev
+
+
+def _notify(**event) -> None:
+    fn = getattr(_local, "observer", None)
+    if fn is None:
+        return
+    try:
+        fn(event)
+    except Exception:  # noqa: BLE001 -- a broken trace must never fail a fetch
+        log.warning("ats_http observer failed", exc_info=True)
+
 
 class CareersError(Exception):
     """Board fetch failed after retries, or the board does not exist.
@@ -48,7 +76,9 @@ def _fetch(
     `read` owns what a 200 body means: a body it cannot use is a wall or a wrong
     slug rather than a blip, so it raises instead of retrying.
     """
+    method = "POST" if json_body is not None else "GET"
     for attempt in range(1, MAX_RETRIES + 1):
+        t0 = time.monotonic()
         try:
             resp = (
                 requests.post(url, json=json_body, timeout=timeout, headers=_HEADERS)
@@ -56,10 +86,17 @@ def _fetch(
                 else requests.get(url, timeout=timeout, headers=_HEADERS)
             )
         except requests.RequestException as exc:
+            _notify(method=method, url=url, attempt=attempt, status=None,
+                    secs=time.monotonic() - t0, error=type(exc).__name__)
             if attempt == MAX_RETRIES:
                 raise CareersError(f"fetch failed: {url}: {exc}") from exc
             _sleep_or_raise(RETRY_BASE_DELAY * attempt, deadline_ts, url)
             continue
+        if getattr(_local, "observer", None) is not None:
+            _notify(method=method, url=url, attempt=attempt, status=resp.status_code,
+                    secs=time.monotonic() - t0,
+                    retry_after=resp.headers.get("Retry-After"),
+                    cf_mitigated=resp.headers.get("cf-mitigated"))
         if resp.status_code == 200:
             return read(resp)
         if resp.status_code == 404:

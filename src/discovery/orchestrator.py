@@ -48,9 +48,12 @@ def current_run_id(now: datetime | None = None) -> str:
     return (now or datetime.now()).strftime(RUN_ID_FMT)
 
 class Context:
-    def __init__(self, config, deadline_ts: float, verticals_config=None):
+    def __init__(self, config, deadline_ts: float, verticals_config=None,
+                 run_id: str | None = None):
         self.config = config
         self.deadline_ts = deadline_ts
+        # Names per-run side files (Workday's request trace). None writes none.
+        self.run_id = run_id
         self.verticals = verticals_config if verticals_config is not None else verticals.get_config()
 
     def deadline_reached(self) -> bool:
@@ -299,7 +302,8 @@ def main(args=None):
     scrape_enabled = config.deadline_hours > 0
     deadline_ts = time.time() + config.deadline_hours * 3600 if scrape_enabled else 0.0
 
-    ctx = Context(config=config, deadline_ts=deadline_ts, verticals_config=verticals_config)
+    ctx = Context(config=config, deadline_ts=deadline_ts, verticals_config=verticals_config,
+                  run_id=run_id)
 
     JOBS_RAW.mkdir(parents=True, exist_ok=True)
     JOBS_RUNS.mkdir(parents=True, exist_ok=True)
