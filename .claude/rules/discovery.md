@@ -1,6 +1,8 @@
 ---
 paths:
   - "src/discovery/**"
+  - "src/ats_http.py"
+  - "scripts/audit_slugs.py"
   - "tests/discovery/**"
   - "profile/discovery.yaml"
   - "profile/discovery.example.yaml"

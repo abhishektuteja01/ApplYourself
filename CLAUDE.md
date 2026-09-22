@@ -146,6 +146,13 @@ uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] 
                                       # per slug. Report only; writes nothing
                                       # else. `--ats` is repeatable, default
                                       # ashby/greenhouse/lever (workday opt-in)
+uv run python scripts/seed_company_aliases.py [--dry-run] [--expected F]
+                                      # one-off: pin jobs/company_aliases.parquet
+                                      # from the tracked roles, so switching the
+                                      # company merge on orphans no existing
+                                      # job_id. Reads pipeline/*/state.yaml only
+                                      # (R10). --dry-run exits 1 on any id change
+                                      # outside the reviewed --expected list
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```

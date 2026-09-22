@@ -31,7 +31,9 @@ sources:
   greenhouse:    {enabled: true,  pacing_seconds: 1}
   lever:         {enabled: true,  pacing_seconds: 1}
   ashby:         {enabled: true,  pacing_seconds: 2}
-  workday:       {enabled: true,  pacing_seconds: 2}
+  # Weekly, not daily: Workday is the most expensive lane per kept row and is
+  # manual-apply only. Set `cadence: daily` if you want it every night.
+  workday:       {enabled: true,  pacing_seconds: 2, cadence: weekly}
 raw_retention_days: 16
 # Ceiling on the career-board staleness exemption, in days. 0 = off: a posting
 # still listed on the company's own board is live regardless of age.
