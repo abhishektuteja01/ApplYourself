@@ -359,3 +359,32 @@ def test_widening_the_candidate_list_did_not_widen_the_gate():
         assert o.old_status in R.NOT_FOUND_STATUSES
         assert o.web_checked and not o.errors
         assert o.found is None and not o.domain and not o.name_match
+
+
+def test_an_inconclusive_search_row_does_not_authorize_retirement():
+    """A searcher blocked by a 403, a JS-only board or a name too generic to
+    attribute says so in the evidence. That is "could not check", not "checked
+    and dead", and about 40% of negatives carry it."""
+    import tempfile
+    log = (
+        "ats,slug,name,outcome,new_ats,new_slug,evidence\n"
+        "greenhouse,solid,Solid Co,searched_nothing_found,,,site up no ATS link\n"
+        "greenhouse,weak,Weak Co,searched_nothing_found,,,inconclusive: 403 blocked\n"
+        "greenhouse,mixed,Mixed Co,searched_nothing_found,,,"
+        "probed 12 variants; INCONCLUSIVE: generic name\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False,
+                                     encoding="utf-8") as fh:
+        fh.write(log)
+        path = fh.name
+
+    exhausted = _apply.load_search_log(path)
+    assert exhausted == {("greenhouse", "solid")}
+
+    # And the gate refuses the inconclusive ones by name.
+    for slug in ("weak", "mixed"):
+        changes, holder = _plan(_row(slug=slug), exhausted)
+        assert [c.action for c in changes] == [_apply.ACT_REFUSED]
+        assert holder.retired == []
+    changes, holder = _plan(_row(slug="solid"), exhausted)
+    assert [c.action for c in changes] == [_apply.ACT_RETIRE]

@@ -88,14 +88,26 @@ def load_search_log(path) -> set[tuple[str, str]]:
     boards, which is not its job.
     """
     exhausted: set[tuple[str, str]] = set()
+    inconclusive = 0
     with open(path, encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if (row.get("outcome") or "").strip() != SEARCH_EXHAUSTED:
+                continue
+            # A searcher that could not read the board says so in the evidence:
+            # a Cloudflare 403, a JS-only careers page, a rate-limited vendor,
+            # a name too generic to attribute. That is "could not check", not
+            # "checked and dead", and roughly 40% of negatives carry it. It
+            # must not authorize a permanent retirement.
+            if "inconclusive" in (row.get("evidence") or "").lower():
+                inconclusive += 1
                 continue
             ats = (row.get("ats") or "").strip().lower()
             slug = (row.get("slug") or "").strip()
             if ats and slug:
                 exhausted.add((ats, slug))
+    if inconclusive:
+        print(f"search log: {inconclusive} row(s) self-reported inconclusive "
+              f"and will not authorize a retirement")
     return exhausted
 
 
