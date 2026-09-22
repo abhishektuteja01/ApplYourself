@@ -107,6 +107,17 @@ def split(args) -> int:
     if args.limit:
         rows = rows[:args.limit]
     BATCH_DIR.mkdir(parents=True, exist_ok=True)
+    # Archive finished results before renumbering. `split` reassigns batch
+    # numbers, so a later wave writing `batch_001.result.csv` would overwrite
+    # the previous wave's evidence for a completely different set of slugs.
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    archived = 0
+    for done_file in sorted(BATCH_DIR.glob("*.result.csv")):
+        target = RESULT_DIR / f"wave{len(list(RESULT_DIR.glob('*.result.csv'))):03d}_{done_file.name}"
+        done_file.rename(target)
+        archived += 1
+    if archived:
+        print(f"archived {archived} finished result file(s) to {RESULT_DIR.name}/")
     for stale in BATCH_DIR.glob("batch_*.csv"):
         stale.unlink()
 
