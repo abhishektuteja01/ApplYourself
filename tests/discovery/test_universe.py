@@ -338,8 +338,8 @@ def test_a_cold_list_shorter_than_the_rotation_still_advances():
 
 
 def test_the_two_rotations_do_not_seek_each_other():
-    """Workday rotates `next_slug` over its tenants and the board lanes rotate
-    `cold_slug` over their cold tail. One writer each."""
+    """The cold rotation writes `cold_slug` only; the retired `next_slug`
+    field is left as loaded."""
     cursor = _cursor()
     # 5 per run, so the "c9" below is always a real slug the rotation could hit.
     total = 5 * universe.COLD_ROTATION_RUNS

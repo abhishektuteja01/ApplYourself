@@ -1,9 +1,7 @@
 """Where a paged, search-scoped crawl left off, persisted across runs.
 
-Two callers. Workday's cost scales as tenants x search terms rather than
-tenants, so it holds a page frontier as well as a tenant rotation;
-`AtsBoardSource` holds only a rotation, over the cold half of its board
-universe.
+Two callers. Both rotate over the cold part of their universe; Workday's cost
+also scales as tenants x search terms, so it holds a page frontier as well.
 
 **`offsets` — the deep-page frontier (live).** `MAX_PAGES_PER_TERM` bounds one
 (tenant, term) pair's pagination. With every run starting at offset 0, pages
@@ -17,19 +15,12 @@ offset 0 to resume deep would blind the crawl to new postings — the one thing
 it is for. `workday.py` reads page 0 every run and uses this only to continue
 past it.
 
-**`next_slug` — Workday's tenant rotation (dormant).** For a run that cannot visit
-every (tenant, term) pair, `next_slug` is where the next run resumes, so a
-deadline cut does not drop the same alphabetical tail forever. At the current
-93 tenants x 1 search term a run completes every tenant, so `advance()` always
-wraps to the head and `rotate()` returns the same order every run. The
-rotation becomes live again if the term list widens or runs start truncating;
-until then treat it as untried in production, not as proven code.
+**`cold_slug` — the cold rotation (live).** `AtsBoardSource` and `workday.py`
+poll their hot boards every run and one rotating slice of the cold ones. This
+is where that slice resumes, so a deadline cut picks up where it stopped.
 
-**`cold_slug` — the board lanes' cold rotation (live).** `AtsBoardSource`
-polls its hot boards every run and one rotating slice of the cold ones. This
-is where that slice resumes. Separate from `next_slug` because the two
-rotations cover different lists, and one writer per cursor field is the only
-way they stay honest.
+**`next_slug` — retired.** Workday's old whole-universe rotation. Nothing
+writes it now; it is still read and saved so an existing cursor file loads.
 
 Deliberately not a column on `universe_health_*.parquet`: that schema is read
 by existing files on disk, and this state is per (slug, term) rather than per
@@ -61,7 +52,9 @@ def cursor_path(ats: str) -> Path:
 class CrawlCursor:
     ats: str
     next_slug: str = ""
-    """The tenant to resume at. A *slug*, not an index: `universe.load()` sorts
+    """Unused; see the module docstring. Kept so older cursor files load.
+
+    Why every rotation here keys on a *slug*, not an index: `universe.load()` sorts
     by (priority, last_yield), `last_yield` is rewritten every run and pruning
     changes the list length, so position 20 in one run is a different tenant
     in the next. A positional cursor made coverage lumpy — simulated over 12
@@ -69,10 +62,8 @@ class CrawlCursor:
     slug-keyed one gives a tight 4-5."""
 
     cold_slug: str = ""
-    """Where the cold-board rotation resumes, for `AtsBoardSource`'s hot/cold
-    split. A second cursor rather than a second writer of `next_slug`: Workday
-    rotates every non-priority tenant, the board lanes rotate only the cold
-    tail, and the two would otherwise seek each other off course."""
+    """Where the cold rotation resumes, for the hot/cold split in
+    `AtsBoardSource` and `workday.py`. Each lane has its own cursor file."""
 
     offsets: dict[str, int] = field(default_factory=dict)
     """`"<slug>\\x00<term>"` -> the offset to resume that pair's paging from."""

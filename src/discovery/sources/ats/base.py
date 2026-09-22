@@ -51,6 +51,13 @@ class AtsBoardSource(Source):
     def parse_rows(self, payload, company: str) -> list[dict]:
         raise NotImplementedError
 
+    def fetch_board(self, c, ctx, pacing: float) -> list[dict]:
+        """One board's rows. Raises `CareersError` or a payload-shape error
+        exactly as the fetch loop expects. A lane whose board needs more than
+        one call overrides this, and paces its extra calls by `pacing`."""
+        payload = fetch_json(self.board_url(c.slug), deadline_ts=ctx.deadline_ts)
+        return self.parse_rows(payload, c.name)
+
     @staticmethod
     def _save_rotation(cursor, selection, completed: int) -> None:
         """Resume the cold rotation after the last cold board reached.
@@ -73,7 +80,9 @@ class AtsBoardSource(Source):
         ledger = universe.HealthLedger(self.name, universe.universe_slugs(self.name))
 
         cursor = load_cursor(self.name)
-        selection = universe.select_for_run(universe_companies, cursor)
+        selection = universe.select_for_run(
+            universe_companies, cursor,
+            rotation_runs=ctx.config.sources[self.name].cold_rotation_runs)
         companies = selection.to_poll
 
         rows: list[dict] = []
@@ -101,10 +110,9 @@ class AtsBoardSource(Source):
 
             polled += 1
             try:
-                payload = fetch_json(self.board_url(c.slug), deadline_ts=ctx.deadline_ts)
                 # Parsed inside the try: a malformed payload must stay a
                 # per-company error like a 404 does.
-                company_rows = self.parse_rows(payload, c.name)
+                company_rows = self.fetch_board(c, ctx, pacing)
             except CareersError as e:
                 is_404 = e.status == 404
                 if is_404:

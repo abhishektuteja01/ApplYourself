@@ -25,6 +25,9 @@ location_allowlist:
 # nine sleeps averaging 5s per query, and it dominates the LinkedIn lane.
 # Lower them to trade rate-limit headroom for wall time; the run report prints
 # the delay used and counts any 429s it earned.
+# `cold_rotation_runs` (greenhouse, lever, ashby, workday; default 3): boards
+# that kept no row in 30 days are polled a slice a run, the whole cold tail
+# once every this many runs.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   indeed:        {enabled: true,  pacing_seconds: 2}

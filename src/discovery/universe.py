@@ -7,6 +7,7 @@ import pandas as pd
 import csv
 from datetime import timedelta
 
+from src.discovery.config import DEFAULT_COLD_ROTATION_RUNS
 from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
 from src.parquet_io import write_parquet
 from src import paths
@@ -32,8 +33,9 @@ HEALTH_COLUMNS = ["ats", "slug", "consecutive_404s", "last_ok", "last_yield",
                   "pruned_at", "last_kept_at"]
 # A board counts as hot for this long after the last row it kept.
 HOT_WINDOW_DAYS = 30
-# The cold tail is polled a slice at a time: full coverage every this many runs.
-COLD_ROTATION_RUNS = 3
+# The cold tail is polled a slice at a time: full coverage every this many runs,
+# unless the source's `cold_rotation_runs` says otherwise.
+COLD_ROTATION_RUNS = DEFAULT_COLD_ROTATION_RUNS
 _NEW_HEALTH_ROW = {"consecutive_404s": 0, "last_ok": pd.NaT, "last_yield": 0,
                    "pruned_at": pd.NaT, "last_kept_at": pd.NaT}
 

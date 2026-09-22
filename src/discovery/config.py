@@ -22,7 +22,12 @@ _TOP_LEVEL_KEYS = frozenset({
 })
 _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
 _SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence",
-                          "page_delay_seconds", "page_delay_band_seconds"})
+                          "page_delay_seconds", "page_delay_band_seconds",
+                          "cold_rotation_runs"})
+
+# Runs to cover an ATS lane's cold tail once, when a source sets no
+# `cold_rotation_runs`.
+DEFAULT_COLD_ROTATION_RUNS = 3
 
 # Ceiling on the locations the jobspy lanes may query when `search_locations`
 # is absent and the allowlist is the fallback. Each location multiplies the
@@ -117,6 +122,9 @@ class SourceConfig:
     # config behaves exactly as before.
     page_delay_seconds: float = DEFAULT_PAGE_DELAY_SECONDS
     page_delay_band_seconds: float = DEFAULT_PAGE_DELAY_BAND_SECONDS
+    # Only the ATS board lanes and Workday read this: their cold tail is
+    # polled one slice a run, covered in full every this many runs.
+    cold_rotation_runs: int = DEFAULT_COLD_ROTATION_RUNS
 
 def _continent_countries(continent: str) -> list[str]:
     """Countries on `continent`, matched case- and whitespace-insensitively.
@@ -388,12 +396,18 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 raise ValueError(
                     f"{p}: sources.{k}.page_delay_band_seconds must be >= 0, "
                     f"got {page_band}")
+            rotation = v.get("cold_rotation_runs", DEFAULT_COLD_ROTATION_RUNS)
+            if isinstance(rotation, bool) or not isinstance(rotation, int) or rotation < 1:
+                raise ValueError(
+                    f"{p}: sources.{k}.cold_rotation_runs must be an integer >= 1, "
+                    f"got {rotation!r}")
             cfg.sources[k] = SourceConfig(
                 enabled=bool(v.get("enabled", True)),
                 pacing_seconds=float(v.get("pacing_seconds", 1.0)),
                 cadence=cadence,
                 page_delay_seconds=page_delay,
                 page_delay_band_seconds=page_band,
+                cold_rotation_runs=rotation,
             )
 
     if "location_allowlist" in data:

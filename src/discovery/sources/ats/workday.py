@@ -258,20 +258,16 @@ class WorkdaySource(Source):
         detail_shape_errors = 0
         first_request = True
 
-        # Resume where the last run stopped, so a deadline cut does not drop
-        # the same alphabetical tail every run. Dormant at one search term:
-        # every tenant completes, so the rotation starts at the same slug each
-        # run. Only the deep-page frontier (`offsets`) is live — see
-        # `crawl_cursor`'s docstring.
+        # Hot tenants (kept a row in the last `HOT_WINDOW_DAYS`, or on the
+        # watchlist) every run, then one rotating slice of the cold tail --
+        # the same split the board lanes use. A deadline cut resumes the cold
+        # rotation where it stopped.
         cursor = load_cursor(self.name)
-        # Priority tenants stay at a fixed head so they are crawled every run;
-        # only the tail rotates. No workday entries in `profile/companies.yaml`,
-        # so `head` is empty and the split is inert today.
-        companies = list(companies)
-        head = [c for c in companies if c.priority]
-        tail = cursor.rotate([c for c in companies if not c.priority],
-                              key=lambda c: c.slug)
-        companies = head + tail
+        universe_size = len(companies)
+        selection = universe.select_for_run(
+            companies, cursor,
+            rotation_runs=ctx.config.sources[self.name].cold_rotation_runs)
+        companies = selection.to_poll
         completed = 0
 
         for c in companies:
@@ -454,12 +450,15 @@ class WorkdaySource(Source):
             ok_tenants.append((c.priority, c_kept, c_fetched, c.name))
 
         # Persisted even on a deadline cut — that is the case it exists for.
-        # Only the rotated tail advances; the fixed head is crawled every run.
-        cursor.advance(tail, max(0, completed - len(head)), key=lambda c: c.slug)
+        # Only the cold rotation advances; the hot head is crawled every run.
+        cursor.advance(selection.cold, max(0, completed - len(selection.hot)),
+                       key=lambda c: c.slug, attr="cold_slug")
         save_cursor(cursor)
         ledger.flush()
 
-        summary = (f"Companies polled: {polled} | OK: {ok} | Err: {err_other} "
+        summary = (f"Companies polled: {polled} of {universe_size} "
+                   f"({len(selection.hot)} hot, {len(companies) - len(selection.hot)} "
+                   f"of {len(selection.cold)} cold) | OK: {ok} | Err: {err_other} "
                    f"| Rows kept: {kept}")
         yield_line = (f"List paths: {new_matched_paths} new+classified "
                       f"| {new_unmatched_paths} new, no vertical "

@@ -26,10 +26,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from src import paths
-from src.ats_http import CareersError, fetch_json, fetch_json_post
+from src.ats_http import CareersError, fetch_json
 from src.discovery import universe
 from src.discovery.config import load_config, pacing_floor
 from src.discovery.dates import iso_date, ms_date, relative_posted_date
+from src.discovery.sources.ats import ashby
 from src.discovery.sources.ats import workday as wd
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
@@ -123,37 +124,16 @@ def board_url(ats: str, slug: str) -> str:
 # postings in total. So a REST 404 is not evidence a board is gone, and the
 # board-page GraphQL call is the authority. `jobs.ashbyhq.com/<slug>` itself is
 # useless as a probe: it serves the SPA shell, 200, for any string at all.
-_ASHBY_GRAPHQL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
-_ASHBY_QUERY = (
-    "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) "
-    "{ jobBoard: jobBoardWithTeams("
-    "organizationHostedJobsPageName: $organizationHostedJobsPageName) "
-    "{ jobPostings { id } } }")
-
-
 def ashby_graphql_summary(slug: str) -> tuple[int, date | None] | None:
     """(count, newest) from Ashby's board-page call, or None if no such board.
 
-    Raises on a transport failure, so the caller reports `error` -- an
-    unreachable second opinion must not confirm the first one's 404.
+    Raises on a transport failure or a rejected query, so the caller reports
+    `error` -- an unreachable second opinion must not confirm the first one's
+    404.
     """
-    payload = fetch_json_post(_ASHBY_GRAPHQL, {
-        "operationName": "ApiJobBoardWithTeams",
-        "variables": {"organizationHostedJobsPageName": slug},
-        "query": _ASHBY_QUERY,
-    })
-    if not isinstance(payload, dict):
-        raise TypeError(f"expected a JSON object, got {type(payload).__name__}")
-    if payload.get("errors"):
-        # A rejected query is not evidence of absence. Raising sends the row to
-        # `error`, which is re-probed, rather than confirming the REST 404.
-        raise ValueError(f"graphql errors: {payload['errors'][:1]}")
-    board = (payload.get("data") or {}).get("jobBoard")
-    if board is None:
+    items = ashby.graphql_board(slug)
+    if items is None:
         return None
-    items = board.get("jobPostings")
-    if not isinstance(items, list):
-        raise TypeError("expected a list under 'jobPostings'")
     # This call carries no publish date, so the age is unknown. `classify`
     # reads that as active, which is the right default: unknown age is not
     # evidence of abandonment.

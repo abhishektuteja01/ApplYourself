@@ -480,3 +480,21 @@ def test_misspelled_page_delay_key_is_reported_not_ignored(tmp_path, monkeypatch
     }), encoding="utf-8")
 
     assert "sources.linkedin.page_delay" in load_config(p).unknown_keys
+
+
+def test_cold_rotation_runs_defaults_to_three(tmp_path, monkeypatch):
+    cfg = _load(tmp_path, monkeypatch, {"sources": {"workday": {"pacing_seconds": 2}}})
+    assert cfg.sources["workday"].cold_rotation_runs == 3
+
+
+def test_cold_rotation_runs_is_read_and_is_not_an_unknown_key(tmp_path, monkeypatch):
+    cfg = _load(tmp_path, monkeypatch,
+                {"sources": {"workday": {"pacing_seconds": 2, "cold_rotation_runs": 7}}})
+    assert cfg.sources["workday"].cold_rotation_runs == 7
+    assert not any("cold_rotation_runs" in k for k in cfg.unknown_keys)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 1.5, "3", True])
+def test_cold_rotation_runs_rejects_a_non_positive_integer(tmp_path, monkeypatch, bad):
+    with pytest.raises(ValueError, match="cold_rotation_runs"):
+        _load(tmp_path, monkeypatch, {"sources": {"workday": {"cold_rotation_runs": bad}}})

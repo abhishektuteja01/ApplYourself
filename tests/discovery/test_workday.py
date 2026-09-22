@@ -3,6 +3,7 @@ ATS sources, list and detail are separate endpoints and list is paginated, so
 this does not reuse `AtsBoardSource` — `fetch_json`/`fetch_json_post` are
 patched on `workday` directly rather than on `base`.
 """
+import pandas as pd
 import pytest
 
 from src import verticals as verticals_module
@@ -19,6 +20,8 @@ from src.discovery.sources.ats.workday import (
 
 class MockConfigSources:
     pacing_seconds = 0
+    # Every tenant every run: these tests are about the crawl, not the rotation.
+    cold_rotation_runs = 1
 
 
 class MockContext:
@@ -828,3 +831,72 @@ class TestPerTenantReportTable:
         lines = WorkdaySource().fetch(MockContext()).report_lines
         rows = [ln for ln in lines if ln.startswith("| ") and " OK " in ln]
         assert [ln.split(" | ")[0].lstrip("| ") for ln in rows] == ["Beta", "Gamma"]
+
+
+class TestHotColdSelection:
+    """Workday takes the board lanes' split: every hot tenant each run, then
+    one rotating slice of the cold tail."""
+
+    def _ctx(self, rotation_runs):
+        class Src:
+            pacing_seconds = 0
+            cold_rotation_runs = rotation_runs
+
+        class Ctx(MockContext):
+            class Config:
+                sources = {"workday": Src}
+            config = Config
+        return Ctx()
+
+    def _run(self, monkeypatch, companies, ctx):
+        polled: list[str] = []
+
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            polled.append(company)
+            return {"total": 0, "jobPostings": []}
+        monkeypatch.setattr(universe, "load", lambda ats: list(companies))
+        monkeypatch.setattr(workday, "list_page", fake_list_page)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+        res = WorkdaySource().fetch(ctx)
+        return set(polled), res
+
+    def test_hot_tenants_every_run_and_one_cold_slice(self, monkeypatch):
+        today = pd.Timestamp.today().normalize()
+        hot = [UniverseCompany("Hot %d" % i, "workday", "hot%d|wd1|s" % i,
+                               last_kept_at=today) for i in range(2)]
+        cold = [UniverseCompany("Cold %d" % i, "workday", "cold%d|wd1|s" % i)
+                for i in range(6)]
+        ctx = self._ctx(3)
+
+        seen_cold: list[set] = []
+        for _ in range(3):
+            polled, res = self._run(monkeypatch, hot + cold, ctx)
+            assert {"hot0", "hot1"} <= polled
+            seen_cold.append(polled - {"hot0", "hot1"})
+        assert all(len(s) == 2 for s in seen_cold)
+        # Three runs at 1/3 cover the whole cold tail exactly once.
+        assert set().union(*seen_cold) == {"cold%d" % i for i in range(6)}
+        assert res.report_lines[0].startswith("Companies polled: 4 of 8 (2 hot, 2 of 6 cold)")
+
+    def test_a_deadline_cut_resumes_the_cold_rotation_where_it_stopped(self, monkeypatch):
+        cold = [UniverseCompany("Cold %d" % i, "workday", "cold%d|wd1|s" % i)
+                for i in range(4)]
+        ctx = self._ctx(1)
+        order: list[str] = []
+
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            order.append(company)
+            return {"total": 0, "jobPostings": []}
+        monkeypatch.setattr(universe, "load", lambda ats: list(cold))
+        monkeypatch.setattr(workday, "list_page", fake_list_page)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        # The deadline lands after the first tenant's first request.
+        ctx.deadline_reached = lambda: bool(order)
+        WorkdaySource().fetch(ctx)
+        assert order == ["cold0"]
+
+        order.clear()
+        ctx.deadline_reached = lambda: False
+        WorkdaySource().fetch(ctx)
+        assert order[0] == "cold1"

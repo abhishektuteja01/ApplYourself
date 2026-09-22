@@ -26,6 +26,7 @@ from src import ats_http as http
 
 class MockConfigSources:
     pacing_seconds = 0
+    cold_rotation_runs = 3
 
 class MockContext:
     """Mirrors orchestrator.Context, including `.verticals` — the injected
@@ -584,3 +585,134 @@ def test_a_board_in_its_prune_cooldown_keeps_its_health_row(monkeypatch, tmp_pat
     df = pd.read_parquet(universe.health_path("greenhouse"))
     assert len(df) == 14, "a board mid-prune-cooldown lost its health row"
     assert set(df.loc[df["pruned_at"].notna(), "slug"]) == {"co00", "co07"}
+
+
+# ---------------------------------------------------------------------
+# Ashby: the GraphQL fallback behind a REST 404
+# ---------------------------------------------------------------------
+
+from src.discovery.sources.ats import ashby as ashby_mod
+
+_NOT_FOUND = http.CareersError("board not found (404)", status=404, permanent=True)
+
+
+def _rest_404(url, **kw):
+    raise _NOT_FOUND
+
+
+def _graphql(board, details=None, fail_ids=()):
+    """A fake fetch_json_post: `board` answers the board query (None = no such
+    board), `details` maps posting id -> the jobPosting node."""
+    calls: list[str] = []
+
+    def post(url, body, **kw):
+        op = body["operationName"]
+        calls.append(op)
+        if op == "ApiJobBoardWithTeams":
+            return {"data": {"jobBoard": None if board is None else {"jobPostings": board}}}
+        pid = body["variables"]["jobPostingId"]
+        if pid in fail_ids:
+            raise http.CareersError("503", status=503)
+        return {"data": {"jobPosting": (details or {}).get(pid)}}
+    return post, calls
+
+
+def _ashby_setup(monkeypatch):
+    monkeypatch.setattr(universe, "load", lambda ats: [UniverseCompany("Whatnot", "ashby", "whatnot")])
+    monkeypatch.setattr(universe, "universe_slugs", lambda ats: {"whatnot"})
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(ashby_mod.time, "sleep", lambda _: None)
+
+
+def _strikes(slug="whatnot"):
+    path = universe.health_path("ashby")
+    if not path.exists():
+        return None
+    df = pd.read_parquet(path)
+    return int(df.loc[df["slug"] == slug, "consecutive_404s"].iloc[0])
+
+
+def test_ashby_a_working_rest_board_never_calls_graphql(monkeypatch):
+    _ashby_setup(monkeypatch)
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: {"jobs": []})
+    post, calls = _graphql(board=[])
+    monkeypatch.setattr(ashby_mod, "fetch_json_post", post)
+    AshbySource().fetch(MockContext())
+    assert calls == []
+
+
+def test_ashby_a_rest_404_with_no_graphql_board_is_still_a_strike(monkeypatch):
+    _ashby_setup(monkeypatch)
+    monkeypatch.setattr(base, "fetch_json", _rest_404)
+    post, calls = _graphql(board=None)
+    monkeypatch.setattr(ashby_mod, "fetch_json_post", post)
+    res = AshbySource().fetch(MockContext())
+    assert calls == ["ApiJobBoardWithTeams"]
+    assert res.rows == []
+    assert _strikes() == 1
+
+
+def test_ashby_a_board_live_only_on_graphql_yields_rows_and_no_strike(monkeypatch):
+    _ashby_setup(monkeypatch)
+    monkeypatch.setattr(base, "fetch_json", _rest_404)
+    board = [
+        {"id": "p1", "title": "Widget Assembly Consultant", "locationName": "New York, NY",
+         "workplaceType": "Remote", "employmentType": "FullTime"},
+        {"id": "p2", "title": "Office Plant Waterer", "locationName": "Austin, TX"},
+    ]
+    details = {"p1": {"id": "p1", "descriptionHtml": "<p>" + "x" * 250 + "</p>",
+                      "publishedDate": "2026-08-22"}}
+    post, calls = _graphql(board, details)
+    monkeypatch.setattr(ashby_mod, "fetch_json_post", post)
+
+    res = AshbySource().fetch(MockContext())
+
+    # A detail call only for the posting that passed the title gate.
+    assert calls == ["ApiJobBoardWithTeams", "ApiJobPosting"]
+    assert len(res.rows) == 1
+    r = res.rows[0]
+    assert r["site"] == "ashby" and r["company"] == "Whatnot"
+    assert r["job_url"] == "https://jobs.ashbyhq.com/whatnot/p1"
+    assert r["location"] == "New York, NY"
+    assert r["date_posted"] == date(2026, 8, 22)
+    assert r["is_remote"] is True
+    assert len(r["description"]) >= 250
+    assert r["min_amount"] is None
+    assert _strikes() == 0
+
+
+def test_ashby_a_rejected_graphql_query_is_an_error_not_a_strike(monkeypatch):
+    _ashby_setup(monkeypatch)
+    monkeypatch.setattr(base, "fetch_json", _rest_404)
+    monkeypatch.setattr(ashby_mod, "fetch_json_post",
+                        lambda url, body, **kw: {"errors": [{"message": "bad query"}]})
+    res = AshbySource().fetch(MockContext())
+    assert any("graphql" in e for e in res.errors)
+    assert _strikes() is None
+
+
+def test_ashby_one_failed_detail_call_skips_only_that_posting(monkeypatch):
+    _ashby_setup(monkeypatch)
+    monkeypatch.setattr(base, "fetch_json", _rest_404)
+    board = [{"id": "p1", "title": "Widget Assembly Consultant"},
+             {"id": "p2", "title": "Widget Assembly Consultant II"}]
+    details = {"p2": {"id": "p2", "descriptionHtml": "<p>ok</p>", "publishedDate": None}}
+    post, _ = _graphql(board, details, fail_ids={"p1"})
+    monkeypatch.setattr(ashby_mod, "fetch_json_post", post)
+    res = AshbySource().fetch(MockContext())
+    assert [r["job_url"] for r in res.rows] == ["https://jobs.ashbyhq.com/whatnot/p2"]
+
+
+def test_ashby_every_graphql_call_is_paced(monkeypatch):
+    _ashby_setup(monkeypatch)
+    monkeypatch.setattr(base, "fetch_json", _rest_404)
+    board = [{"id": "p%d" % i, "title": "Widget Assembly Consultant"} for i in range(3)]
+    details = {"p%d" % i: {"id": "p%d" % i} for i in range(3)}
+    post, calls = _graphql(board, details)
+    monkeypatch.setattr(ashby_mod, "fetch_json_post", post)
+    slept: list[float] = []
+    monkeypatch.setattr(ashby_mod.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(base, "pacing_floor", lambda name: 2.0)
+    AshbySource().fetch(MockContext())
+    # The board call plus one per detail, each after a full pacing sleep.
+    assert len(calls) == 4 and slept == [2.0] * 4

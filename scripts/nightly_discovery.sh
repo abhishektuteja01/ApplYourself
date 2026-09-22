@@ -32,15 +32,16 @@ cd "$REPO" || { echo "FATAL: cannot cd to $REPO" >&2; exit 1; }
 
 echo "=== discovery start $STAMP (repo=$REPO uv=$UV) ===" | tee -a "$LOG"
 # caffeinate -s: hold off system sleep on AC power. -i: hold off idle sleep.
-# -t 32400 (9h): covers discovery plus the score/tailor/apply-prep Desktop
-# routines chained after it (through ~4:30 AM), not just the discover call —
+# -t $CAFFEINATE_SECONDS (default 9h, set it from the LaunchAgent to match your
+# start time): covers discovery plus the score/tailor/apply-prep Desktop
+# routines chained after it, not just the discover call —
 # those routines run hours after this script exits, and idle sleep would
 # otherwise resume the moment discovery finishes. Expires on its own; nothing
 # else needs to kill it. macOS-only — elsewhere it does not exist, and an
 # unguarded call would exit 127 without ever running discovery, so fall
 # through to a plain run.
 if command -v caffeinate >/dev/null 2>&1; then
-  caffeinate -s -i -t 32400 &
+  caffeinate -s -i -t "${CAFFEINATE_SECONDS:-32400}" &
 fi
 "$UV" run discover >>"$LOG" 2>&1
 CODE=$?
