@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 from datetime import timedelta
 from src.discovery import universe
@@ -458,3 +459,104 @@ def test_a_cooling_board_keeps_its_health_row_through_a_flush(tmp_path, monkeypa
     cooled = after[after["pruned_at"].notna()]
     assert set(cooled["slug"]) == {"co00", "co07"}
     assert set(cooled["consecutive_404s"]) == {3}
+
+
+# --- the `active` column: an audit-written, discovery-read tombstone --------
+
+def _csv_env(tmp_path, monkeypatch):
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    (tmp_path / "csv").mkdir()
+    return tmp_path / "csv"
+
+
+def test_active_zero_is_excluded(tmp_path, monkeypatch):
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug,active\nLive Co,live,1\nDead Co,dead,0\n", encoding="utf-8")
+
+    assert {c.slug for c in universe.load("greenhouse")} == {"live"}
+    # universe_slugs feeds HealthLedger.known_slugs, so a retired slug must
+    # leave it too -- otherwise its health row outlives the board forever.
+    assert universe.universe_slugs("greenhouse") == {"live"}
+
+
+def test_active_column_absent_keeps_every_row(tmp_path, monkeypatch):
+    """Every CSV on disk predates the column, as does any fresh bulk dump."""
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug\nA Co,a\nB Co,b\n", encoding="utf-8")
+
+    assert {c.slug for c in universe.load("greenhouse")} == {"a", "b"}
+
+
+def test_active_blank_or_malformed_reads_as_live(tmp_path, monkeypatch, caplog):
+    """Fail-open: a bad cell costs a poll, never a board."""
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug,active\nBlank Co,blank,\nJunk Co,junk,maybe\nOne Co,one,1\n",
+        encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        res = {c.slug for c in universe.load("greenhouse")}
+    assert res == {"blank", "junk", "one"}
+    assert "active='maybe'" in caplog.text.replace('"', "'")
+
+
+def test_retirement_survives_a_local_csv_re_add(tmp_path, monkeypatch):
+    """The whole point of the column: the next bulk dump re-lists a slug the
+    audit already disproved, and the tombstone still wins."""
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug,active\nDead Co,dead,0\n", encoding="utf-8")
+    (csv_dir / "greenhouse.local.csv").write_text(
+        "name,slug\nDead Co From A Bulk Dump,dead\nFresh Co,fresh\n", encoding="utf-8")
+
+    assert {c.slug for c in universe.load("greenhouse")} == {"fresh"}
+
+
+def test_retirement_in_local_csv_also_wins(tmp_path, monkeypatch):
+    """Retirements are unioned across both files, not read from one of them."""
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug\nStill Listed,dead\n", encoding="utf-8")
+    (csv_dir / "greenhouse.local.csv").write_text(
+        "name,slug,active\nDead Co,dead,0\n", encoding="utf-8")
+
+    assert {c.slug for c in universe.load("greenhouse")} == set()
+
+
+def test_watchlist_overrides_a_retirement(tmp_path, monkeypatch):
+    """Naming a slug by hand outranks the audit's verdict."""
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug,active\nDead Co,dead,0\n", encoding="utf-8")
+    (tmp_path / "companies.yaml").write_text(
+        "schema_version: 1\ncompanies:\n"
+        "  - name: I Want This One\n    ats: greenhouse\n    slug: dead\n",
+        encoding="utf-8")
+
+    res = {c.slug: c for c in universe.load("greenhouse")}
+    assert set(res) == {"dead"}
+    assert res["dead"].priority is True
+    assert res["dead"].name == "I Want This One"
+
+
+def test_include_retired_brings_back_the_tombstoned_rows(tmp_path, monkeypatch):
+    """Without this an audit could never un-retire a board it retired itself."""
+    csv_dir = _csv_env(tmp_path, monkeypatch)
+    (csv_dir / "greenhouse.csv").write_text(
+        "name,slug,active\nLive Co,live,1\nDead Co,dead,0\n", encoding="utf-8")
+
+    assert {c.slug for c in universe.universe_companies("greenhouse")} == {"live"}
+    revisit = {c.slug: c for c in
+               universe.universe_companies("greenhouse", include_retired=True)}
+    assert set(revisit) == {"live", "dead"}
+    assert revisit["dead"].name == "Dead Co"
+
+    # The discovery path is unaffected: load() and universe_slugs() have no
+    # such switch, so a retired board stays out of the poll list and out of
+    # the HealthLedger's known_slugs.
+    assert {c.slug for c in universe.load("greenhouse")} == {"live"}
+    assert universe.universe_slugs("greenhouse") == {"live"}

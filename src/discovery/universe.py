@@ -154,9 +154,21 @@ class HealthLedger:
         if changed:
             write_parquet(df, path)
 
-def _load_csv(csv_path, ats: str, out: dict) -> None:
-    """Merge a name,slug CSV into out, keyed by slug. An absent file is not an
-    error: <ats>.local.csv is gitignored and never exists on a fresh clone."""
+def _load_csv(csv_path, ats: str, out: dict, retired: set) -> None:
+    """Merge a name,slug[,active] CSV into out, keyed by slug. An absent file is
+    not an error: <ats>.local.csv is gitignored and never exists on a fresh clone.
+
+    `active=0` collects the slug into `retired` instead of `out`. The column is
+    written only by `scripts/audit_slugs.py` and its reconcile pass, and read
+    only here -- it is a permanent verdict about a slug ("this board is a dead
+    end, or the company moved and the live slug is listed separately"), which
+    is a different claim from the health ledger's `pruned_at` ("healthy board,
+    three 404s, resting 14 days"). Discovery never writes it.
+
+    Anything other than `0` reads as live, including a missing column, a blank,
+    and an unparseable value. Fail-open: a malformed cell must cost us a poll,
+    never a board.
+    """
     if not csv_path.exists():
         return
     try:
@@ -169,22 +181,46 @@ def _load_csv(csv_path, ats: str, out: dict) -> None:
                     if not name or not slug:
                         log.warning("universe: empty name or slug in CSV row, skipping")
                         continue
+                    active = (row.get("active") or "").strip()
+                    if active not in ("", "0", "1"):
+                        log.warning("universe: unrecognized active=%r for %s/%s, "
+                                    "reading as active", active, ats, slug)
+                    elif active == "0":
+                        retired.add(slug)
+                    # Recorded, not dropped: the caller excludes retired slugs
+                    # once both files have loaded, so an audit re-checking its
+                    # own verdicts can ask to keep them.
                     out[slug] = UniverseCompany(name=name, ats=ats, slug=slug, priority=False)
     except (OSError, ValueError, KeyError) as e:
         log.warning("universe: error reading %s: %s", csv_path, e)
 
 
-def _universe_dict(ats: str) -> dict:
+def _universe_dict(ats: str, include_retired: bool = False) -> dict:
     """Every company this lane's CSVs and watchlist name, keyed by slug, with
-    no health filtering at all."""
+    no health filtering at all.
+
+    `include_retired` keeps the `active=0` rows. Only an audit re-checking its
+    own past verdicts may pass it; nothing on the discovery path does.
+    """
     companies_dict = {}
+    retired: set[str] = set()
 
     # 1. Load CSVs, least authoritative first: on a slug in both files the
     #    curated name wins over the bulk one.
-    _load_csv(CSV_DIR / f"{ats}.local.csv", ats, companies_dict)
-    _load_csv(CSV_DIR / f"{ats}.csv", ats, companies_dict)
+    _load_csv(CSV_DIR / f"{ats}.local.csv", ats, companies_dict, retired)
+    _load_csv(CSV_DIR / f"{ats}.csv", ats, companies_dict, retired)
 
-    # 2. Load Watchlist
+    # 2. Apply the retirements, unioned across both files and applied after
+    #    both have loaded. A tombstone has to outlive a re-add: the next bulk
+    #    dump into <ats>.local.csv will happily re-list a slug the audit
+    #    already disproved, and dropping it at parse time would let the other
+    #    file put it straight back.
+    if not include_retired:
+        for slug in retired:
+            companies_dict.pop(slug, None)
+
+    # 3. Load Watchlist -- after the retirements, so naming a slug explicitly
+    #    overrides a tombstone. A deliberate choice outranks the audit.
     if DEFAULT_COMPANIES_PATH.exists():
         try:
             data = yaml.safe_load(DEFAULT_COMPANIES_PATH.read_text(encoding="utf-8"))
@@ -218,20 +254,24 @@ def universe_slugs(ats: str) -> set[str]:
     return set(_universe_dict(ats))
 
 
-def universe_companies(ats: str) -> list[UniverseCompany]:
+def universe_companies(ats: str, include_retired: bool = False) -> list[UniverseCompany]:
     """Every company this lane's universe names, unfiltered, keeping the names.
 
     `universe_slugs` without discarding the name -- for a reader that wants the
     whole universe rather than tonight's poll list. Never a `HealthLedger`
     input either; the caveat on `universe_slugs` applies unchanged.
+
+    `include_retired` adds back the `active=0` rows, for an audit re-checking
+    verdicts it wrote itself. A retired board is otherwise invisible, so
+    without this nothing could ever un-retire one.
     """
-    return list(_universe_dict(ats).values())
+    return list(_universe_dict(ats, include_retired=include_retired).values())
 
 
 def load(ats: str) -> list[UniverseCompany]:
     companies_dict = _universe_dict(ats)
 
-    # 3. Filter and Sort via Health Ledger
+    # 4. Filter and Sort via Health Ledger
     today = pd.Timestamp.today().normalize()
     health_dict = {}
     if health_path(ats).exists():

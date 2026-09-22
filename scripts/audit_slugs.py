@@ -203,6 +203,9 @@ def parse_args(argv):
     p.add_argument("--limit", type=int, help="first N slugs per lane, for a smoke run")
     p.add_argument("--resume", action="store_true",
                    help="skip slugs already in today's output file")
+    p.add_argument("--include-retired", action="store_true",
+                   help="also probe slugs the reconcile pass marked active=0, "
+                        "to re-check a verdict this script wrote itself")
     p.add_argument("--out", help="output CSV (default jobs/slug_audit_<date>.csv)")
     return p.parse_args(argv)
 
@@ -221,7 +224,8 @@ def main(argv=None) -> int:
 
     work = {}
     for ats in lanes:
-        companies = sorted(universe.universe_companies(ats), key=lambda c: c.slug)
+        companies = sorted(universe.universe_companies(
+            ats, include_retired=args.include_retired), key=lambda c: c.slug)
         companies = [c for c in companies if (ats, c.slug) not in done]
         if args.limit:
             companies = companies[:args.limit]

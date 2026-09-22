@@ -58,10 +58,17 @@ jobs/*
 data/universe/*.local.csv
 
 # =============================================================================
-# /companies.csv — a scratch export of the whole slug universe, written by hand
-# when auditing boards. Regenerable; never an input to anything.
+# Slug-universe exports, kept local for the same reason as the <ats>.local.csv
+# overlay: bulk third-party dumps whose licence does not permit redistribution
+# under this repo's MIT licence. `main_companies.csv` is the wide one — ~80k
+# boards across 30 ATS platforms — and is the name-match source for
+# `scripts/reconcile_slugs.py`, which reads it to prove a company still exists
+# somewhere before that company's dead slug may be retired. Regenerable, and
+# absent on a fresh clone: the reconcile pass falls back to companies.csv and
+# then to no name-match tier at all.
 # =============================================================================
 /companies.csv
+/main_companies.csv
 
 # =============================================================================
 # .apply_profile/ — the persistent Chrome profile /apply drives the browser
