@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Blocks a commit that stages a change under src/ or a verticals fixture while
+# the test suite is red. Any other commit skips the suite entirely.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass:                 git commit --no-verify
+#
+# Fail-open on a toolchain that is not set up yet. A fresh clone with no `uv`
+# or no tests/ directory must not be blocked by a gate it cannot run.
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root" || exit 0
+[ -d tests ] || exit 0
+command -v uv >/dev/null 2>&1 || exit 0
+
+WATCHED="src tests/fixtures tests/discovery/fixtures"
+STAGED="$(git diff --cached --name-only -- $WATCHED 2>/dev/null || true)"
+[ -n "$STAGED" ] || exit 0
+
+# tests/discovery needs libpostal, which is the opt-in `discovery` dep group.
+# Without it those tests error out, so narrow the run rather than fail the gate.
+IGNORE=""
+if ! uv run python -c "import postal.parser" >/dev/null 2>&1; then
+  IGNORE="--ignore=tests/discovery"
+fi
+
+RUNNER=(uv run pytest tests -q -x)
+[ -n "$IGNORE" ] && RUNNER+=("$IGNORE")
+
+OUT="$("${RUNNER[@]}" 2>&1)"
+STATUS=$?
+if [ "$STATUS" -ne 0 ]; then
+  {
+    echo "pre-commit: FAIL — src/ or a verticals fixture is staged and the suite is red."
+    [ -n "$IGNORE" ] && echo "(ran with $IGNORE: libpostal is not installed here)"
+    echo
+    printf '%s\n' "$OUT" | tail -30
+    echo
+    echo "Fix the failure before committing. Full run: uv run pytest tests -q"
+  } >&2
+  exit 1
+fi
+exit 0

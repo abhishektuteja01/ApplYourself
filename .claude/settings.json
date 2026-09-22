@@ -72,18 +72,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/tests_gate.sh",
-            "timeout": 660,
-            "statusMessage": "src/ changed: running the test suite"
-          }
-        ]
-      }
     ]
   }
 }

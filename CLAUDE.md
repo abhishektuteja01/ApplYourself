@@ -42,7 +42,8 @@ only when you open the code it governs — `src-boundary`, `state-machine`,
 
 `.claude/hooks/*.sh` enforce four of these mechanically rather than by memory: the
 R7 boundary, the R10 state.yaml writer, the two fixture mirrors, and the PII gate.
-The test suite gates every turn that touched `src/` or a fixture.
+`.githooks/pre-commit` runs the test suite on any commit that stages `src/` or a
+fixture (`git config core.hooksPath .githooks`, once per clone).
 
 ## Pipeline stages (data flow)
 

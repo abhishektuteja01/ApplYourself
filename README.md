@@ -655,7 +655,7 @@ a Skills line.
 <details>
 <summary><b>The Claude Code hooks</b></summary>
 
-Five rules are enforced mechanically rather than by memory. All wired in
+Four rules are enforced mechanically rather than by memory. All wired in
 `.claude/settings.json`, all fail with exit 2.
 
 | hook | when | blocks |
@@ -664,12 +664,15 @@ Five rules are enforced mechanically rather than by memory. All wired in
 | `r7_no_llm_in_src.sh` | after Edit/Write | LLM SDK imports or API endpoints under `src/**/*.py` (R7) |
 | `fixture_mirrors.sh` | after Edit/Write | `tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml` drifting apart |
 | `pii_gate.sh` | before `git commit` | a commit whose index fails `scripts/pii_scan.sh` |
-| `tests_gate.sh` | end of every turn | a turn that touched `src/` or a fixture and left the suite red |
 
 The per-area detail lives in `.claude/rules/*.md`, each scoped by `paths:` so it
 loads only when you open the code it governs: `src-boundary`, `state-machine`,
 `verticals-config`, `scoring`, `apply-submission`, `linting`,
 `profile-templates`, `pii-gate`. Run `/context` to see what actually loaded.
+
+The test suite runs from `.githooks/pre-commit` instead: any commit that stages
+`src/` or a fixture is blocked while the suite is red. Enable it once per clone
+with `git config core.hooksPath .githooks`.
 
 </details>
 
