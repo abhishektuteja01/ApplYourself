@@ -6,7 +6,8 @@ Operations execute in this exact step order:
   1. Normalize company / title fields (seniority preserved)
   2. Drop rows where jd_text < 200 chars
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
-     career-board sources exempt — board presence is the liveness signal
+     career-board sources exempt — board presence is the liveness signal;
+     rows with a pipeline/<job_id>/state.yaml exempt too, matching step 9
   3b. Drop rows outside the location allowlist
   4. Exact dedupe on (company_normalized, title_normalized), longest jd_text wins
   5. Near dedupe within company via rapidfuzz.WRatio >= 90, longest jd_text wins
@@ -182,6 +183,7 @@ def drop_stale(
     today: pd.Timestamp | None = None,
     max_age_days: int = MAX_AGE_DAYS,
     exempt_sources: tuple[str, ...] = STALENESS_EXEMPT_SOURCES,
+    tracked_ids: frozenset[str] = frozenset(),
 ) -> pd.DataFrame:
     df = df.copy()
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
@@ -200,6 +202,17 @@ def drop_stale(
         # Career boards and manual adds: an old-but-listed posting is live by
         # definition; lifetime is governed by the seen-ledger, not age.
         keep = keep | source.isin(exempt_sources)
+    if tracked_ids:
+        # A row with a state.yaml outlives its posted_date, the same rule
+        # apply_expiry states at step 9. Without it a dated source drops the
+        # role here at 14 days and steps 7-9 never get to honor it.
+        # job_id is only assigned at step 6, but both its inputs exist from
+        # step 1, so recompute rather than reorder the pipeline.
+        keep = keep | pd.Series(
+            [compute_job_id(c, t) in tracked_ids
+             for c, t in zip(df["company_normalized"], df["title_normalized"])],
+            index=df.index,
+        )
     return df[keep].copy()
 
 
@@ -858,7 +871,10 @@ def run(
     df = drop_short_jd(df)
     after_short = len(df)
     # step 3
-    df = drop_stale(df, today=today)
+    df = drop_stale(
+        df, today=today,
+        tracked_ids=frozenset(load_state_index(pipeline_dir)),
+    )
     after_stale = len(df)
     # step 3b — location filter. Runs before dedupe so the survivor of a
     # company+title group is picked among eligible rows only, and before the

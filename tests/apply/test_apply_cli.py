@@ -320,6 +320,43 @@ class TestPlanCommand:
         assert all(f["assert_selected"] == (f["kind"] == "react_select")
                    for f in data["fields"])
 
+    def test_a_filled_field_carries_what_was_offered_and_what_answered_it(
+            self, repo, stub_board, capsys):
+        """An answer can only be audited against the alternatives it beat.
+        `options` used to reach the JSON for parked fields only, so a keyword
+        rule that picked the wrong one of nine options was indistinguishable
+        from one that picked right."""
+        repo.write_clean(**{JOB_ID: GH_URL})
+        repo.write_state()
+        assert apply_cli.main(["plan", JOB_ID, "--json"]) == 0
+        data = json.loads(capsys.readouterr().out)
+        assert all("options" in f and "source" in f for f in data["fields"])
+        rule_answered = [f for f in data["fields"] if f["tier"] == "B" and f["source"]]
+        assert rule_answered, "no Tier B field in this fixture to check"
+        # The source is a `match:`/`exact:` keyword from the rule that fired.
+        assert all(f["source"] == f["source"].casefold() for f in rule_answered)
+        # Ashby's real selector, dropped until now.
+        assert all("name" in f for f in data["fields"])
+
+    def test_draftable_says_whether_it_blocks(self, repo, stub_board, capsys):
+        """`draftable` dropped `required` and `tier`, so the session had to
+        infer from the list it came in which fate an unanswered entry had."""
+        repo.write_clean(**{JOB_ID: GH_URL})
+        repo.write_state()
+        assert apply_cli.main(["plan", JOB_ID, "--json"]) == 0
+        data = json.loads(capsys.readouterr().out)
+        assert all({"required", "tier", "reason"} <= set(d) for d in data["draftable"])
+
+    def test_the_questions_view_groups_by_who_answers(self, repo, stub_board, capsys):
+        repo.write_clean(**{JOB_ID: GH_URL})
+        repo.write_state()
+        assert apply_cli.main(["plan", JOB_ID, "--questions"]) == 0
+        out = capsys.readouterr().out
+        assert "FACTS — answered from config" in out
+        assert "QUESTIONS — need judgment" in out
+        assert "BLOCKING — required and unanswered" in out
+        assert "alex@example.com" in out
+
     def test_url_and_out_dir_overrides_skip_lookup(self, repo, stub_board, capsys):
         # No clean.parquet, no state.yaml: both overrides supplied.
         assert apply_cli.main(
@@ -493,12 +530,67 @@ def _fake_plan(job_id=JOB_ID, company="Bushing Group", title="Widget Engineer",
 
 
 def _fake_result(*, submitted=False, failures=(), recovered=(), submit_error="",
-                  confirmed=False):
+                  confirmed=False, manifest=None):
     from src.apply.fill import FillResult
     return FillResult(
         form_url=GH_URL, failures=list(failures), recovered=list(recovered),
         submitted=submitted, submit_error=submit_error, confirmed=confirmed,
+        manifest=list(manifest or []),
     )
+
+
+class TestManifest:
+    """`--manifest` writes the post-fill read-back. Written only when asked
+    for, and only by a run that opened a browser — an unasked-for artifact
+    beside the run report would make "no run was started, so no report
+    exists" untrue."""
+
+    ROWS = [{"id": "q1", "label": "Start date?", "kind": "text", "group": "filled",
+             "planned": "Immediately.", "actual": "September 2026", "matches": False,
+             "prefilled": True, "before": "September 2026", "invalid": False,
+             "options": []}]
+
+    def test_fill_writes_it_where_asked(self, repo, monkeypatch, tmp_path, capsys):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "fill",
+                             lambda plan, answers, **kw: _fake_result(manifest=self.ROWS))
+        out_path = tmp_path / "m.json"
+        assert apply_cli.main(
+            ["fill", JOB_ID, "--headless", "--manifest", str(out_path)]) == 0
+        data = json.loads(out_path.read_text(encoding="utf-8"))
+        assert data["job_id"] == JOB_ID
+        assert data["fields"][0]["actual"] == "September 2026"
+        assert data["fields"][0]["matches"] is False
+        assert "manifest:" in capsys.readouterr().out
+
+    def test_nothing_is_written_without_the_flag(self, repo, monkeypatch, tmp_path):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "fill",
+                             lambda plan, answers, **kw: _fake_result(manifest=self.ROWS))
+        assert apply_cli.main(["fill", JOB_ID, "--headless"]) == 0
+        assert list(tmp_path.glob("*.json")) == []
+
+    def test_a_queue_walk_refuses_one_manifest_path(self, repo, tmp_path):
+        """Every role would overwrite the last one's read-back."""
+        repo.write_state()
+        assert apply_cli.main(
+            ["run", "--manifest", str(tmp_path / "m.json")]) == 1
+
+    def test_the_run_path_writes_it_for_one_role(self, repo, monkeypatch, tmp_path):
+        repo.write_state()
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one",
+                             lambda plan, answers, **kw: _fake_result(manifest=self.ROWS))
+        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "runs")
+        out_path = tmp_path / "m.json"
+        assert apply_cli.main(
+            ["run", "--job-id", JOB_ID, "--headless", "--manifest", str(out_path)]) == 0
+        assert json.loads(out_path.read_text(encoding="utf-8"))["job_id"] == JOB_ID
 
 
 class TestEligibleQueue:
@@ -569,9 +661,7 @@ class TestRunQueue:
         # Now make the first one park (unmapped, nothing recovered) and confirm
         # the second role still runs.
         def build_with_park(job_id, **kw):
-            unmapped = () if job_id == "ok" else [
-                type("U", (), {"id": "why_us"})(),
-            ]
+            unmapped = () if job_id == "ok" else [_unmapped()]
             return _fake_plan(job_id, unmapped=unmapped), None
 
         monkeypatch.setattr(apply_cli, "build", build_with_park)
@@ -633,13 +723,21 @@ class TestRunReport:
         outcomes = [
             RunOutcome("a1", "A Co", "Eng", "submitted"),
             RunOutcome("a2", "B Co", "Eng", "parked", detail="required unresolved",
-                       unmapped=("why_us",)),
+                       unmapped=({"id": "why_us", "tier": "C", "label": "Why us?",
+                                  "reason": "no rule matches this question",
+                                  "source": "", "options": ["Yes", "No"],
+                                  "description": ""},)),
             RunOutcome("a3", "C Co", "Eng", "failed", detail="boom"),
         ]
         text = apply_cli.render_report(outcomes, apply_cli.datetime(2026, 1, 1))
         assert "## Submitted (1)" in text
         assert "## Parked (1)" in text
         assert "why_us" in text
+        # The label, the reason and the offered options, not just the field id:
+        # a bare id names nothing the next pass can act on.
+        assert "Why us?" in text
+        assert "no rule matches this question" in text
+        assert "offers: Yes, No" in text
         assert "## Failed (1)" in text
         assert "boom" in text
 
@@ -875,7 +973,7 @@ class TestOverridesAreBoundToOneRole:
             "job_id": JOB_ID,
             "question_1": {"value": "x", "tier": "B0"},
         }), encoding="utf-8")
-        with pytest.raises(apply_cli.ApplyCliError, match="want C1, C2, JD, B0-LLM or AUDIT"):
+        with pytest.raises(apply_cli.ApplyCliError, match="has tier 'B0'"):
             apply_cli.load_overrides(p, JOB_ID)
 
     def test_a_b0_llm_tagged_entry_loads(self, tmp_path):
@@ -1470,3 +1568,89 @@ class TestSubmitAsksBeforeItSends:
             path.write_text(yaml.safe_dump(data), encoding="utf-8")
         rows = apply_cli.submission_preview(["aaaa1111", "bbbb2222"], repo.pipeline)
         assert [r[3] for r in rows] == ["lever", "manual-apply"]
+
+
+class TestLearnCommand:
+    """`apply learn` — the store's only writer. Its validation is the real
+    loader over the merged result, not a lookalike, so a record that would
+    break the config fails here with the loader's own message."""
+
+    @pytest.fixture(autouse=True)
+    def _real_loader(self, monkeypatch):
+        """The file-wide `stub_answers` returns one pre-loaded config and
+        ignores its arguments, which would make this command's whole
+        validation step a no-op. Bind the real loader to the synthetic config
+        instead, so `learned_path` is actually honoured."""
+        from src.apply.answers import load_answers
+
+        monkeypatch.setattr(
+            apply_cli, "load_answers",
+            lambda *a, **kw: load_answers(
+                FIXTURES / "application_answers.yaml",
+                FIXTURES / "preferences_time_limited.md",
+                learned_path=kw.get("learned_path"),
+            ),
+        )
+
+    def test_list_names_every_group(self, capsys):
+        assert apply_cli.main(["learn", "--list"]) == 0
+        out = capsys.readouterr().out
+        assert "rule group(s)" in out
+        assert "learned record(s)" in out
+
+    def test_a_dry_run_writes_nothing(self, tmp_path, capsys):
+        path = tmp_path / ".apply_learned.jsonl"
+        assert apply_cli.main([
+            "learn", "--kind", "option", "--group", "how did you hear",
+            "--option", "Acme Careers Site", "--path", str(path), "--dry-run",
+        ]) == 0
+        assert not path.exists()
+        assert "--dry-run: nothing written." in capsys.readouterr().out
+
+    def test_a_record_is_appended(self, tmp_path):
+        path = tmp_path / ".apply_learned.jsonl"
+        assert apply_cli.main([
+            "learn", "--kind", "option", "--group", "how did you hear",
+            "--option", "Acme Careers Site", "--job-id", JOB_ID,
+            "--board", "acme", "--path", str(path),
+        ]) == 0
+        record = json.loads(path.read_text(encoding="utf-8").strip())
+        assert record == {
+            "kind": "option", "group": "how did you hear",
+            "option": "Acme Careers Site", "job_id": JOB_ID, "board": "acme",
+            "learned": record["learned"],
+        }
+
+    def test_a_record_that_would_break_the_config_is_refused(self, tmp_path):
+        """The loader's overlap check, reached through a real load rather than
+        re-implemented here."""
+        path = tmp_path / ".apply_learned.jsonl"
+        rc = apply_cli.main([
+            "learn", "--kind", "wording", "--group", "linkedin",
+            "--wording", "portfolio link", "--path", str(path),
+        ])
+        assert rc == 1
+        assert not path.exists()
+
+    def test_a_work_authorization_keyword_is_refused(self, tmp_path, capsys):
+        """Config-independent: no config anywhere lets a rule answer these."""
+        path = tmp_path / ".apply_learned.jsonl"
+        assert apply_cli.main([
+            "learn", "--kind", "answer", "--wording", "will you require visa sponsorship",
+            "--answer", "No", "--path", str(path),
+        ]) == 1
+        assert "work-authorization keyword" in capsys.readouterr().err
+        assert not path.exists()
+
+    def test_a_malformed_record_is_refused_before_any_load(self, tmp_path, capsys):
+        path = tmp_path / ".apply_learned.jsonl"
+        assert apply_cli.main([
+            "learn", "--kind", "wording", "--group", "linkedin",
+            "--wording", "ai", "--path", str(path),
+        ]) == 1
+        assert "shorter than" in capsys.readouterr().err
+        assert not path.exists()
+
+    def test_neither_list_nor_kind_is_an_error(self, capsys):
+        assert apply_cli.main(["learn"]) == 1
+        assert "pass --list" in capsys.readouterr().err

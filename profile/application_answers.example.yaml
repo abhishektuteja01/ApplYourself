@@ -143,6 +143,10 @@ education:
 # recent role, one entry. Delete the block if you would rather park those roles
 # than answer them.
 employment:
+  # Uncomment to fill this block only where the board marks it required, and
+  # park it everywhere else. Off by default: most boards that render the block
+  # want it, and a parked role needs a human before it can go out.
+  # only_when_required: true
   company_name: "Widget Corp"
   title: "Widget Operations Analyst"
   start_month: "January"
@@ -206,3 +210,12 @@ rules:
 #
 # No rules for sponsorship, visas or work authorization either — the loader
 # rejects those keywords. See work_authorization above.
+
+# Escape hatch for the rare board whose EEOC field offers no decline-to-answer
+# option at all (every other board's "Decline To Self Identify"/"I don't wish
+# to answer" wording is tried first, unconditionally, regardless of this
+# block). Field id, not label -- the label is employer-authored and varies.
+# Leave empty (the default) to keep parking those roles instead.
+# demographics:
+#   no_decline_fallback:
+#     hispanic_ethnicity: "No"

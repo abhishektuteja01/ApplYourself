@@ -32,6 +32,56 @@ Read `submit_plan.md` (gitignored) for the phase detail.
 - `--rate` is clamped to a 30s minimum.
 - At most one role per company is submitted per run.
 
+## Optional blocks are a config switch, not a fixed policy
+
+`employment.only_when_required: true` in `profile/application_answers.yaml` fills
+the employment block only on boards that mark one of its fields required, and
+skips it everywhere else — `plan.skipped` names the key as the reason. Absent or
+false, the block fills wherever the form renders it. The flag is accepted on
+`employment` alone; on any other block it is an unknown key and raises.
+
+## Two answer stores, and only one of them is the user's
+
+`profile/application_answers.yaml` is hand-written and holds what the user
+*stated*: identity, work-authorization status, education, real preferences. It is
+fail-closed — any validation error refuses the run — and **no command ever edits
+it**. A person reads this file when an answer looks wrong, so it stays small.
+
+`profile/.apply_learned.jsonl` (`src/apply/learned.py`) holds what `/apply` has
+*learned* from forms already seen: another wording of a question, a spelling of an
+option some board offers, a veto stopping a keyword from matching a label it gets
+backwards, or a standalone question with a stable factual answer. Append-only,
+gitignored, no `.example` template (the leading dot is what exempts it — see
+`profile-templates.md`), and fail-open: a malformed line is skipped with a warning,
+because a convenience must never block a submission.
+
+`load_answers(learned_path=...)` folds the store into `rules:` **before**
+`_parse_rules` validates anything, so a learned wording faces the same overlap
+check, keyword-length floor and work-authorization keyword ban as a written one. A
+learned wording is absorbed into the rule it belongs to rather than appended as a
+new rule, because a new rule whose keyword is a superstring of an existing one is
+exactly what the overlap check rejects. Learned candidates always append *after*
+configured ones, so a stated preference wins.
+
+`uv run apply learn` is the store's sole writer. **R7 is intact:** the command
+session decides what is worth learning, `src/` validates and appends — the same
+split as `/track` owning `state.yaml` through `src/state_io.py`.
+
+## The plan names what answered each field, and what it was chosen from
+
+`Resolution.source` carries the `match:`/`exact:` keyword that fired (or
+`how_heard`, or `override:<tier>`), and `FieldPlan.options` carries what the widget
+offered even for a field that filled. Both reach the plan JSON. `/apply`'s audit
+step exists because a Tier B answer is a keyword match against employer-authored
+prose: the same keyword can answer one label correctly and another backwards, and
+neither case is visible from the value alone.
+
+Override tiers are declared in `apply_cli.OVERRIDE_TIERS`; which of them may
+supersede which resolution tier is decided in `build_plan` alone. `PICK` reaches a
+parked Tier B or C choice and names one of the board's own options. Tier B0 keeps
+`B0-LLM`; Tier A and A2 accept nothing, and an override aimed at one is reported in
+`Plan.ignored_overrides` rather than dropped in silence.
+
 ## Ashby reads a JSON API, not HTML
 
 Ashby's form is client-rendered, so `ashby.load_board` POSTs the `ApplicationForm`

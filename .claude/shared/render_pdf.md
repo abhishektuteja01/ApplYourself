@@ -27,13 +27,17 @@ test -n "${OUT_DIR}" && test -n "${FILE_SLUG}" && test -n "${BASENAME}" || {
 # path never changes, and $(pwd) changes with the shell.
 STAGING="$(git rev-parse --show-toplevel)/.pdf_staging"
 mkdir -p "$STAGING"
-cp "${OUT_DIR}/${FILE_SLUG}_${BASENAME}.docx" "${STAGING}/${FILE_SLUG}_${BASENAME}.docx"
-DOCX_ABS="${STAGING}/${FILE_SLUG}_${BASENAME}.docx"
-PDF_ABS="${STAGING}/${FILE_SLUG}_${BASENAME}.pdf"
+# The staging name is per-job: Word resolves `document "..."` by name and reuses
+# an already-open same-named doc, exporting the wrong role. Deliverable names in
+# OUT_DIR are unaffected.
+TOKEN="$(basename "${OUT_DIR}")"
+cp "${OUT_DIR}/${FILE_SLUG}_${BASENAME}.docx" "${STAGING}/${TOKEN}_${BASENAME}.docx"
+DOCX_ABS="${STAGING}/${TOKEN}_${BASENAME}.docx"
+PDF_ABS="${STAGING}/${TOKEN}_${BASENAME}.pdf"
 osascript <<ASEOF
 tell application "Microsoft Word"
     open POSIX file "${DOCX_ABS}"
-    set theDoc to document "${FILE_SLUG}_${BASENAME}.docx"
+    set theDoc to document "${TOKEN}_${BASENAME}.docx"
     save as theDoc file format format PDF file name "${PDF_ABS}"
     close theDoc saving no
 end tell

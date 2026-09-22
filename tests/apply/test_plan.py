@@ -384,6 +384,79 @@ class TestOverrides:
         )
         assert plan.fields[0].value != "Somebody Else"
 
+    def test_a_pick_override_rescues_a_tier_b_park(self, answers, tailor_dir):
+        """The park this exists for: a rule matched the label, and every
+        candidate it offered was absent from the board's own option list. The
+        answer here is one of the employer's own strings, so it states nothing
+        the employer did not write."""
+        heard = field(
+            id="question_7", label="How did you hear about this job?",
+            kind="react_select", required=True,
+            options=(MergedOption(label="Acme Careers Site"),
+                     MergedOption(label="LinkedIn")),
+        )
+        parked = build_plan(one([heard]), answers, tailor_dir)
+        assert [u.id for u in parked.unmapped] == ["question_7"]
+        assert parked.unmapped[0].tier == "B"
+
+        plan = build_plan(
+            one([heard]), answers, tailor_dir,
+            overrides={"question_7": ("Acme Careers Site", "PICK")},
+        )
+        assert plan.unmapped == ()
+        assert plan.parked is False
+        assert plan.fields[0].value == "Acme Careers Site"
+        assert plan.fields[0].tier == "PICK"
+
+    def test_a_pick_override_resolves_a_tier_c_choice(self, answers, tailor_dir):
+        located = field(id="question_8", label="Do you currently live in San Francisco?",
+                         kind="react_select", required=True,
+                         options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        plan = build_plan(
+            one([located]), answers, tailor_dir,
+            overrides={"question_8": ("Yes", "PICK")},
+        )
+        assert plan.fields[0].value == "Yes"
+        assert plan.fields[0].tier == "PICK"
+
+    def test_a_pick_override_cannot_answer_a_work_authorization_question(
+            self, answers, tailor_dir):
+        """Tier B0 is a legal claim under the user's name. `PICK` picks from
+        what a board offers, which is exactly how a wrong sponsorship answer
+        would get sent — B0 keeps its own narrower tag."""
+        sponsorship = field(
+            id="visa_sponsorship",
+            label="Will you now or in the future require sponsorship to work "
+                  "in the United States?",
+            kind="react_select", required=True,
+            options=(MergedOption(label="Yes"), MergedOption(label="No")),
+        )
+        plan = build_plan(
+            one([sponsorship]), answers, tailor_dir,
+            overrides={"visa_sponsorship": ("No", "PICK")},
+        )
+        # The fixture status is time_limited, so B0 answers this "Yes" and the
+        # PICK entry is dropped and named.
+        assert plan.fields[0].tier == "B0"
+        assert plan.fields[0].value == "Yes"
+        assert plan.ignored_overrides == (
+            "visa_sponsorship: tier PICK cannot supersede a tier B0 resolution",
+        )
+
+    def test_an_ignored_override_is_reported_not_swallowed(self, answers, tailor_dir):
+        """An override that names a real field and then does nothing used to
+        vanish silently, and /apply's own re-plan check could not see it: the
+        plan was not wrong, the correction just never applied."""
+        plan = build_plan(
+            one([field(id="first_name", label="First Name", kind="text")]),
+            answers, tailor_dir,
+            overrides={"first_name": ("Somebody Else", "AUDIT")},
+        )
+        assert plan.fields[0].value != "Somebody Else"
+        assert plan.ignored_overrides == (
+            "first_name: tier AUDIT cannot supersede a tier A resolution",
+        )
+
     def test_an_audit_override_supersedes_a_tier_b_rule_match(self, answers, tailor_dir):
         # "AUDIT" is the general case: a Tier B `rules:` keyword matched a
         # compound label (e.g. "how did you hear about us and why do you

@@ -596,6 +596,43 @@ def test_already_seen_from_state_yaml(tmp_path):
     assert unmatched["application_status"] == ""
 
 
+def test_tracked_stale_row_survives_the_whole_run(tmp_path):
+    """End-to-end: a state.yaml keeps a stale dated-source row in clean.parquet.
+    Step 3 used to drop it before steps 7-9 could apply the seen-ledger tiers,
+    so a tracked role left the pipeline at 14 days whatever its score."""
+    today = pd.Timestamp("2026-06-06")
+    stale = today - pd.Timedelta(days=30)
+    tracked_id = compute_job_id("acme", "widget functional consultant")
+
+    pipeline_dir = tmp_path / "pipeline"
+    (pipeline_dir / tracked_id).mkdir(parents=True)
+    (pipeline_dir / tracked_id / "state.yaml").write_text(yaml.safe_dump({
+        "job_id": tracked_id,
+        "company": "Acme",
+        "title": "Widget Functional Consultant",
+        "state": "saved",
+    }), encoding="utf-8")
+
+    raw_dir = _make_raw_parquet(tmp_path, [
+        {"site": "linkedin", "company": "Acme",
+         "title": "Widget Functional Consultant",
+         "description": "x" * 300, "date_posted": stale},
+        {"site": "linkedin", "company": "Beta LLC",
+         "title": "Gizmo Business Analyst",
+         "description": "y" * 300, "date_posted": stale},
+    ])
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=pipeline_dir,
+        today=today,
+    )
+    assert list(out["job_id"]) == [tracked_id]
+    assert bool(out.iloc[0]["already_seen"]) is True
+
+
 # ---------- T11: cleaning idempotent within a day ----------
 
 def test_cleaning_idempotent(tmp_path):
@@ -705,6 +742,55 @@ def test_drop_stale_exempts_manual_adds():
     ])
     out = drop_stale(df, today=today)
     assert list(out["source"]) == ["manual"]
+
+
+def test_drop_stale_exempts_tracked_rows():
+    """A role with a state.yaml outlives its posted_date. apply_expiry says so
+    at step 9, but step 3 runs first, so without this a dated source drops a
+    tracked role at 14 days and steps 7-9 never get to honor it."""
+    today = pd.Timestamp("2026-07-15")
+    old = pd.Timestamp("2026-05-01")  # far past the 14-day cutoff
+    tracked = compute_job_id("acme", "tracked role")
+    df = _clean_df([
+        {"source": "linkedin", "title_normalized": "tracked role", "posted_date": old},
+        {"source": "linkedin", "title_normalized": "untracked role", "posted_date": old},
+    ])
+    out = drop_stale(df, today=today, tracked_ids=frozenset({tracked}))
+    assert set(out["title_normalized"]) == {"tracked role"}
+
+
+def test_drop_stale_tracked_ids_default_changes_nothing():
+    """Pins the default: every existing caller passes no tracked_ids and must
+    keep the pre-change behavior."""
+    today = pd.Timestamp("2026-07-15")
+    old = pd.Timestamp("2026-05-01")
+    rows = [
+        {"source": "linkedin", "title_normalized": "t1", "posted_date": old},
+        {"source": "greenhouse", "title_normalized": "t2", "posted_date": old},
+    ]
+    assert (
+        set(drop_stale(_clean_df(rows), today=today)["title_normalized"])
+        == set(drop_stale(_clean_df(rows), today=today,
+                          tracked_ids=frozenset())["title_normalized"])
+        == {"t2"}
+    )
+
+
+def test_drop_stale_tracked_exemption_is_per_row():
+    """The exemption keys on job_id, not on the source or the batch: a tracked
+    stale row survives while its untracked same-company sibling still drops."""
+    today = pd.Timestamp("2026-07-15")
+    old = pd.Timestamp("2026-05-01")
+    df = _clean_df([
+        {"source": "indeed", "title_normalized": "kept", "posted_date": old},
+        {"source": "indeed", "title_normalized": "dropped", "posted_date": old},
+        {"source": "indeed", "title_normalized": "fresh", "posted_date": today},
+    ])
+    out = drop_stale(
+        df, today=today,
+        tracked_ids=frozenset({compute_job_id("acme", "kept")}),
+    )
+    assert set(out["title_normalized"]) == {"kept", "fresh"}
 
 
 # ---------- T13: seen-ledger ----------

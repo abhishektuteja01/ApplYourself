@@ -9,6 +9,7 @@ Assertions are structural only. Never pin a real search term, exclude term,
 or skill weight in this file: it is committed.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from src import verticals
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REAL_CONFIG = REPO_ROOT / "profile" / "verticals.yaml"
+REAL_SKILLS_MASTER = REPO_ROOT / "profile" / "skills_master.md"
 
 
 @pytest.fixture
@@ -27,6 +29,21 @@ def real_cfg():
     verticals.set_config(config)
     yield config
     verticals.set_config(None)
+
+
+@pytest.fixture
+def real_skills_master():
+    if not REAL_SKILLS_MASTER.is_file():
+        pytest.skip("profile/skills_master.md is gitignored user data")
+    text = REAL_SKILLS_MASTER.read_text(encoding="utf-8")
+    leans_by_id: dict[str, set[str]] = {}
+    for block in text.split("\n## ")[1:]:
+        skill_id, _, body = block.partition("\n")
+        match = re.search(r"vertical_lean:\s*\[(.*?)\]", body)
+        leans_by_id[skill_id.strip()] = (
+            {v.strip() for v in match.group(1).split(",") if v.strip()} if match else set()
+        )
+    return leans_by_id
 
 
 def test_real_config_loads_under_the_strict_loader(real_cfg):
@@ -101,3 +118,34 @@ def test_disqualifier_title_phrases_do_not_match_the_lanes_own_search_terms(real
                     f"{vertical.name}: title disqualifier {phrase!r} matches its "
                     f"own search term {term!r}"
                 )
+
+
+def test_skill_vertical_lean_tags_are_backed_by_the_layout(real_cfg, real_skills_master):
+    """/tailor's ranking rule (tailor.md 'Skills section' step) treats
+    vertical_lean as a rank tiebreaker inside a layout line's already-eligible
+    SKILL-ID set, never as the gate on whether the skill appears at all — the
+    layout line in tailoring.md is the only thing that gates inclusion. A
+    vertical_lean tag naming a vertical whose tailoring.md never lists that
+    SKILL-ID anywhere is dead metadata: it reads as coverage but renders on
+    no resume."""
+    layout_ids_by_vertical: dict[str, set[str]] = {}
+    for name in real_cfg.names:
+        layout_path = REPO_ROOT / "profile" / "verticals" / name / "tailoring.md"
+        if not layout_path.is_file():
+            continue
+        layout_ids_by_vertical[name] = set(
+            re.findall(r"SKILL-[A-Z0-9-]+", layout_path.read_text(encoding="utf-8"))
+        )
+
+    violations = sorted(
+        f"{skill_id} -> {vertical}"
+        for skill_id, leans in real_skills_master.items()
+        for vertical in leans
+        if vertical in layout_ids_by_vertical
+        and skill_id not in layout_ids_by_vertical[vertical]
+    )
+    assert not violations, (
+        "vertical_lean claims a vertical whose tailoring.md layout never lists "
+        f"the skill (fix by dropping the tag or adding the skill to that "
+        f"vertical's layout line): {violations}"
+    )

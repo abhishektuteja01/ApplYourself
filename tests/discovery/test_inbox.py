@@ -80,6 +80,26 @@ def test_parse_rejects_malformed(tmp_path, cfg, name, text):
     assert inbox.parse_inbox_file(write(tmp_path, f"{name}.md", text)) is None
 
 
+def test_parse_keeps_a_triple_dash_inside_a_value(tmp_path, cfg):
+    """Workday builds its slug from the title, so a title with a dash lands a
+    literal "---" in the url. Splitting on the bare string cut the url there
+    and spilled the rest of the frontmatter into the body."""
+    url = ("https://accenture.wd103.myworkdayjobs.com/AccentureCareers/job/"
+           "Warsaw/Junior-GenAI---Conversational-Analytics-Engineer_R00318994")
+    row = inbox.parse_inbox_file(write(tmp_path, "dashes.md", f"""---
+company: Acme Corp
+title: Machine Learning Engineer
+url: {url}
+vertical: example_tertiary
+---
+We need someone to build model pipelines.
+"""))
+    assert row is not None
+    assert row["job_url"] == url
+    assert row["job_url_direct"] == url
+    assert row["description"] == "We need someone to build model pipelines.\n"
+
+
 # ---------------------------------------------------------------------
 # ingest_inbox
 # ---------------------------------------------------------------------

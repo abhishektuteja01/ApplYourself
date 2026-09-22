@@ -81,6 +81,11 @@ def tailor_dir(tmp_path):
 def answers():
     from src.apply.answers import load_answers
 
+    # `learned_path=False` on purpose: the store is the user's real
+    # profile/.apply_learned.jsonl, and folding it into the synthetic
+    # widget-world config would make these tests depend on whatever the last
+    # /apply run happened to learn.
     return load_answers(
-        FIXTURES / "application_answers.yaml", FIXTURES / "preferences_time_limited.md"
+        FIXTURES / "application_answers.yaml", FIXTURES / "preferences_time_limited.md",
+        learned_path=False,
     )
