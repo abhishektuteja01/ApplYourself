@@ -144,3 +144,10 @@ __pycache__/
 # Machine-local Claude Code permissions — was covered only by the user's global
 # gitignore, so it was exposed on any fresh clone.
 .claude/settings.local.json
+
+# =============================================================================
+# Universe CSV backups, written by `scripts/apply_reconcile.py --backup` before
+# it changes a file. Local safety net for a retirement that is hard to undo by
+# hand; the file itself carries the state worth tracking.
+# =============================================================================
+data/universe/*.bak-*
