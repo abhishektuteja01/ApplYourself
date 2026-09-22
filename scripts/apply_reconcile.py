@@ -72,11 +72,17 @@ DEAD_END = "dead_end"
 
 SEARCH_EXHAUSTED = "searched_nothing_found"
 
+# Retirement justified by a fresh probe rather than by a search. Retiring a
+# 404 slug is not a claim the company is gone -- only that this URL is. Finding
+# where they hire now is separate, additive work, and a URL that answers 404
+# yields nothing while it waits for that work to happen.
+DEAD_URL = "dead_url"
+
 
 def known_verdicts() -> tuple[str, ...]:
     """Every verdict this script understands, read at call time so a resolver
     module that grows a verdict needs no edit here."""
-    return tuple(dict.fromkeys(tuple(R.VERDICTS) + (MOVED_OFFSITE, DEAD_END)))
+    return tuple(dict.fromkeys(tuple(R.VERDICTS) + (MOVED_OFFSITE, DEAD_END, DEAD_URL)))
 
 
 def load_search_log(path) -> set[tuple[str, str]]:
@@ -109,6 +115,61 @@ def load_search_log(path) -> set[tuple[str, str]]:
         print(f"search log: {inconclusive} row(s) self-reported inconclusive "
               f"and will not authorize a retirement")
     return exhausted
+
+
+# Populated by --probe-cache: `(ats, slug) -> True/False`. The cache IS the
+# probe evidence, produced by a parallel sweep minutes earlier, because probing
+# thousands of slugs one at a time inside the apply loop takes hours.
+PROBE_CACHE: dict = {}
+
+
+def confirm_dead(ats: str, slug: str) -> bool | None:
+    """Is this board really still 404? True=dead, False=live, None=unknown.
+
+    `old_status` in the proposal is a snapshot. Correcting the audit does not
+    propagate to a proposal already written, and trusting the stale column
+    retired seven live Ashby boards carrying ~186 postings -- the audit had
+    been corrected for exactly those rows hours earlier.
+
+    So the last thing before a retirement is a fresh probe. One request per
+    candidate, and it makes the retirement rest on what the board does now
+    rather than on what a file remembers. `None` (an error, a 403, a timeout)
+    blocks the retirement: unknown is not dead.
+    """
+    if (ats, slug) in PROBE_CACHE:
+        return PROBE_CACHE[(ats, slug)]
+    from src.ats_http import fetch_json, CareersError
+    try:
+        if ats == "workday":
+            from src.discovery.sources.ats import workday as wd
+            company, pod, site = wd.parse_slug(slug)
+            total = wd.list_page(company, pod, site, offset=0).get("total")
+            return not (isinstance(total, int) and total > 0)
+        payload = fetch_json(R.board_url(ats, slug))
+        return R.posting_count(ats, payload) <= 0
+    except CareersError as e:
+        if e.status not in (404, 410):
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    if ats != "ashby":
+        return True
+    # Ashby's REST API 404s on live boards whose org opted out, so a 404 there
+    # is not the end of the question.
+    try:
+        from src.ats_http import fetch_json_post
+        payload = fetch_json_post(
+            "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams",
+            {"operationName": "ApiJobBoardWithTeams",
+             "variables": {"organizationHostedJobsPageName": slug},
+             "query": "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) "
+                      "{ jobBoard: jobBoardWithTeams(organizationHostedJobsPageName: "
+                      "$organizationHostedJobsPageName) { jobPostings { id } } }"})
+        if not isinstance(payload, dict) or payload.get("errors"):
+            return None
+        return (payload.get("data") or {}).get("jobBoard") is None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def retires(verdict: str) -> bool:
@@ -271,11 +332,32 @@ def plan_row(row: dict, universe: Universe, selected, exhausted=None) -> list[Ch
     # The dead-end route is selected as `dead_end`, not by the row's own
     # verdict: the proposal says "the company is alive, we just could not place
     # them", and the search log is what turns that into a retirement.
+    dead_url = (DEAD_URL in selected
+                and not retires(verdict) and not adds(verdict))
+    if dead_url:
+        # The probe is the whole authorization, so it is the only thing asked.
+        # `None` blocks: unknown is not dead.
+        alive = confirm_dead(ats, slug)
+        if alive is not True:
+            reason = ("board is live" if alive is False
+                      else "probe could not confirm the board is dead")
+            return [Change(ACT_REFUSED, ats, slug, name, DEAD_URL, None, reason)]
+        holder = universe.holder(ats, slug)
+        if holder is None:
+            return [Change(ACT_NOT_IN_UNIVERSE, ats, slug, name, DEAD_URL, None,
+                            "no universe file lists this slug")]
+        if holder.active(slug) == RETIRED:
+            return [Change(ACT_ALREADY_RETIRED, ats, slug, name, DEAD_URL,
+                            holder.path, "already active=0")]
+        holder.retire(slug)
+        return [Change(ACT_RETIRE, ats, slug, name, DEAD_URL, holder.path,
+                        f"probed 404 now (was {verdict}) -> active=0")]
+
     dead_end = (DEAD_END in selected and exhausted is not None
                 and not retires(verdict) and not adds(verdict))
-    if verdict not in selected and not dead_end:
+    if verdict not in selected and not dead_end and not dead_url:
         return []
-    if not (retires(verdict) or adds(verdict) or dead_end):
+    if not (retires(verdict) or adds(verdict) or dead_end or dead_url):
         return []
 
     out: list[Change] = []
@@ -416,6 +498,10 @@ def parse_args(argv):
                    help="skip the .bak-<timestamp> copy of each file about to change")
     p.add_argument("--universe-dir", help="universe directory (default data/universe)")
     p.add_argument("--log", help="change log CSV (default jobs/apply_reconcile_<date>.csv)")
+    p.add_argument("--probe-cache",
+                   help="CSV of `ats,slug,dead` from a parallel probe sweep. Supplies "
+                        f"the evidence --verdict {DEAD_URL} needs without re-probing "
+                        "serially inside the apply loop")
     p.add_argument("--search-log",
                    help="CSV of `ats,slug,outcome` from the web-search pass. A row "
                         f"with outcome={SEARCH_EXHAUSTED!r} is what authorizes "
@@ -450,6 +536,14 @@ def main(argv=None) -> int:
 
     preview = not args.verdict
     selected = frozenset(args.verdict or known_verdicts())
+    if args.probe_cache:
+        with open(paths.REPO_ROOT / args.probe_cache, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                val = (row.get("dead") or "").strip().lower()
+                if val in ("true", "false"):
+                    PROBE_CACHE[((row.get("ats") or "").strip().lower(),
+                                 (row.get("slug") or "").strip())] = val == "true"
+        print(f"probe cache: {len(PROBE_CACHE)} slug(s)")
     exhausted = load_search_log(args.search_log) if args.search_log else None
     if exhausted is not None:
         print(f"search log: {len(exhausted)} slug(s) with the search exhausted")
