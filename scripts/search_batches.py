@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+import time
 from datetime import date
 
 from src import paths
@@ -33,6 +34,9 @@ _spec.loader.exec_module(R)
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
 BATCH_DIR = OUT_DIR / "search_batches"
+# Results are moved out of the batch dir once merged, so a re-split can
+# renumber batches without an agent overwriting a finished result file.
+RESULT_DIR = OUT_DIR / "search_results"
 BATCH_COLUMNS = ["ats", "slug", "name", "old_status", "verdict", "domain", "evidence"]
 LOG_COLUMNS = ["ats", "slug", "name", "outcome", "new_ats", "new_slug", "evidence"]
 
@@ -66,8 +70,27 @@ def load_proposal(path) -> list[dict]:
     return rows
 
 
+def already_searched() -> set[tuple[str, str]]:
+    """Every slug any completed batch already reported on."""
+    done: set[tuple[str, str]] = set()
+    for d in (BATCH_DIR, RESULT_DIR):
+        for path in sorted(d.glob("*.result.csv")) if d.exists() else []:
+            with path.open(encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    ats = (row.get("ats") or "").strip().lower()
+                    slug = (row.get("slug") or "").strip()
+                    if ats and slug:
+                        done.add((ats, slug))
+    return done
+
+
 def split(args) -> int:
     rows = load_proposal(paths.REPO_ROOT / args.proposal)
+    done = already_searched()
+    if done:
+        before = len(rows)
+        rows = [r for r in rows if (r["ats"], r["slug"]) not in done]
+        print(f"skipping {before - len(rows)} slug(s) already searched")
     if args.limit:
         rows = rows[:args.limit]
     BATCH_DIR.mkdir(parents=True, exist_ok=True)
@@ -91,6 +114,58 @@ def split(args) -> int:
     return 0
 
 
+def verify_found(rows, pacing: float = 0.5) -> tuple[int, int]:
+    """Probe every `found` claim and demote the ones that do not exist.
+
+    Measured on the first two batches: 36 of 38 `found` claims named a board
+    that returns 404. A searching agent reads a cached aggregator listing or a
+    careers page and concludes the board is live, and it states that with
+    complete confidence. So a claim is worth exactly what a probe says it is.
+
+    A claim that fails becomes `searched_nothing_found`, keeping the original
+    in `evidence`. That is the accurate reading rather than a convenience: the
+    agent did search, and what it came back with does not exist, so the search
+    produced nothing verifiable. The demotion is recorded so a human can see
+    which retirements rest on a disproved claim.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(paths.REPO_ROOT))
+    from src.ats_http import fetch_json
+    from src.discovery.sources.ats import workday as wd
+
+    kept = demoted = 0
+    for row in rows:
+        if row["outcome"] != SEARCH_FOUND:
+            continue
+        ats, slug = row["new_ats"].strip().lower(), row["new_slug"].strip()
+        if ats not in R.SUPPORTED_ATS or not slug:
+            # No client for this platform, so the claim cannot be checked.
+            # Left as `found`, which authorizes nothing either way.
+            continue
+        time.sleep(pacing)
+        count = None
+        try:
+            if ats == "workday":
+                company, pod, site = wd.parse_slug(slug)
+                payload = wd.list_page(company, pod, site, offset=0)
+                count = payload.get("total")
+            else:
+                payload = fetch_json(R.board_url(ats, slug))
+                count = R.posting_count(ats, payload)
+        except Exception:  # noqa: BLE001 -- a failed probe is a failed claim
+            count = None
+        if isinstance(count, int) and count > 0:
+            kept += 1
+            row["evidence"] = f"verified {count} postings; {row['evidence']}"
+        else:
+            demoted += 1
+            row["outcome"] = SEARCH_EXHAUSTED
+            row["evidence"] = (f"unverified_claim:{ats}/{slug} does not exist; "
+                               f"{row['evidence']}")
+            row["new_ats"] = row["new_slug"] = ""
+    return kept, demoted
+
+
 def merge(args) -> int:
     """One log from every `batch_*.result.csv` an agent wrote.
 
@@ -99,7 +174,8 @@ def merge(args) -> int:
     into a retirement.
     """
     seen: dict[tuple[str, str], dict] = {}
-    files = sorted(BATCH_DIR.glob("batch_*.result.csv"))
+    files = sorted(BATCH_DIR.glob("*.result.csv")) + \
+            (sorted(RESULT_DIR.glob("*.result.csv")) if RESULT_DIR.exists() else [])
     for path in files:
         with path.open(encoding="utf-8") as f:
             for row in csv.DictReader(f):
@@ -114,11 +190,17 @@ def merge(args) -> int:
                 seen[key] = {c: (row.get(c) or "").strip() for c in LOG_COLUMNS}
                 seen[key]["ats"], seen[key]["slug"] = ats, slug
 
+    merged = [seen[k] for k in sorted(seen)]
+    if not args.no_verify:
+        kept, demoted = verify_found(merged)
+        print(f"verification: {kept} claim(s) confirmed live, "
+              f"{demoted} disproved and demoted to {SEARCH_EXHAUSTED}")
+
     out = paths.REPO_ROOT / args.out if args.out else OUT_DIR / f"slug_search_{date.today()}.csv"
     with out.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=LOG_COLUMNS)
         w.writeheader()
-        w.writerows(seen[k] for k in sorted(seen))
+        w.writerows(merged)
 
     found = sum(1 for v in seen.values() if v["outcome"] == SEARCH_FOUND)
     print(f"{len(files)} result file(s) -> {len(seen)} slugs: "
@@ -140,6 +222,9 @@ def parse_args(argv):
 
     m = sub.add_parser("merge", help="merge batch results into one search log")
     m.add_argument("--out", help="default jobs/slug_search_<date>.csv")
+    m.add_argument("--no-verify", action="store_true",
+                   help="skip probing the `found` claims. Only for inspecting raw "
+                        "agent output -- an unprobed claim must never reach apply")
     m.set_defaults(fn=merge)
 
     return p.parse_args(argv)
