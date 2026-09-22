@@ -32,6 +32,14 @@ Read `submit_plan.md` (gitignored) for the phase detail.
 - `--rate` is clamped to a 30s minimum.
 - At most one role per company is submitted per run.
 
+## Optional blocks are a config switch, not a fixed policy
+
+`employment.only_when_required: true` in `profile/application_answers.yaml` fills
+the employment block only on boards that mark one of its fields required, and
+skips it everywhere else — `plan.skipped` names the key as the reason. Absent or
+false, the block fills wherever the form renders it. The flag is accepted on
+`employment` alone; on any other block it is an unknown key and raises.
+
 ## Two answer stores, and only one of them is the user's
 
 `profile/application_answers.yaml` is hand-written and holds what the user

@@ -143,6 +143,10 @@ education:
 # recent role, one entry. Delete the block if you would rather park those roles
 # than answer them.
 employment:
+  # Uncomment to fill this block only where the board marks it required, and
+  # park it everywhere else. Off by default: most boards that render the block
+  # want it, and a parked role needs a human before it can go out.
+  # only_when_required: true
   company_name: "Widget Corp"
   title: "Widget Operations Analyst"
   start_month: "January"
