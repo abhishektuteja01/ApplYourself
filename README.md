@@ -5,6 +5,10 @@ resume. It scrapes postings, scores them against a profile you write, drafts
 tailored resumes and cover letters, and can fill and submit an application form
 for you, with you in the loop at every point that matters.
 
+<p align="center">
+  <img src="docs/media/main.gif" alt="ApplYourself in action" width="100%">
+</p>
+
 **It's for you if** you are applying to a lot of roles across a few different
 kinds of job, you want the sifting automated but the writing to still sound like
 you, and you are comfortable running things from a terminal.
