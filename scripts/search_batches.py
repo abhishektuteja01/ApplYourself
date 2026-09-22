@@ -67,7 +67,20 @@ def load_proposal(path) -> list[dict]:
     with open(path, encoding="utf-8") as f:
         rows = [r for r in csv.DictReader(f) if needs_search(r)]
     rows.sort(key=lambda r: (PRIORITY[r["verdict"].strip()], r["ats"], r["slug"]))
-    return rows
+    # Round-robin the lanes within each priority band. Sorting by `ats` alone
+    # spent an entire night's search budget on ashby and left greenhouse and
+    # lever untouched, because a partial pass then retires only the lane that
+    # sorts first.
+    banded: dict[int, dict[str, list]] = {}
+    for row in rows:
+        band = banded.setdefault(PRIORITY[row["verdict"].strip()], {})
+        band.setdefault(row["ats"], []).append(row)
+    out = []
+    for band in (banded[k] for k in sorted(banded)):
+        lanes = list(band.values())
+        for i in range(max(len(v) for v in lanes)):
+            out.extend(lane[i] for lane in lanes if i < len(lane))
+    return out
 
 
 def already_searched() -> set[tuple[str, str]]:
