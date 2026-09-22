@@ -36,6 +36,7 @@ from src.apply.answers import Answers, resolve
 from src.apply.browser import USER_DATA_DIR, launch as _launch, require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.apply.reconcile import MergedField, MergedOption
+from src.discovery.sources.ats.registry import DRIVER_NAMES
 
 log = logging.getLogger(__name__)
 
@@ -298,6 +299,62 @@ def _is_numeric(value: str) -> bool:
     return True
 
 
+def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
+    """The field names to report from one `invalid_fields` DOM read.
+
+    `rows` is every validating control in the form, each as
+    `{name, type, checked, valueMissing, invalid, fallback}`. Pure, so the
+    suite can cover the grouping the browser read cannot.
+
+    A required checkbox *group* is satisfied by one tick, but Greenhouse marks
+    every box in the group `required`, so the seven unticked siblings stay
+    `valueMissing` and the raw read refuses a form the board would accept.
+    Such a group is dropped. Three conditions narrow that, each guarding a
+    case where dropping would hide a real refusal:
+
+    - Only on a shared non-empty `name`. `el.name || el.id || el.tagName`
+      keys every nameless control to the same "", so grouping on that would
+      let one ticked nameless box clear unrelated empty fields.
+    - Only when every reported member is a checkbox. A shared name is not a
+      shared type: Lever's pronouns group is ten checkboxes plus a free-text
+      `customPronounsTextField` (§`LeverBrowserDriver._checkbox_options`), and
+      that text input being required-and-empty must still refuse.
+    - Only for `valueMissing`. A pattern or `type=email` failure is not an
+      unticked sibling and is never satisfied by one.
+
+    Names are deduped, first-seen order kept: the raw read repeats a group's
+    name once per unticked box.
+    """
+    checked_names = {
+        r["name"] for r in rows
+        if r.get("name") and r.get("type") == "checkbox" and r.get("checked")
+    }
+    reported: dict[str, list[dict]] = {}
+    for row in rows:
+        if not row.get("invalid"):
+            continue
+        key = row.get("name") or ""
+        reported.setdefault(key, []).append(row)
+
+    out: list[str] = []
+    for key, members in reported.items():
+        satisfied_group = (
+            key
+            and key in checked_names
+            and all(
+                m.get("type") == "checkbox" and m.get("valueMissing")
+                for m in members
+            )
+        )
+        if satisfied_group:
+            continue
+        for member in members:
+            label = member.get("name") or member.get("fallback") or ""
+            if label and label not in out:
+                out.append(label)
+    return tuple(out)
+
+
 class BrowserDriver:
     """Everything the fill sequence does to a page, in one swappable object.
 
@@ -307,6 +364,18 @@ class BrowserDriver:
 
     def __init__(self, page):
         self.page = page
+        # field id -> where it really is, for the ids that are aliases
+        # (`MergedField.dom_path`). Only Ashby's driver reads these.
+        self._dom_paths: dict[str, str] = {}
+        self._dom_controls: dict[str, str] = {}
+
+    def learn_dom_aliases(self, plan: Plan) -> None:
+        """Take the plan's `dom_path`/`dom_control` before the fill starts."""
+        for field in plan.fields:
+            if field.dom_path:
+                self._dom_paths[field.id] = field.dom_path
+            if field.dom_control:
+                self._dom_controls[field.id] = field.dom_control
 
     def _locator(self, field_id: str):
         return self.page.locator(FIELD.format(form=FORM_SELECTOR, id=field_id))
@@ -766,19 +835,30 @@ class BrowserDriver:
 
         An empty tuple on a board with no `<form>` element: nothing to check is
         not the same as something invalid, and Ashby renders no form at all.
+
+        The DOM read returns rows, not names: a required checkbox group's
+        unticked siblings are `valueMissing` even once the group is answered,
+        and deciding that needs the ticked sibling's state too. Grouping lives
+        in `refused_field_names`, which is pure and covered by the suite.
         """
-        return tuple(
-            self.page.evaluate(
-                """(sel) => {
-                    const form = document.querySelector(sel);
-                    if (!form || form.checkValidity()) return [];
-                    return [...form.elements]
-                        .filter(el => el.willValidate && !el.checkValidity())
-                        .map(el => el.name || el.id || el.tagName);
-                }""",
-                FORM_SELECTOR,
-            )
+        rows = self.page.evaluate(
+            """(sel) => {
+                const form = document.querySelector(sel);
+                if (!form) return [];
+                return [...form.elements]
+                    .filter(el => el.willValidate)
+                    .map(el => ({
+                        name: el.name || "",
+                        type: el.type || "",
+                        checked: !!el.checked,
+                        valueMissing: !!(el.validity && el.validity.valueMissing),
+                        invalid: !el.checkValidity(),
+                        fallback: el.id || el.tagName,
+                    }));
+            }""",
+            FORM_SELECTOR,
         )
+        return refused_field_names(rows)
 
     def submit_disabled_now(self, selector: str) -> bool:
         """Re-read `aria-disabled` live — `plan.submit_disabled` is a scan-time
@@ -986,13 +1066,16 @@ class AshbyBrowserDriver(BrowserDriver):
     def _entry(self, field_id: str):
         """The field-entry wrapper — what a group or a combobox is found under.
 
-        `field_id` must already be the DOM's own `data-field-path`. The two
-        file fields are aliased to the canonical `resume` / `cover_letter`
-        ids everywhere else in the pipeline, so callers that upload a file
-        pass `FilePlan.name` — the real path `ashby.py` carried through —
-        rather than `.id`.
+        `field_id` is the DOM's own `data-field-path`, unless the plan gave
+        this field a `dom_path` — the education sub-fields are aliased to
+        Greenhouse ids that match no Ashby element. The two file fields are
+        aliased to the canonical `resume` / `cover_letter` ids everywhere else
+        in the pipeline, so callers that upload a file pass `FilePlan.name` —
+        the real path `ashby.py` carried through — rather than `.id`.
         """
-        return self.page.locator(self.ENTRY.format(id=field_id)).first
+        return self.page.locator(
+            self.ENTRY.format(id=self._dom_paths.get(field_id, field_id))
+        ).first
 
     def _upload_group(self, field_id: str):
         """Ashby's field entry doubles as the upload widget — a landed file
@@ -1008,7 +1091,12 @@ class AshbyBrowserDriver(BrowserDriver):
         going through the entry works for every kind including the combobox,
         which carries neither `id` nor `name`.
         """
-        return self._entry(field_id).locator(self.CONTROL)
+        return self._entry(field_id).locator(self._control_for(field_id))
+
+    def _control_for(self, field_id: str) -> str:
+        """`dom_control` when the plan named one, else every control in the
+        entry. The education block is one entry holding eight."""
+        return self._dom_controls.get(field_id) or self.CONTROL
 
     def goto(self, url: str) -> None:
         """No `<form>` to wait for — the base would time out on every board.
@@ -1230,11 +1318,8 @@ class AshbyBrowserDriver(BrowserDriver):
             self.page.keyboard.press("Enter")
 
 
-_DRIVER_NAMES = {
-    "greenhouse": "BrowserDriver",
-    "lever": "LeverBrowserDriver",
-    "ashby": "AshbyBrowserDriver",
-}
+#: Board -> driver class name, from the shared board table.
+_DRIVER_NAMES = dict(DRIVER_NAMES)
 
 
 def has_driver(ats: str) -> bool:
@@ -1375,6 +1460,13 @@ def _apply_field(driver, field: FieldPlan, result: FillResult,
         return FieldOutcome(field.id, "filled", before, ", ".join(labels))
 
     driver.fill_text(field.id, str(field.value))
+    if field.kind == "date":
+        # Ashby's react-datepicker opens on focus and nothing else dismisses
+        # it, so the overlay intercepts the click on every later field.
+        # Closed before the read-back, not after: the widget clears an
+        # unparseable value on blur, so only a value that survives the close
+        # is really there.
+        driver.close()
     after = driver.value_of(field.id)
     if after.strip() != str(field.value).strip():
         raise FillError(f"{field.id}: wrote {field.value!r} but the field reads {after!r}")
@@ -1424,6 +1516,8 @@ def fill_plan(plan: Plan, driver, answers: Answers | None = None,
     can rewrite fields. Everything else is then written over whatever is there.
     """
     result = result if result is not None else FillResult(form_url=plan.form_url)
+    if hasattr(driver, "learn_dom_aliases"):
+        driver.learn_dom_aliases(plan)
     driver.goto(plan.form_url)
 
     # `goto` waits only for the form element, but an upload widget is driven by

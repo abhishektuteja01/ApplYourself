@@ -11,7 +11,7 @@ from dataclasses import replace
 from datetime import datetime
 import pandas as pd
 
-from src.discovery.config import load_config
+from src.discovery.config import CADENCE_DAILY, due_today, load_config
 from src.discovery import cleaning
 from src.discovery.inbox import InboxSource
 from src.discovery.sources.jobspy_source import LinkedinSource, IndeedSource
@@ -58,6 +58,18 @@ class Context:
             return False
         return time.time() > self.deadline_ts
 
+def partial_path(shard_file):
+    """Where a lane cut short by the deadline banks its rows.
+
+    An underscore suffix, not a `.partial` extension: `cleaning._RAW_FILENAME_RE`
+    matches `<date>_<hhmm>(_<suffix>)?.parquet` with a suffix group that
+    excludes `.`, so `<run_id>_<source>_partial.parquet` still loads into the
+    raw window while `<run_id>_<source>.partial.parquet` would be silently
+    skipped. Do not rename this without re-reading that regex.
+    """
+    return shard_file.with_name(f"{shard_file.stem}_partial{shard_file.suffix}")
+
+
 def get_sources():
     return [InboxSource(), LinkedinSource(), IndeedSource(), GreenhouseSource(), LeverSource(),
             AshbySource(), WorkdaySource()]
@@ -97,7 +109,9 @@ def _run_source(source, ctx, run_id, scraped_date, shard_file) -> dict:
         df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
         df = validate_frame(df)
 
-    write_parquet(df, shard_file)
+    # A truncated lane's shard is banked under a name that says so, because
+    # the plain name is what --resume reads as "this lane is done".
+    write_parquet(df, partial_path(shard_file) if outcome["truncated"] else shard_file)
     outcome["rows"] = 0 if df.empty else len(df)
     # A permanent-only health strike (universe.update_health) misses this: a
     # wholesale transient block (429/403/400 across every request) still
@@ -141,19 +155,47 @@ def _render_source(name: str, outcome: dict) -> list[str]:
     lines.append("")
     return lines
 
-def _resolve_sources(config, only: list[str] | None) -> list[str]:
-    """Which sources run, in report order.
+def _resolve_sources(config, only: list[str] | None,
+                     run_date=None) -> tuple[list[str], list[tuple[str, str]]]:
+    """Which sources run, in report order, and which are skipped for cadence.
 
     `--source` is exhaustive: it replaces the config's `enabled` flags *and*
     manual's always-on default, so a narrowed run cannot quietly consume inbox
-    clips. `--source manual` names it back in.
+    clips. `--source manual` names it back in. It also overrides `cadence`:
+    naming a source is the explicit instruction to run it tonight, so a
+    narrowed run never reports a cadence skip.
+
+    A cadence skip is not the same as disabled. A disabled source is absent
+    from the report entirely; a skipped one gets a section saying so, because
+    the digest's medians and zero-streaks have to tell "we chose not to poll"
+    apart from "we polled and got nothing".
     """
     if only:
         wanted = set(only)
-        return [n for n in SOURCE_NAMES if n in wanted]
+        return [n for n in SOURCE_NAMES if n in wanted], []
+
     # manual has no config key: the inbox is local and free, so it is always on.
-    return [n for n in SOURCE_NAMES
-            if n == "manual" or (n in config.sources and config.sources[n].enabled)]
+    enabled = [n for n in SOURCE_NAMES
+               if n == "manual" or (n in config.sources and config.sources[n].enabled)]
+    if run_date is None:
+        return enabled, []
+
+    running, skipped = [], []
+    for name in enabled:
+        # getattr, not attribute access: `manual` has no config entry at all,
+        # and a config predating `cadence` reads as daily rather than crashing.
+        cadence = getattr(config.sources.get(name), "cadence", CADENCE_DAILY)
+        if due_today(cadence, run_date):
+            running.append(name)
+        else:
+            skipped.append((name, cadence))
+    return running, skipped
+
+
+def _render_skipped(name: str, cadence: str) -> list[str]:
+    """The `SKIPPED` section `run_report.py` has been able to parse since it
+    was written, and this is its first writer."""
+    return [f"### Source: {name}", f"SKIPPED (cadence: {cadence})", ""]
 
 
 def _cap_search_terms(verticals_config, max_terms: int):
@@ -211,12 +253,30 @@ def main(args=None):
         # config becomes a one-line message and a nonzero exit.
         sys.exit(f"ERROR: {e}")
 
+    # Preflight, before a single source is constructed. Both checks used to
+    # fire only inside cleaning, in main's finally -- i.e. after a full night
+    # of scraping. Probed unconditionally: cleaning runs even under
+    # --deadline-hours 0, so libpostal is required in that mode too.
+    try:
+        from src.discovery.location import _get_parse_address
+        _get_parse_address()
+    except RuntimeError as e:
+        sys.exit(f"ERROR: {e}")
+
+    problems = config.validate()
+    if problems:
+        sys.exit("ERROR: discovery config problems (run `uv run discovery-check`):\n"
+                 + "\n".join(f"  {p}" for p in problems))
+
     # The one place overrides are applied. Everything below this point reads a
     # normal config and a normal verticals config; the files on disk are
     # untouched, so nothing survives the run.
     if parsed.deadline_hours is not None:
         config.deadline_hours = parsed.deadline_hours
-    run_sources = _resolve_sources(config, parsed.source)
+    # Hoisted above _resolve_sources: cadence resolves against the run's own
+    # start date, so the date has to exist before the sources are chosen.
+    start_time = datetime.now()
+    run_sources, cadence_skipped = _resolve_sources(config, parsed.source, start_time.date())
     verticals_config = verticals.get_config()
     if parsed.max_terms is not None:
         verticals_config = _cap_search_terms(verticals_config, parsed.max_terms)
@@ -229,7 +289,6 @@ def main(args=None):
     if parsed.max_terms is not None:
         override_notes.append(f"`--max-terms {parsed.max_terms}`")
 
-    start_time = datetime.now()
     run_id = parsed.resume or current_run_id(start_time)
     scraped_date = pd.Timestamp(start_time).normalize()
 
@@ -294,8 +353,19 @@ def main(args=None):
         enabled_sources = []
 
     def pending(source) -> bool:
+        if not parsed.resume:
+            return True
         shard_file = JOBS_RAW / f"{run_id}_{source.name}.parquet"
-        if parsed.resume and shard_file.exists():
+        partial = partial_path(shard_file)
+        if partial.exists():
+            # The whole point of --resume. Dropped rather than kept alongside
+            # the retry's shard: the retry re-walks the same ground from the
+            # start, so keeping both would only duplicate its own rows.
+            log.info("Retrying %s: last run's shard was cut short by the deadline.",
+                     source.name)
+            partial.unlink()
+            return True
+        if shard_file.exists():
             log.info("Skipping %s, shard exists.", source.name)
             return False
         return True
@@ -344,9 +414,14 @@ def main(args=None):
                 f"(sources ran concurrently; {serial:.1f}s if summed serially)")
             report_lines.append("")
 
+        # Not on a resume: the original run's report already carries these
+        # sections, and the resume appends rather than rewrites.
+        skipped_by_name = {} if parsed.resume else dict(cadence_skipped)
         for name in fixed_order:
             if name in outcomes:
                 report_lines.extend(_render_source(name, outcomes[name]))
+            elif name in skipped_by_name:
+                report_lines.extend(_render_skipped(name, skipped_by_name[name]))
         if not_started:
             report_lines.append(
                 f"**DEADLINE REACHED** before {', '.join(not_started)} started — "

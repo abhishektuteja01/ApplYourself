@@ -10,8 +10,7 @@ from src import paths
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = paths.REPO_ROOT
-INBOX = REPO_ROOT / "inbox"
+INBOX = paths.INBOX
 
 def parse_inbox_file(path: Path) -> dict | None:
     """Parse one manual JD clip. Returns a JobSpy-shaped row dict, or None on
@@ -66,6 +65,8 @@ def parse_inbox_file(path: Path) -> dict | None:
         "job_type": meta.get("employment_type") or "",
         "job_level": meta.get("seniority") or "",
         "vertical": vertical,
+        "found_by_term": "",
+        "found_by_remote": False,
     }
 
 

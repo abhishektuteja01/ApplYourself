@@ -1,8 +1,11 @@
+"""Retrying HTTP fetchers shared by two consumers: discovery's ATS board
+scrapers and `src/apply/`'s live application-form fetching. The retry and
+timeout constants below govern both — a change here reaches live forms.
+"""
 from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime
 import requests
 
 log = logging.getLogger(__name__)
@@ -81,15 +84,14 @@ def _fetch(
             continue
         # 401/403 walls included: a live board behind Cloudflare must not be pruned.
         raise CareersError(f"HTTP {resp.status_code}: {url}", status=resp.status_code)
-    raise CareersError(f"exhausted retries: {url}")
+    # Unreachable: at attempt == MAX_RETRIES every branch above raises or
+    # returns. Kept as a guard.
+    raise CareersError(f"exhausted retries: {url}")  # pragma: no cover
 
 
-def fetch_json(
-    url: str,
-    timeout: int = REQUEST_TIMEOUT,
-    deadline_ts: float | None = None,
-):
-    """GET url -> parsed JSON. Retries 429/5xx (Retry-After capped at MAX_RETRY_AFTER)."""
+def _json_reader(url: str):
+    """A `read` for `_fetch` that decodes JSON. A 200 that is not JSON is a wall
+    or a wrong slug, not a blip, so it is permanent."""
     def read(resp):
         try:
             return resp.json()
@@ -98,7 +100,16 @@ def fetch_json(
                 f"invalid JSON body: {url}: {exc}", status=200, permanent=True
             ) from exc
 
-    return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts)
+    return read
+
+
+def fetch_json(
+    url: str,
+    timeout: int = REQUEST_TIMEOUT,
+    deadline_ts: float | None = None,
+):
+    """GET url -> parsed JSON. Retries 429/5xx (Retry-After capped at MAX_RETRY_AFTER)."""
+    return _fetch(url, _json_reader(url), timeout=timeout, deadline_ts=deadline_ts)
 
 
 def fetch_json_post(
@@ -113,15 +124,9 @@ def fetch_json_post(
     query parameters — everything else about the response (200/404/429/5xx)
     behaves the same as every other board API here.
     """
-    def read(resp):
-        try:
-            return resp.json()
-        except ValueError as exc:
-            raise CareersError(
-                f"invalid JSON body: {url}: {exc}", status=200, permanent=True
-            ) from exc
-
-    return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts, json_body=json_body)
+    return _fetch(
+        url, _json_reader(url), timeout=timeout, deadline_ts=deadline_ts, json_body=json_body
+    )
 
 
 def fetch_text(
@@ -142,19 +147,3 @@ def fetch_text(
         return text
 
     return _fetch(url, read, timeout=timeout, deadline_ts=deadline_ts)
-
-def iso_date(value) -> date | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-    except ValueError:
-        return None
-
-def ms_date(value) -> date | None:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return None
-    try:
-        return datetime.fromtimestamp(value / 1000).date()
-    except (ValueError, OSError, OverflowError):
-        return None

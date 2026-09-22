@@ -132,6 +132,13 @@ work_authorization:
 # stuck and parks the role if it did not.
 education:
   school: "Example University"
+  # Optional. How a board's own list words this school, when that differs from
+  # the line above — Ashby's combobox stacks name/country/domain into one
+  # option and can offer several same-named schools. Tried in order after
+  # `school`, exact-match only; a board offering none of them parks the role
+  # rather than guessing.
+  # school_alternates:
+  #   - "Example University\nUnited States\nexample.edu"
   degree: "Bachelor's Degree"
   discipline: "Industrial Engineering"
   start_year: 2019

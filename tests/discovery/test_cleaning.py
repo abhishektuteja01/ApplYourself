@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import re
 import warnings
 from pathlib import Path
@@ -21,12 +22,13 @@ from src.discovery import cleaning
 from src.discovery.cleaning import (
     CLEAN_COLUMNS,
     apply_state_yaml,
+    backfill_company_from_url,
+    company_from_url,
     classify_vertical_from_title,
+    coerce_schema,
     compute_job_id,
     drop_short_jd,
     drop_stale,
-    exact_dedupe,
-    near_dedupe,
     normalize_company,
     normalize_title,
     project_raw,
@@ -35,6 +37,22 @@ from src.discovery.cleaning import (
 
 
 # ---------- helpers ----------
+
+_DEFAULT_JOB_URL = "https://example.com/job/1"
+
+
+def _distinct_urls(df: pd.DataFrame, salt: str = "") -> pd.DataFrame:
+    """An identical url is evidence enough to merge on its own, so the shared
+    placeholder gets a per-row suffix. Keyed on position, so the same role
+    re-scraped into a second shard under the same salt keeps its url."""
+    if df.empty:
+        return df
+    df["job_url"] = [
+        f"{url}/{salt}{i}" if url == _DEFAULT_JOB_URL else url
+        for i, url in enumerate(df["job_url"])
+    ]
+    return df
+
 
 def _raw_row(**overrides) -> dict:
     base = {
@@ -45,7 +63,7 @@ def _raw_row(**overrides) -> dict:
         "is_remote": False,
         "date_posted": pd.Timestamp("2026-06-01"),
         "scraped_date": pd.Timestamp("2026-06-06"),
-        "job_url": "https://example.com/job/1",
+        "job_url": _DEFAULT_JOB_URL,
         "job_url_direct": "",
         "description": "x" * 250,
         "min_amount": float("nan"),
@@ -57,6 +75,11 @@ def _raw_row(**overrides) -> dict:
     }
     base.update(overrides)
     return base
+
+
+def _dedupe(df: pd.DataFrame) -> pd.DataFrame:
+    """Survivors only — the merge report is asserted separately."""
+    return cleaning.dedupe(df)[0]
 
 
 def _clean_df(rows: list[dict]) -> pd.DataFrame:
@@ -105,7 +128,7 @@ def _make_raw_parquet(
 ) -> Path:
     raw_dir = tmp_path / "jobs" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame([_raw_row(**r) for r in rows])
+    df = _distinct_urls(pd.DataFrame([_raw_row(**r) for r in rows]))
     df.to_parquet(raw_dir / f"{run_id}.parquet", index=False)
     return raw_dir
 
@@ -174,7 +197,7 @@ def test_job_id_url_independent():
         {"company_normalized": company_norm, "title_normalized": title_norm,
          "url": "https://board-b.example.com/job/9", "jd_text": "longer " * 200},
     ])
-    deduped = exact_dedupe(df)
+    deduped = _dedupe(df)
     assert len(deduped) == 1
     assert deduped.iloc[0]["job_id"] == compute_job_id(company_norm, title_norm)
 
@@ -214,7 +237,7 @@ def test_normalize_title_seniority_preserved():
     assert "principal" in normalize_title("Principal Business Analyst")
 
 
-# ---------- T5: rapidfuzz near-dedupe boundary + longest-jd wins ----------
+# ---------- T5: dedupe title boundary + longest-jd wins ----------
 
 def test_rapidfuzz_dedupe_boundary():
     collapse_a = "widget functional consultant"
@@ -235,7 +258,7 @@ def test_rapidfuzz_dedupe_boundary():
         {"company_normalized": "beta", "title_normalized": keep_b,
          "jd_text": "b" * 300},
     ])
-    out = near_dedupe(df)
+    out = _dedupe(df)
     acme = out[out["company_normalized"] == "acme"]
     beta = out[out["company_normalized"] == "beta"]
     assert len(acme) == 1, "near-dupes within a company must collapse"
@@ -253,13 +276,13 @@ def test_rapidfuzz_dedupe_boundary():
     ("data engineer", "lead data engineer"),
     ("widget consultant", "senior widget consultant"),
 ])
-def test_near_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
+def test_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
     assert fuzz.WRatio(title_a, title_b) >= 90, "pair must be a ratio near-dup"
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": title_a, "jd_text": "a" * 300},
         {"company_normalized": "acme", "title_normalized": title_b, "jd_text": "a" * 500},
     ])
-    out = near_dedupe(df)
+    out = _dedupe(df)
     assert sorted(out["title_normalized"]) == sorted([title_a, title_b])
 
 
@@ -276,16 +299,16 @@ def test_near_dedupe_keeps_titles_that_differ_only_by_level(title_a, title_b):
     ("data analyst intern", "data analyst internship"),
     ("widget engineer co op", "widget engineer coop"),
 ])
-def test_near_dedupe_collapses_abbreviated_spellings_of_one_level(title_a, title_b):
+def test_dedupe_collapses_abbreviated_spellings_of_one_level(title_a, title_b):
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": title_a, "jd_text": "a" * 300},
         {"company_normalized": "acme", "title_normalized": title_b, "jd_text": "a" * 500},
     ])
     assert fuzz.WRatio(title_a, title_b) >= 90, "pair must be a ratio near-dup"
-    assert len(near_dedupe(df)) == 1
+    assert len(_dedupe(df)) == 1
 
 
-def test_near_dedupe_still_collapses_when_levels_match():
+def test_dedupe_still_collapses_when_levels_match():
     """The guard compares level tokens, so two titles that share one still
     collapse on ratio."""
     df = _clean_df([
@@ -294,7 +317,7 @@ def test_near_dedupe_still_collapses_when_levels_match():
         {"company_normalized": "acme", "title_normalized": "senior widget consultants",
          "jd_text": "a" * 500},
     ])
-    assert len(near_dedupe(df)) == 1
+    assert len(_dedupe(df)) == 1
 
 
 # ---------- T6: drop_short_jd at exactly 200 chars ----------
@@ -305,8 +328,23 @@ def test_drop_short_jd():
         {"title_normalized": "t2", "jd_text": "x" * 200},
         {"title_normalized": "t3", "jd_text": "x" * 201},
     ])
-    out = drop_short_jd(df)
+    out, empty_by_source = drop_short_jd(df)
     assert set(out["title_normalized"]) == {"t2", "t3"}
+    # all three had text, so the empty-description tally stays empty
+    assert empty_by_source == {}
+
+
+def test_drop_short_jd_tallies_empty_descriptions():
+    df = _clean_df([
+        {"title_normalized": "t1", "jd_text": ""},
+        {"title_normalized": "t2", "jd_text": None},
+        {"title_normalized": "t3", "jd_text": "x" * 199},
+        {"title_normalized": "t4", "jd_text": "x" * 200},
+    ])
+    out, empty_by_source = drop_short_jd(df)
+    assert set(out["title_normalized"]) == {"t4"}
+    # t3 was short but fetched; only the two blank ones are counted
+    assert empty_by_source == {"manual": 2}
 
 
 # ---------- T7: drop_stale + posted_date_missing flag ----------
@@ -359,22 +397,22 @@ def test_drop_stale_survives_mixed_offset_strings():
     assert set(out["title_normalized"]) == {"utc", "est"}
 
 
-# ---------- T8: exact_dedupe keeps longest jd_text ----------
+# ---------- T8: dedupe keeps longest jd_text ----------
 
-def test_exact_dedupe_keeps_longest_jd():
+def test_dedupe_keeps_longest_jd():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "short " * 40, "url": "https://example.com/short"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "longer description text " * 60, "url": "https://example.com/long"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert len(out) == 1
     assert "longer" in out["jd_text"].iloc[0]
     assert out["url"].iloc[0] == "https://example.com/long"
 
 
-def test_exact_dedupe_prefers_applyable_url_over_longer_jd():
+def test_dedupe_prefers_applyable_url_over_longer_jd():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator copy with boilerplate " * 60,
@@ -383,19 +421,19 @@ def test_exact_dedupe_prefers_applyable_url_over_longer_jd():
          "jd_text": "board copy " * 50,
          "url": "https://job-boards.greenhouse.io/acme/jobs/456"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert len(out) == 1
     assert out["url"].iloc[0] == "https://job-boards.greenhouse.io/acme/jobs/456"
 
 
-def test_exact_dedupe_applyable_preference_does_not_change_job_id():
+def test_dedupe_applyable_preference_does_not_change_job_id():
     rows = [
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator " * 80, "url": "https://www.linkedin.com/jobs/view/123"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "board " * 10, "url": "https://jobs.lever.co/acme/789"},
     ]
-    out = exact_dedupe(_clean_df(rows))
+    out = _dedupe(_clean_df(rows))
     assert compute_job_id("acme", "widget functional consultant") == compute_job_id(
         out["company_normalized"].iloc[0], out["title_normalized"].iloc[0])
 
@@ -406,28 +444,69 @@ def test_exact_dedupe_applyable_preference_does_not_change_job_id():
     "https://jobs.lever.co/acme/abc",
     "https://jobs.ashbyhq.com/acme/abc",
 ])
-def test_exact_dedupe_recognises_each_board_host(applyable):
+def test_dedupe_recognises_each_board_host(applyable):
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "aggregator " * 80, "url": "https://www.indeed.com/viewjob?jk=1"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "board " * 5, "url": applyable},
     ])
-    assert exact_dedupe(df)["url"].iloc[0] == applyable
+    assert _dedupe(df)["url"].iloc[0] == applyable
 
 
-def test_exact_dedupe_falls_back_to_jd_len_when_neither_is_applyable():
+def test_dedupe_gh_jid_careers_page_beats_an_aggregator():
+    # A Greenhouse posting on the company's own careers host: no board
+    # hostname, but ?gh_jid= makes it auto-submittable all the same.
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator " * 80, "url": "https://www.linkedin.com/jobs/view/1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board " * 5, "url": "https://acme.com/jobs/search?gh_jid=8044460"},
+    ])
+    assert _dedupe(df)["url"].iloc[0] == "https://acme.com/jobs/search?gh_jid=8044460"
+
+
+@pytest.mark.parametrize("applyable", [
+    "https://boards.eu.greenhouse.io/acme/jobs/1",
+    "https://job-boards.eu.greenhouse.io/acme/jobs/1",
+    "https://jobs.eu.lever.co/acme/12345678-abcd-4bcd-8bcd-1234567890ab",
+])
+def test_dedupe_recognises_eu_board_hosts(applyable):
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "aggregator " * 80, "url": "https://www.indeed.com/viewjob?jk=1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "board " * 5, "url": applyable},
+    ])
+    assert _dedupe(df)["url"].iloc[0] == applyable
+
+
+def test_dedupe_does_not_match_a_lookalike_host():
+    # The old substring test read "greenhouse.io" anywhere in the URL, so a
+    # spoofed host outranked the real aggregator row.
+    df = _clean_df([
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "spoof " * 5,
+         "url": "https://evilgreenhouse.io.example.com/acme/jobs/1"},
+        {"company_normalized": "acme", "title_normalized": "widget functional consultant",
+         "jd_text": "longer aggregator body " * 60,
+         "url": "https://www.linkedin.com/jobs/view/1"},
+    ])
+    assert _dedupe(df)["url"].iloc[0] == "https://www.linkedin.com/jobs/view/1"
+
+
+def test_dedupe_falls_back_to_jd_len_when_neither_is_applyable():
     df = _clean_df([
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "short " * 10, "url": "https://www.linkedin.com/jobs/view/1"},
         {"company_normalized": "acme", "title_normalized": "widget functional consultant",
          "jd_text": "much longer body " * 60, "url": "https://www.indeed.com/viewjob?jk=2"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert out["url"].iloc[0] == "https://www.indeed.com/viewjob?jk=2"
 
 
-def test_exact_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
+def test_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
     # An indeed-sourced row whose job_url_direct resolved to a board: url is
     # what is ranked, not source.
     df = _clean_df([
@@ -438,14 +517,14 @@ def test_exact_dedupe_aggregator_url_resolved_to_a_board_counts_as_applyable():
          "jd_text": "indeed copy " * 5, "url": "https://job-boards.greenhouse.io/acme/jobs/9",
          "source": "indeed"},
     ])
-    out = exact_dedupe(df)
+    out = _dedupe(df)
     assert out["source"].iloc[0] == "indeed"
 
 
 def test_blank_company_rows_are_dropped_not_collapsed(tmp_path):
     """A null company from JobSpy normalizes to "", so job_id becomes a function
     of the title alone and two rows from different employers collide — one is
-    then silently deleted by exact_dedupe."""
+    then silently deleted by dedupe."""
     raw_dir = _make_raw_parquet(tmp_path, [
         {"company": None, "title": "Widget Functional Consultant",
          "description": "x" * 300, "date_posted": pd.Timestamp("2026-06-01")},
@@ -465,6 +544,111 @@ def test_blank_company_rows_are_dropped_not_collapsed(tmp_path):
     assert list(out["company_normalized"]) == ["acme"]
     report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
     assert "after blank-company drop: 1 (dropped 2)" in report
+
+
+# ---------- step 0b: recover a blank company from the board tenant slug ----------
+
+_ASHBY_URL = "https://jobs.ashbyhq.com/absentia-labs/f8cb711d-1234-4c8d-b5c3-c75a6f95eb3b"
+
+
+@pytest.mark.parametrize("url,expected", [
+    (_ASHBY_URL, "Absentia Labs"),
+    # percent-encoded and mixed-case slugs: decoded, capitals left as written
+    ("https://jobs.ashbyhq.com/Edison%20Scientific/a510a899-a4a3-4c8d-b5c3-c75a6f95eb3b",
+     "Edison Scientific"),
+    ("https://jobs.lever.co/mojave-energy-systems/f8cb711d-1234-4c8d-b5c3-c75a6f95eb3b",
+     "Mojave Energy Systems"),
+    # Workday's tenant is the host label, not a path segment
+    ("https://genpact.wd108.myworkdayjobs.com/External_Careers/job/USA/Engineer_JR-1",
+     "Genpact"),
+    # no board named -> nothing recovered
+    ("https://www.indeed.com/viewjob?jk=abc123", ""),
+    ("https://recruiting.paylocity.com/recruiting/jobs/Details/1234/Engineer", ""),
+    ("https://example.com/job/1", ""),
+    ("", ""),
+    # a careers page identified only by ?gh_jid= has no tenant slug, and its
+    # host is as likely an unlisted ATS as the employer
+    ("https://careers.example.com/openings?gh_jid=4400614009", ""),
+    # too short to trust as a name
+    ("https://nc.wd108.myworkdayjobs.com/NC_Careers/job/Wake-County/Analyst_JR-1", ""),
+])
+def test_company_from_url(url, expected):
+    assert company_from_url(url) == expected
+
+
+def test_backfill_leaves_a_row_that_already_has_a_company():
+    df = project_raw(pd.DataFrame([_raw_row(company="Acme Inc", job_url_direct=_ASHBY_URL)]))
+    out, recovered = backfill_company_from_url(df)
+    assert recovered == 0
+    assert list(out["company"]) == ["Acme Inc"]
+
+
+def test_blank_company_recovered_from_a_board_url(tmp_path):
+    raw_dir = _make_raw_parquet(tmp_path, [
+        {"company": None, "job_url_direct": _ASHBY_URL},
+        # unlisted ATS host: no tenant we can trust, dropped as before
+        {"company": None, "title": "Widget Data Consultant",
+         "job_url_direct": "https://recruiting.paylocity.com/recruiting/jobs/Details/1/W"},
+        # indeed's own page carries no employer, dropped as before
+        {"company": None, "title": "Widget Cloud Consultant",
+         "job_url_direct": "https://www.indeed.com/viewjob?jk=abc123"},
+        {"company": "Acme Inc", "title": "Widget Platform Consultant"},
+    ])
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    assert set(out["company_normalized"]) == {"absentia labs", "acme"}
+    report = (tmp_path / "jobs" / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
+    assert "after blank-company drop: 2 (dropped 2)" in report
+
+
+def test_recovery_does_not_move_an_existing_job_id(tmp_path):
+    """The recovered row is new; the row that already had a company keeps the
+    job_id it had before step 0b existed."""
+    rows = [
+        {"company": "Acme Inc", "title": "Widget Platform Consultant",
+         "job_url_direct": _ASHBY_URL},
+        {"company": None, "title": "Widget Functional Consultant",
+         "job_url_direct": _ASHBY_URL.replace("f8cb711d", "a1cb711d")},
+    ]
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=_make_raw_parquet(tmp_path, rows),
+        clean_dir=tmp_path / "jobs",
+        runs_dir=tmp_path / "jobs" / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    by_company = dict(zip(out["company_normalized"], out["job_id"]))
+    assert by_company["acme"] == compute_job_id("acme", "widget platform consultant")
+    assert by_company["absentia labs"] == compute_job_id(
+        "absentia labs", "widget functional consultant")
+
+
+def test_blank_company_drop_logs_one_summary_not_one_line_per_row(tmp_path, caplog):
+    rows = [
+        {"company": None, "title": f"Widget Functional Consultant {i}",
+         "job_url_direct": "https://www.indeed.com/viewjob?jk=%d" % i}
+        for i in range(5)
+    ] + [{"company": None, "job_url_direct": _ASHBY_URL}]
+    raw_dir = _make_raw_parquet(tmp_path, rows)
+    with caplog.at_level(logging.WARNING, logger="src.discovery.cleaning"):
+        cleaning.run(
+            run_id="2026-06-06_1000",
+            raw_dir=raw_dir,
+            clean_dir=tmp_path / "jobs",
+            runs_dir=tmp_path / "jobs" / "runs",
+            pipeline_dir=tmp_path / "pipeline",
+            today=pd.Timestamp("2026-06-06"),
+        )
+    summaries = [r.getMessage() for r in caplog.records if "blank company" in r.getMessage()]
+    assert summaries == ["blank company: recovered 1 from board tenant slugs, "
+                         "dropped 5 (manual=5)"]
 
 
 # ---------- T9: end-to-end clean schema is exactly the canonical schema ----------
@@ -487,6 +671,51 @@ def test_clean_schema_closed(tmp_path):
     assert list(out.columns) == CLEAN_COLUMNS
     written = pd.read_parquet(tmp_path / "jobs" / "clean.parquet")
     assert list(written.columns) == CLEAN_COLUMNS
+
+
+def test_coerce_schema_raises_on_a_missing_column():
+    full = pd.DataFrame([{c: "" for c in CLEAN_COLUMNS}])
+    with pytest.raises(KeyError, match="sponsorship_label"):
+        coerce_schema(full.drop(columns=["sponsorship_label"]))
+    out = coerce_schema(full.assign(_scratch=1)[["_scratch", *reversed(CLEAN_COLUMNS)]])
+    assert list(out.columns) == CLEAN_COLUMNS
+
+
+# ---------- search-term attribution: passthrough + legacy backfill ----------
+
+def test_project_raw_backfills_the_attribution_columns_on_legacy_shards():
+    """`_raw_row` is the pre-column shard shape: neither column exists. The
+    archive is 100% such shards, and cleaning must not raise on them."""
+    raw = pd.DataFrame([_raw_row()])
+    assert "found_by_term" not in raw.columns
+    assert "found_by_remote" not in raw.columns
+    out = project_raw(raw)
+    assert out["found_by_term"].iloc[0] == ""
+    assert out["found_by_remote"].dtype == bool
+    assert bool(out["found_by_remote"].iloc[0]) is False
+
+
+def test_project_raw_keeps_the_attribution_a_scrape_already_set():
+    out = project_raw(pd.DataFrame([
+        _raw_row(found_by_term="ai engineer", found_by_remote=True)]))
+    assert out["found_by_term"].iloc[0] == "ai engineer"
+    assert bool(out["found_by_remote"].iloc[0]) is True
+
+
+def test_project_raw_nulls_in_found_by_remote_become_false_not_true():
+    """The boolean path, not `string_defaults`: NaN is truthy, so the null
+    fill has to happen before the cast."""
+    out = project_raw(pd.DataFrame([
+        _raw_row(found_by_remote=None),
+        _raw_row(found_by_remote=True, title="Gizmo Business Analyst"),
+    ]))
+    assert out["found_by_remote"].dtype == bool
+    assert list(out["found_by_remote"]) == [False, True]
+
+
+def test_attribution_columns_are_in_the_closed_clean_schema():
+    assert "found_by_term" in CLEAN_COLUMNS
+    assert "found_by_remote" in CLEAN_COLUMNS
 
 
 # ---------- vertical column: discovery-set passthrough + legacy backfill ----------
@@ -690,7 +919,7 @@ def test_report_dropped_stats_chain_off_predecessor(tmp_path):
         """Return (after, dropped) for a report line."""
         line = next(ln for ln in report.splitlines() if ln.startswith(f"- {label}"))
         after = int(re.search(r":\s*(\d+)", line).group(1))
-        dropped = int(re.search(r"\(dropped (\d+)\)", line).group(1))
+        dropped = int(re.search(r"\((?:dropped|merged) (\d+)\)", line).group(1))
         return after, dropped
 
     raw_rows = int(re.search(r"- raw rows loaded: (\d+)", report).group(1))
@@ -707,8 +936,8 @@ def test_report_dropped_stats_chain_off_predecessor(tmp_path):
 
     # Whole chain must telescope: each dropped == predecessor_after - after.
     prev = short_after
-    for label in ("after stale drop", "after exact dedupe", "after near dedupe",
-                  "after seen-ledger expiry", "after location filter"):
+    for label in ("after stale drop", "after location filter", "after dedupe",
+                  "after seen-ledger expiry"):
         after, dropped = stage(label)
         assert dropped == prev - after, f"{label}: {dropped} != {prev} - {after}"
         prev = after
@@ -793,6 +1022,48 @@ def test_drop_stale_tracked_exemption_is_per_row():
     assert set(out["title_normalized"]) == {"kept", "fresh"}
 
 
+def test_board_max_age_days_zero_drops_nothing():
+    """The default is off: an ancient board row still survives."""
+    today = pd.Timestamp("2026-07-15")
+    df = pd.DataFrame([
+        {"source": "greenhouse", "posted_date": pd.Timestamp("2023-05-30")},
+        {"source": "lever", "posted_date": pd.Timestamp("2024-03-22")},
+    ])
+    out = drop_stale(df, today=today, board_max_age_days=0)
+    assert len(out) == 2
+
+
+def test_board_max_age_days_caps_exempt_sources_only():
+    today = pd.Timestamp("2026-07-15")
+    df = pd.DataFrame([
+        {"source": "greenhouse", "posted_date": pd.Timestamp("2025-01-01")},  # past the cap
+        {"source": "greenhouse", "posted_date": pd.Timestamp("2026-04-01")},  # within it
+        {"source": "manual", "posted_date": pd.Timestamp("2025-01-01")},      # past the cap
+        {"source": "greenhouse", "posted_date": pd.NaT},                      # undated, kept
+        {"source": "linkedin", "posted_date": pd.Timestamp("2026-07-10")},    # never exempt anyway
+    ])
+    out = drop_stale(df, today=today, board_max_age_days=365)
+    assert list(out["posted_date"]) == [
+        pd.Timestamp("2026-04-01"), pd.NaT, pd.Timestamp("2026-07-10"),
+    ]
+
+
+def test_board_max_age_days_never_drops_a_tracked_row():
+    today = pd.Timestamp("2026-07-15")
+    tracked = compute_job_id("acme", "tracked role")
+    df = _clean_df([
+        {"source": "greenhouse", "title_normalized": "tracked role",
+         "posted_date": pd.Timestamp("2023-05-30")},
+        {"source": "greenhouse", "title_normalized": "untracked role",
+         "posted_date": pd.Timestamp("2023-05-30")},
+    ])
+    out = drop_stale(
+        df, today=today, board_max_age_days=365,
+        tracked_ids=frozenset({tracked}),
+    )
+    assert set(out["title_normalized"]) == {"tracked role"}
+
+
 # ---------- T13: seen-ledger ----------
 
 def _ledger(rows: list[dict]) -> pd.DataFrame:
@@ -863,11 +1134,11 @@ def test_update_seen_ledger_purged_id_resurfaces_as_new(tmp_path):
 def test_apply_expiry_tiers_and_tracked_exemption():
     today = pd.Timestamp("2026-07-15")
     ledger = _ledger([
-        {"job_id": "low11111", "first_seen": "2026-06-01"},                    # 44d, low tier -> expired
+        {"job_id": "low11111", "first_seen": "2026-06-01", "last_score": 40.0},  # 44d, low tier -> expired
         {"job_id": "high1111", "first_seen": "2026-06-01", "last_score": 85.0},  # 44d, high tier -> visible
-        {"job_id": "trak1111", "first_seen": "2026-06-01"},                    # expired but tracked
-        {"job_id": "manu1111", "first_seen": "2026-06-01"},                    # expired but re-added by hand
-        {"job_id": "new11111", "first_seen": "2026-07-10"},                    # 5d -> visible
+        {"job_id": "trak1111", "first_seen": "2026-06-01", "last_score": 40.0},  # expired but tracked
+        {"job_id": "manu1111", "first_seen": "2026-06-01", "last_score": 40.0},  # expired but re-added by hand
+        {"job_id": "new11111", "first_seen": "2026-07-10", "last_score": 40.0},  # 5d -> visible
     ])
     df = _clean_df([
         {"job_id": "low11111", "title_normalized": "a", "source": "linkedin"},
@@ -879,6 +1150,24 @@ def test_apply_expiry_tiers_and_tracked_exemption():
     ])
     out = cleaning.apply_expiry(df, ledger, today)
     assert sorted(out["job_id"]) == ["high1111", "manu1111", "new11111", "trak1111"]
+
+
+def test_apply_expiry_never_scored_gets_the_high_tier():
+    """NaN last_score means never judged, not judged badly: the row stays
+    visible past the low tier, but only to RETENTION_HIGH_DAYS."""
+    today = pd.Timestamp("2026-07-15")
+    ledger = _ledger([
+        {"job_id": "unsc1111", "first_seen": "2026-06-25"},                     # 20d, unscored
+        {"job_id": "scor1111", "first_seen": "2026-06-25", "last_score": 40.0},  # 20d, scored low
+        {"job_id": "oldu1111", "first_seen": "2026-05-06"},                     # 70d, unscored
+    ])
+    df = _clean_df([
+        {"job_id": "unsc1111", "title_normalized": "a", "source": "linkedin"},
+        {"job_id": "scor1111", "title_normalized": "b", "source": "linkedin"},
+        {"job_id": "oldu1111", "title_normalized": "c", "source": "linkedin"},
+    ])
+    out = cleaning.apply_expiry(df, ledger, today)
+    assert sorted(out["job_id"]) == ["unsc1111"]
 
 
 def test_load_raw_window_shards(tmp_path):
@@ -995,7 +1284,8 @@ def test_project_raw_remote_flag_no_future_warning():
 
 def test_apply_expiry_boundary_day_still_visible():
     # visible THROUGH first_seen + 15d; dropped strictly after
-    ledger = _ledger([{"job_id": "edge1111", "first_seen": "2026-07-01"}])
+    ledger = _ledger([{"job_id": "edge1111", "first_seen": "2026-07-01",
+                       "last_score": 40.0}])
     df = _clean_df([{"job_id": "edge1111", "source": "linkedin"}])
     assert len(cleaning.apply_expiry(df, ledger, pd.Timestamp("2026-07-16"))) == 1
     assert len(cleaning.apply_expiry(df, ledger, pd.Timestamp("2026-07-17"))) == 0
@@ -1125,6 +1415,77 @@ def test_location_filter_continents_shorthand():
 
     out = filter_and_canonicalize_location(df, cfg)
     assert set(out["job_id"]) == {"kept_berlin", "kept_lisbon"}
+
+
+def test_location_allowlist_cities_filter_outside_the_us():
+    # `cities` used to be a silent no-op for non-US rows: parse_location
+    # erased the city text, so the cities branch never fired.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["Germany"], cities=["Berlin"])
+    )
+    df = pd.DataFrame({
+        "job_id": ["kept_berlin", "drop_munich", "drop_hamburg"],
+        "location": ["Berlin, Germany", "Munich, Germany", "Hamburg, Germany"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"kept_berlin"}
+    # A city with no state canonicalizes as "city, country".
+    assert list(out["location"]) == ["Berlin, Germany"]
+
+
+def test_us_canonical_location_text_is_unchanged():
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["United States"]))
+    df = pd.DataFrame({
+        "job_id": ["austin", "portland", "remote_austin"],
+        "location": ["Austin, TX", "Portland, OR", "Remote - Austin, TX"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert list(out["location"]) == ["Austin, TX", "Portland, OR", "Remote - Austin, TX"]
+
+
+def test_region_token_rows_are_dropped_or_kept_by_the_allowlist():
+    # `EMEA` is a positive statement that the role is not in the US, so it
+    # goes through the candidate_countries branch rather than "nothing
+    # parsed -> keep".
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    df = pd.DataFrame({
+        "job_id": ["emea", "apac", "latam", "anz"],
+        "location": ["EMEA", "APAC", "LATAM", "ANZ"],
+    })
+
+    us_only = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["United States"]))
+    assert list(filter_and_canonicalize_location(df, us_only)["job_id"]) == []
+
+    eu = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["Germany"]))
+    assert set(filter_and_canonicalize_location(df, eu)["job_id"]) == {"emea"}
+
+
+def test_ambiguous_location_strings_are_still_kept():
+    # Blank / Worldwide / Anywhere / Remote say nothing about the country,
+    # so the conservative keep stands.
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(location_allowlist=LocationAllowlist(countries=["United States"]))
+    df = pd.DataFrame({
+        "job_id": ["blank", "worldwide", "anywhere", "remote"],
+        "location": ["", "Worldwide", "Anywhere", "Remote"],
+    })
+
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"blank", "worldwide", "anywhere", "remote"}
+    assert out["_loc_unresolved"].all()
 
 
 def test_out_of_allowlist_rows_never_enter_the_seen_ledger(tmp_path, monkeypatch):
@@ -1433,3 +1794,271 @@ def test_compound_classified_titles_survive_the_title_gate(cfg):
     assert "Cog Learning Platform Engineer" in titles
     # ...but a bare "Cog Learning" title is still out-of-lane by charter.
     assert "Cog Learning Engineer" not in titles
+
+
+# ---------- D3.1: the streamed window equals the concatenated one ----------
+
+def _legacy_load_filtered_window(raw_dir, cfg_, pipeline_dir, today=None,
+                                 max_age_days=cleaning.MAX_AGE_DAYS):
+    """The pre-D3.1 order: concatenate the whole 14-day window first, then run
+    steps 0-3b once over it. Same filters, same functions — only the number of
+    frames they see differs, which is exactly what this test pins."""
+    from src import verticals as _verticals
+    from src.state_io import load_state_index as _load_state_index
+
+    stats = cleaning._new_window_stats()
+    raw = cleaning.load_raw_window(raw_dir, today=today, max_age_days=max_age_days)
+    df = cleaning._filter_shard(
+        raw, stats, cfg_, _verticals.get_config(),
+        frozenset(_load_state_index(pipeline_dir)), today,
+    )
+    return df, stats
+
+
+def _write_window_shards(raw_dir: Path) -> None:
+    """Five shards spread across the window, each carrying rows that different
+    steps drop, plus a duplicate pair that only survives to dedupe because
+    dedupe still sees the whole window."""
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    shards = {
+        # in-window, all keepers + one cross-shard duplicate
+        "2026-06-02_0100": [
+            {"company": "Acme Inc", "title": "Widget Functional Consultant",
+             "description": "a" * 400, "date_posted": pd.Timestamp("2026-06-01"),
+             "location": "Austin, TX", "site": "linkedin",
+             "job_url": "https://www.linkedin.com/jobs/view/1"},
+            {"company": "Beta LLC", "title": "Gizmo Business Analyst",
+             "description": "b" * 400, "date_posted": pd.Timestamp("2026-06-01"),
+             "location": "New York, NY", "site": "indeed"},
+        ],
+        # every row here is dropped by one filter or another -> shard empties out
+        "2026-06-03_0100": [
+            {"company": None, "title": "Widget Functional Consultant",
+             "description": "c" * 400, "date_posted": pd.Timestamp("2026-06-02"),
+             "location": "Austin, TX", "site": "linkedin"},
+            {"company": "Gamma Corp", "title": "Widget Functional Consultant",
+             "description": "short", "date_posted": pd.Timestamp("2026-06-02"),
+             "location": "Austin, TX", "site": "linkedin"},
+            {"company": "Delta Ltd", "title": "Widget Functional Consultant",
+             "description": "d" * 400, "date_posted": pd.Timestamp("2026-01-02"),
+             "location": "Austin, TX", "site": "linkedin"},
+            {"company": "Epsilon", "title": "Widget Functional Consultant",
+             "description": "e" * 400, "date_posted": pd.Timestamp("2026-06-02"),
+             "location": "Berlin, Germany", "site": "linkedin"},
+        ],
+        # a zero-row shard
+        "2026-06-04_0100": [],
+        # the other half of the cross-shard duplicate, plus a near-dup title
+        "2026-06-05_0100": [
+            {"company": "Acme, Inc.", "title": "Widget Functional Consultant",
+             "description": "a" * 800, "date_posted": pd.Timestamp("2026-06-04"),
+             "location": "Austin, TX", "site": "indeed"},
+            {"company": "Beta LLC", "title": "Gizmo Business Analyst II",
+             "description": "b" * 500, "date_posted": pd.Timestamp("2026-06-04"),
+             "location": "New York, NY", "site": "indeed"},
+        ],
+        # out of the window entirely
+        "2026-05-01_0100": [
+            {"company": "Zeta", "title": "Widget Functional Consultant",
+             "description": "z" * 400, "date_posted": pd.Timestamp("2026-05-01"),
+             "location": "Austin, TX", "site": "linkedin"},
+        ],
+    }
+    for run_id, rows in shards.items():
+        df = (_distinct_urls(pd.DataFrame([_raw_row(**r) for r in rows]), salt=f"{run_id}-")
+              if rows else pd.DataFrame(columns=list(_raw_row().keys())))
+        df.to_parquet(raw_dir / f"{run_id}.parquet", index=False)
+
+
+def _run_into(tmp_path: Path, raw_dir: Path, name: str) -> tuple[pd.DataFrame, str]:
+    out = cleaning.run(
+        run_id="2026-06-06_1000",
+        raw_dir=raw_dir,
+        clean_dir=tmp_path / name,
+        runs_dir=tmp_path / name / "runs",
+        pipeline_dir=tmp_path / "pipeline",
+        today=pd.Timestamp("2026-06-06"),
+    )
+    report = (tmp_path / name / "runs" / "2026-06-06_1000.md").read_text(encoding="utf-8")
+    return out, report
+
+
+def test_streamed_window_matches_the_concatenated_window(tmp_path, monkeypatch):
+    """D3.1: filtering per shard at load must produce a byte-identical
+    clean.parquet and an identical run report to filtering once on the
+    concatenated 14-day frame."""
+    # One raw dir per run: prune_raw_files deletes the out-of-window shard, so
+    # a shared dir would give the second run a different `pruned` count.
+    streamed_raw = tmp_path / "streamed_jobs" / "raw"
+    legacy_raw = tmp_path / "legacy_jobs" / "raw"
+    _write_window_shards(streamed_raw)
+    _write_window_shards(legacy_raw)
+    # A tracked role that drop_stale must exempt — the one step in the loop
+    # that needs state read from outside the shard.
+    pipeline_dir = tmp_path / "pipeline"
+    stale_id = compute_job_id("delta", "widget functional consultant")
+    (pipeline_dir / stale_id).mkdir(parents=True)
+    (pipeline_dir / stale_id / "state.yaml").write_text(
+        yaml.safe_dump({"job_id": stale_id, "state": "saved"}), encoding="utf-8"
+    )
+
+    streamed, streamed_report = _run_into(tmp_path, streamed_raw, "streamed")
+
+    monkeypatch.setattr(cleaning, "load_filtered_window", _legacy_load_filtered_window)
+    legacy, legacy_report = _run_into(tmp_path, legacy_raw, "legacy")
+
+    # The residual index is an artifact of when the concat happens and is
+    # never written out; row content and order are what must match.
+    pd.testing.assert_frame_equal(
+        streamed.reset_index(drop=True), legacy.reset_index(drop=True)
+    )
+    assert streamed_report == legacy_report
+    assert ((tmp_path / "streamed" / "clean.parquet").read_bytes()
+            == (tmp_path / "legacy" / "clean.parquet").read_bytes())
+    assert ((tmp_path / "streamed" / "clean.preview.jsonl").read_text(encoding="utf-8")
+            == (tmp_path / "legacy" / "clean.preview.jsonl").read_text(encoding="utf-8"))
+
+    # The fixture has to actually exercise every step, or equality is vacuous.
+    for line in ("after blank-company drop", "after short-JD drop",
+                 "after stale drop", "after location filter",
+                 "after dedupe"):
+        assert line in streamed_report
+    assert re.search(r"after blank-company drop: \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after short-JD drop \(<200 chars\): \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after location filter: \d+ \(dropped 1\)", streamed_report)
+    assert re.search(r"after dedupe: \d+ \(merged 1\)", streamed_report)
+    # the tracked stale row survived step 3 despite a January posted_date
+    assert stale_id in set(streamed["job_id"])
+
+
+def test_streamed_window_never_holds_the_whole_window(tmp_path):
+    """The point of D3.1: _filter_shard sees one shard at a time. If a future
+    edit reintroduces a concat-first load, the biggest frame it hands the
+    filters would be the whole window, not the largest shard."""
+    raw_dir = tmp_path / "jobs" / "raw"
+    _write_window_shards(raw_dir)
+    seen: list[int] = []
+    real = cleaning._filter_shard
+
+    def spy(raw, *a, **kw):
+        seen.append(len(raw))
+        return real(raw, *a, **kw)
+
+    cleaning._filter_shard = spy
+    try:
+        cleaning.load_filtered_window(
+            raw_dir, cleaning.load_config(), tmp_path / "pipeline",
+            today=pd.Timestamp("2026-06-06"),
+        )
+    finally:
+        cleaning._filter_shard = real
+    assert len(seen) == 4          # the 2026-05-01 shard is out of window
+    assert max(seen) == 4          # the largest single shard, not the 8-row window
+    assert sum(seen) == 8
+
+
+def test_job_id_collision_drops_the_pair_and_names_both_roles(caplog):
+    """Two distinct roles sharing a job_id must not both reach clean.parquet."""
+    df = pd.DataFrame(
+        {
+            "job_id": ["dead", "dead", "safe"],
+            "company_normalized": ["acme", "globex", "initech"],
+            "title_normalized": ["data engineer", "ml engineer", "analyst"],
+        }
+    )
+    with caplog.at_level(logging.ERROR, logger=cleaning.__name__):
+        kept, named = cleaning.drop_job_id_collisions(df)
+
+    assert kept["job_id"].tolist() == ["safe"]
+    assert named == ["dead acme | data engineer", "dead globex | ml engineer"]
+    assert "job_id collision" in caplog.text
+
+
+def test_same_role_twice_is_not_a_job_id_collision():
+    """One (company, title) on two boards shares an id legitimately."""
+    df = pd.DataFrame(
+        {
+            "job_id": ["same", "same"],
+            "company_normalized": ["acme", "acme"],
+            "title_normalized": ["data engineer", "data engineer"],
+        }
+    )
+    kept, named = cleaning.drop_job_id_collisions(df)
+    assert len(kept) == 2
+    assert named == []
+
+
+def test_job_id_collision_is_reported_and_absent_when_clean(tmp_path):
+    report = tmp_path / "report.md"
+    report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(report, "r1", {"job_id_collisions": ["dead acme | x"]})
+    assert "### job_id collision" in report.read_text(encoding="utf-8")
+
+    clean_report = tmp_path / "clean.md"
+    clean_report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(clean_report, "r1", {})
+    assert "### job_id collision" not in clean_report.read_text(encoding="utf-8")
+
+
+# ---------- report: per-source table + the empty-description line ----------
+
+def test_per_source_table_renders_three_columns_and_round_trips(tmp_path):
+    """`raw` is the true pre-title-gate count; `after gate` is what survived
+    step 0. Both have to survive a trip through the report reader."""
+    from src.discovery import run_report
+
+    report = tmp_path / "r.md"
+    report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(report, "r1", {
+        "per_source": {"indeed": (126929, 13476, 597),
+                       "greenhouse": (400, 400, 60)},
+    })
+    text = report.read_text(encoding="utf-8")
+    assert "| source | raw | after gate | final |" in text
+    assert "| indeed | 126929 | 13476 | 597 |" in text
+
+    parsed = run_report.parse_report(text, run_id="r1")
+    src = parsed.sources["indeed"]
+    assert (src.raw_count, src.after_gate_count, src.final_count) == (126929, 13476, 597)
+
+
+def test_empty_description_line_renders_and_round_trips(tmp_path):
+    from src.discovery import run_report
+
+    report = tmp_path / "r.md"
+    report.write_text("# run\n", encoding="utf-8")
+    cleaning._append_cleaning_section(report, "r1", {
+        "after_blank_company": 2000, "after_short_jd": 899, "dropped_short": 1101,
+        "dropped_empty_jd": 1101,
+        "empty_jd_by_source": {"linkedin": 1090, "indeed": 11},
+    })
+    text = report.read_text(encoding="utf-8")
+    assert "- of which empty description: 1101" in text
+    assert "empty description by source: linkedin=1090, indeed=11" in text
+
+    parsed = run_report.parse_report(text, run_id="r1")
+    assert parsed.funnel["dropped_empty_jd"] == 1101
+    # the by-source detail line is not a funnel key and must not become one
+    assert "linkedin" not in parsed.funnel
+
+
+def test_empty_descriptions_are_reported_apart_from_short_ones(tmp_path):
+    """End to end: one empty JD and one merely short one land in different
+    numbers in the report."""
+    raw_dir = tmp_path / "jobs" / "raw"
+    raw_dir.mkdir(parents=True)
+    rows = [
+        _raw_row(company="Acme", title="Widget Functional Consultant",
+                 description="", site="linkedin"),
+        _raw_row(company="Beta", title="Widget Functional Consultant",
+                 description="tiny", site="linkedin"),
+        _raw_row(company="Gamma", title="Widget Functional Consultant",
+                 description="g" * 400, site="linkedin"),
+    ]
+    _distinct_urls(pd.DataFrame(rows)).to_parquet(
+        raw_dir / "2026-06-06_0100.parquet", index=False)
+
+    _, report = _run_into(tmp_path, raw_dir, "out")
+    assert re.search(r"after short-JD drop \(<200 chars\): \d+ \(dropped 2\)", report)
+    assert "- of which empty description: 1" in report
+    assert "empty description by source: linkedin=1" in report

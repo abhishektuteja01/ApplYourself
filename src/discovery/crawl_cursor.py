@@ -1,28 +1,35 @@
 """Where a paged, search-scoped crawl left off, persisted across runs.
 
-Workday is the first source whose cost scales as tenants x search terms rather
-than tenants. With 55 tenants and 48 distinct terms that is 2,640 list
-requests as a *floor* — one page each, before a single posting is looked at —
-which at the configured pacing does not fit a run's deadline. Two separate
-problems come out of that, and this module holds the state for both:
+Two callers. Workday's cost scales as tenants x search terms rather than
+tenants, so it holds a page frontier as well as a tenant rotation;
+`AtsBoardSource` holds only a rotation, over the cold half of its board
+universe.
 
-**The floor.** A run cannot visit every (tenant, term) pair, so it visits a
-slice and the next run resumes after it. `next_slug` is that resume point.
-Without it a deadline cut drops the same alphabetical tail every run,
-forever — the tenants at the end of the CSV would never be crawled at all.
+**`offsets` — the deep-page frontier (live).** `MAX_PAGES_PER_TERM` bounds one
+(tenant, term) pair's pagination. With every run starting at offset 0, pages
+past that cap would never be read on any run. `offsets` records each pair's
+frontier so later pages are eventually reached, and resets to 0 when a pair
+runs out of results.
 
-**The ceiling.** `MAX_PAGES_PER_TERM` bounds one pair's pagination. The claim
-that "a page never reached is read again from page 0 next run, so nothing is
-lost" was only true of deadline truncation, not of the cap: with every run
-starting at offset 0, pages past the cap were never read on any run.
-`offsets` records each pair's deep frontier so later pages are eventually
-reached, and resets to 0 when a pair runs out of results.
+The frontier is the *second* page a run reads, never the first. Workday's list
+endpoint takes no sort parameter and defaults to newest-first, so skipping
+offset 0 to resume deep would blind the crawl to new postings — the one thing
+it is for. `workday.py` reads page 0 every run and uses this only to continue
+past it.
 
-Note the frontier is the *second* page a run reads, never the first. Workday's
-list endpoint takes no sort parameter and defaults to newest-first, so
-skipping offset 0 to resume deep would blind the crawl to new postings — the
-one thing it is for. `workday.py` reads page 0 every run and uses this only
-to continue past it.
+**`next_slug` — Workday's tenant rotation (dormant).** For a run that cannot visit
+every (tenant, term) pair, `next_slug` is where the next run resumes, so a
+deadline cut does not drop the same alphabetical tail forever. At the current
+93 tenants x 1 search term a run completes every tenant, so `advance()` always
+wraps to the head and `rotate()` returns the same order every run. The
+rotation becomes live again if the term list widens or runs start truncating;
+until then treat it as untried in production, not as proven code.
+
+**`cold_slug` — the board lanes' cold rotation (live).** `AtsBoardSource`
+polls its hot boards every run and one rotating slice of the cold ones. This
+is where that slice resumes. Separate from `next_slug` because the two
+rotations cover different lists, and one writer per cursor field is the only
+way they stay honest.
 
 Deliberately not a column on `universe_health_*.parquet`: that schema is read
 by existing files on disk, and this state is per (slug, term) rather than per
@@ -61,6 +68,12 @@ class CrawlCursor:
     runs it gave 1-7 visits per tenant against an ideal 4.4, where a
     slug-keyed one gives a tight 4-5."""
 
+    cold_slug: str = ""
+    """Where the cold-board rotation resumes, for `AtsBoardSource`'s hot/cold
+    split. A second cursor rather than a second writer of `next_slug`: Workday
+    rotates every non-priority tenant, the board lanes rotate only the cold
+    tail, and the two would otherwise seek each other off course."""
+
     offsets: dict[str, int] = field(default_factory=dict)
     """`"<slug>\\x00<term>"` -> the offset to resume that pair's paging from."""
 
@@ -82,7 +95,7 @@ class CrawlCursor:
             # stays proportional to what is actually mid-pagination.
             self.offsets.pop(key, None)
 
-    def rotate(self, items: list, key=lambda x: x) -> list:
+    def rotate(self, items: list, key=lambda x: x, attr: str = "next_slug") -> list:
         """`items` reordered to start where the last run stopped.
 
         Returns everything, not a slice — the caller stops on its own
@@ -99,17 +112,19 @@ class CrawlCursor:
             return []
         keys = [key(i) for i in items]
         try:
-            start = keys.index(self.next_slug)
+            start = keys.index(getattr(self, attr))
         except ValueError:
             start = 0
         return items[start:] + items[:start]
 
-    def advance(self, items: list, done: int, key=lambda x: x) -> None:
+    def advance(self, items: list, done: int, key=lambda x: x,
+                attr: str = "next_slug") -> None:
         """Record the tenant the next run should resume at: the one after the
         last completed. A completed pass wraps back to the head."""
         if not items:
             return
-        self.next_slug = key(items[done % len(items)]) if done < len(items) else key(items[0])
+        setattr(self, attr,
+                key(items[done % len(items)]) if done < len(items) else key(items[0]))
 
 
 def load_cursor(ats: str) -> CrawlCursor:
@@ -125,6 +140,7 @@ def load_cursor(ats: str) -> CrawlCursor:
         return CrawlCursor(
             ats=ats,
             next_slug=str(data.get("next_slug", "") or ""),
+            cold_slug=str(data.get("cold_slug", "") or ""),
             offsets={str(k): int(v) for k, v in (data.get("offsets") or {}).items()},
         )
     except (OSError, ValueError, TypeError, AttributeError) as exc:
@@ -142,6 +158,7 @@ def save_cursor(cursor: CrawlCursor) -> None:
             json.dumps({
                 "schema_version": _SCHEMA_VERSION,
                 "next_slug": cursor.next_slug,
+                "cold_slug": cursor.cold_slug,
                 "offsets": cursor.offsets,
             }, indent=2, sort_keys=True),
             encoding="utf-8",

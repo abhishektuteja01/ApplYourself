@@ -91,6 +91,12 @@ class FakeDriver:
         self._page = FakePage()                # what the post-submit capture reads
         self.refusals: list[str] = []          # the board's refusal, per click
         self.named_missing: list[list[str]] = []  # labels named missing, per refusal
+        self._dom_paths: dict[str, str] = {}
+        self._dom_controls: dict[str, str] = {}
+
+    # The real implementation, not a stub: what the fill teaches a driver about
+    # aliased ids is the thing under test.
+    learn_dom_aliases = F.BrowserDriver.learn_dom_aliases
 
     def goto(self, url):
         self.calls.append(("goto", url))
@@ -964,7 +970,10 @@ class TestTheDriverSetAndTheShortlistAgree:
         `fill._DRIVER_NAMES`. If those drift, the shortlist promises a
         submission the queue will not make — or hides one it would."""
         from src.apply.detect import SUBMITTABLE_ATS
+        from src.discovery.sources.ats.registry import SUBMITTABLE_SOURCES
         assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_ATS)
+        # both derive from the one board table; pin that too
+        assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_SOURCES)
 
 
 class TestUploadVerificationIsConfirmatoryNotPunitive:
@@ -2149,3 +2158,136 @@ class TestFormManifest:
         rows = F.form_manifest(Exploding(), p, F.FillResult(form_url=""))
         assert rows[0]["actual"] == ""
         assert rows[0]["matches"] is False
+
+
+def row(**kw) -> dict:
+    """One validating control as `invalid_fields`' DOM read reports it."""
+    base = {
+        "name": "", "type": "text", "checked": False,
+        "valueMissing": False, "invalid": False, "fallback": "",
+    }
+    base.update(kw)
+    return base
+
+
+def box(name: str, *, checked: bool) -> dict:
+    """A checkbox in a required group: unticked means required-and-empty."""
+    return row(
+        name=name, type="checkbox", checked=checked,
+        valueMissing=not checked, invalid=not checked,
+    )
+
+
+class TestRefusedFieldNames:
+    """Which browser refusals are real, given one DOM read (§`invalid_fields`)."""
+
+    def test_a_ticked_checkbox_group_is_not_a_refusal(self):
+        """Greenhouse marks all 8 boxes `required`; one tick answers the group."""
+        rows = [box("q[]", checked=i == 1) for i in range(8)]
+        assert F.refused_field_names(rows) == ()
+
+    def test_an_untouched_checkbox_group_still_refuses(self):
+        rows = [box("q[]", checked=False) for _ in range(8)]
+        assert F.refused_field_names(rows) == ("q[]",)
+
+    def test_a_required_empty_text_field_still_refuses(self):
+        rows = [row(name="q1", valueMissing=True, invalid=True)]
+        assert F.refused_field_names(rows) == ("q1",)
+
+    def test_a_text_input_sharing_the_groups_name_still_refuses(self):
+        """Lever's pronouns group: ten boxes plus `customPronounsTextField`
+        under one name. A tick must not clear the empty text input."""
+        rows = [box("pronouns", checked=True), box("pronouns", checked=False)]
+        rows.append(row(name="pronouns", valueMissing=True, invalid=True))
+        assert F.refused_field_names(rows) == ("pronouns",)
+
+    def test_nameless_controls_are_never_grouped(self):
+        """`name` is "" for both, so grouping on the id fallback would let the
+        ticked box clear an unrelated empty field."""
+        rows = [
+            row(type="checkbox", checked=True),
+            row(valueMissing=True, invalid=True, fallback="signature"),
+        ]
+        assert F.refused_field_names(rows) == ("signature",)
+
+    def test_a_non_valuemissing_failure_is_never_dropped(self):
+        """A pattern failure is not an unticked sibling, so a tick cannot
+        answer it."""
+        rows = [
+            box("q[]", checked=True),
+            row(name="q[]", type="checkbox", checked=False, invalid=True),
+        ]
+        assert F.refused_field_names(rows) == ("q[]",)
+
+    def test_a_lone_unticked_consent_box_still_refuses(self):
+        assert F.refused_field_names([box("agree", checked=False)]) == ("agree",)
+
+    def test_an_unselected_radio_group_still_refuses(self):
+        rows = [
+            row(name="gender", type="radio", valueMissing=True, invalid=True)
+            for _ in range(3)
+        ]
+        assert F.refused_field_names(rows) == ("gender",)
+
+    def test_a_valid_form_reports_nothing(self):
+        assert F.refused_field_names([row(name="q1"), box("q[]", checked=True)]) == ()
+
+    def test_names_are_deduped_in_first_seen_order(self):
+        rows = [
+            row(name="b", valueMissing=True, invalid=True),
+            row(name="a", valueMissing=True, invalid=True),
+            row(name="b", valueMissing=True, invalid=True),
+        ]
+        assert F.refused_field_names(rows) == ("b", "a")
+
+
+class TestDatePickerIsDismissed:
+    """Ashby's calendar overlay intercepts every later field (§`_apply_field`)."""
+
+    def test_a_date_is_closed_before_the_read_back(self):
+        p = plan(fields=[field(id="start", kind="date", value="2026-09-18")])
+        d = FakeDriver()
+        assert fill_plan(p, d).ok is True
+        assert ("fill", "start", "2026-09-18") in d.calls
+        assert ("close",) in d.calls
+        assert d.calls.index(("close",)) > d.calls.index(("fill", "start", "2026-09-18"))
+
+    def test_a_plain_text_field_is_not_closed(self):
+        """Escape on a normal field would dismiss whatever else is open."""
+        p = plan(fields=[field(id="phone", kind="text", value="+1 555 0100")])
+        d = FakeDriver()
+        assert fill_plan(p, d).ok is True
+        assert ("close",) not in d.calls
+
+    def test_a_date_the_widget_clears_is_a_failure(self):
+        """The picker clears an unparseable value on blur; closing before the
+        read-back is what catches it instead of reporting a filled field."""
+        class Clearing(FakeDriver):
+            def close(self):
+                super().close()
+                self.values["start"] = ""
+
+        p = plan(fields=[field(id="start", kind="date", value="Immediately.")])
+        result = fill_plan(p, Clearing())
+        assert result.ok is False
+
+
+class TestDomAliasesReachTheDriver:
+    """An `id` that answers.py needs is not always an id the DOM has."""
+
+    def test_the_plan_teaches_the_driver_where_a_field_really_is(self):
+        p = plan(fields=[field(
+            id="school--0", value="Northeastern University",
+            dom_path="_systemfield_education_history",
+            dom_control='input[role="combobox"]',
+        )])
+        d = FakeDriver()
+        fill_plan(p, d)
+        assert d._dom_paths == {"school--0": "_systemfield_education_history"}
+        assert d._dom_controls == {"school--0": 'input[role="combobox"]'}
+
+    def test_a_field_with_no_alias_teaches_nothing(self):
+        d = FakeDriver()
+        fill_plan(plan(fields=[field(id="phone", value="+1 555 0100")]), d)
+        assert d._dom_paths == {}
+        assert d._dom_controls == {}

@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from src.discovery import cleaning, ingest_url
-from src.discovery.sources.ats import http
-from src.discovery.schema import make_row
+from src import ats_http as http
+from src.discovery.schema import make_row, validate_frame
 from src.discovery.ingest_url import (
     IngestError,
     fetch_row,
@@ -56,6 +56,16 @@ class TestParseAtsUrl:
         uuid = "12345678-abcd-4bcd-8bcd-1234567890ab"
         assert parse_ats_url(f"https://jobs.ashbyhq.com/acme/{uuid}") == \
             ("ashby", "acme", uuid)
+
+    def test_greenhouse_eu_hosts(self):
+        # .eu boards are applyable; ingest used to reject them outright
+        for host in ("boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"):
+            assert parse_ats_url(f"https://{host}/acme/jobs/4567") == \
+                ("greenhouse", "acme", "4567")
+
+    def test_workday_is_not_ingestable(self):
+        assert parse_ats_url(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US/X_JR1") is None
 
     def test_unrecognized(self):
         assert parse_ats_url("https://careers.example.com/job/42") is None
@@ -194,11 +204,44 @@ class TestIngest:
         monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
         ingest("https://x", vertical="example_primary", **dirs)
         monkeypatch.setattr(ingest_url, "fetch_row",
-                            lambda *a, **k: _row(company="Other Co",
-                                                 title="Widget Assembly Lead"))
+                            lambda *a, **k: _row(
+                                company="Other Co", title="Widget Assembly Lead",
+                                # A distinct posting needs a distinct url: an
+                                # identical one is a merge on its own now.
+                                url="https://boards.greenhouse.io/otherco/jobs/456"))
         ingest("https://y", vertical="example_primary", **dirs)
         clean = pd.read_parquet(tmp_path / "jobs" / "clean.parquet")
         assert len(clean) == 2  # both survive the same-minute raw file
+
+    def test_shard_is_validate_frame_clean(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
+        ingest("https://x", vertical="example_primary", **_dirs(tmp_path))
+        shard, = (tmp_path / "jobs" / "raw").glob("*.parquet")
+        df = pd.read_parquet(shard)
+        assert df["scraped_date"].dtype.kind == "M"
+        assert validate_frame(df) is not None
+
+    def test_collision_merge_shard_stays_valid(self, tmp_path, monkeypatch):
+        dirs = _dirs(tmp_path)
+        monkeypatch.setattr(ingest_url, "fetch_row", lambda *a, **k: _row())
+        ingest("https://x", vertical="example_primary", **dirs)
+        # a prior shard written with scraped_date as object, as the orchestrator
+        # leaves a zero-row shard
+        shard, = (dirs["raw_dir"]).glob("*.parquet")
+        prior = pd.read_parquet(shard)
+        prior["scraped_date"] = prior["scraped_date"].astype(str).astype(object)
+        prior.to_parquet(shard, index=False)
+        monkeypatch.setattr(ingest_url, "fetch_row",
+                            lambda *a, **k: _row(
+                                company="Other Co", title="Widget Assembly Lead",
+                                # A distinct posting needs a distinct url: an
+                                # identical one is a merge on its own now.
+                                url="https://boards.greenhouse.io/otherco/jobs/456"))
+        ingest("https://y", vertical="example_primary", **dirs)
+        df = pd.read_parquet(shard)
+        assert len(df) == 2
+        assert df["scraped_date"].dtype.kind == "M"
+        assert validate_frame(df) is not None
 
     def test_near_duplicate_reports_winner(self, tmp_path, monkeypatch):
         dirs = _dirs(tmp_path)

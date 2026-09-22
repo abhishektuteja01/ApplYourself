@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.discovery.dates import naive_datetime
+
 COLUMNS: list[str] = [
     "site",
     "company",
@@ -18,18 +20,9 @@ COLUMNS: list[str] = [
     "job_type",
     "job_level",
     "vertical",
+    "found_by_term",
+    "found_by_remote",
 ]
-
-def naive_datetime(values) -> pd.Series:
-    """Parse to tz-naive UTC. Both keywords are load-bearing on a column that
-    concatenated shards have left as object dtype: without utc=True a single
-    tz-aware value coerces every naive one to NaT, and without format="mixed"
-    the format inferred from the first element does the same to every element
-    that doesn't share it."""
-    return pd.to_datetime(
-        values, errors="coerce", utc=True, format="mixed"
-    ).dt.tz_localize(None)
-
 
 def make_row(**kwargs) -> dict:
     row = {
@@ -48,6 +41,8 @@ def make_row(**kwargs) -> dict:
         "job_type": "",
         "job_level": "",
         "vertical": "",
+        "found_by_term": "",
+        "found_by_remote": False,
     }
 
     for k, v in kwargs.items():
@@ -76,5 +71,6 @@ def validate_frame(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # shards must be naive before they are concatenated
-    df["date_posted"] = naive_datetime(df["date_posted"])
+    for col in ("date_posted", "scraped_date"):
+        df[col] = naive_datetime(df[col])
     return df

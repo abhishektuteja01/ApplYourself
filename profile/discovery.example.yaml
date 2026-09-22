@@ -8,13 +8,33 @@ location_allowlist:
   # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
   # continents: ["Europe"]    # optional shorthand: expands to every country on
   #                           # the continent, unioned with `countries` above
+# Where the linkedin/indeed lanes search, as against the allowlist above, which
+# is what cleaning accepts. Absent = the allowlist's countries. Capped at 5
+# locations when absent: each one multiplies the query count and the pacing
+# sleep. Set it to query fewer places than you accept.
+# search_locations: ["Germany", "Netherlands", "United Kingdom"]
 # Every source the loader accepts. An omitted key falls back to the code default
 # in src/discovery/config.py, so list them all to stay explicit.
+# `cadence` is optional and defaults to daily. One of: daily, weekdays, weekly
+# (Monday), every_n_days:N. A skipped night writes no shard and reports as
+# SKIPPED, which the digest excludes from its medians and alarms.
+# `page_delay_seconds` / `page_delay_band_seconds` pace the gap between PAGES
+# of one query, as against `pacing_seconds` which paces the gap between
+# queries. Only the paginating jobspy lanes read them. jobspy hardcodes 3/4,
+# which is what they default to; at 100 results and 10 cards a page that is
+# nine sleeps averaging 5s per query, and it dominates the LinkedIn lane.
+# Lower them to trade rate-limit headroom for wall time; the run report prints
+# the delay used and counts any 429s it earned.
 sources:
-  linkedin:      {enabled: true,  pacing_seconds: 3}
+  linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   indeed:        {enabled: true,  pacing_seconds: 2}
   greenhouse:    {enabled: true,  pacing_seconds: 1}
   lever:         {enabled: true,  pacing_seconds: 1}
   ashby:         {enabled: true,  pacing_seconds: 2}
-  workday:       {enabled: true,  pacing_seconds: 2}
-raw_retention_days: 30
+  # Weekly, not daily: Workday is the most expensive lane per kept row and is
+  # manual-apply only. Set `cadence: daily` if you want it every night.
+  workday:       {enabled: true,  pacing_seconds: 2, cadence: weekly}
+raw_retention_days: 16
+# Ceiling on the career-board staleness exemption, in days. 0 = off: a posting
+# still listed on the company's own board is live regardless of age.
+board_max_age_days: 0

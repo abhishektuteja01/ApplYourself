@@ -45,6 +45,16 @@ class TestParsePosting:
         )
         assert posting.token == posting.posting_id
 
+    def test_the_eu_host(self):
+        # jobs.eu.lever.co ingests fine; detect_ats used to call it
+        # manual-apply because only jobs.lever.co was known here.
+        posting = parse_posting(
+            "https://jobs.eu.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+        )
+        assert (posting.slug, posting.region) == ("widgetco", "eu")
+        # the form lives on the region's own host
+        assert posting.form_url.startswith("https://jobs.eu.lever.co/")
+
     def test_no_url(self):
         with pytest.raises(ApplyUrlError, match="no URL"):
             parse_posting("")
@@ -160,7 +170,7 @@ class TestHasCaptcha:
 
 class TestFetchForm:
     def test_a_404_is_an_ordinary_expiry(self):
-        from src.discovery.sources.ats.http import CareersError
+        from src.ats_http import CareersError
 
         posting = parse_posting("https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001")
         with patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)):

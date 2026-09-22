@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.discovery.schema import make_row, naive_datetime, validate_frame, COLUMNS
+from src.discovery.schema import make_row, validate_frame, COLUMNS
 
 def test_make_row_defaults():
     row = make_row()
@@ -10,6 +10,28 @@ def test_make_row_defaults():
     assert row["is_remote"] is False
     assert row["job_url_direct"] == ""
     assert row["min_amount"] is None
+
+def test_make_row_carries_search_term_attribution():
+    """Both columns are in COLUMNS and in make_row's literal dict — make_row
+    copies only keys already present there, so one without the other is a
+    silently dropped kwarg."""
+    assert COLUMNS[-2:] == ["found_by_term", "found_by_remote"]
+    row = make_row()
+    assert row["found_by_term"] == ""
+    assert row["found_by_remote"] is False
+    stamped = make_row(found_by_term="ai engineer", found_by_remote=True)
+    assert stamped["found_by_term"] == "ai engineer"
+    assert stamped["found_by_remote"] is True
+
+
+def test_validate_frame_accepts_the_attribution_columns():
+    row = make_row(found_by_term="ai engineer", found_by_remote=True)
+    row["ingested_run_id"] = "1"
+    row["scraped_date"] = pd.Timestamp("2026-06-06")
+    out = validate_frame(pd.DataFrame([row]))
+    assert out["found_by_term"].iloc[0] == "ai engineer"
+    assert bool(out["found_by_remote"].iloc[0]) is True
+
 
 def test_make_row_job_url_direct_fallback():
     row = make_row(job_url="http://example.com")
@@ -34,40 +56,6 @@ def test_validate_frame_rejects_extra_column():
     with pytest.raises(ValueError, match="Frame validation failed"):
         validate_frame(df)
 
-def test_naive_datetime_keeps_naive_values_when_column_is_mixed():
-    # object dtype, one tz-aware value among naive ones
-    s = pd.Series(
-        [pd.Timestamp("2026-08-01T10:00:00Z"),
-         pd.Timestamp("2026-08-04"),
-         pd.Timestamp("2026-01-01")],
-        dtype=object,
-    )
-    out = naive_datetime(s)
-    assert out.dtype == "datetime64[ns]"
-    assert not out.isna().any()
-    assert list(out) == [pd.Timestamp("2026-08-01 10:00:00"),
-                         pd.Timestamp("2026-08-04"),
-                         pd.Timestamp("2026-01-01")]
-
-
-def test_naive_datetime_handles_mixed_offset_strings():
-    out = naive_datetime(pd.Series(["2026-08-01T10:00:00+00:00",
-                                    "2026-08-01T10:00:00-05:00",
-                                    "2026-08-04"]))
-    assert out.dtype == "datetime64[ns]"
-    # normalized to UTC, so the -05:00 value shifts forward
-    assert list(out) == [pd.Timestamp("2026-08-01 10:00:00"),
-                         pd.Timestamp("2026-08-01 15:00:00"),
-                         pd.Timestamp("2026-08-04")]
-
-
-def test_naive_datetime_coerces_garbage_and_empty():
-    out = naive_datetime(pd.Series(["not a date", None, ""]))
-    assert out.dtype == "datetime64[ns]"
-    assert out.isna().all()
-    assert naive_datetime(pd.Series([], dtype=object)).dtype == "datetime64[ns]"
-
-
 def test_validate_frame_strips_timezone():
     row = make_row(date_posted="2026-08-01T10:00:00Z")
     row["ingested_run_id"] = "1"
@@ -75,6 +63,38 @@ def test_validate_frame_strips_timezone():
     out = validate_frame(pd.DataFrame([row]))
     assert out["date_posted"].dtype == "datetime64[ns]"
     assert out["date_posted"].iloc[0] == pd.Timestamp("2026-08-01 10:00:00")
+
+
+def test_validate_frame_normalizes_scraped_date():
+    for value, expected in (
+        ("2026-08-01", pd.Timestamp("2026-08-01")),
+        ("2026-08-01T10:00:00-05:00", pd.Timestamp("2026-08-01 15:00:00")),
+        (pd.Timestamp("2026-08-01T10:00:00Z"), pd.Timestamp("2026-08-01 10:00:00")),
+        (pd.Timestamp("2026-08-01"), pd.Timestamp("2026-08-01")),
+    ):
+        row = make_row()
+        row["ingested_run_id"] = "1"
+        row["scraped_date"] = value
+        out = validate_frame(pd.DataFrame([row]))
+        assert out["scraped_date"].dtype == "datetime64[ns]"
+        assert out["scraped_date"].iloc[0] == expected
+
+
+def test_validate_frame_scraped_date_none_becomes_nat():
+    row = make_row()
+    row["ingested_run_id"] = "1"
+    row["scraped_date"] = None
+    out = validate_frame(pd.DataFrame([row]))
+    assert out["scraped_date"].dtype == "datetime64[ns]"
+    assert out["scraped_date"].isna().all()
+
+
+def test_validate_frame_accepts_zero_row_frame():
+    df = pd.DataFrame(columns=COLUMNS + ["ingested_run_id", "scraped_date"])
+    out = validate_frame(df)
+    assert out.empty
+    assert out["scraped_date"].dtype == "datetime64[ns]"
+    assert out["date_posted"].dtype == "datetime64[ns]"
 
 
 def test_validate_frame_coerces_amounts():

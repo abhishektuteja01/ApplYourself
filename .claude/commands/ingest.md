@@ -73,7 +73,7 @@ On exit 1, match the message:
 
 | Message | Action |
 |---|---|
-| `not a recognized ATS posting` | `uv run ingest-url "$1" --dry-run` (writes nothing), read company and title off the printed text, re-run the step 2 command with `--company "..." --title "..."` added (keep `--vertical "$2"`). **One attempt.** They define the `job_id` hash; a wrong pair mints a second id for the same role and cannot be deduped against the board's spelling. |
+| `not a recognized ATS posting` | `uv run ingest-url "$1" --dry-run` (writes nothing), read company and title off the printed text, re-run the step 2 command with `--company "..." --title "..."` added (keep `--vertical "$2"`). **One attempt.** They define the `job_id` hash. A wrong company spelling still merges against the board's own spelling if the JD matches, and the merge keeps the tracked id — but a wrong *title* does not, and mints a second id for the same role. |
 | `below the ... cleaning floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/` and run `/score`. |
 | `did not survive cleaning` + a listed `job_id` | A near-duplicate won dedupe. Continue with that `job_id` — through step 3, not past it; it is in `clean.parquet` but not necessarily scored. Its vertical is whatever that row already carries, which may not be `$2`; read it with `uv run python -c "import pandas as pd; print(pd.read_parquet('jobs/clean.parquet').set_index('job_id').loc['<job_id>','vertical'])"`. |
 | `did not survive cleaning`, no hint | Stop. Report the raw file (below) and that the row was dropped by a cleaning filter no hint covers; the run report `jobs/runs/<run_id>.md` names the stage. |
@@ -84,8 +84,8 @@ The three `did not survive cleaning` / `location_allowlist` rows fail *after*
 the raw row is archived, so they leave it in `jobs/raw/<run_id>.parquet` and
 every later cleaning run re-drops it — name that file when you stop. The other
 three fail before any write, so retrying them costs nothing. Either way, retry
-only as the table prescribes; guessed company/title variations each mint a
-distinct `job_id`.
+only as the table prescribes; a guessed title mints a distinct `job_id` that no
+merge recovers.
 
 ## Step 3 — score that one row
 

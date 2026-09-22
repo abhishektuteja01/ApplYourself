@@ -497,4 +497,6 @@ class TestAshbyIsRegistered:
         """A role the shortlist calls auto-submittable and the queue calls
         manual-apply is the silent gap the shared flag exists to close."""
         from src.apply import detect
+        from src.discovery.sources.ats.registry import SUBMITTABLE_SOURCES
         assert detect.SUBMITTABLE_ATS == frozenset(F._DRIVER_NAMES)
+        assert detect.SUBMITTABLE_ATS == SUBMITTABLE_SOURCES

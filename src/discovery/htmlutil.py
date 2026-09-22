@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import html as html_mod
+import logging
 import re
+
+log = logging.getLogger(__name__)
 
 _BR_RE = re.compile(r"<br\s*/?>", re.I)
 _LI_RE = re.compile(r"<li[^>]*>", re.I)
@@ -27,4 +30,9 @@ def html_to_text(value) -> str:
     x = html_mod.unescape(x)  # second pass: entities inside the text
     lines = [_SPACES_RE.sub(" ", ln.strip()) for ln in x.splitlines()]
     x = _BLANKS_RE.sub("\n\n", "\n".join(lines)).strip()
-    return x[:_MAX_DESCRIPTION_CHARS]
+    if len(x) > _MAX_DESCRIPTION_CHARS:
+        log.warning(
+            "description truncated: %d chars -> %d", len(x), _MAX_DESCRIPTION_CHARS
+        )
+        return x[:_MAX_DESCRIPTION_CHARS]
+    return x

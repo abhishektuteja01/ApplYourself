@@ -2,41 +2,44 @@ import pytest
 import requests
 import pandas as pd
 from datetime import date
-from src.discovery.htmlutil import html_to_text
+from src import verticals as verticals_module
+
+_HOT = pd.Timestamp.today().normalize()
 from src.discovery import universe
-from src.discovery.universe import UniverseCompany
+from src.discovery.universe import UniverseCompany as _UniverseCompany
+
+
+def UniverseCompany(name, ats, slug, priority=False, last_kept_at=_HOT):
+    """Hot by default. These tests exercise the shared fetch loop, not the
+    hot/cold split — a board with no health is cold, and a two-board cold
+    universe rotates one board a run, so the second would never be polled.
+    The split itself is tested in test_universe.py."""
+    return _UniverseCompany(name, ats, slug, priority, last_kept_at)
+
 # fetch_json and the pacing sleep now live in the shared base, so that is where
 # the seam is patched.
 from src.discovery.sources.ats import base
 from src.discovery.sources.ats.greenhouse import GreenhouseSource
 from src.discovery.sources.ats.lever import LeverSource
 from src.discovery.sources.ats.ashby import AshbySource
-from src.discovery.sources.ats import http
-
-def test_html_to_text_strips_tags_and_keeps_structure():
-    html = "<div><h2>Requirements</h2><ul><li>Widgets</li><li>Gizmos</li></ul></div>"
-    text = html_to_text(html)
-    assert "## Requirements" in text
-    assert "- Widgets" in text
-    assert "- Gizmos" in text
-    assert "<" not in text
-
-def test_html_to_text_handles_greenhouse_double_encoding():
-    encoded = "&lt;p&gt;Build &amp;amp; ship widgets&lt;/p&gt;"
-    assert html_to_text(encoded) == "Build & ship widgets"
-
-def test_html_to_text_non_string_is_empty():
-    assert html_to_text(None) == ""
-    assert html_to_text("   ") == ""
+from src import ats_http as http
 
 class MockConfigSources:
     pacing_seconds = 0
 
 class MockContext:
+    """Mirrors orchestrator.Context, including `.verticals` — the injected
+    synthetic fixture (conftest's autouse fixture) is what the title gate
+    reads, same as production."""
     class Config:
         sources = {"greenhouse": MockConfigSources, "lever": MockConfigSources, "ashby": MockConfigSources}
     config = Config
     deadline_ts = 0.0
+
+    @property
+    def verticals(self):
+        return verticals_module.get_config()
+
     def deadline_reached(self): return False
 
 def test_greenhouse_rows_shape(monkeypatch):
@@ -154,6 +157,46 @@ def test_scrape_boards_isolates_per_company_failures(monkeypatch):
     assert "Broken Co" in res.errors[0]
     assert len(res.rows) == 1
 
+def _two_job_board(n_off_lane=0):
+    """One gate-passing title, one that classifies and then trips a
+    title_exclude_term, optionally one that classifies as nothing at all."""
+    jobs = [
+        {"title": "Widget Assembly Consultant", "absolute_url": "https://x/1",
+         "content": "a" * 250},
+        {"title": "Senior Widget Consultant", "absolute_url": "https://x/2",
+         "content": "a" * 250},
+    ]
+    jobs += [{"title": "Definitely Not A Match Zzz", "absolute_url": "https://x/3",
+              "content": "a" * 250}] * n_off_lane
+    return {"jobs": jobs}
+
+
+def test_a_gate_failing_title_never_reaches_the_shard(monkeypatch):
+    """Cleaning's `apply_title_exclusion` runs here too, not only hours later:
+    no HTTP saved on a single-call board, but the raw shard stays ~5x smaller."""
+    monkeypatch.setattr(universe, "load",
+                        lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board())
+
+    rows = GreenhouseSource().fetch(MockContext()).rows
+    assert [r["title"] for r in rows] == ["Widget Assembly Consultant"]
+
+
+def test_health_records_the_kept_count_not_the_fetched_count(monkeypatch):
+    """`universe.load` sorts by `last_yield`, so it has to mean "postings
+    relevant to this profile", not "postings on the board"."""
+    monkeypatch.setattr(universe, "load",
+                        lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board(n_off_lane=1))
+    recorded = []
+    monkeypatch.setattr(universe.HealthLedger, "mark_ok",
+                        lambda self, slug, kept=0: recorded.append((True, kept)))
+
+    res = GreenhouseSource().fetch(MockContext())
+    assert len(res.rows) == 1
+    assert recorded == [(True, 1)]
+
+
 class TestMalformedPayloadStaysPerCompany:
     """fetch_json returns whatever a 200 decodes to. Before the row parse moved
     inside the try, a list or a non-dict item raised AttributeError out of the
@@ -266,6 +309,9 @@ class TestHealthLedgerOnlyCountsDeadBoards:
         monkeypatch.setattr(http.time, "sleep", lambda _: None)
         monkeypatch.setattr(universe, "load",
                             lambda ats: [UniverseCompany("Acme AI", "greenhouse", "acmeai")])
+        # The ledger's membership test is a separate seam from the poll list,
+        # deliberately: see test_a_board_in_its_prune_cooldown_keeps_its_health_row.
+        monkeypatch.setattr(universe, "universe_slugs", lambda ats: {"acmeai"})
 
         def run(response_factory):
             monkeypatch.setattr(http.requests, "get",
@@ -316,3 +362,225 @@ class _JsonResponse:
     headers: dict = {}
     def __init__(self, payload): self._payload = payload
     def json(self): return self._payload
+
+
+def test_deadline_break_still_flushes_the_health_ledger(monkeypatch):
+    """D2.4: health is batched now, so a run cut by the deadline would lose
+    everything it learned unless the break flushes."""
+    monkeypatch.setattr(universe, "load", lambda ats: [
+        UniverseCompany("Acme AI", "greenhouse", "acmeai"),
+        UniverseCompany("Beta Co", "greenhouse", "beta"),
+    ])
+    monkeypatch.setattr(universe, "universe_slugs", lambda ats: {"acmeai", "beta"})
+    monkeypatch.setattr(base, "fetch_json", lambda url, **kw: _two_job_board())
+
+    class CutAfterFirst(MockContext):
+        polled = 0
+
+        def deadline_reached(self):
+            hit = self.polled >= 1
+            self.polled += 1
+            return hit
+
+    GreenhouseSource().fetch(CutAfterFirst())
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert list(df["slug"]) == ["acmeai"]
+
+
+# ---------------------------------------------------------------------
+# registry.py — the one board table discovery and src/apply both read
+# ---------------------------------------------------------------------
+
+from src.discovery.sources.ats import registry  # noqa: E402
+
+_UUID = "12345678-abcd-4bcd-8bcd-1234567890ab"
+
+
+class TestRegistryBoardSlug:
+    @pytest.mark.parametrize("url,slug", [
+        ("https://job-boards.greenhouse.io/acme/jobs/4567", "acme"),
+        ("https://boards.greenhouse.io/embed/job_app/acme/jobs/4567", "acme"),
+        ("https://boards.greenhouse.io/embed/job_app?for=acme&token=99", "acme"),
+        (f"https://jobs.lever.co/acme/{_UUID}", "acme"),
+        (f"https://jobs.ashbyhq.com/acme/{_UUID}", "acme"),
+        # Workday's tenant is the first host label, not a path segment.
+        ("https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US-CA/Eng_JR1", "acme"),
+        ("https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/AcmeCareers/jobs", "acme"),
+    ])
+    def test_slug(self, url, slug):
+        assert registry.board_slug(url) == slug
+
+    def test_non_board_url_has_no_slug(self):
+        assert registry.board_slug("https://www.linkedin.com/jobs/view/1") == ""
+        assert registry.board_slug("") == ""
+
+    def test_workday_pod_and_site_id(self):
+        hit = registry.parse_posting_url(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US-CA/Eng_JR1")
+        assert (hit.source, hit.slug, hit.pod, hit.site_id, hit.posting_id) == \
+            ("workday", "acme", "wd5", "AcmeCareers", "Eng_JR1")
+
+
+class TestRegistryDetectSource:
+    def test_eu_lever_is_plain_lever(self):
+        # region never rides along in the source name
+        assert registry.detect_source(f"https://jobs.eu.lever.co/acme/{_UUID}") == "lever"
+        assert registry.parse_posting_url(
+            f"https://jobs.eu.lever.co/acme/{_UUID}").region == "eu"
+
+    def test_eu_greenhouse_hosts(self):
+        for host in ("boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"):
+            assert registry.detect_source(f"https://{host}/acme/jobs/1") == "greenhouse"
+
+    def test_gh_jid_on_an_arbitrary_careers_host(self):
+        assert registry.detect_source(
+            "https://careers.acme.com/jobs?gh_jid=8044460") == "greenhouse"
+
+    def test_two_different_gh_jids_are_unresolvable(self):
+        assert registry.detect_source(
+            "https://careers.acme.com/jobs?gh_jid=1&gh_jid=2") is None
+        # the same id twice is real and does resolve
+        assert registry.detect_source(
+            "https://careers.acme.com/jobs?gh_jid=1&gh_jid=1") == "greenhouse"
+
+    def test_workday_is_detected_but_not_submittable(self):
+        assert registry.detect_source(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US/X_JR1") == "workday"
+        assert "workday" not in registry.SUBMITTABLE_SOURCES
+        assert "workday" not in registry.DRIVER_NAMES
+
+    def test_aggregator_is_not_a_board(self):
+        assert registry.detect_source("https://www.linkedin.com/jobs/view/1") is None
+
+
+class TestRegistryIsApplyable:
+    def test_lookalike_host_is_not_a_board(self):
+        # substring-over-URL matching would call this Greenhouse
+        assert not registry.is_applyable("https://evilgreenhouse.io.example.com/acme/jobs/1")
+        assert not registry.is_applyable("https://example.com/?x=greenhouse.io")
+
+    def test_board_host_without_a_posting_id_still_counts(self):
+        assert registry.is_applyable("https://boards.greenhouse.io/acme")
+
+    def test_gh_jid_careers_page_counts(self):
+        assert registry.is_applyable("https://stripe.com/jobs/search?gh_jid=8044460")
+
+    def test_aggregator_does_not(self):
+        assert not registry.is_applyable("https://www.linkedin.com/jobs/view/1")
+
+    def test_markers_stay_exported_for_back_compat(self):
+        assert registry.ATS_URL_MARKERS == (
+            "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com")
+        assert registry.ATS_SOURCE_NAMES == (
+            "greenhouse", "lever", "ashby", "workday")
+
+
+def test_the_ledger_sees_the_whole_universe_not_tonights_slice(monkeypatch, tmp_path):
+    """The trap the split introduces: HealthLedger.flush prunes every slug it
+    was not told about, so handing it the polled slice would delete the health
+    of every cold board this run happens not to visit."""
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+
+    # Sized off the rotation so the slice is 2 whatever the divisor is set to.
+    n_cold = 2 * universe.COLD_ROTATION_RUNS
+    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i)
+            for i in range(n_cold)]
+    monkeypatch.setattr(universe, "load", lambda ats: list(cold))
+    monkeypatch.setattr(universe, "universe_slugs", lambda ats: {c.slug for c in cold})
+
+    # Seed health for every cold board, as a run before the split would have.
+    seeded = universe.HealthLedger("greenhouse", [c.slug for c in cold])
+    for c in cold:
+        seeded.mark_ok(c.slug, 0)
+    seeded.flush()
+
+    monkeypatch.setattr(http.requests, "get",
+                        lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
+    GreenhouseSource().fetch(MockContext())
+
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert len(df) == n_cold, "an unvisited cold board lost its health row"
+
+
+def test_the_cold_rotation_advances_across_runs(monkeypatch, tmp_path):
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+
+    # Sized off the rotation so the slice is 2 whatever the divisor is set to.
+    n_cold = 2 * universe.COLD_ROTATION_RUNS
+    cold = [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i)
+            for i in range(n_cold)]
+    monkeypatch.setattr(universe, "load", lambda ats: list(cold))
+
+    polled = []
+
+    def fake_get(url, timeout=None, headers=None):
+        polled.append(url)
+        return _JsonResponse({"jobs": []})
+
+    monkeypatch.setattr(http.requests, "get", fake_get)
+
+    GreenhouseSource().fetch(MockContext())
+    first = list(polled)
+    polled.clear()
+    GreenhouseSource().fetch(MockContext())
+
+    assert len(first) == 2 and len(polled) == 2
+    assert not set(first) & set(polled)
+
+
+def test_the_summary_names_the_universe_not_just_the_slice(monkeypatch, tmp_path):
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    # Sized off the rotation so the slice is 2 whatever the divisor is set to.
+    n_cold = 2 * universe.COLD_ROTATION_RUNS
+    monkeypatch.setattr(universe, "load", lambda ats: (
+        [UniverseCompany("Hot Co", "greenhouse", "hot")]
+        + [_UniverseCompany("Co %d" % i, "greenhouse", "cold%02d" % i)
+           for i in range(n_cold)]))
+    monkeypatch.setattr(http.requests, "get",
+                        lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
+
+    res = GreenhouseSource().fetch(MockContext())
+
+    assert res.report_lines[0].startswith(
+        f"Companies polled: 3 of {n_cold + 1} (1 hot, 2 of {n_cold} cold)")
+
+
+def test_a_board_in_its_prune_cooldown_keeps_its_health_row(monkeypatch, tmp_path):
+    """The real `load()`, not a stub: it hides a board for 14 days after the
+    board was pruned, so a ledger built from it deletes exactly the rows whose
+    `pruned_at` did the hiding -- resetting the cooldown and the strike count
+    every run, and putting dead boards back in tomorrow's poll list."""
+    monkeypatch.setattr(base.time, "sleep", lambda _: None)
+    monkeypatch.setattr(http.time, "sleep", lambda _: None)
+    monkeypatch.setattr(universe, "HEALTH_DIR", tmp_path)
+    monkeypatch.setattr(universe, "CSV_DIR", tmp_path / "csv")
+    monkeypatch.setattr(universe, "DEFAULT_COMPANIES_PATH", tmp_path / "companies.yaml")
+
+    slugs = [f"co{i:02d}" for i in range(14)]
+    (tmp_path / "csv").mkdir()
+    (tmp_path / "csv" / "greenhouse.csv").write_text(
+        "name,slug\n" + "".join(f"Co {s},{s}\n" for s in slugs), encoding="utf-8")
+
+    today = pd.Timestamp.today().normalize()
+    pd.DataFrame([
+        {"ats": "greenhouse", "slug": s,
+         "consecutive_404s": 3 if i % 7 == 0 else 0,
+         "last_ok": pd.NaT if i % 7 == 0 else today, "last_yield": 0,
+         "pruned_at": today if i % 7 == 0 else pd.NaT,
+         "last_kept_at": today if i % 7 else pd.NaT}
+        for i, s in enumerate(slugs)
+    ]).to_parquet(universe.health_path("greenhouse"))
+
+    monkeypatch.setattr(http.requests, "get",
+                        lambda url, timeout=None, headers=None: _JsonResponse({"jobs": []}))
+    GreenhouseSource().fetch(MockContext())
+
+    df = pd.read_parquet(universe.health_path("greenhouse"))
+    assert len(df) == 14, "a board mid-prune-cooldown lost its health row"
+    assert set(df.loc[df["pruned_at"].notna(), "slug"]) == {"co00", "co07"}

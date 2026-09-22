@@ -60,6 +60,18 @@ class MergedField:
     in its own schema/API — e.g. Ashby's sibling description div (§12a). Empty
     for every board/field that has none; Greenhouse and Lever never set it."""
 
+    dom_path: str = ""
+    """Where the field really is, when `id` is an alias and cannot find it.
+    Ashby's EducationHistory sub-fields are aliased into Greenhouse's id space
+    (`school--0`) so `answers.py` resolves them, but no Ashby element carries
+    that `data-field-path` — the fill timed out on every role with an
+    education block until `id` (answers) and this (DOM) were split apart.
+    Empty everywhere else, where `id` is already the selector."""
+
+    dom_control: str = ""
+    """Selector for the one control inside `dom_path`, when the wrapper holds
+    several. Empty means the driver's own default."""
+
     @property
     def dom_only(self) -> bool:
         """No API counterpart, so no label, no required flag and no option list

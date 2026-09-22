@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.discovery.config import LocationAllowlist
+from src.discovery.config import DiscoveryConfig, LocationAllowlist
 from src.discovery.sources import jobspy_source
 from src.discovery.sources.jobspy_source import IndeedSource, LinkedinSource
 
@@ -17,13 +17,14 @@ from src.discovery.sources.jobspy_source import IndeedSource, LinkedinSource
 class _Ctx:
     """Minimal orchestrator context: what fetch() actually reads."""
 
-    def __init__(self, cfg, countries=("United States",), deadline_after=None):
-        class Src:
-            pacing_seconds = 0.0
-        self.config = type("Config", (), {
-            "sources": {"linkedin": Src, "indeed": Src},
-            "location_allowlist": LocationAllowlist(countries=list(countries)),
-        })
+    def __init__(self, cfg, countries=("United States",), deadline_after=None,
+                 search_locations=()):
+        self.config = DiscoveryConfig(
+            location_allowlist=LocationAllowlist(countries=list(countries)),
+            search_locations=list(search_locations),
+        )
+        for source in self.config.sources.values():
+            source.pacing_seconds = 0.0
         self.verticals = cfg
         self._deadline_after = deadline_after
         self.calls = 0
@@ -77,7 +78,8 @@ class _FakeDetails:
 
 def _fake_details(monkeypatch, empty_for=()):
     client = _FakeDetails(empty_for)
-    monkeypatch.setattr(jobspy_source, "_linkedin_detail_client", lambda: client)
+    monkeypatch.setattr(jobspy_source, "_linkedin_detail_client",
+                        lambda *a, **k: client)
     return client
 
 
@@ -102,6 +104,63 @@ def test_queries_every_term_location_and_remote_flag(cfg, monkeypatch):
     # Every term is queried against both locations and both remote flags.
     assert len(seen) == len(expected_terms) * 2 * 2
     assert {r for _, _, r in seen} == {False, True}
+
+
+def test_search_locations_override_the_allowlist(cfg, monkeypatch):
+    """Where we search is decoupled from what cleaning accepts: a wide
+    allowlist no longer multiplies the query count."""
+    seen = []
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: seen.append(kw["location"]) or _df())
+    IndeedSource().fetch(_Ctx(cfg, countries=("United States", "Canada", "France"),
+                              search_locations=("Germany", "Netherlands")))
+    assert set(seen) == {"Germany", "Netherlands"}
+
+
+def test_absent_search_locations_queries_the_allowlist_countries(cfg, monkeypatch):
+    """The no-key default is byte-identical to the previous behaviour:
+    sorted(effective_countries()), each queried against both remote flags."""
+    seen = []
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: seen.append(kw["location"]) or _df())
+    ctx = _Ctx(cfg, countries=("United States", "Canada"))
+    IndeedSource().fetch(ctx)
+
+    expected = sorted(ctx.config.location_allowlist.effective_countries())
+    assert expected == ["Canada", "United States"]
+    assert sorted(set(seen)) == expected
+    n_terms = len({t for v in cfg.verticals.values() for t in v.search_terms})
+    assert len(seen) == n_terms * len(expected) * 2
+
+
+def test_no_allowlist_at_all_still_falls_back_to_the_united_states(cfg, monkeypatch):
+    seen = []
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: seen.append(kw["location"]) or _df())
+    IndeedSource().fetch(_Ctx(cfg, countries=()))
+    assert set(seen) == {"United States"}
+
+
+class TestSaturation:
+    """RESULTS_WANTED truncates a query silently; the report has to say so."""
+
+    def _report(self, cfg, monkeypatch, n_rows):
+        frame = pd.concat([_df(job_url=f"https://www.linkedin.com/jobs/view/{i}")
+                           for i in range(n_rows)], ignore_index=True)
+        monkeypatch.setattr(jobspy_source, "scrape_jobs", lambda **kw: frame)
+        return IndeedSource().fetch(_Ctx(cfg)).report_lines
+
+    def test_a_full_result_set_is_marked(self, cfg, monkeypatch):
+        lines = self._report(cfg, monkeypatch, jobspy_source.RESULTS_WANTED)
+        rows = [line for line in lines if line.startswith("- term=")]
+        assert rows and all("SATURATED" in line for line in rows)
+        assert f"Saturated queries: {len(rows)} of {len(rows)}" in lines
+
+    def test_one_row_short_is_not(self, cfg, monkeypatch):
+        lines = self._report(cfg, monkeypatch, jobspy_source.RESULTS_WANTED - 1)
+        rows = [line for line in lines if line.startswith("- term=")]
+        assert rows and not any("SATURATED" in line for line in rows)
+        assert f"Saturated queries: 0 of {len(rows)}" in lines
 
 
 def test_linkedin_uses_linkedin_terms_and_defers_descriptions(cfg, monkeypatch):
@@ -129,6 +188,23 @@ def test_rows_are_stamped_with_the_vertical_that_found_them(cfg, monkeypatch):
     assert res.rows
     for row in res.rows:
         assert row["vertical"] == term_to_vertical[row["company"]]
+
+
+def test_rows_record_the_query_that_found_them(cfg, monkeypatch):
+    """Per-row attribution: the search term, and the QUERY's remote flag —
+    not JobSpy's per-row is_remote, which says something else."""
+    monkeypatch.setattr(
+        jobspy_source, "scrape_jobs",
+        lambda **kw: _df(company=f"{kw['search_term']}|{kw['is_remote']}"))
+    res = IndeedSource().fetch(_Ctx(cfg))
+    assert res.rows
+    terms = {t for v in cfg.verticals.values() for t in v.search_terms}
+    for row in res.rows:
+        term, remote = row["company"].split("|")
+        assert row["found_by_term"] == term
+        assert row["found_by_remote"] is (remote == "True")
+    assert {row["found_by_term"] for row in res.rows} == terms
+    assert {row["found_by_remote"] for row in res.rows} == {False, True}
 
 
 def test_one_failing_term_does_not_lose_the_others(cfg, monkeypatch):
@@ -249,7 +325,8 @@ class TestDeferredDescriptions:
                 return out
 
         client = _Overreaching()
-        monkeypatch.setattr(jobspy_source, "_linkedin_detail_client", lambda: client)
+        monkeypatch.setattr(jobspy_source, "_linkedin_detail_client",
+                        lambda *a, **k: client)
 
         res = LinkedinSource().fetch(_Ctx(cfg))
 
@@ -312,3 +389,107 @@ def test_jobspy_still_exposes_the_private_detail_api():
     assert callable(LinkedIn._get_job_details)
     assert list(inspect.signature(LinkedIn._get_job_details).parameters) == [
         "self", "job_id"]
+
+
+# ---------------------------------------------------------------------
+# Page pacing + the HTTP tally
+#
+# The inter-page sleep jobspy hardcodes is the largest single line item in the
+# LinkedIn lane, and a 429 it earns is retried silently. These cover both: the
+# configured delay actually reaches the scraper class, and the tally sees the
+# statuses the retry layer hides.
+# ---------------------------------------------------------------------
+
+class _FakeResponse:
+    def __init__(self, status_code=200, history=()):
+        self.status_code = status_code
+        self.raw = type("Raw", (), {
+            "retries": type("R", (), {"history": history})()})()
+
+
+def test_paced_linkedin_sets_delay_and_restores_the_name():
+    import jobspy
+
+    original = jobspy.LinkedIn
+    tally = jobspy_source.HttpTally()
+    with jobspy_source.paced_linkedin(2.0, 1.5, tally) as cls:
+        assert jobspy.LinkedIn is cls
+        assert cls.delay == 2.0
+        assert cls.band_delay == 1.5
+        # A subclass, so every other jobspy behaviour is inherited unchanged.
+        assert issubclass(cls, original)
+    assert jobspy.LinkedIn is original
+
+
+def test_paced_linkedin_restores_the_name_after_a_raise():
+    import jobspy
+
+    original = jobspy.LinkedIn
+    with pytest.raises(RuntimeError):
+        with jobspy_source.paced_linkedin(1.0, 0.0, jobspy_source.HttpTally()):
+            raise RuntimeError("boom")
+    assert jobspy.LinkedIn is original
+
+
+def test_tally_counts_requests_and_flags_429s():
+    tally = jobspy_source.HttpTally()
+    tally.record(0.5, 200)
+    tally.record(0.3, 200)
+    tally.record(0.0, 429)
+
+    assert (tally.requests, tally.rate_limited) == (3, 1)
+    text = "\n".join(tally.report_lines("search", sleep_seconds=10.0))
+    assert "3 requests" in text
+    assert "10.0s deliberate sleep" in text
+    assert "**RATE LIMITED**" in text
+
+
+def test_tally_is_quiet_when_nothing_was_rate_limited():
+    tally = jobspy_source.HttpTally()
+    tally.record(0.4, 200)
+    text = "\n".join(tally.report_lines("search", sleep_seconds=3.0))
+    assert "RATE LIMITED" not in text
+    assert "transport errors" not in text
+
+
+def test_tally_counts_a_transport_error():
+    tally = jobspy_source.HttpTally()
+    tally.record(1.0, None)
+    assert tally.errors == 1
+    assert "transport errors: 1" in "\n".join(tally.report_lines("detail", 0.0))
+
+
+def test_adapter_counts_retried_429s_the_retry_layer_hides(monkeypatch):
+    """urllib3 retries a 429 internally and `send` only ever returns the final
+    200, so without the history walk a throttled night reports zero 429s."""
+    tally = jobspy_source.HttpTally()
+    adapter = jobspy_source._TallyingAdapter(tally)
+
+    attempt = type("Attempt", (), {"status": 429})()
+    monkeypatch.setattr(jobspy_source.HTTPAdapter, "build_response",
+                        lambda self, req, resp: _FakeResponse())
+    adapter.build_response(None, _FakeResponse(history=(attempt, attempt)).raw)
+
+    assert tally.rate_limited == 2
+
+
+def test_fetch_reports_the_page_delay_it_used(cfg, monkeypatch):
+    monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                        lambda **kw: _df(title=NO_VERTICAL))
+    ctx = _Ctx(cfg)
+    ctx.config.sources["linkedin"].page_delay_seconds = 2.0
+    ctx.config.sources["linkedin"].page_delay_band_seconds = 1.0
+
+    result = LinkedinSource().fetch(ctx)
+
+    assert any("Page delay: 2-3s between pages" in line
+               for line in result.report_lines)
+
+
+def test_indeed_reports_no_page_delay_line(cfg, monkeypatch):
+    """Only the LinkedIn lane is paced and tallied; the others are untouched."""
+    monkeypatch.setattr(jobspy_source, "scrape_jobs", lambda **kw: _df())
+
+    result = IndeedSource().fetch(_Ctx(cfg))
+
+    assert not any("Page delay" in line for line in result.report_lines)

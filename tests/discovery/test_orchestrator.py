@@ -1,12 +1,18 @@
 import pytest
 import pandas as pd
-from pathlib import Path
-import json
 
 from src.discovery.orchestrator import main
 from src.discovery import orchestrator
 from src.discovery.schema import make_row
 from src.discovery.sources.base import SourceResult
+from src.discovery.config import DiscoveryConfig, SourceConfig
+
+
+def _config(**overrides):
+    """The real DiscoveryConfig, so these tests cannot drift from its fields."""
+    overrides.setdefault("location_allowlist", None)
+    return DiscoveryConfig(**overrides)
+
 
 def test_resume_skips_existing_shard(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator, "REPO_ROOT", tmp_path)
@@ -20,13 +26,8 @@ def test_resume_skips_existing_shard(tmp_path, monkeypatch):
     # mock a shard for 'manual'
     pd.DataFrame([{"site": "manual"}]).to_parquet(tmp_path / "jobs" / "raw" / f"{today_str}_manual.parquet")
 
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     # Run with resume
     main(["--resume", today_str])
@@ -43,13 +44,8 @@ def test_deadline_hours_zero_no_fetch(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
     monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
 
-    class MockConfig:
-        deadline_hours = 0.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=0.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     main([])
 
@@ -76,17 +72,8 @@ def test_crashing_source_does_not_stop_later_sources(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
     monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
 
-    class MockSourceConfig:
-        enabled = True
-        pacing_seconds = 0
-
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {"linkedin": MockSourceConfig()}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={"linkedin": SourceConfig(True, 0)})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
     monkeypatch.setattr(orchestrator, "get_sources",
                         lambda: [_CrashingSource(), _WorkingSource()])
 
@@ -116,13 +103,8 @@ def test_zero_rows_writes_audit_parquet(tmp_path, monkeypatch):
     # Empty inbox, will return 0 rows for manual
     monkeypatch.setattr("src.discovery.inbox.INBOX", tmp_path / "inbox")
 
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     main([])
 
@@ -150,17 +132,8 @@ def test_zero_rows_with_errors_logs_a_warning(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(orchestrator, "JOBS_ROOT", tmp_path / "jobs")
     monkeypatch.setattr(orchestrator, "PIPELINE", tmp_path / "pipeline")
 
-    class MockSourceConfig:
-        enabled = True
-        pacing_seconds = 0
-
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {"workday": MockSourceConfig()}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={"workday": SourceConfig(True, 0)})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
     monkeypatch.setattr(orchestrator, "get_sources", lambda: [_AllRequestsFailedSource()])
 
     with caplog.at_level("WARNING"):
@@ -182,13 +155,8 @@ def test_zero_rows_with_no_errors_does_not_warn(tmp_path, monkeypatch, caplog):
 
     monkeypatch.setattr("src.discovery.inbox.INBOX", tmp_path / "inbox")
 
-    class MockConfig:
-        deadline_hours = 6.0
-        sources = {}
-        location_allowlist = None
-        raw_retention_days = 30
-
-    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: MockConfig())
+    cfg = _config(deadline_hours=6.0, sources={})
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
 
     with caplog.at_level("WARNING"):
         main([])
@@ -211,17 +179,10 @@ def paths(tmp_path, monkeypatch):
 
 
 def _mock_config(deadline_hours=6.0, **sources):
-    class MockSourceConfig:
-        enabled = True
-        pacing_seconds = 0
-
-    class MockConfig:
-        location_allowlist = None
-        raw_retention_days = 30
-
-    MockConfig.deadline_hours = deadline_hours
-    MockConfig.sources = {name: MockSourceConfig() for name in sources or {"linkedin": 1}}
-    return MockConfig()
+    return _config(
+        deadline_hours=deadline_hours,
+        sources={name: SourceConfig(True, 0) for name in sources or {"linkedin": 1}},
+    )
 
 
 class _NamedSource:
@@ -345,9 +306,11 @@ def test_deadline_spent_before_the_lanes_start_skips_them(paths, monkeypatch):
     assert second.calls == 0
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**DEADLINE REACHED** before linkedin started" in report
-    # the inbox's shard is still banked; the lane's is not, so --resume retries it
-    assert len(list((paths / "jobs" / "raw").glob("*_manual.parquet"))) == 1
-    assert list((paths / "jobs" / "raw").glob("*_linkedin.parquet")) == []
+    # The inbox's rows are still banked, under the _partial name -- it finished
+    # its work but the clock was gone by then, which is the same signal the
+    # report prints. The lane wrote nothing, so --resume retries it either way.
+    assert len(list((paths / "jobs" / "raw").glob("*_manual_partial.parquet"))) == 1
+    assert list((paths / "jobs" / "raw").glob("*_linkedin*.parquet")) == []
 
 
 def test_deadline_spent_by_a_crashing_inbox_still_skips_the_lanes(paths, monkeypatch):
@@ -524,7 +487,9 @@ def test_a_truncated_lane_keeps_its_shard_and_is_marked_partial(paths, monkeypat
 
     main([])
 
-    assert len(list((paths / "jobs" / "raw").glob("*_linkedin.parquet"))) == 1
+    # Banked under the _partial name, which is what makes --resume retry it.
+    assert list((paths / "jobs" / "raw").glob("*_linkedin.parquet")) == []
+    assert len(list((paths / "jobs" / "raw").glob("*_linkedin_partial.parquet"))) == 1
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert "**DEADLINE REACHED** — partial shard" in report
 
@@ -734,3 +699,250 @@ def test_a_resumed_run_records_its_own_overrides(paths, monkeypatch):
     report = (paths / "jobs" / "runs" / f"{run_id}.md").read_text(encoding="utf-8")
     assert "# Run existing" in report
     assert "Run overrides: `--source indeed`" in report
+
+
+# ---------------------------------------------------------------------
+# Preflight (D0.1) and truncated-shard resume (D2.5)
+# ---------------------------------------------------------------------
+
+def test_a_missing_libpostal_exits_before_any_source_is_fetched(paths, monkeypatch):
+    """D0.1: the probe used to happen inside cleaning, in main's finally —
+    i.e. after a whole night of scraping."""
+    from src.discovery import location
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", _mock_config)
+    spy = _NamedSource("manual")
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [spy])
+    calls = _spy_cleaning(monkeypatch)
+    monkeypatch.setattr(location, "_get_parse_address",
+                        lambda: (_ for _ in ()).throw(RuntimeError(location._POSTAL_MISSING)))
+
+    with pytest.raises(SystemExit) as e:
+        main([])
+
+    assert e.value.code != 0
+    assert "libpostal is required" in str(e.value)
+    assert spy.calls == 0
+    assert calls == []
+
+
+def test_the_libpostal_probe_runs_even_with_deadline_hours_zero(paths, monkeypatch):
+    """Cleaning still runs in the kill-switch mode, so it still needs the parser."""
+    from src.discovery import location
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", _mock_config)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_NamedSource("manual")])
+    _spy_cleaning(monkeypatch)
+    monkeypatch.setattr(location, "_get_parse_address",
+                        lambda: (_ for _ in ()).throw(RuntimeError(location._POSTAL_MISSING)))
+
+    with pytest.raises(SystemExit):
+        main(["--deadline-hours", "0"])
+
+
+def test_an_invalid_allowlist_exits_before_any_source_is_fetched(paths, monkeypatch):
+    from src.discovery.config import LocationAllowlist
+
+    cfg = _mock_config()
+    cfg.location_allowlist = LocationAllowlist(countries=["Untied States"])
+    monkeypatch.setattr("src.discovery.orchestrator.load_config", lambda: cfg)
+    spy = _NamedSource("manual")
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [spy])
+    calls = _spy_cleaning(monkeypatch)
+
+    with pytest.raises(SystemExit) as e:
+        main([])
+
+    assert "Untied States" in str(e.value)
+    assert spy.calls == 0
+    assert calls == []
+
+
+def _truncate_after_submit(monkeypatch):
+    """Let one lane start, then report the deadline as blown, so it writes a
+    partial shard the way a real cut-short lane does."""
+    started = {"v": False}
+    real = orchestrator.Context.deadline_reached
+
+    def fake(self):
+        if not started["v"]:
+            started["v"] = True
+            return False
+        return real(self)
+
+    monkeypatch.setattr(orchestrator.Context, "deadline_reached", fake)
+
+
+def test_resume_retries_a_truncated_lane_and_skips_the_completed_ones(paths, monkeypatch):
+    """D2.5: a partial shard is a file, and `pending()` used to read any file
+    as 'this lane is done'."""
+    run_id = "2026-01-01_0000"
+    raw = paths / "jobs" / "raw"
+    raw.mkdir(parents=True)
+    # linkedin finished last run; indeed was cut short.
+    pd.DataFrame([{"site": "linkedin"}]).to_parquet(raw / f"{run_id}_linkedin.parquet")
+    pd.DataFrame([{"site": "indeed"}]).to_parquet(raw / f"{run_id}_indeed_partial.parquet")
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(linkedin=1, indeed=1))
+    done, cut = _NamedSource("linkedin"), _NamedSource("indeed")
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [done, cut])
+    _spy_cleaning(monkeypatch)
+
+    main(["--resume", run_id])
+
+    assert done.calls == 0
+    assert cut.calls == 1
+    # The retry completed, so the stale partial is gone and a full shard stands.
+    assert not (raw / f"{run_id}_indeed_partial.parquet").exists()
+    assert (raw / f"{run_id}_indeed.parquet").exists()
+
+
+def test_a_second_truncation_still_leaves_only_one_partial_shard(paths, monkeypatch):
+    run_id = "2026-01-01_0000"
+    raw = paths / "jobs" / "raw"
+    raw.mkdir(parents=True)
+    pd.DataFrame([{"site": "indeed"}]).to_parquet(raw / f"{run_id}_indeed_partial.parquet")
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(deadline_hours=1e-9, indeed=1))
+    _truncate_after_submit(monkeypatch)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_NamedSource("indeed")])
+    _spy_cleaning(monkeypatch)
+
+    main(["--resume", run_id])
+
+    assert sorted(p.name for p in raw.glob("*.parquet")) == [f"{run_id}_indeed_partial.parquet"]
+
+
+def test_load_raw_window_reads_a_partial_shard(paths, monkeypatch):
+    """The _partial name is an underscore suffix precisely so
+    cleaning._RAW_FILENAME_RE still matches it — a `.partial` extension would
+    make the banked rows invisible."""
+    from src.discovery import cleaning as real_cleaning
+
+    monkeypatch.setattr("src.discovery.orchestrator.load_config",
+                        lambda: _mock_config(deadline_hours=1e-9, linkedin=1))
+    _truncate_after_submit(monkeypatch)
+    monkeypatch.setattr(orchestrator, "get_sources", lambda: [_NamedSource("linkedin", rows=3)])
+    _spy_cleaning(monkeypatch)
+
+    main([])
+
+    raw = paths / "jobs" / "raw"
+    assert len(list(raw.glob("*_partial.parquet"))) == 1
+    window = real_cleaning.load_raw_window(raw)
+    assert len(window) == 3
+
+
+# --- cadence ---------------------------------------------------------------
+
+def _freeze_weekday(monkeypatch, target_date):
+    """Pin the run's start date. Cadence resolves against it, and the run id
+    is derived from the same value, so both move together."""
+    import datetime as _dt
+
+    class _Frozen(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.combine(target_date, _dt.time(2, 0))
+
+    monkeypatch.setattr(orchestrator, "datetime", _Frozen)
+
+
+def _cadence_config(**cadences):
+    cfg = _config(deadline_hours=6.0, sources={
+        name: SourceConfig(True, 0, cadence) for name, cadence in cadences.items()
+    })
+    return cfg
+
+
+def test_a_source_not_due_tonight_is_not_polled(paths, monkeypatch):
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))  # a Saturday
+    srcs = _override_setup(monkeypatch,
+                           _cadence_config(linkedin="daily", indeed="weekdays"))
+
+    main([])
+
+    assert srcs["linkedin"].calls == 1
+    assert srcs["indeed"].calls == 0
+
+
+def test_a_cadence_skip_writes_no_shard_but_does_report_itself(paths, monkeypatch):
+    """The distinction the digest depends on: a skipped lane is not a zero-row
+    lane, so it needs a section saying why and no shard to clean."""
+    from datetime import date
+
+    from src.discovery.run_report import SourceStatus, parse_report
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))  # a Saturday
+    _override_setup(monkeypatch, _cadence_config(linkedin="daily", indeed="weekly"))
+
+    main([])
+
+    shards = sorted(p.name.split("_", 2)[-1] for p in (paths / "jobs" / "raw").glob("*.parquet"))
+    assert "indeed.parquet" not in shards
+
+    report_path = next((paths / "jobs" / "runs").glob("*.md"))
+    parsed = parse_report(report_path.read_text(encoding="utf-8"))
+    assert parsed.sources["indeed"].status is SourceStatus.SKIPPED
+    assert "weekly" in parsed.sources["indeed"].detail
+    # The contrast that matters: linkedin polled and found nothing, which
+    # is an alarm the digest counts; indeed was never asked, which is not.
+    assert parsed.sources["linkedin"].status is SourceStatus.ZERO
+
+
+def test_the_skip_section_keeps_report_order(paths, monkeypatch):
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))
+    _override_setup(monkeypatch, _cadence_config(linkedin="weekly", indeed="daily"))
+
+    main([])
+
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert report.index("### Source: manual") < report.index("### Source: linkedin")
+    assert report.index("### Source: linkedin") < report.index("### Source: indeed")
+
+
+def test_source_flag_overrides_cadence(paths, monkeypatch):
+    """Naming a source is the explicit instruction to run it tonight."""
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))  # a Saturday
+    srcs = _override_setup(monkeypatch, _cadence_config(linkedin="weekdays"))
+
+    main(["--source", "linkedin"])
+
+    assert srcs["linkedin"].calls == 1
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert "SKIPPED" not in report
+
+
+def test_manual_has_no_config_entry_and_is_never_cadence_skipped(paths, monkeypatch):
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))
+    srcs = _override_setup(monkeypatch, _cadence_config(linkedin="weekly"))
+
+    main([])
+
+    assert srcs["manual"].calls == 1
+
+
+def test_a_resume_does_not_repeat_the_skip_sections(paths, monkeypatch):
+    """The resume appends to the original report rather than rewriting it, so
+    re-rendering a skip would leave two sections for one lane."""
+    from datetime import date
+
+    _freeze_weekday(monkeypatch, date(2026, 9, 19))
+    _override_setup(monkeypatch, _cadence_config(linkedin="daily", indeed="weekly"))
+
+    main([])
+    run_id = next((paths / "jobs" / "runs").glob("*.md")).stem
+    main(["--resume", run_id])
+
+    report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
+    assert report.count("SKIPPED (cadence: weekly)") == 1

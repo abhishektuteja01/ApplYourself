@@ -223,7 +223,7 @@ class TestTheSubmitButtonMustBeUnambiguous:
 
 class TestFetchForm:
     def test_a_404_is_an_ordinary_expiry(self):
-        from src.discovery.sources.ats.http import CareersError
+        from src.ats_http import CareersError
 
         posting = parse_posting("https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001")
         with patch("src.apply.ashby.fetch_text", side_effect=CareersError("gone", status=404)):

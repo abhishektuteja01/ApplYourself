@@ -1,27 +1,47 @@
 """Deterministic cleaning.
 
 No LLM calls (R7). Reads pipeline/*/state.yaml but never writes there.
-Operations execute in this exact step order:
+Operations execute in this exact step order. Steps 0-3b are row-local, so they
+run per raw shard inside load_filtered_window rather than once on the
+concatenated window; steps 5+ need the whole window and run after the concat.
   0. Per-vertical title gate (apply_title_exclusion), before everything else
+  0b. Backfill a blank company from the board tenant slug in the row's url
+     (registry.parse_posting_url). Before step 1 so the recovered name goes
+     through the same normalizer as a scraped one
   1. Normalize company / title fields (seniority preserved)
-  2. Drop rows where jd_text < 200 chars
+  1b. Drop rows with a blank company_normalized — job_id would key on title alone
+  2. Drop rows where jd_text < 200 chars; the share whose description was
+     completely empty is counted separately, since a never-fetched JD is a
+     different loss from a thin one
   3. Drop rows where posted_date < today-14d (missing date kept w/ flag);
-     career-board sources exempt — board presence is the liveness signal;
+     career-board sources exempt — board presence is the liveness signal,
+     capped by board_max_age_days when that config key is non-zero;
      rows with a pipeline/<job_id>/state.yaml exempt too, matching step 9
   3b. Drop rows outside the location allowlist
-  4. Exact dedupe on (company_normalized, title_normalized), longest jd_text wins
-  5. Near dedupe within company via rapidfuzz.WRatio >= 90, longest jd_text wins
-  6. job_id = sha1(company_normalized|title_normalized)[:8]
+  4. job_id = sha1(company_normalized|title_normalized)[:8]
      url and jd_text deliberately excluded so job_id is stable across re-scrapes.
      Flipping the hash on a URL change would silently orphan
-     pipeline/<job_id>/state.yaml and applications/<dir> keys.
-  7. Update jobs/seen.parquet: refresh last_score from
+     pipeline/<job_id>/state.yaml and applications/<dir> keys. Assigned before
+     dedupe because the merge group's surviving id is picked from the ids its
+     own members already carry.
+  5. Dedupe — one evidence-based pass (discovery/dedupe.py). Candidate pairs are
+     blocked on url, board slug, squashed company key, company-name containment
+     and identical title; a pair merges only on an identical url, a shared board
+     tenant plus a near-identical title, or a near-identical title with a close
+     company name AND similar jd_text. The survivor is the applyable url, then
+     the in-allowlist location, then the longest jd_text; its id comes from
+     aliases.select_sticky_id and every merged company spelling is pinned in the
+     append-only jobs/company_aliases.parquet.
+  6. Update jobs/seen.parquet: refresh last_score from
      scored.parquet (deterministic READ of Claude's sidecar — R7 intact),
      purge rows RESURFACE_AFTER_DAYS past expiry, stamp first_seen for new ids
-  8. Glob pipeline/*/state.yaml -> set already_seen + application_status
-  9. Drop expired rows per the seen-ledger tiers (tracked rows never expire)
-  10. Initialize Claude-owned columns with defaults
-  11. Write clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
+  7. Glob pipeline/*/state.yaml -> set already_seen + application_status
+  8. Drop expired rows per the seen-ledger tiers (tracked rows never expire;
+     never-scored rows get the high tier — NaN means unjudged, not bad)
+  9. Initialize Claude-owned columns with defaults
+  10. coerce_schema (raises KeyError on a missing column), prune_raw_files
+      (deletes raw shards older than raw_retention_days), then write
+      clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
 """
 from __future__ import annotations
 
@@ -30,14 +50,15 @@ import json
 import logging
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 import pandas as pd
-import yaml
-from rapidfuzz import fuzz
 
 from src import verticals
+from src.discovery import aliases
+from src.discovery import dedupe as dedupe_mod
 from src.discovery.config import load_config
-from src.discovery.schema import naive_datetime
+from src.discovery.dates import naive_datetime
 from src import paths
 from src.parquet_io import write_parquet
 from src.state_io import load_state_index
@@ -51,9 +72,12 @@ CLEAN_COLUMNS: list[str] = [
     "title", "title_normalized", "location", "remote_flag",
     "posted_date", "posted_date_missing", "scraped_date",
     "url", "jd_text",
+    "location_count", "all_locations",
     "salary_min", "salary_max", "salary_currency",
     "employment_type", "seniority_raw", "ingested_run_id",
     "vertical",  # a profile/verticals.yaml name | "" — Python-owned, set at fetch time
+    # which search query surfaced the row; "" / False where the source has none
+    "found_by_term", "found_by_remote",
     "already_seen", "application_status",
     "fit_score", "fit_subscores",
     "sponsorship_label", "sponsorship_evidence", "shortlist_rank",
@@ -62,7 +86,9 @@ CLEAN_COLUMNS: list[str] = [
 # Career-board sources: presence on the company's own board
 # this run IS the liveness signal, so the posted_date staleness cutoff does
 # not apply; a board row's pipeline lifetime is governed by the seen-ledger.
-from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES, ATS_URL_MARKERS
+from src.discovery.sources.ats.registry import (
+    ATS_SOURCE_NAMES, is_applyable, parse_posting_url,
+)
 CAREER_SOURCES: tuple[str, ...] = tuple(ATS_SOURCE_NAMES)
 
 # "manual" joins them for a different reason: an inbox clip or a URL ingest is
@@ -88,6 +114,7 @@ MIN_JD_CHARS = 200
 
 PREVIEW_COLUMNS = [
     "job_id", "source", "company", "title", "location",
+    "location_count", "all_locations",
     "posted_date", "url", "vertical", "fit_score", "sponsorship_label",
 ]
 
@@ -99,7 +126,7 @@ PREVIEW_COLUMNS = [
 #      from inbox.parse_inbox_file.
 #   2. Legacy raw rows from before this column existed, or any row that
 #      otherwise reaches project_raw with vertical="" — backfilled below so
-#      a stale empty-vertical row never wins exact_dedupe over a freshly
+#      a stale empty-vertical row never wins the dedupe tie-break over a freshly
 #      re-scraped, correctly-tagged duplicate by virtue of a longer jd_text.
 # The rules live in profile/verticals.yaml `classifier_rules`:
 # an ORDERED list where first match wins, so rule order encodes the locked
@@ -155,7 +182,7 @@ def normalize_title(s: str | None) -> str:
 
 
 # ---------------------------------------------------------------------
-# Step 6 — job_id (defined early; reused elsewhere)
+# Step 4 — job_id (defined early; reused elsewhere)
 # ---------------------------------------------------------------------
 
 def compute_job_id(company_normalized: str, title_normalized: str) -> str:
@@ -163,15 +190,55 @@ def compute_job_id(company_normalized: str, title_normalized: str) -> str:
     return hashlib.sha1(key).hexdigest()[:8]
 
 
+def drop_job_id_collisions(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Drop rows whose job_id is shared by a different (company, title) pair.
+
+    8 hex chars is 32 bits, so a birthday collision is a matter of time. A
+    collision would cross-wire two unrelated roles' pipeline/<job_id>/state.yaml
+    and applications/<dir>, so every row involved is dropped rather than written.
+    The blast radius is the colliding pair, not the run: losing the night's
+    clean.parquet costs more than losing two rows.
+    """
+    if df.empty:
+        return df, []
+    pairs = df["company_normalized"].astype(str) + "|" + df["title_normalized"].astype(str)
+    distinct_pairs = pairs.groupby(df["job_id"]).nunique()
+    colliding = set(distinct_pairs[distinct_pairs > 1].index)
+    if not colliding:
+        return df, []
+    hit = df["job_id"].isin(colliding)
+    named = sorted(
+        f"{i} {c} | {t}"
+        for i, c, t in zip(
+            df.loc[hit, "job_id"],
+            df.loc[hit, "company_normalized"],
+            df.loc[hit, "title_normalized"],
+        )
+    )
+    log.error(
+        "job_id collision: %d rows across %d ids dropped — %s",
+        int(hit.sum()), len(colliding), "; ".join(named),
+    )
+    return df[~hit].copy(), named
+
+
 # ---------------------------------------------------------------------
 # Step 2 — drop short JD
 # ---------------------------------------------------------------------
 
-def drop_short_jd(df: pd.DataFrame, min_chars: int = MIN_JD_CHARS) -> pd.DataFrame:
+def drop_short_jd(
+    df: pd.DataFrame, min_chars: int = MIN_JD_CHARS
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Returns the survivors plus the per-source count of dropped rows whose
+    description was *completely empty*, not merely short: a JD nobody ever
+    fetched, distinct from one that came back thin. The caller logs one
+    summary per run rather than a line per row."""
     if df.empty:
-        return df.copy()
+        return df.copy(), {}
     lens = df["jd_text"].fillna("").astype(str).str.strip().str.len()
-    return df[lens >= min_chars].copy()
+    empty_by_source: dict[str, int] = {}
+    _tally_by_source(df[lens == 0], empty_by_source)
+    return df[lens >= min_chars].copy(), empty_by_source
 
 
 # ---------------------------------------------------------------------
@@ -184,6 +251,7 @@ def drop_stale(
     max_age_days: int = MAX_AGE_DAYS,
     exempt_sources: tuple[str, ...] = STALENESS_EXEMPT_SOURCES,
     tracked_ids: frozenset[str] = frozenset(),
+    board_max_age_days: int = 0,
 ) -> pd.DataFrame:
     df = df.copy()
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
@@ -201,7 +269,13 @@ def drop_stale(
     if source is not None:
         # Career boards and manual adds: an old-but-listed posting is live by
         # definition; lifetime is governed by the seen-ledger, not age.
-        keep = keep | source.isin(exempt_sources)
+        exempt = source.isin(exempt_sources)
+        if board_max_age_days > 0:
+            # Opt-in ceiling on that exemption. 0 (the default) keeps it
+            # unbounded.
+            board_cutoff = today - pd.Timedelta(days=board_max_age_days)
+            exempt &= posted.isna() | (posted >= board_cutoff)
+        keep = keep | exempt
     if tracked_ids:
         # A row with a state.yaml outlives its posted_date, the same rule
         # apply_expiry states at step 9. Without it a dated source drops the
@@ -222,7 +296,9 @@ def drop_stale(
 
 def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     if df.empty:
-        return df.copy()
+        out = df.copy()
+        out["_loc_unresolved"] = pd.Series(dtype=bool)
+        return out
 
     # Local import: location needs libpostal (optional `discovery` group), and
     # importing this module must stay possible without it.
@@ -237,6 +313,10 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 
     keep_indices = []
     new_locations = []
+    # A conservative keep (nothing parsed, or a multi-region ambiguity that
+    # merely overlaps the allowlist) loses the dedupe tie-break to a row that
+    # positively resolved inside it.
+    unresolved = []
 
     for idx, raw_loc in zip(df.index, df["location"]):
         raw_loc_str = str(raw_loc).strip() if pd.notna(raw_loc) else ""
@@ -245,13 +325,16 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
         # 1. Nothing parsed at all -> KEEP (conservative default, unchanged).
         if not parsed.country and not parsed.state and not parsed.city and not parsed.candidate_countries:
             keep_indices.append(idx)
+            unresolved.append(True)
             if parsed.remote:
                 new_locations.append("Remote")
             else:
                 new_locations.append(raw_loc_str)
             continue
 
-        # 1b. A genuine multi-region ambiguity (location.py no longer picks
+        # 1b. A genuine multi-region ambiguity, or a region acronym like
+        # `EMEA` that location.py expanded to its constituent countries
+        # (location.py no longer picks
         # a winner among multiple countries itself -- that decision belongs
         # here, against whatever the user actually configured, so an
         # India-only allowlist gets the same "don't guess" protection a
@@ -261,6 +344,7 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
             candidates_lower = {c.lower() for c in parsed.candidate_countries}
             if not allow_countries or candidates_lower & allow_countries:
                 keep_indices.append(idx)
+                unresolved.append(True)
                 new_locations.append("Remote" if parsed.remote else raw_loc_str)
             continue
 
@@ -276,9 +360,12 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 
         if not drop:
             keep_indices.append(idx)
+            unresolved.append(False)
             canon = ""
             if parsed.city and parsed.state:
                 canon = f"{parsed.city}, {parsed.state}"
+            elif parsed.city and parsed.country:
+                canon = f"{parsed.city}, {parsed.country}"
             elif parsed.state:
                 canon = parsed.state
             elif parsed.country:
@@ -292,100 +379,49 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
 
     filtered = df.loc[keep_indices].copy()
     filtered["location"] = new_locations
+    filtered["_loc_unresolved"] = unresolved
     return filtered
 
 
 # ---------------------------------------------------------------------
-# Step 4 — exact dedupe
+# Step 5 — dedupe (the decision lives in discovery/dedupe.py)
 # ---------------------------------------------------------------------
 
 def _not_applyable(df: pd.DataFrame) -> pd.Series:
     """False for rows whose url leads to a board application form. Sorted
     ascending, so those rows win their group."""
-    url = df["url"].fillna("").astype(str) if "url" in df.columns else pd.Series("", index=df.index)
-    return ~url.str.contains("|".join(re.escape(m) for m in ATS_URL_MARKERS), case=False, regex=True)
+    if "url" not in df.columns:
+        return pd.Series(True, index=df.index)
+    url = df["url"].fillna("").astype(str)
+    return ~url.map(is_applyable)
 
 
-def exact_dedupe(df: pd.DataFrame) -> pd.DataFrame:
+def dedupe(
+    df: pd.DataFrame,
+    ledger: pd.DataFrame | None = None,
+    state_index: dict | None = None,
+    seen_ids=(),
+) -> tuple[pd.DataFrame, list[dict]]:
+    """One evidence-based pass over the whole window.
+
+    Applyability outranks jd_text length in the survivor tie-break: an
+    aggregator repost wins on appended boilerplate by a percent or two and
+    costs the only url that can be submitted to.
+    """
     if df.empty:
-        return df.copy()
-    df = df.copy()
-    df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
-    # Applyability outranks jd_text length: an aggregator repost wins on
-    # appended boilerplate by a percent or two and costs the only url that can
-    # be submitted to. Both rows share company_normalized and title_normalized,
-    # so job_id is identical either way and no tracked role is orphaned.
-    df["_not_applyable"] = _not_applyable(df)
-    df = df.sort_values(["_not_applyable", "_jd_len"], ascending=[True, False], kind="stable")
-    df = df.drop_duplicates(subset=["company_normalized", "title_normalized"], keep="first")
-    return df.drop(columns=["_jd_len", "_not_applyable"])
+        return dedupe_mod.resolve(df)
+    work = df.copy()
+    work["_not_applyable"] = _not_applyable(work)
+    return dedupe_mod.resolve(
+        work,
+        canonical=aliases.canonical_map(ledger) if ledger is not None else {},
+        state_index=state_index or {},
+        seen_ids=seen_ids,
+    )
 
 
 # ---------------------------------------------------------------------
-# Step 5 — near dedupe within company
-# ---------------------------------------------------------------------
-
-# Level, seniority and track tokens, in canonical spelling. Two titles in one
-# company that disagree on these are different roles however close their ratio:
-# a level-numbered pair scores 98 on title alone, so ratio by itself deletes a
-# real posting.
-LEVEL_TOKENS = frozenset({
-    "i", "ii", "iii", "iv",
-    "intern", "coop", "trainee", "apprentice",
-    "junior", "entry", "graduate", "associate",
-    "senior", "staff", "principal", "distinguished", "fellow",
-    "lead", "manager", "director", "head", "vp", "chief", "president",
-})
-
-# Compared as canonical sets, never raw tokens: the same level is routinely
-# spelled two ways across boards, and treating the spellings as different
-# levels would exempt a genuine duplicate from collapsing.
-_LEVEL_SYNONYMS = {
-    "jr": "junior", "sr": "senior",
-    "mgr": "manager", "mgmt": "manager", "management": "manager",
-    "interns": "intern", "internship": "intern", "internships": "intern",
-    "grad": "graduate", "apprenticeship": "apprentice",
-    "1": "i", "2": "ii", "3": "iii", "4": "iv",
-    "vice": "vp",
-}
-# normalize_title turns "Co-op" into two tokens, so rejoin it before matching.
-_CO_OP_RE = re.compile(r"\bco op\b")
-
-
-def _level_tokens(title: str) -> frozenset[str]:
-    tokens = (_LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title).split())
-    return frozenset(LEVEL_TOKENS.intersection(tokens))
-
-
-def near_dedupe(df: pd.DataFrame, ratio_threshold: float = 90) -> pd.DataFrame:
-    if df.empty:
-        return df.copy()
-    df = df.copy()
-    df["_jd_len"] = df["jd_text"].fillna("").astype(str).str.len()
-    # Same tie-break as exact_dedupe, for the same reason: an aggregator repost
-    # wins on boilerplate by a percent or two and costs the only url that can be
-    # submitted to. Step 4 got this and step 5 did not, so a board row could win
-    # the exact pass and then lose the fuzzy one — silently, since job_id
-    # excludes url. Measured on the 2026-08-10 run: 3 applyable rows lost to a
-    # LinkedIn survivor this way.
-    df["_not_applyable"] = _not_applyable(df)
-    keep_indices: list = []
-    for _, group in df.groupby("company_normalized", sort=False):
-        g = group.sort_values(["_not_applyable", "_jd_len"],
-                               ascending=[True, False], kind="stable")
-        kept: list[tuple[str, frozenset[str]]] = []
-        for idx, title in zip(g.index, g["title_normalized"]):
-            levels = _level_tokens(title)
-            if any(levels == kept_levels and fuzz.WRatio(title, kt) >= ratio_threshold
-                   for kt, kept_levels in kept):
-                continue
-            kept.append((title, levels))
-            keep_indices.append(idx)
-    return df.loc[keep_indices].drop(columns=["_jd_len", "_not_applyable"]).copy()
-
-
-# ---------------------------------------------------------------------
-# Step 7 — seen-ledger (jobs/seen.parquet)
+# Step 6 — seen-ledger (jobs/seen.parquet)
 # ---------------------------------------------------------------------
 
 def _lifetime_days(score: float) -> int:
@@ -417,7 +453,7 @@ def update_seen_ledger(
     if scored_path.exists() and len(ledger):
         try:
             scored = pd.read_parquet(scored_path, columns=["job_id", "fit_score"])
-        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+        except (OSError, ValueError, KeyError) as e:
             log.warning("seen-ledger: could not read %s: %s", scored_path, e)
         else:
             score_map = scored.set_index("job_id")["fit_score"].to_dict()
@@ -443,7 +479,7 @@ def update_seen_ledger(
 
 
 # ---------------------------------------------------------------------
-# Step 8 — state.yaml glob
+# Step 7 — state.yaml glob
 # ---------------------------------------------------------------------
 
 def apply_state_yaml(df: pd.DataFrame, pipeline_dir: Path) -> pd.DataFrame:
@@ -463,7 +499,7 @@ def apply_state_yaml(df: pd.DataFrame, pipeline_dir: Path) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------
-# Step 9 — seen-ledger expiry
+# Step 8 — seen-ledger expiry
 # ---------------------------------------------------------------------
 
 def apply_expiry(
@@ -479,11 +515,17 @@ def apply_expiry(
     source="manual" is exempt for the same reason it is exempt from
     drop_stale: an inbox clip or a URL ingest is a deliberate user add, and
     expiry is keyed on ledger first_seen, so re-adding a role last seen past
-    its retention window would drop the row the user just asked for."""
+    its retention window would drop the row the user just asked for.
+
+    A NaN last_score means never judged, not judged badly, so it gets
+    RETENTION_HIGH_DAYS — visible until scoring gets to it, but still bounded
+    if scoring is abandoned."""
     if df.empty or ledger is None or not len(ledger):
         return df.copy()
     today = pd.Timestamp(today).normalize()
-    lifetimes = ledger["last_score"].apply(_lifetime_days)
+    lifetimes = ledger["last_score"].apply(_lifetime_days).where(
+        ledger["last_score"].notna(), RETENTION_HIGH_DAYS
+    )
     expires_at = ledger["first_seen"] + pd.to_timedelta(lifetimes, unit="D")
     expired_ids = set(ledger.loc[today > expires_at, "job_id"])
     if not expired_ids:
@@ -495,7 +537,7 @@ def apply_expiry(
 
 
 # ---------------------------------------------------------------------
-# Step 10 — Claude-owned defaults
+# Step 9 — Claude-owned defaults
 # ---------------------------------------------------------------------
 
 def init_claude_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -548,6 +590,7 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
         "salary_currency": "", "employment_type": "", "seniority_raw": "",
         "location": "", "source": "", "ingested_run_id": "",
         "company": "", "title": "", "jd_text": "", "url": "", "vertical": "",
+        "found_by_term": "",
     }
     for col, default in string_defaults.items():
         if col not in df.columns:
@@ -562,14 +605,15 @@ def project_raw(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[needs_fallback, "vertical"] = (
             df.loc[needs_fallback, "title"].apply(classify_vertical_from_title)
         )
-    if "remote_flag" not in df.columns:
-        df["remote_flag"] = False
-    else:
-        # .where, not .fillna — fillna on an object column downcasts, and the
-        # trailing astype already fixes the type. NaN is truthy, so the null
-        # fill has to happen before the cast, not via astype alone.
-        flag = df["remote_flag"]
-        df["remote_flag"] = flag.where(flag.notna(), False).astype(bool)
+    for col in ("remote_flag", "found_by_remote"):
+        if col not in df.columns:
+            df[col] = False
+        else:
+            # .where, not .fillna — fillna on an object column downcasts, and the
+            # trailing astype already fixes the type. NaN is truthy, so the null
+            # fill has to happen before the cast, not via astype alone.
+            flag = df[col]
+            df[col] = flag.where(flag.notna(), False).astype(bool)
     if "scraped_date" not in df.columns:
         df["scraped_date"] = pd.Timestamp.today().normalize()
     df["scraped_date"] = naive_datetime(df["scraped_date"])
@@ -675,16 +719,17 @@ def _parse_run_ts_from_filename(name: str) -> pd.Timestamp | None:
         return None
 
 
-def load_raw_window(
+def _iter_raw_shards(
     raw_dir: Path,
     today: pd.Timestamp | None = None,
     max_age_days: int = MAX_AGE_DAYS,
-) -> pd.DataFrame:
+):
+    """Yield one raw shard frame per in-window parquet, oldest filename first.
+    Sole place the window cutoff and the filename convention are applied."""
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     cutoff = today - pd.Timedelta(days=max_age_days)
     if not raw_dir.exists():
-        return pd.DataFrame()
-    frames: list[pd.DataFrame] = []
+        return
     for path in sorted(raw_dir.glob("*.parquet")):
         ts = _parse_run_ts_from_filename(path.name)
         if ts is None:
@@ -693,12 +738,232 @@ def load_raw_window(
         if ts.normalize() < cutoff:
             continue
         try:
-            frames.append(pd.read_parquet(path))
-        except (OSError, ValueError, KeyError, yaml.YAMLError) as e:
+            yield pd.read_parquet(path)
+        except (OSError, ValueError, KeyError) as e:
             log.error("Failed to read %s: %s", path, e)
+
+
+def load_raw_window(
+    raw_dir: Path,
+    today: pd.Timestamp | None = None,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> pd.DataFrame:
+    """The whole window concatenated, unfiltered. `run` uses
+    load_filtered_window instead — this stays for callers that want the raw
+    frame."""
+    frames = list(_iter_raw_shards(raw_dir, today=today, max_age_days=max_age_days))
     if not frames:
         return pd.DataFrame()
     return _concat_raw_frames(frames)
+
+
+_SLUG_SEP_RE = re.compile(r"[-_+]+")
+# Shortest tenant slug trusted as a company name. Below it a slug is an
+# internal abbreviation ("nc"), and a wrong company mints a wrong job_id and a
+# wrong pipeline/<job_id>/ — worse than a dropped row.
+MIN_COMPANY_SLUG_CHARS = 3
+
+
+def company_from_url(url: str) -> str:
+    """Step 0b. The employer named by a board posting URL's tenant slug, or ""
+    when the URL names no tenant we trust.
+
+    Board identity comes only from sources/ats/registry.py — never a second
+    hostname list. A posting recognized with an *empty* slug (a company careers
+    page carrying `?gh_jid=`) recovers nothing: that host is as likely an
+    unlisted ATS as the employer, and nothing here can tell which. Aggregator
+    URLs (indeed's own pages) name no board and stay dropped.
+    """
+    hit = parse_posting_url(url)
+    if hit is None or not hit.slug:
+        return ""
+    name = _WS_RE.sub(" ", _SLUG_SEP_RE.sub(" ", unquote(hit.slug))).strip()
+    if len(name) < MIN_COMPANY_SLUG_CHARS or not any(c.isalpha() for c in name):
+        return ""
+    # Most boards lowercase the slug; title-case those and leave one that
+    # already carries capitals ("Edison Scientific") as the tenant wrote it.
+    # Either spelling normalizes the same way, so job_id does not depend on it.
+    return name.title() if name == name.lower() else name
+
+
+def backfill_company_from_url(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Step 0b, applied. Fills only a blank company, and only from the row's
+    own board URL; a row whose tenant is not recoverable reaches step 1b blank
+    and is dropped there exactly as before."""
+    if df.empty or "company" not in df.columns:
+        return df, 0
+    blank = df["company"].fillna("").astype(str).str.strip() == ""
+    if not blank.any():
+        return df, 0
+    df = df.copy()
+    urls = df.loc[blank, "url"].fillna("").astype(str) if "url" in df.columns else None
+    if urls is None:
+        return df, 0
+    recovered = urls.apply(company_from_url)
+    hits = recovered != ""
+    df.loc[recovered[hits].index, "company"] = recovered[hits]
+    return df, int(hits.sum())
+
+
+def drop_blank_company(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Step 1b. A blank company makes job_id a function of the title alone, so
+    two rows from different employers collide and dedupe deletes one.
+
+    Returns the per-source drop counts; the caller logs one summary per run
+    rather than a line per row."""
+    if df.empty:
+        return df.copy(), {}
+    blank = df["company_normalized"].fillna("").str.strip() == ""
+    if not blank.any():
+        return df, {}
+    by_source = {
+        str(s): int(n) for s, n in df.loc[blank, "source"].value_counts().items()
+    }
+    if log.isEnabledFor(logging.DEBUG):
+        sample = df.loc[blank, ["source", "title", "url"]].head(3)
+        for s, t, u in sample.itertuples(index=False):
+            log.debug("blank company: source=%r title=%r url=%r", s, t, u)
+    return df[~blank].copy(), by_source
+
+
+def _tally_by_source(df: pd.DataFrame, acc: dict) -> None:
+    """Accumulate per-source row counts into `acc`, in place."""
+    if df.empty:
+        return
+    for src, count in df["source"].value_counts().items():
+        acc[str(src)] = acc.get(str(src), 0) + int(count)
+
+
+def _new_window_stats() -> dict:
+    return {
+        "raw_rows": 0,
+        "after_exclusion": 0,
+        "drops_per_vertical": {},
+        "per_source_pregate": {},
+        "per_source_raw": {},
+        "empty_jd_by_source": {},
+        "dropped_empty_jd": 0,
+        "recovered_company": 0,
+        "dropped_blank_company": 0,
+        "blank_company_by_source": {},
+        "after_blank_company": 0,
+        "after_short": 0,
+        "after_stale": 0,
+        "after_location": 0,
+    }
+
+
+def _filter_shard(
+    raw: pd.DataFrame,
+    stats: dict,
+    cfg,
+    vcfg,
+    tracked_ids: frozenset[str],
+    today: pd.Timestamp | None,
+) -> pd.DataFrame:
+    """Steps 0-3b for one shard. Every filter here is row-local, so running it
+    per shard is identical to running it once on the concatenated window — and
+    keeps 14 days of full shards from ever being resident at once. Each stats
+    counter accumulates, so the run report's chained `dropped_*` arithmetic is
+    unchanged."""
+    stats["raw_rows"] += len(raw)
+    df = project_raw(raw)
+    # True per-source raw, before the title gate — the single largest drop
+    # stage, invisible while the table's `raw` column was the post-gate tally.
+    _tally_by_source(df, stats["per_source_pregate"])
+    # step 0
+    df, drops_per_vertical = apply_title_exclusion(df, vcfg)
+    for name, count in drops_per_vertical.items():
+        stats["drops_per_vertical"][name] = stats["drops_per_vertical"].get(name, 0) + count
+    stats["after_exclusion"] += len(df)
+    # step 0b — before the normalizer, so a recovered name is normalized like
+    # any scraped one
+    df, recovered = backfill_company_from_url(df)
+    stats["recovered_company"] += recovered
+    # step 1
+    df["company_normalized"] = df["company"].apply(normalize_company)
+    df["title_normalized"] = df["title"].apply(normalize_title)
+    # Counted before any drop below it, so the per-source table's `after gate`
+    # column still reconciles against after_exclusion.
+    _tally_by_source(df, stats["per_source_raw"])
+    # step 1b
+    df, blank_by_source = drop_blank_company(df)
+    for src, count in blank_by_source.items():
+        stats["blank_company_by_source"][src] = (
+            stats["blank_company_by_source"].get(src, 0) + count
+        )
+    stats["dropped_blank_company"] += sum(blank_by_source.values())
+    stats["after_blank_company"] += len(df)
+    # step 2
+    df, empty_by_source = drop_short_jd(df)
+    for src, count in empty_by_source.items():
+        stats["empty_jd_by_source"][src] = stats["empty_jd_by_source"].get(src, 0) + count
+    stats["dropped_empty_jd"] += sum(empty_by_source.values())
+    stats["after_short"] += len(df)
+    # step 3 — needs company_normalized/title_normalized (it recomputes job_id)
+    # and tracked_ids, which is why both are resolved above the loop.
+    df = drop_stale(
+        df, today=today,
+        tracked_ids=tracked_ids,
+        board_max_age_days=cfg.board_max_age_days,
+    )
+    stats["after_stale"] += len(df)
+    # step 3b — location filter. Runs before dedupe so the survivor of a
+    # company+title group is picked among eligible rows only, and before the
+    # seen-ledger so an allowlist change isn't masked by stale first_seen.
+    df = filter_and_canonicalize_location(df, cfg)
+    stats["after_location"] += len(df)
+    return df
+
+
+def load_filtered_window(
+    raw_dir: Path,
+    cfg,
+    pipeline_dir: Path,
+    today: pd.Timestamp | None = None,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> tuple[pd.DataFrame, dict]:
+    """Stream the window: read one shard, apply steps 0-3b, keep only the
+    survivors. Returns (frame ready for dedupe, accumulated stats)."""
+    stats = _new_window_stats()
+    vcfg = verticals.get_config()
+    # Hoisted above the loop: one state.yaml glob for the whole window.
+    tracked_ids = frozenset(load_state_index(pipeline_dir))
+    frames = [
+        _filter_shard(raw, stats, cfg, vcfg, tracked_ids, today)
+        for raw in _iter_raw_shards(raw_dir, today=today, max_age_days=max_age_days)
+    ]
+    if not frames:
+        # No shard at all still has to produce the canonical column set, the
+        # same way project_raw(pd.DataFrame()) did when run projected the concat.
+        frames = [_filter_shard(pd.DataFrame(), _new_window_stats(), cfg, vcfg, tracked_ids, today)]
+    _log_blank_company_summary(stats)
+    _log_empty_jd_summary(stats)
+    return _concat_raw_frames(frames), stats
+
+
+def _log_empty_jd_summary(stats: dict) -> None:
+    """One line per run for the empty-description share of step 2, not one per
+    row. A source that fetches JDs lazily can accept a row at scrape time and
+    lose it here with a description nobody ever fetched."""
+    dropped = stats.get("dropped_empty_jd", 0)
+    if not dropped:
+        return
+    breakdown = _by_source_text(stats.get("empty_jd_by_source", {}))
+    log.warning("short-JD drop: %d had an empty description (%s)", dropped, breakdown)
+
+
+def _log_blank_company_summary(stats: dict) -> None:
+    """One line per run for step 1b, not one per row."""
+    dropped = stats.get("dropped_blank_company", 0)
+    recovered = stats.get("recovered_company", 0)
+    if not dropped and not recovered:
+        return
+    breakdown = _by_source_text(stats.get("blank_company_by_source", {}))
+    log.warning(
+        "blank company: recovered %d from board tenant slugs, dropped %d (%s)",
+        recovered, dropped, breakdown,
+    )
 
 
 def _concat_raw_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
@@ -743,6 +1008,12 @@ def prune_raw_files(raw_dir: Path, cfg, today: pd.Timestamp) -> int:
     return pruned_count
 
 
+def _by_source_text(by_source: dict) -> str:
+    return ", ".join(
+        f"{s}={n}" for s, n in sorted(by_source.items(), key=lambda kv: -kv[1])
+    ) or "none"
+
+
 def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> None:
     lines = [
         "",
@@ -757,20 +1028,21 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
         f"(dropped {stats.get('dropped_blank_company', 0)})",
         f"- after short-JD drop (<{MIN_JD_CHARS} chars): {stats.get('after_short_jd', 0)} "
         f"(dropped {stats.get('dropped_short', 0)})",
+        f"- of which empty description: {stats.get('dropped_empty_jd', 0)}",
+        "  - empty description by source: "
+        + _by_source_text(stats.get("empty_jd_by_source", {})),
         f"- after stale drop (>{MAX_AGE_DAYS}d): {stats.get('after_stale', 0)} "
         f"(dropped {stats.get('dropped_stale', 0)})",
         f"- after location filter: {stats.get('after_location', 0)} "
         f"(dropped {stats.get('dropped_location', 0)})",
-        f"- after exact dedupe: {stats.get('after_exact_dedupe', 0)} "
-        f"(dropped {stats.get('dropped_exact', 0)})",
-        f"- after near dedupe (WRatio>=90): {stats.get('after_near_dedupe', 0)} "
-        f"(dropped {stats.get('dropped_near', 0)})",
+        f"- after dedupe: {stats.get('after_dedupe', 0)} "
+        f"(merged {stats.get('dropped_dedupe', 0)})",
         f"- after seen-ledger expiry: {stats.get('after_expiry', 0)} "
         f"(dropped {stats.get('dropped_expired', 0)})",
         f"- final rows: {stats.get('final_rows', 0)}",
         f"- pruned {stats.get('pruned_raw', 0)} raw files",
         "",
-        "### Per-source counts (raw -> final)",
+        "### Per-source counts (raw -> after gate -> final)",
         "",
     ]
 
@@ -781,21 +1053,29 @@ def _append_cleaning_section(report_path: Path, run_id: str, stats: dict) -> Non
 
     src_counts = stats.get("per_source", {})
     if src_counts:
-        lines.append("| source | raw | final |")
-        lines.append("|---|---|---|")
+        lines.append("| source | raw | after gate | final |")
+        lines.append("|---|---|---|---|")
         for src in sorted(src_counts):
-            raw, final = src_counts[src]
-            lines.append(f"| {src} | {raw} | {final} |")
+            raw, after_gate, final = src_counts[src]
+            lines.append(f"| {src} | {raw} | {after_gate} | {final} |")
     else:
         lines.append("(no rows)")
     lines.append("")
 
-    # Named, because a near-dup drop is the one silent way a tracked role
-    # leaves clean.parquet.
-    near_dropped = stats.get("near_dropped", [])
-    if near_dropped:
-        lines += ["### Near-dup rows dropped", ""]
-        lines += [f"- {row}" for row in near_dropped]
+    # Named, because a merge is the one silent way a tracked role leaves
+    # clean.parquet under an id other than its own.
+    merged_rows = stats.get("merged_rows", [])
+    if merged_rows:
+        lines += ["### Merge groups", ""]
+        lines += [f"- {row}" for row in merged_rows]
+        lines.append("")
+
+    # A collision cross-wires two unrelated roles' state.yaml and applications
+    # dir, so every colliding row is dropped and every one of them is named.
+    collisions = stats.get("job_id_collisions", [])
+    if collisions:
+        lines += ["### job_id collision", ""]
+        lines += [f"- {row}" for row in collisions]
         lines.append("")
 
     with report_path.open("a", encoding="utf-8") as f:
@@ -842,89 +1122,82 @@ def run(
 ) -> pd.DataFrame:
     runs_dir.mkdir(parents=True, exist_ok=True)
     cfg = load_config()
-    raw = load_raw_window(raw_dir, today=today)
-    raw_rows = len(raw)
-    df = project_raw(raw)
-    # step 1 exclusion
-    df, drops_per_vertical = apply_title_exclusion(df, verticals.get_config())
-    after_exclusion = len(df)
-    # step 1
-    df["company_normalized"] = df["company"].apply(normalize_company)
-    df["title_normalized"] = df["title"].apply(normalize_title)
-    # Counted before any drop below it, so the per-source table's raw column
-    # still reconciles against after_exclusion.
-    per_source_raw = df["source"].value_counts().to_dict() if not df.empty else {}
-    # A blank company makes job_id a function of the title alone, so two rows
-    # from different employers collide and exact_dedupe deletes one.
-    blank_company = df["company_normalized"].fillna("").str.strip() == "" if not df.empty else None
-    dropped_blank_company = int(blank_company.sum()) if blank_company is not None else 0
-    if dropped_blank_company:
-        for s, c, t in zip(
-            df.loc[blank_company, "source"],
-            df.loc[blank_company, "company"],
-            df.loc[blank_company, "title"],
-        ):
-            log.warning("dropping row with unusable company: source=%r company=%r title=%r", s, c, t)
-        df = df[~blank_company].copy()
-    after_blank_company = len(df)
-    # step 2
-    df = drop_short_jd(df)
-    after_short = len(df)
-    # step 3
-    df = drop_stale(
-        df, today=today,
-        tracked_ids=frozenset(load_state_index(pipeline_dir)),
-    )
-    after_stale = len(df)
-    # step 3b — location filter. Runs before dedupe so the survivor of a
-    # company+title group is picked among eligible rows only, and before the
-    # seen-ledger so an allowlist change isn't masked by stale first_seen.
-    df = filter_and_canonicalize_location(df, cfg)
-    after_location = len(df)
-    # step 4
-    df = exact_dedupe(df)
-    after_exact = len(df)
-    # step 5
-    before_near = df
-    df = near_dedupe(df)
-    after_near = len(df)
-    # A near-dup drop is the one silent way a role being actively tracked
-    # leaves clean.parquet, so name the casualties in the run report.
-    near_dropped = [
-        f"{compute_job_id(c, t)} {c} | {t}"
-        for c, t in zip(
-            before_near.loc[before_near.index.difference(df.index), "company_normalized"],
-            before_near.loc[before_near.index.difference(df.index), "title_normalized"],
-        )
-    ]
-    # step 6
+    # steps 0-3b, streamed one raw shard at a time. Dedupe and the seen-ledger
+    # below still need the whole window, so they stay here.
+    df, window_stats = load_filtered_window(raw_dir, cfg, pipeline_dir, today=today)
+    raw_rows = window_stats["raw_rows"]
+    after_exclusion = window_stats["after_exclusion"]
+    drops_per_vertical = window_stats["drops_per_vertical"]
+    per_source_pregate = window_stats["per_source_pregate"]
+    per_source_after_gate = window_stats["per_source_raw"]
+    dropped_blank_company = window_stats["dropped_blank_company"]
+    after_blank_company = window_stats["after_blank_company"]
+    after_short = window_stats["after_short"]
+    after_stale = window_stats["after_stale"]
+    after_location = window_stats["after_location"]
+    today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
+    ledger_path = clean_dir / "seen.parquet"
+    alias_path = clean_dir / "company_aliases.parquet"
+    # step 4 — assigned before the dedupe, which picks the surviving id from
+    # the ids its own group members already carry.
     df["job_id"] = [
         compute_job_id(c, t)
         for c, t in zip(df["company_normalized"], df["title_normalized"])
     ]
-    # step 7 — seen-ledger
-    today_ts = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
-    ledger_path = clean_dir / "seen.parquet"
-
+    df, collisions = drop_job_id_collisions(df)
+    # step 5
+    alias_ledger = aliases.load_ledger(alias_path)
+    seen_ids = frozenset(
+        pd.read_parquet(ledger_path)["job_id"]
+    ) if ledger_path.exists() else frozenset()
+    df, merges = dedupe(
+        df,
+        ledger=alias_ledger,
+        state_index=load_state_index(pipeline_dir),
+        seen_ids=seen_ids,
+    )
+    after_dedupe = len(df)
+    # A merge is the one silent way a role being actively tracked leaves
+    # clean.parquet under a different id, so name every group in the report.
+    merged_rows = [
+        f"{m['job_id']} <- {' + '.join(m['job_ids'])} ({m['canonical']})"
+        for m in merges
+    ]
+    aliases.write_ledger(
+        aliases.append_aliases(
+            alias_ledger,
+            [
+                (variant, m["canonical"], origin)
+                for m in merges
+                for variant, origin in m["origins"].items()
+            ],
+            today_ts,
+        ),
+        alias_path,
+    )
+    # step 6 — seen-ledger
     ledger = update_seen_ledger(
         df["job_id"].tolist(),
         ledger_path,
         clean_dir / "scored.parquet",
         today_ts,
     )
-    # step 8
+    # step 7
     df = apply_state_yaml(df, pipeline_dir)
-    # step 9 — retention expiry (tracked rows exempt)
+    # step 8 — retention expiry (tracked rows exempt)
     df = apply_expiry(df, ledger, today_ts)
     after_expiry = len(df)
-    # step 10
+    # step 9
     df = init_claude_columns(df)
-    # step 11
+    # step 10
     df = coerce_schema(df)
     per_source_final = df["source"].value_counts().to_dict() if not df.empty else {}
     per_source = {
-        src: (per_source_raw.get(src, 0), per_source_final.get(src, 0))
-        for src in set(per_source_raw) | set(per_source_final)
+        src: (per_source_pregate.get(src, 0),
+              per_source_after_gate.get(src, 0),
+              per_source_final.get(src, 0))
+        for src in set(per_source_pregate) | set(per_source_after_gate)
+        | set(per_source_final)
     }
     stats = {
         "raw_rows": raw_rows,
@@ -934,19 +1207,22 @@ def run(
         "after_blank_company": after_blank_company,
         "dropped_blank_company": dropped_blank_company,
         "after_short_jd": after_short,
+        "dropped_empty_jd": window_stats["dropped_empty_jd"],
+        "empty_jd_by_source": window_stats["empty_jd_by_source"],
         # Every dropped_* chains off its predecessor, never raw_rows.
         "dropped_short": after_blank_company - after_short,
         "after_stale": after_stale,
         "dropped_stale": after_short - after_stale,
         "after_location": after_location,
         "dropped_location": after_stale - after_location,
-        "after_exact_dedupe": after_exact,
-        "dropped_exact": after_location - after_exact,
-        "after_near_dedupe": after_near,
-        "dropped_near": after_exact - after_near,
-        "near_dropped": near_dropped,
+        "job_id_collisions": collisions,
+        "after_dedupe": after_dedupe,
+        # Chains off after_location like every other stage; a job_id
+        # collision drop is named separately rather than counted here.
+        "dropped_dedupe": after_location - after_dedupe,
+        "merged_rows": merged_rows,
         "after_expiry": after_expiry,
-        "dropped_expired": after_near - after_expiry,
+        "dropped_expired": after_dedupe - after_expiry,
         "final_rows": len(df),
         "per_source": per_source,
     }

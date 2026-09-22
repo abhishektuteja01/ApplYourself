@@ -119,6 +119,23 @@ class TestDetectAts:
     def test_ashby(self):
         assert apply_cli.detect_ats(ASHBY_URL) == "ashby"
 
+    def test_eu_lever_is_detected_as_plain_lever(self):
+        assert apply_cli.detect_ats(
+            LEVER_URL.replace("jobs.lever.co", "jobs.eu.lever.co")) == "lever"
+
+    def test_eu_greenhouse(self):
+        assert apply_cli.detect_ats(
+            "https://boards.eu.greenhouse.io/widgetco/jobs/1000001") == "greenhouse"
+
+    def test_a_gh_jid_careers_page(self):
+        assert apply_cli.detect_ats(
+            "https://widgetco.com/jobs?gh_jid=1000001") == "greenhouse"
+
+    def test_workday_is_recognised_but_not_submittable(self):
+        url = "https://widgetco.wd5.myworkdayjobs.com/Careers/job/US/Eng_JR1"
+        assert apply_cli.detect_ats(url) == "workday"
+        assert not apply_cli.is_auto_submittable(url)
+
     def test_neither(self):
         assert apply_cli.detect_ats(LINKEDIN_URL) is None
 
@@ -1654,3 +1671,15 @@ class TestLearnCommand:
     def test_neither_list_nor_kind_is_an_error(self, capsys):
         assert apply_cli.main(["learn"]) == 1
         assert "pass --list" in capsys.readouterr().err
+
+
+class TestWorkdayIsRecognisedButNeverSubmitted:
+    """`detect_ats` now names Workday, so the submission paths must gate on
+    submittability rather than on "it parsed"."""
+
+    WD_URL = "https://widgetco.wd5.myworkdayjobs.com/Careers/job/US/Eng_JR1"
+
+    def test_resolve_url_refuses_a_workday_posting(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
+        with pytest.raises(apply_cli.ManualApplyOnly):
+            apply_cli.resolve_url("a1b2c3d4", {"url": self.WD_URL})

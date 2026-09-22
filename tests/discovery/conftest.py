@@ -44,3 +44,14 @@ def isolate_inbox_path(monkeypatch, tmp_path):
     pending clip and discard its row into a tmp shard. Redirect for every test;
     tests that patch it explicitly still win."""
     monkeypatch.setattr(inbox, "INBOX", tmp_path / "inbox")
+
+
+@pytest.fixture(autouse=True)
+def clear_location_cache():
+    """parse_location is lru_cached, so a test that patches COUNTRY_NAMES /
+    CITIES_BY_NAME would otherwise see (or leak) another test's entries."""
+    from src.discovery.location import parse_location
+
+    parse_location.cache_clear()
+    yield
+    parse_location.cache_clear()

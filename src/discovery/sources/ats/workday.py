@@ -2,9 +2,10 @@
 
 Read-only discovery, no submission (§12b). Workday roles are always
 manual-apply: nothing here is imported by `src/apply/`, and `registry.py`'s
-`ATS_URL_MARKERS` (which decides which URL survives dedupe, not which one
-`apply_cli.py` can submit to) is the only other place this source's boards
-are named outside this module.
+workday entry (`submittable=False`, no driver) is the only other place this
+source's boards are named outside this module. Its host suffix is still in
+the shared table, because that decides which URL survives dedupe — a human
+needs the real board URL, not an aggregator repost.
 
 Unlike Greenhouse/Lever/Ashby's single list call, Workday's list endpoint
 returns title/location/`postedOn` only — no description — and is paginated
@@ -20,17 +21,19 @@ few dozen under `searchText="AI Engineer"`, at every offset, not just page
 paginating every posting a tenant has. This trades recall (a role Workday's
 search does not surface under any configured term is never seen, even if its
 title would classify) for a page count small enough to be affordable across
-90+ tenants; `classify_vertical_from_title` still runs on every result as the
-authoritative filter, since search hits are not assumed relevant.
+90+ tenants; `classify_vertical_from_title` plus cleaning's title gate
+(`gate.passing_titles`) still run on every result as the authoritative filter,
+since search hits are not assumed relevant.
 
-`search_terms()` scopes to the default vertical's first configured term only
-(sourced from `profile/verticals.yaml`, never hardcoded — R7's
-company/vertical-agnostic rule extends to search terms too), not the union
-across every vertical. One term per tenant costs one page in the common case
-(a tenant with a handful of matches never fills `LIST_LIMIT`, so pagination
-stops at page 0). Workday therefore surfaces default-vertical roles only; the
-other configured verticals stay covered by LinkedIn/Indeed and the other
-board sources.
+`search_terms()` takes each vertical's first configured term (sourced from
+`profile/verticals.yaml`, never hardcoded — R7's company/vertical-agnostic
+rule extends to search terms too), default vertical first. One per lane, not
+the union across every lane: tenant x term is what this crawl costs, and one
+term per tenant costs one page in the common case (a tenant with a handful of
+matches never fills `LIST_LIMIT`, so pagination stops at page 0). The earlier
+single-term scoping meant Workday structurally could not surface a role in any
+lane but the default; capping the detail fetches and the page frontier paid
+for the widening.
 
 **`total` cannot be trusted past page 0.** Confirmed live: NVIDIA's `total`
 reads 2000 at `offset=0`, then 0 at every later offset checked, including
@@ -43,7 +46,7 @@ regardless. Pagination here stops only on a short page
 "Posted 30+ Days Ago") at both the list and detail level, never an absolute
 timestamp — `relative_posted_date` converts it to an approximate date, or
 `None` if it does not recognize the phrasing. `workday` is in
-`CAREER_SOURCES`/`STALENESS_EXEMPT_SOURCES` (registry.py), so an approximate
+`CAREER_SOURCES`/`STALENESS_EXEMPT_SOURCES` (cleaning.py), so an approximate
 or missing date does not cost a row its place in the window.
 
 Slug is a tri-part pipe-joined string, `company|wd#|site_id` — one company
@@ -55,15 +58,17 @@ from __future__ import annotations
 import random
 import re
 import time
-from datetime import date, timedelta
 
 from src.discovery import cleaning
+from src.discovery.config import pacing_floor
+from src.discovery.dates import relative_posted_date
+from src.discovery import gate
 from src.discovery import universe
 from src.discovery.crawl_cursor import load_cursor, save_cursor
 from src.discovery.htmlutil import html_to_text
 from src.discovery.schema import make_row
 from src.discovery.sources.ats.base import PAYLOAD_SHAPE_ERRORS
-from src.discovery.sources.ats.http import CareersError, fetch_json, fetch_json_post
+from src.ats_http import CareersError, fetch_json, fetch_json_post
 from src.discovery.sources.base import Source, SourceResult
 
 #
@@ -75,11 +80,16 @@ LIST_LIMIT = 20
 # term cannot consume a whole run's deadline. `crawl_cursor` persists where
 # each pair stopped, so pages past the cap are reached on a later run.
 MAX_PAGES_PER_TERM = 6
-
-_POSTED_TODAY = re.compile(r"posted\s+today", re.IGNORECASE)
-_POSTED_YESTERDAY = re.compile(r"posted\s+yesterday", re.IGNORECASE)
-_POSTED_N_DAYS_AGO = re.compile(r"posted\s+(\d+)\+?\s+days?\s+ago", re.IGNORECASE)
-
+# Where the deep frontier wraps back to the head. The list endpoint never
+# reports exhaustion past page 0, so a pair whose searchText-scoped result set
+# is a few dozen postings still reads full pages forever: two tenants had
+# walked to offsets 3,220 and 3,420. 1,000 is ~50 pages, far past any observed
+# scoped result set, and bounds one pair's full cycle to ten runs.
+MAX_FRONTIER_OFFSET = 1000
+# How many tenants the run report's per-tenant table lists, busiest first.
+# Report presentation only — it changes nothing about what is crawled or kept,
+# so it is a constant here rather than a config key.
+REPORT_TOP_TENANTS = 20
 
 class WorkdaySlugError(ValueError):
     """A universe.csv slug is not the tri-part company|wd#|site_id shape."""
@@ -93,21 +103,6 @@ def parse_slug(slug: str) -> tuple[str, str, str]:
     if not re.fullmatch(r"wd\d+", wd, re.IGNORECASE):
         raise WorkdaySlugError(f"expected wd<N> for the pod, got {wd!r} in {slug!r}")
     return company, wd, site_id
-
-
-def relative_posted_date(text: str, today: date | None = None) -> date | None:
-    """Workday's `postedOn` is always relative text, never a timestamp."""
-    if not isinstance(text, str) or not text.strip():
-        return None
-    today = today or date.today()
-    if _POSTED_TODAY.search(text):
-        return today
-    if _POSTED_YESTERDAY.search(text):
-        return today - timedelta(days=1)
-    match = _POSTED_N_DAYS_AGO.search(text)
-    if match:
-        return today - timedelta(days=int(match.group(1)))
-    return None
 
 
 def _base_url(company: str, wd: str) -> str:
@@ -158,18 +153,35 @@ def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str
 
 
 def search_terms(verticals_config) -> tuple[str, ...]:
-    """The default vertical's first configured search term — the only source
-    of a Workday search term (R7: never hardcoded here). Scoped to one term
-    (not the union across every vertical) so tenant x term stays affordable;
-    see the module docstring for why."""
-    default = verticals_config.verticals[verticals_config.default_vertical]
-    if not default.search_terms:
-        return ()
-    return (default.search_terms[0],)
+    """Every vertical's first configured search term — the only source of a
+    Workday search term (R7: never hardcoded here).
+
+    One per vertical, not the union: tenant x term is what this crawl costs,
+    and the union would multiply it by the whole term list. One term total was
+    the earlier scoping, and it meant Workday structurally could not surface a
+    role in any lane but the default. Capping the detail fetches paid for the
+    widening.
+
+    The default vertical leads, so a deadline cut starves the other lanes
+    before it starves that one. Duplicates across lanes collapse.
+    """
+    order = [verticals_config.default_vertical]
+    order += [n for n in verticals_config.verticals if n != verticals_config.default_vertical]
+
+    terms: list[str] = []
+    for name in order:
+        vertical = verticals_config.verticals.get(name)
+        if vertical is None or not vertical.search_terms:
+            continue
+        term = vertical.search_terms[0]
+        if term not in terms:
+            terms.append(term)
+    return tuple(terms)
 
 
 def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
-                 list_item: dict, vertical: str, deadline_ts: float | None = None) -> dict | None:
+                 list_item: dict, vertical: str, term: str = "",
+                 deadline_ts: float | None = None) -> dict | None:
     detail = fetch_json(_detail_url(company, wd, site_id, path), deadline_ts=deadline_ts)
     info = detail.get("jobPostingInfo") if isinstance(detail, dict) else None
     if not isinstance(info, dict):
@@ -187,6 +199,7 @@ def _detail_row(company: str, name: str, wd: str, site_id: str, path: str,
         location=info.get("location") or list_item.get("locationsText") or "",
         date_posted=relative_posted_date(info.get("postedOn") or list_item.get("postedOn")),
         vertical=vertical,
+        found_by_term=term,
     )
 
 
@@ -215,34 +228,45 @@ class WorkdaySource(Source):
     name = "workday"
 
     def fetch(self, ctx) -> SourceResult:
-        pacing = max(1.0, ctx.config.sources[self.name].pacing_seconds)
+        pacing = max(pacing_floor(self.name), ctx.config.sources[self.name].pacing_seconds)
         companies = universe.load(self.name)
+        # `universe_slugs`, not `companies`: `load()` hides a board for 14 days
+        # after it was pruned, and the ledger deletes any slug it was not told
+        # about -- including the row whose `pruned_at` did the hiding.
+        ledger = universe.HealthLedger(self.name, universe.universe_slugs(self.name))
         terms = search_terms(ctx.verticals)
 
         rows: list[dict] = []
         errors: list[str] = []
-        report_lines: list[str] = []
+        error_lines: list[str] = []
+        # (priority, kept, fetched, name) per polled tenant; the table shows
+        # every watchlist tenant, then the busiest of the rest.
+        ok_tenants: list[tuple[bool, int, int, str]] = []
         kept = 0
         polled = 0
         ok = 0
         err_other = 0
         shape_errors = 0
         list_attempts = 0
+        # List-page yield, split three ways: a path never seen before that
+        # classified into a vertical, one already returned by an earlier page
+        # or term, and a new path no vertical claimed.
+        new_matched_paths = 0
+        repeat_paths = 0
+        new_unmatched_paths = 0
         detail_attempts = 0
         detail_shape_errors = 0
         first_request = True
 
-        # Resume where the last run stopped. 55 tenants x 48 terms is 2,640
-        # list requests before a single posting is read, which does not fit
-        # one run's deadline — so a run covers a slice and the rotation makes
-        # the whole space cycle. Without it the deadline cut the same
-        # alphabetical tail every run and those tenants were never crawled.
+        # Resume where the last run stopped, so a deadline cut does not drop
+        # the same alphabetical tail every run. Dormant at one search term:
+        # every tenant completes, so the rotation starts at the same slug each
+        # run. Only the deep-page frontier (`offsets`) is live — see
+        # `crawl_cursor`'s docstring.
         cursor = load_cursor(self.name)
-        # Priority tenants are never rotated out. `universe.load()` sorts them
-        # first for a reason, and rotating the whole list demoted them to
-        # ~40% of runs in simulation — the priority flag became nearly inert
-        # and the priority-only report rows vanished on truncated runs. Head
-        # stays fixed; only the tail rotates.
+        # Priority tenants stay at a fixed head so they are crawled every run;
+        # only the tail rotates. No workday entries in `profile/companies.yaml`,
+        # so `head` is empty and the split is inert today.
         companies = list(companies)
         head = [c for c in companies if c.priority]
         tail = cursor.rotate([c for c in companies if not c.priority],
@@ -252,6 +276,8 @@ class WorkdaySource(Source):
 
         for c in companies:
             if ctx.deadline_reached():
+                # A truncated run must not lose the health it learned.
+                ledger.flush()
                 break
             try:
                 company, wd, site_id = parse_slug(c.slug)
@@ -267,8 +293,12 @@ class WorkdaySource(Source):
 
             c_fetched = 0
             # Keyed by externalPath: the same posting can surface under more
-            # than one search term, and must be detail-fetched only once.
-            survivors: dict[str, tuple[str, dict]] = {}
+            # than one search term, and must be detail-fetched only once — the
+            # first term that finds it is the one recorded as `found_by_term`.
+            survivors: dict[str, tuple[str, dict, str]] = {}
+            # Every path this tenant's list pages have returned, matched or
+            # not, so a repeat is a repeat whether or not it classified.
+            seen_paths: set[str] = set()
             fatal: CareersError | None = None
             # Per TERM, not per tenant. One transient 503 on term 3 of 4 used
             # to discard every survivor terms 1-2 had already found and skip
@@ -288,6 +318,8 @@ class WorkdaySource(Source):
                 # Head first, frontier second: freshness every run, depth
                 # still advancing.
                 frontier = cursor.offset_for(c.slug, term) or LIST_LIMIT
+                if frontier > MAX_FRONTIER_OFFSET:
+                    frontier = LIST_LIMIT
                 offsets = [0] + [frontier + k * LIST_LIMIT
                                   for k in range(MAX_PAGES_PER_TERM - 1)]
                 # Seeded with the frontier this run inherited, so a run that
@@ -300,6 +332,10 @@ class WorkdaySource(Source):
                 # exists for.
                 next_frontier = frontier
                 pages_read = 0
+                # Per (company, term) — `shape_errors` is counted per term, so
+                # counting attempts per company puts the escalation ratio above
+                # 1.0 as soon as there is more than one term.
+                list_attempts += 1
                 try:
                     for offset in offsets:
                         if ctx.deadline_reached():
@@ -315,11 +351,18 @@ class WorkdaySource(Source):
                             c_fetched += 1
                             title = item.get("title") or ""
                             path = item.get("externalPath") or ""
-                            if not title or not path or path in survivors:
+                            if not title or not path:
                                 continue
+                            if path in seen_paths:
+                                repeat_paths += 1
+                                continue
+                            seen_paths.add(path)
                             vertical = cleaning.classify_vertical_from_title(title)
                             if vertical:
-                                survivors[path] = (vertical, item)
+                                new_matched_paths += 1
+                                survivors[path] = (vertical, item, term)
+                            else:
+                                new_unmatched_paths += 1
                         # `total` cannot be trusted past page 0 (module
                         # docstring) — a short or empty page is the only
                         # reliable "no more results" signal.
@@ -340,6 +383,8 @@ class WorkdaySource(Source):
                     # sending a deep pair back to the head on every truncated
                     # run, the exact permanent blind spot the cursor exists to
                     # remove.
+                    if next_frontier > MAX_FRONTIER_OFFSET:
+                        next_frontier = 0
                     if pages_read:
                         cursor.set_offset(c.slug, term, next_frontier)
                 except CareersError as e:
@@ -356,26 +401,35 @@ class WorkdaySource(Source):
                         f"{type(e).__name__}: {e}")
                     break
 
-            list_attempts += 1
             if fatal is not None:
-                universe.update_health(self.name, c.slug, success=False)
+                ledger.mark_dead(c.slug)
                 if c.priority or fatal.status != 404:
-                    report_lines.append(
+                    error_lines.append(
                         f"| {c.name} | ERROR | 0 | 0 | "
                         f"{str(fatal).replace('|', '\\|')[:80]} |")
                 completed += 1
                 continue
             _escalate_if_systemic(shape_errors, list_attempts, "list")
 
+            # Cleaning's title gate, run before the paced detail fetch rather
+            # than hours later: a survivor it drops is one whose detail fetch
+            # would have been thrown away.
+            verdicts = gate.passing_titles(
+                [(item.get("title") or "", vertical)
+                 for vertical, item, _ in survivors.values()],
+                ctx.verticals, self.name)
+            survivors = {path: v for (path, v), ok
+                         in zip(list(survivors.items()), verdicts) if ok}
+
             c_kept = 0
-            for path, (vertical, item) in survivors.items():
+            for path, (vertical, item, term) in survivors.items():
                 if ctx.deadline_reached():
                     break
                 _relaxed_sleep(pacing)
                 detail_attempts += 1
                 try:
                     row = _detail_row(company, c.name, wd, site_id, path, item, vertical,
-                                       deadline_ts=ctx.deadline_ts)
+                                       term, deadline_ts=ctx.deadline_ts)
                 except CareersError as e:
                     errors.append(f"{c.name}: {item.get('title', '')!r}: {e}")
                     continue
@@ -396,18 +450,25 @@ class WorkdaySource(Source):
             ok += 1
             kept += c_kept
             completed += 1
-            universe.update_health(self.name, c.slug, success=True, rows=c_fetched)
-            if c.priority:
-                report_lines.append(f"| {c.name} | OK | {c_fetched} | {c_kept} | |")
+            ledger.mark_ok(c.slug, c_kept)
+            ok_tenants.append((c.priority, c_kept, c_fetched, c.name))
 
         # Persisted even on a deadline cut — that is the case it exists for.
         # Only the rotated tail advances; the fixed head is crawled every run.
         cursor.advance(tail, max(0, completed - len(head)), key=lambda c: c.slug)
         save_cursor(cursor)
+        ledger.flush()
 
         summary = (f"Companies polled: {polled} | OK: {ok} | Err: {err_other} "
                    f"| Rows kept: {kept}")
-        report_summary = [summary, ""]
+        yield_line = (f"List paths: {new_matched_paths} new+classified "
+                      f"| {new_unmatched_paths} new, no vertical "
+                      f"| {repeat_paths} repeat")
+        report_summary = [summary, yield_line, ""]
+        top = sorted(ok_tenants, key=lambda t: t[:3],
+                     reverse=True)[:REPORT_TOP_TENANTS]
+        report_lines = [f"| {name} | OK | {fetched} | {kept_} | |"
+                        for _, kept_, fetched, name in top] + error_lines
         if report_lines:
             report_summary.extend([
                 "| company | status | fetched | kept | error |",

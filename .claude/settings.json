@@ -4,6 +4,8 @@
     "allow": [
       "Bash(uv run pytest:*)",
       "Bash(uv run verticals-check)",
+      "Bash(uv run discovery-check)",
+      "Bash(uv run discover-digest:*)",
       "Bash(uv run score:*)",
       "Bash(uv run track:*)",
       "Bash(uv run tailor-prep:*)",

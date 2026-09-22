@@ -3,8 +3,6 @@ ATS sources, list and detail are separate endpoints and list is paginated, so
 this does not reuse `AtsBoardSource` — `fetch_json`/`fetch_json_post` are
 patched on `workday` directly rather than on `base`.
 """
-from datetime import date
-
 import pytest
 
 from src import verticals as verticals_module
@@ -15,7 +13,6 @@ from src.discovery.sources.ats.workday import (
     WorkdaySlugError,
     WorkdaySource,
     parse_slug,
-    relative_posted_date,
     search_terms,
 )
 
@@ -78,36 +75,42 @@ class TestParseSlug:
             parse_slug(bad)
 
 
-class TestRelativePostedDate:
-    def test_today(self):
-        assert relative_posted_date("Posted Today", today=date(2026, 7, 10)) == date(2026, 7, 10)
-
-    def test_yesterday(self):
-        assert relative_posted_date("Posted Yesterday", today=date(2026, 7, 10)) == date(2026, 7, 9)
-
-    def test_n_days_ago(self):
-        assert relative_posted_date("Posted 19 Days Ago", today=date(2026, 7, 10)) == date(2026, 6, 21)
-
-    def test_n_plus_days_ago(self):
-        assert relative_posted_date("Posted 30+ Days Ago", today=date(2026, 7, 10)) == date(2026, 6, 10)
-
-    def test_unrecognized_text_is_none(self):
-        assert relative_posted_date("Some other phrasing") is None
-
-    def test_missing_is_none(self):
-        assert relative_posted_date(None) is None
-        assert relative_posted_date("") is None
-
-
 class TestSearchTerms:
-    def test_returns_exactly_one_term(self):
-        terms = search_terms(verticals_module.get_config())
-        assert len(terms) == 1
-
-    def test_the_term_is_the_default_verticals_first_search_term(self):
+    def test_one_term_per_vertical_not_the_union(self):
+        """Tenant x term is the cost. One term per lane makes the other lanes
+        reachable at all; the union would multiply the crawl by the term list."""
         cfg = verticals_module.get_config()
-        default = cfg.verticals[cfg.default_vertical]
-        assert search_terms(cfg) == (default.search_terms[0],)
+        terms = search_terms(cfg)
+        assert len(terms) == len(cfg.verticals)
+        assert set(terms) == {v.search_terms[0] for v in cfg.verticals.values()}
+
+    def test_the_default_vertical_leads(self):
+        """A deadline cut has to starve the other lanes before the main one."""
+        cfg = verticals_module.get_config()
+        assert search_terms(cfg)[0] == cfg.verticals[cfg.default_vertical].search_terms[0]
+
+    def test_a_term_shared_by_two_lanes_is_crawled_once(self):
+        from dataclasses import replace
+
+        cfg = verticals_module.get_config()
+        shared = cfg.verticals[cfg.default_vertical].search_terms[0]
+        collided = replace(cfg, verticals={
+            name: (v if name == cfg.default_vertical
+                   else replace(v, search_terms=[shared] + list(v.search_terms)))
+            for name, v in cfg.verticals.items()
+        })
+        assert search_terms(collided) == (shared,)
+
+    def test_a_lane_with_no_search_terms_is_skipped_not_fatal(self):
+        from dataclasses import replace
+
+        cfg = verticals_module.get_config()
+        other = next(n for n in cfg.verticals if n != cfg.default_vertical)
+        thinned = replace(cfg, verticals={
+            name: (replace(v, search_terms=[]) if name == other else v)
+            for name, v in cfg.verticals.items()
+        })
+        assert len(search_terms(thinned)) == len(cfg.verticals) - 1
 
 
 class TestWorkdaySourceFetch:
@@ -207,6 +210,60 @@ class TestWorkdaySourceFetch:
         n_terms = len(search_terms(verticals_module.get_config()))
         assert calls["n"] == n_terms * workday.MAX_PAGES_PER_TERM
 
+    def test_a_gate_failing_title_never_reaches_detail(self, monkeypatch):
+        """`classify_vertical_from_title` is the cheap filter; cleaning's
+        `apply_title_exclusion` is the strict one, and running it only at
+        cleaning time paid for a detail fetch per row it was going to drop."""
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
+        )
+        # Classifies example_primary on "widget", then trips the "senior"
+        # title_exclude_term.
+        excluded = {**LIST_ITEM, "title": "Senior Widget Consultant",
+                    "externalPath": "/job/2"}
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 2, "jobPostings": [LIST_ITEM, excluded],
+        })
+        detail_calls = []
+
+        def fake_detail(url, **kw):
+            detail_calls.append(url)
+            return DETAIL_PAYLOAD
+        monkeypatch.setattr(workday, "fetch_json", fake_detail)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert len(detail_calls) == 1
+        assert not any(url.endswith("/job/2") for url in detail_calls)
+        assert len(res.rows) == 1
+
+    def test_health_records_the_kept_count_not_the_fetched_count(self, monkeypatch):
+        """`universe.load` sorts by `last_yield`, so it has to mean "postings
+        relevant to this profile", not "postings on the board"."""
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
+        )
+        off_lane = {**LIST_ITEM, "title": "Definitely Not A Match Zzz",
+                    "externalPath": "/job/2"}
+        excluded = {**LIST_ITEM, "title": "Senior Widget Consultant",
+                    "externalPath": "/job/3"}
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 3, "jobPostings": [LIST_ITEM, off_lane, excluded],
+        })
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        recorded = []
+        monkeypatch.setattr(
+            universe.HealthLedger, "mark_ok",
+            lambda self, slug, kept=0: recorded.append((True, kept)))
+
+        res = WorkdaySource().fetch(MockContext())
+        assert len(res.rows) == 1
+        assert recorded == [(True, 1)]
+
     def test_the_same_posting_is_detail_fetched_once(self, monkeypatch):
         monkeypatch.setattr(
             universe, "load",
@@ -227,6 +284,25 @@ class TestWorkdaySourceFetch:
         assert len(res.rows) == 1
         assert len(detail_calls) == 1
 
+    def test_rows_record_the_term_that_found_them(self, monkeypatch):
+        """The term is known in the list loop and out of scope by the row
+        build — `survivors` has to carry it across."""
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd3|Site")],
+        )
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 1, "jobPostings": [LIST_ITEM],
+        })
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        term = search_terms(verticals_module.get_config())[0]
+        assert [r["found_by_term"] for r in res.rows] == [term]
+        # Workday never queries a remote-only variant.
+        assert all(r["found_by_remote"] is False for r in res.rows)
+
     def test_a_malformed_slug_is_a_per_company_error_not_a_crash(self, monkeypatch):
         monkeypatch.setattr(universe, "load", lambda ats: [
             UniverseCompany("Broken Co", "workday", "not-a-triple"),
@@ -243,7 +319,7 @@ class TestWorkdaySourceFetch:
         assert any("Broken Co" in e for e in res.errors)
 
     def test_a_detail_fetch_failure_does_not_lose_other_survivors(self, monkeypatch):
-        from src.discovery.sources.ats.http import CareersError
+        from src.ats_http import CareersError
 
         monkeypatch.setattr(
             universe, "load",
@@ -318,8 +394,49 @@ class TestWorkdaySourceFetch:
         assert res.rows, "the healthy tenants after the two bad ones must still yield"
         assert any("malformed detail" in e for e in res.errors)
 
+    def test_the_escalation_ratio_counts_company_term_pairs(self, monkeypatch):
+        """`shape_errors` is counted per (company, term). Counting attempts per
+        company put the ratio above 1.0 as soon as a second term existed — one
+        consistently malformed term would abort the whole lane."""
+        monkeypatch.setattr(workday, "search_terms", lambda cfg: ("term-a", "term-b"))
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site") for i in range(12)
+        ])
+
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            if search_text == "term-b":
+                raise TypeError("expected a list under 'jobPostings', got NoneType")
+            return {"total": 1, "jobPostings": [LIST_ITEM]}
+
+        monkeypatch.setattr(workday, "list_page", fake_list_page)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert len(res.rows) == 12
+        assert len(res.errors) == 12
+
+    def test_a_couple_of_malformed_list_payloads_do_not_escalate(self, monkeypatch):
+        monkeypatch.setattr(workday, "search_terms", lambda cfg: ("term-a", "term-b"))
+        monkeypatch.setattr(universe, "load", lambda ats: [
+            UniverseCompany(f"Co {i}", "workday", f"c{i}|wd1|Site") for i in range(12)
+        ])
+
+        def fake_list_page(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            if search_text == "term-b" and company in ("c0", "c1"):
+                raise TypeError("expected a list under 'jobPostings', got NoneType")
+            return {"total": 1, "jobPostings": [LIST_ITEM]}
+
+        monkeypatch.setattr(workday, "list_page", fake_list_page)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        res = WorkdaySource().fetch(MockContext())
+        assert len(res.rows) == 12
+        assert len(res.errors) == 2
+
     def test_list_endpoint_failure_is_a_per_company_error(self, monkeypatch):
-        from src.discovery.sources.ats.http import CareersError
+        from src.ats_http import CareersError
 
         monkeypatch.setattr(universe, "load", lambda ats: [
             UniverseCompany("Broken Co", "workday", "badco|wd3|Site"),
@@ -572,3 +689,142 @@ class TestTheCrawlResumesAcrossRuns:
         self._stub(monkeypatch, self._companies(2), seen)
         WorkdaySource().fetch(MockContext())
         assert seen, "a bad cursor must mean 'start from the top', not a crash"
+
+
+class TestTheFrontierIsCapped:
+    """The list endpoint never reports exhaustion past page 0, so an uncapped
+    frontier walks forever — two tenants reached offsets 3,220 and 3,420,
+    pages 161-176 of a single query."""
+
+    def _company(self):
+        return [UniverseCompany("Acme AI", "workday", "acme|wd1|Site")]
+
+    def _stub_full_pages(self, monkeypatch, calls):
+        full = [dict(LIST_ITEM, externalPath=f"/job/{i}")
+                for i in range(workday.LIST_LIMIT)]
+
+        def always_full(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            calls.append(offset)
+            return {"total": 0, "jobPostings": full}
+
+        monkeypatch.setattr(universe, "load", lambda ats: self._company())
+        monkeypatch.setattr(workday, "list_page", always_full)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+    def _seed(self, slug, offset):
+        from src.discovery import crawl_cursor as cc
+        cursor = cc.CrawlCursor(ats="workday")
+        for term in search_terms(verticals_module.get_config()):
+            cursor.set_offset(slug, term, offset)
+        cc.save_cursor(cursor)
+        return cc
+
+    def test_a_run_that_would_cross_the_cap_restarts_at_the_head(self, monkeypatch):
+        slug = self._company()[0].slug
+        cc = self._seed(slug, workday.MAX_FRONTIER_OFFSET - workday.LIST_LIMIT)
+        calls: list[int] = []
+        self._stub_full_pages(monkeypatch, calls)
+
+        WorkdaySource().fetch(MockContext())
+
+        assert max(calls) > workday.MAX_FRONTIER_OFFSET - workday.LIST_LIMIT
+        term = search_terms(verticals_module.get_config())[0]
+        assert cc.load_cursor("workday").offset_for(slug, term) == 0
+
+    def test_a_pair_already_past_the_cap_wraps_instead_of_walking_on(self, monkeypatch):
+        slug = self._company()[0].slug
+        self._seed(slug, 3220)
+        calls: list[int] = []
+        self._stub_full_pages(monkeypatch, calls)
+
+        WorkdaySource().fetch(MockContext())
+
+        assert calls[0] == 0
+        assert max(calls) <= workday.MAX_PAGES_PER_TERM * workday.LIST_LIMIT
+        assert 3220 not in calls
+
+    def test_the_short_page_reset_still_wins(self, monkeypatch):
+        """An exhausted pair restarts at the head whatever the cap says."""
+        slug = self._company()[0].slug
+        cc = self._seed(slug, 100)
+        monkeypatch.setattr(universe, "load", lambda ats: self._company())
+        monkeypatch.setattr(workday, "list_page", lambda *a, **kw: {
+            "total": 0, "jobPostings": [LIST_ITEM]})
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        WorkdaySource().fetch(MockContext())
+
+        term = search_terms(verticals_module.get_config())[0]
+        assert cc.load_cursor("workday").offset_for(slug, term) == 0
+
+
+class TestListYieldCounters:
+    """Three buckets, not two: whether deep pages contribute anything has to be
+    answerable from the report."""
+
+    def test_new_repeat_and_unclassified_paths_are_counted_separately(self, monkeypatch):
+        matched = [dict(LIST_ITEM, externalPath=f"/job/m{i}") for i in range(10)]
+        unmatched = [dict(LIST_ITEM, title="Definitely Not A Match Zzz",
+                          externalPath=f"/job/u{i}") for i in range(10)]
+        page = matched + unmatched
+
+        def fake_list(company, wd, site_id, offset, search_text="", deadline_ts=None):
+            if offset in (0, workday.LIST_LIMIT):
+                return {"total": 0, "jobPostings": page}
+            return {"total": 0, "jobPostings": []}
+
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany("Acme AI", "workday", "acme|wd1|Site")])
+        monkeypatch.setattr(workday, "list_page", fake_list)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+        lines = WorkdaySource().fetch(MockContext()).report_lines
+        # Two pages x 20 items x one term per vertical. Only the first term
+        # sees a path as new; every later term re-sees the same 40 as repeats.
+        terms = len(verticals_module.get_config().verticals)
+        assert (f"List paths: 10 new+classified | 10 new, no vertical "
+                f"| {40 * terms - 20} repeat") in lines
+
+
+class TestPerTenantReportTable:
+    """D2.9: the table was only ever appended for `c.priority` tenants, and
+    `companies.yaml` has no workday entries — so it never rendered."""
+
+    def _tenants(self, monkeypatch, counts: dict[str, int]):
+        monkeypatch.setattr(
+            universe, "load",
+            lambda ats: [UniverseCompany(name, "workday", f"{name.lower()}|wd3|Site")
+                         for name in counts],
+        )
+
+        def fake_list(company, wd, site_id, offset, term, **kw):
+            if offset:
+                return {"total": 0, "jobPostings": []}
+            n = counts[company.capitalize()] if company.capitalize() in counts \
+                else counts[company]
+            return {"total": n, "jobPostings": [
+                {**LIST_ITEM, "externalPath": f"/job/{company}/{i}"}
+                for i in range(n)]}
+
+        monkeypatch.setattr(workday, "list_page", fake_list)
+        monkeypatch.setattr(workday, "fetch_json", lambda url, **kw: DETAIL_PAYLOAD)
+        monkeypatch.setattr(workday.time, "sleep", lambda _: None)
+
+    def test_table_renders_for_non_priority_tenants(self, monkeypatch):
+        self._tenants(monkeypatch, {"Acme": 1, "Beta": 3, "Gamma": 2})
+        lines = WorkdaySource().fetch(MockContext()).report_lines
+        assert "| company | status | fetched | kept | error |" in lines
+        rows = [ln for ln in lines if ln.startswith("| ") and " OK " in ln]
+        assert [ln.split(" | ")[0].lstrip("| ") for ln in rows] == \
+            ["Beta", "Gamma", "Acme"]
+
+    def test_only_the_top_n_tenants_are_listed(self, monkeypatch):
+        monkeypatch.setattr(workday, "REPORT_TOP_TENANTS", 2)
+        self._tenants(monkeypatch, {"Acme": 1, "Beta": 3, "Gamma": 2})
+        lines = WorkdaySource().fetch(MockContext()).report_lines
+        rows = [ln for ln in lines if ln.startswith("| ") and " OK " in ln]
+        assert [ln.split(" | ")[0].lstrip("| ") for ln in rows] == ["Beta", "Gamma"]

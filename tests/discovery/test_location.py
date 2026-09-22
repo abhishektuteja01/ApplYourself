@@ -152,18 +152,20 @@ def test_location_ivory_coast_resolves():
 # ---------------------------------------------------------------------
 
 # The exact strings that leaked onto a real shortlist.
-@pytest.mark.parametrize("raw,country", [
-    ("London", "United Kingdom"),
-    ("Stockholm", "Sweden"),
-    ("Lisbon", "Portugal"),
-    ("Kuala Lumpur", "Malaysia"),       # multi-word foreign city (n-gram)
-    ("Iasi", "Romania"),                # ASCII form of geonames "Iaşi"
+@pytest.mark.parametrize("raw,country,city", [
+    ("London", "United Kingdom", "London"),
+    ("Stockholm", "Sweden", "Stockholm"),
+    ("Lisbon", "Portugal", "Lisbon"),
+    ("Kuala Lumpur", "Malaysia", "Kuala Lumpur"),  # multi-word foreign city (n-gram)
+    ("Iasi", "Romania", "Iaşi"),                   # ASCII form of geonames "Iaşi"
 ])
-def test_bare_foreign_city_resolves_to_country(raw, country):
+def test_bare_foreign_city_resolves_to_country(raw, country, city):
     res = parse_location(raw)
     assert res.country == country
     assert res.state == ""
-    assert res.city == ""
+    # City text is returned for every country; only the admin1 -> state
+    # inference is US-only.
+    assert res.city == city
     assert _is_foreign(raw)
 
 
@@ -681,3 +683,118 @@ def test_curated_city_name_aliases_resolve_the_local_or_common_spelling(raw, cou
 ])
 def test_native_language_country_names_resolve_via_pycountrys_own_locale_data(raw, country):
     assert parse_location(raw).country == country
+
+
+# --- lru_cache on parse_location (D4.4) ---
+
+def test_cache_is_transparent_first_call_equals_cached_call():
+    parse_location.cache_clear()
+    cold = parse_location("Austin, TX")
+    warm = parse_location("Austin, TX")
+    assert warm == cold
+    assert parse_location.cache_info().hits == 1
+
+    parse_location.cache_clear()
+    recomputed = parse_location("Austin, TX")
+    assert recomputed == cold
+
+
+def test_a_primed_cache_entry_does_not_survive_into_the_next_test():
+    # Pairs with the test below: primes the cache under the real tables, so a
+    # missing conftest cache_clear would serve this stale answer there.
+    assert parse_location("Germany").country == "Germany"
+
+
+def test_monkeypatched_country_table_is_honoured(monkeypatch):
+    from src.discovery import location
+
+    monkeypatch.setitem(location.COUNTRY_NAMES, "germany", "Zzyzxland")
+    assert parse_location("Germany").country == "Zzyzxland"
+
+
+# ---------------------------------------------------------------------
+# Non-US city text (D4.2). `city` is populated for every country; only the
+# admin1 -> state inference stays US-only.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,country,city", [
+    ("Berlin, Germany", "Germany", "Berlin"),
+    ("Bengaluru, India", "India", "Bengaluru"),
+    ("Lisbon, Portugal", "Portugal", "Lisbon"),
+    ("Toronto, Canada", "Canada", "Toronto"),
+])
+def test_non_us_city_is_returned_with_no_state(raw, country, city):
+    res = parse_location(raw)
+    assert res.country == country
+    assert res.state == ""
+    assert res.city == city
+
+
+@pytest.mark.parametrize("raw,state,city", [
+    ("Austin, TX", "TX", "Austin"),
+    ("Portland, OR", "OR", "Portland"),
+    ("Washington, DC", "DC", "Washington"),
+    ("Remote - Austin, TX", "TX", "Austin"),
+])
+def test_us_parses_are_unchanged_by_the_non_us_city_change(raw, state, city):
+    res = parse_location(raw)
+    assert res.country == "United States"
+    assert res.state == state
+    assert res.city == city
+
+
+def test_non_us_state_is_still_inferred_only_from_an_explicit_state_token():
+    # "Maharashtra" is tagged as a state by libpostal, so it survives; no
+    # admin1 code is promoted to state outside the United States.
+    res = parse_location("Mumbai, Maharashtra")
+    assert (res.country, res.state, res.city) == ("India", "MH", "Mumbai")
+    assert parse_location("Munich, Germany").state == ""
+
+
+# ---------------------------------------------------------------------
+# Region tokens (D4.3). A multi-country acronym expands to its constituent
+# countries and comes back as candidate_countries, so the caller's
+# allowlist decides keep-vs-drop.
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,present,absent", [
+    ("EMEA", ["Germany", "South Africa", "United Arab Emirates"], ["United States", "India"]),
+    ("EMEIA", ["Germany", "India"], ["United States"]),
+    ("APAC", ["India", "Japan", "Australia"], ["United States", "Germany"]),
+    ("LATAM", ["Brazil", "Mexico", "Argentina"], ["United States", "Spain"]),
+    ("ANZ", ["Australia", "New Zealand"], ["United States", "India"]),
+])
+def test_region_token_expands_to_candidate_countries(raw, present, absent):
+    res = parse_location(raw)
+    assert res.country == ""
+    assert res.state == ""
+    assert res.city == ""
+    for name in present:
+        assert name in res.candidate_countries, f"{name} missing from {raw}"
+    for name in absent:
+        assert name not in res.candidate_countries, f"{name} should not be in {raw}"
+
+
+def test_region_token_is_case_insensitive_and_beats_a_namesake_place():
+    # "Apac" is also a real town in Uganda; the token wins.
+    assert parse_location("apac").candidate_countries == parse_location("APAC").candidate_countries
+    assert parse_location("APAC").country == ""
+
+
+def test_region_token_keeps_the_remote_flag():
+    res = parse_location("Remote - EMEA")
+    assert res.remote is True
+    assert "Germany" in res.candidate_countries
+
+
+def test_region_token_alongside_a_country_widens_the_candidates():
+    res = parse_location("EMEA or New York")
+    assert "United States" in res.candidate_countries
+    assert "Germany" in res.candidate_countries
+
+
+@pytest.mark.parametrize("raw", ["", "Worldwide", "Anywhere", "Remote", "Multiple Locations"])
+def test_ambiguous_strings_are_not_region_tokens(raw):
+    res = parse_location(raw)
+    assert res.country == ""
+    assert res.candidate_countries == frozenset()

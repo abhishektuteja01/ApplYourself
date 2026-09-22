@@ -68,7 +68,8 @@ from src.apply.browser import launch, require_playwright
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
-from src.discovery.sources.ats.http import CareersError, fetch_json_post, fetch_text
+from src.ats_http import CareersError, fetch_json_post, fetch_text
+from src.discovery.sources.ats import registry as ats_registry
 
 log = logging.getLogger(__name__)
 
@@ -153,10 +154,19 @@ _EDUCATION_SUBFIELDS = {
 }
 _EDUCATION_SUBFIELD_ORDER = ("schoolName", "degree", "major", "startDate", "endDate")
 
-_URL = re.compile(
-    r"^https?://jobs\.ashbyhq\.com/(?P<slug>[^/?#]+)/(?P<job_id>[0-9a-f-]+)",
-    re.IGNORECASE,
-)
+# Which control inside the block's one `data-field-path`. schoolName is a
+# combobox carrying no id; the other two carry `<path>-<sub>`.
+_EDUCATION_CONTROLS = {
+    "schoolName": 'input[role="combobox"]',
+    "degree": '[id="{path}-degree"]',
+    "major": '[id="{path}-major"]',
+}
+
+# Ashby renders schoolName as a combobox and the other two as plain text —
+# Greenhouse makes all three selects. Typed text alone clears on blur.
+_EDUCATION_KINDS = {"schoolName": "react_select"}
+
+_URL = ats_registry.get_source("ashby").posting_url_re
 
 _FIELD_ENTRY_PREFIX = re.compile(r"^_fieldEntry_")
 _REQUIRED_PREFIX = re.compile(r"^_required_")
@@ -250,7 +260,7 @@ def parse_posting(url: str) -> Posting:
         if "ashbyhq.com" in (urlparse(text).hostname or ""):
             raise ApplyUrlError(f"Ashby URL with no job id: {text}")
         raise ApplyUrlError(f"not an Ashby posting URL: {text}")
-    return Posting(slug=match.group("slug"), job_id=match.group("job_id"))
+    return Posting(slug=match.group("slug"), job_id=match.group("posting_id"))
 
 
 def _classes(el) -> list[str]:
@@ -538,7 +548,12 @@ def _education_history_fields(field: dict, path: str) -> list[MergedField]:
             name=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
             label=f"{field.get('title') or 'Education'}: {sub}",
             required=required,
-            kind="text",
+            kind=_EDUCATION_KINDS.get(sub, "text"),
+            # `id` above is Greenhouse's, for `answers.py`. Ashby renders the
+            # whole block under one path, so the DOM lookup needs the real
+            # one plus which control in it.
+            dom_path=path,
+            dom_control=_EDUCATION_CONTROLS.get(sub, "").format(path=path),
             # `resolve` dispatches the repeating blocks on section, not on id,
             # so this is what routes these to `answers.education` rather than
             # leaving them to the keyword rules.

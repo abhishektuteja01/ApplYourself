@@ -48,7 +48,7 @@ The test suite gates every turn that touched `src/` or a fixture.
 
 | # | Stage | Command | Deterministic plumbing |
 |---|-------|---------|------------------------|
-| 1 | Discovery | `discover` | `src/discovery/` — inbox clips → JobSpy → ATS boards + Workday |
+| 1 | Discovery | `/discover` | `src/discovery/` — inbox clips → JobSpy → ATS boards + Workday, then `run_report.py` reads the report back |
 | 2 | Cleaning | (always runs after discovery) | `src/discovery/cleaning.py` |
 | 3 | Scoring | `/score`, `/rescore` | `prescreen.py`, `scoring_io.py`, `shortlist.py`, `score_cli.py` |
 | 4 | Application material | `/tailor`, `/cover-letter`, `/outreach` | `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
@@ -85,6 +85,18 @@ uv run discover [--resume <run_id>] [--deadline-hours H] [--source NAME] [--max-
                                       # repeatable (naming one excludes the inbox)
                                       # needs `uv sync --group discovery` (libpostal)
 uv run verticals-check                # validate config + rubric/tailoring dirs
+uv run discovery-check                # resolve + validate the discovery config:
+                                      # prints the effective location allowlist,
+                                      # the jobspy search locations and the
+                                      # enabled sources, exits 1 on any problem.
+                                      # `discover` runs it as preflight
+uv run discover-digest [--json] [--run-id ID] [--window N] [--runs-dir D]
+                                      # parse the recent jobs/runs/*.md reports and
+                                      # print the trend facts /discover renders:
+                                      # per-source rows vs that source's own 7-day
+                                      # median, error-rate delta, zero streaks,
+                                      # crashed / skipped / truncated lanes.
+                                      # Reader only, stdlib only, writes nothing
 uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
                                       # [--with-apply] [--with-optional] [--force] [--dry-run]
                                       # /onboarding's setup chores: copy every
@@ -127,18 +139,35 @@ uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers
                                       #   (unless --job-id names one role),
                                       # --submit prompts for a typed confirmation unless --yes,
                                       # --rate floors at 30s, one submit per company per run
+uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] [--limit N] [--resume]
+                                      # one-off liveness audit of the ATS slug
+                                      # universe -> jobs/slug_audit_<date>.csv:
+                                      # active / stale / empty / dead / error
+                                      # per slug. Report only; writes nothing
+                                      # else. `--ats` is repeatable, default
+                                      # ashby/greenhouse/lever (workday opt-in)
+uv run python scripts/seed_company_aliases.py [--dry-run] [--expected F]
+                                      # one-off: pin jobs/company_aliases.parquet
+                                      # from the tracked roles, so switching the
+                                      # company merge on orphans no existing
+                                      # job_id. Reads pipeline/*/state.yaml only
+                                      # (R10). --dry-run exits 1 on any id change
+                                      # outside the reviewed --expected list
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```
 
-The user-facing workflow is the slash commands (`/onboarding`, `/score`,
+The user-facing workflow is the slash commands (`/onboarding`, `/discover`, `/score`,
 `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 `/track`, `/standup`,
 `/new-vertical`, `/tune-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`,
 `/ingest`, `/interview`), defined in
 `.claude/commands/*.md`. The judge is a subagent, not a command:
 `.claude/agents/score-judge.md`, spawned by `/score`, `/rescore` and `/ingest`,
-never invoked directly. `/new-vertical <name>` writes the loader's minimum for a
+never invoked directly. `/discover` is the scrape plus a digest: `discovery-check`
+preflight, `uv run discover` with the user's overrides, then `discover-digest`
+(`src/discovery/run_report.py`) parses `jobs/runs/*.md` and the session renders
+≤10 lines from the numbers it computed. `/new-vertical <name>` writes the loader's minimum for a
 new lane in one confirm-or-edit, and splits into `pass-a` (the lane block and
 classifier rule, enough to start scraping) and `pass-b` (the three prose files)
 when `/onboarding` passes a mode token; `/tune-vertical <name>` is the deep pass over a

@@ -23,7 +23,7 @@ from src.apply.greenhouse import (
     slug_from_form,
 )
 from src.apply.schema import parse_schema
-from src.discovery.sources.ats.http import CareersError
+from src.ats_http import CareersError
 
 from .conftest import FORM_FIXTURES, load_fixture, load_html
 
@@ -76,6 +76,36 @@ class TestParsePosting:
     def test_non_numeric_gh_jid_rejected(self):
         with pytest.raises(ApplyUrlError, match="not numeric"):
             parse_posting("https://x.com/jobs?gh_jid=abc")
+
+    @pytest.mark.parametrize("url,token,slug", [
+        ("https://job-boards.greenhouse.io/embed/job_app"
+         "?for=towerresearchcapital&gh_src=be8ebc4b1&token=7583213",
+         "7583213", "towerresearchcapital"),
+        ("https://boards.greenhouse.io/embed/job_app?token=4719162005",
+         "4719162005", None),
+    ])
+    def test_embed_job_app_form(self, url, token, slug):
+        posting = parse_posting(url)
+        assert (posting.token, posting.url_slug) == (token, slug)
+
+    def test_token_and_gh_jid_disagreeing_is_an_error(self):
+        with pytest.raises(ApplyUrlError, match="2 different"):
+            parse_posting("https://x.com/jobs?gh_jid=111&token=222")
+
+    def test_non_numeric_token_rejected(self):
+        with pytest.raises(ApplyUrlError, match="not numeric"):
+            parse_posting("https://x.com/jobs?token=abc")
+
+    def test_query_keys_come_from_the_shared_registry(self):
+        """Adding a key to the registry without teaching the parser -- or the
+        reverse -- is the drift the registry exists to prevent."""
+        from src.apply import greenhouse
+        from src.discovery.sources.ats import registry as ats_registry
+
+        gh = ats_registry.get_source("greenhouse")
+        assert greenhouse._GH is gh
+        assert set(gh.id_query_keys) == {"token", "gh_jid"}
+        assert set(gh.slug_query_keys) == {"for", "board"}
 
     @pytest.mark.parametrize("url", [
         "https://www.linkedin.com/jobs/view/4422512798",
