@@ -209,6 +209,70 @@ def merge(args) -> int:
     return 0
 
 
+def export(args) -> int:
+    """Turn the searchers' verified recoveries into proposal rows.
+
+    `load_search_log` deliberately ignores `found`, so without this the
+    recoveries a search pass turns up are never applied to anything. This
+    writes them in the proposal's own shape, which routes them through
+    `apply_reconcile.py`'s existing `moved` gate rather than inventing a second
+    authorization path: the gate still demands a confirmed 404 on the old row,
+    `confidence=high`, and a non-empty destination.
+
+    Two guards, both learned from real rows. A destination is only emitted once
+    a probe returns postings, because a searcher will report a board it read
+    off a careers page that does not exist. And a probe proves the board
+    exists, NOT who owns it -- `ashby/Fulcrum` serves 12 real postings for a
+    Sydney firm that is not the Fulcrum we were looking for -- so an ambiguous
+    or generic company name is emitted `review`, never `moved`.
+    """
+    rows = []
+    for path in (sorted(BATCH_DIR.glob("*.result.csv"))
+                 + (sorted(RESULT_DIR.glob("*.result.csv")) if RESULT_DIR.exists() else [])):
+        with path.open(encoding="utf-8") as f:
+            rows.extend(r for r in csv.DictReader(f)
+                        if (r.get("outcome") or "").strip() == SEARCH_FOUND)
+
+    probe_rows = [{c: (r.get(c) or "").strip() for c in LOG_COLUMNS} for r in rows]
+    kept, demoted = verify_found(probe_rows)
+    print(f"{len(probe_rows)} found claim(s): {kept} probe-confirmed, {demoted} disproved")
+
+    out_rows = []
+    for r in probe_rows:
+        if r["outcome"] != SEARCH_FOUND or not r["new_slug"]:
+            continue
+        ambiguous = R.is_ambiguous_name(R.normalize_name(r["name"]))
+        # A destination on a lane we scrape is a `moved`; one on a platform we
+        # have no client for is `moved_offsite`, which retires the dead slug
+        # and adds nothing. Emitting the latter as `moved` would retire the old
+        # row and then log a refusal for an add that can never happen.
+        offsite = r["new_ats"] not in R.SUPPORTED_ATS
+        if ambiguous:
+            verdict = R.REVIEW
+        else:
+            verdict = R.MOVED_OFFSITE if offsite else R.MOVED
+        out_rows.append({
+            "ats": r["ats"], "slug": r["slug"], "name": r["name"],
+            "old_status": "dead",
+            "verdict": verdict,
+            "new_ats": r["new_ats"], "new_slug": r["new_slug"], "new_jobs": "",
+            "acquirer": "", "confidence": R.LOW if ambiguous else R.HIGH,
+            "domain": "", "evidence": f"web_search; {r['evidence']}",
+        })
+
+    out = (paths.REPO_ROOT / args.out if args.out
+           else OUT_DIR / f"slug_search_proposal_{date.today()}.csv")
+    with out.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=R.COLUMNS)
+        w.writeheader()
+        w.writerows(out_rows)
+    movable = sum(1 for r in out_rows if r["verdict"] == R.MOVED)
+    print(f"{len(out_rows)} row(s): {movable} applyable as `moved`, "
+          f"{len(out_rows) - movable} held as `review` (generic name)")
+    print(f"-> {out}")
+    return 0
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -226,6 +290,10 @@ def parse_args(argv):
                    help="skip probing the `found` claims. Only for inspecting raw "
                         "agent output -- an unprobed claim must never reach apply")
     m.set_defaults(fn=merge)
+
+    e = sub.add_parser("export", help="verified recoveries as a proposal CSV")
+    e.add_argument("--out", help="default jobs/slug_search_proposal_<date>.csv")
+    e.set_defaults(fn=export)
 
     return p.parse_args(argv)
 
