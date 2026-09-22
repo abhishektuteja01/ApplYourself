@@ -138,6 +138,31 @@ def split(args) -> int:
     return 0
 
 
+_ASHBY_GRAPHQL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+_ASHBY_QUERY = (
+    "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) "
+    "{ jobBoard: jobBoardWithTeams("
+    "organizationHostedJobsPageName: $organizationHostedJobsPageName) "
+    "{ jobPostings { id } } }")
+
+
+def _ashby_graphql_count(slug: str):
+    """Postings from Ashby's board-page call, or None if no such board."""
+    from src.ats_http import fetch_json_post
+    payload = fetch_json_post(_ASHBY_GRAPHQL, {
+        "operationName": "ApiJobBoardWithTeams",
+        "variables": {"organizationHostedJobsPageName": slug},
+        "query": _ASHBY_QUERY,
+    })
+    if not isinstance(payload, dict) or payload.get("errors"):
+        raise ValueError("graphql unavailable")
+    board = (payload.get("data") or {}).get("jobBoard")
+    if board is None:
+        return None
+    items = board.get("jobPostings")
+    return len(items) if isinstance(items, list) else None
+
+
 def verify_found(rows, pacing: float = 0.5) -> tuple[int, int]:
     """Probe every `found` claim and demote the ones that do not exist.
 
@@ -176,8 +201,17 @@ def verify_found(rows, pacing: float = 0.5) -> tuple[int, int]:
             else:
                 payload = fetch_json(R.board_url(ats, slug))
                 count = R.posting_count(ats, payload)
-        except Exception:  # noqa: BLE001 -- a failed probe is a failed claim
+        except Exception:  # noqa: BLE001 -- see the ashby fallback below
             count = None
+        if count is None and ats == "ashby":
+            # Ashby's REST posting API is opt-in per org and 404s on live
+            # boards, so verifying against it alone demotes real recoveries:
+            # `ashby/chainlink-labs` is live with 22 postings and REST-404s.
+            # Same second opinion the audit takes.
+            try:
+                count = _ashby_graphql_count(slug)
+            except Exception:  # noqa: BLE001 -- unreachable, not absent
+                count = None
         if isinstance(count, int) and count > 0:
             kept += 1
             row["evidence"] = f"verified {count} postings; {row['evidence']}"
