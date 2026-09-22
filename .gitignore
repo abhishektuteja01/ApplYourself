@@ -58,6 +58,12 @@ jobs/*
 data/universe/*.local.csv
 
 # =============================================================================
+# /companies.csv — a scratch export of the whole slug universe, written by hand
+# when auditing boards. Regenerable; never an input to anything.
+# =============================================================================
+/companies.csv
+
+# =============================================================================
 # .apply_profile/ — the persistent Chrome profile /apply drives the browser
 # with. Holds cookies and whatever a board sets during a fill.
 # =============================================================================

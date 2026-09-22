@@ -139,6 +139,13 @@ uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers
                                       #   (unless --job-id names one role),
                                       # --submit prompts for a typed confirmation unless --yes,
                                       # --rate floors at 30s, one submit per company per run
+uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] [--limit N] [--resume]
+                                      # one-off liveness audit of the ATS slug
+                                      # universe -> jobs/slug_audit_<date>.csv:
+                                      # active / stale / empty / dead / error
+                                      # per slug. Report only; writes nothing
+                                      # else. `--ats` is repeatable, default
+                                      # ashby/greenhouse/lever (workday opt-in)
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```

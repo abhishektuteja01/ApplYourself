@@ -218,6 +218,16 @@ def universe_slugs(ats: str) -> set[str]:
     return set(_universe_dict(ats))
 
 
+def universe_companies(ats: str) -> list[UniverseCompany]:
+    """Every company this lane's universe names, unfiltered, keeping the names.
+
+    `universe_slugs` without discarding the name -- for a reader that wants the
+    whole universe rather than tonight's poll list. Never a `HealthLedger`
+    input either; the caveat on `universe_slugs` applies unchanged.
+    """
+    return list(_universe_dict(ats).values())
+
+
 def load(ats: str) -> list[UniverseCompany]:
     companies_dict = _universe_dict(ats)
 
