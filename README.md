@@ -306,8 +306,10 @@ all in `profile/discovery.yaml`:
 - **Cadence, per source.** `cadence: daily | weekdays | weekly | every_n_days:N`
   on a source block. A skipped night writes no shard and reports as `SKIPPED`,
   which the digest excludes from its medians and its alarms — a cadence skip is
-  not a zero-row night. Workday ships weekly: it is the costliest lane per kept
-  row, and it's manual-apply anyway.
+  not a zero-row night. Everything defaults to daily; Workday is the usual first
+  candidate for slowing down, being the costliest lane per kept row and
+  manual-apply anyway. Note `weekly` anchors to Monday, not to "7 days since the
+  last run".
 - **A hot/cold split of the board universe.** The vendored slug lists run to
   thousands of tenants per ATS. A board is *hot* if it's on your watchlist or
   kept you a row in the last 30 days, and hot boards are polled every night. The
