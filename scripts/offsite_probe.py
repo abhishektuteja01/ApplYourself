@@ -168,8 +168,16 @@ def sweep(args) -> int:
 
     A short or generic stem matching a board elsewhere is weak evidence -- a
     three-letter handle collides across unrelated companies -- so those are
-    reported `low` and are for a human to confirm, exactly as in the name-match
-    tier.
+    reported `low`.
+
+    `high` does NOT mean confirmed, and the label is deliberately weaker than
+    it sounds. A handle match cannot establish identity however distinctive the
+    name looks: `tacobell` on bamboohr serves an IT Security Engineer in
+    Mayfair and a Software Engineer in Sydney, and `silverlake` serves a Red
+    Seal Millwright in White River. Both passed the length and generic-word
+    guards. Only reading the returned job titles settles who owns a board, and
+    that is a judgment call, so every row here wants a human before it is
+    applied.
     """
     with open(paths.REPO_ROOT / args.proposal, encoding="utf-8") as f:
         rows = [r for r in csv.DictReader(f)
@@ -223,8 +231,9 @@ def sweep(args) -> int:
     for plat in sorted(by_platform, key=lambda p: -by_platform[p]):
         print(f"{plat:18}{by_platform[plat]:>6}"
               f"{sum(h[6] for h in hits if h[4] == plat):>10}")
-    print(f"\n{len(hits)} of {len(rows)} placed ({high} high confidence, "
-          f"{len(hits) - high} need a human).")
+    print(f"\n{len(hits)} of {len(rows)} placed ({high} pass the name guards, "
+          f"{len(hits) - high} fail them). Both want a human: a handle match "
+          f"does not prove identity.")
     print(f"Wrote {out}. Nothing else was modified.")
     return 0
 
