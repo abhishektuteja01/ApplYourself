@@ -116,6 +116,50 @@ def board_url(ats: str, slug: str) -> str:
     raise ValueError(f"no audit URL for ats {ats!r}")
 
 
+# Ashby's REST posting API is opt-in per organization: it answers 404 for a
+# live, actively-hiring board whose org has not enabled it. Measured over the
+# 801 slugs this audit called `dead`, 12 were live that way -- Whatnot (143
+# postings), Personio (101), Lime (77), EvenUp (40), Chainlink Labs (22): 438
+# postings in total. So a REST 404 is not evidence a board is gone, and the
+# board-page GraphQL call is the authority. `jobs.ashbyhq.com/<slug>` itself is
+# useless as a probe: it serves the SPA shell, 200, for any string at all.
+_ASHBY_GRAPHQL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+_ASHBY_QUERY = (
+    "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) "
+    "{ jobBoard: jobBoardWithTeams("
+    "organizationHostedJobsPageName: $organizationHostedJobsPageName) "
+    "{ jobPostings { id } } }")
+
+
+def ashby_graphql_summary(slug: str) -> tuple[int, date | None] | None:
+    """(count, newest) from Ashby's board-page call, or None if no such board.
+
+    Raises on a transport failure, so the caller reports `error` -- an
+    unreachable second opinion must not confirm the first one's 404.
+    """
+    payload = fetch_json_post(_ASHBY_GRAPHQL, {
+        "operationName": "ApiJobBoardWithTeams",
+        "variables": {"organizationHostedJobsPageName": slug},
+        "query": _ASHBY_QUERY,
+    })
+    if not isinstance(payload, dict):
+        raise TypeError(f"expected a JSON object, got {type(payload).__name__}")
+    if payload.get("errors"):
+        # A rejected query is not evidence of absence. Raising sends the row to
+        # `error`, which is re-probed, rather than confirming the REST 404.
+        raise ValueError(f"graphql errors: {payload['errors'][:1]}")
+    board = (payload.get("data") or {}).get("jobBoard")
+    if board is None:
+        return None
+    items = board.get("jobPostings")
+    if not isinstance(items, list):
+        raise TypeError("expected a list under 'jobPostings'")
+    # This call carries no publish date, so the age is unknown. `classify`
+    # reads that as active, which is the right default: unknown age is not
+    # evidence of abandonment.
+    return len(items), None
+
+
 def classify(count: int, newest: date | None, stale_days: int, today: date) -> str:
     """`empty` and `stale` are the two the nightly cannot see.
 
@@ -138,6 +182,16 @@ def probe(ats: str, slug: str) -> tuple[str, int, date | None, str, str]:
         else:
             payload = fetch_json(board_url(ats, slug))
     except CareersError as e:
+        if ats == "ashby" and e.status in (404, 410):
+            # Second opinion before calling an Ashby board gone.
+            try:
+                found = ashby_graphql_summary(slug)
+            except Exception as e2:  # noqa: BLE001 -- unreachable, not absent
+                return ERROR, 0, None, str(e.status or ""), f"graphql: {e2}"
+            if found is not None:
+                count, newest = found
+                return None, count, newest, "200", "rest 404, live via graphql"
+            return DEAD, 0, None, str(e.status or ""), str(e)
         status = DEAD if e.status in (404, 410) else ERROR
         return status, 0, None, str(e.status or ""), str(e)
     except Exception as e:  # noqa: BLE001 -- a bad slug must not end the pass
