@@ -49,6 +49,18 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 TIMEOUT = 10
 
 LIVE, EMPTY, DEAD, ERROR, UNSUPPORTED = "live", "empty", "dead", "error", "unsupported"
+# A board that answered 200 with no postings, on a platform that answers 200
+# for any string at all. Existence is unproven, so it is not `empty`.
+UNVERIFIABLE = "unverifiable"
+
+# Nonsense slug, used to calibrate each platform before the run. SmartRecruiters
+# answers `totalFound: 0` for this, so on that platform a zero count says
+# nothing about whether the account exists; breezy, recruitee and teamtailor
+# 404 and bamboohr returns non-JSON, so theirs is a real empty board.
+CONTROL_SLUG = "totalgarbagexyz987nope"
+
+# Filled by `calibrate`: platforms that answer any slug with postings.
+WILDCARD: set = set()
 
 
 # --- one endpoint and one count per platform --------------------------------
@@ -107,6 +119,30 @@ def probe(platform: str, slug: str) -> tuple[str, int, str]:
     return (LIVE if count > 0 else EMPTY), count, ""
 
 
+def calibrate(platforms) -> set[str]:
+    """Platforms whose zero-posting answer cannot prove the account exists.
+
+    Measured rather than assumed: the endpoints disagree about what a missing
+    tenant looks like, and reading one platform's `totalFound: 0` as "real
+    board, no openings" overstated an earlier run's result by ~100 rows.
+    """
+    blind = set()
+    for platform in platforms:
+        status, n, _ = probe(platform, CONTROL_SLUG)
+        if status == LIVE:
+            # The platform serves postings for a slug that cannot exist:
+            # Pinpoint answers any slug with five lorem-ipsum demo roles. Every
+            # result from it is worthless, so drop the platform entirely rather
+            # than let it manufacture recoveries.
+            print(f"DROPPING {platform}: returns {n} postings for a nonsense slug",
+                  file=sys.stderr)
+            blind.add(platform)
+            WILDCARD.add(platform)
+        elif status == EMPTY:
+            blind.add(platform)
+    return blind
+
+
 def sweep_stems(name: str, slug: str) -> list[str]:
     """Slugs worth trying on another platform for this company.
 
@@ -143,6 +179,10 @@ def sweep(args) -> int:
     platforms = [p for p in ENDPOINTS
                  if not args.platform or p in {x.lower() for x in args.platform}]
 
+    calibrate(platforms)
+    if WILDCARD:
+        print(f"dropped (answers any slug): {', '.join(sorted(WILDCARD))}")
+
     out = (paths.REPO_ROOT / args.out if args.out
            else OUT_DIR / f"offsite_sweep_{date.today()}.csv")
     print(f"{len(rows)} unplaced row(s) x {len(platforms)} platform(s) -> {out}\n")
@@ -153,6 +193,8 @@ def sweep(args) -> int:
 
     def work(row):
         for platform in platforms:
+            if platform in WILDCARD:
+                continue
             for stem in sweep_stems(row["name"], row["slug"]):
                 time.sleep(args.pacing)
                 status, n, _ = probe(platform, stem)
@@ -214,6 +256,11 @@ def main(argv=None) -> int:
     out = paths.REPO_ROOT / args.out if args.out else OUT_DIR / f"offsite_probe_{date.today()}.csv"
     print(f"{len(rows)} offsite destination(s) -> {out}\n")
 
+    blind = calibrate(sorted({r["new_ats"].strip().lower() for r in rows}
+                             & set(ENDPOINTS)))
+    if blind:
+        print(f"zero-count is unverifiable on: {', '.join(sorted(blind))}\n")
+
     lock = threading.Lock()
     results: list[list] = []
     counts: Counter = Counter()
@@ -224,6 +271,8 @@ def main(argv=None) -> int:
         dest = row["new_slug"].strip()
         time.sleep(args.pacing)
         status, n, note = probe(platform, dest)
+        if status == EMPTY and platform in blind:
+            status, note = UNVERIFIABLE, "200 with no postings on a platform that 200s for any slug"
         with lock:
             counts[(platform, status)] += 1
             postings[platform] += n
@@ -241,10 +290,11 @@ def main(argv=None) -> int:
 
     platforms = sorted({p for p, _ in counts})
     print(f"{'platform':18}{'live':>7}{'empty':>7}{'dead':>7}{'error':>7}"
-          f"{'unsupp':>8}{'postings':>10}")
+          f"{'unverif':>9}{'unsupp':>8}{'postings':>10}")
     for plat in platforms:
         print(f"{plat:18}" + "".join(f"{counts[(plat, s)]:>7}"
                                      for s in (LIVE, EMPTY, DEAD, ERROR))
+              + f"{counts[(plat, UNVERIFIABLE)]:>9}"
               + f"{counts[(plat, UNSUPPORTED)]:>8}{postings[plat]:>10}")
     live = sum(v for (_, s), v in counts.items() if s == LIVE)
     print(f"\n{live} of {len(rows)} destinations confirmed live, "

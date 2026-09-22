@@ -535,7 +535,15 @@ _SUPPORTED_PATTERNS = (
 # Platforms we do not scrape. Recorded, never probed -- how much of the
 # universe left our four lanes is the point of collecting them.
 _UNSUPPORTED_PATTERNS = (
-    ("workable", re.compile(r"(?:apply|[A-Za-z0-9-]+)\.workable\.com/([A-Za-z0-9_-]*)")),
+    # Workable publishes both shapes and the slug is in a different place in
+    # each: `apply.workable.com/<slug>` puts it in the path, while
+    # `<slug>.workable.com` puts it in the subdomain. Matching only the first
+    # captured an empty slug from the second and dropped the board.
+    ("workable", re.compile(r"apply\.workable\.com/([A-Za-z0-9_-]+)")),
+    # The lookbehind anchors the match to the start of the hostname. Without
+    # it the engine restarts inside `apply.` and captures `pply`.
+    ("workable", re.compile(
+        r"(?<![A-Za-z0-9.-])(?!apply\.)([A-Za-z0-9-]+)\.workable\.com")),
     ("smartrecruiters", re.compile(
         r"(?:careers|jobs)\.smartrecruiters\.com/([A-Za-z0-9_-]*)")),
     ("rippling", re.compile(r"ats\.rippling\.com/([A-Za-z0-9_-]*)")),
@@ -546,6 +554,22 @@ _UNSUPPORTED_PATTERNS = (
     ("teamtailor", re.compile(r"([A-Za-z0-9-]+)\.teamtailor\.com")),
     ("recruitee", re.compile(r"([A-Za-z0-9-]+)\.recruitee\.com")),
     ("personio", re.compile(r"([A-Za-z0-9-]+)\.jobs\.personio\.(?:com|de)")),
+    # Added from boards the search pass actually found companies on, which
+    # this list had no pattern for. `pinpoint` is recorded but is worthless as
+    # evidence on its own: `<anything>.pinpointhq.com/postings.json` answers
+    # any slug with five lorem-ipsum demo roles.
+    ("breezy", re.compile(r"([A-Za-z0-9-]+)\.breezy\.hr")),
+    ("gem", re.compile(r"jobs\.gem\.com/([A-Za-z0-9_-]*)")),
+    ("jazzhr", re.compile(r"([A-Za-z0-9-]+)\.applytojob\.com")),
+    ("dover", re.compile(r"app\.dover\.com/(?:jobs|apply)/([A-Za-z0-9_-]*)")),
+    ("gusto", re.compile(r"jobs\.gusto\.com/boards/([A-Za-z0-9_-]*)")),
+    ("welcometothejungle", re.compile(
+        r"(?:www\.)?welcometothejungle\.com/[a-z-]+/companies/([A-Za-z0-9_-]*)")),
+    ("freshteam", re.compile(r"([A-Za-z0-9-]+)\.freshteam\.com")),
+    ("join_com", re.compile(r"join\.com/companies/([A-Za-z0-9_-]*)")),
+    ("pinpoint", re.compile(r"([A-Za-z0-9-]+)\.pinpointhq\.com")),
+    ("eightfold", re.compile(r"([A-Za-z0-9-]+)\.eightfold\.ai")),
+    ("ashby_custom", re.compile(r"careers\.([A-Za-z0-9.-]+)/\?ashby")),
 )
 
 # Greenhouse/Lever/Ashby path segments that are never a board slug.
