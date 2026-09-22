@@ -522,7 +522,13 @@ _SUPPORTED_PATTERNS = (
     ("greenhouse", re.compile(
         r"(?:boards|job-boards)\.greenhouse\.io/(?!embed\b)([A-Za-z0-9_-]+)")),
     ("lever", re.compile(r"jobs\.(?:eu\.)?lever\.co/([A-Za-z0-9_.-]+)")),
-    ("ashby", re.compile(r"jobs\.ashbyhq\.com/([A-Za-z0-9_.%-]+)")),
+    # Both URL forms, and `%20` is in the character class deliberately: an
+    # Ashby slug may contain literal spaces. Flock Safety's board is
+    # `Flock Safety`, which no name-derived candidate would ever generate, so
+    # scraping the page for the slug is the only way to reach it.
+    ("ashby", re.compile(
+        r"(?:jobs\.ashbyhq\.com|api\.ashbyhq\.com/posting-api/job-board)"
+        r"/([A-Za-z0-9_.%+-]+)")),
     ("workday", _WD_URL_RE),
 )
 
