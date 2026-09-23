@@ -322,8 +322,10 @@ class TestDryRun:
 class TestLocationDropHint:
     def test_out_of_allowlist_location_names_the_filter(self, tmp_path, monkeypatch):
         from src.discovery.config import DiscoveryConfig
-        # Pin the allowlist so a local profile/discovery.yaml cannot change it.
+        # Pin the allowlist so a local profile/discovery.yaml cannot change it:
+        # both here and in the cleaning run ingest calls.
         monkeypatch.setattr(ingest_url, "load_config", lambda *a, **k: DiscoveryConfig())
+        monkeypatch.setattr(ingest_url.cleaning, "load_config", lambda *a, **k: DiscoveryConfig())
         monkeypatch.setattr(ingest_url, "fetch_row",
                             lambda *a, **k: _row(location="Berlin, Germany"))
         with pytest.raises(IngestError, match="location_allowlist"):

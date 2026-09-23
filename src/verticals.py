@@ -53,6 +53,8 @@ class Vertical:
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
     resume_file: str  # repo-relative path to the attested resume judges score against (read by score-judge.md)
+    # Optional. The terms a jobspy lane's `abroad` block queries per country.
+    abroad_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     if not search_terms:
         raise _fail(path, f"{where}.search_terms must be nonempty")
     linkedin_terms = _str_list(_require(raw, "linkedin_terms", path, where), path, f"{where}.linkedin_terms")
+    abroad_terms = _str_list(raw.get("abroad_terms", []), path, f"{where}.abroad_terms")
 
     dq = _require(raw, "disqualifier", path, where)
     if not isinstance(dq, dict):
@@ -190,6 +193,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         display_name=str(_require(raw, "display_name", path, where)),
         search_terms=search_terms,
         linkedin_terms=linkedin_terms,
+        abroad_terms=abroad_terms,
         disqualifier_max_years=max_years,
         disqualifier_phrases=phrases,
         disqualifier_title_phrases=title_phrases,

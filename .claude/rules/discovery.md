@@ -48,6 +48,11 @@ errors above the cap.
 inference is US-only, so `location_allowlist.cities` filters worldwide. A city
 with no state canonicalizes as `"City, Country"`.
 
+A jobspy source's `abroad` block (`countries`, `verticals`) adds one query per
+country × that vertical's `abroad_terms`, remote=False, after every home query.
+`remote_queries: false` drops the remote copy of each home query. Every abroad
+country must be in the allowlist, or cleaning drops what it finds.
+
 A location that is exactly a region acronym (`EMEA`, `EMEIA`, `APAC`, `LATAM`,
 `ANZ`) expands to its constituent countries and goes through the
 `candidate_countries` branch: overlap with the allowlist keeps it for review, no

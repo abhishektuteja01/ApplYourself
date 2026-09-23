@@ -221,6 +221,30 @@ def _country_indeed_value(location: str) -> str:
     return location
 
 
+def build_queries(source_name, source_cfg, verticals_config, locations):
+    """(vertical, term, location, is_remote) for every query, in run order.
+
+    Materialized up front only so the deadline can break one loop rather than
+    four. Home queries come first -- vertical, term, location, remote flag --
+    then the `abroad` block: each country x listed vertical x `abroad_terms`,
+    remote=False only."""
+    remote_flags = (False, True) if source_cfg.remote_queries else (False,)
+    queries = [
+        (v.name, term, location, is_remote)
+        for v in verticals_config.verticals.values()
+        for term in (v.linkedin_terms if source_name == "linkedin" else v.search_terms)
+        for location in locations
+        for is_remote in remote_flags
+    ]
+    for country in source_cfg.abroad_countries:
+        for name in source_cfg.abroad_verticals:
+            vertical = verticals_config.verticals.get(name)
+            if vertical is None:
+                continue  # reported by discovery-check
+            queries.extend((name, term, country, False) for term in vertical.abroad_terms)
+    return queries
+
+
 class JobSpySource(Source):
     def fetch(self, ctx) -> SourceResult:
         rows = []
@@ -239,16 +263,7 @@ class JobSpySource(Source):
         # countries. Sorted for deterministic query order.
         locations = ctx.config.effective_search_locations()
 
-        # Materialized up front only so the deadline can break one loop rather
-        # than four. Iteration order is unchanged: vertical, term, location,
-        # remote flag — and so, therefore, is query priority.
-        queries = [
-            (v.name, term, location, is_remote)
-            for v in ctx.verticals.verticals.values()
-            for term in (v.linkedin_terms if self.name == "linkedin" else v.search_terms)
-            for location in locations
-            for is_remote in (False, True)
-        ]
+        queries = build_queries(self.name, source_cfg, ctx.verticals, locations)
 
         total_queries = 0
         saturated_queries = 0
@@ -313,8 +328,11 @@ class JobSpySource(Source):
                     saturated = len(df) >= RESULTS_WANTED
                     saturated_queries += saturated
                     suffix = " (SATURATED — more results exist)" if saturated else ""
+                    # Location named only for abroad queries, so the home
+                    # lines read as they always have.
+                    where = "" if location in locations else f" location={location}"
                     report_lines.append(
-                        f"- term='{term}' remote={is_remote}: {len(df)} rows{suffix}")
+                        f"- term='{term}'{where} remote={is_remote}: {len(df)} rows{suffix}")
 
         if not deadline_hit:
             report_lines.append(f"Queries made: {total_queries}")

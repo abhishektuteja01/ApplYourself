@@ -439,3 +439,23 @@ class TestClassifierRuleProtocol:
         returned None would still work — until something compared the result."""
         for _vertical, rule in cfg.classifier_rules:
             assert isinstance(rule.matches("Some Unrelated Title"), bool), rule
+
+
+class TestAbroadTerms:
+    """Optional: absent means no abroad queries for that lane."""
+
+    def test_absent_is_empty(self, cfg):
+        assert all(v.abroad_terms == () for v in cfg.verticals.values())
+
+    def test_a_list_is_loaded_in_order(self, tmp_path):
+        data = _load_raw()
+        data["verticals"]["example_primary"]["abroad_terms"] = ["Widget Engineer", "Junior Widget Engineer"]
+        loaded = _write_and_load(tmp_path, data)
+        assert loaded.verticals["example_primary"].abroad_terms == ("Widget Engineer", "Junior Widget Engineer")
+
+    @pytest.mark.parametrize("bad", ["Widget Engineer", [""], [3]])
+    def test_a_bad_value_is_rejected(self, tmp_path, bad):
+        data = _load_raw()
+        data["verticals"]["example_primary"]["abroad_terms"] = bad
+        with pytest.raises(ValueError, match="abroad_terms must be a list"):
+            _write_and_load(tmp_path, data)

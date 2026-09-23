@@ -303,8 +303,12 @@ def test_a_non_list_search_locations_is_rejected(tmp_path, monkeypatch):
 
 def test_the_real_and_example_configs_validate(monkeypatch):
     from src import verticals
-    monkeypatch.setattr(verticals, "get_config", lambda: None)
     root = Path(__file__).resolve().parents[2] / "profile"
+    # An `abroad` block names lanes, so the real config is checked against the
+    # real verticals.yaml when there is one.
+    real_lanes = root / "verticals.yaml"
+    lanes = verticals.load_verticals(real_lanes) if real_lanes.exists() else None
+    monkeypatch.setattr(verticals, "get_config", lambda: lanes)
     for name in ("discovery.example.yaml", "discovery.yaml"):
         p = root / name
         if p.exists():
@@ -525,3 +529,82 @@ def test_pacing_spread_rejects_below_one(tmp_path, monkeypatch, bad):
 def test_detail_reuse_days_rejects_a_non_integer_or_negative(tmp_path, monkeypatch, bad):
     with pytest.raises(ValueError, match="detail_reuse_days"):
         _load(tmp_path, monkeypatch, {"sources": {"workday": {"detail_reuse_days": bad}}})
+
+
+class TestAbroadConfig:
+    """`remote_queries` and `abroad` on a jobspy source block."""
+
+    @staticmethod
+    def _load(tmp_path, sources, countries=("United States", "Germany")):
+        p = tmp_path / "d.yaml"
+        p.write_text(yaml.dump({
+            "location_allowlist": {"countries": list(countries)},
+            "search_locations": ["United States"],
+            "sources": sources,
+        }), encoding="utf-8")
+        return load_config(p)
+
+    @staticmethod
+    def _lane_with_terms(cfg):
+        from dataclasses import replace
+        from src import verticals
+        name = next(iter(cfg.verticals))
+        lanes = dict(cfg.verticals)
+        lanes[name] = replace(lanes[name], abroad_terms=("Widget Engineer",))
+        verticals.set_config(replace(cfg, verticals=lanes))
+        return name
+
+    def test_defaults_keep_todays_behaviour(self, tmp_path, cfg):
+        c = self._load(tmp_path, {"linkedin": {"enabled": True}})
+        s = c.sources["linkedin"]
+        assert s.remote_queries is True
+        assert s.abroad_countries == [] and s.abroad_verticals == []
+        assert c.validate() == []
+
+    def test_a_valid_block_loads_and_validates(self, tmp_path, cfg):
+        name = self._lane_with_terms(cfg)
+        c = self._load(tmp_path, {"linkedin": {
+            "remote_queries": False,
+            "abroad": {"countries": ["Germany"], "verticals": [name]}}})
+        s = c.sources["linkedin"]
+        assert s.remote_queries is False
+        assert (s.abroad_countries, s.abroad_verticals) == (["Germany"], [name])
+        assert c.validate() == []
+
+    def test_remote_queries_must_be_a_boolean(self, tmp_path, cfg):
+        with pytest.raises(ValueError, match="remote_queries must be true or false"):
+            self._load(tmp_path, {"linkedin": {"remote_queries": "no"}})
+
+    def test_abroad_lists_must_be_lists_of_names(self, tmp_path, cfg):
+        with pytest.raises(ValueError, match="abroad.countries must be a list"):
+            self._load(tmp_path, {"linkedin": {"abroad": {"countries": "Germany"}}})
+
+    def test_an_unknown_abroad_key_is_reported(self, tmp_path, cfg):
+        name = self._lane_with_terms(cfg)
+        c = self._load(tmp_path, {"linkedin": {"abroad": {
+            "countries": ["Germany"], "verticals": [name], "terms": ["x"]}}})
+        assert "unknown config key: sources.linkedin.abroad.terms" in c.validate()
+
+    @pytest.mark.parametrize("abroad, expected", [
+        ({"countries": ["Germany"]}, "needs both countries and verticals"),
+        ({"countries": ["Atlantis"], "verticals": ["LANE"]}, "'Atlantis' is not a country name"),
+        ({"countries": ["France"], "verticals": ["LANE"]}, "'France' is not in location_allowlist"),
+        ({"countries": ["Germany"], "verticals": ["nope"]}, "'nope' is not a vertical"),
+    ])
+    def test_problems_are_reported(self, tmp_path, cfg, abroad, expected):
+        name = self._lane_with_terms(cfg)
+        abroad = {k: [name if x == "LANE" else x for x in v] for k, v in abroad.items()}
+        c = self._load(tmp_path, {"indeed": {"abroad": abroad}})
+        assert any(expected in p for p in c.validate()), c.validate()
+
+    def test_a_vertical_without_abroad_terms_is_reported(self, tmp_path, cfg):
+        name = next(iter(cfg.verticals))
+        c = self._load(tmp_path, {"linkedin": {"abroad": {
+            "countries": ["Germany"], "verticals": [name]}}})
+        assert any("has no abroad_terms" in p for p in c.validate())
+
+    def test_only_the_jobspy_lanes_take_an_abroad_block(self, tmp_path, cfg):
+        name = self._lane_with_terms(cfg)
+        c = self._load(tmp_path, {"ashby": {"abroad": {
+            "countries": ["Germany"], "verticals": [name]}}})
+        assert any("sources.ashby.abroad: only" in p for p in c.validate())

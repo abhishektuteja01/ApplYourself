@@ -55,3 +55,40 @@ false_positive_guard:
   - "must be authorized to work in the US"
   - "work authorization required"
   - "authorized to work in the United States"
+
+# Rows located only in a "Visa needed" country (profile/preferences.md,
+# "## Work countries") use this block instead of the lists above. Abroad there
+# is no opt_ok: needing no sponsorship is not an option.
+# Precedence: ineligible -> conditional without a sponsors match -> sponsors -> unknown.
+abroad:
+  ineligible:
+    - "EU citizenship required"
+    - "must hold EU citizenship"
+    - "unrestricted work permit"
+    - "visa sponsorship is not available"
+    - "unable to provide visa sponsorship"
+    - "no visa sponsorship"
+    - "no sponsorship"
+    - "unable to sponsor"
+    - "will not sponsor"
+    - "do not sponsor"
+    - "without the need for employer sponsorship"
+    - "without sponsorship"
+    - "already be eligible to work"
+    - "without any time limitations"
+    - "not support relocation or visa sponsorship"
+  # Ineligible unless a `sponsors` phrase below also matches.
+  conditional:
+    - "right to work in"
+    - "eligible to work in"
+    - "legally able to work in"
+    - "legal right to work"
+    - "valid work permit"
+    - "work permit are required"
+    - "eligible to work within the EU"
+    - "existing right to work"
+  sponsors:
+    - "visa support"
+    - "visa sponsorship is available"
+    - "sponsor visas"
+    - "visa sponsorship where"

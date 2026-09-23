@@ -202,13 +202,14 @@ def _render_skipped(name: str, cadence: str) -> list[str]:
 
 
 def _cap_search_terms(verticals_config, max_terms: int):
-    """First `max_terms` terms of every lane, order preserved. Both term lists:
+    """First `max_terms` terms of every lane, order preserved. Every term list:
     `linkedin_terms` is the same list in LinkedIn's dialect, and a cap that
-    skipped it would be a no-op for that source."""
+    skipped it would be a no-op for that source; `abroad_terms` likewise."""
     capped = {
         name: replace(v,
                       search_terms=v.search_terms[:max_terms],
-                      linkedin_terms=v.linkedin_terms[:max_terms])
+                      linkedin_terms=v.linkedin_terms[:max_terms],
+                      abroad_terms=v.abroad_terms[:max_terms])
         for name, v in verticals_config.verticals.items()
     }
     return replace(verticals_config, verticals=capped)

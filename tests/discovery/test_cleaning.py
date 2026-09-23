@@ -1887,6 +1887,9 @@ def test_streamed_window_matches_the_concatenated_window(tmp_path, monkeypatch):
     """D3.1: filtering per shard at load must produce a byte-identical
     clean.parquet and an identical run report to filtering once on the
     concatenated 14-day frame."""
+    # Pinned so a local profile/discovery.yaml cannot move the location drop.
+    from src.discovery.config import DiscoveryConfig
+    monkeypatch.setattr(cleaning, "load_config", lambda *a, **k: DiscoveryConfig())
     # One raw dir per run: prune_raw_files deletes the out-of-window shard, so
     # a shared dir would give the second run a different `pruned` count.
     streamed_raw = tmp_path / "streamed_jobs" / "raw"

@@ -24,7 +24,10 @@ _ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
 _SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence",
                           "page_delay_seconds", "page_delay_band_seconds",
                           "cold_rotation_runs", "pacing_spread",
-                          "detail_reuse_days"})
+                          "detail_reuse_days", "remote_queries", "abroad"})
+_ABROAD_KEYS = frozenset({"countries", "verticals"})
+# The sources that read `remote_queries` and `abroad`.
+JOBSPY_SOURCES = frozenset({"linkedin", "indeed"})
 
 # Runs to cover an ATS lane's cold tail once, when a source sets no
 # `cold_rotation_runs`.
@@ -135,6 +138,12 @@ class SourceConfig:
     # Only Workday reads these two.
     pacing_spread: float = DEFAULT_PACING_SPREAD
     detail_reuse_days: int = DEFAULT_DETAIL_REUSE_DAYS
+    # Only the jobspy lanes read these. `remote_queries: false` drops the
+    # remote=True copy of every query. `abroad` adds one query per country x
+    # term, using each listed vertical's `abroad_terms`, remote=False only.
+    remote_queries: bool = True
+    abroad_countries: list[str] = field(default_factory=list)
+    abroad_verticals: list[str] = field(default_factory=list)
 
 def _continent_countries(continent: str) -> list[str]:
     """Countries on `continent`, matched case- and whitespace-insensitively.
@@ -347,6 +356,43 @@ class DiscoveryConfig:
                     f"location_allowlist expands to {n} search locations "
                     f"(max {MAX_SEARCH_LOCATIONS} without an explicit search_locations): "
                     f"{cost}Set search_locations to the countries to query.")
+        problems.extend(self._abroad_problems())
+        return problems
+
+    def _abroad_problems(self) -> list[str]:
+        """An `abroad` block that would query nothing, or fetch rows cleaning
+        then drops, is reported rather than run."""
+        from src.discovery import location
+
+        problems = []
+        allowed = ({c.lower() for c in self.location_allowlist.effective_countries()}
+                   if self.location_allowlist is not None
+                   and self.location_allowlist.configured() else None)
+        for name, src in self.sources.items():
+            if not (src.abroad_countries or src.abroad_verticals):
+                continue
+            lanes = verticals.get_config().verticals
+            where = f"sources.{name}.abroad"
+            if name not in JOBSPY_SOURCES:
+                problems.append(f"{where}: only {sorted(JOBSPY_SOURCES)} read it")
+                continue
+            if not src.abroad_countries or not src.abroad_verticals:
+                problems.append(f"{where}: needs both countries and verticals")
+            for c in src.abroad_countries:
+                canonical = location.COUNTRY_NAMES.get(location._fold(c))
+                if canonical is None:
+                    problems.append(f"{where}.countries: {c!r} is not a country name")
+                elif allowed is not None and canonical.lower() not in allowed:
+                    problems.append(
+                        f"{where}.countries: {c!r} is not in location_allowlist, "
+                        f"so cleaning would drop every row it finds")
+            for v in src.abroad_verticals:
+                if v not in lanes:
+                    problems.append(f"{where}.verticals: {v!r} is not a vertical")
+                elif not lanes[v].abroad_terms:
+                    problems.append(
+                        f"{where}.verticals: {v!r} has no abroad_terms in "
+                        f"profile/verticals.yaml")
         return problems
 
 def load_config(path: Path | None = None) -> DiscoveryConfig:
@@ -422,6 +468,24 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 raise ValueError(
                     f"{p}: sources.{k}.detail_reuse_days must be an integer >= 0, "
                     f"got {reuse!r}")
+            remote_queries = v.get("remote_queries", True)
+            if not isinstance(remote_queries, bool):
+                raise ValueError(
+                    f"{p}: sources.{k}.remote_queries must be true or false, "
+                    f"got {remote_queries!r}")
+            abroad = v.get("abroad") or {}
+            if not isinstance(abroad, dict):
+                raise ValueError(f"{p}: sources.{k}.abroad must be a mapping")
+            cfg.unknown_keys += [f"sources.{k}.abroad.{sub}"
+                                 for sub in abroad if sub not in _ABROAD_KEYS]
+            abroad_lists = {}
+            for sub in _ABROAD_KEYS:
+                values = abroad.get(sub) or []
+                if not isinstance(values, list) or not all(
+                        isinstance(x, str) and x.strip() for x in values):
+                    raise ValueError(
+                        f"{p}: sources.{k}.abroad.{sub} must be a list of names")
+                abroad_lists[sub] = [x.strip() for x in values]
             cfg.sources[k] = SourceConfig(
                 enabled=bool(v.get("enabled", True)),
                 pacing_seconds=float(v.get("pacing_seconds", 1.0)),
@@ -431,6 +495,9 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
                 cold_rotation_runs=rotation,
                 pacing_spread=float(spread),
                 detail_reuse_days=reuse,
+                remote_queries=remote_queries,
+                abroad_countries=abroad_lists["countries"],
+                abroad_verticals=abroad_lists["verticals"],
             )
 
     if "location_allowlist" in data:
@@ -496,6 +563,11 @@ def main() -> int:
             suffix += f", sleep {src.pacing_seconds:g}-{src.pacing_seconds * src.pacing_spread:g}s"
         if src.detail_reuse_days != DEFAULT_DETAIL_REUSE_DAYS:
             suffix += f", reuse JD {src.detail_reuse_days}d"
+        if not src.remote_queries:
+            suffix += ", no remote queries"
+        if src.abroad_countries:
+            suffix += (f", abroad {'/'.join(src.abroad_verticals)} in "
+                       f"{len(src.abroad_countries)} countries")
         return f"{name} ({src.pacing_seconds:g}s{suffix})"
 
     print("sources:   " + (", ".join(_source(n, s) for n, s in enabled)

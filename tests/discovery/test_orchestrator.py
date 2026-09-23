@@ -617,12 +617,9 @@ def test_source_flag_is_repeatable_and_keeps_report_order(paths, monkeypatch):
 
 
 def test_source_flag_beats_a_disabled_config_flag(paths, monkeypatch):
-    class _Off:
-        enabled = False
-        pacing_seconds = 0
-
     config = _mock_config(linkedin=1)
-    config.sources = {"linkedin": _Off(), "indeed": _Off()}
+    config.sources = {"linkedin": SourceConfig(enabled=False, pacing_seconds=0),
+                      "indeed": SourceConfig(enabled=False, pacing_seconds=0)}
     srcs = _override_setup(monkeypatch, config)
 
     main(["--source", "linkedin"])
@@ -946,3 +943,12 @@ def test_a_resume_does_not_repeat_the_skip_sections(paths, monkeypatch):
 
     report = next((paths / "jobs" / "runs").glob("*.md")).read_text(encoding="utf-8")
     assert report.count("SKIPPED (cadence: weekly)") == 1
+
+
+def test_max_terms_caps_abroad_terms_too(cfg):
+    from dataclasses import replace
+    name = next(iter(cfg.verticals))
+    lanes = dict(cfg.verticals)
+    lanes[name] = replace(lanes[name], abroad_terms=("A", "B", "C"))
+    capped = orchestrator._cap_search_terms(replace(cfg, verticals=lanes), 2)
+    assert capped.verticals[name].abroad_terms == ("A", "B")

@@ -493,3 +493,61 @@ def test_indeed_reports_no_page_delay_line(cfg, monkeypatch):
     result = IndeedSource().fetch(_Ctx(cfg))
 
     assert not any("Page delay" in line for line in result.report_lines)
+
+
+def _with_abroad_terms(cfg, name, terms):
+    """`cfg` with one vertical carrying `abroad_terms`, installed as the
+    active config so validate() sees it too."""
+    from dataclasses import replace
+    from src import verticals
+    lanes = dict(cfg.verticals)
+    lanes[name] = replace(lanes[name], abroad_terms=tuple(terms))
+    out = replace(cfg, verticals=lanes)
+    verticals.set_config(out)
+    return out
+
+
+class TestQueryPlan:
+    def test_remote_queries_off_drops_every_remote_copy(self, cfg, monkeypatch):
+        seen = []
+        monkeypatch.setattr(jobspy_source, "scrape_jobs",
+                            lambda **kw: seen.append(kw["is_remote"]) or _df())
+        ctx = _Ctx(cfg)
+        ctx.config.sources["linkedin"].remote_queries = False
+        LinkedinSource().fetch(ctx)
+        expected = sum(len(v.linkedin_terms) for v in cfg.verticals.values())
+        assert seen == [False] * expected
+
+    def test_abroad_adds_country_by_term_for_listed_verticals_only(self, cfg):
+        name = next(iter(cfg.verticals))
+        vc = _with_abroad_terms(cfg, name, ["Widget Engineer", "Junior Widget Engineer"])
+        src = DiscoveryConfig().sources["linkedin"]
+        src.abroad_countries = ["Netherlands", "Poland"]
+        src.abroad_verticals = [name]
+        queries = jobspy_source.build_queries("linkedin", src, vc, ["United States"])
+
+        home = [q for q in queries if q[2] == "United States"]
+        abroad = [q for q in queries if q[2] != "United States"]
+        assert len(home) == sum(len(v.linkedin_terms) for v in vc.verticals.values()) * 2
+        assert abroad == [(name, t, c, False)
+                          for c in ("Netherlands", "Poland")
+                          for t in ("Widget Engineer", "Junior Widget Engineer")]
+        # Home queries run first, so a deadline cut loses abroad, not home.
+        assert queries[:len(home)] == home
+
+    def test_no_abroad_block_leaves_the_plan_unchanged(self, cfg):
+        src = DiscoveryConfig().sources["indeed"]
+        queries = jobspy_source.build_queries("indeed", src, cfg, ["United States"])
+        assert len(queries) == sum(len(v.search_terms) for v in cfg.verticals.values()) * 2
+
+    def test_abroad_rows_are_stamped_and_reported_with_their_country(self, cfg, monkeypatch):
+        name = next(iter(cfg.verticals))
+        vc = _with_abroad_terms(cfg, name, ["Widget Engineer"])
+        monkeypatch.setattr(jobspy_source, "scrape_jobs", lambda **kw: _df(title=ANY_VERTICAL))
+        ctx = _Ctx(vc)
+        src = ctx.config.sources["indeed"]
+        src.abroad_countries, src.abroad_verticals = ["Germany"], [name]
+        result = IndeedSource().fetch(ctx)
+        assert "- term='Widget Engineer' location=Germany remote=False: 1 rows" in result.report_lines
+        # Home lines keep their old shape.
+        assert not any("location=United States" in line for line in result.report_lines)
