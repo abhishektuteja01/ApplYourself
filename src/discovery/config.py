@@ -44,13 +44,13 @@ DEFAULT_DETAIL_REUSE_DAYS = 0
 # query count, and the pacing sleep alone can outrun `deadline_hours`.
 MAX_SEARCH_LOCATIONS = 5
 
-# The pacing floor config cannot go below, per source. Default 1.0s; the three
+# The pacing floor config cannot go below, per source. Default 1.0s; the four
 # lanes below tolerate 0.5s. One home for what used to be four copies of the
 # same two numbers -- the runtime sleeps in `ats/base.py`, `jobspy_source.py`
 # and `workday.py`, plus the cost estimator here, which must model the same
 # floor the lanes will actually sleep.
 DEFAULT_MIN_PACING_SECONDS = 1.0
-MIN_PACING_SECONDS = {"greenhouse": 0.5, "linkedin": 0.5, "indeed": 0.5}
+MIN_PACING_SECONDS = {"greenhouse": 0.5, "linkedin": 0.5, "indeed": 0.5, "workday": 0.5}
 
 
 def pacing_floor(source_name: str) -> float:

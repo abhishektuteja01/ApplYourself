@@ -953,10 +953,16 @@ class TestZoneState:
             lambda *a, **k: (_ for _ in ()).throw(s.gaierror(s.EAI_NONAME, "x")))
         assert web.resolves("21.co") == M.R.DNS_OK
 
-    def test_the_system_resolver_is_asked_first(self, M):
+    def test_the_system_resolver_is_asked_first(self, M, monkeypatch, tmp_path):
         """A local cache makes the junk candidates nearly free."""
+        conf = tmp_path / "resolv.conf"
+        monkeypatch.setattr(M, "Path", lambda _: conf)
         assert M.DNS_FALLBACK_SERVERS == ("1.1.1.1", "8.8.8.8")
-        assert M.NAMESERVERS[-2:] == M.DNS_FALLBACK_SERVERS
+        conf.write_text("nameserver 10.0.0.1\n", encoding="utf-8")
+        assert M.nameservers() == ("10.0.0.1", "1.1.1.1", "8.8.8.8")
+        # A fallback the system already lists keeps its system position.
+        conf.write_text("nameserver 8.8.8.8\nnameserver 8.8.4.4\n", encoding="utf-8")
+        assert M.nameservers() == ("8.8.8.8", "8.8.4.4", "1.1.1.1")
 
 
 class TestNoCandidates:

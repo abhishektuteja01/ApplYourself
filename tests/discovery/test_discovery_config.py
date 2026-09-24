@@ -325,7 +325,7 @@ def test_pacing_floor_is_the_one_home_for_every_lane_floor():
     assert pacing_floor("indeed") == 0.5
     assert pacing_floor("lever") == 1.0
     assert pacing_floor("ashby") == 1.0
-    assert pacing_floor("workday") == 1.0
+    assert pacing_floor("workday") == 0.5
     assert pacing_floor("a source that does not exist") == 1.0
 
 
