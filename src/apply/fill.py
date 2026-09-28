@@ -1761,7 +1761,7 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
             "group": group,
             "planned": planned,
             "actual": actual,
-            "matches": _same(planned, actual),
+            "matches": _matches(field_id, kind, planned, actual),
             "prefilled": bool(outcome.was_prefilled) if outcome else False,
             "before": outcome.before if outcome else "",
             "invalid": field_id in invalid,
@@ -1807,6 +1807,32 @@ def _planned_text(value) -> str:
 
 def _same(planned: str, actual: str) -> bool:
     return planned.strip().casefold() == actual.strip().casefold()
+
+
+_CHOICE_KINDS = frozenset({"select", "react_select", "yesno", "radio_group",
+                           "checkbox_group"})
+
+
+def _matches(field_id: str, kind: str, planned: str, actual: str) -> bool:
+    """Whether the page holds what was planned, read the way each widget shows
+    it: a single checkbox has no text to compare, Greenhouse's country field
+    shows its dial code ("+1"), and a chooser may show a longer or shorter
+    spelling of the option picked (Ashby stacks name, country and domain)."""
+    if kind == "checkbox":
+        return True
+    if field_id == "country" and actual.strip().startswith("+"):
+        return True
+    p, a = " ".join(planned.casefold().split()), " ".join(actual.casefold().split())
+    if kind in _CHOICE_KINDS and p and a:
+        return p == a or p in a or a in p
+    return p == a
+
+
+def form_check(manifest: list[dict]) -> list[str]:
+    """Filled fields whose page value is not what was planned. Any one refuses
+    the submit click: the form that goes out must be the form that was read."""
+    return [f"{r['label'] or r['id']}: planned {r['planned']!r}, page holds {r['actual']!r}"
+            for r in manifest if r.get("group") == "filled" and not r.get("matches")]
 
 
 def _reverify_fields(driver, plan: Plan) -> None:
@@ -2171,7 +2197,10 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
                 result.title = page.title()
             except Exception as exc:  # noqa: BLE001 - never block a submit
                 log.warning("reading the form manifest failed: %s", exc)
-            if submit_after:
+            problems = form_check(result.manifest) if submit_after else []
+            if problems:
+                result.submit_error = "form check refused the click: " + "; ".join(problems)
+            elif submit_after:
                 try:
                     submit(plan, result, driver, answers, before_click=before_click)
                 except SubmitGuardError as exc:

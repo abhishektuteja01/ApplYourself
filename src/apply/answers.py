@@ -21,6 +21,7 @@ country: the same person is authorized in one country and not in another.
 """
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -298,101 +299,101 @@ _SECOND_NATIONALITY = re.compile(
 )
 _NONE_CANDIDATES = ("None", "No", "N/A", "Not applicable")
 
-# Countries and regions a label can name, as the canonical names the
-# `work_authorization.countries` table is keyed by. Data, not config: which
-# country a word means is not a preference. "US" (capitals) is matched
-# separately, case-sensitive, since "us" is a pronoun.
-_PLACE_PATTERNS: dict[str, str] = {
-    "United States": r"united\s+states|\bu\.s\.a?\b\.?|\busa\b"
-                     r"|(?<!latin\s)(?<!south\s)(?<!central\s)(?<!north\s)\bamerica\b",
-    "Canada": r"\bcanad(?:a|ian)\b",
-    "United Kingdom": r"united\s+kingdom|\bu\.k\b\.?|\buk\b|\bengland\b|\bscotland\b"
-                      r"|\bwales\b|\bgreat\s+britain\b|\bbritain\b",
-    "Ireland": r"\bireland\b",
-    "India": r"\bindia\b",
-    "Germany": r"\bgermany\b|\bdeutschland\b",
-    "France": r"\bfrance\b",
-    "Spain": r"\bspain\b",
-    "Italy": r"\bitaly\b",
-    "Portugal": r"\bportugal\b",
-    "Poland": r"\bpoland\b",
-    "Switzerland": r"\bswitzerland\b",
-    "Netherlands": r"\bnetherlands\b|\bholland\b",
-    "Belgium": r"\bbelgium\b",
-    "Luxembourg": r"\bluxembourg\b",
-    "Sweden": r"\bsweden\b",
-    "Norway": r"\bnorway\b",
-    "Denmark": r"\bdenmark\b",
-    "Finland": r"\bfinland\b",
-    "Austria": r"\baustria\b",
-    "Czechia": r"\bczech(?:ia)?\b",
-    "Greece": r"\bgreece\b",
-    "Hungary": r"\bhungary\b",
-    "Romania": r"\bromania\b",
-    "Ukraine": r"\bukraine\b",
-    "Turkey": r"\bturkey\b|\bt[üu]rkiye\b",
-    "Israel": r"\bisrael\b",
-    "Egypt": r"\begypt\b",
-    "South Africa": r"south\s+africa",
-    "Nigeria": r"\bnigeria\b",
-    "Kenya": r"\bkenya\b",
-    "Australia": r"\baustralia\b",
-    "New Zealand": r"new\s+zealand",
-    "Singapore": r"\bsingapore\b",
-    "Japan": r"\bjapan\b",
-    "China": r"\bchina\b",
-    "Hong Kong": r"hong\s+kong",
-    "Taiwan": r"\btaiwan\b",
-    "South Korea": r"south\s+korea",
-    "Vietnam": r"\bvietnam\b",
-    "Philippines": r"\bphilippines\b",
-    "Indonesia": r"\bindonesia\b",
-    "Malaysia": r"\bmalaysia\b",
-    "Pakistan": r"\bpakistan\b",
-    "Mexico": r"\bmexico\b",
-    "Brazil": r"\bbrazil\b",
-    "Argentina": r"\bargentina\b",
-    "Colombia": r"\bcolombia\b",
-    "Chile": r"\bchile\b",
-    "United Arab Emirates": r"united\s+arab\s+emirates|\buae\b|\bdubai\b|abu\s+dhabi",
-    "Saudi Arabia": r"\bsaudi\b",
-    "Qatar": r"\bqatar\b",
-    # Regions. A region has no row of its own unless the bank gives it one, so
-    # it answers from `default`.
+# Countries a label can name come from discovery's vocabulary (pycountry's
+# names plus its aliases), so a place is spelled one way across the pipeline.
+# Regions have no country of their own: they answer from `default` unless the
+# bank gives them a row.
+REGIONS: dict[str, str] = {
     "European Union": r"european\s+union|\beu\b|\beea\b|\befta\b|\beurope\b|\bemea\b",
     "Latin America": r"latin\s+america|\blatam\b|south\s+america|central\s+america",
     "Asia Pacific": r"\bapac\b|asia[\s-]pacific",
 }
-_PLACES = {name: re.compile(p, re.IGNORECASE) for name, p in _PLACE_PATTERNS.items()}
-_US_ABBREV = re.compile(r"\bUS\b")
+# Places whose names contain a country's: masked before any country is looked
+# for, so "New Mexico" is never Mexico and "Bank of America" never the US.
+_NOT_COUNTRIES = (
+    "new south wales", "new england", "papua new guinea", "bank of america",
+    "north america", "latin america", "south america", "central america",
+)
+_SHORT_NAMES = {"us": "United States", "usa": "United States", "u.s.": "United States",
+                "u.s.a.": "United States", "uk": "United Kingdom",
+                "u.k.": "United Kingdom", "uae": "United Arab Emirates"}
+_UK_NATIONS = {"england": "United Kingdom", "scotland": "United Kingdom",
+               "wales": "United Kingdom", "northern ireland": "United Kingdom",
+               "great britain": "United Kingdom", "britain": "United Kingdom"}
+_OR_BETWEEN = re.compile(r"\bor\b", re.IGNORECASE)
 #: The job's country when its location names a place nothing could read.
 UNKNOWN_COUNTRY = "(unknown)"
-_OR_BETWEEN = re.compile(r"\bor\b", re.IGNORECASE)
+
+
+@functools.lru_cache(maxsize=1)
+def _vocabulary() -> tuple[dict[str, str], re.Pattern, re.Pattern, tuple]:
+    from src.discovery.location import COUNTRY_NAMES
+    import pycountry
+
+    names = {k: v for k, v in COUNTRY_NAMES.items()
+             if len(k) >= 4 and k.isascii() and not k.startswith("u.s")}
+    names.update(_SHORT_NAMES)
+    names.update(_UK_NATIONS)
+    us_states = [s.name.casefold() for s in pycountry.subdivisions.get(country_code="US")]
+    masked = sorted({*_NOT_COUNTRIES, *us_states}, key=len, reverse=True)
+    mask = re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(m) for m in masked) + r")(?![\w])",
+                      re.IGNORECASE)
+    ordered = sorted((k for k in names if k != "us"), key=len, reverse=True)
+    country = re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(k) for k in ordered)
+                         + r")(?![\w])", re.IGNORECASE)
+    regions = tuple((name, re.compile(p, re.IGNORECASE)) for name, p in REGIONS.items())
+    return names, mask, country, regions
 
 
 def canonical_place(text: str) -> str:
-    """The canonical country name a string spells, or the string itself."""
-    raw = (text or "").strip()
-    for name, pattern in _PLACES.items():
-        if pattern.fullmatch(raw) or raw.casefold() == name.casefold():
+    """The canonical name for a country or region, or "" when it names neither."""
+    raw = " ".join((text or "").split())
+    if raw.casefold() == "default":
+        return "default"
+    names, _, _, regions = _vocabulary()
+    key = unicodedata.normalize("NFKD", raw)
+    key = "".join(c for c in key if not unicodedata.combining(c)).casefold()
+    if key in names:
+        return names[key]
+    if key.startswith("the ") and key[4:] in names:
+        return names[key[4:]]
+    for name, pattern in regions:
+        if raw.casefold() == name.casefold() or pattern.fullmatch(raw):
             return name
     if raw == "US":
         return "United States"
-    return raw
+    named = places_named(raw)
+    return named[0] if len(named) == 1 else ""
+
+
+def _place_hits(label: str) -> list[tuple[int, int, str]]:
+    names, mask, country, regions = _vocabulary()
+    text = mask.sub(lambda m: " " * len(m.group(0)), label or "")
+    hits = [(m.start(), m.end(), names[m.group(0).casefold()]) for m in country.finditer(text)]
+    hits += [(m.start(), m.end(), name) for name, pattern in regions
+             for m in [pattern.search(label or "")] if m]
+    # "US" in capitals only, and not in a label written all in capitals.
+    if not (label or "").isupper():
+        hits += [(m.start(), m.end(), "United States")
+                 for m in re.finditer(r"(?<![\w.])US(?![\w])", text)]
+    return sorted(hits)
 
 
 def places_named(label: str) -> list[str]:
-    """Every country or region a label names, in the order it names them."""
-    text = label or ""
-    hits: list[tuple[int, str]] = []
-    for name, pattern in _PLACES.items():
-        m = pattern.search(text)
-        if m:
-            hits.append((m.start(), name))
-    m = _US_ABBREV.search(text)
-    if m and all(name != "United States" for _, name in hits):
-        hits.append((m.start(), "United States"))
-    return [name for _, name in sorted(hits)]
+    """Every country or region a label names, in order, each once."""
+    seen: list[str] = []
+    for _, _, name in _place_hits(label):
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
+def _either_place(label: str) -> bool:
+    """Whether the label offers its places as alternatives: an "or" between two
+    of them ("the US or Canada"), not anywhere ("now or in the future")."""
+    hits = _place_hits(label)
+    return any(_OR_BETWEEN.search(label[a[1]:b[0]]) for a, b in zip(hits, hits[1:])
+               if a[2] != b[2])
 
 
 # Region membership for "are you a citizen of a country in <region>?" yes/no
@@ -633,7 +634,8 @@ class Answers:
 
     @property
     def home_country(self) -> str:
-        return canonical_place(self.identity.get("country", ""))
+        home = self.identity.get("country", "")
+        return canonical_place(home) or home
 
     @property
     def country(self) -> str:
@@ -641,7 +643,7 @@ class Answers:
         return self.job_country or self.home_country
 
     def facts_for(self, country: str) -> CountryFacts:
-        return self.countries.get(canonical_place(country)) or self.countries["default"]
+        return self.countries.get(canonical_place(country) or country) or self.countries["default"]
 
     @property
     def authorized_now(self) -> bool:
@@ -803,7 +805,11 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
         for text_key in ("status_label", "followup"):
             if not isinstance(row.get(text_key, ""), str):
                 raise AnswersError(f"{where}.{text_key}: must be a string")
-        key = "default" if name == "default" else canonical_place(str(name))
+        key = canonical_place(str(name))
+        if not key:
+            raise AnswersError(f"{where}: not a country or region this pipeline knows")
+        if key in countries:
+            raise AnswersError(f"{where}: another row already names {key}")
         countries[key] = CountryFacts(
             authorized=authorized, requires_sponsorship=requires,
             unrestricted=unrestricted,
@@ -834,7 +840,10 @@ def _parse_claims(data) -> dict[str, dict]:
             if k in facts:
                 claim[k] = _require_bool(facts[k], f"{where}.{k}")
         if "country" in facts:
-            claim["country"] = canonical_place(_require_str(facts["country"], f"{where}.country"))
+            place = canonical_place(_require_str(facts["country"], f"{where}.country"))
+            if not place:
+                raise AnswersError(f"{where}.country: not a country this pipeline knows")
+            claim["country"] = place
         if not set(claim) - {"country"}:
             raise AnswersError(f"{where}: states no fact")
         out[key] = claim
@@ -1250,7 +1259,7 @@ def _one_value(label: str, answers: Answers, fact) -> tuple[bool | None, str]:
     or Canada", all of them otherwise ("the US and the UK")."""
     countries = _question_countries(label, answers)
     values = [fact(answers.facts_for(c)) for c in countries]
-    if len(countries) > 1 and _OR_BETWEEN.search(label):
+    if len(countries) > 1 and _either_place(label):
         return any(values), ""
     return all(values), ""
 

@@ -400,3 +400,50 @@ def test_an_unreadable_job_country_parks_instead_of_guessing_home(opt_holder):
     assert r.action == "park" and "could not be read" in r.reason
     named = MergedField(**{**f.__dict__, "label": "Are you authorized to work in the US?"})
     assert resolve(named, dc_replace(opt_holder, job_country=UNKNOWN_COUNTRY)).value == "Yes"
+
+
+class TestPlaceNames:
+    """One vocabulary (discovery's), with the places that only look like countries masked."""
+
+    @pytest.mark.parametrize("label,expected", [
+        ("Are you authorized to work in the U.S.?", ["United States"]),
+        ("New South Wales, Australia", ["Australia"]),
+        ("Candidates in New England or New Mexico", []),
+        ("Northern Ireland", ["United Kingdom"]),
+        ("Bank of America", []),
+        ("LET US KNOW", []),
+        ("Are you authorized to work in Estonia?", ["Estonia"]),
+        ("Indiana", []),
+        ("Czech Republic", ["Czechia"]),
+        ("Are you authorized to work in Latin America?", ["Latin America"]),
+    ])
+    def test_what_a_label_names(self, label, expected):
+        from src.apply.answers import places_named
+        assert places_named(label) == expected
+
+    def field(self, label):
+        return MergedField(id="q", name="q", label=label, required=True, kind="select",
+                           section="questions", multi=False, api_type="x",
+                           options=(MergedOption(value="Yes", label="Yes"),
+                                    MergedOption(value="No", label="No")))
+
+    def test_us_with_dots_is_the_us_on_a_foreign_job(self, opt_holder):
+        a = dc_replace(opt_holder, job_country="India")
+        r = resolve(self.field("Will you require visa sponsorship to work in the U.S.?"), a)
+        assert says(r.value, "Yes")
+
+    def test_an_or_elsewhere_in_the_label_is_not_either_country(self, opt_holder):
+        r = resolve(self.field("Are you authorized to work in the US and Canada? (yes or no)"),
+                    opt_holder)
+        assert says(r.value, "No")
+
+    def test_a_bank_row_must_name_a_real_place(self, tmp_path):
+        import yaml
+        from src.apply.answers import AnswersError, load_answers
+        data = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(encoding="utf-8"))
+        data["work_authorization"]["countries"]["Narnia"] = {
+            "authorized": True, "requires_sponsorship": False}
+        p = tmp_path / "bank.yaml"
+        p.write_text(yaml.safe_dump(data), encoding="utf-8")
+        with pytest.raises(AnswersError, match="Narnia"):
+            load_answers(p)
