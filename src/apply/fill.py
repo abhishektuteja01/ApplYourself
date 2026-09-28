@@ -536,7 +536,12 @@ class BrowserDriver:
                     return True
             except Exception:  # noqa: BLE001 - a bad marker is not a failure
                 continue
-        return False
+        try:
+            # Greenhouse lands on /embed/job_app/confirmation after a submit
+            # (d4e8be80: "Thank you for your interest in career opportunities").
+            return "/confirmation" in (self.page.url or "")
+        except Exception:  # noqa: BLE001
+            return False
 
     def watch_submit_requests(self, ats: str, sink: list[str]) -> None:
         """Record 2xx responses to the board's submit endpoint into `sink`.

@@ -1715,3 +1715,14 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
     assert out[0].category == "parked" and not out[0].learned
     assert "What's your LinkedIn?" not in (yaml.safe_load(path.read_text(encoding="utf-8"))
                                           ["questions"]["linkedin"].get("wordings") or [])
+
+
+def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monkeypatch):
+    import shutil
+    from src.apply import bank
+    path = tmp_path / "bank.yaml"
+    shutil.copy(FIXTURES / "application_answers.yaml", path)
+    monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+    bank.learn([bank.Lesson(label="Is LinkedIn required?", question="linkedin_required",
+                            value="No", source="jd", misfired="linkedin")])
+    assert not yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"].get("not")

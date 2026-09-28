@@ -221,19 +221,20 @@ def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
     changes: list[str] = []
     for lesson in lessons:
         wording = A.norm_label(lesson.label)
-        questions = data.get("questions") or {}
-        if (lesson.misfired and lesson.misfired != lesson.question
-                and lesson.misfired in questions and wording):
-            # Saved on its own: whatever becomes of the right answer, the
-            # wrong guess must not be made again.
-            if _add(questions[lesson.misfired], "not", wording):
-                changes.append(f"not: {lesson.misfired} no longer answers {wording!r}")
         trial = copy.deepcopy(data)
         made, refusal = _one(trial, lesson)
         refusal = refusal or (_still_answers(trial, lesson) if made else "")
         if refusal:
             changes.append(f"not saved: {refusal}")
             continue
+        questions = trial.get("questions") or {}
+        if (lesson.misfired and lesson.misfired != lesson.question
+                and lesson.misfired in questions and wording
+                and lesson.question in questions):
+            # Only once the right answer is saved: a "not" with nowhere else
+            # for the label to go would just park it.
+            if _add(questions[lesson.misfired], "not", wording):
+                made.append(f"not: {lesson.misfired} no longer answers {wording!r}")
         data.clear()
         data.update(trial)
         changes.extend(made)
