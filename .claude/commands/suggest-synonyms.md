@@ -75,9 +75,10 @@ scored = pd.read_parquet('jobs/scored.parquet')
 # company lives only in clean.parquet; scored.parquet has no company column
 clean = pd.read_parquet('jobs/clean.parquet', columns=['job_id', 'company'])
 scored = scored.merge(clean, on='job_id', how='left')
-# Only shortlist-worthy rows (fit >= 50, not ineligible)
+# Only shortlist-worthy rows (fit >= scoring.yaml action.review_min, not ineligible)
+from src.score_filter import load_scoring
 keepers = scored[
-    (scored.fit_score >= 50) &
+    (scored.fit_score >= load_scoring().review_min) &
     (scored.sponsorship_label != 'ineligible')
 ].copy()
 
@@ -154,7 +155,7 @@ Format:
 ```markdown
 # Synonym & Skills Suggestions — <today's date>
 
-Generated from top-N shortlist keywords in `scored.parquet` (fit ≥ 50 rows).
+Generated from top-N shortlist keywords in `scored.parquet` (fit ≥ `action.review_min` rows).
 **Review each entry before adding to profile/bullets.md or profile/skills_master.md.**
 Only add entries you can stand behind on a call — these are attested claims.
 

@@ -17,7 +17,8 @@ concatenated window; steps 5+ need the whole window and run after the concat.
      career-board sources exempt — board presence is the liveness signal,
      capped by board_max_age_days when that config key is non-zero;
      rows with a pipeline/<job_id>/state.yaml exempt too, matching step 9
-  3b. Drop rows outside the location allowlist
+  3b. Drop rows outside the location allowlist, and rows in an `abroad`
+      country whose lane is not in that source block's `verticals`
   4. job_id = sha1(company_normalized|title_normalized)[:8]
      url and jd_text deliberately excluded so job_id is stable across re-scrapes.
      Flipping the hash on a URL change would silently orphan
@@ -32,14 +33,16 @@ concatenated window; steps 5+ need the whole window and run after the concat.
      the in-allowlist location, then the longest jd_text; its id comes from
      aliases.select_sticky_id and every merged company spelling is pinned in the
      append-only jobs/company_aliases.parquet.
+  5b. Carry forward from the previous clean.parquet every row whose job_id
+      is in an active state (saved .. interview) and has aged out of the
+      window, so a tracked role never loses its JD or its score
   6. Update jobs/seen.parquet: refresh last_score from
      scored.parquet (deterministic READ of Claude's sidecar — R7 intact),
      purge rows RESURFACE_AFTER_DAYS past expiry, stamp first_seen for new ids
   7. Glob pipeline/*/state.yaml -> set already_seen + application_status
   8. Drop expired rows per the seen-ledger tiers (tracked rows never expire;
      never-scored rows get the high tier — NaN means unjudged, not bad)
-  9. Initialize Claude-owned columns with defaults
-  10. coerce_schema (raises KeyError on a missing column), prune_raw_files
+  9. coerce_schema (raises KeyError on a missing column), prune_raw_files
       (deletes raw shards older than raw_retention_days), then write
       clean.parquet + clean.preview.jsonl + ## Cleaning run-report section
 """
@@ -61,7 +64,7 @@ from src.discovery.config import load_config
 from src.discovery.dates import naive_datetime
 from src import paths
 from src.parquet_io import write_parquet
-from src.state_io import load_state_index
+from src.state_io import ACTIVE_STATES, load_state_index
 
 log = logging.getLogger(__name__)
 
@@ -79,8 +82,6 @@ CLEAN_COLUMNS: list[str] = [
     # which search query surfaced the row; "" / False where the source has none
     "found_by_term", "found_by_remote",
     "already_seen", "application_status",
-    "fit_score", "fit_subscores",
-    "sponsorship_label", "sponsorship_evidence", "shortlist_rank",
 ]
 
 # Career-board sources: presence on the company's own board
@@ -115,7 +116,7 @@ MIN_JD_CHARS = 200
 PREVIEW_COLUMNS = [
     "job_id", "source", "company", "title", "location",
     "location_count", "all_locations",
-    "posted_date", "url", "vertical", "fit_score", "sponsorship_label",
+    "posted_date", "url", "vertical",
 ]
 
 # Vertical classification fallback (`vertical` column). Scraped
@@ -310,6 +311,10 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
     allow_countries = {c.lower() for c in cfg.location_allowlist.effective_countries()}
     allow_states = {s.lower() for s in cfg.location_allowlist.effective_states()}
     allow_cities = {c.lower() for c in cfg.location_allowlist.cities}
+    # A country in some source's `abroad` block keeps only that block's lanes.
+    abroad_lanes = cfg.abroad_lanes()
+    lanes = (df["vertical"].fillna("").astype(str) if "vertical" in df.columns
+             else pd.Series("", index=df.index))
 
     keep_indices = []
     new_locations = []
@@ -356,6 +361,9 @@ def filter_and_canonicalize_location(df: pd.DataFrame, cfg) -> pd.DataFrame:
         elif allow_states and parsed.state and parsed.state.lower() not in allow_states:
             drop = True
         elif allow_cities and parsed.city and parsed.city.lower() not in allow_cities:
+            drop = True
+        elif (parsed.country.lower() in abroad_lanes and lanes[idx]
+              and lanes[idx] not in abroad_lanes[parsed.country.lower()]):
             drop = True
 
         if not drop:
@@ -479,6 +487,31 @@ def update_seen_ledger(
 
 
 # ---------------------------------------------------------------------
+# Step 5b — carry active roles forward
+# ---------------------------------------------------------------------
+
+def carry_forward_active(
+    df: pd.DataFrame, prev_clean: Path, pipeline_dir: Path,
+) -> pd.DataFrame:
+    """Append rows from the previous clean.parquet whose job_id is in an
+    ACTIVE_STATES state.yaml and is missing from df."""
+    if not prev_clean.exists():
+        return df
+    active = {jid for jid, d in load_state_index(pipeline_dir).items()
+              if d.get("state") in ACTIVE_STATES}
+    missing = active - set(df["job_id"])
+    if not missing:
+        return df
+    prev = pd.read_parquet(prev_clean)
+    carried = prev[prev["job_id"].isin(missing)]
+    if carried.empty:
+        return df
+    log.info("carry_forward_active: kept %d aged-out active role(s)", len(carried))
+    return pd.concat([df, carried[[c for c in carried.columns if c in df.columns]]],
+                     ignore_index=True)
+
+
+# ---------------------------------------------------------------------
 # Step 7 — state.yaml glob
 # ---------------------------------------------------------------------
 
@@ -534,20 +567,6 @@ def apply_expiry(
     if "source" in df.columns:
         drop &= df["source"] != "manual"
     return df[~drop].copy()
-
-
-# ---------------------------------------------------------------------
-# Step 9 — Claude-owned defaults
-# ---------------------------------------------------------------------
-
-def init_claude_columns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["fit_score"] = float("nan")
-    df["fit_subscores"] = ""
-    df["sponsorship_label"] = "unknown"
-    df["sponsorship_evidence"] = ""
-    df["shortlist_rank"] = float("nan")
-    return df
 
 
 # ---------------------------------------------------------------------
@@ -667,7 +686,9 @@ def apply_title_exclusion(df: pd.DataFrame, cfg) -> tuple[pd.DataFrame, dict[str
         mask = (df["vertical"] == name) & (df["source"] != "manual")
         if not mask.any():
             continue
-        titles = df.loc[mask, "title"].fillna("").astype(str)
+        # "_" is a word character to \b, so "IN_Manager_Tax" would hide
+        # "manager" from a word-boundary term.
+        titles = df.loc[mask, "title"].fillna("").astype(str).str.replace("_", " ")
 
         exclude_rx = _compile(v.title_exclude_terms)
         include_rx = _compile(v.title_include_terms)
@@ -1175,6 +1196,8 @@ def run(
         ),
         alias_path,
     )
+    # step 5b
+    df = carry_forward_active(df, clean_dir / "clean.parquet", pipeline_dir)
     # step 6 — seen-ledger
     ledger = update_seen_ledger(
         df["job_id"].tolist(),
@@ -1188,8 +1211,6 @@ def run(
     df = apply_expiry(df, ledger, today_ts)
     after_expiry = len(df)
     # step 9
-    df = init_claude_columns(df)
-    # step 10
     df = coerce_schema(df)
     per_source_final = df["source"].value_counts().to_dict() if not df.empty else {}
     per_source = {

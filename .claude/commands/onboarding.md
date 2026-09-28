@@ -166,8 +166,8 @@ the resume.
    ```
 
    Copies every `profile/*.example.*` to its real name including the two Word
-   templates, strips the example lanes from `verticals.yaml`, reconciles
-   `sponsorship_rules.yaml`. Never overwrites — an existing file is skipped and
+   templates, strips the example lanes from `verticals.yaml`, sets `sponsorship_need`
+   in `scoring.yaml`. Never overwrites — an existing file is skipped and
    listed. Read the report; `SKIPPED` and `FAILED` are the only parts that need
    you. `--with-apply` and `--with-optional` are step 5's menu, not this path.
 
@@ -182,9 +182,10 @@ the resume.
    plus the confirm-or-edit — **Question 5** — in one `AskUserQuestion`. Do not
    duplicate any of it here and do not pre-empt them.
 
-   The level answer becomes `disqualifier.title_phrases` in the lane block:
-   titles containing any phrase are dropped at prescreen and stamped
-   `disqualified: title`, so a wrong band costs a `/rescore`, not a re-scrape.
+   The level answer becomes level words in the lane's `title_exclude_terms`:
+   the title gate drops titles holding any of them (whole words). Tightening
+   applies on the next `clean.parquet` rebuild; loosening brings rows back as
+   their boards are next checked.
 
    Pass A ends with the loader working and a marker at
    `profile/verticals/<lane>/.pass_a_only`. `verticals-check` fails until step 2
@@ -342,32 +343,34 @@ line that the lane stays on the blocklist until `/tune-vertical`.
 
 ### 3.3 What the level band drops
 
-Show the effect of the lane's `disqualifier.title_phrases` before 3.5 asks the
-user to confirm it. Lowercase substring match, as `src/prescreen.py` does it —
-not the word-boundary regex 3.2 uses.
+Show the effect of the level words pass A put in the lane's `title_exclude_terms`
+before 3.5 asks the user to confirm them. The title gate already dropped those
+rows, so count them in the nightly debug shards, which keep every classified
+listing with its gate verdict.
 
 ```bash
 uv run python -c "
-import pandas as pd
-LANE    = '<lane>'
-PHRASES = ['<phrase one>', '<phrase two>']    # the lane's disqualifier.title_phrases
-d = pd.read_parquet('jobs/clean.parquet')
+import glob, re, pandas as pd
+LANE  = '<lane>'
+TERMS = ['<term one>', '<term two>']          # the level words in title_exclude_terms
+d = pd.concat(pd.read_parquet(f) for f in glob.glob('jobs/raw/*.parquet'))
 d = d[d.vertical == LANE]
-t = d.title.fillna('').astype(str).str.lower()
-hit = t.apply(lambda s: any(p in s for p in PHRASES))
-print(f'{int(hit.sum())}/{len(d)} rows disqualified on level')
+rx = re.compile('|'.join(r'\b' + re.escape(t) + r'\b' for t in TERMS), re.I)
+hit = d.title.fillna('').astype(str).str.contains(rx)
+print(f'{int(hit.sum())}/{len(d)} rows dropped on level')
 print('DROPPED:'); print(d.loc[hit, 'title'].value_counts().head(15).to_string())"
 ```
 
-Unlike the include gate, these rows are kept and stamped, so a wrong band costs
-a `/rescore`, not a re-scrape.
+Tightening the band takes effect on the next `clean.parquet` rebuild. Loosening
+it brings rows back as their boards and searches are next checked: the store
+keeps only rows that passed the gate.
 
 ### 3.4 Spawn the scoring agent, in the background
 
 Spawn **one** background agent whose whole job is to run `/score` for this repo
 and report the line it prints. Do not reimplement scoring here and do not spawn
 judge agents from this command. If that agent cannot spawn its own judge
-subagents, it judges the ranges itself against the lane's `rubric.md` — slower,
+subagents, it judges the slices itself against the lane's `rubric.md` — slower,
 but it is in the background and the user does not feel it.
 
 ### 3.5 The two review questions, one `AskUserQuestion`
@@ -416,7 +419,7 @@ Apply what they said, in one pass, then stop. No second round.
 uv run verticals-check
 ```
 
-If a rubric boundary, `max_years` or `title_phrases` changed, run `/rescore` and
+If a rubric boundary or the `years` table changed, run `/score --all` and
 show the new top rows — otherwise their edit has no visible effect. Term changes need a fresh
 scrape, so those only say "next run".
 
@@ -464,7 +467,7 @@ Three things that will otherwise confuse them on day two:
 Two lines at hand-off. None is an interview, none blocks the daily loop.
 
 - **`/tune-vertical <lane>`** — the deep pass on the lane: search terms, skill
-  weights, the title gate, classifier collisions, disqualifier phrases, rubric
+  weights, the title gate, classifier collisions, `drop_phrases`, rubric
   tiers, `vertical_lean` tags. Run it once a few days of shortlists exist. This
   is the fix when the shortlist stays thin or keeps surfacing the wrong titles.
 - **`/suggest-synonyms`** again — step 4 ran it once, against one day of
@@ -537,7 +540,7 @@ authority when the two disagree.
 step_completed: 3               # 0-5; 5 means setup is done
 notes:
   - lane: revenue_ops; contexts WID (Widget Corp), SPR (side project), EDU (degree)
-  - time-limited authorization; sponsorship_rules reconciled by the scaffold
+  - time-limited authorization; scoring.yaml sponsorship_need set by the scaffold
   - application_answers.yaml filled; apply browser not installed
   - deferred: /tune-vertical, voice samples, nightly launchd
 ```

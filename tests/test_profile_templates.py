@@ -31,7 +31,6 @@ _PLACEHOLDER_MARKERS = ("<", ">", "*", "YYYY", "MM", "DD")
 # than personal data. A new clone gets working copies and tunes them in place.
 COMMITTED_DEFAULTS = {
     "profile/de_ai_rules.yaml",
-    "profile/sponsorship_rules.yaml",
 }
 
 # Suffix -> template suffix.

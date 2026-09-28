@@ -76,13 +76,6 @@ def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):
         assert (REPO_ROOT / v.resume_file).is_file(), f"{name} resume_file missing"
 
 
-def test_scored_by_stamps_are_unique_per_vertical(real_cfg):
-    """The stamp lands in scored.parquet.scored_by_model; a shared one makes
-    auto-skips unattributable."""
-    stamps = [v.disqualifier_scored_by for v in real_cfg.verticals.values()]
-    assert all(stamps) and len(set(stamps)) == len(stamps)
-
-
 def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
     """An exclude term that also matches a search term drops every row that
     term finds — invisible without a title-by-title read of the drop log."""
@@ -105,19 +98,6 @@ def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
             assert not exclude_rx.search(term), (
                 f"{vertical.name}: a search term trips its own title_exclude_terms"
             )
-
-
-def test_disqualifier_title_phrases_do_not_match_the_lanes_own_search_terms(real_cfg):
-    """A title disqualifier that fires on the lane's own search term auto-skips
-    every row that term finds, before any judge sees it."""
-    for vertical in real_cfg.verticals.values():
-        phrases = vertical.disqualifier_title_phrases or ()
-        for phrase in phrases:
-            for term in vertical.search_terms:
-                assert phrase.lower() not in term.lower(), (
-                    f"{vertical.name}: title disqualifier {phrase!r} matches its "
-                    f"own search term {term!r}"
-                )
 
 
 def test_skill_vertical_lean_tags_are_backed_by_the_layout(real_cfg, real_skills_master):

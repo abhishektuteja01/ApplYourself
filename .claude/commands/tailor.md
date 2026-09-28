@@ -357,7 +357,7 @@ Tailored for job_id `$1` on $(date +%Y-%m-%d).
 Every rephrase records before→after so NO-DRIFT is eyeball-catchable.
 ```
 
-**`${OUT_DIR}/keywords_to_mirror.md`** — the 2–3 keywords from
+**`${OUT_DIR}/keywords_to_mirror.md`** — the keywords from
 `scored.parquet.keywords_to_mirror` and where each landed (which resume line, or
 "not landed — kept verbatim canonical to preserve attestation").
 

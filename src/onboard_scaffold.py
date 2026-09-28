@@ -2,8 +2,8 @@
 
 One command for every mechanical step of a fresh install: copy each
 `profile/*.example.*` template to its real name, strip the shipped example
-lanes out of the copied `verticals.yaml`, reconcile
-`profile/sponsorship_rules.yaml` against the work-authorization answer, probe
+lanes out of the copied `verticals.yaml`, set `profile/scoring.yaml`'s
+`sponsorship_need` from the work-authorization answer, probe
 for libpostal, and — behind `--with-apply` — set up the submission path.
 
 Never destructive: an existing file is skipped and listed, `--force`
@@ -21,9 +21,7 @@ and Playwright's Chrome. application_answers.yaml is always copied, so
 /onboarding can fill it from the resume it has already parsed.
 
 The two YAML edits are line-based, not a parse-and-dump: `ruamel.yaml` is not a
-dependency and PyYAML would drop every comment in both files, including
-sponsorship_rules.yaml's header, which is the only statement of what these
-edits are for.
+dependency and PyYAML would drop every comment in both files.
 
 After the strip, `verticals.yaml` no longer loads: it has no lanes and no
 classifier rules, and `default_vertical` names the lane the user has not
@@ -242,100 +240,43 @@ def reconcile_verticals(default_vertical: str, copied: bool, dry_run: bool,
     )
 
 
-# --- sponsorship_rules.yaml -----------------------------------------------
+# --- scoring.yaml ----------------------------------------------------------
 
-def _list_span(lines: list[str], key: str) -> tuple[int, list[int]]:
-    """(index of `key:`, indices of its `- ` items). (-1, []) if absent."""
-    for i, line in enumerate(lines):
-        if line.rstrip() == f"{key}:":
-            items = []
-            j = i + 1
-            while j < len(lines) and (_is_filler(lines[j]) or lines[j].startswith("  - ")):
-                if lines[j].startswith("  - "):
-                    items.append(j)
-                elif not lines[j].strip():
-                    break
-                j += 1
-            return i, items
-    return -1, []
+_NEED_RE = re.compile(r"^sponsorship_need:.*$", re.M)
+_NEED_BY_WORK_AUTH = {"citizen": "never", "time_limited": "later", "needs_now": "now"}
 
 
-def reconcile_sponsorship(text: str) -> str:
-    """The two edits sponsorship_rules.yaml's own header specifies for someone
-    who needs sponsorship now: every opt_ok phrase moves to ineligible (order
-    preserved, no duplicates), and false_positive_guard empties."""
-    lines = text.splitlines()
-    _, opt_items = _list_span(lines, "opt_ok")
-    ineligible_key, ineligible_items = _list_span(lines, "ineligible")
-    if ineligible_key < 0:
-        raise ValueError("sponsorship_rules.yaml has no `ineligible:` list")
-    def _item(index: int) -> str:
-        return lines[index].strip().removeprefix("-").strip()
-
-    seen = {_item(i) for i in ineligible_items}
-    moved: list[str] = []
-    for index in opt_items:  # order preserved, no duplicates
-        phrase = _item(index)
-        if phrase not in seen:
-            seen.add(phrase)
-            moved.append(phrase)
-
-    opt_key, _ = _list_span(lines, "opt_ok")
-    guard_key, guard_items = _list_span(lines, "false_positive_guard")
-    drop = set(opt_items) | set(guard_items)
-    insert_at = (ineligible_items[-1] if ineligible_items else ineligible_key) + 1
-
-    # Emptied lists stay explicit: a bare `opt_ok:` parses as null, and every
-    # consumer would then have to special-case None.
-    emptied = {opt_key: "opt_ok: []", guard_key: "false_positive_guard: []"}
-
-    out = []
-    for i, line in enumerate(lines):
-        if i == insert_at:
-            out.extend(f"  - {phrase}" for phrase in moved)
-        if i in drop:
-            continue
-        if i in emptied:
-            out.append(emptied[i])
-            continue
-        out.append(line)
-    if insert_at >= len(lines):
-        out.extend(f"  - {phrase}" for phrase in moved)
-    return "\n".join(out) + "\n"
+def set_sponsorship_need(text: str, need: str) -> str:
+    """scoring.yaml with `sponsorship_need: <need>`, comments untouched."""
+    if not _NEED_RE.search(text):
+        raise ValueError("scoring.yaml has no `sponsorship_need:` line")
+    return _NEED_RE.sub(f"sponsorship_need: {need}", text, count=1)
 
 
 def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
-    """citizen and time_limited are both authorized-to-work-now, which is what
-    the shipped lists already assume — no-ops. Only needs_now edits.
-
-    Skip/force is content-based here rather than existence-based: this file is
-    a committed default, so it always exists, and gating on that would put the
-    one edit that matters behind --force. The edit is idempotent — a file
-    already reconciled is reported as unchanged."""
-    target = PROFILE / "sponsorship_rules.yaml"
-    if work_auth != "needs_now":
-        rep.notes.append(
-            f"{_rel(target)} unchanged — work-auth {work_auth} is authorized now, "
-            f"which is what the shipped lists assume"
-        )
+    """Set scoring.yaml's `sponsorship_need` from the work-authorization
+    answer. Runs after the template copy, and edits an existing file too, so
+    a re-run with a new answer updates it. Idempotent."""
+    target = PROFILE / "scoring.yaml"
+    source = target if target.is_file() else PROFILE / "scoring.example.yaml"
+    if not source.is_file():
+        rep.failed.append(f"{_rel(target)} missing and no template to copy it from")
         return
-    if not target.is_file():
-        rep.failed.append(f"{_rel(target)} missing — it is a committed default, not a template")
-        return
-    text = target.read_text(encoding="utf-8")
+    need = _NEED_BY_WORK_AUTH[work_auth]
+    text = source.read_text(encoding="utf-8")
     try:
-        reconciled = reconcile_sponsorship(text)
+        updated = set_sponsorship_need(text, need)
     except ValueError as exc:
         rep.failed.append(f"{_rel(target)}: {exc}")
         return
-    if reconciled == text:
-        rep.notes.append(f"{_rel(target)} already reconciled for needs_now")
+    if updated == text:
+        rep.notes.append(f"{_rel(target)} already has sponsorship_need: {need}")
         return
-    label = "reconcile for needs_now: opt_ok phrases -> ineligible, false_positive_guard emptied"
+    label = f"set sponsorship_need: {need}"
     if dry_run:
         rep.done.append(f"would {label} in {_rel(target)}")
         return
-    target.write_text(reconciled, encoding="utf-8")
+    target.write_text(updated, encoding="utf-8")
     rep.done.append(f"{label} — {_rel(target)}")
 
 

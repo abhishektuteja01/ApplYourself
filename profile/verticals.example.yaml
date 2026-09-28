@@ -6,8 +6,7 @@
 #   - mapping order under `verticals:` = shortlist section order; first = primary
 #   - classifier_rules order = ambiguity policy (first match wins; one vertical
 #     may own several rules at different priorities)
-#   - a phrase + title disqualifier (example_secondary) vs years-only
-#     (example_primary)
+#   - drop_phrases + years (example_secondary) vs years only (example_primary)
 # Vertical names must match ^[a-z][a-z0-9_]*$ — they become parquet values,
 # applications/<name>/ directories, and staging-file suffixes.
 
@@ -31,7 +30,7 @@ verticals:
     linkedin_terms:
       - Widget Engineer
       - Gizmo Systems Consultant
-    # 0-10 integer weights; consumed by LLM judges for jd_skill_overlap,
+    # 0-10 integer weights; consumed by LLM judges for skills,
     # opaque to src/. Base every entry on attested experience only.
     skill_weights:
       widgets:
@@ -39,15 +38,11 @@ verticals:
         gizmo_calibration: 7  # secondary tooling
       domain:
         widget_supply_chain: 9
-    disqualifier:
-      # JD explicit-minimum years ABOVE max_years -> auto-skip ("years").
-      max_years: 4
-      # No phrase disqualifier for this vertical.
-      phrases: []
-      scored_by: "rubric:example-primary-jd-years-disqualifier"
-      reasoning_years: >-
-        Auto-skipped by deterministic pre-screen: JD states an explicit
-        minimum of 5+ years of experience.
+    # Dropped before judging when the JD holds one (whole words).
+    drop_phrases: []
+    # Required years -> seniority cap; a JD asking more than the
+    # largest key is dropped.
+    years: {3: 14, 4: 10}
     # Optional, and lane-specific: only /apply's Step 4b reads this (not
     # src/verticals.py's typed loader), and only for the vertical(s) that set
     # it. Leave it out entirely for a vertical where the JD-first/no-flat-
@@ -85,6 +80,7 @@ verticals:
     title_exclude_terms:
       - sprocket sales
       - sprocket marketing
+      - sprocket director
     # strong_keep overrides every exclude — unambiguous in-lane signals that
     # must survive even if the title also trips an exclude term.
     title_strong_keep_terms:
@@ -92,31 +88,14 @@ verticals:
     skill_weights:
       sprocket_governance:
         sprocket_audit_tool: 8
-    disqualifier:
-      max_years: 4
-      # Case-insensitive JD substrings -> auto-skip ("phrase").
-      phrases:
-        - sprocket certification required
-        - advanced sprocketry degree required
-      # Case-insensitive TITLE substrings -> auto-skip ("title"). Optional;
-      # requires reasoning_title when nonempty. Checked before phrases/years.
-      title_phrases:
-        - sprocket director
-      scored_by: "rubric:example-secondary-jd-disqualifier"
-      reasoning_phrase: >-
-        Auto-skipped by deterministic pre-screen: JD requires a credential
-        this profile does not hold.
-      reasoning_title: >-
-        Auto-skipped by deterministic pre-screen: job title signals a
-        seniority level or specialization outside this vertical's lane.
-      reasoning_years: >-
-        Auto-skipped by deterministic pre-screen: JD states an explicit
-        minimum of 5+ years of experience.
+    # Dropped before judging when the JD holds one (whole words).
+    drop_phrases:
+      - sprocket certification required
+      - advanced sprocketry degree required
+    # Required years -> seniority cap; a JD asking more than the
+    # largest key is dropped.
+    years: {3: 14, 4: 10}
 
-out_of_lane:
-  reasoning: >-
-    Auto-skipped by deterministic pre-screen: title matches no configured
-    vertical, so it cannot reach the shortlist.
 
 # Ordered — first match wins. example_primary owns two rules at different
 # priorities: a strong signal ABOVE example_secondary (unambiguous primary

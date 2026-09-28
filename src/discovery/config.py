@@ -318,6 +318,15 @@ class DiscoveryConfig:
     # from a setting that silently never applied.
     unknown_keys: list[str] = field(default_factory=list)
 
+    def abroad_lanes(self) -> dict[str, set[str]]:
+        """{country (lowercased): lanes allowed there} from every source's
+        `abroad` block. A country absent here is home: every lane is allowed."""
+        lanes: dict[str, set[str]] = {}
+        for src in self.sources.values():
+            for c in src.abroad_countries:
+                lanes.setdefault(c.lower(), set()).update(src.abroad_verticals)
+        return lanes
+
     def effective_search_locations(self) -> list[str]:
         """The `location=` values the jobspy lanes query, in query order.
         `search_locations` when set, else the allowlist's effective countries.

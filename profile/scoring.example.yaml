@@ -1,0 +1,108 @@
+# TEMPLATE — copy to profile/scoring.yaml and edit (/onboarding does both).
+#
+# Scoring policy for /score. Read by src/score_filter.py, src/score_store.py
+# and src/shortlist.py. Per-lane rules (drop_phrases, years, skill_weights)
+# live in profile/verticals.yaml; how to judge a role lives in
+# profile/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
+schema_version: 1
+
+# When you need visa sponsorship: never (citizen or permanent resident),
+# later (authorized now, e.g. OPT, but not for good), or now. The judge only
+# reports what a JD says; this decides what it means for you. /onboarding
+# sets it.
+sponsorship_need: later
+
+# Where you can work without a visa. A role located only elsewhere always
+# needs sponsorship.
+visa_free_countries: [United States]
+
+# Roles you can never take. A JD holding one is dropped before any judge and
+# labeled ineligible. Whole words, any case; "U.S." and "United States" read
+# as "US". Conditional wording ("now or in the future") stays with the judge:
+# it also appears verbatim in neutral application-form questions.
+ineligible:
+  - us citizenship required
+  - us citizenship is required
+  - must be a us citizen
+  - us citizens only
+  - green card required
+  - active security clearance
+  - ability to obtain a security clearance
+  - public trust clearance
+  - top secret clearance
+  - ts/sci clearance
+  - requires security clearance
+  - requires a security clearance
+  - does require security clearance
+  - security clearance is required
+  - security clearance required
+  - secret clearance required
+  - citizen or green card
+
+# The employer will not sponsor. Dropped only when sponsorship_need is now.
+no_sponsorship:
+  - no sponsorship
+  - no visa sponsorship
+  - unable to sponsor
+  - will not sponsor
+  - do not sponsor
+  - does not sponsor
+
+# How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
+keywords_max: 5
+
+# A JD under min_words has its skills axis capped at skills_cap.
+jd_quality:
+  min_words: 300
+  skills_cap: 12
+
+# suggested_action from the fit total. The judge may only lower it.
+action:
+  tailor_min: 60
+  review_min: 50
+
+# Sections cut from the judge's copy of a JD. A section starts at a heading
+# that begins with one of `headings` and runs to the next heading. A
+# paragraph holding any keep word always stays.
+trim_jd:
+  headings:
+    - equal opportunity
+    - equal employment
+    - eeo
+    - benefits
+    - perks
+    - what we offer
+    - why join
+    - why work
+    - about us
+    - who we are
+    - our values
+    - our culture
+    - life at
+    - accommodation
+    - reasonable accommodation
+    - privacy
+    - diversity
+    - e-verify
+  keep_words:
+    - sponsor
+    - visa
+    - citizen
+    - clearance
+    - authoriz
+    - salary
+    - compensation
+    - years
+
+shortlist:
+  top_n: 25
+  # Shown in their own "In pipeline" section. Every other tracked state
+  # (applied and later, skip, withdrawn) is left off the shortlist.
+  pipeline_states: [saved, tailored]
+  # How many of them to list, highest fit first; the section header keeps
+  # the full count.
+  pipeline_show: 10
+  # Tie-break after fit_score, best first.
+  sponsorship_order: [sponsors, opt_ok, unknown]
+  # One line under the header; "" for none.
+  note: "Verify E-Verify before submitting (manual step)."

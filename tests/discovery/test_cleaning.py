@@ -106,11 +106,6 @@ def _clean_df(rows: list[dict]) -> pd.DataFrame:
         "ingested_run_id": "2026-06-06_1000",
         "already_seen": False,
         "application_status": "",
-        "fit_score": float("nan"),
-        "fit_subscores": "",
-        "sponsorship_label": "unknown",
-        "sponsorship_evidence": "",
-        "shortlist_rank": float("nan"),
     }
     data = []
     for r in rows:
@@ -862,6 +857,34 @@ def test_tracked_stale_row_survives_the_whole_run(tmp_path):
     assert bool(out.iloc[0]["already_seen"]) is True
 
 
+def test_active_role_carried_forward_after_it_ages_out(tmp_path):
+    """A saved role whose raw shard left the window stays in clean.parquet,
+    copied from the previous clean.parquet; a skipped one does not."""
+    today = pd.Timestamp("2026-06-06")
+    kwargs = dict(clean_dir=tmp_path / "jobs", runs_dir=tmp_path / "jobs" / "runs",
+                  pipeline_dir=tmp_path / "pipeline", today=today)
+    saved_id = compute_job_id("acme", "widget functional consultant")
+    skip_id = compute_job_id("beta", "gizmo business analyst")
+    for jid, state in ((saved_id, "saved"), (skip_id, "skip")):
+        (tmp_path / "pipeline" / jid).mkdir(parents=True)
+        (tmp_path / "pipeline" / jid / "state.yaml").write_text(yaml.safe_dump(
+            {"job_id": jid, "state": state}), encoding="utf-8")
+    first = _make_raw_parquet(tmp_path / "a", [
+        {"company": "Acme", "title": "Widget Functional Consultant",
+         "description": "x" * 300, "date_posted": today},
+        {"company": "Beta LLC", "title": "Gizmo Business Analyst",
+         "description": "y" * 300, "date_posted": today},
+    ])
+    cleaning.run(run_id="2026-06-06_1000", raw_dir=first, **kwargs)
+    empty = _make_raw_parquet(tmp_path / "b", [
+        {"company": "Gamma", "title": "Widget Functional Consultant",
+         "description": "z" * 300, "date_posted": today},
+    ])
+    out = cleaning.run(run_id="2026-06-06_1100", raw_dir=empty, **kwargs)
+    assert saved_id in set(out["job_id"])
+    assert skip_id not in set(out["job_id"])
+
+
 # ---------- T11: cleaning idempotent within a day ----------
 
 def test_cleaning_idempotent(tmp_path):
@@ -1315,6 +1338,24 @@ def test_location_filter():
     assert locs["5"] == "San Francisco, CA"
 
 
+def test_location_filter_keeps_only_abroad_lanes_abroad():
+    from src.discovery.config import DiscoveryConfig, LocationAllowlist, SourceConfig
+    from src.discovery.cleaning import filter_and_canonicalize_location
+
+    cfg = DiscoveryConfig(
+        location_allowlist=LocationAllowlist(countries=["United States", "Poland"]),
+        sources={"linkedin": SourceConfig(True, 3.0, abroad_countries=["Poland"],
+                                          abroad_verticals=["lane_a"])},
+    )
+    df = pd.DataFrame({
+        "job_id": ["a_pl", "b_pl", "b_us", "blank_pl"],
+        "location": ["Warsaw, Poland", "Warsaw, Poland", "Austin, TX", "Warsaw, Poland"],
+        "vertical": ["lane_a", "lane_b", "lane_b", ""],
+    })
+    out = filter_and_canonicalize_location(df, cfg)
+    assert set(out["job_id"]) == {"a_pl", "b_us", "blank_pl"}
+
+
 def test_location_filter_drops_bare_foreign_cities():
     # Regression: bare foreign-city strings (no country suffix) used to parse
     # to nothing and slip through the US allowlist onto the shortlist.
@@ -1653,6 +1694,16 @@ def test_title_exclusion(cfg):
     assert drops["example_primary"] == 1
 
 
+def test_title_exclusion_sees_words_joined_by_underscores(cfg):
+    from src.discovery.cleaning import apply_title_exclusion
+
+    df = pd.DataFrame([{"title": "IN_Senior_Widget_Consultant",
+                        "vertical": "example_primary", "source": "linkedin"}])
+    out, _ = apply_title_exclusion(df, cfg)
+    assert out.empty
+    assert list(df["title"]) == ["IN_Senior_Widget_Consultant"]
+
+
 def test_title_inclusion_gate(cfg):
     """All three verticals configure a title include-gate: keep iff strong_keep
     OR (include AND NOT exclude)."""
@@ -1765,8 +1816,7 @@ def test_clean_preview_jsonl_is_written_and_json_safe(tmp_path):
     # job_id joins the preview back to clean.parquet.
     assert {r["job_id"] for r in rows} == set(out["job_id"])
     # NaT/NaN become null, and timestamps become ISO strings, not repr junk.
-    missing = next(r for r in rows if r["posted_date"] is None)
-    assert missing["fit_score"] is None
+    assert any(r["posted_date"] is None for r in rows)
     dated = next(r for r in rows if r["posted_date"] is not None)
     assert dated["posted_date"].startswith("2026-06-01")
 

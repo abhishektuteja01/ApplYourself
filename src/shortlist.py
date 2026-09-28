@@ -1,207 +1,128 @@
-"""Shortlist computation and rendering: which rows make the cut, and the markdown
-a human reads.
+"""The daily shortlist: which scored roles to look at, and the markdown a human
+reads. A pure read of scored.parquet, clean.parquet and pipeline/*/state.yaml
+(R7, R10): it writes only shortlist/<date>.md.
 
-Deterministic (R7): a sort, a cap, an exclusion split, and a template. The
-invariants are asserted inline rather than trusted, because a silently dropped
-row here is a job the user never sees.
+Two parts:
+  In pipeline   roles whose state is in shortlist.pipeline_states: the count,
+                and the shortlist.pipeline_show highest-fit of them
+  One per lane  the top shortlist.top_n untracked roles at fit >= review_min,
+                excluding ineligible and suggested skip
 """
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
 from src import verticals
 from src.apply.detect import is_auto_submittable
-from src.parquet_io import write_parquet
-from src.scoring_io import SUBSCORE_AXES, to_jsonable
+from src.score_filter import ScoringConfig
+from src.score_store import read_scored
 from src.state_io import load_state_index
 
-# Shortlist caps. compute_shortlist's defaults, the assertion that guards them,
-# and the header line a human reads must all be the same two numbers.
-SHORTLIST_TOP_N = 25
+_JOB_ID_RE = re.compile(r"`([0-9a-f]{8})`")
 
 
-SHORTLIST_MIN_FIT = 50
+def compute(scored_path: Path, clean_path: Path, pipeline_dir: Path,
+            cfg: ScoringConfig) -> dict:
+    """{"pipeline": [row...], "lanes": {lane: [row...]}} in display order."""
+    names = verticals.get_config().names
+    scored = read_scored(scored_path)
+    if scored.empty:
+        return {"pipeline": [], "lanes": {v: [] for v in names}}
+    clean = pd.read_parquet(clean_path).drop(
+        columns=[c for c in scored.columns if c != "job_id"], errors="ignore")
+    df = scored.merge(clean, on="job_id", how="inner")
+    states = {j: d.get("state", "") for j, d in load_state_index(pipeline_dir).items()}
+    df["state"] = df["job_id"].map(states).fillna("")
+    order = {label: i for i, label in enumerate(cfg.sponsorship_order)}
+    df["_sponsor"] = df["sponsorship_label"].map(order).fillna(len(order))
+    df["_posted"] = pd.to_datetime(df["posted_date"], errors="coerce")
 
+    def ranked(frame: pd.DataFrame) -> pd.DataFrame:
+        return frame.sort_values(["fit_score", "_sponsor", "_posted", "job_id"],
+                                 ascending=[False, True, False, True],
+                                 na_position="last", kind="stable")
 
-# Higher = preferred. ineligible never reaches the main list, but included
-# for completeness so the sort key never sees a missing label.
-SPONSORSHIP_PREF = {"sponsors": 3, "opt_ok": 2, "unknown": 1, "ineligible": 0}
-
-
-# Pipeline states at or past the point of application — exclude from the
-# shortlist main list because the user has already acted on these roles.
-_APPLIED_STATES = frozenset({
-    "applied", "recruiter_contact", "screen", "interview",
-    "offer", "rejected", "withdrawn", "ghosted",
-})
-
-
-def _count_skips(state_history: Any) -> int:
-    if not isinstance(state_history, list):
-        return 0
-    return sum(
-        1 for h in state_history
-        if isinstance(h, dict) and h.get("state") == "skip"
-    )
-
-
-def _load_state_metadata(pipeline_dir: Path) -> dict[str, dict]:
-    """{job_id: {state, skip_count}} from pipeline/*/state.yaml."""
+    pool = df[(df["state"] == "")
+              & (df["sponsorship_label"] != "ineligible")
+              & (df["suggested_action"] != "skip")
+              & (df["fit_score"] >= cfg.review_min)]
     return {
-        jid: {
-            "state": data.get("state", ""),
-            "skip_count": _count_skips(data.get("state_history")),
-        }
-        for jid, data in load_state_index(pipeline_dir).items()
+        "pipeline": ranked(df[df["state"].isin(cfg.pipeline_states)]).to_dict("records"),
+        "lanes": {v: ranked(pool[pool["vertical"] == v]).head(cfg.top_n).to_dict("records")
+                  for v in names},
     }
 
 
-def compute_shortlist(
-    scored_path: Path,
-    clean_path: Path,
-    pipeline_dir: Path,
-    top_n: int = SHORTLIST_TOP_N,
-    min_fit: int = SHORTLIST_MIN_FIT,
-    write_ranks: bool = True,
-) -> dict:
-    """Deterministic sort + cap + exclusion split.
-
-    Returns:
-      {
-        "main": {<vertical>: [row, ...] for each configured vertical,
-                 in profile/verticals.yaml config order}
-            # top_n per vertical, each section sorted/capped independently;
-            # excludes ineligible/suppressed. Sections rank independently:
-            # one vertical's fit_score is never compared against another's.
-        "excluded":   [row, ...]   # sponsorship_label == 'ineligible' (sponsorship is the only exclusion gate)
-        "suppressed": [row, ...]   # state_history skip count >= 1 (a skip is not an ineligible)
-      }
-
-    Sort key within each vertical's section (locked):
-      fit_score DESC,
-      sponsorship_pref DESC (sponsors > opt_ok > unknown),
-      posted_date DESC.
-
-    Side effect (write_ranks=True): writes shortlist_rank back to scored.parquet
-    (1..N within each vertical's section for main rows, NaN otherwise)."""
-    cfg = verticals.get_config()
-    if not scored_path.exists():
-        return {"main": {v: [] for v in cfg.names}, "excluded": [], "suppressed": []}
-    scored = pd.read_parquet(scored_path)
-    clean = pd.read_parquet(clean_path)
-    state_meta = _load_state_metadata(pipeline_dir)
-
-    df = scored.merge(clean, on="job_id", how="left", suffixes=("", "_clean"))
-    df["skip_count"] = df["job_id"].map(
-        lambda j: state_meta.get(j, {}).get("skip_count", 0)
-    )
-    df["current_state"] = df["job_id"].map(
-        lambda j: state_meta.get(j, {}).get("state", "")
-    )
-    df["sponsorship_pref"] = (
-        df["sponsorship_label"].map(SPONSORSHIP_PREF).fillna(0).astype(int)
-    )
-    excluded = df[df["sponsorship_label"] == "ineligible"].copy()
-    suppressed = df[df["skip_count"] >= 1].copy()
-
-    main_pool = df[
-        (df["sponsorship_label"] != "ineligible")
-        & (df["skip_count"] < 1)
-        & (df["fit_score"] >= min_fit)
-        & (~df["current_state"].isin(_APPLIED_STATES))
-    ].copy()
-
-    new_ranks: dict[str, int] = {}
-    main: dict[str, list[dict]] = {}
-    for vertical in cfg.names:
-        section = main_pool[main_pool["vertical"] == vertical].sort_values(
-            by=["fit_score", "sponsorship_pref", "posted_date"],
-            ascending=[False, False, False],
-            kind="stable",
-        ).head(top_n)
-        for rank, jid in enumerate(section["job_id"]):
-            new_ranks[jid] = rank + 1
-        main[vertical] = [{k: to_jsonable(v) for k, v in r.items()} for r in section.to_dict("records")]
-
-    if write_ranks:
-        scored2 = scored.copy()
-        scored2["shortlist_rank"] = (
-            scored2["job_id"].map(new_ranks).astype("float64")
-        )
-        write_parquet(scored2, scored_path)
-
-    return {
-        "main":       main,
-        "excluded":   [{k: to_jsonable(v) for k, v in r.items()} for r in excluded.to_dict("records")],
-        "suppressed": [{k: to_jsonable(v) for k, v in r.items()} for r in suppressed.to_dict("records")],
-    }
+def previous_ids(shortlist_dir: Path, date_str: str) -> set[str]:
+    """job_ids in the newest shortlist file dated before date_str."""
+    older = sorted(p for p in shortlist_dir.glob("*.md") if p.stem < date_str)
+    return set(_JOB_ID_RE.findall(older[-1].read_text(encoding="utf-8"))) if older else set()
 
 
-def render_shortlist_markdown(
-    shortlist: dict, cfg: "verticals.VerticalsConfig",
-    date_str: str, n_scored: int, n_clean: int,
-) -> str:
-    """Render shortlist/<date>.md from compute_shortlist()'s output.
-    Asserts invariants inline (fit>=50, subscore sum, no ineligible/skip
-    leakage, no cross-vertical leakage) — raises AssertionError, never
-    silently drops a row."""
-    def subscores(row):
-        s = row["fit_subscores"]
-        return json.loads(s) if isinstance(s, str) else s
+def _text(value) -> str:
+    return "unknown" if value is None or pd.isna(value) or str(value) == "" else str(value)
 
-    sections = []
-    total_keepers = 0
-    for v in cfg.names:
-        rows = shortlist["main"].get(v, [])
-        assert len(rows) <= SHORTLIST_TOP_N, (
-            f"{v}: {len(rows)} rows exceeds cap {SHORTLIST_TOP_N}")
-        lines = [f"## {cfg.verticals[v].display_name} ({len(rows)})", ""]
+
+def _date(value) -> str:
+    ts = pd.to_datetime(value, errors="coerce")
+    return "unknown" if pd.isna(ts) else ts.date().isoformat()
+
+
+def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
+           n_clean: int, seen: set[str]) -> str:
+    vcfg = verticals.get_config()
+    out = [f"# Shortlist — {date_str}", "",
+           f"{n_scored} of {n_clean} scored. Top {cfg.top_n} per lane with fit >= "
+           f"{cfg.review_min}. ★ = new since the last shortlist."]
+    if cfg.note:
+        out.append(cfg.note)
+    pipe = result["pipeline"]
+    out += ["", f"## In pipeline ({len(pipe)})", ""]
+    out += [f"- `{r['job_id']}` {r['fit_score']:.0f} — {r['company']} — {r['title']} ({r['state']})"
+            for r in pipe[:cfg.pipeline_show]] or ["Nothing saved or tailored."]
+    if len(pipe) > cfg.pipeline_show:
+        out.append(f"- …and {len(pipe) - cfg.pipeline_show} more (`/standup` lists them all)")
+    for v in vcfg.names:
+        rows = result["lanes"][v]
+        out += ["", f"## {vcfg.verticals[v].display_name} ({len(rows)})", ""]
         if not rows:
-            lines.append("No keepers today in this vertical.")
-        for i, row in enumerate(rows, 1):
-            assert row["vertical"] == v, f"{row['job_id']} leaked into {v} section"
-            assert row["fit_score"] >= SHORTLIST_MIN_FIT, \
-                f"{row['job_id']}: fit {row['fit_score']} < {SHORTLIST_MIN_FIT}"
-            sub = subscores(row)
-            assert sum(sub[a] for a in SUBSCORE_AXES) == row["fit_score"], \
-                f"{row['job_id']}: subscores {sub} != fit_score {row['fit_score']}"
-            assert row["sponsorship_label"] != "ineligible", f"{row['job_id']}: ineligible in main"
-            status = row["application_status"] if row.get("already_seen") else "new"
-            kws = ", ".join(row.get("keywords_to_mirror", [])[:3])
-            # Derived from the URL, not `source`: Workday rows often arrive
-            # labelled "indeed", and LinkedIn/Indeed/Ashby rows are
-            # manual-apply too. §12c puts all of them in the same
-            # manual-apply category, so the same predicate the queue uses
-            # decides it here.
-            manual_apply = (
-                "" if is_auto_submittable(row.get("url"))
-                else " — **manual-apply, not auto-submittable**"
-            )
-            lines.append(
-                f"### {i}. {row['fit_score']} — {row['company']} — {row['title']}\n"
-                f"- **job_id:** `{row['job_id']}`\n"
-                f"- **location:** {row['location']} · **source:** {row['source']}{manual_apply} "
-                f"· **posted:** {row['posted_date']}\n"
-                f"- **fit:** {row['fit_score']} (title {sub['title']} / skills {sub['skills']} "
-                f"/ seniority {sub['seniority']} / domain {sub['domain']})\n"
-                f"- **sponsorship:** {row['sponsorship_label']} — \"{row['sponsorship_evidence']}\"\n"
-                f"- **why:** {row['reasoning']}\n"
-                f"- **mirror in tailoring:** {kws}\n"
-                f"- **status:** {status}\n"
-                f"- **suggested:** {row['suggested_action']}\n"
-                f"- **verify E-Verify** before submitting (manual step)\n"
-                f"- {row['url']}\n"
-            )
-        sections.append("\n".join(lines))
-        total_keepers += len(rows)
+            out.append("No keepers today.")
+        for i, r in enumerate(rows, 1):
+            subs = json.loads(r["fit_subscores"])
+            star = "" if r["job_id"] in seen else " ★"
+            extras = []
+            if r["sponsorship_label"] != "unknown":
+                extras.append(f"sponsorship {r['sponsorship_label']}: \"{r['sponsorship_evidence']}\"")
+            if r["suggested_action"] != "tailor":
+                extras.append(f"suggested {r['suggested_action']}")
+            if not is_auto_submittable(r.get("url")):
+                extras.append("manual-apply")
+            out += [
+                f"### {i}. {r['fit_score']:.0f} — {r['company']} — {r['title']}{star}",
+                f"- `{r['job_id']}` · {_text(r.get('location'))} · posted {_date(r.get('posted_date'))}"
+                f" · {r['source']}",
+                f"- title {subs['title']} / skills {subs['skills']} / seniority "
+                f"{subs['seniority']} / domain {subs['domain']} — {r['reasoning']}",
+                f"- mirror: {', '.join(list(r['keywords_to_mirror'])[:3])}",
+            ]
+            if extras:
+                out.append("- " + " · ".join(extras))
+            out += [f"- {r['url']}", ""]
+    return "\n".join(out).rstrip() + "\n"
 
-    header = (f"# Shortlist — {date_str}\n\n"
-              f"({n_scored} of {n_clean} scored, top {SHORTLIST_TOP_N} "
-              f"per vertical with fit >= {SHORTLIST_MIN_FIT})\n")
-    if total_keepers == 0:
-        return header + "\nNo keepers today in this vertical.\n"
-    return header + "\n" + "\n".join(sections)
+
+def write(scored_path: Path, clean_path: Path, pipeline_dir: Path, shortlist_dir: Path,
+          cfg: ScoringConfig, date_str: str) -> tuple[Path, int]:
+    """Render and write shortlist/<date_str>.md. Returns (path, lane rows)."""
+    result = compute(scored_path, clean_path, pipeline_dir, cfg)
+    n_scored = len(read_scored(scored_path))
+    n_clean = len(pd.read_parquet(clean_path, columns=["job_id"]))
+    md = render(result, cfg, date_str, n_scored, n_clean, previous_ids(shortlist_dir, date_str))
+    shortlist_dir.mkdir(parents=True, exist_ok=True)
+    path = shortlist_dir / f"{date_str}.md"
+    path.write_text(md, encoding="utf-8")
+    return path, sum(len(rows) for rows in result["lanes"].values())

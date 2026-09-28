@@ -6,7 +6,7 @@ Deterministic config loading only (no LLM calls in src/).
 with a pointer at the committed template — never a
 silent empty fallback, unlike lint rules.
 
-Consumers (discovery, cleaning, scoring_io, score_cli) must call
+Consumers (discovery, cleaning, score_filter, score_store) must call
 `get_config()` inside function bodies — never at module level, never
 captured into module constants — so test injection via `set_config()`
 always wins regardless of import order.
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from typing import Protocol
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -42,19 +42,19 @@ class Vertical:
     display_name: str
     search_terms: tuple[str, ...]
     linkedin_terms: tuple[str, ...]
-    disqualifier_max_years: int
-    disqualifier_phrases: tuple[str, ...]
-    disqualifier_title_phrases: tuple[str, ...]
-    disqualifier_scored_by: str
-    reasoning_years: str
-    reasoning_phrase: str | None
-    reasoning_title: str | None
     title_exclude_terms: tuple[str, ...]
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
     resume_file: str  # repo-relative path to the attested resume judges score against (read by score-judge.md)
     # Optional. The terms a jobspy lane's `abroad` block queries per country.
     abroad_terms: tuple[str, ...] = ()
+    # /score's lane rules (src/score_filter.py). A JD holding a drop phrase is
+    # dropped; `years` maps required years -> seniority cap, and a JD asking
+    # more than its largest key is dropped.
+    drop_phrases: tuple[str, ...] = ()
+    years: dict[int, int] = field(default_factory=dict)
+    # Judge-only: printed into the lane's scoring packet as-is.
+    skill_weights: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,6 @@ class VerticalsConfig:
     default_vertical: str
     verticals: dict[str, Vertical]  # insertion order == config order
     classifier_rules: tuple[tuple[str, "ClassifierRule"], ...]
-    out_of_lane_reasoning: str
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -145,22 +144,18 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     linkedin_terms = _str_list(_require(raw, "linkedin_terms", path, where), path, f"{where}.linkedin_terms")
     abroad_terms = _str_list(raw.get("abroad_terms", []), path, f"{where}.abroad_terms")
 
-    dq = _require(raw, "disqualifier", path, where)
-    if not isinstance(dq, dict):
-        raise _fail(path, f"{where}.disqualifier must be a mapping")
-    max_years = _require(dq, "max_years", path, f"{where}.disqualifier")
-    if not isinstance(max_years, int):
-        raise _fail(path, f"{where}.disqualifier.max_years must be an integer")
-    phrases = _str_list(dq.get("phrases", []), path, f"{where}.disqualifier.phrases")
-    title_phrases = _str_list(dq.get("title_phrases", []), path, f"{where}.disqualifier.title_phrases")
-    scored_by = _require(dq, "scored_by", path, f"{where}.disqualifier")
-    reasoning_years = _require(dq, "reasoning_years", path, f"{where}.disqualifier")
-    reasoning_phrase = dq.get("reasoning_phrase")
-    if phrases and not reasoning_phrase:
-        raise _fail(path, f"{where}.disqualifier.reasoning_phrase is required when phrases is nonempty")
-    reasoning_title = dq.get("reasoning_title")
-    if title_phrases and not reasoning_title:
-        raise _fail(path, f"{where}.disqualifier.reasoning_title is required when title_phrases is nonempty")
+    if "disqualifier" in raw:
+        raise _fail(path, f"{where}.disqualifier was replaced: phrases -> drop_phrases, "
+                          "max_years -> years, title_phrases -> title_exclude_terms")
+    drop_phrases = _str_list(raw.get("drop_phrases", []), path, f"{where}.drop_phrases")
+    years = raw.get("years") or {}
+    if not isinstance(years, dict) or not all(
+            type(k) is int and type(v) is int and k >= 0 and 0 <= v <= 20
+            for k, v in years.items()):
+        raise _fail(path, f"{where}.years must map whole years to a seniority cap 0-20")
+    skill_weights = raw.get("skill_weights") or {}
+    if not isinstance(skill_weights, dict):
+        raise _fail(path, f"{where}.skill_weights must be a mapping")
 
     # Title include-gate: opt-in per vertical. When title_include_terms is
     # empty the gate is OFF and apply_title_exclusion falls back to
@@ -194,17 +189,13 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         search_terms=search_terms,
         linkedin_terms=linkedin_terms,
         abroad_terms=abroad_terms,
-        disqualifier_max_years=max_years,
-        disqualifier_phrases=phrases,
-        disqualifier_title_phrases=title_phrases,
-        disqualifier_scored_by=str(scored_by),
-        reasoning_years=str(reasoning_years),
-        reasoning_phrase=str(reasoning_phrase) if reasoning_phrase else None,
-        reasoning_title=str(reasoning_title) if reasoning_title else None,
         title_exclude_terms=tuple(exclude_terms),
         title_include_terms=tuple(include_terms),
         title_strong_keep_terms=tuple(strong_keep_terms),
         resume_file=resume_file.strip(),
+        drop_phrases=drop_phrases,
+        years=dict(sorted(years.items())),
+        skill_weights=skill_weights,
     )
 
 
@@ -237,9 +228,9 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
     if default_vertical not in verticals:
         raise _fail(p, f"default_vertical {default_vertical!r} is not a configured vertical")
 
-    out_of_lane = _require(data, "out_of_lane", p, "top level")
-    if not isinstance(out_of_lane, dict) or not out_of_lane.get("reasoning"):
-        raise _fail(p, "out_of_lane.reasoning is required")
+    if "out_of_lane" in data:
+        raise _fail(p, "out_of_lane is no longer read: delete it (dropped rows now "
+                       "carry the reason /score matched)")
 
     raw_rules = _require(data, "classifier_rules", p, "top level")
     if not isinstance(raw_rules, list) or not raw_rules:
@@ -272,7 +263,6 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
         default_vertical=default_vertical,
         verticals=verticals,
         classifier_rules=tuple(rules),
-        out_of_lane_reasoning=str(out_of_lane["reasoning"]),
     )
 
 

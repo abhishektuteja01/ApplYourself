@@ -43,7 +43,7 @@ deleted by `pass-b`.
 **Out of scope here — this is `/tune-vertical`'s entire reason to exist. Do not
 ask about it:** `skill_weights`, `title_include_terms` /
 `title_strong_keep_terms`, classifier rule priority and
-collisions, `disqualifier.phrases`, rubric tier boundaries,
+collisions, `drop_phrases`, rubric tier boundaries,
 `vertical_lean` tagging.
 
 `title_exclude_terms` is in scope here — it drops only what it names, so a
@@ -66,9 +66,6 @@ failed to anticipate.
   resume onboarding already parsed. Never invent a skill and never add a new
   `SKILL-*` entry. If the lane needs skills the profile doesn't document, say so
   and point at `/suggest-synonyms`.
-- **Reasoning and stamp strings are literal config fields** — draft them fresh
-  (`rubric:<name-with-dashes>-jd-years-disqualifier`), never reuse another
-  lane's.
 - **One call, three questions.** At most one `AskUserQuestion` call, in Step 3,
   after the whole draft is on screen — carried by bare mode and by `pass-a`.
   `pass-b` asks nothing. Never apply unconfirmed text; if the user edits, re-show
@@ -94,8 +91,7 @@ uv run python -c "
 import yaml; d = yaml.safe_load(open('profile/verticals.yaml'))
 print('default_vertical:', d.get('default_vertical'))
 print('lanes:', list(d.get('verticals') or {}))
-print('rules:', len(d.get('classifier_rules') or []))
-print('out_of_lane:', bool((d.get('out_of_lane') or {}).get('reasoning')))"
+print('rules:', len(d.get('classifier_rules') or []))"
 ```
 
 Then, in bare mode and `pass-b` only — **not** in `pass-a`, where unauthored
@@ -128,7 +124,7 @@ That is the expected mid-state, not damage to repair.
 Two accepted starting states:
 
 - **Straight out of `onboard-scaffold`** — `verticals:` and `classifier_rules:`
-  are empty, `out_of_lane.reasoning` is intact, `default_vertical` is already
+  are empty, `default_vertical` is already
   the new lane name, so `verticals-check` fails. That failure is the expected
   input, not a problem to repair: adding the block plus one rule is exactly what
   makes the file load.
@@ -144,7 +140,7 @@ Two accepted starting states:
 | neither `<name>` nor a configured lane | stop; ask which lane should be default before writing anything |
 
 Any other `verticals-check` failure — unparsable YAML, wrong `schema_version`,
-missing `out_of_lane.reasoning`, or an *existing* lane missing its
+or an *existing* lane missing its
 rubric/tailoring/resume — stops the command. Quick mode does not repair
 unrelated config.
 
@@ -168,30 +164,23 @@ description argument plus the lane name — bullets are not read.
 - `search_terms` — 6-12 real job titles for the lane, spine first, adjacent
   after; comment the tiers like the example block does.
 - `linkedin_terms` — the reduced set (429 mitigation), usually the spine only.
-- `disqualifier` — `max_years` from Step 3's answer, `title_phrases` from
-  Step 3's level answer, a fresh `scored_by` stamp, and `reasoning_years` plus
-  `reasoning_title` in the established voice ("Auto-skipped by deterministic
-  pre-screen: ..."). **`reasoning_title` is required whenever `title_phrases` is
-  nonempty** — without it `load_verticals()` raises and the lane does not load.
-  Omit `phrases`.
-  - Draft the phrases from the level answer crossed with **this lane's own title
-    vocabulary** — the band words differ per lane, so read them off the lane's
-    real titles (`search_terms`, the description argument), never off a fixed
-    list.
+- `years` — required years mapped to a seniority cap (0-20), largest key =
+  Step 3's cap, lower caps for higher asks (cap 5 → `{3: 14, 4: 10, 5: 6}`).
+  A JD asking more than the largest key is dropped before judging.
+  Omit `drop_phrases`.
+- `title_exclude_terms` — a short blocklist: the level words from Step 3's
+  level answer, plus title words naming a different *function*.
+  - Draft the level words from the level answer crossed with **this lane's own
+    title vocabulary** — the band words differ per lane, so read them off the
+    lane's real titles (`search_terms`, the description argument), never off a
+    fixed list.
   - Exclude in **both directions**: a senior/lead answer excludes the bands
     below it, an entry/mid answer excludes the bands above it.
-  - All phrases lowercase — prescreen matches by plain substring containment,
-    not word boundaries.
-  - Keep the list short and specific. A bare short phrase over-catches (`associate`
-    also matches "Associate Director"); prefer the longer phrase when it would.
-  - A wrong guess costs nothing permanent: tripped rows are auto-scored and
-    stamped `title`, not deleted, so editing the list and running `/rescore`
-    undoes it with no re-scrape.
-- `title_exclude_terms` — a short blocklist of title words naming a different
-  *function*, not a different level. Seniority belongs in `title_phrases`
-  above and must not be repeated here: this list drops rows during cleaning,
-  so a level word here deletes the row before prescreen can stamp it and
-  `/rescore` cannot bring it back.
+  - Matching is whole-word and case-insensitive. Keep the list short and
+    specific. A bare short word over-catches (`associate` also matches
+    "Associate Director"); prefer the longer phrase when it would.
+  - A wrong guess costs no re-scrape: the raw shards keep the rows, so editing
+    the list undoes it on the next clean rebuild.
 
 Omit `skill_weights`, `title_include_terms` and `title_strong_keep_terms`
 entirely. A nonempty `title_include_terms` turns the lane into an allowlist
@@ -205,13 +194,13 @@ enforced during cleaning, which can empty the lane before anyone sees a row.
   the other lanes is `/tune-vertical`'s.
 
 **3. `profile/verticals/<name>/rubric.md`** — example_primary's shape: the
-four axes with maxima fixed by `profile/scoring_rubric.md` (`title_match` 0-30,
-`jd_skill_overlap` 0-30, `seniority_fit` 0-20, `domain_bonus` 0-20; judges emit
+four axes with maxima fixed by `profile/scoring_rubric.md` (`title` 0-30,
+`skills` 0-30, `seniority` 0-20, `domain` 0-20; judges emit
 the scaffold's keys `title`/`skills`/`seniority`/`domain`), plus an
 `## Additional self-check items` section. State the tiers against this lane's
 spine titles and the profile's real evidence. Standard bands are fine — the
 boundaries are `/tune-vertical`'s. With no `skill_weights` in the config, anchor
-`jd_skill_overlap` on how many of the profile's attested skills the JD demands.
+`skills` on how many of the profile's attested skills the JD demands.
 
 **4. `profile/verticals/<name>/tailoring.md`** — bullet budget (mix summing to
 ≥10 non-frozen bullets), project ordering default, summary framing, section
@@ -232,8 +221,8 @@ Show, in one message: the YAML block in full, the classifier rule in full, and �
 bare mode only — three or four lines summarizing each prose file (rubric tiers,
 bullet budget + skills layout line count, resume sections). Say in one line what
 you inferred and what you left for `/tune-vertical`. After the answers land,
-restate the locked decisions including `max_years`, the level answer and the
-`title_phrases` it produced.
+restate the locked decisions including the `years` table, the level answer and
+the level words it put in `title_exclude_terms`.
 
 Then one `AskUserQuestion` carrying all three questions, in this order — the
 confirm-or-edit stays last.
@@ -243,9 +232,10 @@ confirm-or-edit stays last.
 is dropped before scoring, and `/tune-vertical` can change it later.
 
 "What level are you targeting?" — `Entry / associate` / `Mid-level` /
-`Senior / staff` / `Lead / director and up`. The answer becomes
-`disqualifier.title_phrases`. Say in one line that anything matching the excluded
-bands is dropped before scoring but stays visible and reversible with `/rescore`.
+`Senior / staff` / `Lead / director and up`. The answer becomes level words in
+`title_exclude_terms`. Say in one line that titles matching the excluded bands
+are dropped at the title gate: tightening the list applies on the next
+`clean.parquet` rebuild, loosening it as the boards are next checked.
 
 "Use this lane as drafted?":
 
@@ -282,7 +272,7 @@ rm -f profile/verticals/<name>/.pass_a_only
 ## Step 5a — verify (`pass-a`)
 
 ```bash
-uv run python -c "from src.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, c.default_vertical, len(v.search_terms), len(v.linkedin_terms), v.disqualifier_scored_by)"
+uv run python -c "from src.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, c.default_vertical, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.title_exclude_terms))"
 uv run python -c "
 from src.discovery.cleaning import classify_vertical_from_title as c
 from src.verticals import load_verticals
@@ -291,9 +281,8 @@ bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
 print('MISCLASSIFIED:', bad or 'none')"
 ```
 
-The `load_verticals()` call is what catches a malformed `disqualifier` block
-before the scrape — a failure there means `title_phrases` is nonempty with no
-`reasoning_title`.
+The `load_verticals()` call is what catches a malformed `years` table or title
+term before the scrape.
 
 Do not run `verticals-check` or `tests/test_real_config_drift.py` here — both
 fail by design while the three prose files are missing.
@@ -313,16 +302,16 @@ it never saw the lane.
 
 ## Step 6a — report (`pass-a`)
 
-The lane block, the rule, `max_years`, the level answer and its
-`title_phrases`, `title_exclude_terms`, and the marker
+The lane block, the rule, the `years` table, the level answer,
+`title_exclude_terms`, and the marker
 path. State that the lane is scrape-ready but not yet scoreable: `uv run
 discover` can run now; scoring needs `pass-b`'s three files. Name the single next
 step, `/new-vertical <name> pass-b`.
 
 ## Step 6b — report (bare mode and `pass-b`)
 
-Files written, the locked decisions (terms, rule, `max_years`, the level answer
-and its `title_phrases`, skills layout),
+Files written, the locked decisions (terms, rule, the `years` table, the level answer
+and its `title_exclude_terms` words, skills layout),
 and:
 
 - `uv run discover` then `/score` — their call, it hits the network.

@@ -1,5 +1,5 @@
 ---
-description: Deep tuning pass on a vertical that already exists — run it after your first shortlist, against postings you have actually seen. Sharpens search terms, skill_weights, the title gate, classifier rules and collisions, disqualifier phrases, rubric tier boundaries and vertical_lean tags. Config only, no code edits. Use /new-vertical to create a lane, this to sharpen one.
+description: Deep tuning pass on a vertical that already exists — run it after your first shortlist, against postings you have actually seen. Sharpens search terms, skill_weights, the title gate, classifier rules and collisions, drop phrases, rubric tier boundaries and vertical_lean tags. Config only, no code edits. Use /new-vertical to create a lane, this to sharpen one.
 model: opus
 effort: high
 allowed-tools:
@@ -45,12 +45,8 @@ confirmed → run the round's verify → report → next round.**
   `profile/bullets.md` / `profile/skills_master.md` content. Never invent a
   skill; never add a new `SKILL-*` entry, only tag existing ones. Gaps go to
   `/suggest-synonyms`.
-- **Reasoning and stamp strings are literal config fields.** A new `phrases` or
-  `title_phrases` list requires its partner (`reasoning_phrase`,
-  `reasoning_title`) written fresh in the established voice; never reuse another
-  lane's stamp.
 - Editing terms or rules does **not** reclassify existing rows. The effect shows
-  up on the next `discover`; `/rescore --vertical <name>` re-judges what is
+  up on the next `discover`; `/score --all --vertical <name>` re-judges what is
   already there.
 
 ## Round 0 — preflight & evidence (no writes)
@@ -66,7 +62,7 @@ c = load_verticals(); v = c.verticals['<name>']
 print('lanes:', c.names, 'default:', c.default_vertical)
 print('search:', len(v.search_terms), 'linkedin:', len(v.linkedin_terms))
 print('title gate: include', len(v.title_include_terms), 'exclude', len(v.title_exclude_terms), 'strong_keep', len(v.title_strong_keep_terms))
-print('dq: max_years', v.disqualifier_max_years, 'phrases', len(v.disqualifier_phrases), 'title_phrases', len(v.disqualifier_title_phrases))
+print('drops: years', v.years, 'drop_phrases', len(v.drop_phrases))
 print('rules for this lane:', [i for i, (vt, _) in enumerate(c.classifier_rules) if vt == '<name>'], 'of', len(c.classifier_rules))"
 ```
 
@@ -90,7 +86,7 @@ d = pd.read_parquet('jobs/clean.parquet')
 for lane, g in d[d.vertical != '<name>'].groupby(d.vertical.fillna('')):
     print('--', lane or '(out-of-lane)', len(g)); print(g.title.value_counts().head(15).to_string())"
 
-# What the deterministic pre-screen killed, by stamp.
+# What the hard-rule filter dropped, by stamp (filter:<code>).
 uv run python -c "
 import pandas as pd
 s = pd.read_parquet('jobs/scored.parquet'); s = s[s.vertical == '<name>']
@@ -100,8 +96,8 @@ print(s.sort_values('fit_score', ascending=False)[['fit_score','suggested_action
 ```
 
 Report in five lines: lane volume, the title families that dominate it, the
-off-lane families closest to it, how many rows the pre-screen killed and under
-which stamp, and the score distribution. That report is Round 1's input.
+off-lane families closest to it, how many rows the filter dropped and under
+which code, and the score distribution. That report is Round 1's input.
 
 ## Round 1 — terms and the title gate
 
@@ -121,11 +117,9 @@ only those.
   and the noise is too varied for a blocklist. Pair `title_strong_keep_terms`
   with unambiguous in-lane titles that would otherwise trip an exclude.
 
-Two self-collision traps, both enforced by the Round 4 drift test — check them
+One self-collision trap, enforced by the Round 4 drift test — check it
 while drafting:
 
-- no `title_phrases` entry may appear inside any of this lane's own
-  `search_terms`; a hit auto-skips every row that term finds, before any judge.
 - no `title_exclude_terms` entry may word-match one of its own `search_terms`
   unless a `title_strong_keep_terms` entry covers it.
 
@@ -140,7 +134,7 @@ uv run python -c "from src.verticals import load_verticals; v = load_verticals()
 uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
-## Round 2 — classifier rules, collisions, disqualifiers
+## Round 2 — classifier rules, collisions, drop rules
 
 **`classifier_rules`.** Ordered, first match wins, and position decides
 collisions (a build-lane rule must sit AFTER a risk lane's, so "AI Risk
@@ -161,15 +155,14 @@ other lanes' rules deliberately. Every row misfiled in Round 0's evidence is a
 rule-position bug — name the row, propose the move, have the user confirm the
 **ruling**, not the regex.
 
-**`disqualifier`** — this is where `phrases` and `title_phrases` earn their
-place, from rows the pre-screen should have killed and didn't:
+**Drop rules** — from rows the filter should have dropped and didn't:
 
-- `max_years` — raise or lower only against observed JDs.
-- `phrases` — case-insensitive JD substrings that are a deterministic kill for
-  this profile. Nonempty requires `reasoning_phrase`.
-- `title_phrases` — case-insensitive title substrings, checked before
-  phrases/years, for the adjacent title families job boards fuzzy-match your
-  search terms into. Nonempty requires `reasoning_title`.
+- `years` — required years mapped to a seniority cap; a JD asking more than the
+  largest key is dropped. Change only against observed JDs.
+- `drop_phrases` — JD phrases (whole words, any case) that are a deterministic
+  kill for this profile.
+- Adjacent title families job boards fuzzy-match your search terms into go in
+  Round 1's `title_exclude_terms`.
 
 Verify:
 
@@ -203,7 +196,7 @@ print(len(moved), 'rows would reclassify')
 print(moved.assign(new=now[moved.index])[['title','vertical','new']].head(30).to_string())"
 ```
 
-Rows only actually move on the next `discover`; `/rescore --vertical <name>`
+Rows only actually move on the next `discover`; `/score --all --vertical <name>`
 re-judges what is already there.
 
 ## Round 3 — `skill_weights` and rubric tiers
@@ -216,12 +209,11 @@ re-judges what is already there.
   for and the profile cannot attest is a `/suggest-synonyms` item, not a weight.
 - **`rubric.md` tier boundaries** — the four axes and their maxima are fixed by
   `profile/scoring_rubric.md` (`title` 0-30, `skills` 0-30, `seniority` 0-20,
-  `domain` 0-20; the rubric prose labels them `title_match` /
-  `jd_skill_overlap` / `seniority_fit` / `domain_bonus`). Only the *tiers* are
+  `domain` 0-20). Only the *tiers* are
   tunable here. Retune them against the scored rows: if the top-scoring rows are
   ones the user would not apply to, the title or domain tiers are too generous;
   if roles they liked landed mid-pack, they are too tight. Once `skill_weights`
-  exist, re-anchor `jd_skill_overlap` on the weight sum. Propose the top-band
+  exist, re-anchor `skills` on the weight sum. Propose the top-band
   and bottom-band boundaries and have them confirmed; keep the
   `## Additional self-check items` section current.
 
@@ -232,8 +224,8 @@ uv run verticals-check
 ```
 
 Then have the user look at what changed:
-`/rescore --vertical <name>`, then the shortlist. It re-judges every row in the
-window, so it costs a full scoring pass — their call.
+`/score --all --vertical <name>`, then the shortlist. It re-judges every row in the
+lane's window, so it costs a full scoring pass — their call.
 
 ## Round 4 — tagging, tests, audit
 
@@ -247,10 +239,8 @@ window, so it costs a full scoring pass — their call.
 2. `tests/test_real_config_drift.py` runs against `profile/verticals.yaml` when
    present and is what covers this lane. It fails if any
    `search_terms`/`linkedin_terms` entry misclassifies, if
-   `rubric.md`/`tailoring.md`/`resume_file` are missing, if the `scored_by`
-   stamp collides with another lane's, if a `title_exclude_terms` entry kills
-   one of its own search terms, or if a `disqualifier.title_phrases` entry
-   matches one of its own search terms. Add structural assertions there if this
+   `rubric.md`/`tailoring.md`/`resume_file` are missing, or if a
+   `title_exclude_terms` entry kills one of its own search terms. Add structural assertions there if this
    round's changes need more — never a literal real term.
 
 3. Final audit:
@@ -266,8 +256,8 @@ window, so it costs a full scoring pass — their call.
    the lane.
 
 4. Completion summary: every file touched, every locked decision (terms, title
-   gate, rule positions and collision rulings, disqualifier, weights, rubric
+   gate, rule positions and collision rulings, drop rules, weights, rubric
    boundaries, tags), anything deliberately left alone, and the two follow-ups —
    `uv run discover` for the term and rule changes to take effect, and
-   `/rescore --vertical <name>` for the weight and rubric changes to reach rows
+   `/score --all --vertical <name>` for the weight and rubric changes to reach rows
    already scored.

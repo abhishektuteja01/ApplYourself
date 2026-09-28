@@ -73,63 +73,23 @@ class TestFixtureHappyPath:
             assert (REPO_ROOT / v.resume_file).is_file(), v.resume_file
 
 
-class TestByteParityAnchors:
-    """Config strings must reach the dataclass verbatim — these land in
-    scored.parquet rows, so any mangling here drifts scored output."""
+class TestLaneRules:
+    """/score's per-lane rules reach the dataclass as configured."""
 
-    def test_scored_by_stamps(self, cfg):
-        assert (cfg.verticals["example_primary"].disqualifier_scored_by
-                == "rubric:example-primary-jd-years-disqualifier")
-        assert (cfg.verticals["example_secondary"].disqualifier_scored_by
-                == "rubric:example-secondary-jd-disqualifier")
-
-    def test_phrases(self, cfg):
-        """Phrase lists are additive over time, so anchor by membership for
-        the vertical whose list grows; pin the short one exactly."""
-        assert set(cfg.verticals["example_secondary"].disqualifier_phrases) >= {
-            "phd required",
-            "ph.d. required",
-            "doctorate required",
-            "sprocket charter required",
-            "sprocket certification required",
-        }
-        assert cfg.verticals["example_primary"].disqualifier_phrases == (
+    def test_drop_phrases(self, cfg):
+        assert cfg.verticals["example_primary"].drop_phrases == (
             "rival widget suite",
             "legacy gizmo stack",
             "widget payroll module",
             "solution architect",
         )
-        assert cfg.verticals["example_primary"].reasoning_phrase.startswith(
-            "Auto-skipped: JD contains an example_primary disqualifier phrase"
-        )
+        assert "phd required" in cfg.verticals["example_secondary"].drop_phrases
 
-    def test_max_years(self, cfg):
-        assert cfg.verticals["example_primary"].disqualifier_max_years == 4
-        assert cfg.verticals["example_secondary"].disqualifier_max_years == 4
+    def test_years_table_sorted_by_years(self, cfg):
+        assert cfg.verticals["example_primary"].years == {3: 14, 4: 10}
 
-    def test_out_of_lane_reasoning_verbatim(self, cfg):
-        assert cfg.out_of_lane_reasoning == (
-            "Out-of-lane: title contains no in-lane keyword, so title_match=0 "
-            "and the row cannot reach the fit>=50 shortlist."
-        )
-
-    def test_secondary_phrase_reasoning_verbatim(self, cfg):
-        assert cfg.verticals["example_secondary"].reasoning_phrase == (
-            "Auto-skipped: JD contains an example_secondary disqualifier phrase "
-            "(credential requirement, legacy ledger, or vendor-risk stack)."
-        )
-
-    def test_secondary_years_reasoning_verbatim(self, cfg):
-        assert cfg.verticals["example_secondary"].reasoning_years == (
-            "Auto-skipped: JD requires more years of experience than this "
-            "vertical's max_years."
-        )
-
-    def test_primary_years_reasoning_verbatim(self, cfg):
-        assert cfg.verticals["example_primary"].reasoning_years == (
-            "Auto-skipped: JD requires more years of experience than this "
-            "vertical's max_years."
-        )
+    def test_skill_weights_kept_as_is(self, cfg):
+        assert cfg.verticals["example_primary"].skill_weights["widgets"]["widget_assembly"] == 10
 
 
 class TestValidation:
@@ -185,55 +145,24 @@ class TestValidation:
         with pytest.raises(ValueError, match=key):
             _write_and_load(tmp_path, data)
 
-    def test_phrases_without_reasoning_phrase(self, tmp_path):
+    def test_old_disqualifier_block_names_its_replacement(self, tmp_path):
         data = _load_raw()
-        del data["verticals"]["example_secondary"]["disqualifier"]["reasoning_phrase"]
-        with pytest.raises(ValueError, match="reasoning_phrase"):
+        data["verticals"]["example_primary"]["disqualifier"] = {"max_years": 4}
+        with pytest.raises(ValueError, match="drop_phrases"):
             _write_and_load(tmp_path, data)
 
-    def test_title_phrases_without_reasoning_title(self, tmp_path):
+    def test_out_of_lane_block_rejected(self, tmp_path):
         data = _load_raw()
-        del data["verticals"]["example_primary"]["disqualifier"]["reasoning_title"]
-        with pytest.raises(ValueError, match="reasoning_title"):
+        data["out_of_lane"] = {"reasoning": "x"}
+        with pytest.raises(ValueError, match="out_of_lane"):
             _write_and_load(tmp_path, data)
 
-    def test_title_phrases_optional(self, tmp_path):
+    @pytest.mark.parametrize("years", [{"3": 14}, {3: 25}, {3: -1}, [3, 4]])
+    def test_bad_years_table(self, tmp_path, years):
         data = _load_raw()
-        del data["verticals"]["example_primary"]["disqualifier"]["title_phrases"]
-        del data["verticals"]["example_primary"]["disqualifier"]["reasoning_title"]
-        cfg = _write_and_load(tmp_path, data)
-        assert cfg.verticals["example_primary"].disqualifier_title_phrases == ()
-        assert cfg.verticals["example_primary"].reasoning_title is None
-
-    def test_title_phrases_parsed(self, cfg):
-        assert set(cfg.verticals["example_primary"].disqualifier_title_phrases) >= {
-            "senior",
-            "manager",
-            "director",
-            "principal",
-            "lead",
-            "architect",
-            "head of",
-            "vice president",
-            "buyer",
-            "sourcing",
-            "procurement",
-            "engineer",
-        }
-        assert cfg.verticals["example_primary"].reasoning_title.startswith(
-            "Auto-skipped: title matches an example_primary title-disqualifier phrase"
-        )
-        assert set(cfg.verticals["example_secondary"].disqualifier_title_phrases) >= {
-            "quality",
-            "clinical",
-            "privacy",
-            "automation",
-            "operations",
-            "nurse",
-        }
-        assert cfg.verticals["example_secondary"].reasoning_title.startswith(
-            "Auto-skipped: title matches an example_secondary title-disqualifier phrase"
-        )
+        data["verticals"]["example_primary"]["years"] = years
+        with pytest.raises(ValueError, match="years"):
+            _write_and_load(tmp_path, data)
 
 
 class TestExampleTemplate:

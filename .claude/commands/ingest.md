@@ -31,9 +31,7 @@ cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; e
 test -n "$2" || { echo "ERROR: /ingest requires <url> <vertical>."; exit 1; }
 uv run verticals-check || exit 1
 test -f profile/scoring_rubric.md || { echo "ERROR: profile/scoring_rubric.md missing -- score-judge reads it."; exit 1; }
-# score_cli dump clears staging unconditionally, so a concurrent /score would
-# lose its judged batches.
-test -z "$(ls -A jobs/scored.staging 2>/dev/null)" || { echo "ERROR: jobs/scored.staging is non-empty -- a /score is in flight. Re-run /ingest after it finishes."; exit 1; }
+test ! -f jobs/scored.staging/run.json || { echo "ERROR: a /score run is open. Finish it with /score, then re-run /ingest."; exit 1; }
 # Step 2 writes into jobs/raw/ and rebuilds clean.parquet + the seen ledger, so
 # a discovery run must not be mid-flight. The bracketed letters keep the pattern
 # from matching this command line itself.
@@ -89,52 +87,24 @@ merge recovers.
 
 ## Step 3 — score that one row
 
-```bash
-uv run python -m src.score_cli dump --job-id <job_id> --no-prescreen
-```
-
-`--no-prescreen` sends a deliberately chosen role to a judge instead of
-auto-skipping it, so it gets real subscores and `keywords_to_mirror`. Read
-`rows_to_score=` from the output:
-
-- `0` → the row is either already scored or absent from `clean.parquet`; the
-  dump cannot tell you which. Confirm before going on:
-
-  ```bash
-  uv run python -c "
-  import pandas as pd, sys
-  from pathlib import Path
-  p = Path('jobs/scored.parquet')
-  print(p.exists() and sys.argv[1] in set(pd.read_parquet(p)['job_id']))
-  " <job_id>
-  ```
-
-  `True` → skip to step 4 (a re-tailor becomes `_v2`). Do **not** spawn a judge;
-  the range would not exist. `False` → stop; the `job_id` is in neither file.
-- `1` → continue:
+Already scored? Then skip to step 4 (a re-tailor becomes `_v2`):
 
 ```bash
-uv run python -m src.score_cli split
+uv run python -c "
+import pandas as pd, sys
+from pathlib import Path
+p = Path('jobs/scored.parquet')
+print(p.exists() and sys.argv[1] in set(pd.read_parquet(p)['job_id']))
+" <job_id>
 ```
 
-`split` prints one `<vertical>=<n>` pair per lane. Exactly one must be `1`, and
-it must be step 2's vertical — if some other lane holds the row, that lane is
-the truth; judge it there. Spawn one Agent with
-`subagent_type: score-judge`, prompt exactly — no other content:
-`--range 1-1 --vertical <that vertical>`
-
-```bash
-uv run python -m src.score_cli check-coverage
-uv run python -m src.score_cli merge --no-prune
-```
-
-- `check-coverage` exit 1 → delete the batch, re-spawn once, re-check. Still
-  failing → stop before tailoring.
-- `merge` `ValueError: Cannot merge` → fix the named row in the named batch
-  file in place, re-run merge. Never re-spawn for a row fix.
-- `--no-prune` is required: step 2 rebuilt `clean.parquet` over the 14-day raw
-  window, so pruning here would delete every aged-out row from
-  `scored.parquet`.
+`False` → `uv run score start --job-id <job_id>`. `--job-id` skips the drops,
+so a deliberately chosen role gets real subscores and `keywords_to_mirror`.
+- Exit 1 → report the error, stop.
+- `judge=0` → the `job_id` is not in `clean.parquet`; stop.
+- One `judge ...` line → spawn one `score-judge` agent whose prompt is the
+  rest of that line, then `uv run score finish`. Exit 1 → spawn its `judge`
+  line once, `finish` again; still exit 1 → stop before tailoring.
 
 ## Step 4 — resume
 

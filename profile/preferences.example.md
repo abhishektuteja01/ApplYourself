@@ -1,18 +1,16 @@
 # TEMPLATE — copy to profile/preferences.md and edit.
 #
-# Read by /score (every judge call), /tailor and /apply. Plain guidance, not a
-# strict filter: the deterministic filters live in profile/verticals.yaml
-# (disqualifiers) and profile/discovery.yaml (location allowlist). The one
-# exception is the Work authorization section below, which /apply reads
+# Read by /tailor and /apply. Plain guidance, not a strict filter. /score
+# does not read this file: its rules live in profile/scoring.yaml
+# (sponsorship_need, visa_free_countries, ineligible), profile/verticals.yaml
+# (drop_phrases, years) and profile/discovery.yaml (countries per lane). The
+# one exception is the Work authorization section below, which /apply reads
 # strictly.
-#
-# Keep it short. Every line here is in the packet for every row scored.
 
 ## Work authorization
 
-Keep ONE of these three and delete the rest. This is the line
-profile/scoring_rubric.md's false-positive guard defers to, so it has to be
-unambiguous.
+Keep ONE of these three and delete the rest. Match it in
+profile/scoring.yaml's `sponsorship_need` (never / now / later).
 
 /apply enforces that. Before it fills a form it cross-checks
 profile/application_answers.yaml's `work_authorization.status` against this
@@ -29,13 +27,22 @@ under your name on a legal point, so there is no default and no guess.
   Authorized now for <N> months; sponsorship needed after that. Hard exclude:
   roles requiring citizenship or a clearance → `ineligible`.
 
+## Work countries
+
+Optional; delete it if you search only at home.
+
+- No visa needed: <countries> (also `visa_free_countries` in
+  profile/scoring.yaml).
+- Visa needed: <countries>. A role there counts as `sponsors` only when the JD
+  offers sponsorship.
+
 ## Preferences
 
 - Open to every vertical in `profile/verticals.yaml`; each is scored on its own
   rubric and ranked only within its own shortlist section.
 - Location: <any US location, onsite/hybrid/remote | list your metros | remote
-  only>. Narrowing here is guidance for judges; the hard geographic filter is
-  `location_allowlist` in `profile/discovery.yaml`.
+  only>. The hard geographic filter is `location_allowlist` in
+  `profile/discovery.yaml`.
 - Compensation: <no floor | a floor, and whether it is firm>.
 - Deal-breakers: <list them, or "none beyond the authorization gate">. Anything
   you would refuse regardless of fit belongs here.

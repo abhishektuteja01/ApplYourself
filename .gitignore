@@ -24,7 +24,6 @@ profile/*
 # text beyond its approved set or picks up an author in its core properties.
 !profile/*.example.docx
 !profile/de_ai_rules.yaml
-!profile/sponsorship_rules.yaml
 !profile/verticals/
 profile/verticals/*
 !profile/verticals/example_primary/

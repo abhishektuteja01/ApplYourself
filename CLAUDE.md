@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A personal, human-gated job-search pipeline, sponsorship-aware throughout (the
-scoring pre-screen and the outreach disclosure rules both know about it). It scrapes
+scoring filter and the outreach disclosure rules both know about it). It scrapes
 jobs, scores them against a profile, and generates tailored application material.
 Outreach is always gated on the user. Application submission is automatable via
 `/apply`, which submits only when every required field resolves — from config, or
@@ -51,7 +51,7 @@ fixture (`git config core.hooksPath .githooks`, once per clone).
 |---|-------|---------|------------------------|
 | 1 | Discovery | `/discover` | `src/discovery/` — inbox clips → JobSpy → ATS boards + Workday, then `run_report.py` reads the report back |
 | 2 | Cleaning | (always runs after discovery) | `src/discovery/cleaning.py` |
-| 3 | Scoring | `/score`, `/rescore` | `prescreen.py`, `scoring_io.py`, `shortlist.py`, `score_cli.py` |
+| 3 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
 | 4 | Application material | `/tailor`, `/cover-letter`, `/outreach` | `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
 | 5 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
 | 6 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
@@ -102,15 +102,17 @@ uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
                                       # [--with-apply] [--with-optional] [--force] [--dry-run]
                                       # /onboarding's setup chores: copy every
                                       # profile/*.example.* to its real name, strip the
-                                      # example lanes + set default_vertical, reconcile
-                                      # sponsorship_rules.yaml, probe libpostal.
+                                      # example lanes + set default_vertical, set
+                                      # sponsorship_need in scoring.yaml, probe libpostal.
                                       # Skips existing files unless --force
 uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]
                                       # one JD -> jobs/raw + clean rebuild
                                       # --vertical: lane (/ingest always passes it)
                                       # --company/--title: override a bad parse
                                       # --dry-run: print text only
-uv run score <subcommand>             # score_cli plumbing (dump/split/merge/...)
+uv run score start [--all] [--vertical V] [--job-id ID]
+                                      # drop by hard rules, stage judge slices
+uv run score finish                   # check answers, merge, prune, write shortlist
 uv run track <job_id> <state> [--note ...]   # state transition
 uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
 uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
@@ -161,10 +163,10 @@ uv run python scripts/scrub_example_templates.py  # strip Word metadata from the
 The user-facing workflow is the slash commands (`/onboarding`, `/discover`, `/score`,
 `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 `/track`, `/standup`,
-`/new-vertical`, `/tune-vertical`, `/suggest-synonyms`, `/rescore`, `/no_ai_slop`,
+`/new-vertical`, `/tune-vertical`, `/suggest-synonyms`, `/no_ai_slop`,
 `/ingest`, `/interview`), defined in
 `.claude/commands/*.md`. The judge is a subagent, not a command:
-`.claude/agents/score-judge.md`, spawned by `/score`, `/rescore` and `/ingest`,
+`.claude/agents/score-judge.md`, spawned by `/score` and `/ingest`,
 never invoked directly. `/discover` is the scrape plus a digest: `discovery-check`
 preflight, `uv run discover` with the user's overrides, then `discover-digest`
 (`src/discovery/run_report.py`) parses `jobs/runs/*.md` and the session renders
@@ -176,7 +178,7 @@ lane that already exists, run against real scored rows. `/company-answers <job_i
 role's `company_answers.md` into its `/tailor` output dir; `/apply` calls it
 directly for roles that need no full cover letter. `/ingest <url> <vertical> [resume]
 [cover-letter]` is the single-URL fast path: it chains `ingest-url` → a
-one-row `score dump --job-id --no-prescreen` + one judge → `/tailor` →
+one-row `score start --job-id` + one judge + `score finish` → `/tailor` →
 `/cover-letter`, spawning the existing commands rather than reimplementing
 them, and stops at `saved` because `/track` alone writes transitions.
 `/interview <job_id | vertical>` is the prep half: it drills the user on the claims

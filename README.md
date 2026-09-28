@@ -47,7 +47,7 @@ discovered and scored like anything else, and never submitted to.
 > `apply run` both leave files on the employer's server. They just don't press
 > the button.
 
-It is sponsorship-aware throughout. The scoring pre-screen skips postings that
+It is sponsorship-aware throughout. The scoring filter drops postings that
 state a hard ineligibility, and the outreach drafts have per-channel rules for
 when to raise work authorization.
 
@@ -60,7 +60,7 @@ anywhere, look at what happened, and pick up later.
 flowchart TD
     A["<b>1. discover</b><br/>inbox clips, JobSpy,<br/>ATS boards, Workday"]
     B["<b>2. clean</b><br/>normalize, drop, dedupe,<br/>assign job_id"]
-    C["<b>3. score</b><br/>pre-screen, then<br/>parallel judge agents"]
+    C["<b>3. score</b><br/>hard-rule filter, then<br/>parallel judge agents"]
     D["<b>4. tailor</b><br/>resume, cover letter,<br/>outreach, audit trail"]
     E["<b>5. apply</b><br/>read the form,<br/>fill it, maybe submit"]
     F["<b>6. track</b><br/>pipeline/&lt;job_id&gt;/state.yaml<br/>11 states, one file per role"]
@@ -120,7 +120,7 @@ compared to a score in another.
 
 A **vertical** is a job lane, one distinct kind of role you're pursuing. Say
 you're open to two quite different jobs. Each lane gets its own search terms,
-title classifier rules, disqualifiers, scoring rubric, tailoring defaults, and
+title classifier rules, drop rules, scoring rubric, tailoring defaults, and
 the resume it gets judged against. A posting is classified into exactly one lane
 at fetch time, scored against that lane's rubric, and tailored from that lane's
 resume.
@@ -146,8 +146,9 @@ plus the resume that block's required `resume_file` points at.
 - Mapping order under `verticals:` sets shortlist section order. First is primary.
 - `classifier_rules` order is the ambiguity policy: first match wins. One lane
   may own several rules at different priorities.
-- `disqualifier` supports title phrases, JD phrases, and a `max_years` ceiling.
-  Priority when several hit: title, then phrase, then years.
+- `drop_phrases` drops a row whose JD holds one (whole words). `years` maps
+  required years to a seniority cap, and a JD asking more than the largest key
+  is dropped. Level words in titles go in `title_exclude_terms`.
 - `title_include_terms` is an optional include-gate for when a board fuzzy-matches
   your search terms into hundreds of off-lane titles a blocklist can't keep up
   with. Off by default.
@@ -226,8 +227,8 @@ Already set up and want a health check? `/onboarding audit` reports what's
 missing or invalid and changes nothing. Prefer to do it by hand?
 `uv run onboard-scaffold --vertical <lane> --work-auth <status>` does the
 mechanical half — every `profile/*.example.*` copied to its real name, the
-example lanes stripped out of `verticals.yaml`, `sponsorship_rules.yaml`
-reconciled — and leaves the writing to you. It leaves `verticals.yaml`
+example lanes stripped out of `verticals.yaml`, `sponsorship_need` set in
+`scoring.yaml` — and leaves the writing to you. It leaves `verticals.yaml`
 without a lane, so it won't load until `/new-vertical <lane>` writes one. See
 [What only you can supply](#what-only-you-can-supply).
 
@@ -343,8 +344,7 @@ in `.claude/commands/`, not in `src/`.
 |---|---|---|
 | `/onboarding` | Five-step resumable setup: eight questions, ~21 minutes, real scored jobs at step 4. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
 | `/discover` | Run the nightly scrape, then read its own run report back: a ≤10-line health digest of tonight's run against that source's own 7-day median. Read-only on every report. | `jobs/` only |
-| `/score` | Score new rows and regenerate today's shortlist. Fans out one judge agent per lane range. Takes no arguments. | `jobs/scored.parquet`, `shortlist/<date>.md` |
-| `/rescore` | Throw away every judgment and re-judge the whole 14-day window. Explicit only. | same, after deleting `jobs/scored.parquet` |
+| `/score [--all] [--vertical V]` | Score new rows and regenerate today's shortlist. Fans out judge agents over staged slices. `--all` re-judges the whole window; `--vertical` limits it to one lane. | `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `/tailor <job_id>` | One-page ATS-clean tailored resume, plus the audit trail behind it. | `applications/<vertical>/<dir>/`: `_Resume.docx`, `_Resume.pdf`, `resume.md`, `trace.md`, `keywords_to_mirror.md`, `jd_snapshot.md`, `lint_report.md` |
 | `/cover-letter <job_id>` | One-page letter into that role's latest `/tailor` dir. | `_Cover_Letter.docx`, `_Cover_Letter.pdf` |
 | `/company-answers <job_id>` | Research the company and draft its answer sheet. No letter. | `company_answers.md` in the `/tailor` dir |
@@ -355,12 +355,12 @@ in `.claude/commands/`, not in `src/`.
 | `/standup` | Rebuild the whole-pipeline view. Read-only on state. | `pipeline.md` |
 | `/ingest <url> <vertical> [resume] [cover-letter]` | Single-URL fast path: ingest, score one row, tailor, letter. Stops before applying. | everything the chained commands write |
 | `/new-vertical <name>` | Quick-add a lane as pure config: the loader's minimum, one confirm-or-edit. | `profile/verticals.yaml` block + `profile/verticals/<name>/` |
-| `/tune-vertical <name>` | Deep tuning pass on a lane that already exists, against rows you've seen: search terms, `skill_weights`, the title gate, classifier collisions, disqualifiers, rubric tiers, `vertical_lean`. | the same two, edited in place |
+| `/tune-vertical <name>` | Deep tuning pass on a lane that already exists, against rows you've seen: search terms, `skill_weights`, the title gate, classifier collisions, drop rules, rubric tiers, `vertical_lean`. | the same two, edited in place |
 | `/suggest-synonyms` | Three-track audit of your bullets and skills against real shortlist keywords. Proposes, never edits. | `profile/synonyms_draft_<date>.md` |
 | `/no_ai_slop` | Editor pass: sharpen a draft, or name its AI-slop patterns without rewriting. | nothing; returns the edit in conversation |
 
 The judge is a subagent, not a command: `.claude/agents/score-judge.md`, spawned
-per row-range by `/score`, `/rescore` and `/ingest`. Never invoke it directly.
+per slice group by `/score` and `/ingest`. Never invoke it directly.
 
 ### Deterministic CLIs
 
@@ -373,8 +373,8 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 | `uv run verticals-check` | Validate config plus every per-lane rubric, tailoring file and resume. | nothing |
 | `uv run discovery-check` | Resolve and validate the discovery config: prints the effective location allowlist, the JobSpy search locations and the enabled sources, exits 1 on any problem. `discover` runs it as preflight. | nothing |
 | `uv run discover-digest [--json] [--run-id ID] [--window N]` | Parse the recent `jobs/runs/*.md` reports and print the trend facts `/discover` renders: per-source rows against that source's own 7-day median, error-rate delta, zero streaks, and the crashed, skipped or truncated lanes. Reader only, stdlib only. | nothing |
-| `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, reconcile `sponsorship_rules.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
-| `uv run score <subcommand>` | `/score`'s plumbing: `prepare`, `dump`, `split`, `ranges`, `check-coverage`, `merge`, `render`. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
+| `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set `sponsorship_need` in `scoring.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
+| `uv run score start [--all] [--vertical V] [--job-id ID]` / `uv run score finish` | `/score`'s plumbing: `start` drops rows by the hard rules and stages judge slices; `finish` checks the answers, merges, prunes and writes the shortlist. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
 | `uv run tailor-prep <job_id>` | `/tailor`'s front matter: prereqs, row load, output dir. Also `identity` and `snapshot`. | `/tmp/tailor_<job_id>_row.json`, the `applications/` output dir |
 | `uv run profile-extract <file>` | Dump a `.docx` or `.md` resume's text. Refuses `.pdf`. | nothing; prints to stdout |
@@ -435,7 +435,7 @@ experience. Filling them in is the work.
 | `bullets.md` | Canonical resume bullets. **The source of truth for every generated document.** `/tailor` may reword within the synonyms you allow, never beyond them. |
 | `skills_master.md` | Your skills inventory. The Skills section is assembled from here, not written fresh. |
 | `preferences.md` | Work authorization, location, comp, deal-breakers. |
-| `scoring_rubric.md` | Shared scoring schema and sponsorship precedence, layered under each lane's own `rubric.md`. Ships working defaults. |
+| `scoring_rubric.md` | Shared judging guide (the four axes, the sponsorship label), layered under each lane's own `rubric.md`. Ships working defaults. |
 | `voice_samples.md` | Messages you actually sent, so outreach sounds like you. `/outreach` **refuses to run** without it, and there is no generic-voice fallback. |
 | `application_answers.yaml` | The standing answers `/apply` fills forms from: contact details, work authorization, demographics, links. A field it can't resolve here parks the role instead of guessing. |
 | `verticals.yaml` | Your lanes. See [Lanes](#lanes-verticals). |
@@ -453,8 +453,9 @@ not personal data:
   to the same linting as generated prose. Once you've read your bullets for
   diction yourself, set it `true` to exempt them. `/onboarding` leaves it `false`
   unless you ask.
-- `profile/sponsorship_rules.yaml` has a `false_positive_guard` that assumes
-  you're already authorized to work. Remove those phrases if you need sponsorship.
+- `profile/scoring.yaml` holds the scoring policy: `sponsorship_need`
+  (never / later / now), `visa_free_countries`, the `ineligible` drop list,
+  the action thresholds and the shortlist size.
 
 The `profile/` files you fill in are **gitignored user data**. Nothing you write
 into them is ever committed. What *is* tracked there is only scaffolding: the
@@ -498,7 +499,7 @@ through.
 ```
 jobs/clean.parquet              the only discovery output downstream reads
 jobs/scored.parquet             scores, one row per judged posting
-jobs/scored.staging/            per-lane unscored shards and judge batch files
+jobs/scored.staging/            per-lane packets, judge slices and answer files
 jobs/raw/<run_id>_<source>.parquet   one shard per source per run
 jobs/runs/<run_id>.md           the run report, including every dedupe casualty
 jobs/seen.parquet               retention ledger (60 / 15 day windows)
@@ -540,9 +541,9 @@ without writing it down, in an artifact stored next to the resume it produced.
 And the `src/` half, given the same inputs and the same seen-ledger, does the
 same thing every time.
 
-A corollary: `src/` is vertical-agnostic and company-agnostic. `DEFAULT_MODEL` in
-`score_cli.py` is a bare string printed for a judge subagent to use. No client
-is ever constructed.
+A corollary: `src/` is vertical-agnostic and company-agnostic. The judge's model
+name is read from `.claude/agents/score-judge.md` only to stamp `scored_by_model`.
+No client is ever constructed.
 
 `.claude/hooks/r7_no_llm_in_src.sh` enforces this at edit time.
 
@@ -597,35 +598,41 @@ orphan every one of them. Do not add url or jd_text to the hash.
 <details>
 <summary><b>Scoring: what gets skipped before a judge sees it</b></summary>
 
-`/score` runs the deterministic `src.score_cli` subcommands in order
-(`prepare`, then judges, then `check-coverage`, `merge`, `render`) and fans out
-parallel judge agents over per-lane row ranges. It never judges a row itself, and
-its own context stays counts-only.
+`/score` runs `uv run score start`, fans out parallel judge agents over the
+slices it stages, then runs `uv run score finish`. It never judges a row itself,
+and its own context stays counts-only.
 
-Three deterministic pre-screens auto-skip rows *before* any judge is spawned:
+`score start` drops rows *before* any judge is spawned, stamping them
+`scored_by_model: filter:<code>`:
 
-1. **Out-of-lane titles.** No lane matched, so fit score 0.
-2. **Hard-ineligible sponsorship phrases**, matched against
-   `profile/sponsorship_rules.yaml`. These are pre-*labeled* `ineligible`, not
-   skipped.
-3. **Per-lane disqualifiers**: title phrases, JD phrases, or a stated minimum
-   above the lane's `max_years` ceiling. The years regex reads the *lower* bound,
-   so "3-6 years" counts as 3, and requires the figure to sit within a few words
-   of "experience".
+1. **`no-lane`**: the title matched no lane.
+2. **`ineligible`**: the JD holds a phrase from `profile/scoring.yaml`
+   `ineligible` (whole words; "U.S." reads as "us"). With
+   `sponsorship_need: now`, the `no_sponsorship` phrases drop too.
+3. **`phrase`**: the JD holds one of the lane's `drop_phrases`.
+4. **`years`**: the JD asks more years than the lane's largest `years` key.
+   The years regex reads the *lower* bound, so "3-6 years" counts as 3.
 
 Degree requirements are deliberately left to the judge.
 
-A judge reads only its assigned line range of
-`jobs/scored.staging/unscored_<lane>.jsonl` and writes only
-`batch_<lane>_NNN.json`, so gaps and collisions are impossible by construction.
-It never merges, never touches `scored.parquet`, and reports back only counts,
-with no JD content and no scores.
+A judge reads one packet per lane (shared rubric, lane rubric, resume,
+`skill_weights`) plus its slices, and writes one answer file per slice. It
+never merges, never touches `scored.parquet`.
 
-Score axes are capped `title 30`, `skills 30`, `seniority 20`, `domain 20`, so
-the subscores always sum to 100 and the total is never written independently.
+The judge reads facts and judges fit. It writes four subscores capped
+`title 30`, `skills 30`, `seniority 20`, `domain 20`; the years the JD
+requires; the country; what the JD says about sponsorship (`offers`,
+`no_sponsorship`, `no_future_sponsorship`, `no_opt_support`, `status_bar`,
+`right_to_work`,
+`silent`), listing every statement the JD makes, with literal quotes; keywords and a short reason. `score finish`
+applies every rule to those facts: the sponsorship label from
+`sponsorship_need` and `visa_free_countries`, the lane's years limit and
+seniority cap, discovery's countries per lane, the vague-JD skills cap, the
+total and the action. A judge may only lower the action.
 
-`/rescore` is explicit-only. Run it after editing your bullets, a rubric, your
-preferences, the sponsorship rules, or on a model upgrade.
+`/score --all` re-judges the whole window; `/score --all --vertical <name>`
+re-judges one lane. Run it after editing your bullets, a rubric, your
+preferences, `scoring.yaml`, or on a model upgrade.
 
 </details>
 

@@ -4,8 +4,8 @@
 # Mirrored byte-for-byte at tests/fixtures/verticals.yaml and
 # tests/discovery/fixtures/verticals.yaml; TestFixtureMirrors enforces it.
 # Shaped after profile/verticals.example.yaml and enriched so every schema
-# branch is covered: include-gate on, strong-keep override, phrase/title/years
-# disqualifiers, regex + literal + compound classifier rules, and one vertical
+# branch is covered: include-gate on, strong-keep override, drop_phrases and
+# years, regex + literal + compound classifier rules, and one vertical
 # owning rules at two priorities.
 #
 # Real-config coverage lives in tests/test_real_config_drift.py, which runs
@@ -19,7 +19,7 @@ verticals:
   example_primary:
     display_name: Widget Engineering
     resume_file: profile/verticals/example_primary/resume_example_primary.md
-    # No term contains "Engineer" — "engineer" is a title disqualifier here.
+    # No term contains "Engineer" — "engineer" is a title exclude term here.
     search_terms:
       - Widget Functional Consultant
       - Widget Platform Analyst
@@ -41,42 +41,29 @@ verticals:
       - clinical
       - nurse
       - rival doohickey
+      - manager
+      - director
+      - architect
+      - vice president
+      - buyer
+      - sourcing
+      - procurement
+      - engineer
     skill_weights:
       widgets:
         widget_assembly: 10
         gizmo_calibration: 7
       domain:
         widget_supply_chain: 9
-    disqualifier:
-      max_years: 4
-      phrases:
-        - rival widget suite
-        - legacy gizmo stack
-        - widget payroll module
-        - solution architect
-      title_phrases:
-        - senior
-        - manager
-        - director
-        - principal
-        - lead
-        - architect
-        - head of
-        - vice president
-        - buyer
-        - sourcing
-        - procurement
-        - engineer
-      scored_by: "rubric:example-primary-jd-years-disqualifier"
-      reasoning_phrase: >-
-        Auto-skipped: JD contains an example_primary disqualifier phrase
-        (competing vendor stack or architect-level pool).
-      reasoning_title: >-
-        Auto-skipped: title matches an example_primary title-disqualifier
-        phrase (seniority or adjacent family).
-      reasoning_years: >-
-        Auto-skipped: JD requires more years of experience than this
-        vertical's max_years.
+    # Dropped before judging when the JD holds one (whole words).
+    drop_phrases:
+      - rival widget suite
+      - legacy gizmo stack
+      - widget payroll module
+      - solution architect
+    # Required years -> seniority cap; a JD asking more than the
+    # largest key is dropped.
+    years: {3: 14, 4: 10}
 
   example_secondary:
     display_name: Sprocket Compliance
@@ -103,6 +90,10 @@ verticals:
       - clinical
       - privacy
       - nurse
+      - automation
+      - operations
+      - data analyst
+      - developer
     title_strong_keep_terms:
       - sprocket risk management
     skill_weights:
@@ -111,35 +102,18 @@ verticals:
         sprocket_governance: 8
       sprocket_quant:
         sprocket_backtesting: 6
-    disqualifier:
-      max_years: 4
-      phrases:
-        - phd required
-        - ph.d. required
-        - doctorate required
-        - sprocket charter required
-        - sprocket certification required
-        - legacy sprocket ledger
-        - vendor sprocket risk
-      title_phrases:
-        - quality
-        - clinical
-        - privacy
-        - automation
-        - operations
-        - nurse
-        - data analyst
-        - developer
-      scored_by: "rubric:example-secondary-jd-disqualifier"
-      reasoning_phrase: >-
-        Auto-skipped: JD contains an example_secondary disqualifier phrase
-        (credential requirement, legacy ledger, or vendor-risk stack).
-      reasoning_title: >-
-        Auto-skipped: title matches an example_secondary title-disqualifier
-        phrase (adjacent validation family or generic analyst/developer).
-      reasoning_years: >-
-        Auto-skipped: JD requires more years of experience than this
-        vertical's max_years.
+    # Dropped before judging when the JD holds one (whole words).
+    drop_phrases:
+      - phd required
+      - ph.d. required
+      - doctorate required
+      - sprocket charter required
+      - sprocket certification required
+      - legacy sprocket ledger
+      - vendor sprocket risk
+    # Required years -> seniority cap; a JD asking more than the
+    # largest key is dropped.
+    years: {3: 14, 4: 10}
 
   example_tertiary:
     display_name: Cog Engineering
@@ -163,6 +137,8 @@ verticals:
       - distinguished
       - research scientist
       - cog learning
+      - scientist
+      - manager
     title_strong_keep_terms:
       - cog learning platform
       - cog learning agents
@@ -170,32 +146,17 @@ verticals:
       cog_stack:
         cog_agents: 9
         cog_platform: 8
-    disqualifier:
-      max_years: 4
-      phrases:
-        - phd required
-        - ph.d. required
-        - doctorate required
-        - autonomous cogs
-        - cog firmware
-      title_phrases:
-        - scientist
-        - manager
-      scored_by: "rubric:example-tertiary-jd-disqualifier"
-      reasoning_phrase: >-
-        Auto-skipped: JD contains an example_tertiary disqualifier phrase
-        (doctorate requirement or embedded/firmware pool).
-      reasoning_title: >-
-        Auto-skipped: title matches an example_tertiary title-disqualifier
-        phrase (research or people-management pool).
-      reasoning_years: >-
-        Auto-skipped: JD requires more years of experience than this
-        vertical's max_years.
+    # Dropped before judging when the JD holds one (whole words).
+    drop_phrases:
+      - phd required
+      - ph.d. required
+      - doctorate required
+      - autonomous cogs
+      - cog firmware
+    # Required years -> seniority cap; a JD asking more than the
+    # largest key is dropped.
+    years: {3: 14, 4: 10}
 
-out_of_lane:
-  reasoning: >-
-    Out-of-lane: title contains no in-lane keyword, so title_match=0 and the
-    row cannot reach the fit>=50 shortlist.
 
 # Ordered — first match wins. example_primary owns two rules: a strong signal
 # above everything, and a generic catch-all below everything (ambiguity

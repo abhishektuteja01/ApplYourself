@@ -1,62 +1,29 @@
 ---
 name: score-judge
-description: Judge one range of unscored job rows against a vertical's rubric. Spawned per range by /score, /rescore and /ingest. Never invoked directly by the user.
-tools: Bash, Read, Write
+description: Judge a few staged slices of job rows for /score. Spawned by /score and /ingest with slice file paths. Never invoked directly by the user.
+tools: Read, Write
 model: sonnet
 effort: medium
 ---
 
-# Judge slice
+# Judge slices
 
-You are spawned with a range and a vertical, e.g. `--range 51-100 --vertical example_primary`.
+Your prompt is one or more slice file paths. The top of each slice names
+its packet and the file to write.
 
-Missing `--vertical`, missing `unscored_<vertical>.jsonl`, or range's
-lines don't exist → stop, report, don't improvise.
-Never dump, merge, or touch `scored.parquet`/shortlist. Never read rows
-outside your range or other judges' batch files. Never pick your own
-batch numbers.
+1. Read the packet once, in full. It is your rubric, resume and skill weights.
+2. For each slice: Read it, judge every role in it, and Write the answer
+   file it names — a JSON array, one object per role:
 
-## Step 1 — load rubric + profile
-
-Read, in full, in order:
-
-- `profile/scoring_rubric.md` — schema, sponsorship precedence, JD
-  quality gate, thresholds, self-check. Apply to every row.
-- `profile/verticals/<vertical>/rubric.md` — this vertical's tiers/caps/
-  self-check only.
-- resume at `profile/verticals.yaml` → `<vertical>.resume_file`
-- `profile/bullets.md`
-- `profile/preferences.md`
-- this vertical's `skill_weights` in `profile/verticals.yaml`
-- `profile/sponsorship_rules.yaml`
-
-## Step 2 — slice your rows
-
-```bash
-sed -n 'A,Bp' jobs/scored.staging/unscored_<vertical>.jsonl
+```json
+{"job_id": "a1b2c3d4", "title": 26, "skills": 22, "seniority": 18, "domain": 12,
+ "years": 3, "country": "United States",
+ "sponsorship": ["no_sponsorship"], "evidence": "we do not sponsor visas",
+ "keywords_to_mirror": ["LLM evals", "RAG", "TypeScript"],
+ "reasoning": "strong agentic fit; thin domain signal"}
 ```
 
-Only these lines. Every row's `vertical` must equal `--vertical`;
-mismatch → stop, report, don't judge it under either rubric.
+   Add `"action": "skip"` or `"manual-review"` only when the packet says to
+   lower a role's action; say why in `reasoning`.
 
-## Step 3 — judge in batches of 10
-
-Batches of 10 (final batch may be short), applying only this vertical's
-rubric. Per batch: JSON array per the rubric schema, run the rubric
-self-check on every row, `Write` to
-`jobs/scored.staging/batch_<vertical>_NNN.json`,
-`NNN = ceil(first_row_number/10)` zero-padded to 3 digits — e.g.
-`--range 51-100` → `batch_<v>_006.json` through `_010.json`. Never write
-elsewhere. Never delete a batch file.
-
-`NNN` is unique per judge only when your range's first row number
-satisfies `first_row_number % 10 == 1` (1, 11, 21, ...). Check that one
-condition and nothing else. Length is never a reason to stop: `1-4`,
-`1-1` and `1-85` are all valid, and a range under 10 rows is just one
-short batch. Stop and report only if the start is off that grid (e.g.
-`4-83`) — never renumber.
-
-## Step 4 — report
-
-Reply with ONLY: range, vertical, rows judged, batch filenames + row
-counts. No JD content, no scores, no reasoning text.
+Read and write only those files. Reply with only the answer files you wrote.

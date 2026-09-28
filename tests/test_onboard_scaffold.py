@@ -32,10 +32,7 @@ verticals:
     resume_file: profile/verticals/{name}/resume.md
     search_terms: [Some Title]
     linkedin_terms: [Some Title]
-    disqualifier:
-      max_years: 4
-      scored_by: "rubric:{name}-jd-years-disqualifier"
-      reasoning_years: "Auto-skipped: JD states an explicit minimum above the cap."
+    years: {{3: 14, 4: 10}}
 classifier_rules:
   - vertical: {name}
     pattern: '.'
@@ -45,10 +42,10 @@ classifier_rules:
 @pytest.fixture
 def prof(tmp_path, monkeypatch) -> Path:
     """A scratch profile/ holding the real templates and the committed
-    sponsorship default."""
+    templates."""
     target = tmp_path / "profile"
     target.mkdir()
-    for src in list(REAL_PROFILE.glob("*.example.*")) + [REAL_PROFILE / "sponsorship_rules.yaml"]:
+    for src in REAL_PROFILE.glob("*.example.*"):
         (target / src.name).write_bytes(src.read_bytes())
     monkeypatch.setattr(scaffold, "PROFILE", target)
     return target
@@ -126,7 +123,7 @@ class TestSafetyContract:
         out = capsys.readouterr().out
         assert "nothing written" in out
         assert "would copy" in out and "would strip" in out
-        assert "would reconcile for needs_now" in out
+        assert "would set sponsorship_need: now" in out
 
     def test_dry_run_with_apply_only_prints_the_subprocesses(self, prof, capsys, monkeypatch):
         def _boom(*a, **k):  # noqa: ANN002
@@ -161,7 +158,6 @@ class TestVerticalsStrip:
     def test_the_kept_keys_are_kept(self, prof):
         data = yaml.safe_load(self._stripped(prof).read_text(encoding="utf-8"))
         assert data["schema_version"] == 1
-        assert data["out_of_lane"]["reasoning"]
         assert data["default_vertical"] == "my_lane"
 
     def test_the_only_thing_missing_is_the_lane_itself(self, prof):
@@ -202,57 +198,30 @@ class TestVerticalsStrip:
 
 class TestWorkAuth:
     @staticmethod
-    def _rules(prof: Path) -> dict:
-        return yaml.safe_load((prof / "sponsorship_rules.yaml").read_text(encoding="utf-8"))
+    def _scoring(prof: Path) -> dict:
+        return yaml.safe_load((prof / "scoring.yaml").read_text(encoding="utf-8"))
 
-    @pytest.mark.parametrize("status", ["citizen", "time_limited"])
-    def test_authorized_now_is_a_no_op(self, prof, status):
-        before = (prof / "sponsorship_rules.yaml").read_text(encoding="utf-8")
+    @pytest.mark.parametrize("status, need", [
+        ("citizen", "never"), ("time_limited", "later"), ("needs_now", "now")])
+    def test_sets_sponsorship_need_and_keeps_the_rest(self, prof, status, need):
+        before = yaml.safe_load((prof / "scoring.example.yaml").read_text(encoding="utf-8"))
         assert run("--vertical", "my_lane", "--work-auth", status) == 0
-        assert (prof / "sponsorship_rules.yaml").read_text(encoding="utf-8") == before
+        after = self._scoring(prof)
+        assert after["sponsorship_need"] == need
+        assert {k: v for k, v in after.items() if k != "sponsorship_need"} == \
+            {k: v for k, v in before.items() if k != "sponsorship_need"}
 
-    def test_needs_now_moves_opt_ok_into_ineligible_and_empties_the_guard(self, prof):
-        before = self._rules(prof)
-        assert before["opt_ok"] and before["false_positive_guard"]
-        assert run("--vertical", "my_lane", "--work-auth", "needs_now") == 0
-        after = self._rules(prof)
-        assert after["opt_ok"] == []
-        assert after["false_positive_guard"] == []
-        assert after["ineligible"] == before["ineligible"] + before["opt_ok"]
-        assert after["hard_ineligible"] == before["hard_ineligible"]
-        assert after["sponsors"] == before["sponsors"]
-
-    def test_needs_now_keeps_the_header_that_explains_the_edit(self, prof):
+    def test_keeps_comments(self, prof):
         run("--vertical", "my_lane", "--work-auth", "needs_now")
-        text = (prof / "sponsorship_rules.yaml").read_text(encoding="utf-8")
-        assert "THESE LISTS ASSUME YOU ARE ALREADY AUTHORIZED TO WORK" in text
+        assert "# Roles you can never take." in (prof / "scoring.yaml").read_text(encoding="utf-8")
 
-    def test_needs_now_is_idempotent(self, prof, capsys):
+    def test_is_idempotent(self, prof, capsys):
         run("--vertical", "my_lane", "--work-auth", "needs_now")
-        once = (prof / "sponsorship_rules.yaml").read_text(encoding="utf-8")
+        once = (prof / "scoring.yaml").read_text(encoding="utf-8")
         capsys.readouterr()
         assert run("--vertical", "my_lane", "--work-auth", "needs_now") == 0
-        assert (prof / "sponsorship_rules.yaml").read_text(encoding="utf-8") == once
-        assert "already reconciled" in capsys.readouterr().out
-
-    def test_no_duplicate_phrase_when_one_is_already_ineligible(self, prof):
-        path = prof / "sponsorship_rules.yaml"
-        path.write_text(
-            path.read_text(encoding="utf-8").replace(
-                'ineligible:\n', 'ineligible:\n  - "no sponsorship"\n', 1),
-            encoding="utf-8")
-        run("--vertical", "my_lane", "--work-auth", "needs_now")
-        ineligible = self._rules(prof)["ineligible"]
-        assert ineligible.count("no sponsorship") == 1
-
-    def test_the_three_choices_match_the_preferences_template(self):
-        """The reconcile hangs on there being exactly one variant that is not
-        authorized to work now."""
-        prefs = (REAL_PROFILE / "preferences.example.md").read_text(encoding="utf-8").lower()
-        assert "citizen / permanent resident" in prefs
-        assert "needs sponsorship now" in prefs
-        assert "time-limited work authorization" in prefs
-        assert set(scaffold.WORK_AUTH_CHOICES) == {"citizen", "needs_now", "time_limited"}
+        assert (prof / "scoring.yaml").read_text(encoding="utf-8") == once
+        assert "already has sponsorship_need: now" in capsys.readouterr().out
 
 
 class TestLibpostalProbe:
