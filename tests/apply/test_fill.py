@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from src import paths
+from src.apply import browser
 from src.apply import fill as F
 from src.apply.fill import FillError, FillResult, fill_plan
 from dataclasses import replace
@@ -930,8 +931,8 @@ class TestDriverGuards:
             F._require_playwright("patchright")
 
     def test_the_profile_dir_is_not_the_users_chrome(self):
-        assert F.USER_DATA_DIR.name == ".apply_profile"
-        assert "Application Support" not in str(F.USER_DATA_DIR)
+        assert browser.USER_DATA_DIR.name == ".apply_profile"
+        assert "Application Support" not in str(browser.USER_DATA_DIR)
 
 
 class TestAnUploadIsReadBack:

@@ -43,7 +43,7 @@ from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, UNKNOWN_COUNTRY, Answ
                                AnswersError, load_answers)
 from src.apply.fill import (_require_playwright, blocking_details, has_driver,
                              run_one)
-from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
+from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
 from src.apply.plan import Override, Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError

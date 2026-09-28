@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.apply.answers import Answers, Resolution, match_option, resolve, similar_questions
-from src.apply.greenhouse import BoardForm
 from src.apply.reconcile import MergedField, Reconciled
 
 # Artifact suffixes in upload preference order. Greenhouse accepts
