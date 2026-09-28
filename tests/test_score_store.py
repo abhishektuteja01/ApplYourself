@@ -95,6 +95,9 @@ class TestStart:
         assert run["model"] == "score-judge:sonnet"
         packet = (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
         assert "# shared rubric" in packet and "widget_assembly" in packet
+        # the baseline resume, built from the example sources
+        assert "**Alex Example**" in packet and "**WORK EXPERIENCE**" in packet
+        assert "Owned the daily widget assembly throughput report" in packet
         assert len(res["lines"]) == 1 and res["lines"][0].count("slice_") == 3
         text = (env["staging"] / "slice_example_primary_001.md").read_text(encoding="utf-8")
         assert "out_example_primary_001.json" in text

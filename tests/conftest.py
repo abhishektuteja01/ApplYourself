@@ -32,6 +32,18 @@ def cfg():
 
 
 @pytest.fixture(autouse=True)
+def _example_resume_sources(monkeypatch):
+    """Resume sources come from the committed example world, never the
+    gitignored profile/resume.yaml, bullets.md or skills_master.md."""
+    from src import resume_model
+
+    profile = Path(__file__).resolve().parent.parent / "profile"
+    monkeypatch.setattr(resume_model, "RESUME", profile / "resume.example.yaml")
+    monkeypatch.setattr(resume_model, "BULLETS", profile / "bullets.example.md")
+    monkeypatch.setattr(resume_model, "SKILLS", profile / "skills_master.example.md")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_learned_store(tmp_path, monkeypatch):
     """Keep the user's real `profile/.apply_learned.jsonl` out of every test.
 

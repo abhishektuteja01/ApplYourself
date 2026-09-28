@@ -31,21 +31,6 @@ def real_cfg():
     verticals.set_config(None)
 
 
-@pytest.fixture
-def real_skills_master():
-    if not REAL_SKILLS_MASTER.is_file():
-        pytest.skip("profile/skills_master.md is gitignored user data")
-    text = REAL_SKILLS_MASTER.read_text(encoding="utf-8")
-    leans_by_id: dict[str, set[str]] = {}
-    for block in text.split("\n## ")[1:]:
-        skill_id, _, body = block.partition("\n")
-        match = re.search(r"vertical_lean:\s*\[(.*?)\]", body)
-        leans_by_id[skill_id.strip()] = (
-            {v.strip() for v in match.group(1).split(",") if v.strip()} if match else set()
-        )
-    return leans_by_id
-
-
 def test_real_config_loads_under_the_strict_loader(real_cfg):
     assert real_cfg.names
     assert real_cfg.default_vertical in real_cfg.verticals
@@ -73,7 +58,8 @@ def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):
             assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file(), (
                 f"{name}/{fname} missing"
             )
-        assert (REPO_ROOT / v.resume_file).is_file(), f"{name} resume_file missing"
+        assert v.resume is not None or (REPO_ROOT / v.resume_file).is_file(), (
+            f"{name} has no resume: block")
 
 
 def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
@@ -100,32 +86,20 @@ def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
             )
 
 
-def test_skill_vertical_lean_tags_are_backed_by_the_layout(real_cfg, real_skills_master):
-    """/tailor's ranking rule (tailor.md 'Skills section' step) treats
-    vertical_lean as a rank tiebreaker inside a layout line's already-eligible
-    SKILL-ID set, never as the gate on whether the skill appears at all — the
-    layout line in tailoring.md is the only thing that gates inclusion. A
-    vertical_lean tag naming a vertical whose tailoring.md never lists that
-    SKILL-ID anywhere is dead metadata: it reads as coverage but renders on
-    no resume."""
-    layout_ids_by_vertical: dict[str, set[str]] = {}
-    for name in real_cfg.names:
-        layout_path = REPO_ROOT / "profile" / "verticals" / name / "tailoring.md"
-        if not layout_path.is_file():
-            continue
-        layout_ids_by_vertical[name] = set(
-            re.findall(r"SKILL-[A-Z0-9-]+", layout_path.read_text(encoding="utf-8"))
-        )
+def test_real_resume_sources_check_clean_and_every_baseline_builds(real_cfg, monkeypatch):
+    """The same source check `verticals-check` runs, plus every lane's baseline
+    resume (what /score's judge reads) assembling without a problem."""
+    from src import resume_model
 
-    violations = sorted(
-        f"{skill_id} -> {vertical}"
-        for skill_id, leans in real_skills_master.items()
-        for vertical in leans
-        if vertical in layout_ids_by_vertical
-        and skill_id not in layout_ids_by_vertical[vertical]
-    )
-    assert not violations, (
-        "vertical_lean claims a vertical whose tailoring.md layout never lists "
-        f"the skill (fix by dropping the tag or adding the skill to that "
-        f"vertical's layout line): {violations}"
-    )
+    profile = REPO_ROOT / "profile"
+    for attr, name in (("RESUME", "resume.yaml"), ("BULLETS", "bullets.md"),
+                       ("SKILLS", "skills_master.md")):
+        if not (profile / name).is_file():
+            pytest.skip(f"profile/{name} is gitignored user data")
+        monkeypatch.setattr(resume_model, attr, profile / name)
+    src = resume_model.load_sources()
+    assert resume_model.check_sources(src, real_cfg) == []
+    for lane, v in real_cfg.verticals.items():
+        if v.resume is not None:
+            built = resume_model.build(src, lane, resume_model.baseline_plan(src, lane))
+            assert built.problems == [], (lane, [p.as_dict() for p in built.problems])

@@ -155,6 +155,15 @@ def _judge_model() -> str:
     return f"score-judge:{meta.get('model', 'unknown')}"
 
 
+def _lane_resume(lane: verticals.Vertical) -> str:
+    """The lane's baseline resume, built from the profile sources by the same
+    assembler /tailor uses (legacy lanes still read their resume_file)."""
+    if lane.resume is not None:
+        from src import resume_model
+        return resume_model.baseline_markdown(lane.name)
+    return (paths.REPO_ROOT / lane.resume_file).read_text(encoding="utf-8")
+
+
 def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) -> None:
     parts = [
         f"# Scoring packet — lane {lane.name}\n",
@@ -163,7 +172,7 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
         (verticals.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
         "## Skill weights\n\n```yaml\n"
         + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip() + "\n```\n",
-        "## Resume\n\n" + (paths.REPO_ROOT / lane.resume_file).read_text(encoding="utf-8"),
+        "## Resume\n\n" + _lane_resume(lane),
     ]
     (staging / f"packet_{lane.name}.md").write_text("\n".join(parts), encoding="utf-8")
 
