@@ -19,7 +19,9 @@ R7: the session decides what each label means; this module only records it.
 """
 from __future__ import annotations
 
+import copy
 import os
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,16 +63,24 @@ def read(path: Path | None = None) -> dict:
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
 
+HISTORY_KEEP = 20
+
+
 def write(data: dict, path: Path | None = None) -> Path:
-    """Validate, keep the old file as `.bak`, then replace atomically."""
+    """Validate, keep the old file in `.bank_history/`, then replace atomically."""
     p = Path(path) if path is not None else DEFAULT_PATH
     A.answers_from(data, where=str(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     if p.exists():
-        p.with_suffix(p.suffix + ".bak").write_text(p.read_text(encoding="utf-8"),
-                                                     encoding="utf-8")
+        history = p.parent / ".bank_history"
+        history.mkdir(exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
+        (history / f"{p.stem}.{stamp}.yaml").write_text(p.read_text(encoding="utf-8"),
+                                                          encoding="utf-8")
+        for old in sorted(history.glob(f"{p.stem}.*.yaml"))[:-HISTORY_KEEP]:
+            old.unlink()
     os.replace(tmp, p)
     return p
 
@@ -104,75 +114,129 @@ def _add(spec: dict, key: str, value: str) -> bool:
     return True
 
 
-def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
-    """Fold lessons into a raw bank mapping in place. Returns one line per change."""
+# Sources a new question's answer may come from. A drafted sentence about the
+# user (a bullet, a story), a board's own option, or the user's own words
+# answers any employer the same way. Anything else (the JD, a company's
+# answers) is about one employer and stays with that role.
+_REUSABLE_SOURCES = ("B-", "S-", "SKILL-", "bullets", "stories", "option", "user")
+
+# A new id this long that is the start of an existing one is a typo, not a
+# new question ("do_you_have_at_least_3_years_of_profession").
+_TYPO_PREFIX_MIN = 16
+
+
+def _reusable(source: str) -> bool:
+    return any(part.strip().startswith(_REUSABLE_SOURCES) for part in source.split(","))
+
+
+def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
+    """Apply one lesson to `data` in place. Returns (changes, refusal)."""
     questions = data.setdefault("questions", {})
-    claims = data.setdefault("claims", {}) or {}
-    data["claims"] = claims
+    wording = A.norm_label(lesson.label)
     changes: list[str] = []
-    for lesson in lessons:
-        wording = A.norm_label(lesson.label)
-        if lesson.claim is not None:
-            for option in _as_list(lesson.value):
-                if A._norm_option(option) in A._BARE_OPTIONS:
-                    continue
-                if claims.get(option) != lesson.claim:
-                    claims[option] = dict(lesson.claim)
-                    changes.append(f"claim: {option!r} -> {lesson.claim}")
-            continue
-        if not wording or not lesson.question:
-            continue
 
-        if lesson.misfired and lesson.misfired != lesson.question \
-                and lesson.misfired in questions:
-            if _add(questions[lesson.misfired], "not", wording):
-                changes.append(f"not: {lesson.misfired} no longer answers {wording!r}")
+    if lesson.claim is not None:
+        claims = data.get("claims") or {}
+        data["claims"] = claims
+        for option in _as_list(lesson.value):
+            if A._norm_option(option) not in A._BARE_OPTIONS and claims.get(option) != lesson.claim:
+                claims[option] = dict(lesson.claim)
+                changes.append(f"claim: {option!r} -> {lesson.claim}")
+        return changes, ""
+    if not wording or not lesson.question:
+        return [], ""
 
-        qid = lesson.question
-        if qid not in questions:
-            if lesson.source.startswith("company_answers"):
-                # A company's own answer is per role; the bank only ever points
-                # at company_answers.yaml for it.
-                continue
-            near = [q for q in questions if q.startswith(qid)]
-            if near:
-                # A shortened spelling of an id the bank has: a typo, not a new
-                # question.
-                changes.append(f"skipped {qid!r}: did you mean {near[0]!r}?")
-                continue
-            if not _as_list(lesson.value):
-                raise BankError(f"new question {qid!r} needs an answer")
-            values = _as_list(lesson.value)
-            spec = {"answer": values[0] if len(values) == 1 else values,
-                    "wordings": [lesson.label.strip()]}
-            if lesson.source:
-                spec["source"] = lesson.source
-            if lesson.job_id:
-                spec["from"] = [lesson.job_id]
-            questions[qid] = spec
-            changes.append(f"new question {qid}: {lesson.label.strip()!r}")
-            continue
-
+    qid = lesson.question
+    if qid not in questions:
+        if not _reusable(lesson.source):
+            return changes, (f"{qid}: an answer from {lesson.source or 'nowhere'} is about "
+                             f"one employer, so it stays with this role")
+        near = [q for q in questions if len(qid) >= _TYPO_PREFIX_MIN and q.startswith(qid)]
+        if near:
+            return changes, f"{qid}: did you mean {near[0]!r}?"
+        values = _as_list(lesson.value)
+        if not values:
+            return changes, f"{qid}: a new question needs an answer"
+        owner = _owner_of(questions, wording)
+        if owner:
+            return changes, f"{wording!r} already belongs to {owner}"
+        spec = {"answer": values[0] if len(values) == 1 else values,
+                "wordings": [lesson.label.strip()]}
+        if lesson.source:
+            spec["source"] = lesson.source
+        if lesson.job_id:
+            spec["from"] = [lesson.job_id]
+        questions[qid] = spec
+        changes.append(f"new question {qid}: {lesson.label.strip()!r}")
+    else:
         spec = questions[qid]
         owner = _owner_of(questions, wording)
         if owner and owner != qid:
-            raise BankError(f"{wording!r} already belongs to {owner}, not {qid}")
-        if not owner and _add(spec, "wordings", lesson.label.strip()):
-            changes.append(f"wording -> {qid}: {lesson.label.strip()!r}")
+            return changes, f"{wording!r} already belongs to {owner}, not {qid}"
         answer = spec.get("answer")
         if lesson.offered and not isinstance(answer, dict):
             candidates = _as_list(answer)
-            known = {A._norm_option(c) for c in candidates}
+            offered = {A._norm_option(o) for o in lesson.offered}
+            known_here = [c for c in candidates if A._norm_option(c) in offered]
             for option in _as_list(lesson.value):
-                if option in lesson.offered and A._norm_option(option) not in known:
-                    candidates.append(option)
-                    changes.append(f"option -> {qid}: {option!r}")
+                if A._norm_option(option) in {A._norm_option(c) for c in candidates}:
+                    continue
+                if known_here:
+                    # The board offered the bank's own answer and the user
+                    # chose another: a different question, or a wrong answer.
+                    return changes, (f"{qid} answers {known_here[0]!r}, this form was "
+                                     f"answered {option!r}; give it its own question id")
+                candidates.append(option)
+                changes.append(f"option -> {qid}: {option!r}")
             spec["answer"] = candidates[0] if len(candidates) == 1 else candidates
+        if not owner and _add(spec, "wordings", lesson.label.strip()):
+            changes.append(f"wording -> {qid}: {lesson.label.strip()!r}")
         if lesson.job_id:
             _add(spec, "from", lesson.job_id)
+    if lesson.keyword:
+        changes.extend(_add_keyword(data, qid, lesson.keyword))
+    return changes, ""
+
+
+def _still_answers(data: dict, lesson: Lesson) -> str:
+    """"" when the bank, with this lesson in, finds the lesson's question for
+    its label; else why not."""
+    if lesson.claim is not None or not lesson.question:
+        return ""
+    try:
+        bank = A.answers_from(data)
+    except A.AnswersError as exc:
+        return f"the bank would not load: {exc}"
+    found = A.find_question(lesson.label, bank)
+    if found is None or found[0].id != lesson.question:
+        got = found[0].id if found else "nothing"
+        return f"{lesson.label.strip()!r} would find {got}, not {lesson.question}"
+    return ""
+
+
+def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
+    """Fold lessons into a raw bank mapping in place, one at a time. A lesson
+    is kept only if the bank still loads and still finds that lesson's question
+    for its label; a refused lesson is named and the others stand."""
+    changes: list[str] = []
     for lesson in lessons:
-        if lesson.keyword and lesson.question in questions:
-            changes.extend(_add_keyword(data, lesson.question, lesson.keyword))
+        wording = A.norm_label(lesson.label)
+        questions = data.get("questions") or {}
+        if (lesson.misfired and lesson.misfired != lesson.question
+                and lesson.misfired in questions and wording):
+            # Saved on its own: whatever becomes of the right answer, the
+            # wrong guess must not be made again.
+            if _add(questions[lesson.misfired], "not", wording):
+                changes.append(f"not: {lesson.misfired} no longer answers {wording!r}")
+        trial = copy.deepcopy(data)
+        made, refusal = _one(trial, lesson)
+        refusal = refusal or (_still_answers(trial, lesson) if made else "")
+        if refusal:
+            changes.append(f"not saved: {refusal}")
+            continue
+        data.clear()
+        data.update(trial)
+        changes.extend(made)
     return changes
 
 
@@ -196,33 +260,44 @@ def _add_keyword(data: dict, qid: str, keyword: str) -> list[str]:
 
 
 def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:
-    """Write every lesson into the bank. All or nothing: an invalid result
-    writes nothing."""
+    """Write every lesson that holds into the bank; name the ones that do not."""
     if not lessons:
         return []
     data = read(path)
     changes = apply_lessons(data, lessons)
-    if changes:
+    if any(not c.startswith(("not saved:", "keyword refused")) for c in changes):
         write(data, path)
     return changes
 
 
-def undo(qid: str, wording: str = "", path: Path | None = None) -> str:
-    """Remove one wording from a question, or the whole question."""
+def undo(qid: str = "", wording: str = "", keyword: str = "", claim: str = "",
+         path: Path | None = None) -> str:
+    """Take one thing back: a whole question, one wording or keyword of it, or
+    one claim. A question left with no way to be found is removed whole."""
     data = read(path)
+    if claim:
+        claims = data.get("claims") or {}
+        if claim not in claims:
+            raise BankError(f"no claim {claim!r}")
+        claims.pop(claim)
+        write(data, path)
+        return f"removed claim {claim!r}"
     questions = data.get("questions") or {}
     if qid not in questions:
         raise BankError(f"no question {qid!r}")
-    if wording:
-        target = A.norm_label(wording)
-        spec = questions[qid]
-        kept = [w for w in spec.get("wordings") or [] if A.norm_label(w) != target]
-        if len(kept) == len(spec.get("wordings") or []):
-            raise BankError(f"{qid} has no wording {wording!r}")
-        spec["wordings"] = kept
+    spec = questions[qid]
+    if wording or keyword:
+        key, target = ("wordings", wording) if wording else ("keywords", keyword)
+        kept = [w for w in spec.get(key) or [] if A.norm_label(w) != A.norm_label(target)]
+        if len(kept) == len(spec.get(key) or []):
+            raise BankError(f"{qid} has no {key[:-1]} {target!r}")
+        spec[key] = kept
         if not kept:
-            spec.pop("wordings")
-        done = f"removed {wording!r} from {qid}"
+            spec.pop(key)
+        done = f"removed {target!r} from {qid}"
+        if not spec.get("wordings") and not spec.get("keywords"):
+            questions.pop(qid)
+            done += f"; {qid} had no other way to be found, so it is removed"
     else:
         questions.pop(qid)
         done = f"removed question {qid}"

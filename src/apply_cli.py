@@ -326,7 +326,9 @@ def salary_for(job_id: str, vertical: str, country: str) -> float | None:
             if not row.empty:
                 salary_min = row.iloc[0]["salary_min"]
                 currency = str(row.iloc[0]["salary_currency"] or "").strip().upper()
-                if currency == "USD" and not pd.isna(salary_min) and salary_min:
+                # Under a thousand is an hourly rate, not a salary: the form
+                # asks for a year's pay, so the lane's fallback answers.
+                if currency == "USD" and not pd.isna(salary_min) and salary_min >= 1000:
                     return float(salary_min) * (1 + float(markup) / 100)
     fallback = expectation.get("fallback")
     if isinstance(fallback, dict):
@@ -382,13 +384,24 @@ def _clean_value(job_id: str, column: str) -> str:
     return "" if row.empty else str(row.iloc[0][column] or "")
 
 
+# "must be based in Germany", "open to candidates located in India": the JD
+# saying where the hire works, not every country it happens to mention.
+_RESIDENCY_PHRASE = re.compile(
+    r"(?:based|located|residing|reside|live|living|work(?:ing)?\s+from|remote|"
+    r"authori[sz]ed\s+to\s+work|eligible\s+to\s+work|hiring)\s+(?:only\s+)?"
+    r"(?:in|within|from|across)\s+(?:the\s+)?([^.;\n]{2,40})",
+    re.IGNORECASE)
+
+
 def _jd_country(job_id: str) -> str:
-    """The one country the JD names, for a posting whose location says only
-    "Remote". Two countries, or none, is no answer."""
+    """The one country the JD says the hire works in, for a posting whose
+    location says only "Remote". Two countries, or none, is no answer."""
     from src.apply.answers import places_named
 
-    countries = {p for p in places_named(_clean_value(job_id, "jd_text"))
-                 if p not in ("European Union", "Latin America", "Asia Pacific")}
+    countries = set()
+    for m in _RESIDENCY_PHRASE.finditer(_clean_value(job_id, "jd_text")):
+        countries |= {p for p in places_named(m.group(1))
+                      if p not in ("European Union", "Latin America", "Asia Pacific")}
     return countries.pop() if len(countries) == 1 else ""
 
 
@@ -676,8 +689,10 @@ def _cmd_learn(args: argparse.Namespace) -> int:
     for looking and taking back."""
     path = Path(args.path) if args.path else None
     try:
-        if args.undo:
-            print(bank.undo(args.undo, args.wording or "", path))
+        if args.undo or args.undo_claim:
+            print(bank.undo(args.undo or "", wording=args.wording or "",
+                            keyword=args.keyword or "", claim=args.undo_claim or "",
+                            path=path))
             return 0
         for line in bank.review(path, since_job=args.job or ""):
             print(line)
@@ -956,15 +971,21 @@ def _attempt(job_id: str, plan: Plan, answers, *, submit: bool, headless: bool,
                        f"per {ledger.LEDGER_NAME}; delete that line to retry",
             )
 
+    clicked: list[bool] = []
+
     def mark(status: str, detail: str = "") -> None:
         ledger.append(ledger_path(), job_id, status, form_url=plan.form_url,
                       company=plan.company, title=plan.title, detail=detail)
+
+    def before_click() -> None:
+        clicked.append(True)
+        mark("clicking")
 
     sink: list = []
     try:
         result = run_one(plan, answers, headless=headless, submit_after=submit,
                           sink=sink, after=None if submit else review,
-                          before_click=lambda: mark("clicking"))
+                          before_click=before_click)
     except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
         landed = sink[0] if sink else None
         # The manifest is read before the click, so a crash after it still has
@@ -1003,6 +1024,10 @@ def _attempt(job_id: str, plan: Plan, answers, *, submit: bool, headless: bool,
         except OSError as exc:
             print(f"WARNING: could not write the manifest: {exc}", file=sys.stderr)
 
+    if clicked and not result.submitted and result.outcome not in ("rejected", "unsent"):
+        # The board declined every click, or a captcha was never solved: it
+        # has nothing, so the role may be tried again.
+        mark("refused", result.submit_error)
     if result.outcome in ("rejected", "unsent"):
         mark(result.outcome, result.submit_error)
         return RunOutcome(job_id, plan.company, plan.title, result.outcome,
@@ -1363,11 +1388,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.job_id:
         queue = eligible_queue()
         if args.job_id not in queue:
-            print(
-                f"ERROR: {args.job_id} is not eligible — needs state == tailored "
-                "with tailored_dirs[] non-empty",
-                file=sys.stderr,
-            )
+            sent = ledger.prior(ledger_path(), args.job_id)
+            why = (f"already sent {sent.get('at', '')} ({sent.get('status', '')}) per "
+                   f"{ledger.LEDGER_NAME}; delete that line to retry" if sent
+                   else "needs state == tailored with tailored_dirs[] non-empty")
+            print(f"ERROR: {args.job_id} is not eligible — {why}", file=sys.stderr)
             return 1
         queue = [args.job_id]
     else:
@@ -1469,7 +1494,10 @@ def main(argv: list[str] | None = None) -> int:
     lrn.add_argument("--job", default=None, help="only questions this job taught")
     lrn.add_argument("--undo", default=None, metavar="QUESTION_ID",
                      help="remove a question, or one wording of it with --wording")
-    lrn.add_argument("--wording", default=None)
+    lrn.add_argument("--wording", default=None, help="with --undo: one wording only")
+    lrn.add_argument("--keyword", default=None, help="with --undo: one keyword only")
+    lrn.add_argument("--undo-claim", default=None, metavar="OPTION_TEXT",
+                     help="remove one work-authorization claim")
     lrn.add_argument("--path", default=None, type=Path, help="bank path (tests)")
     lrn.set_defaults(func=_cmd_learn)
 

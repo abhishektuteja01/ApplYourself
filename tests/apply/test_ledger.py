@@ -42,3 +42,17 @@ def test_a_rejected_submit_does_not_block_registration(tmp_path, monkeypatch):
     ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "bbbb2222",
                   "rejected")
     assert track_cli.main(["ensure", "bbbb2222"]) == 0
+
+
+def test_a_refused_click_lets_the_role_be_tried_again(tmp_path):
+    path = tmp_path / "submitted.jsonl"
+    ledger.append(path, "aaaa1111", "clicking")
+    ledger.append(path, "aaaa1111", "refused", detail="captcha never solved")
+    assert ledger.prior(path, "aaaa1111") is None
+    assert ledger.sent_job_ids(path) == set()
+
+
+def test_lever_eu_and_global_hosts_are_one_posting(tmp_path):
+    path = tmp_path / "submitted.jsonl"
+    ledger.append(path, "aaaa1111", "accepted", form_url="https://jobs.eu.lever.co/acme/123")
+    assert ledger.prior(path, "bbbb2222", "https://jobs.lever.co/acme/123")

@@ -1503,7 +1503,8 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
         # Blank is never a false claim, and an optional free-text visa question
         # is not worth parking a role over.
         if resolution.parked and not field.required:
-            return _skip(resolution.reason, "B0")
+            return Resolution("skip", tier="B0", reason=resolution.reason,
+                              source=resolution.source)
         return resolution
 
     question = _resolve_question(field, answers)

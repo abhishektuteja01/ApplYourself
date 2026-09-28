@@ -3,12 +3,13 @@
 `state.yaml` says where a role stands; this file says what was sent to a board.
 The two are kept apart because a state file can be re-created, and then the
 only record that a role was already applied to would be gone. `apply run`
-never clicks for a role with any line here — delete that role's lines to allow
-a retry.
+never clicks for a role whose latest line is anything but `refused` — delete
+that role's lines to allow a retry.
 
 Statuses: `clicking` (written right before the click), then one of `accepted`,
-`ambiguous`, `unsent`, `rejected` once the board has answered, or `backfill`
-for a line rebuilt from old run reports.
+`ambiguous`, `unsent`, `rejected` once the board has answered, `refused` when the
+board declined the click (the only one that lets the role be tried again), or
+`backfill` for a line rebuilt from old run reports.
 """
 from __future__ import annotations
 
@@ -31,7 +32,14 @@ def url_key(url: str) -> str:
             key = key[len(prefix):]
     if key.startswith("www."):
         key = key[4:]
+    # Lever serves one posting from its EU and global hosts alike.
+    if key.startswith("jobs.eu.lever.co/"):
+        key = "jobs.lever.co/" + key[len("jobs.eu.lever.co/"):]
     return key.rstrip("/")
+
+
+#: Lines that mean the board has nothing: the role may be tried again.
+NOT_SENT = frozenset({"refused"})
 
 
 def records(path: Path) -> list[dict]:
@@ -57,11 +65,15 @@ def prior(path: Path, job_id: str, form_url: str = "") -> dict | None:
     for rec in records(path):
         if rec.get("job_id") == job_id or (key and url_key(rec.get("form_url", "")) == key):
             hit = rec
-    return hit
+    return None if hit is not None and hit.get("status") in NOT_SENT else hit
 
 
 def sent_job_ids(path: Path) -> set[str]:
-    return {str(rec["job_id"]) for rec in records(path) if rec.get("job_id")}
+    latest: dict[str, str] = {}
+    for rec in records(path):
+        if rec.get("job_id"):
+            latest[str(rec["job_id"])] = rec.get("status", "")
+    return {j for j, status in latest.items() if status not in NOT_SENT}
 
 
 def append(path: Path, job_id: str, status: str, *, form_url: str = "",

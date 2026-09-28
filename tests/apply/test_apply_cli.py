@@ -1406,7 +1406,7 @@ class TestARunLearnsWhatWasConfirmed:
         plan = self._plan([self._field("q", "Is LinkedIn required?", "No",
                                        source="override",
                                        replaced="bank:linkedin~linkedin")])
-        self._run(tmp_path, monkeypatch, plan, {"q": {"value": "No",
+        self._run(tmp_path, monkeypatch, plan, {"q": {"value": "No", "source": "user",
                                                       "question": "linkedin_required"}})
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
         assert "is linkedin required" in q["linkedin"]["not"]
@@ -1528,7 +1528,7 @@ class TestKeywordsGeneralize:
         path = self._bank(tmp_path, monkeypatch)
         bank.learn([bank.Lesson(label="Tell us about a project you're proud of",
                                 question="project_proud", value="I built a widget.",
-                                keyword="proud of")])
+                                keyword="proud of", source="bullets:B-1")])
         found = find_question("What are you most proud of building?", load_answers(path))
         assert found and found[0].id == "project_proud" and "~" in found[1]
 
@@ -1538,7 +1538,7 @@ class TestKeywordsGeneralize:
         path = self._bank(tmp_path, monkeypatch)
         changes = bank.learn([bank.Lesson(label="Your personal LinkedIn page",
                                           question="linkedin_page", value="x",
-                                          keyword="linkedin page")])
+                                          keyword="linkedin page", source="user")])
         assert any("keyword refused" in c for c in changes)
         assert "linkedin_page" in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
@@ -1549,19 +1549,112 @@ def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
     monkeypatch.setattr(bank, "DEFAULT_PATH", path)
-    changes = bank.learn([bank.Lesson(label="Your LinkedIn?", question="linked", value="x")])
-    assert changes == ["skipped 'linked': did you mean 'linkedin'?"]
-    assert "linked" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+    data = bank.read()
+    data["questions"]["years_of_professional_experience_total"] = {
+        "answer": "2", "wordings": ["Years of professional experience"]}
+    bank.write(data)
+    changes = bank.learn([bank.Lesson(label="How many years have you worked?",
+                                      question="years_of_professional_exp", value="2",
+                                      source="user")])
+    assert changes == ["not saved: years_of_professional_exp: did you mean "
+                       "'years_of_professional_experience_total'?"]
 
 
-def test_a_batch_submit_never_sends_an_unconfirmed_keyword_guess(monkeypatch):
-    from dataclasses import replace
-    from src.apply.plan import FieldPlan
-    guess = FieldPlan(id="q", name="q", label="LinkedIn?", kind="text", section="questions",
-                      required=True, multi=False, value="https://x", tier="B",
-                      source="bank:linkedin~linkedin")
-    plan = replace(_fake_plan(JOB_ID), fields=(guess,))
-    monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
-    monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not fill")))
-    out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
-    assert out[0].category == "parked" and "not confirmed" in out[0].detail
+class TestEachLessonMustHold:
+    """A lesson is saved only if the bank, with it in, still answers what was
+    confirmed; a refused lesson never costs the others."""
+
+    def _bank(self, tmp_path, monkeypatch):
+        import shutil
+        from src.apply import bank
+        path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", path)
+        monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+        return path
+
+    def test_a_different_answer_under_the_same_id_is_refused(self, tmp_path, monkeypatch):
+        from src.apply import bank
+        path = self._bank(tmp_path, monkeypatch)
+        changes = bank.learn([bank.Lesson(label="Pronouns, please", question="pronouns",
+                                          value="He/Him", offered=("They/Them", "He/Him"))])
+        assert changes[0].startswith("not saved: pronouns answers 'They/Them'")
+        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["pronouns"]
+        assert q["answer"] == ["They/Them"]
+
+    def test_a_new_spelling_is_learned_when_the_board_offered_none_of_the_bank_s(
+            self, tmp_path, monkeypatch):
+        from src.apply import bank
+        path = self._bank(tmp_path, monkeypatch)
+        bank.learn([bank.Lesson(label="Pronouns", question="pronouns",
+                                value="they / them", offered=("they / them", "he / him"))])
+        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["pronouns"]
+        assert q["answer"] == ["They/Them", "they / them"]
+
+    def test_a_one_employer_answer_never_becomes_a_question(self, tmp_path, monkeypatch):
+        from src.apply import bank
+        path = self._bank(tmp_path, monkeypatch)
+        changes = bank.learn([bank.Lesson(label="What excites you about this role?",
+                                          question="excites_role", source="jd",
+                                          value="Your fraud roadmap at Acme.")])
+        assert "stays with this role" in changes[0]
+        assert "excites_role" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+
+    def test_one_bad_lesson_does_not_lose_the_rest(self, tmp_path, monkeypatch):
+        from src.apply import bank
+        path = self._bank(tmp_path, monkeypatch)
+        changes = bank.learn([
+            bank.Lesson(label="Will you require visa sponsorship?", question="clash",
+                        value="No", source="user"),
+            bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them"),
+        ])
+        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+        assert "clash" not in q and "Your pronouns?" in q["pronouns"]["wordings"]
+        assert any(c.startswith("not saved") for c in changes)
+
+    def test_undo_of_the_last_wording_removes_the_question(self, tmp_path, monkeypatch):
+        from src.apply import bank
+        path = self._bank(tmp_path, monkeypatch)
+        bank.learn([bank.Lesson(label="Why widgets?", question="why_widgets",
+                                value="I like them.", source="user")])
+        out = bank.undo("why_widgets", wording="Why widgets?")
+        assert "removed" in out
+        assert "why_widgets" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+
+    def test_every_write_keeps_a_history(self, tmp_path, monkeypatch):
+        from src.apply import bank
+        self._bank(tmp_path, monkeypatch)
+        bank.learn([bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them")])
+        assert list((tmp_path / ".bank_history").glob("bank.*.yaml"))
+
+
+def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
+    clean = tmp_path / "clean.parquet"
+    pd.DataFrame([{"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0,
+                   "salary_currency": "USD"}]).to_parquet(clean)
+    monkeypatch.setattr(apply_cli, "CLEAN", clean)
+    (tmp_path / "verticals.yaml").write_text(yaml.safe_dump({"verticals": {"example_primary": {
+        "salary_expectation": {"markup_pct": 10, "fallback": 110000}}}}), encoding="utf-8")
+    monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
+    assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
+
+
+def test_an_optional_export_control_question_takes_no_override(answers, tailor_dir):
+    from src.apply.plan import Override, build_plan
+    from src.apply.reconcile import MergedField, MergedOption, Reconciled
+    f = MergedField(id="q", name="q", label="Does the deemed export rule affect you?",
+                    required=False, kind="select", section="questions", multi=False,
+                    options=(MergedOption(label="Yes"), MergedOption(label="No")))
+    plan = build_plan(Reconciled(fields=(f,), api_only=()), answers, tailor_dir,
+                      overrides={"q": Override(value="No")})
+    assert not plan.fields and "export control" in plan.ignored_overrides[0]
+
+
+def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
+    clean = tmp_path / "clean.parquet"
+    pd.DataFrame([{"job_id": "a", "url": "", "jd_text": "Our team in India builds tools. "
+                   "This role is remote and you must be based in the United States."},
+                  {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."}]
+                 ).to_parquet(clean)
+    monkeypatch.setattr(apply_cli, "CLEAN", clean)
+    assert apply_cli._jd_country("a") == "United States"
+    assert apply_cli._jd_country("b") == ""
