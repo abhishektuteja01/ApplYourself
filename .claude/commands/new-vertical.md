@@ -47,8 +47,8 @@ collisions, `drop_phrases`, rubric tier boundaries,
 `vertical_lean` tagging.
 
 `title_exclude_terms` is in scope here — it drops only what it names, so a
-wrong entry costs those rows and not the lane. Keep it short: it runs during
-cleaning, and a high-volume word still guts a lane no `/rescore` can restore.
+wrong entry costs those rows and not the lane. Keep it short: it runs on every
+listing, and a high-volume word guts the lane until it is removed.
 `title_include_terms` is never in scope: a nonempty one flips the lane to an
 allowlist enforced at that same point, so a blind list discards everything it
 failed to anticipate.
@@ -184,7 +184,7 @@ description argument plus the lane name — bullets are not read.
 
 Omit `skill_weights`, `title_include_terms` and `title_strong_keep_terms`
 entirely. A nonempty `title_include_terms` turns the lane into an allowlist
-enforced during cleaning, which can empty the lane before anyone sees a row.
+enforced at the title gate, which can empty the lane before anyone sees a row.
 
 **2. One `classifier_rules` entry**, appended last:
 
@@ -274,7 +274,7 @@ rm -f profile/verticals/<name>/.pass_a_only
 ```bash
 uv run python -c "from src.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, c.default_vertical, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.title_exclude_terms))"
 uv run python -c "
-from src.discovery.cleaning import classify_vertical_from_title as c
+from src.discovery.normalize import classify_vertical_from_title as c
 from src.verticals import load_verticals
 v = load_verticals().verticals['<name>']
 bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
@@ -315,8 +315,8 @@ and its `title_exclude_terms` words, skills layout),
 and:
 
 - `uv run discover` then `/score` — their call, it hits the network.
-- Board sources only reach companies already in `profile/companies.yaml` /
-  `data/universe/*.csv`; if this lane's employers aren't there, LinkedIn and
+- Board sources only reach boards listed in `data/universe/boards.csv` /
+  `boards.local.csv`; if this lane's employers aren't there, LinkedIn and
   Indeed search terms are its only route.
 - No `SKILL-*` entry carries a `vertical_lean` for this lane yet, so `/tailor`
   Step 3e's lean-based rank clauses stay inert until `/tune-vertical` Round 4.

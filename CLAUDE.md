@@ -49,17 +49,19 @@ fixture (`git config core.hooksPath .githooks`, once per clone).
 
 | # | Stage | Command | Deterministic plumbing |
 |---|-------|---------|------------------------|
-| 1 | Discovery | `/discover` | `src/discovery/` — inbox clips → JobSpy → ATS boards + Workday, then `run_report.py` reads the report back |
-| 2 | Cleaning | (always runs after discovery) | `src/discovery/cleaning.py` |
-| 3 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
-| 4 | Application material | `/tailor`, `/cover-letter`, `/outreach` | `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
-| 5 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
-| 6 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
+| 1 | Discovery | `/discover` | `src/discovery/` — `run.py` checks due boards and searches into the jobs store (`store.py`), rebuilds `clean.parquet`; `digest.py` reads the report back |
+| 2 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
+| 3 | Application material | `/tailor`, `/cover-letter`, `/outreach` | `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
+| 4 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
+| 5 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
 
 `jobs/clean.parquet` is the **only** discovery output anything downstream reads.
-Cleaning normalizes, drops short/stale rows and rows outside the location
-allowlist, dedupes (exact then rapidfuzz WRatio ≥ 90), assigns `job_id`, and tags
-the seen-ledger, writing `jobs/clean.parquet` + `clean.preview.jsonl`.
+`jobs/jobs.parquet` holds one row per posting with its `job_id` and the dates it
+was first and last seen; a night only adds to it. `clean.parquet` is the live
+view built from it: seen recently, through the title gate and location
+allowlist, one row per `job_id`, within retention. Boards are listed in
+`data/universe/boards.csv` + `boards.local.csv`; `jobs/boards.parquet` records
+when each was last checked.
 Application material lands in `applications/<vertical>/<dir>/`;
 tracking keeps one `pipeline/<job_id>/state.yaml` per role.
 
@@ -79,11 +81,13 @@ uv run pytest tests/test_verticals.py -q          # single test file
 uv run pytest tests/test_verticals.py::<name>     # single test
 
 # Deterministic CLIs (entry points in pyproject [project.scripts]).
-uv run discover [--resume <run_id>] [--deadline-hours H] [--source NAME] [--max-terms N]
-                                      # overnight scrape -> jobs/clean.parquet
-                                      # the three overrides narrow one run without
-                                      # touching config; --source is exhaustive and
-                                      # repeatable (naming one excludes the inbox)
+uv run discover [--deadline-hours H] [--source NAME] [--max-terms N] [--jobs-dir D] [--boards-dir D]
+                                      # overnight scrape -> jobs store -> jobs/clean.parquet
+                                      # the overrides narrow one run without touching
+                                      # config; --source is exhaustive and repeatable
+                                      # (naming one excludes the inbox); --jobs-dir and
+                                      # --boards-dir point a shadow run at a copy.
+                                      # A killed run just leaves boards due.
                                       # needs `uv sync --group discovery` (libpostal)
 uv run verticals-check                # validate config + rubric/tailoring dirs
 uv run discovery-check                # resolve + validate the discovery config:
@@ -92,12 +96,12 @@ uv run discovery-check                # resolve + validate the discovery config:
                                       # enabled sources, exits 1 on any problem.
                                       # `discover` runs it as preflight
 uv run discover-digest [--json] [--run-id ID] [--window N] [--runs-dir D]
-                                      # parse the recent jobs/runs/*.md reports and
+                                      # read the recent jobs/runs/*.json reports and
                                       # print the trend facts /discover renders:
-                                      # per-source rows vs that source's own 7-day
-                                      # median, error-rate delta, zero streaks,
-                                      # crashed / skipped / truncated lanes.
-                                      # Reader only, stdlib only, writes nothing
+                                      # per-lane rows vs that lane's own 7-day
+                                      # median, error delta, zero streaks, 403/429s,
+                                      # crashed / truncated lanes, dead boards.
+                                      # Reader only, writes nothing
 uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
                                       # [--with-apply] [--with-optional] [--force] [--dry-run]
                                       # /onboarding's setup chores: copy every
@@ -106,7 +110,7 @@ uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
                                       # sponsorship_need in scoring.yaml, probe libpostal.
                                       # Skips existing files unless --force
 uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]
-                                      # one JD -> jobs/raw + clean rebuild
+                                      # one JD -> jobs store + clean rebuild
                                       # --vertical: lane (/ingest always passes it)
                                       # --company/--title: override a bad parse
                                       # --dry-run: print text only
@@ -149,13 +153,6 @@ uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] 
                                       # per slug. Report only; writes nothing
                                       # else. `--ats` is repeatable, default
                                       # ashby/greenhouse/lever (workday opt-in)
-uv run python scripts/seed_company_aliases.py [--dry-run] [--expected F]
-                                      # one-off: pin jobs/company_aliases.parquet
-                                      # from the tracked roles, so switching the
-                                      # company merge on orphans no existing
-                                      # job_id. Reads pipeline/*/state.yaml only
-                                      # (R10). --dry-run exits 1 on any id change
-                                      # outside the reviewed --expected list
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```
@@ -169,7 +166,7 @@ The user-facing workflow is the slash commands (`/onboarding`, `/discover`, `/sc
 `.claude/agents/score-judge.md`, spawned by `/score` and `/ingest`,
 never invoked directly. `/discover` is the scrape plus a digest: `discovery-check`
 preflight, `uv run discover` with the user's overrides, then `discover-digest`
-(`src/discovery/run_report.py`) parses `jobs/runs/*.md` and the session renders
+(`src/discovery/digest.py`) reads `jobs/runs/*.json` and the session renders
 ≤10 lines from the numbers it computed. `/new-vertical <name>` writes the loader's minimum for a
 new lane in one confirm-or-edit, and splits into `pass-a` (the lane block and
 classifier rule, enough to start scraping) and `pass-b` (the three prose files)

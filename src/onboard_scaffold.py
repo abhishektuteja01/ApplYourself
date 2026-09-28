@@ -11,7 +11,7 @@ overwrites, `--dry-run` prints the full plan and touches nothing.
 
 Templates NOT copied by default, because /onboarding puts them on its "later,
 when you want it" menu rather than the setup path:
-  voice_samples / contacts / companies / pii_denylist -> --with-optional
+  voice_samples / contacts / pii_denylist -> --with-optional
       (/outreach's voice samples, optional contact and company lists, and the
       PII gate, which only matters once application_answers.yaml holds a real
       email and phone)
@@ -53,7 +53,6 @@ OPTIONAL_TEMPLATES = (
     "voice_samples.example.md",
     "stories.example.md",
     "contacts.example.yaml",
-    "companies.example.yaml",
     "pii_denylist.example.txt",
 )
 
@@ -350,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--with-apply", action="store_true",
                         help="also set up the /apply submission path")
     parser.add_argument("--with-optional", action="store_true",
-                        help="also copy the later-menu templates (voice samples, contacts, companies, PII denylist)")
+                        help="also copy the later-menu templates (voice samples, contacts, PII denylist)")
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
     parser.add_argument("--dry-run", action="store_true", help="print the plan; write nothing")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)

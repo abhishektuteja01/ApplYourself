@@ -24,7 +24,7 @@ from src.apply.domscan import FormScan, scan_form
 from src.apply.reconcile import Reconciled, reconcile
 from src.apply.schema import BoardSchema, fetch_questions
 from src.ats_http import CareersError, fetch_text
-from src.discovery.sources.ats import registry as ats_registry
+from src import ats_registry
 
 EMBED_URL = "https://boards.greenhouse.io/embed/job_app?token={token}"
 

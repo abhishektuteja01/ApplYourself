@@ -44,7 +44,7 @@ def responses(monkeypatch):
             if isinstance(item, Exception):
                 raise item
             return item
-        monkeypatch.setattr(http.requests, "get", fake_get)
+        monkeypatch.setattr(http, "_get", fake_get)
         return calls
 
     return install
@@ -103,7 +103,7 @@ def test_retry_after_below_cap_is_honored_verbatim(responses, sleeps):
     assert sleeps == [5.0]
 
 
-@pytest.mark.parametrize("header", ["Wed, 05 Aug 2026 07:28:00 GMT", "1.5", " 30", ""])
+@pytest.mark.parametrize("header", ["Wed, 05 Aug 2026 07:28:00 GMT", "1.5", "soon", ""])
 def test_unparseable_retry_after_falls_back_to_exponential(responses, sleeps, header):
     responses([
         FakeResponse(503, headers={"Retry-After": header}),
@@ -111,6 +111,38 @@ def test_unparseable_retry_after_falls_back_to_exponential(responses, sleeps, he
     ])
     assert fetch_json("https://x/board") == {"ok": True}
     assert sleeps == [http.RETRY_BASE_DELAY * 2]
+
+
+def test_future_http_date_retry_after_is_honoured(responses, sleeps, monkeypatch):
+    monkeypatch.setattr(http.time, "time", lambda: 1_000_000_000.0)
+    from email.utils import formatdate
+    responses([
+        FakeResponse(429, headers={"Retry-After": formatdate(1_000_000_020.0, usegmt=True)}),
+        FakeResponse(200, {"ok": True}),
+    ])
+    assert fetch_json("https://x/board") == {"ok": True}
+    assert sleeps == [20.0]
+
+
+def test_session_is_reused_per_thread_and_refuses_cookies():
+    import threading
+    a, b = http._session(), http._session()
+    assert a is b
+    other = []
+    t = threading.Thread(target=lambda: other.append(http._session()))
+    t.start(); t.join()
+    assert other[0] is not a
+    assert not a.cookies.get_policy().allowed_domains()
+
+
+def test_tally_counts_per_host():
+    tally = http.HttpTally()
+    tally.record("https://a.example/x", 0.5, 200)
+    tally.record("https://a.example/y", 0.5, 429)
+    tally.record("https://b.example/z", 1.0, None)
+    assert tally.hosts["a.example"]["requests"] == 2
+    assert tally.hosts["a.example"]["429"] == 1
+    assert tally.totals() == {"requests": 3, "seconds": 2.0, "403": 0, "429": 1, "errors": 1}
 
 
 def test_missing_retry_after_backs_off_exponentially(responses, sleeps):

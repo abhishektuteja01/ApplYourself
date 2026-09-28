@@ -121,7 +121,7 @@ class TestBoardUrls:
         assert "includeCompensation" not in audit.board_url("ashby", "acme")
 
     def test_every_summarizer_has_a_lane_and_vice_versa(self, audit):
-        from src.discovery.sources.ats.registry import ATS_SOURCE_NAMES
+        from src.ats_registry import ATS_SOURCE_NAMES
 
         assert set(audit.SUMMARIZE) == set(ATS_SOURCE_NAMES)
         assert set(audit.DEFAULT_ATS) <= set(audit.SUMMARIZE)

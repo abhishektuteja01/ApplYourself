@@ -336,7 +336,7 @@ def load_all_states(pipeline_dir: Path) -> list[dict]:
 
 def load_state_index(pipeline_dir: Path) -> dict[str, dict]:
     """{job_id: state dict} for the consumers that key on job_id --
-    cleaning's already_seen tagging and the shortlist's skip suppression.
+    the discovery view's application_status and the shortlist's skip suppression.
     Records without a str job_id are skipped: they cannot be joined to a row."""
     return {d["job_id"]: d for d in iter_states(pipeline_dir)
             if isinstance(d.get("job_id"), str)}

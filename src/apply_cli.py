@@ -71,11 +71,11 @@ from src.apply.plan import Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError
 from src.apply.domscan import DomScanError
-from src.discovery.cleaning import normalize_company
+from src.discovery.normalize import normalize_company
 from src.ats_http import CareersError
 
 # Board identity comes from the shared table in
-# `discovery/sources/ats/registry.py`, wrapped by `src.apply.detect` so
+# `src/ats_registry.py`, wrapped by `src.apply.detect` so
 # `shortlist.py` can ask "can /apply submit to this?" without importing this
 # CLI. Re-exported here because callers and tests already reach for
 # `apply_cli.detect_ats`. `detect_ats` recognizes Workday too, so every

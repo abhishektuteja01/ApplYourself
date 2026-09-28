@@ -7,7 +7,7 @@ from src.discovery.location import parse_location
 # allowlist) exactly when it resolves to a non-empty, non-US country, OR
 # when every candidate in a genuine multi-region ambiguity is foreign (the
 # candidate_countries path — location.py itself no longer picks a winner
-# among multiple countries, so this helper mirrors what cleaning.py's
+# among multiple countries, so this helper mirrors what Allowlist.check's
 # allowlist-intersection check would do for a US-only allowlist).
 def _is_foreign(raw):
     r = parse_location(raw)
@@ -104,8 +104,9 @@ def test_location_city_list_not_hijacked_by_state_namesake():
         "Chicago; Dallas; Los Angeles; Minneapolis; New York; "
         "San Francisco; Seattle; Washington, D.C."
     )
-    assert res.country == ""
-    assert res.state == ""
+    # Several cities of one country: the country, never one of the cities.
+    assert res.country == "United States"
+    assert res.state == "" and res.city == ""
 
 def test_location_many_state_dump_stays_unresolved():
     res = parse_location(
@@ -543,7 +544,7 @@ def test_and_countries_survive_the_list_separator_presplit(raw):
 # ---------------------------------------------------------------------
 # Multi-region reconciliation across every separator style. location.py no
 # longer decides keep-vs-drop for a multi-country ambiguity itself (that
-# moved to cleaning.py's allowlist-aware logic) -- it surfaces every
+# moved to Allowlist.check's allowlist-aware logic) -- it surfaces every
 # candidate via `candidate_countries` instead, asserted here directly.
 # ---------------------------------------------------------------------
 # Found by scanning real historical data after this rewrite landed, not
@@ -580,8 +581,9 @@ def test_slash_separator_resolves_the_real_segment_and_ignores_remote():
 
 def test_or_list_of_two_full_us_pairs_is_a_multi_site_listing_kept():
     # Both segments are the same country but different states -> a
-    # multi-site listing, not a single answer -> kept for review.
-    assert _is_kept_unresolved("Chicago, Illinois or Austin, Texas")
+    # multi-site listing: the country is certain, no single state is.
+    res = parse_location("Chicago, Illinois or Austin, Texas")
+    assert (res.country, res.state, res.city) == ("United States", "", "")
 
 
 def test_semicolon_all_foreign_list_has_no_us_candidate():
@@ -616,9 +618,9 @@ def test_pipe_separated_multi_office_listing_is_ambiguous_not_a_wrong_single_ans
     # Before `|` was a recognized separator, libpostal mis-tokenized the
     # whole string and confidently returned just "Seattle, WA", silently
     # dropping the other two offices. It must resolve the same way the
-    # semicolon-separated equivalent already does: ambiguous, kept empty.
+    # semicolon-separated equivalent already does: the country, no one city.
     res = parse_location("San Francisco, CA | New York City, NY | Seattle, WA")
-    assert res.country == ""
+    assert res.country == "United States"
     assert res.state == ""
     assert res.city == ""
 
@@ -798,3 +800,72 @@ def test_ambiguous_strings_are_not_region_tokens(raw):
     res = parse_location(raw)
     assert res.country == ""
     assert res.candidate_countries == frozenset()
+
+
+# ---------------------------------------------------------------------
+# The allowlist decision
+# ---------------------------------------------------------------------
+
+class _Cfg:
+    def __init__(self, countries, abroad=None):
+        from src.discovery.config import LocationAllowlist
+        self.location_allowlist = LocationAllowlist(countries)
+        self._abroad = abroad or {}
+
+    def abroad_lanes(self):
+        return self._abroad
+
+
+@pytest.mark.parametrize("raw,keep,shown", [
+    ("London; Manchester", False, "London; Manchester"),
+    ("Toronto, ON; Vancouver, BC", False, "Toronto, ON; Vancouver, BC"),
+    ("Seoul, Korea", False, "Seoul, Korea"),
+    ("Malta", False, "Malta"),
+    ("Tel Aviv (Onsite)", False, "Tel Aviv (Onsite)"),
+    ("London Office", False, "London Office"),
+    ("Chennai, TN", True, "Chennai, India"),
+    ("Mumbai, Maharashtra, India", True, "Mumbai, India"),
+    ("New York, NY (HQ)", True, "New York City, NY"),
+    ("Austin, TX; Seattle, WA", True, "Austin, TX; Seattle, WA"),
+    ("Remote - US", True, "Remote - United States"),
+    ("Remote", True, "Remote"),
+])
+def test_allowlist_check(raw, keep, shown):
+    from src.discovery.location import Allowlist
+    got = Allowlist(_Cfg(["United States", "India"])).check(raw)
+    assert (got.keep, got.location) == (keep, shown)
+
+
+def test_an_abroad_country_keeps_only_its_lanes():
+    from src.discovery.location import Allowlist
+    al = Allowlist(_Cfg(["United States", "India"], abroad={"india": {"lane_a"}}))
+    assert al.check("Bengaluru", "lane_a").keep
+    assert not al.check("Bengaluru", "lane_b").keep
+
+
+@pytest.mark.parametrize("title,expected", [
+    ("AI Engineer Backend (Remote - ES/UK only)", {"Spain", "United Kingdom"}),
+    ("Forward Deployed Engineer (UK Based)", {"United Kingdom"}),
+    ("AI Engineer - US only", {"United States"}),
+    ("Engineer (Remote - EU only)", "europe"),
+    ("W2 only - SAP SD OTC Consultant", set()),
+    ("AI Developer (US Citizens/ Green Cards only)", set()),
+    ("AI Engineer (On-Site, Indiana Only)", set()),
+    ("Credit Risk Analyst (UAE Nationals Only)", set()),
+    ("Founding Engineer (AI + Geometry / CAD)", set()),
+    ("SAP Specialist - Columbia, MD", set()),
+    ("AI Engineer (in only one team)", set()),
+])
+def test_residency_countries(title, expected):
+    from src.discovery.location import REGION_TOKEN_COUNTRIES, residency_countries
+    if expected == "europe":
+        expected = set(REGION_TOKEN_COUNTRIES["europe"])
+    assert residency_countries(title) == expected
+
+
+def test_a_title_limited_to_disallowed_countries_is_dropped():
+    from src.discovery.location import Allowlist
+    al = Allowlist(_Cfg(["United States", "India"]))
+    assert not al.check("Remote", "", "AI Engineer Backend (Remote - ES/UK only)").keep
+    assert al.check("Remote", "", "AI Engineer (US or UK only)").keep
+    assert al.check("Remote", "", "AI Engineer (US Citizens only)").keep

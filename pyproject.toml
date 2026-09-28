@@ -46,10 +46,10 @@ track = "src.track_cli:main"
 tailor-prep = "src.tailor_cli:main"
 profile-extract = "src.profile_extract:main"
 onboard-scaffold = "src.onboard_scaffold:main"
-discover = "src.discovery.orchestrator:main"
+discover = "src.discovery.run:main"
 verticals-check = "src.verticals:main"
 discovery-check = "src.discovery.config:main"
-discover-digest = "src.discovery.run_report:main"
+discover-digest = "src.discovery.digest:main"
 apply = "src.apply_cli:main"
 
 [dependency-groups]

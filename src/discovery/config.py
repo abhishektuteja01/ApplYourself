@@ -1,326 +1,125 @@
+"""`profile/discovery.yaml`: every discovery setting, loaded and checked.
+
+`uv run discovery-check` prints what the file resolves to and every problem
+with it; `discover` runs the same check before it starts. A key the loader
+does not know is reported by name, never ignored.
+"""
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
+
 import yaml
-from src import verticals
-from src import paths
+
+from src import paths, verticals
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = paths.REPO_ROOT
-DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "discovery.yaml"
-_SCHEMA_VERSION = 1
+DEFAULT_CONFIG_PATH = paths.REPO_ROOT / "profile" / "discovery.yaml"
+SCHEMA_VERSION = 2
 
-# The loader's whole surface. A key outside these sets never applies, so it is
-# collected as an unknown key rather than ignored -- see DiscoveryConfig.validate.
-_TOP_LEVEL_KEYS = frozenset({
-    "schema_version", "deadline_hours", "location_allowlist", "sources",
-    "raw_retention_days", "board_max_age_days", "search_locations",
-})
-_ALLOWLIST_KEYS = frozenset({"countries", "states", "cities", "continents"})
-_SOURCE_KEYS = frozenset({"enabled", "pacing_seconds", "cadence",
-                          "page_delay_seconds", "page_delay_band_seconds",
-                          "cold_rotation_runs", "pacing_spread",
-                          "detail_reuse_days", "remote_queries", "abroad"})
-_ABROAD_KEYS = frozenset({"countries", "verticals"})
-# The sources that read `remote_queries` and `abroad`.
+SOURCE_NAMES = ("linkedin", "indeed", "greenhouse", "lever", "ashby", "workday")
 JOBSPY_SOURCES = frozenset({"linkedin", "indeed"})
 
-# Runs to cover an ATS lane's cold tail once, when a source sets no
-# `cold_rotation_runs`.
-DEFAULT_COLD_ROTATION_RUNS = 3
+_TOP_LEVEL_KEYS = frozenset({
+    "schema_version", "deadline_hours", "location_allowlist", "search_locations", "sources",
+    "live_days", "search_max_age_days", "retention", "forget_after_days", "raw_keep_days",
+    "dead_every_days",
+})
+_ALLOWLIST_KEYS = frozenset({"countries"})
+_RETENTION_KEYS = frozenset({"score_threshold", "high_days", "low_days"})
+_SOURCE_KEYS = frozenset({
+    "enabled", "pacing_seconds", "page_delay_seconds", "page_delay_band_seconds",
+    "remote_queries", "abroad", "every_days", "max_pages", "hours_old", "results_wanted",
+})
+_ABROAD_KEYS = frozenset({"countries", "verticals"})
+# Keys a schema_version 1 file may still carry, and what replaced them.
+_RETIRED_KEYS = {
+    "raw_retention_days": "raw_keep_days", "board_max_age_days": "(nothing; boards are live while listed)",
+    "cold_rotation_runs": "every_days", "cadence": "every_days",
+    "pacing_spread": "(nothing)", "detail_reuse_days": "(nothing; the store keeps every JD)",
+    "states": "(nothing)", "cities": "(nothing)", "continents": "countries",
+}
 
-# Workday's inter-request sleep is uniform(pacing, pacing * pacing_spread).
-DEFAULT_PACING_SPREAD = 3.0
-# Days a saved Workday description may be reused instead of re-fetched.
-# 0 = always fetch.
-DEFAULT_DETAIL_REUSE_DAYS = 0
-
-# Ceiling on the locations the jobspy lanes may query when `search_locations`
-# is absent and the allowlist is the fallback. Each location multiplies the
-# query count, and the pacing sleep alone can outrun `deadline_hours`.
+# With no `search_locations`, the jobspy lanes query the allowlist's
+# countries; past this many, the query count outruns the deadline.
 MAX_SEARCH_LOCATIONS = 5
 
-# The pacing floor config cannot go below, per source. Default 1.0s; the four
-# lanes below tolerate 0.5s. One home for what used to be four copies of the
-# same two numbers -- the runtime sleeps in `ats/base.py`, `jobspy_source.py`
-# and `workday.py`, plus the cost estimator here, which must model the same
-# floor the lanes will actually sleep.
+# The pacing floor config cannot go below, per source.
 DEFAULT_MIN_PACING_SECONDS = 1.0
 MIN_PACING_SECONDS = {"greenhouse": 0.5, "linkedin": 0.5, "indeed": 0.5, "workday": 0.5}
+# jobspy's own page delay, and the floor under it.
+DEFAULT_PAGE_DELAY_SECONDS = 3.0
+DEFAULT_PAGE_DELAY_BAND_SECONDS = 4.0
+MIN_PAGE_DELAY_SECONDS = 0.5
 
 
 def pacing_floor(source_name: str) -> float:
     return MIN_PACING_SECONDS.get(source_name, DEFAULT_MIN_PACING_SECONDS)
 
 
-# Page-level pacing, distinct from the inter-query `pacing_seconds` above.
-# A paginating source sleeps `uniform(page_delay, page_delay + band)` between
-# pages of ONE query; jobspy hardcodes 3/4 on its LinkedIn scraper. At
-# results_wanted=100 the guest endpoint returns 10 cards a page, so that is 9
-# sleeps -- ~45s of the ~54s a query costs, and the largest single line item
-# in the whole nightly run. Configurable so it can be walked down (and back
-# up) without a code change; the floor is here because it is mechanism, while
-# the chosen value is user policy and lives in discovery.yaml.
-DEFAULT_PAGE_DELAY_SECONDS = 3.0
-DEFAULT_PAGE_DELAY_BAND_SECONDS = 4.0
-MIN_PAGE_DELAY_SECONDS = 0.5
-
-
-# How often a source runs. `daily` is the historical behaviour and the
-# default; the rest exist because board novelty is 2-3% a night and near zero
-# at the weekend, so polling every board every night buys almost nothing.
-# `weekly` anchors on Monday: the weekend's backlog lands on the first
-# productive night rather than being spread across two dead ones.
-CADENCE_DAILY = "daily"
-CADENCE_WEEKDAYS = "weekdays"
-CADENCE_WEEKLY = "weekly"
-_EVERY_N_DAYS = "every_n_days:"
-_WEEKLY_ANCHOR = 0  # Monday, as datetime.weekday() numbers it.
-
-
-def parse_cadence(value: str) -> str:
-    """The normalized cadence, or raise ValueError naming what was wrong.
-
-    Kept separate from `due_today` so a bad value fails at config load, next
-    to `Unknown source key`, rather than silently never running a lane.
-    """
-    v = str(value).strip().lower()
-    if v in (CADENCE_DAILY, CADENCE_WEEKDAYS, CADENCE_WEEKLY):
-        return v
-    if v.startswith(_EVERY_N_DAYS):
-        n = v[len(_EVERY_N_DAYS):].strip()
-        if n.isdigit() and int(n) >= 1:
-            return f"{_EVERY_N_DAYS}{int(n)}"
-        raise ValueError(
-            f"cadence {value!r}: every_n_days needs a whole number >= 1, got {n!r}")
-    raise ValueError(
-        f"unknown cadence {value!r}. One of: {CADENCE_DAILY}, {CADENCE_WEEKDAYS}, "
-        f"{CADENCE_WEEKLY}, {_EVERY_N_DAYS}N")
-
-
-def due_today(cadence: str, run_date) -> bool:
-    """Whether a source on `cadence` runs on `run_date` (a date or datetime).
-
-    `every_n_days:N` keys off the proleptic ordinal rather than a stored
-    last-run date: no state file to lose, and a missed night does not shift
-    the whole schedule.
-    """
-    if cadence == CADENCE_DAILY:
-        return True
-    if cadence == CADENCE_WEEKDAYS:
-        return run_date.weekday() < 5
-    if cadence == CADENCE_WEEKLY:
-        return run_date.weekday() == _WEEKLY_ANCHOR
-    if cadence.startswith(_EVERY_N_DAYS):
-        return run_date.toordinal() % int(cadence[len(_EVERY_N_DAYS):]) == 0
-    # parse_cadence rejects everything else at load; an unparsed value here
-    # means a hand-built SourceConfig, and running is the safe reading.
-    return True
-
-
 @dataclass
 class SourceConfig:
-    enabled: bool
-    pacing_seconds: float
-    cadence: str = CADENCE_DAILY
-    # Only the paginating jobspy lanes read these; every other source ignores
-    # them. Defaults reproduce jobspy's own hardcoded values, so an unset
-    # config behaves exactly as before.
+    enabled: bool = True
+    pacing_seconds: float = 1.0
+    # jobspy lanes: page delay, the remote copy of each query, the search
+    # window, the result cap, and the `abroad` block.
     page_delay_seconds: float = DEFAULT_PAGE_DELAY_SECONDS
     page_delay_band_seconds: float = DEFAULT_PAGE_DELAY_BAND_SECONDS
-    # Only the ATS board lanes and Workday read this: their cold tail is
-    # polled one slice a run, covered in full every this many runs.
-    cold_rotation_runs: int = DEFAULT_COLD_ROTATION_RUNS
-    # Only Workday reads these two.
-    pacing_spread: float = DEFAULT_PACING_SPREAD
-    detail_reuse_days: int = DEFAULT_DETAIL_REUSE_DAYS
-    # Only the jobspy lanes read these. `remote_queries: false` drops the
-    # remote=True copy of every query. `abroad` adds one query per country x
-    # term, using each listed vertical's `abroad_terms`, remote=False only.
     remote_queries: bool = True
+    hours_old: int = 336
+    results_wanted: int = 100
     abroad_countries: list[str] = field(default_factory=list)
     abroad_verticals: list[str] = field(default_factory=list)
-
-def _continent_countries(continent: str) -> list[str]:
-    """Countries on `continent`, matched case- and whitespace-insensitively.
-    `CONTINENT_TO_COUNTRIES` is keyed by display name ("Europe"), so a raw
-    `.get()` made `continents: ["europe"]` a silent no-op -- which emptied the
-    allowlist and turned location filtering off entirely."""
-    from src.discovery import location
-
-    by_fold = {location._fold(k): v for k, v in location.CONTINENT_TO_COUNTRIES.items()}
-    return by_fold.get(location._fold(continent), [])
-
-
-def _subdivisions_for(state: str) -> list:
-    """Subdivisions a configured `states:` entry names, by full name first and
-    bare ISO 3166-2 code second. A bare code is not globally unique, so the
-    code branch applies `location._disambiguate_subdivisions`' conventional
-    tie-break: "CA" means California, not Burundi's Cayanza, because a job
-    posting written in English that abbreviates a subdivision to two letters
-    is using one of the countries that are conventionally written that way."""
-    from src.discovery import location
-
-    subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(state), [])
-    if subs:
-        return subs
-    subs = location.SUBDIVISIONS_BY_CODE.get(state.strip().upper(), [])
-    conventional = [s for s in subs if s.country_code in location._COMMONLY_ABBREVIATED_CC]
-    return conventional or subs
+    # Board lanes: days between checks of one board. Workday: pages per term.
+    every_days: int = 1
+    max_pages: int = 6
 
 
 @dataclass
 class LocationAllowlist:
     countries: list[str] = field(default_factory=list)
-    states: list[str] = field(default_factory=list)
-    cities: list[str] = field(default_factory=list)
-    # Optional shorthand: "Europe" expands to every European country at
-    # compare time instead of the user typing ~44 country names by hand.
-    # Purely additive -- existing countries-only configs are unaffected.
-    continents: list[str] = field(default_factory=list)
 
     def effective_countries(self) -> set[str]:
-        """`countries` plus whatever `continents` expands to, normalized to
-        the canonical names `location.parse_location` returns."""
-        from src.discovery import location  # local import: avoid a hard
-        # dependency on libpostal's system library for callers that never
-        # touch location filtering (e.g. pure config validation/tests).
-
-        result = {location.COUNTRY_NAMES.get(location._fold(c), c) for c in self.countries}
-        for continent in self.continents:
-            result |= set(_continent_countries(continent))
-
-        if not result and self.states:
-            # A states-only allowlist ("just TX") with no countries/continents
-            # configured still needs a country floor: without one, a row that
-            # only resolves to a bare country ("Canada", no state text) has
-            # no `parsed.state` for the states check to test and slips through
-            # unfiltered. Scope it to whichever countries the configured
-            # states actually belong to.
-            for s in self.states:
-                result |= {location.CC_TO_COUNTRY.get(sub.country_code, "")
-                           for sub in _subdivisions_for(s)}
-            result.discard("")
-
-        return result
+        from src.discovery.location import canonical_country
+        return {canonical_country(c) or c for c in self.countries}
 
     def unresolved(self) -> list[str]:
-        """Configured entries that name nothing the parser can ever produce.
-        Each one is silent at runtime -- a typo'd country drops every row, a
-        typo'd continent disables filtering -- so they are reported, not
-        guessed at."""
-        from src.discovery import location
-
-        problems = []
-        for c in self.countries:
-            if location._fold(c) not in location.COUNTRY_NAMES:
-                problems.append(f"location_allowlist.countries: {c!r} is not a country name")
-        for c in self.continents:
-            if not _continent_countries(c):
-                names = ", ".join(sorted(location.CONTINENT_TO_COUNTRIES))
-                problems.append(
-                    f"location_allowlist.continents: {c!r} is not a continent (one of: {names})")
-        for s in self.states:
-            if not _subdivisions_for(s):
-                problems.append(
-                    f"location_allowlist.states: {s!r} is not a state/province name or code")
-        for city in self.cities:
-            if location._city_lookup(city) is None:
-                problems.append(f"location_allowlist.cities: {city!r} is not a known city")
-        return problems
-
-    def configured(self) -> bool:
-        return any((self.countries, self.states, self.cities, self.continents))
-
-    def effective_states(self) -> set[str]:
-        """`states` normalized to the 2-letter subdivision codes
-        `location.parse_location` returns, accepting either a full name
-        ("Texas") or a code ("TX") -- full names used to be a silent no-op
-        because the parser only ever produced codes."""
-        from src.discovery import location
-
-        result = set()
-        for s in self.states:
-            subs = location.SUBDIVISIONS_BY_NAME.get(location._fold(s), [])
-            if subs:
-                # A name that collides across countries (e.g. "Santa Cruz")
-                # can't be narrowed here -- there's no sibling country to
-                # check against, unlike the parser's own use of this table.
-                # Accept any of them; membership is still exact-code matched
-                # per row downstream, so this only ever widens the allowlist
-                # to cover every country that name could mean, never the
-                # wrong single one.
-                result.update(sub.code.split("-", 1)[-1] for sub in subs)
-            else:
-                result.add(s.strip())
-        return result
-
-def _fmt_duration(seconds: float) -> str:
-    if seconds >= 3600:
-        return f"{seconds / 3600:.1f}h"
-    if seconds >= 60:
-        return f"{seconds / 60:.0f}m"
-    return f"{seconds:.0f}s"
+        from src.discovery.location import canonical_country
+        return [f"location_allowlist.countries: {c!r} is not a country name"
+                for c in self.countries if canonical_country(c) is None]
 
 
-def _jobspy_query_cost(cfg: "DiscoveryConfig", n_locations: int) -> tuple[int, float]:
-    """(queries, pacing seconds) the enabled jobspy lanes would spend on
-    `n_locations`. Each lane runs terms x locations x (on-site, remote) and
-    sleeps `pacing_seconds` between queries -- see jobspy_source.fetch."""
-    try:
-        vcfg = verticals.get_config()
-    except (FileNotFoundError, ValueError):
-        # load_config() resolves verticals.yaml before any caller can reach
-        # validate(), and raises there. Reaching this means a hand-built
-        # config: report the cap without a cost estimate rather than raising
-        # a second time from inside a problem-reporting method.
-        vcfg = None
-    lanes = getattr(vcfg, "verticals", None) or {}
-
-    queries = 0
-    seconds = 0.0
-    for name, attr in (("linkedin", "linkedin_terms"), ("indeed", "search_terms")):
-        source = cfg.sources.get(name)
-        if source is None or not source.enabled:
-            continue
-        terms = sum(len(getattr(v, attr, ()) or ()) for v in lanes.values())
-        n = terms * n_locations * 2
-        queries += n
-        seconds += n * max(pacing_floor(name), source.pacing_seconds)
-    return queries, seconds
+def _default_sources() -> dict[str, SourceConfig]:
+    return {"linkedin": SourceConfig(pacing_seconds=3.0), "indeed": SourceConfig(pacing_seconds=2.0),
+            "greenhouse": SourceConfig(), "lever": SourceConfig(),
+            "ashby": SourceConfig(pacing_seconds=2.0), "workday": SourceConfig(pacing_seconds=2.0)}
 
 
 @dataclass
 class DiscoveryConfig:
-    schema_version: int = _SCHEMA_VERSION
     deadline_hours: float = 4.0
-    location_allowlist: LocationAllowlist = field(default_factory=lambda: LocationAllowlist(["United States"]))
-    sources: dict[str, SourceConfig] = field(default_factory=lambda: {
-        "linkedin": SourceConfig(True, 3.0),
-        "indeed": SourceConfig(True, 2.0),
-        "greenhouse": SourceConfig(True, 1.0),
-        "lever": SourceConfig(True, 1.0),
-        "ashby": SourceConfig(True, 2.0),
-        "workday": SourceConfig(True, 2.0),
-    })
-    raw_retention_days: int = 16
-    # Age cap for the staleness-exempt board sources (step 3). 0 = off.
-    board_max_age_days: int = 0
-    # Where the jobspy lanes *search*, as against the allowlist, which is what
-    # cleaning *accepts*. Empty = fall back to the allowlist's countries.
+    location_allowlist: LocationAllowlist = field(
+        default_factory=lambda: LocationAllowlist(["United States"]))
+    # Where the jobspy lanes search, as against what the view accepts.
     search_locations: list[str] = field(default_factory=list)
-    # Keys the loader did not recognise, recorded rather than dropped so
-    # validate() can name them. A typo'd key is otherwise indistinguishable
-    # from a setting that silently never applied.
+    sources: dict[str, SourceConfig] = field(default_factory=_default_sources)
+    # The live view: seen within `live_days`; a search row also posted within
+    # `search_max_age_days`. Retention counts from first_seen, by score tier.
+    live_days: int = 14
+    search_max_age_days: int = 14
+    retention_score_threshold: float = 80.0
+    retention_high_days: int = 60
+    retention_low_days: int = 15
+    forget_after_days: int = 120
+    raw_keep_days: int = 3
+    dead_every_days: int = 14
     unknown_keys: list[str] = field(default_factory=list)
 
     def abroad_lanes(self) -> dict[str, set[str]]:
-        """{country (lowercased): lanes allowed there} from every source's
-        `abroad` block. A country absent here is home: every lane is allowed."""
+        """{country (lowercased): lanes allowed there}. A country absent here
+        allows every lane."""
         lanes: dict[str, set[str]] = {}
         for src in self.sources.values():
             for c in src.abroad_countries:
@@ -328,59 +127,42 @@ class DiscoveryConfig:
         return lanes
 
     def effective_search_locations(self) -> list[str]:
-        """The `location=` values the jobspy lanes query, in query order.
-        `search_locations` when set, else the allowlist's effective countries.
-        The ATS sources are unaffected: they crawl globally and filter at
-        cleaning, so a wide allowlist costs them nothing."""
         if self.search_locations:
             return sorted(self.search_locations)
-        allow = self.location_allowlist
-        countries = sorted(allow.effective_countries()) if allow is not None else []
-        return countries or ["United States"]
+        return sorted(self.location_allowlist.effective_countries()) or ["United States"]
 
     def validate(self) -> list[str]:
-        """Every problem with this config, in human-readable form. Empty list
-        means the config is usable. Reads what the user configured and reports
-        it back; it holds no opinion about what they *should* have configured."""
-        problems = [f"unknown config key: {k}" for k in self.unknown_keys]
-
-        allow = self.location_allowlist
-        if allow is not None:
-            problems.extend(allow.unresolved())
-            effective = (allow.effective_countries() | allow.effective_states()
-                         | {c for c in allow.cities if c.strip()})
-            if allow.configured() and not effective:
-                problems.append(
-                    "location_allowlist resolves to nothing: every scraped row would "
-                    "be dropped, or location filtering skipped entirely")
-
+        """Every problem, in plain words. Empty means usable."""
+        problems = []
+        for key in self.unknown_keys:
+            leaf = key.rsplit(".", 1)[-1]
+            hint = f" (removed; use {_RETIRED_KEYS[leaf]})" if leaf in _RETIRED_KEYS else ""
+            problems.append(f"unknown config key: {key}{hint}")
+        problems += self.location_allowlist.unresolved()
         if not self.search_locations:
             n = len(self.effective_search_locations())
             if n > MAX_SEARCH_LOCATIONS:
-                queries, seconds = _jobspy_query_cost(self, n)
-                cost = (f"the jobspy lanes would run ~{queries} queries, "
-                        f"~{_fmt_duration(seconds)} of pacing sleep alone. "
-                        if queries else "")
                 problems.append(
-                    f"location_allowlist expands to {n} search locations "
-                    f"(max {MAX_SEARCH_LOCATIONS} without an explicit search_locations): "
-                    f"{cost}Set search_locations to the countries to query.")
-        problems.extend(self._abroad_problems())
+                    f"location_allowlist expands to {n} search locations (max "
+                    f"{MAX_SEARCH_LOCATIONS} without an explicit search_locations). Set "
+                    f"search_locations to the countries to query.")
+        problems += self._abroad_problems()
+        board_every = [s.every_days for n, s in self.sources.items()
+                       if n not in JOBSPY_SOURCES and s.enabled]
+        if board_every and self.live_days <= max(board_every) + 1:
+            problems.append(
+                f"live_days ({self.live_days}) must be above every_days + 1 "
+                f"({max(board_every) + 1}), or a board's jobs leave the view between checks")
         return problems
 
     def _abroad_problems(self) -> list[str]:
-        """An `abroad` block that would query nothing, or fetch rows cleaning
-        then drops, is reported rather than run."""
-        from src.discovery import location
+        from src.discovery.location import canonical_country
 
         problems = []
-        allowed = ({c.lower() for c in self.location_allowlist.effective_countries()}
-                   if self.location_allowlist is not None
-                   and self.location_allowlist.configured() else None)
+        allowed = {c.lower() for c in self.location_allowlist.effective_countries()}
         for name, src in self.sources.items():
             if not (src.abroad_countries or src.abroad_verticals):
                 continue
-            lanes = verticals.get_config().verticals
             where = f"sources.{name}.abroad"
             if name not in JOBSPY_SOURCES:
                 problems.append(f"{where}: only {sorted(JOBSPY_SOURCES)} read it")
@@ -388,205 +170,146 @@ class DiscoveryConfig:
             if not src.abroad_countries or not src.abroad_verticals:
                 problems.append(f"{where}: needs both countries and verticals")
             for c in src.abroad_countries:
-                canonical = location.COUNTRY_NAMES.get(location._fold(c))
+                canonical = canonical_country(c)
                 if canonical is None:
                     problems.append(f"{where}.countries: {c!r} is not a country name")
-                elif allowed is not None and canonical.lower() not in allowed:
-                    problems.append(
-                        f"{where}.countries: {c!r} is not in location_allowlist, "
-                        f"so cleaning would drop every row it finds")
+                elif allowed and canonical.lower() not in allowed:
+                    problems.append(f"{where}.countries: {c!r} is not in location_allowlist, "
+                                    f"so the view would drop every row it finds")
+            lanes = verticals.get_config().verticals
             for v in src.abroad_verticals:
                 if v not in lanes:
                     problems.append(f"{where}.verticals: {v!r} is not a vertical")
                 elif not lanes[v].abroad_terms:
-                    problems.append(
-                        f"{where}.verticals: {v!r} has no abroad_terms in "
-                        f"profile/verticals.yaml")
+                    problems.append(f"{where}.verticals: {v!r} has no abroad_terms in "
+                                    f"profile/verticals.yaml")
         return problems
+
+
+def _int(value, where: str, floor: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < floor:
+        raise ValueError(f"{where} must be an integer >= {floor}, got {value!r}")
+    return value
+
+
+def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
+    where = f"{p}: sources.{name}"
+    cfg.unknown_keys += [f"sources.{name}.{k}" for k in v if k not in _SOURCE_KEYS]
+    base = cfg.sources.get(name, SourceConfig())
+    out = SourceConfig(
+        enabled=bool(v.get("enabled", True)),
+        pacing_seconds=float(v.get("pacing_seconds", base.pacing_seconds)),
+        page_delay_seconds=float(v.get("page_delay_seconds", DEFAULT_PAGE_DELAY_SECONDS)),
+        page_delay_band_seconds=float(v.get("page_delay_band_seconds",
+                                            DEFAULT_PAGE_DELAY_BAND_SECONDS)),
+        remote_queries=v.get("remote_queries", True),
+        every_days=_int(v.get("every_days", 1), f"{where}.every_days", 1),
+        max_pages=_int(v.get("max_pages", 6), f"{where}.max_pages", 1),
+        hours_old=_int(v.get("hours_old", 336), f"{where}.hours_old", 1),
+        results_wanted=_int(v.get("results_wanted", 100), f"{where}.results_wanted", 1),
+    )
+    if out.page_delay_seconds < MIN_PAGE_DELAY_SECONDS:
+        raise ValueError(f"{where}.page_delay_seconds must be >= {MIN_PAGE_DELAY_SECONDS}, "
+                         f"got {out.page_delay_seconds}")
+    if out.page_delay_band_seconds < 0:
+        raise ValueError(f"{where}.page_delay_band_seconds must be >= 0")
+    if not isinstance(out.remote_queries, bool):
+        raise ValueError(f"{where}.remote_queries must be true or false, got {out.remote_queries!r}")
+    abroad = v.get("abroad") or {}
+    if not isinstance(abroad, dict):
+        raise ValueError(f"{where}.abroad must be a mapping")
+    cfg.unknown_keys += [f"sources.{name}.abroad.{k}" for k in abroad if k not in _ABROAD_KEYS]
+    for key in _ABROAD_KEYS:
+        values = abroad.get(key) or []
+        if not isinstance(values, list) or not all(isinstance(x, str) and x.strip() for x in values):
+            raise ValueError(f"{where}.abroad.{key} must be a list of names")
+        setattr(out, f"abroad_{key}", [x.strip() for x in values])
+    return out
+
 
 def load_config(path: Path | None = None) -> DiscoveryConfig:
     try:
         verticals.get_config()
     except FileNotFoundError as e:
-        # Raise, don't sys.exit: a library function must let a non-CLI caller
-        # handle this. orchestrator.main turns it into the one-line CLI message.
         raise FileNotFoundError(f"profile/verticals.yaml missing: {e}") from e
-
-    p = path or DEFAULT_CONFIG_PATH
+    p = Path(path or DEFAULT_CONFIG_PATH)
     if not p.exists():
         log.info("profile/discovery.yaml not found, using defaults")
         return DiscoveryConfig()
-
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
         raise ValueError(f"Malformed YAML in {p}: {e}") from e
-
     if not isinstance(data, dict):
         raise ValueError("Config must be a dictionary")
+    version = data.get("schema_version", SCHEMA_VERSION)
+    if version != SCHEMA_VERSION:
+        raise ValueError(f"{p}: schema_version must be {SCHEMA_VERSION}, got {version!r}")
 
     cfg = DiscoveryConfig()
-
     cfg.unknown_keys = [k for k in data if k not in _TOP_LEVEL_KEYS]
-    if isinstance(data.get("location_allowlist"), dict):
-        cfg.unknown_keys += [f"location_allowlist.{k}"
-                             for k in data["location_allowlist"]
-                             if k not in _ALLOWLIST_KEYS]
+    for name, v in (data.get("sources") or {}).items():
+        if name not in SOURCE_NAMES:
+            raise ValueError(f"Unknown source key: {name}")
+        cfg.sources[name] = _source(name, v or {}, p, cfg)
 
-    version = data.get("schema_version", _SCHEMA_VERSION)
-    if version != _SCHEMA_VERSION:
-        raise ValueError(f"{p}: schema_version must be {_SCHEMA_VERSION}, got {version!r}")
-    cfg.schema_version = _SCHEMA_VERSION
-
-    if "sources" in data:
-        allowed_sources = {"linkedin", "indeed", "greenhouse", "lever", "ashby", "workday"}
-        for k, v in data["sources"].items():
-            if k not in allowed_sources:
-                raise ValueError(f"Unknown source key: {k}")
-            cfg.unknown_keys += [f"sources.{k}.{sub}"
-                                 for sub in v if sub not in _SOURCE_KEYS]
-            try:
-                cadence = parse_cadence(v.get("cadence", CADENCE_DAILY))
-            except ValueError as e:
-                raise ValueError(f"sources.{k}: {e}") from None
-            page_delay = float(v.get("page_delay_seconds",
-                                     DEFAULT_PAGE_DELAY_SECONDS))
-            page_band = float(v.get("page_delay_band_seconds",
-                                    DEFAULT_PAGE_DELAY_BAND_SECONDS))
-            if page_delay < MIN_PAGE_DELAY_SECONDS:
-                raise ValueError(
-                    f"{p}: sources.{k}.page_delay_seconds must be >= "
-                    f"{MIN_PAGE_DELAY_SECONDS}, got {page_delay}")
-            if page_band < 0:
-                raise ValueError(
-                    f"{p}: sources.{k}.page_delay_band_seconds must be >= 0, "
-                    f"got {page_band}")
-            rotation = v.get("cold_rotation_runs", DEFAULT_COLD_ROTATION_RUNS)
-            if isinstance(rotation, bool) or not isinstance(rotation, int) or rotation < 1:
-                raise ValueError(
-                    f"{p}: sources.{k}.cold_rotation_runs must be an integer >= 1, "
-                    f"got {rotation!r}")
-            spread = v.get("pacing_spread", DEFAULT_PACING_SPREAD)
-            if (isinstance(spread, bool) or not isinstance(spread, (int, float))
-                    or spread < 1):
-                raise ValueError(
-                    f"{p}: sources.{k}.pacing_spread must be a number >= 1, "
-                    f"got {spread!r}")
-            reuse = v.get("detail_reuse_days", DEFAULT_DETAIL_REUSE_DAYS)
-            if isinstance(reuse, bool) or not isinstance(reuse, int) or reuse < 0:
-                raise ValueError(
-                    f"{p}: sources.{k}.detail_reuse_days must be an integer >= 0, "
-                    f"got {reuse!r}")
-            remote_queries = v.get("remote_queries", True)
-            if not isinstance(remote_queries, bool):
-                raise ValueError(
-                    f"{p}: sources.{k}.remote_queries must be true or false, "
-                    f"got {remote_queries!r}")
-            abroad = v.get("abroad") or {}
-            if not isinstance(abroad, dict):
-                raise ValueError(f"{p}: sources.{k}.abroad must be a mapping")
-            cfg.unknown_keys += [f"sources.{k}.abroad.{sub}"
-                                 for sub in abroad if sub not in _ABROAD_KEYS]
-            abroad_lists = {}
-            for sub in _ABROAD_KEYS:
-                values = abroad.get(sub) or []
-                if not isinstance(values, list) or not all(
-                        isinstance(x, str) and x.strip() for x in values):
-                    raise ValueError(
-                        f"{p}: sources.{k}.abroad.{sub} must be a list of names")
-                abroad_lists[sub] = [x.strip() for x in values]
-            cfg.sources[k] = SourceConfig(
-                enabled=bool(v.get("enabled", True)),
-                pacing_seconds=float(v.get("pacing_seconds", 1.0)),
-                cadence=cadence,
-                page_delay_seconds=page_delay,
-                page_delay_band_seconds=page_band,
-                cold_rotation_runs=rotation,
-                pacing_spread=float(spread),
-                detail_reuse_days=reuse,
-                remote_queries=remote_queries,
-                abroad_countries=abroad_lists["countries"],
-                abroad_verticals=abroad_lists["verticals"],
-            )
-
-    if "location_allowlist" in data:
-        loc = data["location_allowlist"]
-        cfg.location_allowlist = LocationAllowlist(
-            countries=loc.get("countries", []),
-            states=loc.get("states", []),
-            cities=loc.get("cities", []),
-            continents=loc.get("continents", []),
-        )
+    allow = data.get("location_allowlist") or {}
+    if not isinstance(allow, dict):
+        raise ValueError(f"{p}: location_allowlist must be a mapping")
+    cfg.unknown_keys += [f"location_allowlist.{k}" for k in allow if k not in _ALLOWLIST_KEYS]
+    if "countries" in allow:
+        cfg.location_allowlist = LocationAllowlist(list(allow.get("countries") or []))
 
     if "search_locations" in data:
-        raw_locations = data["search_locations"] or []
-        if not isinstance(raw_locations, list):
+        raw = data["search_locations"] or []
+        if not isinstance(raw, list):
             raise ValueError(f"{p}: search_locations must be a list of location names")
-        cfg.search_locations = [str(s).strip() for s in raw_locations if str(s).strip()]
+        cfg.search_locations = [str(s).strip() for s in raw if str(s).strip()]
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
-    cfg.raw_retention_days = int(data.get("raw_retention_days", cfg.raw_retention_days))
-
-    cfg.board_max_age_days = int(data.get("board_max_age_days", cfg.board_max_age_days))
-    if cfg.board_max_age_days < 0:
-        raise ValueError(f"{p}: board_max_age_days must be >= 0, got {cfg.board_max_age_days}")
-
+    for key in ("live_days", "search_max_age_days", "forget_after_days", "raw_keep_days",
+                "dead_every_days"):
+        setattr(cfg, key, _int(data.get(key, getattr(cfg, key)), f"{p}: {key}", 1))
+    retention = data.get("retention") or {}
+    if not isinstance(retention, dict):
+        raise ValueError(f"{p}: retention must be a mapping")
+    cfg.unknown_keys += [f"retention.{k}" for k in retention if k not in _RETENTION_KEYS]
+    cfg.retention_score_threshold = float(retention.get("score_threshold",
+                                                        cfg.retention_score_threshold))
+    for key in ("high_days", "low_days"):
+        setattr(cfg, f"retention_{key}", _int(retention.get(key, getattr(cfg, f"retention_{key}")),
+                                               f"{p}: retention.{key}", 1))
     return cfg
 
 
 def main() -> int:
-    """`discovery-check` -- print what discovery.yaml actually resolves to and
-    every problem with it. The counterpart to `verticals-check`."""
+    """`discovery-check`: what discovery.yaml resolves to, and every problem."""
     try:
         cfg = load_config()
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 1
-
-    allow = cfg.location_allowlist
-    if allow is not None:
-        def _fmt(values):
-            return ", ".join(sorted(values)) if values else "(any)"
-        print(f"countries: {_fmt(allow.effective_countries())}")
-        print(f"states:    {_fmt(allow.effective_states())}")
-        print(f"cities:    {_fmt(allow.cities)}")
-
-    searched = cfg.effective_search_locations()
-    print(f"search in: {', '.join(searched)}"
+    print(f"countries: {', '.join(sorted(cfg.location_allowlist.effective_countries())) or '(any)'}")
+    print(f"search in: {', '.join(cfg.effective_search_locations())}"
           + ("" if cfg.search_locations else "  (from the allowlist)"))
 
+    def line(name: str, s: SourceConfig) -> str:
+        bits = [f"{s.pacing_seconds:g}s"]
+        if name in JOBSPY_SOURCES:
+            if not s.remote_queries:
+                bits.append("no remote queries")
+            if s.abroad_countries:
+                bits.append(f"abroad {'/'.join(s.abroad_verticals)} in {len(s.abroad_countries)} countries")
+        else:
+            bits.append(f"every {s.every_days}d")
+        return f"{name} ({', '.join(bits)})"
+
     enabled = [(n, s) for n, s in cfg.sources.items() if s.enabled]
-
-    def _source(name, src):
-        # Cadence is shown only when it is not the default, so the common line
-        # stays readable and an unusual schedule stands out.
-        suffix = "" if src.cadence == CADENCE_DAILY else f", {src.cadence}"
-        # Page delay shown only when tuned off jobspy's own default, for the
-        # same reason as cadence: the common line stays readable and a
-        # non-stock value is exactly what you want to notice.
-        if (src.page_delay_seconds, src.page_delay_band_seconds) != (
-                DEFAULT_PAGE_DELAY_SECONDS, DEFAULT_PAGE_DELAY_BAND_SECONDS):
-            suffix += (f", pages {src.page_delay_seconds:g}"
-                       f"-{src.page_delay_seconds + src.page_delay_band_seconds:g}s")
-        if src.pacing_spread != DEFAULT_PACING_SPREAD:
-            suffix += f", sleep {src.pacing_seconds:g}-{src.pacing_seconds * src.pacing_spread:g}s"
-        if src.detail_reuse_days != DEFAULT_DETAIL_REUSE_DAYS:
-            suffix += f", reuse JD {src.detail_reuse_days}d"
-        if not src.remote_queries:
-            suffix += ", no remote queries"
-        if src.abroad_countries:
-            suffix += (f", abroad {'/'.join(src.abroad_verticals)} in "
-                       f"{len(src.abroad_countries)} countries")
-        return f"{name} ({src.pacing_seconds:g}s{suffix})"
-
-    print("sources:   " + (", ".join(_source(n, s) for n, s in enabled)
-                           if enabled else "(none enabled)"))
-    today = date.today()
-    not_due = [n for n, s in enabled if not due_today(s.cadence, today)]
-    if not_due:
-        print(f"           not due today ({today:%a}): {', '.join(not_due)}")
+    print("sources:   " + (", ".join(line(n, s) for n, s in enabled) or "(none enabled)"))
+    print(f"live view: seen within {cfg.live_days}d; search rows posted within "
+          f"{cfg.search_max_age_days}d; keep {cfg.retention_high_days}d at fit >= "
+          f"{cfg.retention_score_threshold:g}, else {cfg.retention_low_days}d")
     print(f"deadline_hours: {cfg.deadline_hours:g}")
-
     problems = cfg.validate()
     if problems:
         print("\nERROR: discovery config problems:")

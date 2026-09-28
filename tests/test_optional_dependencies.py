@@ -16,15 +16,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Every module that transitively pulled in postal before the import was made
-# lazy: location itself, cleaning, and everything importing cleaning.
+# lazy: location itself and every discovery module around it.
 DISCOVERY_MODULES = [
     "src.discovery.location",
-    "src.discovery.cleaning",
-    "src.discovery.orchestrator",
-    "src.discovery.inbox",
+    "src.discovery.normalize",
+    "src.discovery.store",
+    "src.discovery.run",
     "src.discovery.ingest_url",
-    "src.discovery.sources.ats.base",
-    "src.discovery.sources.ats.workday",
+    "src.discovery.sources.boards",
+    "src.discovery.sources.inbox",
+    "src.discovery.sources.workday",
 ]
 
 

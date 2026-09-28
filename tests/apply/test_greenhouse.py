@@ -100,7 +100,7 @@ class TestParsePosting:
         """Adding a key to the registry without teaching the parser -- or the
         reverse -- is the drift the registry exists to prevent."""
         from src.apply import greenhouse
-        from src.discovery.sources.ats import registry as ats_registry
+        from src import ats_registry
 
         gh = ats_registry.get_source("greenhouse")
         assert greenhouse._GH is gh

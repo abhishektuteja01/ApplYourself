@@ -8,6 +8,9 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
+from http.cookiejar import DefaultCookiePolicy
+from urllib.parse import urlsplit
+
 import requests
 
 log = logging.getLogger(__name__)
@@ -15,13 +18,65 @@ log = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.5
 REQUEST_TIMEOUT = 30
-# Retry-After is remote input; a board asking for an hour gets skipped instead.
+# Retry-After is remote input: honoured, but never for longer than this.
 MAX_RETRY_AFTER = 60
 _HEADERS = {"User-Agent": "job-search-pipeline (personal job-search pipeline)"}
 
 # One observer per thread: discovery runs its lanes on separate threads, so a
 # lane that traces sees only its own requests. Unset, nothing is recorded.
 _local = threading.local()
+
+
+def _session() -> requests.Session:
+    """This thread's session, so a lane reuses its TLS connections. Cookies are
+    refused, which keeps every request as stateless as a bare `requests.get`."""
+    session = getattr(_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+        _local.session = session
+    return session
+
+
+def _get(url, **kwargs):
+    return _session().get(url, **kwargs)
+
+
+def _post(url, **kwargs):
+    return _session().post(url, **kwargs)
+
+
+class HttpTally:
+    """Thread-safe request counts per host: requests, seconds spent waiting on
+    the network, 403s, 429s and transport errors. Feed it with `observe`."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.hosts: dict[str, dict] = {}
+
+    def record(self, url: str, secs: float, status: int | None) -> None:
+        host = (urlsplit(url).hostname or "").lower()
+        with self._lock:
+            h = self.hosts.setdefault(
+                host, {"requests": 0, "seconds": 0.0, "403": 0, "429": 0, "errors": 0})
+            h["requests"] += 1
+            h["seconds"] += secs
+            if status is None:
+                h["errors"] += 1
+            elif status in (403, 429):
+                h[str(status)] += 1
+
+    def on_http(self, event: dict) -> None:
+        self.record(event.get("url", ""), event.get("secs", 0.0), event.get("status"))
+
+    def totals(self) -> dict:
+        with self._lock:
+            out = {"requests": 0, "seconds": 0.0, "403": 0, "429": 0, "errors": 0}
+            for h in self.hosts.values():
+                for k in out:
+                    out[k] += h[k]
+            out["seconds"] = round(out["seconds"], 1)
+            return out
 
 
 @contextmanager
@@ -81,9 +136,9 @@ def _fetch(
         t0 = time.monotonic()
         try:
             resp = (
-                requests.post(url, json=json_body, timeout=timeout, headers=_HEADERS)
+                _post(url, json=json_body, timeout=timeout, headers=_HEADERS)
                 if json_body is not None
-                else requests.get(url, timeout=timeout, headers=_HEADERS)
+                else _get(url, timeout=timeout, headers=_HEADERS)
             )
         except requests.RequestException as exc:
             _notify(method=method, url=url, attempt=attempt, status=None,
@@ -111,12 +166,9 @@ def _fetch(
                     f"HTTP {resp.status_code} after {MAX_RETRIES} attempts: {url}",
                     status=resp.status_code,
                 )
-            retry_after = resp.headers.get("Retry-After")
-            delay = (
-                min(float(retry_after), MAX_RETRY_AFTER)
-                if retry_after and retry_after.isdigit()
-                else RETRY_BASE_DELAY * (2 ** attempt)
-            )
+            delay = _retry_after(resp.headers.get("Retry-After"))
+            if delay is None:
+                delay = RETRY_BASE_DELAY * (2 ** attempt)
             _sleep_or_raise(delay, deadline_ts, url)
             continue
         # 401/403 walls included: a live board behind Cloudflare must not be pruned.
@@ -124,6 +176,33 @@ def _fetch(
     # Unreachable: at attempt == MAX_RETRIES every branch above raises or
     # returns. Kept as a guard.
     raise CareersError(f"exhausted retries: {url}")  # pragma: no cover
+
+
+def _retry_after(value: str | None) -> float | None:
+    """Seconds a Retry-After header asks for, capped at MAX_RETRY_AFTER. Both
+    header forms: delta-seconds and an HTTP date."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return min(float(value), MAX_RETRY_AFTER)
+    from email.utils import parsedate_to_datetime
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    wait = when.timestamp() - time.time()
+    # A date already past says nothing useful; back off as if it were absent.
+    return min(wait, MAX_RETRY_AFTER) if wait > 0 else None
+
+
+def fetch_page(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[int, str]:
+    """(status, body) for one plain GET, no retries: for a careers page whose
+    status the caller wants to explain itself."""
+    resp = _get(url, timeout=timeout, headers=_HEADERS)
+    return resp.status_code, resp.text or ""
 
 
 def _json_reader(url: str):

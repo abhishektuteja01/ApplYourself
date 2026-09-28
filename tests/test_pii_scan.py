@@ -59,7 +59,7 @@ def test_license_is_allowlisted(tmp_path):
 
 
 def test_vendored_universe_csv_is_allowlisted(tmp_path):
-    result = _scan(_repo(tmp_path, {"data/universe/ashby.csv": "Quimby,x\n"}))
+    result = _scan(_repo(tmp_path, {"data/universe/boards.csv": "ashby,Quimby,x,\n"}))
     assert result.returncode == 0
 
 

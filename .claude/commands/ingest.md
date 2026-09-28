@@ -32,10 +32,10 @@ test -n "$2" || { echo "ERROR: /ingest requires <url> <vertical>."; exit 1; }
 uv run verticals-check || exit 1
 test -f profile/scoring_rubric.md || { echo "ERROR: profile/scoring_rubric.md missing -- score-judge reads it."; exit 1; }
 test ! -f jobs/scored.staging/run.json || { echo "ERROR: a /score run is open. Finish it with /score, then re-run /ingest."; exit 1; }
-# Step 2 writes into jobs/raw/ and rebuilds clean.parquet + the seen ledger, so
-# a discovery run must not be mid-flight. The bracketed letters keep the pattern
-# from matching this command line itself.
-pgrep -f 'discovery[.]orchestrato[r]|/discove[r]$' >/dev/null && { echo "ERROR: a discovery run is in flight. Re-run /ingest after it finishes."; exit 1; }
+# Step 2 writes the jobs store and rebuilds clean.parquet. It waits on the
+# store's lock, but a nightly run would rebuild clean.parquet again at its end,
+# so wait for it. The bracketed letters keep the pattern from matching itself.
+pgrep -f 'discovery[.]ru[n]|/discove[r]$' >/dev/null && { echo "ERROR: a discovery run is in flight. Re-run /ingest after it finishes."; exit 1; }
 ```
 
 If `resume` was requested (or implied), also — `tailor-prep`'s prereqs, which
@@ -63,27 +63,25 @@ uv run ingest-url "$1" --vertical "$2"
 
 On success it prints `job_id: <8-hex>` and `Ingested: <company> — <title>
 [<vertical>]`. **That printed vertical, not `$2`, is the row's lane for every
-later step**: a duplicate already in `clean.parquet` can win dedupe on a longer
-`jd_text` and keep its own vertical, url and source. If it differs from `$2`,
-use the printed one and say so in step 6.
+later step**: when the posting joins a job the store already had, it prints
+`note: this posting joined a job ...`, and that job keeps its own id, vertical,
+url and source. If the vertical differs from `$2`, use the printed one and say
+so in step 6.
 
 On exit 1, match the message:
 
 | Message | Action |
 |---|---|
 | `not a recognized ATS posting` | `uv run ingest-url "$1" --dry-run` (writes nothing), read company and title off the printed text, re-run the step 2 command with `--company "..." --title "..."` added (keep `--vertical "$2"`). **One attempt.** They define the `job_id` hash. A wrong company spelling still merges against the board's own spelling if the JD matches, and the merge keeps the tracked id — but a wrong *title* does not, and mints a second id for the same role. |
-| `below the ... cleaning floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/` and run `/score`. |
-| `did not survive cleaning` + a listed `job_id` | A near-duplicate won dedupe. Continue with that `job_id` — through step 3, not past it; it is in `clean.parquet` but not necessarily scored. Its vertical is whatever that row already carries, which may not be `$2`; read it with `uv run python -c "import pandas as pd; print(pd.read_parquet('jobs/clean.parquet').set_index('job_id').loc['<job_id>','vertical'])"`. |
-| `did not survive cleaning`, no hint | Stop. Report the raw file (below) and that the row was dropped by a cleaning filter no hint covers; the run report `jobs/runs/<run_id>.md` names the stage. |
+| `below the ... floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/` and run `/score`. |
+| `does not exist yet` | Stop. The jobs store has not been built; report the printed command. |
+| `did not survive cleaning` | Stop. The job was saved but the view dropped it (its retention window has passed); report the `job_id`. |
 | `location_allowlist` | Stop. Report the location and that `profile/discovery.yaml` must allow it. |
 | `not configured` / `did not classify` | Stop. Report the configured vertical list. |
 
-The three `did not survive cleaning` / `location_allowlist` rows fail *after*
-the raw row is archived, so they leave it in `jobs/raw/<run_id>.parquet` and
-every later cleaning run re-drops it — name that file when you stop. The other
-three fail before any write, so retrying them costs nothing. Either way, retry
-only as the table prescribes; a guessed title mints a distinct `job_id` that no
-merge recovers.
+Every row but `did not survive cleaning` fails before any write, so retrying
+costs nothing. Retry only as the table prescribes; a guessed title mints a
+distinct `job_id`.
 
 ## Step 3 — score that one row
 

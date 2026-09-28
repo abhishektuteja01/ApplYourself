@@ -86,7 +86,6 @@ class TestCopies:
         run("--vertical", "my_lane", "--work-auth", "citizen", "--with-optional")
         assert (prof / "voice_samples.md").is_file()
         assert (prof / "contacts.yaml").is_file()
-        assert (prof / "companies.yaml").is_file()
         assert (prof / "pii_denylist.txt").is_file()
 
     def test_a_new_template_is_picked_up_without_a_code_change(self, prof):

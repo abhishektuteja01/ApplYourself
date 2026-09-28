@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from src.discovery.orchestrator import main
+from src.discovery.run import main
 
 if __name__ == "__main__":
     sys.exit(main())

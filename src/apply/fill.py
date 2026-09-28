@@ -36,7 +36,7 @@ from src.apply.answers import Answers, resolve
 from src.apply.browser import USER_DATA_DIR, launch as _launch, require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.apply.reconcile import MergedField, MergedOption
-from src.discovery.sources.ats.registry import DRIVER_NAMES
+from src.ats_registry import DRIVER_NAMES
 
 log = logging.getLogger(__name__)
 

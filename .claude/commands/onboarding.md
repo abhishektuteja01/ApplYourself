@@ -92,10 +92,10 @@ there. If everything is present and `verticals-check` passes, report that and
 stop — that is the audit. `audit` mode always stops here.
 
 **libpostal is a hard prerequisite for the scrape at the end of step 1.** The
-location filter in cleaning imports the `postal` binding (opt-in group
+location filter imports the `postal` binding (opt-in group
 `discovery`), compiled against the system `libpostal` C library. No fallback
-parser, and no way around it: `uv run discover` and `uv run ingest-url` both go
-through cleaning. Steps 2, 4 and 5 do not need it, and step 1 up to the scrape
+parser, and no way around it: `uv run discover` and `uv run ingest-url` both
+rebuild `clean.parquet` through it. Steps 2, 4 and 5 do not need it, and step 1 up to the scrape
 does not either.
 
 If the probe says absent, say so now and let 0b's `uv sync --group discovery`
@@ -204,16 +204,16 @@ the resume.
          > logs/onboarding_scrape.log 2>&1 &
    ```
 
-   **libpostal is blocking here**, not later: cleaning runs on every ingestion
-   path, so the scrape cannot start without the binding. If it is missing, skip
+   **libpostal is blocking here**, not later: the location filter runs on every
+   ingestion path, so the scrape cannot start without the binding. If it is missing, skip
    the `nohup` line, say so in one line, print the install block from 0a, and
    continue to step 2 — step 3 picks it up through the paste-URL fallback. Never
    dead-end the user on it.
 
    Say what the scrape is before starting it: LinkedIn search only, two terms.
    No Indeed unless the fallback fires, no Greenhouse, Lever, Ashby or Workday
-   board crawls (those reach only companies already in `profile/companies.yaml`
-   or `data/universe/*.csv`, and take far longer than this has). Expect a
+   board crawls (those reach only boards listed in `data/universe/boards.csv` or
+   `boards.local.csv`, and take far longer than this has). Expect a
    fraction of an overnight run. `location_allowlist` stays at the shipped
    `countries: ["United States"]`; nothing here needs undoing, because tomorrow's
    plain `uv run discover` runs the full config.
@@ -319,8 +319,8 @@ print(len(d), 'rows'); print(d.title.value_counts().head(20).to_string())"
 
 Draft a candidate `title_include_terms` for the lane from those real titles, then
 **test it before writing it**. A nonempty `title_include_terms` flips the lane
-from blocklist to allowlist and the gate runs during cleaning
-(`src/discovery/cleaning.py:apply_title_exclusion`), so a list drafted blind
+from blocklist to allowlist and the gate runs on every listing
+(`src/discovery/normalize.py:title_passes`), so a list drafted blind
 empties the lane silently.
 
 ```bash
@@ -389,11 +389,11 @@ but it is in the background and the user does not feel it.
 - A source they turn off is `enabled: false` under that source in
   `discovery.yaml`'s `sources` block, and nowhere else.
 - Locations go into `preferences.md` and into `discovery.yaml`'s
-  `location_allowlist`, the hard geographic filter that drops rows in cleaning.
-  Canonical names or codes (`states: ["Texas"]` or `["TX"]`,
-  `continents: ["Europe"]`), not every spelling a board might use.
-- A new years cap is `max_years`, a new level band is `title_phrases` — both in
-  the lane's `disqualifier` block.
+  `location_allowlist`, the hard geographic filter on `clean.parquet`.
+  Country names only (`countries: ["United States"]`), not every spelling a
+  board might use.
+- A new years cap is the lane's `years` table; a new level band is its level
+  words in `title_exclude_terms`.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
 
 Then wait on the scoring agent and read the shortlist it wrote.
@@ -484,9 +484,9 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
 - **`/outreach`** — hard-refuses without `profile/voice_samples.md`. Paste in
   real messages they actually sent; polished samples sound like nobody.
   `contacts.yaml` is optional alongside it. `--with-optional` copies both, plus
-  `companies.yaml` (only for boards they specifically care about —
-  `data/universe/*.csv` ships thousands, and `name` must match how boards spell
-  it, because it feeds `job_id`) and the denylist.
+  the denylist. A board they care about that `data/universe/boards.csv` lacks
+  goes in `data/universe/boards.local.csv` as `ats,name,slug,active` (`name`
+  must match how boards spell it, because it feeds `job_id`).
 - **Restyling the two Word templates.** The resume body is rebuilt, but headers,
   footers and text boxes survive onto every resume — keep name and contact out of
   the Word header. Restyle the five named paragraph styles without renaming them,

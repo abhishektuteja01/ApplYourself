@@ -69,7 +69,7 @@ from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
 from src.ats_http import CareersError, fetch_json_post, fetch_text
-from src.discovery.sources.ats import registry as ats_registry
+from src import ats_registry
 
 log = logging.getLogger(__name__)
 

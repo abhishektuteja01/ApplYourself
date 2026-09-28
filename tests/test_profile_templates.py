@@ -239,7 +239,6 @@ class TestTemplateCoverage:
             "stories.example.md",
             "scoring_rubric.example.md",
             "contacts.example.yaml",
-            "companies.example.yaml",
             "discovery.example.yaml",
             "application_answers.example.yaml",
             "verticals.example.yaml",
@@ -294,12 +293,12 @@ class TestExampleConfigsAreValid:
         assert answers.education
 
     @pytest.mark.parametrize(
-        "name", ["contacts.example.yaml", "companies.example.yaml", "discovery.example.yaml"]
+        "name,version", [("contacts.example.yaml", 1), ("discovery.example.yaml", 2)]
     )
-    def test_yaml_templates_parse(self, name):
+    def test_yaml_templates_parse(self, name, version):
         data = yaml.safe_load((PROFILE / name).read_text(encoding="utf-8"))
         assert isinstance(data, dict)
-        assert data.get("schema_version") == 1
+        assert data.get("schema_version") == version
 
     def test_contacts_template_entries_carry_the_documented_fields(self):
         data = yaml.safe_load(

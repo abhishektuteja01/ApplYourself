@@ -8,7 +8,7 @@ zero postings, and one whose newest posting is two years old, are both
 indistinguishable from a healthy board that simply has no AI roles.
 
 This walks every slug once and says which it is. It writes a single CSV and
-prints a summary; it does not touch the health ledgers, `data/universe/*.csv`,
+prints a summary; it does not touch jobs/boards.parquet, `data/universe/boards*.csv`,
 or anything under `pipeline/`.
 
     uv run python scripts/audit_slugs.py --stale-days 90
@@ -27,11 +27,11 @@ from datetime import date
 
 from src import paths
 from src.ats_http import CareersError, fetch_json
-from src.discovery import universe
 from src.discovery.config import load_config, pacing_floor
-from src.discovery.dates import iso_date, ms_date, relative_posted_date
-from src.discovery.sources.ats import ashby
-from src.discovery.sources.ats import workday as wd
+from src.discovery.normalize import iso_date, ms_date, relative_posted_date
+from src.discovery.sources import ashby
+from src.discovery.sources import workday as wd
+from src.discovery.sources.boards import load_boards
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
 DEFAULT_ATS = ("ashby", "greenhouse", "lever")
@@ -42,7 +42,7 @@ ACTIVE, STALE, EMPTY, DEAD, ERROR = "active", "stale", "empty", "dead", "error"
 
 
 # --- payload -> (count, newest posting date). Pure; one per ATS. ------------
-# Each reads the same date field its scraper in src/discovery/sources/ats/
+# Each reads the same date field its lane in src/discovery/sources/
 # reads, so "newest posting" here means the same thing a kept row's
 # `posted_date` would. A payload of the wrong shape raises, and the caller
 # reports it as `error` rather than counting it as an empty board.
@@ -91,7 +91,7 @@ def workday_summary(payload) -> tuple[int, date | None]:
     items = _items(payload, "jobPostings")
     total = payload.get("total")
     count = total if isinstance(total, int) and total >= len(items) else len(items)
-    return count, _newest(relative_posted_date(i.get("postedOn") or "") for i in items)
+    return count, _newest(relative_posted_date(i.get("postedOn") or "", date.today()) for i in items)
 
 
 SUMMARIZE = {
@@ -258,8 +258,8 @@ def main(argv=None) -> int:
 
     work = {}
     for ats in lanes:
-        companies = sorted(universe.universe_companies(
-            ats, include_retired=args.include_retired), key=lambda c: c.slug)
+        companies = sorted(load_boards(ats, include_retired=args.include_retired),
+                           key=lambda c: c.slug)
         companies = [c for c in companies if (ats, c.slug) not in done]
         if args.limit:
             companies = companies[:args.limit]

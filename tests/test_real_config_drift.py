@@ -52,10 +52,10 @@ def test_real_config_loads_under_the_strict_loader(real_cfg):
 
 
 def test_every_search_term_classifies_into_its_own_lane(real_cfg):
-    """discovery.py tags a row by the search term that found it; cleaning.py
+    """discovery tags a row by the search term that found it; normalize.py
     falls back to the title classifier. When they disagree, a manual clip and
     a scraped row for the same title land in different rubrics."""
-    from src.discovery.cleaning import classify_vertical_from_title
+    from src.discovery.normalize import classify_vertical_from_title
 
     for vertical in real_cfg.verticals.values():
         for term in vertical.search_terms + vertical.linkedin_terms:

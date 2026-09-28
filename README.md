@@ -59,14 +59,14 @@ anywhere, look at what happened, and pick up later.
 ```mermaid
 flowchart TD
     A["<b>1. discover</b><br/>inbox clips, JobSpy,<br/>ATS boards, Workday"]
-    B["<b>2. clean</b><br/>normalize, drop, dedupe,<br/>assign job_id"]
+    B["<b>2. store</b><br/>one row per posting,<br/>job_id, first/last seen"]
     C["<b>3. score</b><br/>hard-rule filter, then<br/>parallel judge agents"]
     D["<b>4. tailor</b><br/>resume, cover letter,<br/>outreach, audit trail"]
     E["<b>5. apply</b><br/>read the form,<br/>fill it, maybe submit"]
     F["<b>6. track</b><br/>pipeline/&lt;job_id&gt;/state.yaml<br/>11 states, one file per role"]
 
-    A -->|"jobs/raw/&lt;run_id&gt;_&lt;source&gt;.parquet<br/>jobs/runs/&lt;run_id&gt;.md"| B
-    B -->|"<b>jobs/clean.parquet</b><br/>jobs/seen.parquet"| C
+    A -->|"jobs/runs/&lt;run_id&gt;.json"| B
+    B -->|"jobs/jobs.parquet<br/><b>jobs/clean.parquet</b>"| C
     C -->|"jobs/scored.parquet<br/>shortlist/&lt;date&gt;.md"| D
     D -->|"applications/&lt;vertical&gt;/&lt;dir&gt;/"| E
     E -->|"applications/apply_runs/&lt;ts&gt;.md"| F
@@ -77,40 +77,27 @@ flowchart TD
 ```
 
 `jobs/clean.parquet` is the **only** discovery output anything downstream reads.
-Cleaning runs automatically at the end of every discovery run, in a fixed order:
+A run works like this:
 
-0. Title gate: classify each row into a lane; unclassified rows are dropped
-0b. Recover a blank company from the board tenant slug in the row's url
-1. Normalize company and title, then drop rows still left with a blank
-   company — `job_id` would key on the title alone
-2. Drop postings whose description is under 200 characters
-3. Drop postings older than 14 days. Career-board sources are exempt, because
-   being on the company's own board this run *is* the liveness signal, and so
-   is any role you're already tracking
-3b. Drop postings outside your location allowlist
-4. Assign `job_id` — before dedupe, because a merge group keeps an id one of
-   its own members already carries
-5. Dedupe: one evidence-based pass. A pair merges only on an identical url, a
-   shared board tenant plus a near-identical title, or a near-identical title
-   with a close company name **and** similar description text. Two titles in
-   one company that disagree on level tokens are different roles however
-   similar the JD, so "Senior Engineer" never merges into "Engineer". The
-   survivor is the applyable url, then the in-allowlist location, then the
-   longest description
-6. Update the seen-ledger
-7. Read `pipeline/*/state.yaml` for the roles you're tracking
-8. Drop rows the seen-ledger has expired (tracked rows never expire; a
-   never-scored row gets the longest retention — unjudged is not bad)
-9. Default the scoring columns
+1. **Pick due boards.** Each board in `data/universe/boards.csv` +
+   `boards.local.csv` is checked when `every_days` have passed since its last
+   check (`jobs/boards.parquet`); due boards run oldest first.
+2. **List and gate.** Each lane lists its boards or runs its searches, and every
+   title goes through the lane's title gate right away.
+3. **Known or new.** A posting the store already holds is only touched (or
+   refreshed, when the list carries its JD). A new one gets its JD fetched once,
+   then a `job_id`: a known url, else a known company + title pair, else the
+   same role from a different source, else the hash. Two postings of one board
+   never merge, and "Senior Engineer" never merges into "Engineer".
+4. **Save as it goes.** The store is written every few minutes, so a killed run
+   loses little and the next run finds the unchecked boards still due.
+5. **Build the view.** `clean.parquet` is every job seen within `live_days`,
+   through the title gate and location allowlist, one row per `job_id`, kept for
+   60 days from first seen at fit >= 80 (or unscored), else 15. Roles you are
+   actively tracking are always in.
 
-The normative list is the module docstring in `src/discovery/cleaning.py`;
-reordering it changes which rows exist.
-
-Every near-duplicate it drops is named in `jobs/runs/<run_id>.md`. That's the one
-quiet way a role you were tracking can leave `clean.parquet` — and the reason
-each merged company spelling is pinned in an append-only
-`jobs/company_aliases.parquet`, so a surviving `job_id` never moves under a
-role you already have on file.
+A stored posting never changes its `job_id`, so a role you have on file never
+moves.
 
 Scoring puts a keeper list in `shortlist/<date>.md`: the top 25 per lane, minimum
 fit 50, and **each lane ranks independently**. A score in one lane is never
@@ -195,10 +182,10 @@ uv sync
 uv run pytest tests -q --ignore=tests/discovery   # should be fully green
 ```
 
-**2. Install libpostal.** The location filter in cleaning needs the system
+**2. Install libpostal.** The location filter needs the system
 **libpostal** C library and its Python binding, with no fallback parser, and
-every ingestion path runs cleaning — including the scrape `/onboarding` does at
-its step 1. This is the one genuinely annoying install.
+every ingestion path rebuilds `clean.parquet` through it — including the scrape
+`/onboarding` does at its step 1. This is the one genuinely annoying install.
 
 ```bash
 brew install libpostal            # macOS. On Linux, build from source first.
@@ -305,25 +292,17 @@ session.
 <details>
 <summary><b>What a night actually polls</b></summary>
 
-A run is not "every source, every board, every night". Three things narrow it,
-all in `profile/discovery.yaml`:
+Two settings in `profile/discovery.yaml` decide it:
 
-- **Cadence, per source.** `cadence: daily | weekdays | weekly | every_n_days:N`
-  on a source block. A skipped night writes no shard and reports as `SKIPPED`,
-  which the digest excludes from its medians and its alarms — a cadence skip is
-  not a zero-row night. Everything defaults to daily; Workday is the usual first
-  candidate for slowing down, being the costliest lane per kept row and
-  manual-apply anyway. Note `weekly` anchors to Monday, not to "7 days since the
-  last run".
-- **A hot/cold split of the board universe.** The vendored slug lists run to
-  thousands of tenants per ATS. A board is *hot* if it's on your watchlist or
-  kept you a row in the last 30 days, and hot boards are polled every night. The
-  cold remainder is split into thirds, one third per run, so the whole tail is
-  covered every three nights instead of crowding out the hot set on all of them.
-- **Liveness pruning.** Three consecutive 404s drop a slug. That only sees
-  boards that stopped answering, though — a board serving 200 with no postings,
-  and one whose newest posting is two years old, both look healthy. That blind
-  spot is what `scripts/audit_slugs.py` exists to measure.
+- **`every_days`, per board lane.** A board is checked when that many days have
+  passed since its last check, oldest first. Greenhouse, Lever and Ashby ship at
+  1; Workday, the slowest lane per kept row and manual-apply anyway, at 3, so a
+  third of its tenants run each night. There is no rotation state: a missed or
+  killed night just leaves more boards due.
+- **Dead boards.** Three 404s in a row mark a board `dead`, re-checked every
+  `dead_every_days`. That only sees boards that stopped answering — a board
+  serving 200 with no postings looks healthy, which is what
+  `scripts/audit_slugs.py` and the digest's `never_found` count measure.
 
 `uv run discovery-check` prints the config these resolve to before you run
 anything, and `discover` runs it as preflight.
@@ -368,11 +347,11 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 
 | command | what it does | writes |
 |---|---|---|
-| `uv run discover [--resume <run_id>] [--deadline-hours H] [--source NAME] [--max-terms N]` | Overnight scrape, then cleaning. The three overrides narrow one run without touching config; `--source` is repeatable and exhaustive, so naming one excludes the inbox. Needs `--group discovery`. | `jobs/raw/<run_id>_<source>.parquet`, `jobs/runs/<run_id>.md`, then cleaning's output |
-| `uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]` | One posting into the pipeline, then a full clean rebuild. Needs `--group discovery`. | `jobs/raw/<run_id>.parquet`, `jobs/clean.parquet` |
+| `uv run discover [--deadline-hours H] [--source NAME] [--max-terms N] [--jobs-dir D] [--boards-dir D]` | Overnight scrape into the jobs store, then the `clean.parquet` rebuild. The overrides narrow one run without touching config; `--source` is repeatable and exhaustive, so naming one excludes the inbox. Needs `--group discovery`. | `jobs/jobs.parquet`, `jobs/boards.parquet`, `jobs/clean.parquet`, `jobs/raw/<run_id>.parquet`, `jobs/runs/<run_id>.json` + `.md` |
+| `uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]` | One posting into the store, then a `clean.parquet` rebuild. Needs `--group discovery`. | `jobs/jobs.parquet`, `jobs/clean.parquet` |
 | `uv run verticals-check` | Validate config plus every per-lane rubric, tailoring file and resume. | nothing |
 | `uv run discovery-check` | Resolve and validate the discovery config: prints the effective location allowlist, the JobSpy search locations and the enabled sources, exits 1 on any problem. `discover` runs it as preflight. | nothing |
-| `uv run discover-digest [--json] [--run-id ID] [--window N]` | Parse the recent `jobs/runs/*.md` reports and print the trend facts `/discover` renders: per-source rows against that source's own 7-day median, error-rate delta, zero streaks, and the crashed, skipped or truncated lanes. Reader only, stdlib only. | nothing |
+| `uv run discover-digest [--json] [--run-id ID] [--window N]` | Read the recent `jobs/runs/*.json` reports and print the trend facts `/discover` renders: per-lane rows against that lane's own 7-day median, error delta, zero streaks, 403/429 counts, crashed or truncated lanes, dead boards. Reader only. | nothing |
 | `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set `sponsorship_need` in `scoring.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
 | `uv run score start [--all] [--vertical V] [--job-id ID]` / `uv run score finish` | `/score`'s plumbing: `start` drops rows by the hard rules and stages judge slices; `finish` checks the answers, merges, prunes and writes the shortlist. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
@@ -380,16 +359,12 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 | `uv run profile-extract <file>` | Dump a `.docx` or `.md` resume's text. Refuses `.pdf`. | nothing; prints to stdout |
 | `uv run apply <subcommand>` | `prepare`, `plan`, `fill`, `run`. Needs `--group apply`. | see below |
 
-Plus four scripts: `./scripts/pii_scan.sh` (the
+Plus three scripts: `./scripts/pii_scan.sh` (the
 [PII gate](#before-you-push-the-pii-gate)),
 `uv run python scripts/scrub_example_templates.py` (strips Word metadata from
-the two tracked `.docx`), and two one-offs —
-`scripts/audit_slugs.py`, which walks the whole ATS slug universe once and says
-which boards are active, empty, stale or dead into `jobs/slug_audit_<date>.csv`,
-and `scripts/seed_company_aliases.py`, which pins `jobs/company_aliases.parquet`
-from the roles you already track so the company merge can never orphan a
-`job_id`. Both are report-first: the second takes `--dry-run`, and the first
-writes nothing but its CSV.
+the two tracked `.docx`), and `scripts/audit_slugs.py`, which walks every board
+once and says which are active, empty, stale or dead into
+`jobs/slug_audit_<date>.csv`. It writes nothing but that CSV.
 
 <details>
 <summary><b>What each <code>apply</code> subcommand actually does</b></summary>
@@ -440,7 +415,6 @@ experience. Filling them in is the work.
 | `application_answers.yaml` | The standing answers `/apply` fills forms from: contact details, work authorization, demographics, links. A field it can't resolve here parks the role instead of guessing. |
 | `verticals.yaml` | Your lanes. See [Lanes](#lanes-verticals). |
 | `discovery.yaml` | Sources, deadlines, location allowlist, retention. |
-| `companies.yaml` | A watchlist that wins over the vendored slug lists. Optional. |
 | `contacts.yaml` | People to reach out to. Optional. |
 | `resume_template.docx` | Word template whose five named paragraph styles the renderer fills. Its body text is discarded. |
 | `cover_letter_template.docx` | Your own letter design. Everything that isn't a `{{PLACEHOLDER}}` is **preserved into every letter**, so nothing decorative is free. |
@@ -498,12 +472,13 @@ through.
 
 ```
 jobs/clean.parquet              the only discovery output downstream reads
+jobs/jobs.parquet               the store: one row per posting, job_id, first/last seen
+jobs/boards.parquet             one row per board: last checked, last found, counts
 jobs/scored.parquet             scores, one row per judged posting
 jobs/scored.staging/            per-lane packets, judge slices and answer files
-jobs/raw/<run_id>_<source>.parquet   one shard per source per run
-jobs/runs/<run_id>.md           the run report, including every dedupe casualty
-jobs/seen.parquet               retention ledger (60 / 15 day windows)
-jobs/clean.preview.jsonl        a readable peek at clean.parquet
+jobs/raw/<run_id>.parquet       debug: every classified listing and its gate verdict
+jobs/runs/<run_id>.json + .md   the run report
+data/universe/boards.csv        the board list; boards.local.csv is yours
 shortlist/<date>.md             today's keepers, sectioned by lane
 applications/<vertical>/<dir>/  one directory per tailoring run
 applications/apply_runs/        submission run reports and evidence
@@ -530,7 +505,7 @@ applies.
 <details>
 <summary><b>R7: no module under <code>src/</code> ever calls an LLM</b></summary>
 
-`src/` is deterministic plumbing: parquet I/O, config loading, cleaning, linting,
+`src/` is deterministic plumbing: parquet I/O, config loading, the jobs store, linting,
 docx rendering, state transitions. Every act of *judgment* (scoring a posting,
 choosing which bullets to tailor, writing a letter) happens inside a slash
 command session, which shells out to the `src/` helpers for the deterministic
@@ -538,7 +513,7 @@ parts.
 
 That split is what makes the pipeline auditable. No model decides anything
 without writing it down, in an artifact stored next to the resume it produced.
-And the `src/` half, given the same inputs and the same seen-ledger, does the
+And the `src/` half, given the same inputs and the same jobs store, does the
 same thing every time.
 
 A corollary: `src/` is vertical-agnostic and company-agnostic. The judge's model

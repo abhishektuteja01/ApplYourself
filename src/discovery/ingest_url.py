@@ -1,50 +1,33 @@
-"""URL ingest: fetch ONE job description by URL into the normal raw archive
-and rebuild jobs/clean.parquet (same cleaning path as discovery).
-
-Deterministic plumbing: no LLM calls (R7), no browser automation
-— one or two unauthenticated GETs. Recognized ATS posting URLs (Greenhouse /
-Lever / Ashby) are fetched via their public JSON APIs and parsed by the same
-row parsers discovery uses (sources/ats/), so company/title/JD are structured,
-not scraped. Any other URL falls back to a raw HTML fetch stripped to text, and
-REQUIRES explicit --company/--title (the job_id hash depends on them — never
-guessed).
+"""`uv run ingest-url <url>`: one job description by url into the jobs store,
+then a clean.parquet rebuild. The same store, id rules and view the nightly
+run uses.
 
     uv run ingest-url <url> [--vertical NAME] [--company "..."] [--title "..."]
     uv run ingest-url <url> --dry-run
 
-Prints the resulting job_id. Reached only through that console script: nothing
-in src/ calls ingest() directly.
+Greenhouse, Lever and Ashby posting urls are read through their public JSON
+APIs. Any other url is fetched as a page and REQUIRES --company and --title:
+they define the job_id hash and are never guessed. --dry-run prints the text
+and writes nothing. Prints `job_id: <8-hex>` on success.
 
---dry-run fetches and prints the extracted text without writing anything, so a
-caller can read company/title off a non-ATS page and pass them back explicitly.
+Deterministic plumbing (R7): one or two GETs, no browser.
 """
 from __future__ import annotations
 
 import argparse
 import logging
-import re
 import sys
-from pathlib import Path
 
 import pandas as pd
-import requests
 
-from src import verticals
-from src.discovery import cleaning
-from src.discovery import htmlutil
-from src.discovery.config import load_config
 from src import ats_http as http
-from src.discovery.sources.ats import greenhouse, lever, ashby, registry
-from src.discovery.dates import naive_datetime
-from src.discovery.schema import make_row, validate_frame
-from src.parquet_io import write_parquet
-from src.discovery.orchestrator import (
-    JOBS_RAW,
-    JOBS_ROOT,
-    JOBS_RUNS,
-    PIPELINE,
-    current_run_id,
-)
+from src import paths, verticals
+from src.ats_registry import parse_posting_url
+from src.discovery import normalize as N
+from src.discovery import store as S
+from src.discovery.config import load_config
+from src.discovery.sources import ashby, greenhouse, lever
+from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
 
@@ -53,329 +36,141 @@ class IngestError(Exception):
     """Actionable failure; the CLI prints the message verbatim and exits 1."""
 
 
-# htmlutil.html_to_text strips tags but keeps their text content — right for
-# ATS API fragments (pure prose), wrong for full pages where <script>/<style>
-# bodies would leak in as "JD text" and defeat cleaning's MIN_JD_CHARS floor.
-_DROP_BLOCKS_RE = re.compile(
-    r"<(script|style|noscript|template|svg)\b.*?</\1\s*>",
-    re.I | re.S,
-)
-
-
-def _page_to_text(html: str) -> str:
-    return htmlutil.html_to_text(_DROP_BLOCKS_RE.sub(" ", html))
-
-
-def _slug_to_name(slug: str) -> str:
+def _slug_name(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").strip().title()
 
 
-def parse_ats_url(url: str) -> tuple[str, str, str] | None:
-    """Recognize a per-posting ATS URL. Returns (ats, board_slug, posting_id)
-    or None (generic URL). Board identity comes from the shared registry.
-
-    Lever's region rides along in the ats field ("lever:eu") so the fetch hits
-    the right API host; the row's `site` stays "lever" either way. Greenhouse's
-    .eu boards are served by the same boards-api host, so they carry no suffix.
-    """
-    hit = registry.parse_posting_url(url)
-    if hit is None or hit.source == "workday" or not (hit.slug and hit.posting_id):
-        return None
-    ats = "lever:eu" if hit.source == "lever" and hit.region == "eu" else hit.source
-    return (ats, hit.slug, hit.posting_id)
-
-
-# ---------------------------------------------------------------------
-# Per-ATS single-posting fetch -> JobSpy-shaped row (sources/ats/ parsers)
-# ---------------------------------------------------------------------
-
-def _fetch_greenhouse(slug: str, posting_id: str) -> dict:
-    posting = http.fetch_json(
-        f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{posting_id}"
-    )
-    if not isinstance(posting, dict) or not posting.get("title"):
-        raise IngestError(f"ERROR: Greenhouse posting {posting_id} on board "
-                          f"{slug!r} returned no title — check the URL.")
-    # per-posting payloads omit absolute_url sometimes; parser requires one
-    posting.setdefault(
-        "absolute_url",
-        f"https://boards.greenhouse.io/{slug}/jobs/{posting_id}",
-    )
+def fetch_row(url: str, *, company: str | None = None, title: str | None = None) -> dict:
+    """url -> a store row. Explicit --company/--title win: they define the id."""
+    hit = parse_posting_url(url)
     try:
-        board = http.fetch_json(
-            f"https://boards-api.greenhouse.io/v1/boards/{slug}"
-        )
-        company = (board or {}).get("name") or _slug_to_name(slug)
-    except http.CareersError:
-        company = _slug_to_name(slug)
-    rows = greenhouse.greenhouse_rows({"jobs": [posting]}, company)
-    if not rows:
-        raise IngestError(f"ERROR: could not parse Greenhouse posting "
-                          f"{posting_id} on board {slug!r}.")
-    return rows[0]
-
-
-def _fetch_lever(slug: str, posting_id: str, region: str = "") -> dict:
-    api_host = "api.eu.lever.co" if region == "eu" else "api.lever.co"
-    posting = http.fetch_json(
-        f"https://{api_host}/v0/postings/{slug}/{posting_id}"
-    )
-    rows = lever.lever_rows(
-        [posting] if isinstance(posting, dict) else [], _slug_to_name(slug)
-    )
-    if not rows:
-        raise IngestError(f"ERROR: could not parse Lever posting {posting_id} "
-                          f"on board {slug!r} — check the URL.")
-    return rows[0]
-
-
-def _fetch_ashby(slug: str, posting_id: str) -> dict:
-    # Ashby has no public per-posting endpoint; fetch the board and match
-    # the posting UUID against id/jobUrl/applyUrl.
-    payload = http.fetch_json(f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true")
-    pid = posting_id.lower()
-    matches = [
-        j for j in (payload or {}).get("jobs", [])
-        if isinstance(j, dict) and (
-            str(j.get("id", "")).lower() == pid
-            or pid in str(j.get("jobUrl", "")).lower()
-            or pid in str(j.get("applyUrl", "")).lower()
-        )
-    ]
-    if not matches:
-        raise IngestError(
-            f"ERROR: posting {posting_id} not found on Ashby board {slug!r} — "
-            f"the role may have closed, or the URL is wrong."
-        )
-    rows = ashby.ashby_rows({"jobs": matches}, _slug_to_name(slug))
-    if not rows:
-        raise IngestError(f"ERROR: could not parse Ashby posting {posting_id} "
-                          f"on board {slug!r}.")
-    return rows[0]
-
-
-def _fetch_page(url: str) -> str:
-    try:
-        resp = requests.get(url, timeout=http.REQUEST_TIMEOUT,
-                            headers=http._HEADERS)
-    except requests.RequestException as exc:
-        raise IngestError(f"ERROR: fetch failed: {url}: {exc}") from exc
-    if resp.status_code != 200:
-        raise IngestError(f"ERROR: HTTP {resp.status_code} fetching {url} — "
-                          f"the posting may be gone or behind a login.")
-    return _page_to_text(resp.text)
-
-
-def _fetch_generic(url: str, company: str | None, title: str | None) -> dict:
-    if not company or not title:
-        raise IngestError(
-            "ERROR: this URL is not a recognized ATS posting (Greenhouse / "
-            "Lever / Ashby), so company and title cannot be extracted "
-            "reliably — they define the job_id hash and are never guessed. "
-            "Re-run with --company \"...\" --title \"...\", or --dry-run to "
-            "print the page text first."
-        )
-    return make_row(site="manual", company=company, title=title, job_url=url,
-                    description=_fetch_page(url))
-
-
-def fetch_row(url: str, *, company: str | None = None,
-              title: str | None = None) -> dict:
-    """URL -> JobSpy-shaped row dict. ATS URLs use the JSON APIs; anything
-    else is a raw HTML fetch requiring explicit company/title."""
-    parsed = parse_ats_url(url)
-    if parsed is None:
-        return _fetch_generic(url, company, title)
-    ats, slug, pid = parsed
-    try:
-        if ats == "greenhouse":
-            row = _fetch_greenhouse(slug, pid)
-        elif ats.startswith("lever"):
-            row = _fetch_lever(slug, pid, region="eu" if ats.endswith(":eu") else "")
+        if hit and hit.source == "greenhouse" and hit.slug and hit.posting_id:
+            try:
+                name = greenhouse.board_name(hit.slug) or _slug_name(hit.slug)
+            except http.CareersError:
+                name = _slug_name(hit.slug)
+            row = greenhouse.fetch_posting(hit.slug, hit.posting_id, name)
+        elif hit and hit.source == "lever" and hit.slug and hit.posting_id:
+            row = lever.fetch_posting(hit.slug, hit.posting_id, _slug_name(hit.slug), hit.region)
+        elif hit and hit.source == "ashby" and hit.slug and hit.posting_id:
+            pid = hit.posting_id.lower()
+            rows = [r for r in ashby.list_rest(hit.slug, _slug_name(hit.slug))
+                    if pid in r["url"].lower()]
+            if not rows:
+                raise IngestError(f"ERROR: posting {hit.posting_id} not found on Ashby board "
+                                  f"{hit.slug!r} — the role may have closed, or the URL is wrong.")
+            row = rows[0]
         else:
-            row = _fetch_ashby(slug, pid)
+            if not company or not title:
+                raise IngestError(
+                    "ERROR: this URL is not a recognized ATS posting (Greenhouse / Lever / "
+                    "Ashby), so company and title cannot be extracted reliably — they define "
+                    "the job_id hash and are never guessed. Re-run with --company \"...\" "
+                    "--title \"...\", or --dry-run to print the page text first.")
+            row = S.make_posting(source="manual", company=company, title=title, url=url,
+                                 jd_text=fetch_page_text(url))
     except http.CareersError as exc:
         raise IngestError(f"ERROR: {exc}") from exc
-    # explicit overrides win — they define the job_id hash
-    if company:
-        row["company"] = company
-    if title:
-        row["title"] = title
+    if row is None:
+        raise IngestError(f"ERROR: could not parse the posting at {url} — check the URL.")
+    if company or title:
+        row = S.make_posting(**{**row, "company": company or row["company"],
+                                "title": title or row["title"]})
     return row
 
 
-def fetch_text_only(url: str) -> dict:
-    """URL -> {company, title, text}, writing nothing anywhere. company/title
-    come back "" for a non-ATS URL: the caller reads them off the text and
-    passes them back via --company/--title, because they define the job_id
-    hash and this function will not guess them."""
-    if parse_ats_url(url) is None:
-        return {"company": "", "title": "", "text": _fetch_page(url)}
-    row = fetch_row(url)
-    return {"company": row["company"], "title": row["title"],
-            "text": (row.get("description") or "")}
-
-
-# ---------------------------------------------------------------------
-# Ingest: row -> raw archive -> cleaning rebuild -> job_id
-# ---------------------------------------------------------------------
-
-def ingest(
-    url: str,
-    *,
-    vertical: str | None = None,
-    company: str | None = None,
-    title: str | None = None,
-    raw_dir: Path = JOBS_RAW,
-    clean_dir: Path = JOBS_ROOT,
-    runs_dir: Path = JOBS_RUNS,
-    pipeline_dir: Path = PIPELINE,
-) -> dict:
-    """Fetch the JD at url, archive it as a raw row, rebuild clean.parquet
-    via the standard cleaning path, and return
-    {job_id, company, title, vertical, url, source, location, jd_text}.
-    Fails loud (IngestError) on every dead end — never a partial write."""
-    row = fetch_row(url, company=company, title=title)
-
-    jd = (row.get("description") or "").strip()
-    if len(jd) < cleaning.MIN_JD_CHARS:
-        raise IngestError(
-            f"ERROR: JD text extracted from {url} is {len(jd)} chars — below "
-            f"the {cleaning.MIN_JD_CHARS}-char cleaning floor. The page may be "
-            f"JS-rendered or the posting closed. Paste the JD into inbox/ "
-            f"as a manual clip instead."
-        )
-
-    cfg = verticals.get_config()
-    v = vertical or cleaning.classify_vertical_from_title(row["title"])
-    if v not in cfg.verticals:
-        _bad_vertical(vertical, sorted(cfg.verticals))
-    row["vertical"] = v
-
-    # A URL ingest is a deliberate, user-initiated add (URL-mode /tailor), so it
-    # must bypass discovery's title_exclude_terms exactly like an inbox/ manual
-    # clip — otherwise a deliberately saved senior role would be dropped by the
-    # seniority/adjacent title families. _fetch_generic already tags
-    # site="manual"; normalize the ATS fetch paths (greenhouse/lever/ashby) here
-    # too. Scoped to ingest() only — the ATS *scraper* keeps its real source.
-    row["site"] = "manual"
-
-    run_id = current_run_id()
-    now = pd.Timestamp.now().normalize()
-    df = pd.DataFrame([row])
-    df["ingested_run_id"] = run_id
-    df["scraped_date"] = now
-    df["date_posted"] = naive_datetime(df["date_posted"])
-
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    raw_path = raw_dir / f"{run_id}.parquet"
-    if raw_path.exists():
-        # same-minute collision with another run: merge, never clobber
-        prior = pd.read_parquet(raw_path)
-        df = pd.concat([prior, df], ignore_index=True)
-        if "date_posted" in df.columns:
-            df["date_posted"] = naive_datetime(df["date_posted"])
-    # after the merge, so the shard that reaches disk is the validated one
-    df = validate_frame(df)
-    write_parquet(df, raw_path)
-    log.info("archived 1 row from %s to %s", url, raw_path)
-
-    clean_df = cleaning.run(
-        run_id=run_id, raw_dir=raw_dir, clean_dir=clean_dir,
-        runs_dir=runs_dir, pipeline_dir=pipeline_dir,
-    )
-
-    company_n = cleaning.normalize_company(row["company"])
-    title_n = cleaning.normalize_title(row["title"])
-    job_id = cleaning.compute_job_id(company_n, title_n)
-    if job_id not in set(clean_df["job_id"]):
-        siblings = clean_df[clean_df["company_normalized"] == company_n]
-        hint = ""
-        if not siblings.empty:
-            listing = "; ".join(
-                f"{r.job_id} {r.title!r}" for r in siblings.itertuples()
-            )
-            hint = (f"\nA near-duplicate title at the same company already "
-                    f"exists and won dedupe — tailor that job_id instead: "
-                    f"{listing}")
-        elif _dropped_by_location(row):
-            hint = (f"\nLocation {(row.get('location') or '')!r} is outside "
-                    f"location_allowlist in profile/discovery.yaml — widen it "
-                    f"there, or this row cannot enter clean.parquet.")
-        raise IngestError(
-            f"ERROR: row for {row['company']!r} / {row['title']!r} did not "
-            f"survive cleaning (job_id {job_id} absent from "
-            f"clean.parquet).{hint}"
-        )
-    kept = clean_df.set_index("job_id").loc[job_id]
-    return {
-        "job_id": job_id,
-        "company": str(kept["company"]),
-        "title": str(kept["title"]),
-        "vertical": str(kept["vertical"]),
-        "url": str(kept["url"]),
-        "source": str(kept["source"]),
-        "location": str(kept["location"]),
-        "jd_text": str(kept["jd_text"]),
-    }
-
-
-def _dropped_by_location(row: dict) -> bool:
-    """Ask the real cleaning filter, on a one-row frame, whether this row's
-    location is what killed it. Reuses the function rather than re-deriving the
-    allowlist test, so the two cannot drift."""
-    probe = pd.DataFrame({"location": [row.get("location") or ""]})
+def fetch_page_text(url: str) -> str:
     try:
-        kept = cleaning.filter_and_canonicalize_location(probe, load_config())
-    except (FileNotFoundError, ValueError):
-        return False
-    return kept.empty
+        status, body = http.fetch_page(url)
+    except Exception as exc:  # noqa: BLE001 -- any transport failure is one message
+        raise IngestError(f"ERROR: fetch failed: {url}: {exc}") from exc
+    if status != 200:
+        raise IngestError(f"ERROR: HTTP {status} fetching {url} — the posting may be gone "
+                          f"or behind a login.")
+    return N.html_to_text(body)
 
 
-def _bad_vertical(requested: str | None, configured: list[str]):
-    if requested:
-        raise IngestError(f"ERROR: vertical {requested!r} is not configured. "
-                          f"Configured verticals: {configured}")
-    raise IngestError(
-        f"ERROR: the title did not classify into any configured vertical "
-        f"and none was given. Re-run with --vertical, one of: {configured}"
-    )
+def ingest(url: str, *, vertical: str | None = None, company: str | None = None,
+           title: str | None = None, jobs_dir=None) -> dict:
+    """Fetch, save into the store, rebuild clean.parquet, return the row."""
+    from src.discovery.location import Allowlist
+    from src.discovery.run import Paths, rebuild_view
+    from src.discovery.sources.boards import BOARDS_DIR
+
+    p = Paths(jobs=jobs_dir or paths.JOBS, boards_dir=BOARDS_DIR)
+    if not p.store.exists():
+        raise IngestError(f"ERROR: {p.store} does not exist yet. Run "
+                          f"`uv run python scripts/migrate_store.py --apply` first.")
+    row = fetch_row(url, company=company, title=title)
+    jd = row["jd_text"].strip()
+    if len(jd) < N.MIN_JD_CHARS:
+        raise IngestError(
+            f"ERROR: JD text extracted from {url} is {len(jd)} chars — below the "
+            f"{N.MIN_JD_CHARS}-char floor. The page may be JS-rendered or the posting closed. "
+            f"Paste the JD into inbox/ as a manual clip instead.")
+    vcfg = verticals.get_config()
+    lane = vertical or N.classify_vertical_from_title(row["title"])
+    if lane not in vcfg.verticals:
+        names = sorted(vcfg.verticals)
+        raise IngestError(f"ERROR: vertical {vertical!r} is not configured. Configured verticals: {names}"
+                          if vertical else
+                          f"ERROR: the title did not classify into any configured vertical and none "
+                          f"was given. Re-run with --vertical, one of: {names}")
+    cfg = load_config()
+    if not Allowlist(cfg).check(row["location_raw"], lane).keep:
+        raise IngestError(f"ERROR: location {row['location_raw']!r} is outside location_allowlist "
+                          f"in profile/discovery.yaml — widen it there, or this row cannot enter "
+                          f"clean.parquet.")
+    # A deliberate add: exempt from the title gate like an inbox clip.
+    row.update(vertical=lane, source="manual")
+    today = pd.Timestamp.today().normalize()
+    state_index = load_state_index(p.pipeline)
+    batch = S.Batch()
+    batch.upsert(row)
+    stats = S.flush(batch, today, frozenset(state_index), cfg.live_days, path=p.store)
+    rebuild_view(cfg, p, today, state_index)
+
+    store = S.load_store(p.store)
+    job_id = store.set_index("posting_key").at[row["posting_key"], "job_id"]
+    clean = pd.read_parquet(p.clean).set_index("job_id")
+    if job_id not in clean.index:
+        raise IngestError(f"ERROR: row for {row['company']!r} / {row['title']!r} did not survive "
+                          f"cleaning (job_id {job_id} absent from clean.parquet).")
+    kept = clean.loc[job_id]
+    attached = bool(stats.refreshed) or any(k != "hash" for k in stats.by_rule)
+    return {"job_id": job_id, "attached": attached,
+            **{c: str(kept[c]) for c in ("company", "title", "vertical", "url", "source",
+                                         "location", "jd_text")}}
 
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
-    parser = argparse.ArgumentParser(prog="python -m src.discovery.ingest_url",
-                                     description=__doc__)
-    parser.add_argument("url", help="job-posting URL")
-    parser.add_argument("--vertical", default=None,
-                        help="configured vertical name (else title classifier)")
-    parser.add_argument("--company", default=None,
-                        help="explicit company (required for non-ATS URLs)")
-    parser.add_argument("--title", default=None,
-                        help="explicit title (required for non-ATS URLs)")
+    parser = argparse.ArgumentParser(prog="ingest-url", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("url")
+    parser.add_argument("--vertical", default=None)
+    parser.add_argument("--company", default=None)
+    parser.add_argument("--title", default=None)
     parser.add_argument("--dry-run", action="store_true",
                         help="print company/title/text and exit; writes nothing")
     args = parser.parse_args(argv)
-    if args.dry_run:
-        try:
-            info = fetch_text_only(args.url)
-        except IngestError as exc:
-            print(exc, file=sys.stderr)
-            return 1
-        print(f"company: {info['company']}")
-        print(f"title: {info['title']}")
-        print(f"chars: {len(info['text'])}")
-        print("--- text ---")
-        print(info["text"])
-        return 0
     try:
-        info = ingest(args.url, vertical=args.vertical,
-                      company=args.company, title=args.title)
+        if args.dry_run:
+            if parse_posting_url(args.url) is None:
+                info = {"company": "", "title": "", "jd_text": fetch_page_text(args.url)}
+            else:
+                info = fetch_row(args.url)
+            print(f"company: {info['company']}\ntitle: {info['title']}\n"
+                  f"chars: {len(info['jd_text'])}\n--- text ---\n{info['jd_text']}")
+            return 0
+        info = ingest(args.url, vertical=args.vertical, company=args.company, title=args.title)
     except IngestError as exc:
         print(exc, file=sys.stderr)
         return 1
-    print(f"Ingested: {info['company']} — {info['title']} "
-          f"[{info['vertical']}] (source: {info['source']})")
+    print(f"Ingested: {info['company']} — {info['title']} [{info['vertical']}] "
+          f"(source: {info['source']})")
+    if info["attached"]:
+        print("note: this posting joined a job the store already had; that job's id is below")
     print(f"job_id: {info['job_id']}")
     return 0
 

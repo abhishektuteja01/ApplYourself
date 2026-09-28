@@ -1,50 +1,34 @@
-schema_version: 1
-# Sources run concurrently, so this caps each lane independently rather than
-# being shared across them.
+schema_version: 2
+# Lanes run at the same time, each against this budget, in hours.
 deadline_hours: 4
 location_allowlist:
   countries: ["United States"]
-  # states: ["Texas", "NY"]   # optional narrowing; full name or code, either works
-  # cities: ["Austin"]        # optional narrowing; empty/absent = all cities
-  # continents: ["Europe"]    # optional shorthand: expands to every country on
-  #                           # the continent, unioned with `countries` above
 # Where the linkedin/indeed lanes search, as against the allowlist above, which
-# is what cleaning accepts. Absent = the allowlist's countries. Capped at 5
-# locations when absent: each one multiplies the query count and the pacing
-# sleep. Set it to query fewer places than you accept.
+# is what the view accepts. Absent = the allowlist's countries, capped at 5:
+# each location multiplies the query count. The board lanes are unaffected.
 # search_locations: ["Germany", "Netherlands", "United Kingdom"]
-# Every source the loader accepts. An omitted key falls back to the code default
-# in src/discovery/config.py, so list them all to stay explicit.
-# `cadence` is optional and defaults to daily. One of: daily, weekdays, weekly
-# (Monday), every_n_days:N. A skipped night writes no shard and reports as
-# SKIPPED, which the digest excludes from its medians and alarms.
-# `page_delay_seconds` / `page_delay_band_seconds` pace the gap between PAGES
-# of one query, as against `pacing_seconds` which paces the gap between
-# queries. Only the paginating jobspy lanes read them. jobspy hardcodes 3/4,
-# which is what they default to; at 100 results and 10 cards a page that is
-# nine sleeps averaging 5s per query, and it dominates the LinkedIn lane.
-# Lower them to trade rate-limit headroom for wall time; the run report prints
-# the delay used and counts any 429s it earned.
-# `cold_rotation_runs` (greenhouse, lever, ashby, workday; default 3): boards
-# that kept no row in 30 days are polled a slice a run, the whole cold tail
-# once every this many runs.
-# `pacing_spread` (workday; default 3): the sleep between requests is a random
-# pacing_seconds x 1..spread. `detail_reuse_days` (workday; default 0 = off):
-# reuse a description saved in the last N days instead of fetching it again.
-# Each Workday run writes jobs/runs/<run_id>_workday_trace.jsonl and reports
-# its HTTP status counts and the first 429/403, so a pacing change can be
-# checked against what it earned.
+# The live view (clean.parquet): a job stays while seen within live_days; a
+# LinkedIn/Indeed row also needs a posted date within search_max_age_days.
+live_days: 14
+search_max_age_days: 14
+# How long a job stays in the view from first seen, by its fit score.
+retention: {score_threshold: 80, high_days: 60, low_days: 15}
+# Untracked postings not seen for this long leave the store.
+forget_after_days: 120
+# Nightly debug shards under jobs/raw/.
+raw_keep_days: 3
+# A board that 404s three checks in a row is re-checked this often.
+dead_every_days: 14
+# Every source the loader accepts. every_days: days between checks of one
+# board. page_delay_* pace the pages of one jobspy query; pacing_seconds paces
+# queries and boards. hours_old / results_wanted: the jobspy search window and
+# result cap. remote_queries: false drops the remote copy of each query.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   indeed:        {enabled: true,  pacing_seconds: 2}
-  greenhouse:    {enabled: true,  pacing_seconds: 1}
-  lever:         {enabled: true,  pacing_seconds: 1}
-  ashby:         {enabled: true,  pacing_seconds: 2}
-  # Workday is the costliest lane per kept row and is manual-apply only, so it
-  # is the usual first candidate for a slower cadence. Measure yours first:
-  # `cadence: weekly` anchors to Monday, so six nights in seven it is skipped.
-  workday:       {enabled: true,  pacing_seconds: 2}  # cadence: weekly
-raw_retention_days: 16
-# Ceiling on the career-board staleness exemption, in days. 0 = off: a posting
-# still listed on the company's own board is live regardless of age.
-board_max_age_days: 0
+  greenhouse:    {enabled: true,  pacing_seconds: 1, every_days: 1}
+  lever:         {enabled: true,  pacing_seconds: 1, every_days: 1}
+  ashby:         {enabled: true,  pacing_seconds: 2, every_days: 1}
+  # Workday is the slowest lane per kept row and manual-apply only, so a
+  # third of it a night is a good start.
+  workday:       {enabled: true,  pacing_seconds: 2, every_days: 3}

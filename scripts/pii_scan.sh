@@ -42,10 +42,7 @@ example="profile/pii_denylist.example.txt"
 allowlist=(
   LICENSE
   "$example"
-  data/universe/ashby.csv
-  data/universe/greenhouse.csv
-  data/universe/lever.csv
-  data/universe/workday.csv
+  data/universe/boards.csv
   profile/resume_template.example.docx
   profile/cover_letter_template.example.docx
   docs/media/main.gif

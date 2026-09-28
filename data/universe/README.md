@@ -18,84 +18,58 @@ WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 Slugs added since the seed clone were verified individually against the live
 board API before being committed.
 
-`workday.csv` has no ats-scrapers seed at all (§12b) — Workday's tri-part
-slug (`company|wd#|site_id`) is not a shape that source publishes, so every
-row was hand-verified against the live CXS API, one tenant at a time,
-before being committed.
+The Workday rows have no ats-scrapers seed at all: Workday's tri-part slug
+(`company|wd#|site_id`) is not a shape that source publishes, so every one was
+hand-verified against the live CXS API before being committed.
 
-## `<ats>.local.csv` — untracked overlay
+## The two files
 
-`universe.load()` reads `<ats>.local.csv` before `<ats>.csv` and merges both on
-`slug`, so a local file extends the tracked list. Tracked loads second and wins
-the name on any overlapping slug; the `profile/companies.yaml` watchlist still
-wins over both.
+`boards.csv` (tracked) and `boards.local.csv` (gitignored, optional) are both
+`ats,name,slug,active`, with `ats` one of greenhouse, lever, ashby, workday.
+`sources/boards.py:load_boards` reads both:
 
-These files are gitignored and optional — nothing here depends on one existing.
-They are the place for bulk slug dumps whose license does not permit
-redistribution under this repo's MIT license. Only self-verified slugs go in the
-tracked CSV.
+- One board per (ats, slug) whatever the slug's case. When one spelling is
+  retired and another is live, the live one is used: Lever's API is
+  case-sensitive (`fliff` 404s where `Fliff` serves).
+- `active=0` retires that exact spelling, in either file, and outlives a re-add
+  of it in the other file.
+- `active=1` in `boards.local.csv` is a deliberate choice and overrides a
+  retirement. Use it for a board you specifically want.
+- The local file wins the name. `name` must be spelled the way the board spells
+  it: it feeds `job_id`.
 
-Expect a slower first few runs after a bulk addition: dead slugs are pruned only
-after 3 consecutive 404s.
+`boards.local.csv` is the place for your own boards and for bulk slug dumps whose
+license does not permit redistribution under this repo's MIT license. Only
+self-verified slugs go in `boards.csv`.
 
-## `active` — the audit's tombstone column
+`jobs/boards.parquet` records, per board, when it was last checked, when it last
+had a job that passed the title gate, and last check's counts. Three 404s in a
+row mark a board `dead`, re-checked every `dead_every_days`. A 404 on its own
+never justifies `active=0`: it conflates a never-real slug, a renamed board, a
+platform move and a casing artifact. `scripts/audit_slugs.py` reports which is
+which; setting `active=0` is a hand edit.
 
-Each `<ats>.csv` is `name,slug[,active]`. `active` is `0` or `1`; a missing
-column, a blank cell and an unparseable value all read as live, so every file
-written before the column existed keeps working untouched.
-
-`active=0` is written **only** by the audit — `scripts/audit_slugs.py` and its
-reconcile pass — and read only by `universe._load_csv`. Discovery never writes
-it. It is a different claim from the health ledger's `pruned_at`:
-
-| | writer | claim | reversible |
-|---|---|---|---|
-| `active=0` | the audit | this slug is a dead end, or the company moved and the live slug is listed separately | by hand only |
-| `pruned_at` | the nightly run | healthy board, three consecutive 404s, resting 14 days | automatically |
-
-Two properties the column exists for:
-
-- **A tombstone outlives a re-add.** Retirements are unioned across `<ats>.csv`
-  and `<ats>.local.csv` and applied after both have loaded, so the next bulk
-  dump into the overlay cannot resurrect a slug the audit already disproved.
-- **The watchlist still wins.** `profile/companies.yaml` loads after the
-  retirements, so naming a slug by hand overrides the verdict.
-
-A retired slug leaves `universe_slugs()` too, so its health row is pruned as an
-orphan. `universe_companies(ats, include_retired=True)` is the only way back in,
-and only an audit re-checking its own verdicts may pass it —
-`audit_slugs.py --include-retired` does exactly that.
-
-A 404 on its own never justifies `active=0`. It means only that the API has no
-board under that exact string, which conflates a never-real seed slug, a
-renamed board, a platform move, and a Lever casing artifact (Lever's API is
-case-sensitive: `fliff` 404s where `Fliff` serves). Only a verdict of `moved`
-(on the old row, once the new slug is confirmed live) or `gone` (nothing found
-by any tier, and no candidate domain resolves) may set it.
-
-## Refresh Procedure
-Each `<ats>.csv` here is `name,slug[,active]` with a header, deduplicated on `slug`.
+## Refresh procedure
 
 ```bash
 git clone https://github.com/kalil0321/ats-scrapers.git /tmp/ats-scrapers
-for ats in greenhouse lever ashby; do
-  uv run python - "$ats" <<'PY' > "data/universe/$ats.csv"
-import csv, sys, pathlib
-ats = sys.argv[1]
-rows, seen = [], set()
-for p in sorted(pathlib.Path("/tmp/ats-scrapers/ats-companies").glob(f"*{ats}*")):
-    with p.open(encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            slug = (r.get("slug") or r.get("token") or "").strip()
-            name = (r.get("name") or r.get("company") or "").strip()
-            if slug and name and slug not in seen:
-                seen.add(slug)
-                rows.append((name, slug))
-w = csv.writer(sys.stdout)
-w.writerow(["name", "slug"])
-w.writerows(sorted(rows, key=lambda r: r[1]))
+uv run python - <<'PY'
+import csv, pathlib
+out = pathlib.Path("data/universe/boards.csv")
+rows = {(r["ats"], r["slug"].lower()): r for r in csv.DictReader(out.open(encoding="utf-8"))}
+for ats in ("greenhouse", "lever", "ashby"):
+    for p in sorted(pathlib.Path("/tmp/ats-scrapers/ats-companies").glob(f"*{ats}*")):
+        with p.open(encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                slug = (r.get("slug") or r.get("token") or "").strip()
+                name = (r.get("name") or r.get("company") or "").strip()
+                if slug and name:
+                    rows.setdefault((ats, slug.lower()), {"ats": ats, "name": name, "slug": slug, "active": ""})
+with out.open("w", encoding="utf-8", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=["ats", "name", "slug", "active"])
+    w.writeheader()
+    w.writerows(sorted(rows.values(), key=lambda r: (r["ats"], r["slug"].lower())))
 PY
-done
 ```
 
-Then commit the updated CSV files.
+Then commit `boards.csv`.

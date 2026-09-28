@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from src import verticals
-from src.discovery import crawl_cursor
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
@@ -47,12 +46,14 @@ def _isolate_learned_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_crawl_cursor(tmp_path, monkeypatch):
-    """Keep the resume cursor out of the real `jobs/`.
+def _isolate_discovery_state(tmp_path, monkeypatch):
+    """Keep the jobs store, board state, board lists and inbox out of the real
+    repo. Every discovery writer resolves these names at call time."""
+    from src.discovery import store
+    from src.discovery.sources import boards, inbox
 
-    `WorkdaySource.fetch` persists where it stopped, so without this a test
-    run writes real state and every later run reads it back — tests would
-    silently depend on each other's rotation position, and on whatever the
-    last real `discover` left behind.
-    """
-    monkeypatch.setattr(crawl_cursor, "CURSOR_DIR", tmp_path / "cursors")
+    monkeypatch.setattr(store, "STORE", tmp_path / "jobs" / "jobs.parquet")
+    monkeypatch.setattr(store, "CLEAN", tmp_path / "jobs" / "clean.parquet")
+    monkeypatch.setattr(boards, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
+    monkeypatch.setattr(boards, "BOARDS_DIR", tmp_path / "universe")
+    monkeypatch.setattr(inbox, "INBOX", tmp_path / "inbox")

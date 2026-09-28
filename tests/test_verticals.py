@@ -49,7 +49,7 @@ class TestFixtureHappyPath:
         """A vertical with no classifier rule can never be reached by the title
         fallback, so an inbox clip for it silently lands out-of-lane. What each
         rule matches is pinned by the parametrized table in
-        tests/discovery/test_cleaning.py, not duplicated here."""
+        tests/discovery/test_normalize.py, not duplicated here."""
         owners = {vertical for vertical, _rule in cfg.classifier_rules}
         assert owners == set(cfg.names)
 
