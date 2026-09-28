@@ -8,7 +8,7 @@ allowed-tools:
   - Write
   - Edit
   - Skill
-argument-hint: <job_id> [--submit]
+argument-hint: <job_id> [--submit] [--letter]
 ---
 
 # /apply — answer the new questions, confirm, fill, learn
@@ -22,8 +22,10 @@ Every answer the user confirms here is saved to the bank by `apply run`, so the
 same question — in any wording — is answered on its own next time. Only "why
 this company / this role" answers stay per role, in `company_answers.yaml`.
 
-Read `.claude/shared/no_fab.md` first. Parse `$ARGUMENTS`: the `job_id`, and
-whether `--submit` is present. Without it this fills and stops.
+Read `.claude/shared/no_fab.md` first. Parse `$ARGUMENTS`: the `job_id`,
+whether `--submit` is present (without it this fills and stops), and whether
+`--letter` is present (write a cover letter even where the board's upload is
+optional).
 
 Every command below takes literal values: write the real paths you were shown,
 never a shell variable from an earlier call.
@@ -58,8 +60,10 @@ this job's country).
 
 From the plan:
 
-- The board has a `cover_letter` upload and the folder has no letter → run the
-  `cover-letter` skill with `<job_id>`.
+- The board **requires** a cover letter (it parks on `cover_letter`), or it
+  offers an optional one and `--letter` was passed, and the folder has no
+  letter → run the `cover-letter` skill with `<job_id>`. An optional upload
+  without `--letter` stays blank.
 - A question asks why this company, why this role, or what excites you about
   the product (it parks naming `company_answers.yaml`, or it is NEW and
   company-specific) and `COMPANY_ANSWERS` is empty → run the `company-answers`
@@ -81,8 +85,9 @@ Work through every **GUESSED BY KEYWORD**, **NEW** and **BLOCKING** item, plus
 anything in **KNOWN** whose value is plainly wrong for its label. Run
 `uv run apply learn` once to see every question id the bank has.
 
-For each, decide which question it really asks, then write one entry into
-`OVERRIDES_FILE` keyed by the field id:
+For each, decide which question it really asks — start from the plan's
+**closest in the bank** ids, and only invent a new id when none of them asks the
+same thing — then write one entry into `OVERRIDES_FILE` keyed by the field id:
 
 ```json
 "<field_id>": {"value": "...", "question": "<bank id>", "source": "<where it came from>", "label": "<the board's label>"}
@@ -91,7 +96,11 @@ For each, decide which question it really asks, then write one entry into
 `value` is a string, or a list for a multi-select. For a choice it must be one
 of the board's own options, verbatim. `question` is what makes the run learn:
 use the id of the bank question this label asks, or a new short id
-(`project_proud`, `years_experience`) when none does.
+(`project_proud`, `years_experience`) when none does. A new question is saved
+only when its `source` is about you — a `B-`/`S-`/`SKILL-` id, `option`, or
+`user`; an answer from the JD or `company_answers.yaml` stays with this role.
+If the bank already answers this question differently from what this form
+needs, it is a different question: give it its own id.
 
 For a question boards word many ways, also add `"keyword"`: two to four words
 every wording of it shares and no other question does (`"proud of"`, `"hardest
@@ -160,15 +169,22 @@ bank. **Stop and wait for the reply.**
   `user`), re-run this step, ask again.
 - No, or no reply → stop. Report where `OVERRIDES_FILE` is. Nothing is saved.
 
-## 7. Fill and read the form back
+## 7. Fill, and submit only with `--submit`
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json
+cd "$(git rev-parse --show-toplevel)" && uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json [--submit]
 ```
 
-This saves the confirmed answers to the bank, then fills. **Filling uploads
-the resume and cover letter to the board**; say so if the user asks for a
-fill-only run.
+One browser, one fill. It saves the confirmed answers to the bank, fills the
+form, reads every field back into the manifest, and — with `--submit` — clicks
+only if every filled field holds what was planned. A mismatch refuses the click
+(`failed`, "form check refused the click") and nothing is sent. **Filling
+uploads the resume and cover letter to the board**, submit or not.
+
+`--yes` stands in for the CLI's typed prompt; step 6 was the confirmation. The
+CLI refuses a role already in `applications/apply_runs/submitted.jsonl`, writes
+that ledger line before the click, and moves the role to `applied` through
+`/track` only when the board accepted it.
 
 Read the manifest and check:
 
@@ -178,22 +194,11 @@ Read the manifest and check:
 3. `options` on a row whose plan had none — a parked choice may now be
    answerable.
 
-For anything found, fix or add the entry (step 4's rules), re-run step 6 and
-show the change. Two rounds at most; if the same field still disagrees, stop and
-report it.
+For anything found, fix or add the entry (step 4's rules), re-run step 6, show
+the change, and run this step again. Two rounds at most; if the same field
+still disagrees, stop and report it.
 
-## 8. Submit — only with `--submit`
-
-```bash
-cd "$(git rev-parse --show-toplevel)" && uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --submit --manifest <OUT_DIR>/form_manifest.submit.json
-```
-
-`--yes` stands in for the CLI's typed prompt; step 6 was the confirmation. The
-CLI refuses a role already in `applications/apply_runs/submitted.jsonl`, writes
-that ledger line before the click, and moves the role to `applied` through
-`/track` only when the board accepted it.
-
-## 9. Report
+## 8. Report
 
 Read the run report the command printed and tell the user:
 

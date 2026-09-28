@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.apply.answers import Answers, Resolution, match_option, resolve
+from src.apply.answers import Answers, Resolution, match_option, resolve, similar_questions
 from src.apply.greenhouse import BoardForm
 from src.apply.reconcile import MergedField, Reconciled
 
@@ -161,6 +161,9 @@ class Unmapped:
     source: str = ""
     """`Resolution.source`. On a Tier B park, the bank question whose answer
     the board did not offer."""
+
+    similar: tuple[str, ...] = ()
+    """For a question the bank does not know: the closest bank questions."""
 
 
 @dataclass(frozen=True)
@@ -379,8 +382,12 @@ def _work_authorization_facts(answers: Answers) -> dict[str, object]:
     }
 
 
-def _unmapped(field: MergedField, resolution: Resolution, reason: str = "") -> Unmapped:
+def _unmapped(field: MergedField, resolution: Resolution, reason: str = "",
+              answers: Answers | None = None) -> Unmapped:
+    similar = (similar_questions(field.label, answers)
+               if answers is not None and resolution.tier == "C" else ())
     return Unmapped(
+        similar=similar,
         id=field.id,
         label=field.label,
         required=field.required,
@@ -479,7 +486,7 @@ def build_plan(
                                                   resolution.tier, company)
 
         if resolution.action == "park":
-            unmapped.append(_unmapped(field, resolution))
+            unmapped.append(_unmapped(field, resolution, answers=answers))
             continue
 
         if resolution.action == "skip":
@@ -491,7 +498,7 @@ def build_plan(
             if resolution.tier == "C" and field.kind in DRAFTABLE_KINDS:
                 # Optional and unmatched, but a human would answer it. /apply
                 # gets the chance; leaving it blank stays a valid outcome.
-                draftable.append(_unmapped(field, resolution))
+                draftable.append(_unmapped(field, resolution, answers=answers))
             else:
                 skipped.append(Skipped(
                     id=field.id, label=field.label,

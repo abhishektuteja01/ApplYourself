@@ -1455,6 +1455,32 @@ def find_question(label: str, answers: Answers) -> tuple[Question, str] | None:
     return None
 
 
+_STOPWORDS = frozenset(
+    "a an and any are as at be by can do does did for from have has how i if in is it "
+    "of on or our please that the this to us we what when where which who why will with "
+    "would you your yours".split())
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in _norm(text).split() if w not in _STOPWORDS and len(w) > 2}
+
+
+def similar_questions(label: str, answers: Answers, n: int = 3) -> tuple[str, ...]:
+    """The bank questions whose wordings and keywords share the most words with
+    a label, best first — the ids a session should choose from before it
+    invents a new one."""
+    want = _words(label)
+    if not want:
+        return ()
+    scored = []
+    for q in answers.questions:
+        have = set().union(*(_words(t) for t in (*q.wordings, *q.keywords, q.id.replace("_", " "))))
+        shared = len(want & have)
+        if shared:
+            scored.append((shared / len(want | have), q.id))
+    return tuple(qid for _, qid in sorted(scored, reverse=True)[:n])
+
+
 def _resolve_question(field: MergedField, answers: Answers) -> Resolution | None:
     found = find_question(field.label, answers)
     if found is None:

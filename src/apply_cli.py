@@ -500,14 +500,14 @@ def as_dict(plan: Plan) -> dict:
             {"id": u.id, "label": u.label, "required": u.required, "kind": u.kind,
              "section": u.section, "tier": u.tier, "reason": u.reason,
              "options": list(u.options), "description": u.description,
-             "multi": u.multi, "source": u.source}
+             "multi": u.multi, "source": u.source, "similar": list(u.similar)}
             for u in plan.unmapped
         ],
         "draftable": [
             {"id": d.id, "label": d.label, "kind": d.kind, "section": d.section,
              "options": list(d.options), "description": d.description,
              "required": d.required, "tier": d.tier, "reason": d.reason,
-             "multi": d.multi, "source": d.source}
+             "multi": d.multi, "source": d.source, "similar": list(d.similar)}
             for d in plan.draftable
         ],
         "skipped": [
@@ -637,6 +637,8 @@ def render_questions(plan: Plan) -> str:
             lines.append(f"      choose from: {_offered(q.options, limit=10)}")
         if q.description:
             lines.append(f"      note: {q.description}")
+        if q.similar:
+            lines.append(f"      closest in the bank: {', '.join(q.similar)}")
 
     blockers = [u for u in plan.unmapped if u.required]
     lines.append("")
