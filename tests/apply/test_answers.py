@@ -1273,3 +1273,56 @@ class TestSelfIdSignature:
     def test_it_is_tier_a2_like_the_rest_of_the_eeoc_block(self, tmp_path):
         a = load_answers(write_config(tmp_path), PREFS)
         assert resolve(self._field("eeo[disabilitySignature]"), a).tier == "A2"
+
+
+class TestStartDate:
+    """`availability.start_date` fills a board's Date field when it is still ahead."""
+
+    def _date_field(self):
+        return field(id="question_1", label="When can you start?", kind="date")
+
+    def _pin(self, monkeypatch):
+        import src.apply.answers as A
+        from datetime import date as _date
+        monkeypatch.setattr(A, "_today", lambda: _date(2026, 9, 27))
+
+    def test_a_future_start_date_is_used(self, tmp_path, monkeypatch):
+        self._pin(monkeypatch)
+        a = load_answers(write_config(tmp_path, availability={"start_date": "12/01/2026"}), PREFS)
+        assert resolve(self._date_field(), a).value == "12/01/2026"
+
+    def test_a_past_start_date_falls_back_to_today(self, tmp_path, monkeypatch):
+        self._pin(monkeypatch)
+        a = load_answers(write_config(tmp_path, availability={"start_date": "09/01/2026"}), PREFS)
+        assert resolve(self._date_field(), a).value == "09/27/2026"
+
+    def test_no_start_date_is_today(self, tmp_path, monkeypatch):
+        self._pin(monkeypatch)
+        a = load_answers(write_config(tmp_path), PREFS)
+        assert resolve(self._date_field(), a).value == "09/27/2026"
+
+    def test_a_malformed_start_date_is_refused(self, tmp_path):
+        with pytest.raises(AnswersError, match="availability.start_date"):
+            load_answers(write_config(tmp_path, availability={"start_date": "2026-12-01"}), PREFS)
+
+
+class TestOnlyWhenRequiredRule:
+    """A rule flagged `only_when_required` leaves an optional field blank."""
+
+    def _answers(self, tmp_path):
+        rules = [{"exact": ["current company"], "answer": "Widget Corp",
+                  "only_when_required": True}]
+        return load_answers(write_config(tmp_path, rules=rules), PREFS)
+
+    def test_an_optional_field_is_skipped(self, tmp_path):
+        r = resolve(field(label="Current company", required=False), self._answers(tmp_path))
+        assert r.action == "skip"
+
+    def test_a_required_field_still_fills(self, tmp_path):
+        r = resolve(field(label="Current company", required=True), self._answers(tmp_path))
+        assert (r.action, r.value) == ("fill", "Widget Corp")
+
+    def test_a_non_bool_flag_is_refused(self, tmp_path):
+        rules = [{"exact": ["current company"], "answer": "X", "only_when_required": "yes"}]
+        with pytest.raises(AnswersError, match="only_when_required"):
+            load_answers(write_config(tmp_path, rules=rules), PREFS)

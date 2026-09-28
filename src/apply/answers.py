@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import yaml
@@ -84,6 +84,8 @@ TOP_LEVEL_KEYS = (
     "browser",
     # Opt-in escape hatch for `_resolve_eeoc`. See `demographics_no_decline_fallback`.
     "demographics",
+    # Optional `start_date` for a board's own Date field. See `_resolve_date`.
+    "availability",
 )
 
 # A `match:` keyword this short matches almost any label. Punctuation is
@@ -710,6 +712,7 @@ class Rule:
     answers: tuple[str, ...]    # candidates, in preference order
     exact: tuple[str, ...] = () # normalized labels, matched whole
     mode: str = "exact"         # "exact" (default) or "contains" — see _pick_option
+    only_when_required: bool = False  # optional fields are left blank
 
     @property
     def group(self) -> str:
@@ -822,6 +825,7 @@ class Answers:
     `rules:` default, since a number this role's own posting states should
     always win over a generic configured fallback."""
     demographics_no_decline_fallback: dict[str, str] = field(default_factory=dict)
+    start_date: date | None = None
     """Per-field-id real answer for `_resolve_eeoc`, tried only after every
     decline-to-answer wording has been tried and failed to match. Empty (the
     default) parks the question, same as always — a board offering no
@@ -996,10 +1000,14 @@ def _parse_rules(data, raw=None) -> tuple[Rule, ...]:
         mode = entry.get("mode", "exact")
         if mode not in ("exact", "contains"):
             raise AnswersError(f"{where}.mode: must be 'exact' or 'contains', got {mode!r}")
-        unknown = set(entry) - {"match", "exact", "answer", "mode"}
+        only_when_required = entry.get("only_when_required", False)
+        if not isinstance(only_when_required, bool):
+            raise AnswersError(f"{where}.only_when_required: must be true or false")
+        unknown = set(entry) - {"match", "exact", "answer", "mode", "only_when_required"}
         if unknown:
             raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
-        rules.append(Rule(match=keywords, answers=answers, exact=exact, mode=mode))
+        rules.append(Rule(match=keywords, answers=answers, exact=exact, mode=mode,
+                          only_when_required=only_when_required))
 
     # Matching is substring-and-first-wins, so an overlap is not a tie the file
     # order resolves — it is a rule silently shadowing another, which is how a
@@ -1228,6 +1236,22 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None,
             )
         demographics_no_decline_fallback = dict(fallback_raw)
 
+    availability = data.get("availability") or {}
+    if not isinstance(availability, dict):
+        raise AnswersError("availability: must be a mapping")
+    unknown_avail = set(availability) - {"start_date"}
+    if unknown_avail:
+        raise AnswersError(f"availability: unknown keys {sorted(unknown_avail)} "
+                           f"(expected ['start_date'])")
+    start_date = None
+    if availability.get("start_date"):
+        raw_start = _require_str(availability["start_date"], "availability.start_date")
+        try:
+            start_date = datetime.strptime(raw_start, DATE_FORMAT).date()
+        except ValueError as exc:
+            raise AnswersError(
+                f"availability.start_date: {raw_start!r} is not {DATE_FORMAT}") from exc
+
     # The learned store, folded into `rules:` *before* validation so a learned
     # wording is held to every check a hand-written one is — the overlap check
     # above all, which is why a wording is absorbed into the rule it belongs to
@@ -1264,6 +1288,7 @@ def load_answers(path: Path | None = None, preferences_path: Path | None = None,
         sponsorship_followup_text=sponsorship_followup_text.strip(),
         us_person_answer=us_person_answer,
         demographics_no_decline_fallback=demographics_no_decline_fallback,
+        start_date=start_date,
     )
 
 
@@ -1351,9 +1376,10 @@ def _pick_country(field: MergedField, value: str) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
-def _resolve_date(field: MergedField) -> Resolution | None:
+def _resolve_date(field: MergedField, answers: Answers) -> Resolution | None:
     """A board's own `Date`-typed field (kind `date`, currently Ashby-only),
-    resolved to today rather than a Tier B free-text default.
+    resolved to `availability.start_date` when set and still ahead, else today,
+    rather than a Tier B free-text default.
 
     Ashby's `react-datepicker` widget parses whatever is typed on blur and
     silently clears the input if it cannot — a Tier B sentence like
@@ -1364,7 +1390,9 @@ def _resolve_date(field: MergedField) -> Resolution | None:
     """
     if field.kind != "date":
         return None
-    return _fill(_today().strftime(DATE_FORMAT), "A")
+    today = _today()
+    start = answers.start_date if answers.start_date and answers.start_date > today else today
+    return _fill(start.strftime(DATE_FORMAT), "A")
 
 
 def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None:
@@ -1769,6 +1797,8 @@ def _resolve_rule(field: MergedField, answers: Answers) -> Resolution | None:
                 # This label is on record as one this rule gets wrong. Fall
                 # through to the next rule rather than answering it.
                 continue
+            if rule.only_when_required and not field.required:
+                return _skip("rule is only_when_required and this field is optional", "B")
             if field.kind == "file":
                 return (_park("a rule cannot answer a file upload", "B", source=key)
                         if field.required
@@ -1800,7 +1830,7 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
     if identity is not None:
         return identity
 
-    resolved_date = _resolve_date(field)
+    resolved_date = _resolve_date(field, answers)
     if resolved_date is not None:
         return resolved_date
 
