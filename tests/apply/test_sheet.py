@@ -84,3 +84,16 @@ def test_answers_waiting_for_the_user(tmp_path, monkeypatch):
     _state(tmp_path, "aaaa1111", "tailored", folder)
     sheet.refresh(add=True)
     assert _rows(tmp_path)["aaaa1111"]["status"] == "Needs your OK"
+
+
+def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
+    import json
+    _world(tmp_path, monkeypatch)
+    folder = "lane/2026-09-28_acme_eng_aaaa1111"
+    (paths.APPLICATIONS / folder).mkdir(parents=True)
+    (paths.APPLICATIONS / folder / "answers_override.json").write_text(
+        json.dumps({"job_id": "aaaa1111", "confirmed": True, "q": {"value": "x"}}),
+        encoding="utf-8")
+    _state(tmp_path, "aaaa1111", "tailored", folder)
+    sheet.refresh(add=True)
+    assert _rows(tmp_path)["aaaa1111"]["status"] == "Resume ready"

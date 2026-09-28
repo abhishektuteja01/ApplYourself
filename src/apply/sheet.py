@@ -61,9 +61,12 @@ def _waiting(state: dict, since: str) -> str:
     if not path.is_file():
         return ""
     try:
-        drafted = len(yaml.safe_load(path.read_text(encoding="utf-8")) or {}) > 1
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError:
         return ""
+    if data.get("confirmed") is True:
+        return ""
+    drafted = len({k for k in data if k not in ("job_id", "confirmed")}) > 0
     stamp = path.stat().st_mtime
     if not drafted:
         return ""
