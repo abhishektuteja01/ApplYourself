@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import app_cli, docx_render, paths, track_cli
+from src import app_cli, paths, track_cli
 
 JOB = "a1b2c3d4"
 JD = "Build widget assembly tooling in Python and SQL across 4 plants. Salary 120000."
@@ -204,7 +204,7 @@ def _letter(**over):
     return {"salutation": "Dear May Chen,", "uses": ["B-WID-01"],
             "body": ["Acme builds the widget tooling I used across four plants.",
                      "I owned the daily widget assembly throughput report for a national client."],
-            "closing": "Best,", **over}
+            **over}
 
 
 def test_letter_renders_and_never_transitions(repo, capsys):

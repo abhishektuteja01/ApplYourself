@@ -140,14 +140,19 @@ def _identity() -> tuple[str, str]:
 # dir
 # =====================================================================
 
+def built_folder(state: dict) -> Path | None:
+    """The last folder a resume was built in (tailored_dirs[-1]), or None."""
+    dirs = state.get("tailored_dirs") or []
+    return APPLICATIONS / dirs[-1] if dirs else None
+
+
 def role_info(job_id: str) -> dict:
     """Where a role's material lives. `dir` is the last folder a resume was
     built in (tailored_dirs[-1]) — what letters, answers and /apply use.
     `work_dir` is the newest folder on disk — where the next resume builds."""
     state = _state(job_id)
     dirs = _role_dirs(job_id)
-    built = (state.get("tailored_dirs") or [None])[-1]
-    built_dir = APPLICATIONS / built if built else None
+    built_dir = built_folder(state)
     name, slug = _identity()
 
     def has(folder: Path | None, fname: str) -> bool:
@@ -156,7 +161,8 @@ def role_info(job_id: str) -> dict:
     return {
         "job_id": job_id,
         "state": state.get("state", ""),
-        "vertical": built.split("/", 1)[0] if built else (dirs[-1].parent.name if dirs else ""),
+        "vertical": (built_dir.relative_to(APPLICATIONS).parts[0] if built_dir
+                     else dirs[-1].parent.name if dirs else ""),
         "dir": str(built_dir.relative_to(APPLICATIONS.parent)) if built_dir else "",
         "work_dir": str(dirs[-1].relative_to(APPLICATIONS.parent)) if dirs else "",
         "name": name,
@@ -198,10 +204,9 @@ def _load_row(job_id: str) -> dict:
 
 
 def cmd_new(job_id: str, today: str | None = None) -> dict:
-    today = today or date.today().isoformat()
-    for fname in ("resume_template.docx",):
-        if not (PROFILE / fname).is_file():
-            raise AppError(f"profile/{fname} missing.")
+    today = today or date.today().isoformat()  # noqa: DTZ011 - the user's local date
+    if not (PROFILE / "resume_template.docx").is_file():
+        raise AppError("profile/resume_template.docx missing.")
     resume_model.load_sources()
     row = _load_row(job_id)
     cfg = verticals.get_config()
@@ -345,7 +350,7 @@ def cmd_build_letter(job_id: str, today: date | None = None) -> tuple[dict, int]
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / LETTER_PLAN)
     src = resume_model.load_sources()
-    name, slug = _identity()
+    _, slug = _identity()
     company = str(facts.get("company", ""))
     problems: list[dict] = []
 
@@ -356,7 +361,7 @@ def cmd_build_letter(job_id: str, today: date | None = None) -> tuple[dict, int]
     salutation = str(data.get("salutation") or "").strip()
     if not salutation:
         problems.append({"where": "salutation", "code": "layout", "detail": "missing"})
-    recipient = re.sub(r"^(dear|hi|hello)\s+|,$", "", salutation, flags=re.I).strip()
+    recipient = re.sub(r"^(dear|hi|hello)\s+|,$", "", salutation, flags=re.IGNORECASE).strip()
     keep = resume_model.keep_terms(src, company, recipient)
     uses = [str(u) for u in data.get("uses") or []]
     if not uses:
@@ -372,10 +377,9 @@ def cmd_build_letter(job_id: str, today: date | None = None) -> tuple[dict, int]
     if problems:
         return {"ok": False, "problems": problems}, 2
 
-    today = today or date.today()
+    today = today or date.today()  # noqa: DTZ011 - the user's local date
     content = {"salutation": salutation, "body": body,
-               "date": f"{today:%B} {today.day}, {today.year}",
-               "closing": str(data.get("closing") or ""), "signoff_name": name}
+               "date": f"{today:%B} {today.day}, {today.year}"}
     docx = folder / f"{slug}_Cover_Letter.docx"
     try:
         render_cover_letter(content, PROFILE / "cover_letter_template.docx", docx)

@@ -1,5 +1,5 @@
 ---
-description: Generate an outreach draft (recruiter / referral / alumni) for a specific job_id. Per-channel OPT disclosure and length defaults. Fully linted with outreach_only banned phrases. HARD-REFUSES if profile/voice_samples.md is missing or empty.
+description: Generate an outreach draft (recruiter / referral / alumni) for a specific job_id. Per-channel work-authorization disclosure and length defaults. Fully linted with outreach_only banned phrases. HARD-REFUSES if profile/voice_samples.md is missing or empty.
 model: sonnet
 effort: medium
 allowed-tools:
@@ -63,6 +63,7 @@ test -f "pipeline/${JOB_ID}/state.yaml" || {
     echo "ERROR: pipeline/${JOB_ID}/state.yaml missing -- run /track ${JOB_ID} saved first."
     exit 1
 }
+test -f profile/application_answers.yaml || { echo "ERROR: profile/application_answers.yaml missing -- run /onboarding."; exit 1; }
 test -f jobs/clean.parquet  || { echo "ERROR: jobs/clean.parquet missing";  exit 1; }
 test -f jobs/scored.parquet || { echo "ERROR: jobs/scored.parquet missing"; exit 1; }
 ```
@@ -82,10 +83,9 @@ Read:
   fit_score, existing outreach[])
 - `jobs/scored.parquet` + `jobs/clean.parquet` row (reasoning, keywords,
   full JD body)
-- `applications/<entry>/trace.md` where `<entry>` is `state.yaml.tailored_dirs[]`'s
-  last entry (already vertical-prefixed, e.g. `<vertical>/2026-06-17_acme_..._a1b2c3d4`)
-  IF that list is non-empty (so the outreach knows which bullets your
-  resume leads with)
+- `<dir>/trace.md`, where `<dir>` is what `uv run app dir <job_id>` prints (so
+  the outreach knows which bullets your resume leads with). An empty `dir`
+  means no resume is built yet: stop and tell the user to run `/tailor <job_id>`.
 - `profile/contacts.yaml` (schema in `profile/contacts.example.yaml`; PII;
   gitignored). If the file doesn't exist, treat as empty and proceed. Select
   entries whose `company` matches the row's company OR whose `tags` overlap the
@@ -97,6 +97,26 @@ Read:
 - `profile/voice_samples.md` -- the voice baseline (NOT templates; fresh
   generation in the user's voice)
 - `profile/de_ai_rules.yaml` -- both `banned_phrases` and `outreach_only`
+- the work-authorization row for the job's country, which sets the disclosure:
+
+  ```bash
+  cd "$(git rev-parse --show-toplevel)" && uv run python -c "
+  from src.apply.answers import load_answers
+  a = load_answers()
+  country = '<the country in state.yaml location, or empty for a remote or unnamed one>' or a.home_country
+  f = a.facts_for(country)
+  print(country, f.authorized, f.requires_sponsorship, repr(f.status_label), repr(f.followup))
+  "
+  ```
+
+### Disclosure
+
+- `requires_sponsorship: false` -> the draft never mentions work
+  authorization, on any channel.
+- `requires_sponsorship: true` -> the channel below decides whether it
+  appears. When it does, it is one light, honest line worded from the row's
+  `status_label` and `followup`, and it says sponsorship is needed now when
+  `authorized` is false. NO-FAB: no status fact the row does not state.
 
 ## Step 3 — generate the draft per channel rubric (LOCKED)
 
@@ -104,11 +124,11 @@ Read:
 
 LinkedIn DM:
 - **≤ 90 words**, NO subject line
-- OPT disclosure: **ONLY if asked**. Cold disclosure kills the funnel.
+- Disclosure: **only if asked**.
 
 Email:
 - **≤ 150 words**, short subject line (≤ 8 words)
-- OPT disclosure: **ONLY if asked**
+- Disclosure: **only if asked**
 
 Pick the medium by the first rule that applies:
 1. `--via "email"` was passed -> Email.
@@ -122,8 +142,8 @@ That is the whole rule. Reachability is not a judgment call to make here.
 
 - **≤ 120 words**
 - Warm contact you know; asking them to refer you internally
-- **OPT disclosure: light, honest, upfront mention** so the contact can
-  check internally before spending social capital
+- **Disclosure: upfront**, so the contact can check internally before
+  spending social capital
 - Direct ask: "would you be open to forwarding my resume to <X>?"
 
 ### alumni
@@ -134,7 +154,7 @@ That is the whole rule. Reachability is not a judgment call to make here.
   `profile/contacts.yaml`, the `--via` context, or an employer or school in
   `profile/resume.yaml`
 - **Ask for a 15-minute call -- NOT a referral up front**
-- **OPT disclosure: light, honest, upfront mention**
+- **Disclosure: upfront**
 
 ### Output file structure
 
@@ -165,7 +185,7 @@ status: draft
 # Why this approach
 
 <2-3 sentences: which voice cue you mirrored, which JD signal you
-referenced, why this OPT-disclosure choice for this channel.
+referenced, why this disclosure choice for this channel.
 The user deletes this section before sending.>
 ```
 
@@ -175,23 +195,23 @@ collapse non-alphanumerics to `-`, strip leading/trailing `-`. If no
 
 ## Step 4 — LINT the draft (outreach context)
 
-Outreach is fresh-generation text -- **NO bullets.md exemption applies.**
-
 ```bash
 uv run python <<'PYEOF'
 import json
 from pathlib import Path
-from src.lint import fix_mechanical, find_phrase_violations, load_de_ai_rules
+from src import resume_model
+from src.lint import fix_mechanical, find_phrase_violations
 
 # Substitute the literal path of the draft written in Step 3 — bash
 # variables do not persist between Bash calls.
 draft_path = Path("pipeline/<job_id>/outreach/<date>_<channel>_<recipient-slug>.md")
 draft = draft_path.read_text()
-rules = load_de_ai_rules()
-fixed, subs = fix_mechanical(draft, rules)
+src = resume_model.load_sources()
+fixed, subs = fix_mechanical(draft, src.rules)
 draft_path.write_text(fixed)
 # outreach context: enforces banned_phrases + outreach_only + no_emoji + no_exclamation
-violations = find_phrase_violations(fixed, context="outreach", rules=rules)
+keep = resume_model.keep_terms(src, "<company>", "<recipient name, or omit>")
+violations = find_phrase_violations(fixed, context="outreach", rules=src.rules, keep=keep)
 print(json.dumps({"mech_subs": len(subs), "violations": violations}, indent=2))
 PYEOF
 ```
@@ -236,9 +256,10 @@ print(f'OK: outreach[] now has {len(data[\"outreach\"])} entry/entries')
 - [ ] Word count is within the channel limit
 - [ ] state.yaml.outreach[] has a new `{channel, to, status: draft, draft_file}` entry,
       carrying `contact_id` when the recipient came from `contacts.yaml`
-- [ ] If channel is `recruiter`, the draft does NOT volunteer OPT status
-- [ ] If channel is `referral` or `alumni`, the draft DOES surface OPT
-      lightly and upfront
+- [ ] If the row has `requires_sponsorship: false`, the draft never mentions
+      work authorization
+- [ ] Otherwise: a `recruiter` draft does NOT volunteer it; a `referral` or
+      `alumni` draft DOES surface it lightly and upfront
 
 If any assertion fails, do NOT report success.
 

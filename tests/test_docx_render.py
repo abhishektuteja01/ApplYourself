@@ -492,17 +492,14 @@ def test_cover_letter_removes_the_body_placeholder(tmp_path):
 
 
 def test_cover_letter_leaves_no_raw_token_behind(tmp_path):
-    t = _make_cl_template(
-        tmp_path / "t.docx",
-        tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}", "{{CLOSING}}",
-                "{{SIGNOFF_NAME}}"))
+    t = _make_cl_template(tmp_path / "t.docx",
+                          tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}"))
     out = tmp_path / "cl.docx"
-    render_cover_letter(_content(date="2026-06-06", closing="Sincerely,",
-                                signoff_name="Jane Doe"), t, out)
+    render_cover_letter(_content(date="2026-06-06"), t, out)
     assert "{{" not in "\n".join(_texts(out))
     assert _texts(out) == [
         "Static header line", "2026-06-06", "Dear Hiring Manager,",
-        "First para.", "Second para.", "Sincerely,", "Jane Doe",
+        "First para.", "Second para.",
     ]
 
 
@@ -525,7 +522,7 @@ def test_cover_letter_skips_optional_placeholders_absent_from_the_template(tmp_p
     t = _make_cl_template(tmp_path / "t.docx",
                           static_text=("Static header line", "Sincerely,"))
     out = tmp_path / "cl.docx"
-    render_cover_letter(_content(closing="IGNORED", signoff_name="IGNORED"), t, out)
+    render_cover_letter(_content(date="IGNORED"), t, out)
     texts = _texts(out)
     assert "IGNORED" not in texts
     assert texts == ["Static header line", "Sincerely,", "Dear Hiring Manager,",
@@ -670,53 +667,6 @@ def test_cover_letter_placeholders_inside_a_table_cell_are_filled(tmp_path):
     assert cell_texts == ["Dear Hiring Manager,", "First para.", "Second para."]
 
 
-# ---------- job header date-range tab guard ----------
-
-@pytest.mark.parametrize("header", [
-    "**Advisory Analyst** - Deloitte Bengaluru, IN | May 2022 - Jul 2024",
-    "**CapTrack** Dec 2025 - Feb 2026",
-    "**APPLYOURSELF** | Jul 2026 - Present",
-    "**Master of Science in Computer Science** Sep 2024 \u2013 May 2026",
-])
-def test_job_header_date_range_without_tab_is_rejected(tmp_path, header):
-    """The template's sole tab stop is a right-aligned one on Resume Job
-    Header; a dated header with no tab renders the date inline."""
-    template = _make_template(tmp_path / "t.docx")
-    out = tmp_path / "resume.docx"
-    with pytest.raises(ResumeContentError) as exc:
-        render_resume(f"**Name**\n\n{header}", template, out)
-    msg = str(exc.value)
-    assert "tab" in msg
-    assert header in msg          # names the offending line
-    assert not out.exists()       # fails before writing anything
-
-
-@pytest.mark.parametrize("header", [
-    "**Advisory Analyst** - Deloitte\tBengaluru, IN | May 2022 - Jul 2024",
-    "**CapTrack**\tDec 2025 - Feb 2026",
-    "**APPLYOURSELF**\tJul 2026 - Present",
-    "**Employer** — Title",                      # no date range at all
-    "**Degree**, Institution — Mon YYYY",        # single date, not a range
-])
-def test_job_header_is_accepted_when_tabbed_or_undated(tmp_path, header):
-    template = _make_template(tmp_path / "t.docx")
-    out = tmp_path / "resume.docx"
-    render_resume(f"**Name**\n\n{header}", template, out)
-    assert out.exists()
-
-
-def test_guard_reports_every_offending_line(tmp_path):
-    template = _make_template(tmp_path / "t.docx")
-    md = ("**Name**\n\n**CapTrack** Dec 2025 - Feb 2026\n\n"
-          "**PROVA** Mar 2026 - May 2026\n\n**Ok**\tJan 2025 - Feb 2025")
-    with pytest.raises(ResumeContentError) as exc:
-        render_resume(md, template, tmp_path / "r.docx")
-    msg = str(exc.value)
-    assert "2 job header line(s)" in msg
-    assert "CapTrack" in msg and "PROVA" in msg
-    assert "**Ok**" not in msg
-
-
 def test_cover_letter_placeholder_in_a_merged_cell_is_found_once(tmp_path):
     """python-docx returns a merged cell once per column it spans; counting it
     twice raised a false 'more than one paragraph' error."""
@@ -757,7 +707,7 @@ def test_cover_letter_blanks_tokens_in_file_properties(tmp_path):
     {"body": ["Line one\nline two"]},
     {"body": ["Tab\tinside"]},
     {"salutation": "Dear\x0bX,"},
-    {"closing": 5},
+    {"date": 5},
 ])
 def test_cover_letter_rejects_malformed_content(tmp_path, over):
     t = _make_cl_template(tmp_path / "t.docx")

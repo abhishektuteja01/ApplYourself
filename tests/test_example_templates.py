@@ -96,8 +96,8 @@ APPROVED_COVER_LETTERHEAD = {
     "Sincerely,",
     "|",
 }
-# {{DATE}} is the one optional placeholder the template uses; the closing and
-# signoff are literal letterhead instead.
+# {{DATE}} is the one optional placeholder; the template owns the sign-off as
+# literal text.
 USED_COVER_PLACEHOLDERS = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | {"{{DATE}}"}
 
 APPROVED_COVER_TEXT = APPROVED_COVER_LETTERHEAD | USED_COVER_PLACEHOLDERS
@@ -302,7 +302,7 @@ class TestCoverLetterTemplateContract:
 
     def test_declares_no_placeholder_the_renderer_cannot_fill(self):
         """A typo'd token is preserved verbatim, so it ships as literal
-        '{{SIGNOFF_NAM}}' inside a real cover letter."""
+        '{{SALUTATON}}' inside a real cover letter."""
         declared = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(
             COVER_LETTER_OPTIONAL_PLACEHOLDERS
         )
@@ -379,28 +379,6 @@ class TestCoverLetterTemplateContract:
         assert not (set(texts) & set(COVER_LETTER_REQUIRED_PLACEHOLDERS)), (
             "an unfilled placeholder survived into the output"
         )
-
-    def test_closing_and_signoff_values_are_dropped_not_rendered(self, tmp_path):
-        """The template hardcodes its closing and signoff, so a caller supplying
-        closing/signoff_name has those values silently ignored. Pinned so the
-        consequence of that design is visible rather than surprising."""
-        out = tmp_path / "cl.docx"
-        render_cover_letter(
-            {
-                "salutation": "Dear Hiring Manager,",
-                "body": ["Body."],
-                "closing": "Warm regards,",
-                "signoff_name": "Some Name",
-            },
-            COVER_TEMPLATE,
-            out,
-        )
-        texts = [p.text.strip() for p in Document(str(out)).paragraphs]
-        for dropped in ("Warm regards,", "Some Name"):
-            assert dropped not in texts, (
-                f"{dropped!r} rendered; the template regained a placeholder for it, "
-                f"so this test and the letterhead approval need revisiting"
-            )
 
     def test_an_unsupplied_date_leaves_no_raw_token(self, tmp_path):
         """{{DATE}} is optional. The renderer fills a found placeholder even with

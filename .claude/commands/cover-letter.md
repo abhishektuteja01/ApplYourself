@@ -48,7 +48,6 @@ uses: [B-XXX-01, B-YYY-02]        # every bullet a sentence about you draws on
 body:
   - "First paragraph."
   - "Second paragraph."
-closing: "Sincerely,"             # used only if the template has {{CLOSING}}
 ```
 
 Write fresh prose about this role, not a mail-merge. Across the letter, cover:

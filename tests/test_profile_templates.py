@@ -234,10 +234,8 @@ class TestTemplateCoverage:
         [
             "bullets.example.md",
             "skills_master.example.md",
-            "preferences.example.md",
             "voice_samples.example.md",
             "stories.example.md",
-            "scoring_rubric.example.md",
             "contacts.example.yaml",
             "discovery.example.yaml",
             "application_answers.example.yaml",
@@ -300,38 +298,27 @@ class TestExampleSourcesResolve:
     """The shipped example world must pass the same source check
     `verticals-check` runs on real config: every pointer between resume.yaml,
     bullets.md, skills_master.md and the lane `resume:` blocks resolves, every
-    budget can be met, and every example lane's baseline resume builds."""
+    budget can be met, and every example lane's baseline resume builds. The
+    conftest already points resume_model at the example sources."""
 
-    @staticmethod
-    def _example_world(monkeypatch):
-        from src import resume_model, verticals
-        monkeypatch.setattr(resume_model, "RESUME", PROFILE / "resume.example.yaml")
-        monkeypatch.setattr(resume_model, "BULLETS", PROFILE / "bullets.example.md")
-        monkeypatch.setattr(resume_model, "SKILLS", PROFILE / "skills_master.example.md")
-        from tests.conftest import FIXTURE_PATH
-        cfg = verticals.load_verticals(FIXTURE_PATH)
+    @pytest.fixture
+    def example_cfg(self):
+        from src import verticals
+        cfg = load_verticals(PROFILE / "verticals.example.yaml")
         verticals.set_config(cfg)
-        return resume_model, cfg
+        return cfg
 
-    def test_example_sources_check_clean(self, monkeypatch):
-        resume_model, cfg = self._example_world(monkeypatch)
-        try:
-            assert resume_model.check_sources(resume_model.load_sources(), cfg) == []
-        finally:
-            from src import verticals
-            verticals.set_config(None)
+    def test_example_sources_check_clean(self, example_cfg):
+        from src import resume_model
+        assert resume_model.check_sources(resume_model.load_sources(), example_cfg) == []
 
-    def test_every_example_lane_baseline_builds(self, monkeypatch):
-        resume_model, cfg = self._example_world(monkeypatch)
-        try:
-            src = resume_model.load_sources()
-            for lane in cfg.names:
-                built = resume_model.build(src, lane, resume_model.baseline_plan(src, lane))
-                assert built.problems == [], (lane, built.problems)
-                assert built.markdown.startswith("**Alex Example**")
-        finally:
-            from src import verticals
-            verticals.set_config(None)
+    def test_every_example_lane_baseline_builds(self, example_cfg):
+        from src import resume_model
+        src = resume_model.load_sources()
+        for lane in example_cfg.names:
+            built = resume_model.build(src, lane, resume_model.baseline_plan(src, lane))
+            assert built.problems == [], (lane, built.problems)
+            assert built.markdown.startswith("**Alex Example**")
 
     def test_every_bullet_is_cited_by_some_skill(self):
         text = (PROFILE / "skills_master.example.md").read_text(encoding="utf-8")
@@ -342,36 +329,35 @@ class TestExampleSourcesResolve:
 
 
 class TestExampleEntrySchemas:
-    BULLET_KEYS = ("canonical:", "tags:", "evidence:", "allowable_synonyms:")
-    SKILL_KEYS = ("name:", "evidence:", "allowable_synonyms:")
+    """The templates show every key the loader accepts, and no other."""
 
     @staticmethod
-    def _entries(name: str) -> list[str]:
-        text = (PROFILE / name).read_text(encoding="utf-8")
-        return re.split(r"^## ", text, flags=re.M)[1:]
+    def _entries(name: str) -> dict[str, dict]:
+        from src.resume_model import parse_entries
+        return parse_entries((PROFILE / name).read_text(encoding="utf-8"))
 
-    def test_every_bullet_entry_has_every_key(self):
-        for entry in self._entries("bullets.example.md"):
-            entry_id = entry.split("\n", 1)[0].strip()
-            for key in self.BULLET_KEYS:
-                assert key in entry, f"bullet {entry_id} missing {key}"
-
-    def test_every_skill_entry_has_every_key(self):
-        for entry in self._entries("skills_master.example.md"):
-            entry_id = entry.split("\n", 1)[0].strip()
-            for key in self.SKILL_KEYS:
-                assert key in entry, f"skill {entry_id} missing {key}"
+    @pytest.mark.parametrize("name,keys_attr", [
+        ("bullets.example.md", "BULLET_KEYS"),
+        ("skills_master.example.md", "SKILL_KEYS"),
+    ])
+    def test_entries_use_exactly_the_loader_keys(self, name, keys_attr):
+        from src import resume_model
+        keys = set(getattr(resume_model, keys_attr))
+        entries = self._entries(name)
+        for entry_id, entry in entries.items():
+            assert set(entry) <= keys, f"{entry_id}: unknown keys {set(entry) - keys}"
+        shown = set().union(*(set(e) for e in entries.values()))
+        assert shown == keys, f"{name} never shows {keys - shown}"
 
     def test_bullet_ids_follow_the_documented_shape(self):
-        for entry in self._entries("bullets.example.md"):
-            entry_id = entry.split("\n", 1)[0].strip()
+        for entry_id in self._entries("bullets.example.md"):
             assert re.fullmatch(r"B-[A-Z]+-\d{2}", entry_id), (
                 f"bullet id {entry_id!r} does not match B-<CTX>-NN"
             )
 
 
 class TestStoriesTemplate:
-    """profile/stories.md is /apply's only source for a Tier C1 question about a
+    """profile/stories.md is /apply's only source for a question about a
     decision, a mistake or the hardest thing the user has done. bullets.md
     cannot answer those, so a malformed template is a silent fallback to
     drafting a story out of a bullet, which is fabrication."""

@@ -1,12 +1,11 @@
 """Tests for src/lint.py — deterministic two-tier linter."""
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
-import yaml
 
 from src.lint import (
+    LintConfigError,
     find_phrase_violations,
     fix_mechanical,
     load_de_ai_rules,
@@ -54,91 +53,13 @@ def _rules(**overrides) -> dict:
 # Tier 1 — mechanical
 # ===========================================================
 
-def test_fix_mechanical_em_dash():
-    text = "We had a meeting — it went well."
-    out, subs = fix_mechanical(text, _rules())
-    assert "—" not in out
-    # Surrounding whitespace collapses so " — " -> ", " (not ",  ")
-    assert out == "We had a meeting, it went well."
-    assert any(s["category"] == "em_dash" for s in subs)
-
-
-def test_fix_mechanical_en_dash_range_vs_paren():
-    text = "Tenure 2022–2024 — see the report (a small – b sized)."
-    out, subs = fix_mechanical(text, _rules())
-    # range: 2022-2024 (no whitespace to collapse around digit-en-digit)
-    assert "2022-2024" in out
-    # parenthetical: " – " collapses to ", "
-    assert "a small, b sized" in out
-    cats = {s["category"] for s in subs}
-    assert "en_dash_in_range" in cats
-    assert "en_dash_parenthetical" in cats
-
-
 def test_em_dash_pass_does_not_shift_reported_columns():
-    """Columns reference the ORIGINAL line, per fix_mechanical's contract. The
-    em-dash pass shortens the line, so running it first drifted every later
-    column left."""
+    """Columns reference the ORIGINAL line, per fix_mechanical's contract."""
     text = "Role — Company 2022–2024 done"
     _, subs = fix_mechanical(text, _rules())
     reported = sorted(s["column"] for s in subs)
     true_cols = sorted(i + 1 for i, ch in enumerate(text) if ch in "—–")
     assert reported == true_cols
-
-
-def test_em_dash_does_not_flip_en_dash_classification():
-    """An em-dash earlier in the line must not change how a later en-dash is
-    classified: collapsing " — " to ", " used to pull a digit inside
-    _endash_is_date_range's window and turn a parenthetical into a range."""
-    bare = fix_mechanical("aaaa – 2024", _rules())
-    with_em = fix_mechanical("1 — aaaa – 2024", _rules())
-    en_cat = lambda subs: {s["category"] for s in subs if s["category"].startswith("en_dash")}
-    assert en_cat(bare[1]) == {"en_dash_parenthetical"}
-    assert en_cat(with_em[1]) == {"en_dash_parenthetical"}
-    assert with_em[0] == "1, aaaa, 2024"
-
-
-def test_fix_mechanical_en_dash_spacious_date_range():
-    """Resume date ranges like 'May 2022 – Jul 2024' must be recognised as
-    range (digits on both sides across whitespace) -- not silently
-    collapsed to 'May 2022, Jul 2024' as a parenthetical."""
-    out, subs = fix_mechanical("Tenure: May 2022 – Jul 2024", _rules())
-    assert out == "Tenure: May 2022 - Jul 2024"  # surrounding spaces preserved
-    cats = {s["category"] for s in subs}
-    assert cats == {"en_dash_in_range"}
-    assert "May 2022 - Jul 2024" in out  # not "May 2022, Jul 2024"
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("Acme (May 2022 – Present)", "Acme (May 2022 - Present)"),
-    ("Acme (2022 – Present)", "Acme (2022 - Present)"),
-    ("Acme (May 2022 – present)", "Acme (May 2022 - present)"),
-    ("Acme (Jun 2021 – Current)", "Acme (Jun 2021 - Current)"),
-    ("Acme (Mar 2019 – ongoing)", "Acme (Mar 2019 - ongoing)"),
-    ("Acme (Mar 2019 – to date)", "Acme (Mar 2019 - to date)"),
-    ("Acme | May 2022 – Present | Boston", "Acme | May 2022 - Present | Boston"),
-])
-def test_fix_mechanical_open_ended_date_range(text, expected):
-    """The current role's end has no digit, so a digits-on-both-sides test
-    reads it as a parenthetical and ships 'May 2022, Present' in every
-    tailored resume header."""
-    out, subs = fix_mechanical(text, _rules())
-    assert out == expected
-    assert {s["category"] for s in subs} == {"en_dash_in_range"}
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("Shipped in 2024 – now the standard", "Shipped in 2024, now the standard"),
-    ("Cut latency 40% – currently the fastest", "Cut latency 40%, currently the fastest"),
-    ("Raised 3 rounds – ongoing work continues", "Raised 3 rounds, ongoing work continues"),
-    ("the plan – now revised", "the plan, now revised"),
-])
-def test_fix_mechanical_open_ended_words_still_paren_mid_sentence(text, expected):
-    """'now'/'ongoing' also start asides. A real end-date terminates its
-    field; an aside continues into prose, which is what separates them."""
-    out, subs = fix_mechanical(text, _rules())
-    assert out == expected
-    assert {s["category"] for s in subs} == {"en_dash_parenthetical"}
 
 
 def test_fix_mechanical_smart_quotes():
@@ -257,8 +178,9 @@ def test_find_phrase_violations_reports_line_and_column():
 # Rule loading
 # ===========================================================
 
-def test_load_de_ai_rules_missing_file_is_empty(tmp_path):
-    assert load_de_ai_rules(tmp_path / "absent.yaml") == {}
+def test_load_de_ai_rules_missing_file_fails_loud(tmp_path):
+    with pytest.raises(LintConfigError, match="missing"):
+        load_de_ai_rules(tmp_path / "absent.yaml")
 
 
 # ===========================================================
@@ -266,12 +188,33 @@ def test_load_de_ai_rules_missing_file_is_empty(tmp_path):
 # ===========================================================
 
 @pytest.mark.parametrize("text,expected", [
+    # ranges: dates, numbers, day names, open-ended ends
     ("May 2022 — Jul 2024", "May 2022 - Jul 2024"),
+    ("Tenure: May 2022 – Jul 2024", "Tenure: May 2022 - Jul 2024"),
+    ("Tenure 2022–2024", "Tenure 2022-2024"),
     ("Open Mon–Fri", "Open Mon-Fri"),
     ("Jan – May 2024", "Jan - May 2024"),
-    ("Cut cost by –5%", "Cut cost by -5%"),
     ("grew 40%–60%", "grew 40%-60%"),
+    ("Acme (May 2022 – Present)", "Acme (May 2022 - Present)"),
+    ("Acme (2022 – Present)", "Acme (2022 - Present)"),
+    ("Acme (May 2022 – present)", "Acme (May 2022 - present)"),
+    ("Acme (Jun 2021 – Current)", "Acme (Jun 2021 - Current)"),
+    ("Acme (Mar 2019 – ongoing)", "Acme (Mar 2019 - ongoing)"),
+    ("Acme (Mar 2019 – to date)", "Acme (Mar 2019 - to date)"),
+    ("Acme | May 2022 – Present | Boston", "Acme | May 2022 - Present | Boston"),
+    # minus sign
+    ("Cut cost by –5%", "Cut cost by -5%"),
+    # asides, including open-ended words that continue into prose
+    ("We had a meeting — it went well.", "We had a meeting, it went well."),
+    ("see the report (a small – b sized).", "see the report (a small, b sized)."),
     ("the plan — now revised", "the plan, now revised"),
+    ("the plan – now revised", "the plan, now revised"),
+    ("Shipped in 2024 – now the standard", "Shipped in 2024, now the standard"),
+    ("Cut latency 40% – currently the fastest", "Cut latency 40%, currently the fastest"),
+    ("Raised 3 rounds – ongoing work continues", "Raised 3 rounds, ongoing work continues"),
+    # an earlier dash does not change how a later one reads
+    ("aaaa – 2024", "aaaa, 2024"),
+    ("1 — aaaa – 2024", "1, aaaa, 2024"),
 ])
 def test_fix_mechanical_one_dash_rule(text, expected):
     out, _ = fix_mechanical(text, _rules())

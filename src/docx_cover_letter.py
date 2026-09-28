@@ -19,7 +19,7 @@ from src.docx_render import TemplateError, TemplateMissingError
 
 # The placeholder contract this renderer fills.
 COVER_LETTER_REQUIRED_PLACEHOLDERS = ["{{SALUTATION}}", "{{BODY}}"]
-COVER_LETTER_OPTIONAL_PLACEHOLDERS = ["{{DATE}}", "{{CLOSING}}", "{{SIGNOFF_NAME}}"]
+COVER_LETTER_OPTIONAL_PLACEHOLDERS = ["{{DATE}}"]
 
 def render_cover_letter(content: dict, template_path: Path, out_path: Path) -> None:
     """Fill placeholder paragraphs in the user's own cover-letter .docx
@@ -30,13 +30,13 @@ def render_cover_letter(content: dict, template_path: Path, out_path: Path) -> N
       salutation   (str, required)  -- e.g. "Dear Hiring Manager,"
       body         (list[str], required) -- one entry per body paragraph
       date         (str, optional)
-      closing      (str, optional)  -- e.g. "Sincerely,"
-      signoff_name (str, optional)  -- e.g. "Jane Doe"
+
+    The template owns the sign-off: its closing and name are literal text.
 
     Template contract: somewhere in the template body, a paragraph whose
     stripped text is EXACTLY one of COVER_LETTER_REQUIRED_PLACEHOLDERS /
     COVER_LETTER_OPTIONAL_PLACEHOLDERS marks where that content goes.
-    {{SALUTATION}}/{{DATE}}/{{CLOSING}}/{{SIGNOFF_NAME}} are replaced
+    {{SALUTATION}}/{{DATE}} are replaced
     in place (the paragraph's first run keeps its formatting). {{BODY}}'s
     paragraph is cloned once per entry in content['body'] (preserving its
     style/run formatting), then the placeholder paragraph is removed.
@@ -96,13 +96,9 @@ def _iter_paragraphs(doc):
 
 
 def list_cover_letter_placeholders(template_path: Path) -> set[str]:
-    """Return which COVER_LETTER_REQUIRED_PLACEHOLDERS /
-    COVER_LETTER_OPTIONAL_PLACEHOLDERS tokens are present in
-    template_path (using _paragraph_full_text, so w:hyperlink/w:sdt
-    nesting is accounted for). /cover-letter uses this to decide which
-    optional fields (date/closing/signoff_name) are worth generating --
-    callers must NOT re-implement detection with plain paragraph.text,
-    which silently misses tokens nested in Word content controls."""
+    """The placeholder tokens present in template_path, found the way the
+    renderer finds them (w:hyperlink / w:sdt nesting included). Used to check
+    a template, not by the build."""
     doc = Document(str(template_path))
     all_tokens = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(COVER_LETTER_OPTIONAL_PLACEHOLDERS)
     return {
@@ -142,8 +138,6 @@ def _fill_cover_letter_placeholders(doc, content: dict, path: Path) -> None:
     simple_values = {
         "{{DATE}}": content.get("date"),
         "{{SALUTATION}}": content.get("salutation"),
-        "{{CLOSING}}": content.get("closing"),
-        "{{SIGNOFF_NAME}}": content.get("signoff_name"),
     }
     for token, value in simple_values.items():
         if token in found:
@@ -169,7 +163,7 @@ def _check_content(content: dict) -> None:
     if (not isinstance(body, list) or not body
             or not all(isinstance(p, str) and p.strip() for p in body)):
         raise ValueError("content['body'] must be a non-empty list of non-empty paragraph strings.")
-    for key in ("salutation", "date", "closing", "signoff_name"):
+    for key in ("salutation", "date"):
         value = content.get(key)
         if value is not None and not isinstance(value, str):
             raise ValueError(f"content[{key!r}] must be a string.")

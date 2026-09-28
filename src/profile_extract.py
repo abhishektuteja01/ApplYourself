@@ -3,7 +3,7 @@
     uv run profile-extract <file>
 
 Deterministic (R7): plain text extraction, no judgment, no LLM. The onboarding
-session reads the output and interviews the user about it; nothing here decides
+session reads the output and drafts the profile from it; nothing here decides
 what is a bullet.
 
 .docx is the case that needs code -- Claude cannot read a Word file directly.

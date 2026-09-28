@@ -74,15 +74,14 @@ print('default:', c.default_vertical)
 **Role mode:**
 
 ```bash
-JOB_ID="<the 8-hex id>"
-sed -n '1,40p' "pipeline/$JOB_ID/state.yaml"
+cd "$(git rev-parse --show-toplevel)" && uv run app dir <job_id>
+sed -n '1,40p' "pipeline/<job_id>/state.yaml"
 ```
 
-From that state file take `vertical`, `company`, `title`, and the **last** entry of
-`tailored_dirs[]` — the same resolution `src/apply_cli.py:resolve_out_dir` uses. Join
-it to `applications/` to get the role's output dir.
+`dir` is the role's output dir and `vertical` its lane. From the state file take
+`company` and `title`.
 
-If `state.yaml` is missing, or `tailored_dirs[]` is empty, **stop**. The role was never
+If `state.yaml` is missing, or `dir` is empty, **stop**. The role was never
 tailored, so there is no JD snapshot and no landed-claim list; interviewing JD-blind
 would invent the questions. Tell the user to run `/tailor <job_id>` first, or to run
 `/interview <vertical>` instead.

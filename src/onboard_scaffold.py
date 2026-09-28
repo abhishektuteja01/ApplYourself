@@ -2,26 +2,26 @@
 
 One command for every mechanical step of a fresh install: copy each
 `profile/*.example.*` template to its real name, strip the shipped example
-lanes out of the copied `verticals.yaml`, set `profile/scoring.yaml`'s
-the home country's work-authorization row from the answer, probe
-for libpostal, and — behind `--with-apply` — set up the submission path.
+lanes out of the copied `verticals.yaml`, set the home country's
+work-authorization row in `profile/application_answers.yaml` from the answer,
+probe for libpostal, and — behind `--with-apply` — set up the submission path.
 
 Never destructive: an existing file is skipped and listed, `--force`
 overwrites, `--dry-run` prints the full plan and touches nothing.
 
 Templates NOT copied by default, because /onboarding puts them on its "later,
 when you want it" menu rather than the setup path:
-  voice_samples / contacts / pii_denylist -> --with-optional
-      (/outreach's voice samples, optional contact and company lists, and the
-      PII gate, which only matters once application_answers.yaml holds a real
-      email and phone)
+  voice_samples / stories / contacts / pii_denylist -> --with-optional
+      (/outreach's voice samples, /apply's story bank, optional contact and
+      company lists, and the PII gate, which only matters once
+      application_answers.yaml holds a real email and phone)
 
 --with-apply copies no extra template: it installs the apply dependency group
 and Playwright's Chrome. application_answers.yaml is always copied, so
 /onboarding can fill it from the resume it has already parsed.
 
-The two YAML edits are line-based, not a parse-and-dump: `ruamel.yaml` is not a
-dependency and PyYAML would drop every comment in both files.
+The verticals.yaml strip is line-based, not a parse-and-dump: `ruamel.yaml` is
+not a dependency and PyYAML would drop every comment in the file.
 
 After the strip, `verticals.yaml` no longer loads: it has no lanes and no
 classifier rules, and `default_vertical` names the lane the user has not
@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
 from src import paths
 
 PROFILE = paths.PROFILE  # tests repoint these names; keep them module attrs
@@ -297,7 +298,7 @@ def probe_libpostal(rep: Report) -> None:
     """Advisory only: never installs, never changes the exit code."""
     try:
         __import__("postal.parser")
-    except Exception:
+    except Exception:  # noqa: BLE001 - a broken native install raises anything
         hint = LIBPOSTAL_INSTALL.get(sys.platform, LIBPOSTAL_INSTALL["linux"])
         rep.notes.append(
             f"libpostal not importable — `uv run discover` needs it. Install it "
@@ -321,7 +322,7 @@ def setup_apply_path(dry_run: bool, rep: Report) -> bool:
         if dry_run:
             rep.done.append(f"would run: {printable}")
             continue
-        result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
+        result = subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=False)
         if result.returncode == 0:
             rep.done.append(f"ran: {printable}")
         else:

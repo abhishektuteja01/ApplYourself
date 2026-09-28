@@ -34,7 +34,6 @@ from docx.oxml.ns import qn
 
 from src import paths
 
-
 REQUIRED_STYLES = [
     "Resume Name",
     "Resume Section",
@@ -90,20 +89,18 @@ def render_resume(md_content: str, template_path: Path, out_path: Path) -> None:
     _validate_template(doc, template_path)
     _clear_body(doc)
     blocks = parse_resume_md(md_content)
-    _validate_job_headers(blocks)
     _write_blocks(doc, blocks)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
 
 
 def parse_resume_md(md: str) -> list[Block]:
-    """Parse the small resume.md markdown subset into typed blocks.
+    """Parse the markdown resume_model.build emits into typed blocks.
 
-    Supported subset:
-      **Name** or # **Name**            -> name (first such line only)
+      **Name**                          -> name (first such line only)
       **SECTION NAME**                  -> section_header (all-caps content)
       **Bold Prefix** rest of line      -> job_header
-      * bullet  /  - bullet             -> bullet
+      * bullet                          -> bullet
       anything else (non-blank)         -> body
 
     Inline **bold** runs are split for body / bullet / job_header blocks."""
@@ -114,17 +111,17 @@ def parse_resume_md(md: str) -> list[Block]:
         if not line:
             continue
         if not seen_name:
-            m = re.fullmatch(r"#?\s*\*\*(.+?)\*\*", line)
+            m = re.fullmatch(r"\*\*(.+?)\*\*", line)
             if m:
                 blocks.append({"type": "name", "text": m.group(1).strip()})
                 seen_name = True
                 continue
         # Bullet
-        if line.startswith(("* ", "- ")):
+        if line.startswith("* "):
             body = line[2:].strip()
             blocks.append({
                 "type": "bullet", "text": body,
-                "runs": _split_inline_runs(body),
+                "runs": _inline_runs(body),
             })
             continue
         # Section header: a line that is entirely **ALL CAPS WORDS**
@@ -150,7 +147,7 @@ def parse_resume_md(md: str) -> list[Block]:
             if bold_prefix.endswith(":"):
                 blocks.append({
                     "type": "body", "text": line,
-                    "runs": _split_inline_runs(line),
+                    "runs": _inline_runs(line),
                 })
                 continue
             runs: list[Run] = [
@@ -158,13 +155,13 @@ def parse_resume_md(md: str) -> list[Block]:
             ]
             tail = m.group(2)
             if tail:
-                runs.extend(_split_inline_runs(tail))
+                runs.extend(_inline_runs(tail))
             blocks.append({"type": "job_header", "text": line, "runs": runs})
             continue
         # Plain body (may contain inline bold)
         blocks.append({
             "type": "body", "text": line,
-            "runs": _split_inline_runs(line),
+            "runs": _inline_runs(line),
         })
     return blocks
 
@@ -172,33 +169,6 @@ def parse_resume_md(md: str) -> list[Block]:
 # =====================================================================
 # Internals
 # =====================================================================
-
-_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?"
-_DATE_RANGE_RE = re.compile(
-    rf"{_MONTH}\s+\d{{4}}\s*[-\u2013\u2014]\s*(?:{_MONTH}\s+\d{{4}}|Present)"
-)
-
-
-def _validate_job_headers(blocks: list[Block]) -> None:
-    """A job header carrying a date range must put a tab before the date.
-
-    The template's only tab stop is a right-aligned one on Resume Job Header,
-    so a header without the tab renders its date inline mid-line instead of
-    flush right. Headers with no date range are unaffected."""
-    bad = [
-        b.get("text", "") for b in blocks
-        if b.get("type") == "job_header"
-        and "\t" not in b.get("text", "")
-        and _DATE_RANGE_RE.search(b.get("text", ""))
-    ]
-    if bad:
-        listing = "\n".join(f"  {text}" for text in bad)
-        raise ResumeContentError(
-            f"ERROR: {len(bad)} job header line(s) carry a date range with no "
-            f"tab before it. The date would render inline instead of flush "
-            f"right. Insert a literal tab before the date:\n{listing}"
-        )
-
 
 def _validate_template(doc, path: Path) -> None:
     style_names = {s.name for s in doc.styles}
@@ -339,11 +309,10 @@ _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def _split_inline_runs(text: str) -> list[Run]:
-    """Split text into runs at **bold** AND [text](url) boundaries.
+def _inline_runs(text: str) -> list[Run]:
+    """Split text into runs at **bold** and [text](url) boundaries.
 
-    Name is historical -- handles bold and links now. Plain text becomes
-    plain runs; **x** becomes a bold run; [t](u) becomes a link run (bold
+    Plain text becomes plain runs; **x** becomes a bold run; [t](u) becomes a link run (bold
     inside a link or a link inside bold are NOT supported -- if a
     bold span and a link span overlap, whichever started earlier wins and
     the later overlapping match is dropped)."""
@@ -416,7 +385,7 @@ def export_pdf(docx_path: Path, token: str) -> PdfResult:
     )
     try:
         proc = subprocess.run(["osascript"], input=script, text=True, encoding="utf-8",
-                              capture_output=True, timeout=180)
+                              capture_output=True, timeout=180, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         staged_docx.unlink(missing_ok=True)
         return PdfResult(status="failed", path="", pages=0, detail=f"osascript: {exc}")

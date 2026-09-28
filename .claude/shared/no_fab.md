@@ -32,9 +32,9 @@ with a `code`:
 | `unknown_id` | a bullet or skill id that does not exist |
 | `context`, `budget`, `layout` | the plan breaks the lane's shape: a context not on this lane, a bullet count outside `{min, max}`, a skill on the wrong line, or a missing or extra key |
 | `license` | a reworded bullet uses a word outside REPHRASE-LICENSE |
-| `number` | a number that no cited bullet, and not the JD, contains |
+| `number` | a number with no source: on a resume, the cited bullets, a context header or the baseline summary; in a letter or answers, the JD, a context header or a `uses` bullet |
 | `skill` | a summary names a skill no cited bullet backs, or an alias that is not an allowable synonym |
-| `lint` | a banned phrase from `profile/de_ai_rules.yaml`. Company names, the recipient's name, skill names, URLs and dates are never flagged |
+| `lint` | a banned phrase from `profile/de_ai_rules.yaml`. Company names, the recipient's name, skill names, context titles and orgs, URLs and dates are never flagged |
 | `pages` | the pdf runs past one page |
 
 Mechanical fixes (dashes, smart quotes, ellipses, odd spaces) are applied

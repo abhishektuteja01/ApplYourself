@@ -29,7 +29,7 @@
 #                        fabrication with extra steps.
 #
 # `uv run verticals-check` lints every canonical sentence once, here at the
-# source; generated documents only lint what they reword.
+# source; builds lint only the text a session wrote.
 #
 # The entries below are fictional, and match the widget/sprocket/cog world of
 # the committed profile/verticals/example_* lanes.

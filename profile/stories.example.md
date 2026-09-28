@@ -10,8 +10,8 @@
 # allowable_synonyms. No new numbers, no invented tools.
 #
 # Entry format (all eight keys, one blank line between entries):
-#   ## S-<CTX>-<SLUG>    <CTX> matches the bullets.md context tag for the same
-#                        project; <SLUG> is a short name you invent.
+#   ## S-<CTX>-<SLUG>    <CTX> is the project's context key in
+#                        profile/resume.yaml; <SLUG> is a short name you invent.
 #   kind:                the routing key. /apply maps a question label to a
 #                        kind, never straight to a project. One of:
 #                        bug_caught | judgment_call | reversal |
@@ -29,9 +29,7 @@
 #                        bullets.md, a synonym that widens the claim is a
 #                        fabrication with extra steps.
 #
-# Unlike bullets.md, story prose gets NO diction-lint exemption. It is fresh
-# generation into a form field, same as outreach, so it must survive the banned
-# phrase list in profile/de_ai_rules.yaml on its own.
+# Story prose must pass the banned-phrase list in profile/de_ai_rules.yaml.
 #
 # Which story wins when several match a question is set per vertical, by
 # `C1 story priority` in profile/verticals/<name>/tailoring.md.

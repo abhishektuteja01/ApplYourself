@@ -1,27 +1,28 @@
 """Two-tier linter.
 
 Determinism boundary (R7): no LLM calls. The rewrite loop happens in the
-.claude/commands/tailor.md and .claude/commands/outreach.md sessions, with
-find_phrase_violations as the deterministic referee.
+writing command sessions (/tailor, /cover-letter, /company-answers, /outreach),
+with find_phrase_violations as the deterministic referee.
 
 Tier 1 (mechanical, auto-fix): em/en-dash, smart quotes, ellipsis, NBSP,
-zero-width. Applied to everything including verbatim canonical text — no
-exemption.
+zero-width.
 
 Tier 2 (phrase, flag-and-rewrite): banned phrases per profile/de_ai_rules.yaml.
-NEVER auto-rewritten. The caller loops the LLM to rewrite the offending line
-until the linter returns empty.
+NEVER auto-rewritten. The caller rewrites the offending line until the linter
+returns empty.
 
 Sources (bullets.md, skills_master.md, resume.yaml) are linted once at the
-source by `verticals-check`; builds lint only the text a session generated.
+source by `verticals-check`; builds lint only the text a session wrote.
 """
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Literal, TypedDict
+from typing import Literal, TypedDict
 
 import yaml
+
 from src import paths
 
 
@@ -59,10 +60,10 @@ class LintConfigError(ValueError):
 # =====================================================================
 
 def load_de_ai_rules(path: Path | None = None) -> dict:
-    """Load profile/de_ai_rules.yaml. Returns {} if file missing."""
+    """Load profile/de_ai_rules.yaml. A missing file raises LintConfigError."""
     p = path or _DEFAULT_RULES_PATH
     if not p.exists():
-        return {}
+        raise LintConfigError(f"{p} is missing")
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
 
@@ -134,7 +135,7 @@ _CHAR_SUBSTITUTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("smart_quote_double", ("“", "”")),
     ("ellipsis", ("…",)),
     ("nbsp", (" ", " ", " ", " ", " ")),
-    ("zero_width", ("​", "‌", "‍", "⁠", "﻿")),
+    ("zero_width", ("\u200b", "‌", "‍", "⁠", "﻿")),
 )
 
 
@@ -260,8 +261,8 @@ def find_phrase_violations(
     """Scan text for banned phrases; return one Violation per occurrence.
 
     Link targets, URLs, emails, month names used as dates, and every `keep`
-    term (company, recipient, skill names — proper nouns the writer can't
-    reword) are never scanned. `outreach_only` phrases apply only to
+    term (company, recipient, skill names and aliases, context titles and
+    orgs — proper nouns the writer can't reword) are never scanned. `outreach_only` phrases apply only to
     context='outreach'."""
     if rules is None:
         rules = load_de_ai_rules()
