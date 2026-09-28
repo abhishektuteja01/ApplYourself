@@ -71,7 +71,7 @@ def test_deleting_a_bullet_names_every_pointer_to_fix(world):
     ("bullets.md", "## B-WID-01", "## B-ZZZ-01", "no context 'ZZZ'"),
     ("bullets.md", "default_for: [example_primary]", "default_for: [nope]", "'nope' is not a configured lane"),
     ("skills_master.md", 'show: {example_secondary: "Programming"}', 'show: {example_secondary: "Nope"}', "'Nope' is not one of"),
-    ("resume.yaml", "lanes: {example_primary: [2, 3]", "lanes: {example_primary: [9, 3]", "must be [min, max]"),
+    ("resume.yaml", "lanes: {example_primary: {min: 2", "lanes: {example_primary: {min: 9", "0 <= min <= max"),
     ("resume.yaml", "section: work", "section: jobs", "must be work or projects"),
 ])
 def test_broken_pointer_is_named(world, file, old, new, expect):
@@ -207,3 +207,14 @@ def test_keyword_coverage_is_traced(world):
                                keywords=("SQL", "Kubernetes"))
     assert "- Kubernetes: not landed" in built.trace
     assert any(t.startswith("- SQL: L") for t in built.trace)
+
+
+def test_baseline_orders_contexts_by_the_lane_order(world):
+    tmp, _ = world
+    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2, order: 1}}",
+          "example_secondary: {min: 1, max: 2, order: 5}}")
+    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2}}\n  EDU",
+          "example_secondary: {min: 1, max: 2, order: 1}}\n  EDU")
+    src = resume_model.load_sources()
+    md = resume_model.build(src, "example_secondary", resume_model.baseline_plan(src, "example_secondary")).markdown
+    assert md.index("**Cog Assistant**") < md.index("**Sprocket Validator**")

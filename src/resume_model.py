@@ -118,7 +118,13 @@ def evidence_bullets(skill: dict) -> set[str]:
 def lane_budget(src: Sources, ctx: str, lane: str) -> tuple[int, int] | None:
     """(min, max) bullets for a context on a lane, or None when not shown."""
     b = (src.contexts.get(ctx, {}).get("lanes") or {}).get(lane)
-    return (int(b[0]), int(b[1])) if b is not None else None
+    return (int(b["min"]), int(b["max"])) if isinstance(b, dict) else None
+
+
+def lane_order(src: Sources, ctx: str, lane: str) -> tuple[int, int]:
+    """Sort key for a context on a lane's baseline: its `order`, then file order."""
+    b = (src.contexts.get(ctx, {}).get("lanes") or {}).get(lane) or {}
+    return (int(b.get("order", 999)), list(src.contexts).index(ctx) if ctx in src.contexts else 999)
 
 
 def shown_skills(src: Sources, lane: str) -> dict[str, list[str]]:
@@ -167,9 +173,12 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
         for lane, b in (c.get("lanes") or {}).items():
             if lane not in lane_names:
                 problems.append(f"{where}.lanes: {lane!r} is not a configured lane")
-            elif not (isinstance(b, list) and len(b) == 2 and all(type(x) is int for x in b)
-                      and 0 <= b[0] <= b[1]):
-                problems.append(f"{where}.lanes.{lane}: must be [min, max]")
+            elif not (isinstance(b, dict) and set(b) <= {"min", "max", "order"}
+                      and all(type(b.get(k)) is int for k in ("min", "max"))
+                      and 0 <= b["min"] <= b["max"]
+                      and type(b.get("order", 0)) is int):
+                problems.append(f"{where}.lanes.{lane}: must be {{min, max, order?}} "
+                                f"with 0 <= min <= max")
 
     ctx_bullets: dict[str, list[str]] = {}
     for bid, b in src.bullets.items():
@@ -351,7 +360,9 @@ def baseline_plan(src: Sources, lane: str) -> dict:
     shown skill in file order."""
     return {
         "summary": {"text": verticals.get_config().verticals[lane].resume.summary, "uses": []},
-        "entries": [{"id": b} for b, e in src.bullets.items() if lane in (e.get("default_for") or [])],
+        "entries": [{"id": b} for b in sorted(
+            (b for b, e in src.bullets.items() if lane in (e.get("default_for") or [])),
+            key=lambda b: lane_order(src, src.context_of(b), lane))],
         "skills": {},
     }
 
