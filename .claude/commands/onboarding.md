@@ -166,8 +166,8 @@ the resume.
    ```
 
    Copies every `profile/*.example.*` to its real name including the two Word
-   templates, strips the example lanes from `verticals.yaml`, sets `sponsorship_need`
-   in `scoring.yaml`. Never overwrites — an existing file is skipped and
+   templates, strips the example lanes from `verticals.yaml`, sets your home
+   country's row in `application_answers.yaml`'s `work_authorization.countries`. Never overwrites — an existing file is skipped and
    listed. Read the report; `SKIPPED` and `FAILED` are the only parts that need
    you. `--with-apply` and `--with-optional` are step 5's menu, not this path.
 
@@ -541,7 +541,7 @@ authority when the two disagree.
 step_completed: 3               # 0-5; 5 means setup is done
 notes:
   - lane: revenue_ops; contexts WID (Widget Corp), SPR (side project), EDU (degree)
-  - time-limited authorization; scoring.yaml sponsorship_need set by the scaffold
+  - time-limited authorization; the home work-auth row set by the scaffold
   - application_answers.yaml filled; apply browser not installed
   - deferred: /tune-vertical, voice samples, nightly launchd
 ```

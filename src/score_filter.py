@@ -32,7 +32,11 @@ SPONSORSHIP_FACTS = ("offers", "no_sponsorship", "no_future_sponsorship",
 @dataclass(frozen=True)
 class ScoringConfig:
     sponsorship_need: str
-    visa_free_countries: tuple[str, ...]
+    """Your need in your own country: never, later or now."""
+    country_needs: tuple[tuple[str, str], ...]
+    """(country, need) for every country the answer bank lists."""
+    default_need: str
+    """The need everywhere the bank does not list."""
     ineligible: tuple[str, ...]
     no_sponsorship: tuple[str, ...]
     min_words: int
@@ -63,8 +67,28 @@ def _int(block: dict, key: str, where: str, path: Path) -> int:
     return value
 
 
-def load_scoring(path: Path | None = None) -> ScoringConfig:
-    """Parse and validate profile/scoring.yaml. Missing file or bad key fails loud."""
+def _need(facts) -> str:
+    if facts.authorized and not facts.requires_sponsorship:
+        return "never"
+    return "later" if facts.authorized else "now"
+
+
+def sponsorship_needs(bank_path: Path) -> tuple[str, tuple[tuple[str, str], ...], str]:
+    """(home need, per-country needs, default need), from the answer bank's
+    work-authorization table — the one place those facts are stated."""
+    from src.apply.answers import load_answers
+
+    bank = load_answers(bank_path)
+    rows = tuple((c, _need(f)) for c, f in bank.countries.items() if c != "default")
+    return _need(bank.facts_for(bank.home_country)), rows, _need(bank.countries["default"])
+
+
+def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> ScoringConfig:
+    """Parse and validate profile/scoring.yaml. Missing file or bad key fails loud.
+
+    Your sponsorship need comes from the answer bank (`bank_path`, default
+    profile/application_answers.yaml; the example bank for the example scoring
+    file), never from scoring.yaml."""
     path = path or SCORING_PATH
     if not path.exists():
         raise FileNotFoundError(f"{path} not found — copy profile/scoring.example.yaml "
@@ -72,13 +96,21 @@ def load_scoring(path: Path | None = None) -> ScoringConfig:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise ValueError(f"{path}: schema_version must be {_SCHEMA_VERSION}")
-    if data.get("sponsorship_need") not in SPONSORSHIP_NEEDS:
-        raise ValueError(f"{path}: sponsorship_need must be one of {', '.join(SPONSORSHIP_NEEDS)}")
+    moved = {"sponsorship_need", "visa_free_countries"} & set(data)
+    if moved:
+        raise ValueError(f"{path}: {', '.join(sorted(moved))} moved to "
+                         "application_answers.yaml work_authorization.countries — delete it here")
+    if bank_path is None:
+        from src.apply import answers as bank_module
+        bank_path = (bank_module.EXAMPLE_PATH if path.name.startswith("scoring.example")
+                     else bank_module.DEFAULT_PATH)
+    home_need, country_needs, default_need = sponsorship_needs(Path(bank_path))
     q, a = data.get("jd_quality") or {}, data.get("action") or {}
     t, s = data.get("trim_jd") or {}, data.get("shortlist") or {}
     cfg = ScoringConfig(
-        sponsorship_need=data["sponsorship_need"],
-        visa_free_countries=_phrases(data, "visa_free_countries", path),
+        sponsorship_need=home_need,
+        country_needs=country_needs,
+        default_need=default_need,
         ineligible=_phrases(data, "ineligible", path),
         no_sponsorship=_phrases(data, "no_sponsorship", path),
         min_words=_int(q, "min_words", "jd_quality", path),
@@ -321,13 +353,24 @@ def sponsorship_label(facts: list[str], country: Any, cfg: ScoringConfig) -> str
                key=_LABEL_RANK.__getitem__)
 
 
+def need_in(country: Any, cfg: ScoringConfig) -> str:
+    """Your sponsorship need for a role in `country` (the judge's field,
+    ";"-separated): the least of the needs of the countries it lists, or your
+    home need when none is known."""
+    from src.apply.answers import canonical_place
+
+    if not isinstance(country, str):
+        return cfg.sponsorship_need
+    table = dict(cfg.country_needs)
+    names = [canonical_place(c) or c.strip() for c in country.split(";")]
+    needs = [table.get(n, cfg.default_need) for n in names
+             if n and n.casefold() != "remote"]
+    return min(needs, key=SPONSORSHIP_NEEDS.index) if needs else cfg.sponsorship_need
+
+
 def _fact_label(fact: str, country: Any, cfg: ScoringConfig) -> str:
-    """The label for one statement, given your sponsorship need. A role
-    outside every visa-free country needs sponsorship whatever
-    sponsorship_need says."""
-    names = countries(country)
-    visa_free = {normalize(c) for c in cfg.visa_free_countries}
-    need = "now" if names and not any(c in visa_free for c in names) else cfg.sponsorship_need
+    """The label for one statement, given your sponsorship need there."""
+    need = need_in(country, cfg)
     if fact == "offers":
         return "sponsors"
     if fact == "status_bar":

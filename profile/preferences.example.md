@@ -1,16 +1,15 @@
 # TEMPLATE — copy to profile/preferences.md and edit.
 #
-# Plain guidance for the writing commands, not a strict filter. /score reads
-# profile/scoring.yaml (sponsorship_need, visa_free_countries, ineligible),
-# profile/verticals.yaml (drop_phrases, years) and profile/discovery.yaml
-# (countries per lane). /apply answers work-authorization questions from
-# profile/application_answers.yaml's per-country table, not from this file.
+# Plain guidance the judge and the writing commands read, not a strict filter.
+# Your work-authorization facts live in one place,
+# profile/application_answers.yaml's work_authorization.countries: /score and
+# /apply both read them there. The hard drop list is profile/scoring.yaml.
 
 ## Work authorization
 
-Keep ONE of these three and delete the rest. Match it in
-profile/scoring.yaml's `sponsorship_need` (never / now / later) and in
-application_answers.yaml's `work_authorization.countries`.
+Keep ONE of these three and delete the rest. It is prose for the judge; the
+facts are your home row in application_answers.yaml's
+`work_authorization.countries`.
 
 - **Citizen / permanent resident:** No sponsorship needed, ever. Hard exclude:
   nothing on authorization grounds. Roles requiring an active security
@@ -25,8 +24,8 @@ application_answers.yaml's `work_authorization.countries`.
 
 Optional; delete it if you search only at home.
 
-- No visa needed: <countries> (also `visa_free_countries` in
-  profile/scoring.yaml).
+- No visa needed: <countries> (a row with `requires_sponsorship: false` in
+  application_answers.yaml's `work_authorization.countries`).
 - Visa needed: <countries>. A role there counts as `sponsors` only when the JD
   offers sponsorship.
 

@@ -119,8 +119,8 @@ uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
                                       # [--with-apply] [--with-optional] [--force] [--dry-run]
                                       # /onboarding's setup chores: copy every
                                       # profile/*.example.* to its real name, strip the
-                                      # example lanes + set default_vertical, set
-                                      # sponsorship_need in scoring.yaml, probe libpostal.
+                                      # example lanes + set default_vertical, set the home
+                                      # country's work-auth row, probe libpostal.
                                       # Skips existing files unless --force
 uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]
                                       # one JD -> jobs store + clean rebuild

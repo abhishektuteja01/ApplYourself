@@ -6,6 +6,7 @@ import pytest
 from src import score_filter as sf
 
 REAL_SCORING = sf.SCORING_PATH.with_name("scoring.example.yaml")
+EXAMPLE_BANK = sf.SCORING_PATH.with_name("application_answers.example.yaml")
 
 
 @pytest.fixture
@@ -18,18 +19,20 @@ class TestLoadScoring:
         assert scfg.review_min <= scfg.tailor_min
         assert "green card required" in scfg.ineligible
 
-    def test_bad_sponsorship_need_fails(self, tmp_path):
-        text = REAL_SCORING.read_text(encoding="utf-8").replace(
-            "sponsorship_need: later", "sponsorship_need: maybe")
+    def test_a_sponsorship_key_in_scoring_yaml_is_refused(self, tmp_path):
+        text = REAL_SCORING.read_text(encoding="utf-8") + "\nsponsorship_need: later\n"
         (tmp_path / "s.yaml").write_text(text, encoding="utf-8")
-        with pytest.raises(ValueError, match="sponsorship_need"):
-            sf.load_scoring(tmp_path / "s.yaml")
+        with pytest.raises(ValueError, match="moved to application_answers.yaml"):
+            sf.load_scoring(tmp_path / "s.yaml", EXAMPLE_BANK)
+
+    def test_the_needs_come_from_the_bank(self, scfg):
+        assert scfg.sponsorship_need == "later" and scfg.default_need == "now"
 
     def test_review_above_tailor_fails(self, tmp_path):
         text = REAL_SCORING.read_text(encoding="utf-8").replace("review_min: 50", "review_min: 70")
         (tmp_path / "s.yaml").write_text(text, encoding="utf-8")
         with pytest.raises(ValueError, match="review_min"):
-            sf.load_scoring(tmp_path / "s.yaml")
+            sf.load_scoring(tmp_path / "s.yaml", EXAMPLE_BANK)
 
 
 class TestFindPhrase:
@@ -163,7 +166,8 @@ def test_seniority_cap(cfg):
 
 def _need(scfg, need):
     return sf.ScoringConfig(**{**scfg.__dict__, "sponsorship_need": need,
-                               "visa_free_countries": ("United States", "India")})
+                               "country_needs": (("United States", need), ("India", need)),
+                               "default_need": "now"})
 
 
 class TestSponsorshipLabel:
@@ -189,6 +193,15 @@ class TestSponsorshipLabel:
         assert sf.sponsorship_label(["right_to_work"], "India", cfg) == "unknown"
         assert sf.sponsorship_label(["right_to_work"], "", cfg) == "unknown"
         assert sf.sponsorship_label(["right_to_work"], "Germany; USA", cfg) == "unknown"
+
+    def test_each_country_has_its_own_need(self, scfg):
+        cfg = sf.ScoringConfig(**{**scfg.__dict__, "sponsorship_need": "later",
+                                  "country_needs": (("United States", "later"),
+                                                    ("India", "never")),
+                                  "default_need": "now"})
+        assert sf.sponsorship_label(["no_future_sponsorship"], "India", cfg) == "opt_ok"
+        assert sf.sponsorship_label(["no_future_sponsorship"], "United States", cfg) == \
+            "ineligible"
 
 
     @pytest.mark.parametrize("facts, label", [

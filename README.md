@@ -208,8 +208,8 @@ Already set up and want a health check? `/onboarding audit` reports what's
 missing or invalid and changes nothing. Prefer to do it by hand?
 `uv run onboard-scaffold --vertical <lane> --work-auth <status>` does the
 mechanical half — every `profile/*.example.*` copied to its real name, the
-example lanes stripped out of `verticals.yaml`, `sponsorship_need` set in
-`scoring.yaml` — and leaves the writing to you. It leaves `verticals.yaml`
+example lanes stripped out of `verticals.yaml`, your home country's
+work-authorization row set in `application_answers.yaml` — and leaves the writing to you. It leaves `verticals.yaml`
 without a lane, so it won't load until `/new-vertical <lane>` writes one. See
 [What only you can supply](#what-only-you-can-supply).
 
@@ -346,7 +346,7 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 | `uv run verticals-check` | Validate config plus every per-lane rubric, tailoring file and resume. | nothing |
 | `uv run discovery-check` | Resolve and validate the discovery config: prints the effective location allowlist, the JobSpy search locations and the enabled sources, exits 1 on any problem. `discover` runs it as preflight. | nothing |
 | `uv run discover-digest [--json] [--run-id ID] [--window N]` | Read the recent `jobs/runs/*.json` reports and print the trend facts `/discover` renders: per-lane rows against that lane's own 7-day median, error delta, zero streaks, 403/429 counts, crashed or truncated lanes, dead boards. Reader only. | nothing |
-| `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set `sponsorship_need` in `scoring.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
+| `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set your home country's work-authorization row in `application_answers.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
 | `uv run score start [--all] [--vertical V] [--job-id ID]` / `uv run score finish` | `/score`'s plumbing: `start` drops rows by the hard rules and stages judge slices; `finish` checks the answers, merges, prunes and writes the shortlist. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
 | `uv run app new\|dir\|build <job_id>` | The plumbing of `/tailor`, `/cover-letter` and `/company-answers`: open the role's folder, resolve it, and build a resume, letter or answer sheet from the session's YAML. `build` prints problems and exits 2 instead of rendering anything wrong. | the role's `applications/` folder, `tailored_dirs[]` |
@@ -423,9 +423,9 @@ not personal data:
 - `profile/de_ai_rules.yaml` holds the banned phrasing, the mechanical
   replacements, and the stopwords a reworded bullet may add. Your sources are
   linted against it once, by `verticals-check`.
-- `profile/scoring.yaml` holds the scoring policy: `sponsorship_need`
-  (never / later / now), `visa_free_countries`, the `ineligible` drop list,
-  the action thresholds and the shortlist size.
+- `profile/scoring.yaml` holds the scoring policy: the `ineligible` drop list,
+  the action thresholds and the shortlist size. Your sponsorship need per
+  country comes from `application_answers.yaml`'s work-authorization table.
 
 The `profile/` files you fill in are **gitignored user data**. Nothing you write
 into them is ever committed. What *is* tracked there is only scaffolding: the
@@ -579,8 +579,8 @@ and its own context stays counts-only.
 
 1. **`no-lane`**: the title matched no lane.
 2. **`ineligible`**: the JD holds a phrase from `profile/scoring.yaml`
-   `ineligible` (whole words; "U.S." reads as "us"). With
-   `sponsorship_need: now`, the `no_sponsorship` phrases drop too.
+   `ineligible` (whole words; "U.S." reads as "us"). When you need
+   sponsorship now at home, the `no_sponsorship` phrases drop too.
 3. **`phrase`**: the JD holds one of the lane's `drop_phrases`.
 4. **`years`**: the JD asks more years than the lane's largest `years` key.
    The years regex reads the *lower* bound, so "3-6 years" counts as 3.
@@ -597,8 +597,8 @@ requires; the country; what the JD says about sponsorship (`offers`,
 `no_sponsorship`, `no_future_sponsorship`, `no_opt_support`, `status_bar`,
 `right_to_work`,
 `silent`), listing every statement the JD makes, with literal quotes; keywords and a short reason. `score finish`
-applies every rule to those facts: the sponsorship label from
-`sponsorship_need` and `visa_free_countries`, the lane's years limit and
+applies every rule to those facts: the sponsorship label from your need in
+the role's country, the lane's years limit and
 seniority cap, discovery's countries per lane, the vague-JD skills cap, the
 total and the action. A judge may only lower the action.
 

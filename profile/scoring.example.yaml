@@ -6,15 +6,8 @@
 # profile/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
 schema_version: 1
 
-# When you need visa sponsorship: never (citizen or permanent resident),
-# later (authorized now, e.g. OPT, but not for good), or now. The judge only
-# reports what a JD says; this decides what it means for you. /onboarding
-# sets it.
-sponsorship_need: later
-
-# Where you can work without a visa. A role located only elsewhere always
-# needs sponsorship.
-visa_free_countries: [United States]
+# Your sponsorship need in each country comes from
+# profile/application_answers.yaml's work_authorization.countries.
 
 # Roles you can never take. A JD holding one is dropped before any judge and
 # labeled ineligible. Whole words, any case; "U.S." and "United States" read
@@ -39,7 +32,7 @@ ineligible:
   - secret clearance required
   - citizen or green card
 
-# The employer will not sponsor. Dropped only when sponsorship_need is now.
+# The employer will not sponsor. Dropped only when you need sponsorship now at home.
 no_sponsorship:
   - no sponsorship
   - no visa sponsorship

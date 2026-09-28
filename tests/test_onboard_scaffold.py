@@ -121,7 +121,7 @@ class TestSafetyContract:
         out = capsys.readouterr().out
         assert "nothing written" in out
         assert "would copy" in out and "would strip" in out
-        assert "would set sponsorship_need: now" in out
+        assert "would set United States's work authorization: needs_now" in out
 
     def test_dry_run_with_apply_only_prints_the_subprocesses(self, prof, capsys, monkeypatch):
         def _boom(*a, **k):  # noqa: ANN002
@@ -196,30 +196,30 @@ class TestVerticalsStrip:
 
 class TestWorkAuth:
     @staticmethod
-    def _scoring(prof: Path) -> dict:
-        return yaml.safe_load((prof / "scoring.yaml").read_text(encoding="utf-8"))
+    def _row(prof: Path) -> dict:
+        data = yaml.safe_load((prof / "application_answers.yaml").read_text(encoding="utf-8"))
+        return data["work_authorization"]["countries"]["United States"]
 
-    @pytest.mark.parametrize("status, need", [
-        ("citizen", "never"), ("time_limited", "later"), ("needs_now", "now")])
-    def test_sets_sponsorship_need_and_keeps_the_rest(self, prof, status, need):
-        before = yaml.safe_load((prof / "scoring.example.yaml").read_text(encoding="utf-8"))
+    @pytest.mark.parametrize("status, authorized, requires", [
+        ("citizen", True, False), ("time_limited", True, True), ("needs_now", False, True)])
+    def test_sets_the_home_countrys_row(self, prof, status, authorized, requires):
         assert run("--vertical", "my_lane", "--work-auth", status) == 0
-        after = self._scoring(prof)
-        assert after["sponsorship_need"] == need
-        assert {k: v for k, v in after.items() if k != "sponsorship_need"} == \
-            {k: v for k, v in before.items() if k != "sponsorship_need"}
+        row = self._row(prof)
+        assert (row["authorized"], row["requires_sponsorship"]) == (authorized, requires)
 
-    def test_keeps_comments(self, prof):
-        run("--vertical", "my_lane", "--work-auth", "needs_now")
-        assert "# Roles you can never take." in (prof / "scoring.yaml").read_text(encoding="utf-8")
+    def test_scoring_reads_it(self, prof):
+        from src import score_filter as sf
+        run("--vertical", "my_lane", "--work-auth", "citizen")
+        cfg = sf.load_scoring(prof / "scoring.yaml", prof / "application_answers.yaml")
+        assert cfg.sponsorship_need == "never"
 
     def test_is_idempotent(self, prof, capsys):
         run("--vertical", "my_lane", "--work-auth", "needs_now")
-        once = (prof / "scoring.yaml").read_text(encoding="utf-8")
+        once = (prof / "application_answers.yaml").read_text(encoding="utf-8")
         capsys.readouterr()
         assert run("--vertical", "my_lane", "--work-auth", "needs_now") == 0
-        assert (prof / "scoring.yaml").read_text(encoding="utf-8") == once
-        assert "already has sponsorship_need: now" in capsys.readouterr().out
+        assert (prof / "application_answers.yaml").read_text(encoding="utf-8") == once
+        assert "already says needs_now" in capsys.readouterr().out
 
 
 class TestLibpostalProbe:

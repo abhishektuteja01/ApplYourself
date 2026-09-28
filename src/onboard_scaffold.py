@@ -3,7 +3,7 @@
 One command for every mechanical step of a fresh install: copy each
 `profile/*.example.*` template to its real name, strip the shipped example
 lanes out of the copied `verticals.yaml`, set `profile/scoring.yaml`'s
-`sponsorship_need` from the work-authorization answer, probe
+the home country's work-authorization row from the answer, probe
 for libpostal, and — behind `--with-apply` — set up the submission path.
 
 Never destructive: an existing file is skipped and listed, `--force`
@@ -239,43 +239,45 @@ def reconcile_verticals(default_vertical: str, copied: bool, dry_run: bool,
     )
 
 
-# --- scoring.yaml ----------------------------------------------------------
+# --- work authorization -----------------------------------------------------
 
-_NEED_RE = re.compile(r"^sponsorship_need:.*$", re.M)
-_NEED_BY_WORK_AUTH = {"citizen": "never", "time_limited": "later", "needs_now": "now"}
-
-
-def set_sponsorship_need(text: str, need: str) -> str:
-    """scoring.yaml with `sponsorship_need: <need>`, comments untouched."""
-    if not _NEED_RE.search(text):
-        raise ValueError("scoring.yaml has no `sponsorship_need:` line")
-    return _NEED_RE.sub(f"sponsorship_need: {need}", text, count=1)
+_ROW_BY_WORK_AUTH = {
+    "citizen": {"authorized": True, "requires_sponsorship": False, "unrestricted": True},
+    "time_limited": {"authorized": True, "requires_sponsorship": True},
+    "needs_now": {"authorized": False, "requires_sponsorship": True},
+}
 
 
 def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
-    """Set scoring.yaml's `sponsorship_need` from the work-authorization
-    answer. Runs after the template copy, and edits an existing file too, so
-    a re-run with a new answer updates it. Idempotent."""
-    target = PROFILE / "scoring.yaml"
-    source = target if target.is_file() else PROFILE / "scoring.example.yaml"
+    """Set the home country's row in application_answers.yaml's
+    work_authorization.countries from the work-authorization answer. Scoring
+    and /apply both read it there. Idempotent; a re-run with a new answer
+    updates it."""
+    from src.apply import answers as A
+    from src.apply import bank
+
+    target = PROFILE / "application_answers.yaml"
+    source = target if target.is_file() else PROFILE / "application_answers.example.yaml"
     if not source.is_file():
         rep.failed.append(f"{_rel(target)} missing and no template to copy it from")
         return
-    need = _NEED_BY_WORK_AUTH[work_auth]
-    text = source.read_text(encoding="utf-8")
-    try:
-        updated = set_sponsorship_need(text, need)
-    except ValueError as exc:
-        rep.failed.append(f"{_rel(target)}: {exc}")
+    data = bank.read(source)
+    home = A.canonical_place((data.get("identity") or {}).get("country", "")) or "United States"
+    countries = data.setdefault("work_authorization", {}).setdefault("countries", {})
+    old = dict(countries.get(home) or {})
+    row = dict(_ROW_BY_WORK_AUTH[work_auth])
+    if "start_in_days" in old:
+        row["start_in_days"] = old["start_in_days"]
+    if all(old.get(k) == v for k, v in row.items()) and \
+            bool(old.get("unrestricted")) == bool(row.get("unrestricted")):
+        rep.notes.append(f"{_rel(target)} already says {work_auth} for {home}")
         return
-    if updated == text:
-        rep.notes.append(f"{_rel(target)} already has sponsorship_need: {need}")
-        return
-    label = f"set sponsorship_need: {need}"
+    label = f"set {home}'s work authorization: {work_auth}"
     if dry_run:
         rep.done.append(f"would {label} in {_rel(target)}")
         return
-    target.write_text(updated, encoding="utf-8")
+    countries[home] = row
+    bank.write(data, target)
     rep.done.append(f"{label} — {_rel(target)}")
 
 
