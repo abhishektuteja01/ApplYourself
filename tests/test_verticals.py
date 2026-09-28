@@ -30,11 +30,6 @@ class TestFixtureHappyPath:
         assert cfg.names == ("example_primary", "example_secondary", "example_tertiary")
         assert cfg.default_vertical == "example_tertiary"
 
-    def test_valid_verticals_includes_empty(self, cfg):
-        assert cfg.valid_verticals == frozenset(
-            {"example_primary", "example_secondary", "example_tertiary", ""}
-        )
-
     def test_rule_order_and_ownership(self, cfg):
         """Precedence, not rule count: the strong primary signal wins first,
         example_secondary outranks example_tertiary, and the primary-adjacent
@@ -71,15 +66,6 @@ class TestFixtureHappyPath:
             for fname in ("rubric.md", "tailoring.md"):
                 assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
             assert v.resume is not None, name
-
-    def test_a_leftover_resume_file_key_is_rejected(self, tmp_path):
-        text = FIXTURE_PATH.read_text(encoding="utf-8").replace(
-            "    display_name: Widget Engineering\n",
-            "    display_name: Widget Engineering\n    resume_file: x.md\n", 1)
-        p = tmp_path / "v.yaml"
-        p.write_text(text, encoding="utf-8")
-        with pytest.raises(ValueError, match="resume_file was replaced"):
-            verticals.load_verticals(p)
 
 
 class TestLaneRules:
@@ -154,18 +140,6 @@ class TestValidation:
         with pytest.raises(ValueError, match=key):
             _write_and_load(tmp_path, data)
 
-    def test_old_disqualifier_block_names_its_replacement(self, tmp_path):
-        data = _load_raw()
-        data["verticals"]["example_primary"]["disqualifier"] = {"max_years": 4}
-        with pytest.raises(ValueError, match="drop_phrases"):
-            _write_and_load(tmp_path, data)
-
-    def test_out_of_lane_block_rejected(self, tmp_path):
-        data = _load_raw()
-        data["out_of_lane"] = {"reasoning": "x"}
-        with pytest.raises(ValueError, match="out_of_lane"):
-            _write_and_load(tmp_path, data)
-
     @pytest.mark.parametrize("years", [{"3": 14}, {3: 25}, {3: -1}, [3, 4]])
     def test_bad_years_table(self, tmp_path, years):
         data = _load_raw()
@@ -179,10 +153,10 @@ class TestExampleTemplate:
 
     def test_example_yaml_loads(self):
         cfg = verticals.load_verticals(REPO_ROOT / "profile" / "verticals.example.yaml")
-        assert cfg.names == ("example_primary", "example_secondary")
+        assert cfg.names == ("example_primary", "example_secondary", "example_tertiary")
         assert cfg.default_vertical == "example_primary"
 
-    @pytest.mark.parametrize("name", ["example_primary", "example_secondary"])
+    @pytest.mark.parametrize("name", ["example_primary", "example_secondary", "example_tertiary"])
     @pytest.mark.parametrize("fname", ["rubric.md", "tailoring.md"])
     def test_example_dirs_have_prose_files(self, name, fname):
         assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
@@ -192,21 +166,8 @@ class TestSingleton:
         assert verticals.get_config() is cfg
 
 
-class TestFixtureMirrors:
-    """The two fixtures must mirror each other. Drift here is invisible: the
-    discovery suite keeps passing against rules the rest of the suite doesn't
-    use."""
-
-    FIXTURES = (
-        REPO_ROOT / "tests" / "fixtures" / "verticals.yaml",
-        REPO_ROOT / "tests" / "discovery" / "fixtures" / "verticals.yaml",
-    )
-
-    def test_mirrors_are_identical(self):
-        # Bytes, not text: read_text translates newlines, so a CRLF mirror
-        # decodes identically while no longer being byte-identical.
-        a, b = (p.read_bytes() for p in self.FIXTURES)
-        assert a == b, "tests/fixtures and tests/discovery/fixtures have diverged"
+class TestFixture:
+    FIXTURE = REPO_ROOT / "tests" / "fixtures" / "verticals.yaml"
 
     def test_fixture_is_synthetic(self):
         """The fixtures ship publicly, so they must never be a copy of the
@@ -215,10 +176,9 @@ class TestFixtureMirrors:
         if not real.is_file():
             pytest.skip("profile/verticals.yaml is gitignored user data")
         expected = yaml.safe_load(real.read_text(encoding="utf-8"))
-        for p in self.FIXTURES:
-            assert yaml.safe_load(p.read_text(encoding="utf-8")) != expected, (
-                f"{p.relative_to(REPO_ROOT)} is a copy of profile/verticals.yaml"
-            )
+        assert yaml.safe_load(self.FIXTURE.read_text(encoding="utf-8")) != expected, (
+            "tests/fixtures/verticals.yaml is a copy of profile/verticals.yaml"
+        )
 
 
 class TestMainCli:

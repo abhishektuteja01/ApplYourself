@@ -158,7 +158,8 @@ rule-position bug — name the row, propose the move, have the user confirm the
 **Drop rules** — from rows the filter should have dropped and didn't:
 
 - `years` — required years mapped to a seniority cap; a JD asking more than the
-  largest key is dropped. Change only against observed JDs.
+  largest key is dropped before judging, or forced to skip when the judge reads
+  more. Change only against observed JDs.
 - `drop_phrases` — JD phrases (whole words, any case) that are a deterministic
   kill for this profile.
 - Adjacent title families job boards fuzzy-match your search terms into go in
@@ -207,15 +208,14 @@ re-judges what is already there.
   `keywords_to_mirror` column is the demand side, `profile/bullets.md` and
   `profile/skills_master.md` are the supply side. A skill the JDs keep asking
   for and the profile cannot attest is a `/suggest-synonyms` item, not a weight.
-- **`rubric.md` tier boundaries** — the four axes and their maxima are fixed by
-  `profile/scoring_rubric.md` (`title` 0-30, `skills` 0-30, `seniority` 0-20,
-  `domain` 0-20). Only the *tiers* are
+- **`rubric.md` tier boundaries** — the four axes and their maxima are fixed in
+  code (`score_store.AXIS_MAXIMA`: `title` 0-30, `skills` 0-30, `seniority`
+  0-20, `domain` 0-20). Only the *tiers* are
   tunable here. Retune them against the scored rows: if the top-scoring rows are
   ones the user would not apply to, the title or domain tiers are too generous;
   if roles they liked landed mid-pack, they are too tight. Once `skill_weights`
   exist, re-anchor `skills` on the weight sum. Propose the top-band
-  and bottom-band boundaries and have them confirmed; keep the
-  `## Additional self-check items` section current.
+  and bottom-band boundaries and have them confirmed.
 
 Verify:
 

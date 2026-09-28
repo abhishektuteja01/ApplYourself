@@ -15,7 +15,6 @@ Staging holds only:
 from __future__ import annotations
 
 import json
-import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -42,8 +41,6 @@ from src.score_filter import (
 )
 from src.state_io import ACTIVE_STATES, load_state_index
 
-log = logging.getLogger(__name__)
-
 SCORED_COLUMNS: list[str] = [
     "job_id",
     "fit_score",           # sum of fit_subscores, 0-100
@@ -66,7 +63,7 @@ JUDGE_SLICES = 5
 JUDGE_BYTES = 300_000
 
 JUDGE_AGENT = paths.REPO_ROOT / ".claude" / "agents" / "score-judge.md"
-SHARED_RUBRIC = paths.PROFILE / "scoring_rubric.md"
+SHARED_RUBRIC = paths.REPO_ROOT / ".claude" / "shared" / "scoring_rubric.md"
 
 
 class RunOpen(RuntimeError):
@@ -237,7 +234,8 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
           rescore: bool = False, vertical: str | None = None,
           job_ids: list[str] | None = None, pipeline_dir: Path | None = None,
           now: datetime | None = None) -> dict:
-    """Stage a run. Returns {"dropped": {code: n}, "judge": n, "lines": [...]}.
+    """Stage a run. Returns {"dropped": {code: n}, "judge": n, "lines": [...],
+    "resumed": bool}.
     An open run is resumed when no selector is given, refused otherwise."""
     run = load_run(staging)
     if run is not None:

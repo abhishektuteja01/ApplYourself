@@ -19,12 +19,6 @@ class TestLoadScoring:
         assert scfg.review_min <= scfg.tailor_min
         assert "green card required" in scfg.ineligible
 
-    def test_a_sponsorship_key_in_scoring_yaml_is_refused(self, tmp_path):
-        text = REAL_SCORING.read_text(encoding="utf-8") + "\nsponsorship_need: later\n"
-        (tmp_path / "s.yaml").write_text(text, encoding="utf-8")
-        with pytest.raises(ValueError, match="moved to application_answers.yaml"):
-            sf.load_scoring(tmp_path / "s.yaml", EXAMPLE_BANK)
-
     def test_the_needs_come_from_the_bank(self, scfg):
         assert scfg.sponsorship_need == "later" and scfg.default_need == "now"
 

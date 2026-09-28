@@ -15,7 +15,3 @@ evidence rather than title wording.
 - **Example of an LLM-judged cap:** if the JD is a research role wearing a
   build-role title, cap title ≤10 / skills ≤4 / domain ≤6 and note it in
   `reasoning`.
-
-## Additional self-check items (this vertical only)
-
-- Did you keep research-flavored postings out of this lane's shortlist?

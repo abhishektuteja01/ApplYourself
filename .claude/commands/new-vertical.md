@@ -167,7 +167,8 @@ description argument plus the lane name — bullets are not read.
 - `linkedin_terms` — the reduced set (429 mitigation), usually the spine only.
 - `years` — required years mapped to a seniority cap (0-20), largest key =
   Step 3's cap, lower caps for higher asks (cap 5 → `{3: 14, 4: 10, 5: 6}`).
-  A JD asking more than the largest key is dropped before judging.
+  A JD asking more than the largest key is dropped before judging, or forced
+  to skip when the judge reads more.
   Omit `drop_phrases`.
 - `title_exclude_terms` — a short blocklist: the level words from Step 3's
   level answer, plus title words naming a different *function*.
@@ -195,17 +196,15 @@ enforced at the title gate, which can empty the lane before anyone sees a row.
   the other lanes is `/tune-vertical`'s.
 
 **3. `profile/verticals/<name>/rubric.md`** — example_primary's shape: the
-four axes with maxima fixed by `profile/scoring_rubric.md` (`title` 0-30,
-`skills` 0-30, `seniority` 0-20, `domain` 0-20; judges emit
-the scaffold's keys `title`/`skills`/`seniority`/`domain`), plus an
-`## Additional self-check items` section. State the tiers against this lane's
+four axes with maxima fixed in code (`score_store.AXIS_MAXIMA`: `title` 0-30,
+`skills` 0-30, `seniority` 0-20, `domain` 0-20). State the tiers against this lane's
 spine titles and the profile's real evidence. Standard bands are fine — the
 boundaries are `/tune-vertical`'s. With no `skill_weights` in the config, anchor
 `skills` on how many of the profile's attested skills the JD demands.
 
 **4. `profile/verticals/<name>/tailoring.md`** — judgment only, in
-example_primary's shape: summary framing, when to change the baseline picks, and
-the C1 story priority. Name projects in words; `verticals-check` rejects bullet
+example_primary's shape: summary framing and when to change the baseline picks.
+Name projects in words; `verticals-check` rejects bullet
 or skill ids here, because they belong in the sources.
 
 **5. The resume shape** — what `/tailor` builds from and `/score`'s judges read:
@@ -234,7 +233,7 @@ confirm-or-edit stays last.
 
 "Skip jobs asking for more than how many years of experience?" — `3 years` /
 `5 years` / `8 years` / `12 years`. Say in one line that anything above the cap
-is dropped before scoring, and `/tune-vertical` can change it later.
+is dropped or skipped, and `/tune-vertical` can change it later.
 
 "What level are you targeting?" — `Entry / associate` / `Mid-level` /
 `Senior / staff` / `Lead / director and up`. The answer becomes level words in

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -122,7 +121,7 @@ class TestStart:
 
     def test_already_scored_rows_skipped_unless_all(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
-        run = _start(env, scfg)
+        _start(env, scfg)
         _write_answers(env, score_store.load_run(env["staging"])["slices"],
                        {"aaaaaaaa": _answer("aaaaaaaa")})
         _finish(env, scfg)

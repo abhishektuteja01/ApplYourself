@@ -85,7 +85,8 @@ class Vertical:
     abroad_terms: tuple[str, ...] = ()
     # /score's lane rules (src/score_filter.py). A JD holding a drop phrase is
     # dropped; `years` maps required years -> seniority cap, and a JD asking
-    # more than its largest key is dropped.
+    # more than its largest key is dropped before judging, or forced to skip
+    # when the judge reads more.
     drop_phrases: tuple[str, ...] = ()
     years: dict[int, int] = field(default_factory=dict)
     # Judge-only: printed into the lane's scoring packet as-is.
@@ -102,11 +103,6 @@ class VerticalsConfig:
     def names(self) -> tuple[str, ...]:
         """Vertical names in config order (first = primary)."""
         return tuple(self.verticals)
-
-    @property
-    def valid_verticals(self) -> frozenset[str]:
-        """Configured names plus "" (unclassified/out-of-lane)."""
-        return frozenset(self.verticals) | {""}
 
 
 class ClassifierRule(Protocol):
@@ -179,9 +175,6 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     linkedin_terms = _str_list(_require(raw, "linkedin_terms", path, where), path, f"{where}.linkedin_terms")
     abroad_terms = _str_list(raw.get("abroad_terms", []), path, f"{where}.abroad_terms")
 
-    if "disqualifier" in raw:
-        raise _fail(path, f"{where}.disqualifier was replaced: phrases -> drop_phrases, "
-                          "max_years -> years, title_phrases -> title_exclude_terms")
     drop_phrases = _str_list(raw.get("drop_phrases", []), path, f"{where}.drop_phrases")
     years = raw.get("years") or {}
     if not isinstance(years, dict) or not all(
@@ -210,13 +203,6 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     include_terms = title_terms["title_include_terms"]
     strong_keep_terms = title_terms["title_strong_keep_terms"]
 
-    # Per-vertical scoring resume: the attested resume judges read via
-    # score-judge.md (also the tailoring frozen-section/summary source).
-    # Required: a shared default silently scored a lane against another
-    # lane's resume. Existence is enforced in main().
-    if "resume_file" in raw:
-        raise _fail(path, f"{where}.resume_file was replaced: the fixed lines live in "
-                          "profile/resume.yaml and the lane's shape in a `resume:` block")
     # Optional to the loader so a lane can scrape before its resume shape
     # exists (/new-vertical pass-a); verticals-check requires it.
     resume = _parse_lane_resume(raw["resume"], path, f"{where}.resume") if "resume" in raw else None
@@ -265,10 +251,6 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
     default_vertical = _require(data, "default_vertical", p, "top level")
     if default_vertical not in verticals:
         raise _fail(p, f"default_vertical {default_vertical!r} is not a configured vertical")
-
-    if "out_of_lane" in data:
-        raise _fail(p, "out_of_lane is no longer read: delete it (dropped rows now "
-                       "carry the reason /score matched)")
 
     raw_rules = _require(data, "classifier_rules", p, "top level")
     if not isinstance(raw_rules, list) or not raw_rules:

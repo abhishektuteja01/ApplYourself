@@ -3,11 +3,10 @@
 # Scoring policy for /score. Read by src/score_filter.py, src/score_store.py
 # and src/shortlist.py. Per-lane rules (drop_phrases, years, skill_weights)
 # live in profile/verticals.yaml; how to judge a role lives in
-# profile/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
-schema_version: 1
-
+# .claude/shared/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
 # Your sponsorship need in each country comes from
 # profile/application_answers.yaml's work_authorization.countries.
+schema_version: 1
 
 # Roles you can never take. A JD holding one is dropped before any judge and
 # labeled ineligible. Whole words, any case; "U.S." and "United States" read

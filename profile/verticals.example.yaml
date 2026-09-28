@@ -2,11 +2,13 @@
 # Also copy profile/verticals/example_primary/ -> profile/verticals/<your_name>/
 # for each vertical you define (each dir needs rubric.md + tailoring.md).
 #
-# Two fictional verticals below demonstrate every feature:
+# Three fictional verticals below demonstrate every feature:
 #   - mapping order under `verticals:` = shortlist section order; first = primary
 #   - classifier_rules order = ambiguity policy (first match wins; one vertical
 #     may own several rules at different priorities)
 #   - drop_phrases + years (example_secondary) vs years only (example_primary)
+#   - a lane whose titles collide with both others, so its rule sits below
+#     theirs (example_tertiary)
 # Vertical names must match ^[a-z][a-z0-9_]*$ — they become parquet values,
 # applications/<name>/ directories, and staging-file suffixes.
 
@@ -49,8 +51,8 @@ verticals:
         widget_supply_chain: 9
     # Dropped before judging when the JD holds one (whole words).
     drop_phrases: []
-    # Required years -> seniority cap; a JD asking more than the
-    # largest key is dropped.
+    # Required years -> seniority cap; a JD asking more than the largest
+    # key is dropped before judging, or forced to skip when the judge reads more.
     years: {3: 14, 4: 10}
     # Optional, and lane-specific: only /apply's Step 4b reads this (not
     # src/verticals.py's typed loader), and only for the vertical(s) that set
@@ -112,8 +114,35 @@ verticals:
     drop_phrases:
       - sprocket certification required
       - advanced sprocketry degree required
-    # Required years -> seniority cap; a JD asking more than the
-    # largest key is dropped.
+    # Required years -> seniority cap; a JD asking more than the largest
+    # key is dropped before judging, or forced to skip when the judge reads more.
+    years: {3: 14, 4: 10}
+
+  example_tertiary:
+    display_name: Cog Engineering
+    # The lane's resume shape. Picks live on bullets (default_for) and
+    # skills (show), so this block names no ids.
+    resume:
+      sections: [summary, work, projects, education, skills]
+      bullets: [4, 6]
+      skill_lines:
+        - "Programming"
+        - "AI & Machine Learning"
+        - "Databases & Tools"
+        - "Domain & Enterprise"
+      summary: >-
+        Builds LLM applications for cog maintenance teams, with Python and SQL tooling and two years of widget plant operations.
+    search_terms:
+      - Cog Engineer
+      - Cog Platform Engineer
+    linkedin_terms:
+      - Cog Engineer
+    skill_weights:
+      cog_stack:
+        cog_agents: 9
+        cog_platform: 8
+    # Required years -> seniority cap; a JD asking more than the largest
+    # key is dropped before judging, or forced to skip when the judge reads more.
     years: {3: 14, 4: 10}
 
 
@@ -126,5 +155,7 @@ classifier_rules:
     pattern: '\b(?:widget|gizmo)\b'
   - vertical: example_secondary
     pattern: '\b(?:sprocket|governance|compliance)\b'
+  - vertical: example_tertiary
+    pattern: '\bcog\b'
   - vertical: example_primary
     pattern: '\b(?:operations|systems? analyst)\b'

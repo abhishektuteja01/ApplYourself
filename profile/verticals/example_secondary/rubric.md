@@ -15,7 +15,3 @@ within its own shortlist section, never capped relative to the primary.
   with no path this profile holds, cap title ≤10 / skills ≤4 / domain ≤6 and
   note it in `reasoning` — the kind of semantic call that stays with the
   judge rather than a `src/` drop rule.
-
-## Additional self-check items (this vertical only)
-
-- Did the credential-cap fire on every closed-credential JD you scored?

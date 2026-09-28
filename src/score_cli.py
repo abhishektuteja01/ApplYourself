@@ -74,10 +74,10 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("start", help="drop, stage, print judge lines")
-    p.add_argument("--all", action="store_true", help="re-judge every row, not just new ones")
+    p.add_argument("--all", action="store_true", help="re-judge every row not past saved/tailored, not just new ones")
     p.add_argument("--vertical", metavar="V", help="only this lane")
     p.add_argument("--job-id", metavar="ID", action="append",
-                   help="only these rows (repeatable); skips the drops (/ingest)")
+                   help="only these rows (repeatable); skips every drop except no-lane (/ingest)")
     p.set_defaults(func=_cmd_start)
     sub.add_parser("finish", help="check, merge, prune, write the shortlist").set_defaults(
         func=_cmd_finish)

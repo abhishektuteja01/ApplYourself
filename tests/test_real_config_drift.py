@@ -9,7 +9,6 @@ Assertions are structural only. Never pin a real search term, exclude term,
 or skill weight in this file: it is committed.
 """
 
-import re
 from pathlib import Path
 
 import pytest
@@ -58,8 +57,7 @@ def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):
             assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file(), (
                 f"{name}/{fname} missing"
             )
-        assert v.resume is not None or (REPO_ROOT / v.resume_file).is_file(), (
-            f"{name} has no resume: block")
+        assert v.resume is not None, f"{name} has no resume: block"
 
 
 def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):

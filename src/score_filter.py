@@ -1,8 +1,9 @@
-"""Step 1 of /score: the hard rules, decided before any judge sees a row.
+"""Every rule /score applies: the drops before judging, the JD trim, the
+seniority cap, the country rule and the sponsorship label.
 
-Pure functions over one row, driven by profile/scoring.yaml (shared policy)
-and profile/verticals.yaml (per-lane `drop_phrases` and `years`). No LLM (R7).
-Every rule here has exactly one owner: the judge never re-checks them.
+Pure functions, driven by profile/scoring.yaml (shared policy), the answer
+bank (sponsorship needs) and profile/verticals.yaml (per-lane `drop_phrases`
+and `years`). No LLM (R7). The judge reads facts; it never re-checks a rule.
 """
 from __future__ import annotations
 
@@ -96,10 +97,6 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise ValueError(f"{path}: schema_version must be {_SCHEMA_VERSION}")
-    moved = {"sponsorship_need", "visa_free_countries"} & set(data)
-    if moved:
-        raise ValueError(f"{path}: {', '.join(sorted(moved))} moved to "
-                         "application_answers.yaml work_authorization.countries — delete it here")
     if bank_path is None:
         from src.apply import answers as bank_module
         bank_path = (bank_module.EXAMPLE_PATH if path.name.startswith("scoring.example")

@@ -1,5 +1,5 @@
 ---
-description: Score new jobs and write today's shortlist. --all re-judges everything; --vertical V limits to one lane.
+description: Score new jobs and write today's shortlist. --all re-judges every role not past saved/tailored; --vertical V limits to one lane.
 model: sonnet
 effort: low
 argument-hint: "[--all] [--vertical <name>]"
