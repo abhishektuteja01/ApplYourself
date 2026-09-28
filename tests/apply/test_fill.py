@@ -223,6 +223,9 @@ class FakeDriver:
     def wait(self, ms):
         self.calls.append(("wait", ms))
 
+    def submission_rejected(self):
+        return getattr(self, 'rejects', '')
+
     def submission_refused(self):
         self.calls.append(("submission_refused",))
         # A list, so a test can refuse the first click and accept the retry.

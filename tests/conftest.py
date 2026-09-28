@@ -44,6 +44,19 @@ def _example_resume_sources(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_applications(tmp_path, monkeypatch):
+    """Keep run reports, post-submit evidence and the submit ledger out of the
+    real `applications/`. Tests that need a specific folder still set their own."""
+    from src import paths
+    from src import apply_cli
+
+    apps = tmp_path / "applications"
+    monkeypatch.setattr(paths, "APPLICATIONS", apps)
+    monkeypatch.setattr(apply_cli, "APPLICATIONS", apps)
+    monkeypatch.setattr(apply_cli, "APPLY_RUNS", apps / "apply_runs")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_learned_store(tmp_path, monkeypatch):
     """Keep the user's real `profile/.apply_learned.jsonl` out of every test.
 

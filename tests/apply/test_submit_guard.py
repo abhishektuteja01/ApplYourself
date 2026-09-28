@@ -87,6 +87,9 @@ class FakeSubmitDriver:
     def wait(self, ms):
         """The board is given time to answer before the page is judged."""
 
+    def submission_rejected(self):
+        return getattr(self, 'rejects', '')
+
     def submission_refused(self):
         """No refusal. The default has to stay "it went out": absence of
         evidence must never become evidence of failure, or an unrecognised
@@ -650,3 +653,59 @@ class TestTheLeverSubmitMarker:
             "POST", "https://jobs.ashbyhq.com/api/non-user-graphql", 302,
             ats="ashby",
         ) == []
+
+
+class TestTheOutcomeOfAClick:
+    """Every click ends in one named outcome; only `accepted` and `ambiguous`
+    are ever tracked as applied."""
+
+    def test_a_seen_submit_request_is_accepted(self):
+        d = FakeSubmitDriver()
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert result.outcome == "accepted"
+
+    def test_a_rejection_after_a_200_is_rejected_and_not_retried(self):
+        # 33a514eb: Ashby answered 200 and showed "We couldn't submit your
+        # application ... flagged as possible spam".
+        d = FakeSubmitDriver()
+        d.rejects = "Your application submission was flagged as possible spam."
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert result.outcome == "rejected"
+        assert result.submitted is False
+        assert "possible spam" in result.submit_error
+        assert len(d.clicked) == 1
+
+    def test_a_watched_board_that_fires_nothing_is_unsent(self):
+        class Silent(FakeSubmitDriver):
+            def click_submit(self, selector):
+                self.clicked.append(selector)
+
+        d = Silent()
+        result = FillResult(form_url="x")
+        submit(plan(), result, d)
+        assert result.outcome == "unsent"
+
+    def test_an_unwatched_board_with_no_confirmation_is_ambiguous(self):
+        d = FakeSubmitDriver(confirms=False)
+        result = FillResult(form_url="x")
+        submit(replace(plan(), ats="unmeasured_board"), result, d)
+        assert result.outcome == "ambiguous"
+
+    def test_before_click_runs_before_the_click(self):
+        d = FakeSubmitDriver()
+        seen = []
+        submit(plan(), FillResult(form_url="x"), d,
+               before_click=lambda: seen.append(list(d.clicked)))
+        assert seen == [[]]
+
+
+def test_an_ashby_autosave_is_not_a_submit_request():
+    # 8475e862 was reported submitted on two `op=ApiSetFormValue` autosaves.
+    marker = F.SUBMIT_REQUEST_MARKERS["ashby"][0]
+    assert marker not in "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSetFormValue"
+    assert marker in ("https://jobs.ashbyhq.com/api/non-user-graphql"
+                      "?op=ApiSubmitSingleApplicationFormAction")
+    assert marker in ("https://jobs.ashbyhq.com/api/non-user-graphql"
+                      "?op=ApiSubmitMultipleFormsAction")

@@ -62,7 +62,7 @@ import pandas as pd
 import yaml
 
 from src import paths, state_io, track_cli
-from src.apply import ashby, lever
+from src.apply import ashby, ledger, lever
 from src.apply.answers import DEFAULT_PATH, EXAMPLE_PATH, Answers, AnswersError, load_answers
 from src.apply.fill import (SubmitGuardError, _require_playwright, blocking_details,
                              blocking_questions, fill, has_driver, run_one)
@@ -88,6 +88,12 @@ CLEAN = paths.CLEAN
 PIPELINE = paths.PIPELINE
 APPLICATIONS = paths.APPLICATIONS
 APPLY_RUNS = APPLICATIONS / "apply_runs"
+
+
+def ledger_path() -> Path:
+    """`submitted.jsonl`, resolved at call time so a test that points
+    `APPLY_RUNS` elsewhere moves the ledger with it."""
+    return APPLY_RUNS / ledger.LEDGER_NAME
 
 # Tiers an `--answers` entry may claim. `plan.py` decides which of them may
 # supersede which deterministic resolution; this is only the set that parses.
@@ -801,7 +807,9 @@ def render_fill(result, plan: Plan) -> str:
 
 
 def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
-    """`state == tailored` with a resume on file.
+    """`state == tailored` with a resume on file, and no line in the submit
+    ledger — a role already sent to a board never re-enters the queue, even
+    if its state.yaml was re-created.
 
     A cover letter is not required here: whether one is needed depends on what
     the board's form asks, which `/apply`'s own plan-check (Step 2c) decides
@@ -816,10 +824,12 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     object and miss a test's `monkeypatch.setattr(apply_cli, "PIPELINE", ...)`.
     """
     idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    sent = ledger.sent_job_ids(ledger_path())
     return sorted(
         job_id for job_id, st in idx.items()
         if st.get("state") == "tailored"
         and st.get("tailored_dirs")
+        and job_id not in sent
     )
 
 
@@ -859,8 +869,8 @@ class RunOutcome:
     company: str = ""
     title: str = ""
     category: str = "failed"
-    """submitted | submitted_unconfirmed | submitted_untracked | manual |
-    parked | ready | skipped | failed | expired"""
+    """submitted | submitted_unconfirmed | submitted_untracked | rejected |
+    unsent | manual | parked | ready | skipped | failed | expired"""
 
     detail: str = ""
     unmapped: tuple[dict, ...] = dc_field(default_factory=tuple)
@@ -947,10 +957,24 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
         if not headless and sys.stdin.isatty():
             input("\nreview the form in the browser, then press Enter to close: ")
 
+    if submit:
+        sent = ledger.prior(ledger_path(), job_id, plan.form_url)
+        if sent is not None:
+            return RunOutcome(
+                job_id, plan.company, plan.title, "skipped",
+                detail=f"already sent {sent.get('at', '')} ({sent.get('status', '')}) "
+                       f"per {ledger.LEDGER_NAME}; delete that line to retry",
+            )
+
+    def mark(status: str, detail: str = "") -> None:
+        ledger.append(ledger_path(), job_id, status, form_url=plan.form_url,
+                      company=plan.company, title=plan.title, detail=detail)
+
     sink: list = []
     try:
         result = run_one(plan, answers, headless=headless, submit_after=submit,
-                          sink=sink, after=None if submit else review)
+                          sink=sink, after=None if submit else review,
+                          before_click=lambda: mark("clicking"))
     except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
         landed = sink[0] if sink else None
         # The manifest is read before the click, so a crash after it still has
@@ -961,13 +985,14 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
             except OSError:
                 pass
         if landed is not None and landed.submitted:
+            mark("ambiguous", f"{type(exc).__name__} after the click")
             rc, exc_note = _track_applied(job_id, plan)
             if rc:
                 return RunOutcome(
                     job_id, plan.company, plan.title, "submitted_untracked",
                     detail=f"SUBMITTED, then {type(exc).__name__}: {exc}, and "
                            f"track_cli exited {rc}{exc_note} — state.yaml still says "
-                           f"tailored; fix by hand before the next run",
+                           f"tailored; fix by hand",
                 )
             return RunOutcome(
                 job_id, plan.company, plan.title, "submitted_unconfirmed",
@@ -988,16 +1013,23 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
         except OSError as exc:
             print(f"WARNING: could not write the manifest: {exc}", file=sys.stderr)
 
+    if result.outcome in ("rejected", "unsent"):
+        mark(result.outcome, result.submit_error)
+        return RunOutcome(job_id, plan.company, plan.title, result.outcome,
+                           detail=result.submit_error or "clicked; no submit request "
+                                  "fired — verify on the board by hand",
+                           evidence=result.evidence)
+
     if result.submitted:
+        mark(result.outcome or "ambiguous")
         rc, exc_note = _track_applied(job_id, plan)
         if rc:
             # The application is on the board but the state write refused or
-            # blew up. Loudest category there is: the role still reads
-            # `tailored`, so the next run would apply to it a second time.
+            # blew up. The ledger line already keeps it out of the next run.
             return RunOutcome(
                 job_id, plan.company, plan.title, "submitted_untracked",
                 detail=f"SUBMITTED but track_cli exited {rc}{exc_note} — state.yaml "
-                       f"still says tailored; fix by hand before the next run",
+                       f"still says tailored; fix by hand",
             )
         if result.confirmed:
             return RunOutcome(job_id, plan.company, plan.title, "submitted",
@@ -1087,7 +1119,7 @@ def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
                              answers_path=answers_path,
                              manifest_path=manifest_path)
         outcomes.append(outcome)
-        if outcome.category.startswith("submitted"):
+        if outcome.category in _CLICKED:
             # Count both names: the plan's is what actually went out, the
             # index's is what the next role will be checked against.
             for counted in {normalize_company(outcome.company), key} - {""}:
@@ -1101,19 +1133,25 @@ def run_queue(job_ids: list[str], *, submit: bool, headless: bool = False,
 # ------------------------------------------------------------------ report
 
 
-_CATEGORY_ORDER = ("submitted", "submitted_unconfirmed", "submitted_untracked",
-                    "parked", "ready", "manual", "skipped", "failed", "expired")
+_CATEGORY_ORDER = ("submitted_untracked", "submitted", "submitted_unconfirmed",
+                    "rejected", "unsent", "parked", "ready", "manual", "skipped", "failed", "expired")
 _CATEGORY_TITLE = {
     "submitted": "Submitted",
     "submitted_unconfirmed": "Submitted (no confirmation seen — verify by hand)",
     "submitted_untracked": "SUBMITTED BUT NOT TRACKED — fix state.yaml by hand",
+    "rejected": "Rejected by the board (not tracked — read its reason)",
+    "unsent": "Clicked, but no submit request fired (not tracked — verify by hand)",
     "parked": "Parked",
     "ready": "Ready (not submitted)",
     "manual": "Manual-apply (no submit path for this board)",
-    "skipped": "Skipped (one submission per company per run)",
+    "skipped": "Skipped (already sent, or one submission per company per run)",
     "failed": "Failed",
     "expired": "Expired postings",
 }
+
+# Categories where a click reached the board; the per-company cap counts them.
+_CLICKED = ("submitted", "submitted_unconfirmed", "submitted_untracked",
+            "rejected", "unsent")
 
 # Categories that make `apply run` exit non-zero. `manual` is deliberately not
 # one: a board with no submit path is a fact about the board, not a failure.

@@ -122,6 +122,14 @@ SUBMIT_REFUSED_MARKERS = (
     "your form needs corrections",
     "missing entry for required field",
 )
+# Text a board renders when it received the application and turned it down —
+# a spam flag, a duplicate, a past decision. Unlike a refusal, clicking again
+# cannot help, so this ends the attempt. Measured on Ashby (33a514eb, 335009f3,
+# 35e0852e): the submit request answers 200 and the page says this instead.
+SUBMIT_REJECTED_MARKERS = (
+    "we couldn't submit your application",
+    "we couldn’t submit your application",
+)
 # How many times to click when the board keeps refusing. A refusal is positive
 # evidence nothing was sent, so a retry cannot duplicate an application.
 SUBMIT_ATTEMPTS = 2
@@ -131,14 +139,11 @@ SUBMIT_ATTEMPTS = 2
 # said the page looked right. Keyed by ats, and absent for a board nobody has
 # watched yet — an unknown board falls back to the text markers.
 SUBMIT_REQUEST_MARKERS = {
-    # Matched on the endpoint path, not the GraphQL op name: `?op=<name>` is
-    # how our own `load_board` fetch labels its query, and the live bundle's
-    # mutation can omit it entirely. Safe to match this broadly because
-    # nothing else reaches this endpoint through the browser — `load_board`
-    # is a server-side fetch `page.on` never sees, and `watch_submit_requests`
-    # is installed only right before the click. Gated by
-    # SUBMIT_REQUEST_METHOD below regardless.
-    "ashby": ("jobs.ashbyhq.com/api/non-user-graphql",),
+    # The submit mutations only (`ApiSubmitSingleApplicationFormAction`,
+    # `ApiSubmitMultipleFormsAction`). The same endpoint also carries
+    # `ApiSetFormValue` autosaves, which fire around the click and are not a
+    # submission (8475e862 was reported submitted on two autosaves alone).
+    "ashby": ("jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmit",),
     # `job-boards.greenhouse.io/embed/job_app` — the iframe's own GET, loaded
     # once per page view — contains this same substring (it's the `job-`
     # prefix, not a different path), so the URL alone is not unique. Gated by
@@ -273,6 +278,15 @@ class FillResult:
     """Where the post-submit page was written. The record that lets
     `CONFIRMATION_MARKERS` be extended from what a board actually renders
     rather than from another guess."""
+
+    outcome: str = ""
+    """What the click came to, set by `submit()`:
+    `accepted` — the board's submit request or confirmation text was seen.
+    `ambiguous` — clicked on a board with no request marker, no confirmation.
+    `unsent` — clicked on a board with a request marker, and no request fired.
+    `rejected` — the board received it and said no (spam flag, duplicate).
+    `refused` — the board declined every click; nothing was sent.
+    Empty when no click was made."""
 
     submit_error: str = ""
     """Set by `run_one` when `submit=True`. Empty + `submitted=False` means
@@ -607,6 +621,24 @@ class BrowserDriver:
         for marker in SUBMIT_REFUSED_MARKERS:
             if marker.casefold() in lowered:
                 return marker
+        return ""
+
+    def submission_rejected(self) -> str:
+        """The board's reason for turning a received application down, or "".
+
+        Returns the line after the rejection heading ("...flagged as possible
+        spam", "...already received an application from you"), or the heading
+        itself when nothing follows it.
+        """
+        try:
+            text = self.page.locator("body").inner_text(
+                timeout=UPLOAD_READBACK_TIMEOUT)
+        except Exception:  # noqa: BLE001 - unreadable page is not a rejection
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for i, line in enumerate(lines):
+            if any(m in line.casefold() for m in SUBMIT_REJECTED_MARKERS):
+                return (lines[i + 1] if i + 1 < len(lines) else line)[:300]
         return ""
 
     def missing_field_labels(self) -> tuple[str, ...]:
@@ -1870,7 +1902,8 @@ def _reverify_fields(driver, plan: Plan) -> None:
                 continue
 
 
-def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = None) -> None:
+def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = None,
+           before_click=None) -> None:
     """Click the one submit button on an already-filled form.
 
     The only path to a real click — `fill_plan` never reaches it, by
@@ -1878,6 +1911,10 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
     `SubmitGuardError` instead of clicking when a required question is still
     unanswered, the fill itself failed a field, or the board renders no submit
     button at all.
+
+    `before_click()` runs immediately before every click, so the caller can
+    record the attempt before anything irreversible happens. Sets
+    `result.outcome`.
     """
     blocking = blocking_questions(plan, result)
     if blocking:
@@ -1930,6 +1967,8 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
             # challenge, and the wait below has to be able to tell this
             # solve's token from one an earlier interaction already banked.
             driver.clear_captcha_token()
+        if before_click is not None:
+            before_click()
         driver.click_submit(plan.submit_selector)
         if plan.requires_captcha:
             # Lever's submit is a JS-driven type="button", not a native form
@@ -1980,6 +2019,16 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
         # cannot count towards this attempt's signal.
         result.submit_requests.extend(attempt_requests)
 
+        # Received and turned down. Final: another click would be judged the
+        # same way, and on a duplicate it would be a second application.
+        rejection = driver.submission_rejected()
+        if rejection:
+            result.submitted = False
+            result.outcome = "rejected"
+            result.submit_error = f"the board rejected the application: {rejection}"
+            log.info("submit rejected: %s", rejection)
+            break
+
         refusal = driver.submission_refused()
         if not refusal:
             break
@@ -2024,6 +2073,18 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
     result.confirmed = result.submitted and (
         bool(attempt_requests) or driver.submission_confirmed()
     )
+    if result.outcome != "rejected":
+        if not result.submitted:
+            result.outcome = "refused"
+        elif result.confirmed:
+            result.outcome = "accepted"
+        elif SUBMIT_REQUEST_MARKERS.get(plan.ats):
+            # A watched board fired no submit request in the whole wait: the
+            # click reached nothing. Not tracked as applied; the ledger line
+            # still stops a second automatic click until someone checks.
+            result.outcome = "unsent"
+        else:
+            result.outcome = "ambiguous"
     result.evidence = capture_submit_evidence(driver, plan, result)
 
 
@@ -2073,7 +2134,8 @@ def capture_submit_evidence(driver, plan, result: FillResult | None = None) -> P
 
 
 def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = None,
-            headless: bool = False, submit_after: bool = False, after=None) -> FillResult:
+            headless: bool = False, submit_after: bool = False, after=None,
+            before_click=None) -> FillResult:
     """Open a browser, fill the form, and — only when `submit_after` is set —
     make the one guarded click, all inside the same session. A real
     submission needs the click on the page it just filled; a fresh browser
@@ -2113,7 +2175,7 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
                 log.warning("reading the form manifest failed: %s", exc)
             if submit_after:
                 try:
-                    submit(plan, result, driver, answers)
+                    submit(plan, result, driver, answers, before_click=before_click)
                 except SubmitGuardError as exc:
                     # Refusal — raised before the click, so `submitted` is
                     # still False and nothing went out.

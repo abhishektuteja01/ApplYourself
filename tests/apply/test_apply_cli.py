@@ -537,7 +537,8 @@ def _fake_plan(job_id=JOB_ID, company="Bushing Group", title="Widget Engineer",
                ats="greenhouse", requires_captcha=False):
     from src.apply.plan import Plan
     return Plan(
-        job_id=job_id, board="bushinggroup", token="1", form_url=GH_URL,
+        job_id=job_id, board="bushinggroup", token="1",
+        form_url=GH_URL if job_id == JOB_ID else f"{GH_URL}?role={job_id}",
         company=company, title=title, out_dir=Path("/tmp"),
         fields=(), files=(), unmapped=tuple(unmapped), draftable=(), skipped=(),
         submit_selector=submit_selector, submit_disabled=False, ats=ats,
@@ -1678,3 +1679,74 @@ class TestWorkdayIsRecognisedButNeverSubmitted:
         monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
         with pytest.raises(apply_cli.ManualApplyOnly):
             apply_cli.resolve_url("a1b2c3d4", {"url": self.WD_URL})
+
+
+class TestTheSubmitLedger:
+    """A role already sent never gets clicked again, even when its state.yaml
+    was re-created (68 roles were applied to twice that way)."""
+
+    def _stub(self, monkeypatch, result):
+        monkeypatch.setattr(apply_cli, "build",
+                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        calls = []
+
+        def run_one(plan, answers, **kw):
+            calls.append(plan.job_id)
+            if kw.get("before_click"):
+                kw["before_click"]()
+            return result
+
+        monkeypatch.setattr(apply_cli, "run_one", run_one)
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
+        return calls
+
+    def test_a_submit_writes_clicking_then_the_outcome(self, monkeypatch):
+        r = _fake_result(submitted=True, confirmed=True)
+        r.outcome = "accepted"
+        self._stub(monkeypatch, r)
+        apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        from src.apply import ledger
+        statuses = [x["status"] for x in ledger.records(apply_cli.ledger_path())]
+        assert statuses == ["clicking", "accepted"]
+
+    def test_a_role_in_the_ledger_is_skipped_without_opening_a_browser(self, monkeypatch):
+        from src.apply import ledger
+        ledger.append(apply_cli.ledger_path(), JOB_ID, "accepted", form_url=GH_URL)
+        calls = self._stub(monkeypatch, _fake_result())
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "skipped"
+        assert "already sent" in out[0].detail
+        assert calls == []
+
+    def test_rejected_is_reported_and_never_tracked(self, monkeypatch):
+        r = _fake_result(submit_error="the board rejected the application: spam")
+        r.outcome = "rejected"
+        self._stub(monkeypatch, r)
+        tracked = []
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: tracked.append(argv) or 0)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "rejected"
+        assert tracked == []
+
+    def test_unsent_is_reported_and_never_tracked(self, monkeypatch):
+        r = _fake_result(submitted=True)
+        r.outcome = "unsent"
+        self._stub(monkeypatch, r)
+        tracked = []
+        monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: tracked.append(argv) or 0)
+        out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+        assert out[0].category == "unsent"
+        assert tracked == []
+
+    def test_the_queue_leaves_out_sent_roles(self, repo):
+        from src.apply import ledger
+        repo.write_state()
+        assert apply_cli.eligible_queue() == [JOB_ID]
+        ledger.append(apply_cli.ledger_path(), JOB_ID, "backfill")
+        assert apply_cli.eligible_queue() == []
+
+
+def test_tests_never_touch_the_real_applications_folder():
+    from src import paths
+    assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
+    assert paths.REPO_ROOT / "applications" != apply_cli.APPLY_RUNS.parent
