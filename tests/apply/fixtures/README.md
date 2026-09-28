@@ -53,7 +53,7 @@ Do not re-capture into these filenames without re-running the scrub. A raw
 Greenhouse form names the employer in its EEOC text, its question labels, its
 logo URL and its form action.
 
-**`form_lever_*.html` / `form_ashby_widgets.html`** — phase 2 (§12a). Same
+**`form_lever_*.html` / `form_ashby_widgets.html`** — same
 scrub rule, same fictional widget world. Lever has no public question API, so
 the served HTML alone is the fixture and `lever.py` emits `MergedField`s
 straight from the scan. Ashby's form is client-rendered: `load_board` POSTs the
@@ -65,3 +65,12 @@ hashed class names) used only by the Ashby fill-driver tests.
 |---|---|
 | `form_lever_minimal` | core identity + links, resume and location both required |
 | `form_lever_full` | employer-authored "cards" (select/textarea), EEOC block including the `race` radio group and the disability signature/date pair, work-authorization dropdowns, hCaptcha |
+
+## Other fixtures
+
+- **`greenhouse_location_compliance.json`**: a Greenhouse payload with a
+  `compliance` EEOC group and hidden `location_questions` (latitude, longitude).
+- **`application_answers.yaml`**: the fictional answer bank most tests resolve
+  against (the `answers` fixture).
+- **`work_auth_labels.jsonl`**: every real work-authorization (label, options)
+  pair with its judged category, the golden corpus for `test_work_auth_corpus.py`.

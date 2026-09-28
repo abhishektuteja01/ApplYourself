@@ -301,7 +301,7 @@ class TestEndToEndResolution:
     def test_full_parks_only_on_genuinely_unanswerable_customs(self, answers, tailor_dir):
         reconciled = scan_lever_form(load_html("form_lever_full"))
         plan = build_plan(reconciled, answers, tailor_dir, ats="lever")
-        # Every parked field is a bespoke employer card with no matching rule
+        # Every parked field is a bespoke employer card no bank question asks
         # -- not an identity or EEOC field, which must always resolve.
         assert plan.unmapped
         for u in plan.unmapped:

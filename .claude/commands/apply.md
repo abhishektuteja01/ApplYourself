@@ -162,13 +162,13 @@ Show the user, in full, never summarized:
   <value>                      [<source>] -> saved as <question id>
 ```
 
-For a `fact` entry, show the answer the plan computed and the rule: `Yes when
-<fact> is <yes_when>`.
-
 for every entry you wrote, then every **GUESSED BY KEYWORD** line that you left
 standing (it will be saved as that question's wording), then every question
 still parked and why. Say plainly that confirming saves these to the answer
 bank. **Stop and wait for the reply.**
+
+For a `fact` entry, show the answer the plan computed and the rule: `Yes when
+<fact> is <yes_when>`.
 
 - Confirmed → add `"confirmed": true` to `OVERRIDES_FILE` (beside `job_id`), then
   step 7. Only a confirmed file teaches the bank or lets a keyword guess through

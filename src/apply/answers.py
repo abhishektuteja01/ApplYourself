@@ -187,12 +187,6 @@ _OPT_OUT = (
     "I decline to self-identify for protected veteran status",
 )
 
-# Anything salary/compensation shaped.
-_MONEY_DOMAIN = re.compile(
-    r"salary|compensation|desired\s+rate\s+of\s+pay|pay\s+expectation",
-    re.IGNORECASE,
-)
-
 # "U.S. person" as ITAR/EAR defines it (citizen, permanent resident, refugee or
 # asylee). Not the same question as work authorization — a time-limited status
 # is authorized to work and is *not* a U.S. person. Answered only from an
@@ -662,6 +656,15 @@ class Question:
 
 
 @dataclass(frozen=True)
+class SalaryFloor:
+    """The lowest gross salary a country's work visa allows."""
+    amount: float
+    currency: str
+    per: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class CountryFacts:
     authorized: bool
     requires_sponsorship: bool
@@ -669,6 +672,7 @@ class CountryFacts:
     status_label: str = ""
     followup: str = ""
     start_in_days: int | None = None
+    visa_salary_floor: SalaryFloor | None = None
 
 
 @dataclass(frozen=True)
@@ -818,12 +822,38 @@ def _parse_block(data, key: str, required: tuple[str, ...],
 
 
 _COUNTRY_ROW_KEYS = ("authorized", "requires_sponsorship", "unrestricted",
-                     "status_label", "followup", "start_in_days")
+                     "status_label", "followup", "start_in_days", "visa_salary_floor")
+_SALARY_FLOOR_KEYS = ("amount", "currency", "per", "note")
+_SALARY_FLOOR_PER = ("year", "month")
+_CURRENCY = re.compile(r"^[A-Z]{3}$")
 _US_PERSON = ("park", "yes", "no")
 _CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 _QID = re.compile(r"^[a-z0-9_]+$")
 _QUESTION_KEYS = ("answer", "wordings", "keywords", "not", "mode",
                   "only_when_required", "source", "from")
+
+
+def _parse_salary_floor(raw, where: str) -> SalaryFloor | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise AnswersError(f"{where}: must be {{amount, currency, per[, note]}}")
+    unknown = set(raw) - set(_SALARY_FLOOR_KEYS)
+    if unknown:
+        raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
+    amount = raw.get("amount")
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
+        raise AnswersError(f"{where}.amount: must be a positive number")
+    currency = raw.get("currency")
+    if not isinstance(currency, str) or not _CURRENCY.match(currency):
+        raise AnswersError(f"{where}.currency: must be a three-letter ISO code, e.g. EUR")
+    per = raw.get("per")
+    if per not in _SALARY_FLOOR_PER:
+        raise AnswersError(f"{where}.per: one of {list(_SALARY_FLOOR_PER)}")
+    note = raw.get("note", "")
+    if not isinstance(note, str):
+        raise AnswersError(f"{where}.note: must be a string")
+    return SalaryFloor(amount=amount, currency=currency, per=per, note=note.strip())
 
 
 def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str, ...], str]:
@@ -875,6 +905,7 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
         for text_key in ("status_label", "followup"):
             if not isinstance(row.get(text_key, ""), str):
                 raise AnswersError(f"{where}.{text_key}: must be a string")
+        floor = _parse_salary_floor(row.get("visa_salary_floor"), f"{where}.visa_salary_floor")
         key = canonical_place(str(name))
         if not key:
             raise AnswersError(f"{where}: not a country or region this pipeline knows")
@@ -886,6 +917,7 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
             status_label=str(row.get("status_label", "")).strip(),
             followup=str(row.get("followup", "")).strip(),
             start_in_days=start,
+            visa_salary_floor=floor,
         )
     return countries, tuple(n.strip() for n in nationalities), us_person
 
@@ -1106,9 +1138,7 @@ def answers_from(data, where: str = "answer bank") -> Answers:
     if not isinstance(data, dict):
         raise AnswersError(f"{where}: top level must be a mapping")
     if data.get("schema_version") != SCHEMA_VERSION:
-        raise AnswersError(
-            f"{where}: schema_version must be {SCHEMA_VERSION} "
-            f"(scripts/migrate_answer_bank.py converts a version 1 file)")
+        raise AnswersError(f"{where}: schema_version must be {SCHEMA_VERSION}")
     unknown_top = set(data) - set(TOP_LEVEL_KEYS)
     if unknown_top:
         raise AnswersError(

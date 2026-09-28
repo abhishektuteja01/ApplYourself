@@ -1,27 +1,21 @@
 """Deterministic CLI for /track (R7: no LLM calls; R10: sole state writer).
 
-  transition <job_id> <state> [--note "..."] [--if S]
-                                                   move a role through the
-                                                   11-state machine, creating
-                                                   pipeline/<job_id>/state.yaml
-                                                   from clean/scored parquet
-                                                   on first transition.
-                                                   --if S: only when the role
-                                                   is currently in state S;
-                                                   otherwise a no-op, exit 0
-  outreach-sent <job_id> --channel C --to "N"     flip the latest matching
-                                                   draft outreach[] entry to
-                                                   sent
-  ensure <job_id>                                 create state.yaml at `saved`
-                                                   if absent; no-op if present.
-                                                   Bootstrap only, never a
-                                                   transition -- this is what
-                                                   /tailor calls so a re-tailor
-                                                   cannot rewind live state.
+  <job_id> <state> [--note "..."] [--if S]
+                              move a role through the 11-state machine,
+                              creating pipeline/<job_id>/state.yaml from
+                              clean/scored parquet on first transition.
+                              --if S: only when the role is currently in
+                              state S; otherwise a no-op, exit 0
+  outreach-sent <job_id> --channel C --to "N"
+                              flip the latest matching draft outreach[]
+                              entry to sent
+  ensure <job_id>             create state.yaml at `saved` if absent; no-op if
+                              present. Bootstrap only, never a transition --
+                              `app new` calls it so a re-tailor cannot rewind
+                              live state.
 
-Run directly: `uv run python -m src.track_cli <job_id> <state> [--note "..."]`
-or `uv run python -m src.track_cli outreach-sent <job_id> --channel C --to "N"`
-or `uv run python -m src.track_cli ensure <job_id>`.
+Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
+`uv run track ensure <job_id>`.
 """
 from __future__ import annotations
 
@@ -184,20 +178,20 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
     if argv and argv[0] == "ensure":
-        parser = argparse.ArgumentParser(prog="python -m src.track_cli ensure")
+        parser = argparse.ArgumentParser(prog="track ensure")
         parser.add_argument("job_id")
         args = parser.parse_args(argv[1:])
         return _cmd_ensure(args)
 
     if argv and argv[0] == "outreach-sent":
-        parser = argparse.ArgumentParser(prog="python -m src.track_cli outreach-sent")
+        parser = argparse.ArgumentParser(prog="track outreach-sent")
         parser.add_argument("job_id")
         parser.add_argument("--channel", required=True, choices=["recruiter", "referral", "alumni"])
         parser.add_argument("--to", required=True)
         args = parser.parse_args(argv[1:])
         return _cmd_outreach_sent(args)
 
-    parser = argparse.ArgumentParser(prog="python -m src.track_cli", description=__doc__,
+    parser = argparse.ArgumentParser(prog="track", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("job_id")
     parser.add_argument("state", choices=sorted(VALID_STATES))

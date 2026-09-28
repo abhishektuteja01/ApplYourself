@@ -35,7 +35,7 @@ def plan(*, unmapped=(), submit_selector="#application-form button[type=submit]"
 
 def unmapped(id="why_us", required=True) -> Unmapped:
     return Unmapped(id=id, label="Why us?", required=required, kind="textarea",
-                     section="questions", tier="C", reason="no rule matches this question")
+                     section="questions", tier="C", reason="no question in the bank asks this")
 
 
 class FakeSubmitDriver:

@@ -38,7 +38,8 @@ A cover letter is a per-board prerequisite, decided by that plan-check.
   `tailored` with non-empty `tailored_dirs[]`. This is what lets the
   self-promotion fire.
 - `apply run`'s `eligible_queue()` takes `tailored` only and leaves out every
-  role in the submit ledger (`applications/apply_runs/submitted.jsonl`);
+  role whose latest submit-ledger line (`applications/apply_runs/submitted.jsonl`)
+  is anything but `refused`;
   `--job-id` is checked against that same queue.
 
 A board that DOES need a cover letter blocks inside the plan-check either way.

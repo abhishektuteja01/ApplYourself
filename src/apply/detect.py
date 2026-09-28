@@ -14,15 +14,10 @@ keys off URL shape only.
 """
 from __future__ import annotations
 
-from src.apply import ashby, lever
-from src.apply.greenhouse import ApplyUrlError, parse_posting
 from src.ats_registry import (
     SUBMITTABLE_SOURCES,
     detect_source,
 )
-
-# Never read. Kept only because `apply_cli` still imports it; drop both
-# together.
 
 # Boards with a working browser driver — the ones `apply run --submit` can
 # actually reach. Derived from the registry, which `tests/apply/test_fill.py`
@@ -31,8 +26,7 @@ from src.ats_registry import (
 # quietly understating what the queue can do.
 SUBMITTABLE_ATS = SUBMITTABLE_SOURCES
 
-__all__ = ["SUBMITTABLE_ATS", "ApplyUrlError", "detect_ats",
-           "is_auto_submittable"]
+__all__ = ["SUBMITTABLE_ATS", "detect_ats", "is_auto_submittable"]
 
 
 def detect_ats(url: str) -> str | None:

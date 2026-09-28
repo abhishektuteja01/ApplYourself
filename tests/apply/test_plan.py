@@ -16,11 +16,9 @@ from src.apply.answers import Resolution
 from src.apply.greenhouse import BoardForm, Posting
 from src.apply.plan import (
     FieldPlan,
-    FilePlan,
     Plan,
     PlanError,
     Skipped,
-    Unmapped,
     Override,
     build_plan,
     find_artifact,
@@ -28,7 +26,7 @@ from src.apply.plan import (
 )
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
 
-from .conftest import FORM_FIXTURES
+from .conftest import FORM_FIXTURES, load_fixture
 
 
 def field(**kw) -> MergedField:
@@ -416,7 +414,7 @@ class TestArtifacts:
         assert find_artifact(out, "resume")[0] is None
 
     def test_other_files_in_the_dir_are_ignored(self, tmp_path):
-        out = self._dir(tmp_path, "resume.md", "trace.md", "A_B_Resume.pdf")
+        out = self._dir(tmp_path, "resume_plan.yaml", "trace.md", "A_B_Resume.pdf")
         assert find_artifact(out, "resume")[0].name == "A_B_Resume.pdf"
 
     def test_an_unknown_artifact_id_is_not_an_artifact(self, tmp_path):
@@ -452,9 +450,8 @@ class TestMissingArtifacts:
     def test_a_required_cover_letter_with_nothing_to_attach_still_parks(
         self, answers, tmp_path
     ):
-        # `eligible_queue()` no longer pre-filters on cover_letters[] -- this
-        # is the mechanism that has to catch a genuinely-needed-but-missing
-        # cover letter now, at plan/run time instead.
+        # A required cover letter with nothing to attach is caught here, at
+        # plan time.
         out = tmp_path / "empty"
         out.mkdir()
         plan = build_plan(
@@ -470,8 +467,8 @@ class TestMissingArtifacts:
         self, answers, tmp_path
     ):
         # No cover_letter field at all, and no C-tier company/motivational
-        # question either -- the "genuinely doesn't need one" case /apply's
-        # Step 2c relies on to skip /cover-letter and self-promote.
+        # question either -- the case where /apply skips /cover-letter and
+        # fires the `--if saved` promotion itself.
         out = tmp_path / "empty"
         out.mkdir()
         (out / "Alex_Example_Resume.pdf").write_bytes(b"x")
@@ -619,7 +616,7 @@ class TestPassThrough:
         assert (plan.submit_selector, plan.submit_disabled) == ("#s", True)
 
     def test_plan_for_board_carries_the_board_identifiers(
-        self, merged, answers, tailor_dir, scan, payload
+        self, merged, answers, tailor_dir, scan
     ):
         from src.apply.schema import parse_schema
 
@@ -629,7 +626,7 @@ class TestPassThrough:
             slug="bushinggroup",
             html="",
             scan=scan(name),
-            schema=parse_schema(payload(name)),
+            schema=parse_schema(load_fixture(name)),
             reconciled=merged(name),
         )
         plan = plan_for_board(board, answers, tailor_dir, job_id="a1b2c3d4")

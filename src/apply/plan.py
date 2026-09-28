@@ -13,8 +13,8 @@ Three outcomes per field, and one list each:
 
 Two more lists, neither of which blocks a submission:
 
-    draftable[] an optional question no rule matched, of a kind a person would
-                actually answer — /apply may draft it, and leaving it blank
+    draftable[] an optional question the bank does not answer, of a kind a
+                person would actually answer — /apply may draft it, and leaving it blank
                 stays valid. Without this an optional "why do you want to work
                 here" would go out empty and nothing would say so.
     skipped[]   an optional field left alone on purpose.
@@ -29,7 +29,7 @@ happily upload.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 from src.apply.answers import (
@@ -80,20 +80,20 @@ class FieldPlan:
     value: str | tuple[str, ...] | bool
     tier: str
     description: str = ""
-    """`MergedField.description`, carried through so Step 4d's audit can weigh
+    """`MergedField.description`, carried through so step 7's manifest check can weigh
     a board's own instructional text, not just its label."""
 
     options: tuple[str, ...] = ()
     """What the widget offered. Held on a *filled* field, not just a parked one:
     an answer can only be audited against the alternatives it beat, and a
-    keyword rule that picked the wrong one of nine options looks identical to a
+    keyword guess that picked the wrong one of nine options looks identical to a
     right one when all you can see is the value. Empty for free text and for
     every DOM-only select, whose real list exists only once a browser has
     opened it (`fill.py`'s `observed_options`)."""
 
     source: str = ""
-    """`Resolution.source` — which rule keyword, or which resolver, answered
-    this."""
+    """`Resolution.source` — `bank:<id>[~keyword]`, or the resolver that
+    answered this."""
 
     dom_path: str = ""
     """`MergedField.dom_path` — the real selector when `id` is an alias."""
@@ -209,7 +209,7 @@ class Plan:
     identity/EEOC or export-control field, or a file path that does not exist.
     `apply plan`/`apply run` exit non-zero while any remain."""
 
-    work_authorization: dict = field(default_factory=dict)
+    work_authorization: dict = dc_field(default_factory=dict)
     """The facts for this job's country, so the session can judge a board's
     full-sentence work-authorization option against them."""
 

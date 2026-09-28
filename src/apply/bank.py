@@ -14,8 +14,8 @@ next form that asks the same thing is answered without anyone deciding again:
 
 Facts about the user (identity, work authorization per country) are never
 written here: those change only when the user states them. Every write is
-validated by loading the whole bank first, and the previous file is kept as
-`<name>.bak`.
+validated by loading the whole bank first, and the previous file is kept in
+`.bank_history/` next to it (last 20).
 
 R7: the session decides what each label means; this module only records it.
 """
@@ -83,7 +83,7 @@ def write(data: dict, path: Path | None = None) -> Path:
         stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
         (history / f"{p.stem}.{stamp}.yaml").write_text(p.read_text(encoding="utf-8"),
                                                           encoding="utf-8")
-        for old in sorted(history.glob(f"{p.stem}.*.yaml"))[:-HISTORY_KEEP]:
+        for old in sorted(history.glob(f"{p.stem}.[0-9][0-9][0-9][0-9]-*.yaml"))[:-HISTORY_KEEP]:
             old.unlink()
     os.replace(tmp, p)
     return p
@@ -93,14 +93,6 @@ def _as_list(value) -> list[str]:
     if isinstance(value, (list, tuple)):
         return [str(v) for v in value]
     return [str(value)] if value not in (None, "") else []
-
-
-def _new_id(label: str, taken) -> str:
-    base = A._PUNCT.sub(" ", A.norm_label(label)).replace(" ", "_")[:48].strip("_") or "question"
-    qid, n = base, 2
-    while qid in taken:
-        qid, n = f"{base}_{n}", n + 1
-    return qid
 
 
 def _owner_of(questions: dict, wording: str) -> str:

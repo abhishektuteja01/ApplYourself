@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import apply_cli
+from src import app_cli, apply_cli
 from src.apply import ashby
 from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
@@ -42,6 +42,10 @@ def repo(tmp_path, monkeypatch, tailor_dir):
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
     monkeypatch.setattr(apply_cli, "PIPELINE", pipeline)
     monkeypatch.setattr(apply_cli, "APPLICATIONS", tailor_dir.parent.parent)
+    # The role's folder comes from app_cli's resolver.
+    monkeypatch.setattr(app_cli, "PIPELINE", pipeline)
+    monkeypatch.setattr(app_cli, "APPLICATIONS", tailor_dir.parent.parent)
+    monkeypatch.setattr(app_cli, "_identity", lambda: ("Alex Example", "Alex_Example"))
 
     tailored = f"{tailor_dir.parent.name}/{tailor_dir.name}"
 
@@ -236,20 +240,22 @@ class TestResolveUrl:
 class TestResolveOutDir:
     def test_the_most_recent_tailor_dir_wins(self, repo):
         # tailored_dirs[] is append-only, so a re-tailor puts _v2 at the end.
-        got = apply_cli.resolve_out_dir(JOB_ID, {"tailored_dirs": ["old/dir", repo.tailored]})
-        assert got == repo.out_dir
+        repo.write_state(tailored_dirs=["old/dir", repo.tailored])
+        assert apply_cli.resolve_out_dir(JOB_ID) == repo.out_dir
 
     def test_no_tailored_dirs_points_at_tailor(self, repo):
+        repo.write_state(tailored_dirs=[])
         with pytest.raises(apply_cli.ApplyCliError, match="run /tailor"):
-            apply_cli.resolve_out_dir(JOB_ID, {"tailored_dirs": []})
+            apply_cli.resolve_out_dir(JOB_ID)
 
     def test_no_state_at_all_points_at_tailor(self, repo):
         with pytest.raises(apply_cli.ApplyCliError, match="run /tailor"):
-            apply_cli.resolve_out_dir(JOB_ID, None)
+            apply_cli.resolve_out_dir(JOB_ID)
 
     def test_a_tailored_dir_that_is_gone_from_disk_is_named(self, repo):
-        with pytest.raises(apply_cli.ApplyCliError, match="not a"):
-            apply_cli.resolve_out_dir(JOB_ID, {"tailored_dirs": ["example_primary/deleted"]})
+        repo.write_state(tailored_dirs=["example_primary/deleted"])
+        with pytest.raises(apply_cli.ApplyCliError, match="not on disk"):
+            apply_cli.resolve_out_dir(JOB_ID)
 
 
 class TestSalaryFor:
@@ -332,17 +338,17 @@ class TestPlanCommand:
             self, repo, stub_board, capsys):
         """An answer can only be audited against the alternatives it beat.
         `options` used to reach the JSON for parked fields only, so a keyword
-        rule that picked the wrong one of nine options was indistinguishable
+        guess that picked the wrong one of nine options was indistinguishable
         from one that picked right."""
         repo.write_clean(**{JOB_ID: GH_URL})
         repo.write_state()
         assert apply_cli.main(["plan", JOB_ID, "--json"]) == 0
         data = json.loads(capsys.readouterr().out)
         assert all("options" in f and "source" in f for f in data["fields"])
-        rule_answered = [f for f in data["fields"] if f["tier"] == "B" and f["source"]]
-        assert rule_answered, "no Tier B field in this fixture to check"
-        # The source is a `match:`/`exact:` keyword from the rule that fired.
-        assert all(f["source"] == f["source"].casefold() for f in rule_answered)
+        bank_answered = [f for f in data["fields"] if f["tier"] == "B" and f["source"]]
+        assert bank_answered, "no Tier B field in this fixture to check"
+        # The source names the bank question, and the keyword when it guessed.
+        assert all(f["source"].startswith("bank:") for f in bank_answered)
         # Ashby's real selector, dropped until now.
         assert all("name" in f for f in data["fields"])
 
@@ -432,12 +438,12 @@ class TestPlanCommand:
 class TestPrepareCommand:
     """`/apply` Step 1, consolidated into the CLI: validate prerequisites and
     derive OUT_DIR/VERTICAL/COMPANY_ANSWERS from state.yaml, printing
-    shell-quoted `KEY=value` lines the command session `eval`s."""
+    shell-quoted `KEY=value` lines for the command session to read."""
 
     @pytest.fixture(autouse=True)
     def _answers_yaml_exists(self, monkeypatch, tmp_path):
         answers_path = tmp_path / "application_answers.yaml"
-        answers_path.write_text("schema_version: 1\n", encoding="utf-8")
+        answers_path.write_text("schema_version: 2\n", encoding="utf-8")
         monkeypatch.setattr(apply_cli, "DEFAULT_PATH", answers_path)
         monkeypatch.setattr(apply_cli, "EXAMPLE_PATH", tmp_path / "application_answers.example.yaml")
         monkeypatch.setattr(apply_cli, "_playwright_available", lambda: True)
@@ -487,7 +493,7 @@ class TestPrepareCommand:
     def test_no_tailored_dirs_exits_1(self, repo, capsys):
         repo.write_state(tailored_dirs=[])
         assert apply_cli.main(["prepare", JOB_ID]) == 1
-        assert "tailored_dirs" in capsys.readouterr().err
+        assert "run /tailor" in capsys.readouterr().err
 
     def test_missing_application_answers_yaml_exits_1(self, repo, monkeypatch, tmp_path, capsys):
         missing = tmp_path / "does_not_exist.yaml"
@@ -706,7 +712,7 @@ class TestRunReport:
             RunOutcome("a1", "A Co", "Eng", "submitted"),
             RunOutcome("a2", "B Co", "Eng", "parked", detail="required unresolved",
                        unmapped=({"id": "why_us", "tier": "C", "label": "Why us?",
-                                  "reason": "no rule matches this question",
+                                  "reason": "no question in the bank asks this",
                                   "source": "", "options": ["Yes", "No"],
                                   "description": ""},)),
             RunOutcome("a3", "C Co", "Eng", "failed", detail="boom"),
@@ -718,7 +724,7 @@ class TestRunReport:
         # The label, the reason and the offered options, not just the field id:
         # a bare id names nothing the next pass can act on.
         assert "Why us?" in text
-        assert "no rule matches this question" in text
+        assert "no question in the bank asks this" in text
         assert "offers: Yes, No" in text
         assert "## Failed (1)" in text
         assert "boom" in text
@@ -1028,7 +1034,6 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         self, monkeypatch
     ):
         self._plan_only(monkeypatch)
-        seen: list = []
 
         def submit_then_interrupt(plan, answers, sink=None, **kw):
             sink.append(_fake_result(submitted=True))
@@ -1087,7 +1092,7 @@ def _unmapped(field_id="why_us"):
     from src.apply.plan import Unmapped
     return Unmapped(id=field_id, label="Why us?", required=True, kind="textarea",
                      section="questions", tier="C",
-                     reason="no rule matches this question")
+                     reason="no question in the bank asks this")
 
 
 class TestSubmitRequiresAnExplicitBound:

@@ -17,7 +17,7 @@ class TestLoadBrowserConfig:
         return p
 
     def test_reads_the_driver_and_stealth_flag(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 1\nbrowser:\n"
+        p = self._write(tmp_path, "schema_version: 2\nbrowser:\n"
                                   "  driver: patchright\n  stealth: true\n")
         assert B.load_browser_config(p) == ("patchright", True)
 
@@ -25,21 +25,21 @@ class TestLoadBrowserConfig:
         assert B.load_browser_config(tmp_path / "gone.yaml") == (B.DEFAULT_DRIVER, False)
 
     def test_a_config_with_no_browser_block_keeps_the_old_behaviour(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 1\nidentity:\n  first_name: A\n")
+        p = self._write(tmp_path, "schema_version: 2\nidentity:\n  first_name: A\n")
         assert B.load_browser_config(p) == (B.DEFAULT_DRIVER, False)
 
     def test_an_unknown_driver_is_refused_rather_than_silently_ignored(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 1\nbrowser:\n  driver: selenium\n")
+        p = self._write(tmp_path, "schema_version: 2\nbrowser:\n  driver: selenium\n")
         with pytest.raises(B.BrowserConfigError, match="browser.driver"):
             B.load_browser_config(p)
 
     def test_a_non_mapping_browser_block_is_refused(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 1\nbrowser: patchright\n")
+        p = self._write(tmp_path, "schema_version: 2\nbrowser: patchright\n")
         with pytest.raises(B.BrowserConfigError, match="must be a mapping"):
             B.load_browser_config(p)
 
     def test_the_driver_name_is_case_and_space_insensitive(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 1\nbrowser:\n  driver: '  Patchright '\n")
+        p = self._write(tmp_path, "schema_version: 2\nbrowser:\n  driver: '  Patchright '\n")
         assert B.load_browser_config(p)[0] == "patchright"
 
 

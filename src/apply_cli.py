@@ -37,7 +37,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import paths, state_io, track_cli
+from src import app_cli, paths, state_io, track_cli
 from src.apply import ashby, bank, ledger, lever
 from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, FACT_WORDING_FACTS,
                                UNKNOWN_COUNTRY, Answers,
@@ -73,10 +73,9 @@ def ledger_path() -> Path:
     `APPLY_RUNS` elsewhere moves the ledger with it."""
     return APPLY_RUNS / ledger.LEDGER_NAME
 
-# What an `--answers` entry may carry. `label` and `source_id` are records for
-# the reader; the rest is read.
-OVERRIDE_KEYS = ("value", "source", "question", "claim", "keyword", "fact", "label",
-                 "source_id")
+# What an `--answers` entry may carry. `label` is a record for the reader; the
+# rest is read.
+OVERRIDE_KEYS = ("value", "source", "question", "claim", "keyword", "fact", "label")
 CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 
 
@@ -130,20 +129,12 @@ def resolve_url(job_id: str, state: dict | None) -> str:
     )
 
 
-def resolve_out_dir(job_id: str, state: dict | None) -> Path:
-    """The role's most recent /tailor output dir, which holds both artifacts."""
-    dirs = list((state or {}).get("tailored_dirs") or [])
-    if not dirs:
-        raise ApplyCliError(
-            f"{job_id} has no tailored_dirs[] — run /tailor before /apply"
-        )
-    out_dir = APPLICATIONS / dirs[-1]
-    if not out_dir.is_dir():
-        raise ApplyCliError(
-            f"{job_id}: tailored_dirs[] names {dirs[-1]}, which is not a "
-            f"directory under {APPLICATIONS.name}/"
-        )
-    return out_dir
+def resolve_out_dir(job_id: str) -> Path:
+    """The folder the role's resume was last built in, as `app dir` resolves it."""
+    try:
+        return app_cli._built_dir(job_id)
+    except app_cli.AppError as exc:
+        raise ApplyCliError(str(exc)) from exc
 
 
 def _playwright_available() -> bool:
@@ -167,9 +158,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     answers_override.json. Never judges (R7). Consolidated into one call so
     the command session does not issue several.
 
-    Prints `key=value` lines, shell-quoted, meant for `eval` in the command
-    session — not JSON, since the caller wants these straight into bash
-    variables, not a payload to parse.
+    Prints `key=value` lines, shell-quoted, for the command session to read.
     """
     job_id = args.job_id
     state_path = state_io.state_path_for(PIPELINE, job_id)
@@ -197,31 +186,23 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    # `saved` is a valid entry state, not just `tailored` -- whether this role
-    # needs a cover letter before it can become `tailored` is exactly what
-    # /apply's Step 2c decides, per role, from the board's own form.
+    # `saved` is a valid entry state: whether this role needs a cover letter
+    # before it can become `tailored` is /apply's step 3 (Materials), per role,
+    # from the board's own form.
 
-    dirs = state.get("tailored_dirs") or []
-    if not dirs:
-        print(f"ERROR: {state_path} has no tailored_dirs[]. Run /tailor first.",
-              file=sys.stderr)
+    try:
+        out_dir = resolve_out_dir(job_id)
+        info = app_cli.role_info(job_id)
+    except (ApplyCliError, app_cli.AppError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    tailored_dir = dirs[-1]
-    # tailored_dirs[] entries are vertical-prefixed (same convention
-    # /cover-letter uses), so the lane is just the first path segment -- no
-    # vertical name is ever hardcoded here.
-    vertical = tailored_dir.split("/", 1)[0]
-    out_dir = APPLICATIONS / tailored_dir
-    if not out_dir.is_dir():
-        print(f"ERROR: {state_path} names {tailored_dir}, which is not a folder under "
-              f"{APPLICATIONS.name}/. Run /tailor again.", file=sys.stderr)
-        return 1
+    vertical = info["vertical"]
 
     # The role folder is the truth: answers exist iff the file is there. A
-    # missing file is not a prerequisite — /apply's Step 2c decides from the
-    # board's form whether any company question needs one.
+    # missing file is not a prerequisite: /apply's step 3 (Materials) decides
+    # from the board's form whether any company question needs one.
     candidate = out_dir / "company_answers.yaml"
-    company_answers = str(candidate) if candidate.is_file() else ""
+    company_answers = str(candidate) if info["has_answers"] else ""
 
     # Persisted next to the role's other artifacts instead of a /tmp scratch
     # file -- an audit trail of what was submitted and why. Overwritten fresh
@@ -536,7 +517,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     """
     state = state_io.load_state(state_io.state_path_for(PIPELINE, job_id))
     posting_url = url or resolve_url(job_id, state)
-    target = Path(out_dir) if out_dir else resolve_out_dir(job_id, state)
+    target = Path(out_dir) if out_dir else resolve_out_dir(job_id)
     answers = load_answers()
     tailored_dirs = (state or {}).get("tailored_dirs") or []
     vertical = tailored_dirs[-1].split("/", 1)[0] if tailored_dirs else ""
@@ -872,13 +853,13 @@ def render_fill(result, plan: Plan) -> str:
 
 
 def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
-    """`state == tailored` with a resume on file, and no line in the submit
-    ledger — a role already sent to a board never re-enters the queue, even
-    if its state.yaml was re-created.
+    """`state == tailored` with a resume on file, and whose latest submit-ledger
+    line (if any) is `refused` — a role already sent to a board never
+    re-enters the queue, even if its state.yaml was re-created.
 
     A cover letter is not required here: whether one is needed depends on what
-    the board's form asks, which `/apply`'s own plan-check (Step 2c) decides
-    per role. A role whose board requires a cover letter it doesn't have
+    the board's form asks, which `/apply`'s step 3 (Materials) decides per
+    role. A role whose board requires a cover letter it doesn't have
     surfaces via `build_plan()`'s `unmapped`/`parked` outcome, the same
     mechanism that blocks any other missing required field. Sorted by job_id:
     the only ordering signal every eligible role is guaranteed to carry, so

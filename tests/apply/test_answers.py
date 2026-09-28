@@ -23,23 +23,6 @@ from .conftest import FIXTURES
 CONFIG = FIXTURES / "application_answers.yaml"
 
 
-def questions(rules) -> dict:
-    """Rules in the old shorthand (`match`/`exact`/`answer`/`mode`) as bank
-    questions — the tests below were written against that shape."""
-    out = {}
-    for i, rule in enumerate(rules):
-        spec = {"answer": rule["answer"]}
-        if rule.get("match") is not None:
-            spec["keywords"] = rule["match"]
-        if rule.get("exact") is not None:
-            spec["wordings"] = rule["exact"]
-        for key in ("mode", "only_when_required"):
-            if key in rule:
-                spec[key] = rule[key]
-        out[rule.get("id", f"q{i}")] = spec
-    return out
-
-
 def field(**kw) -> MergedField:
     """A merged field with everything but the interesting bits defaulted."""
     base = dict(
@@ -63,8 +46,6 @@ def by_label(reconciled, needle: str) -> MergedField:
 
 def write_config(tmp_path, **overrides):
     data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    if "rules" in overrides:
-        overrides["questions"] = questions(overrides.pop("rules") or [])
     for key, value in overrides.items():
         if value is None:
             data.pop(key, None)
@@ -79,37 +60,38 @@ class TestFindingAQuestion:
     """An exact wording beats every keyword; a keyword is a guess, named as one;
     a `not:` wording is never guessed again."""
 
-    def _answers(self, tmp_path, rules):
-        return load_answers(write_config(tmp_path, rules=rules))
+    def _answers(self, tmp_path, qs):
+        return load_answers(write_config(tmp_path, questions=qs))
 
     def test_a_wording_matches_the_whole_label(self, tmp_path):
-        a = self._answers(tmp_path, [{"exact": ["state"], "answer": ["California"]}])
+        a = self._answers(tmp_path, {"q0": {"answer": ["California"], "wordings": ["state"]}})
         assert resolve(field(label="State", options=["California"]), a).value == "California"
 
     def test_a_wording_does_not_match_a_label_containing_it(self, tmp_path):
-        a = self._answers(tmp_path, [{"exact": ["state"], "answer": ["California"]}])
+        a = self._answers(tmp_path, {"q0": {"answer": ["California"], "wordings": ["state"]}})
         for label in ("United States", "Please state their name", "Home state address"):
             assert resolve(field(label=label), a).action == "skip"
 
     def test_punctuation_and_case_do_not_break_a_wording(self, tmp_path):
-        a = self._answers(tmp_path, [
-            {"exact": ["current position title"], "answer": "Teaching Assistant"},
-        ])
+        a = self._answers(tmp_path, {
+            "q0": {"answer": "Teaching Assistant", "wordings": ["current position title"]},
+        })
         assert resolve(field(label="Current Position/Title"), a).value == "Teaching Assistant"
 
     def test_a_question_may_carry_both(self, tmp_path):
-        a = self._answers(tmp_path, [
-            {"match": ["pay expectation"], "exact": ["expected pay"], "answer": "Open"},
-        ])
+        a = self._answers(tmp_path, {
+            "q0": {"answer": "Open", "keywords": ["pay expectation"],
+                   "wordings": ["expected pay"]},
+        })
         assert resolve(field(label="Expected pay"), a).value == "Open"
         assert resolve(field(label="What is your pay expectation?"), a).value == "Open"
 
     def test_an_exact_wording_beats_an_earlier_keyword(self, tmp_path):
-        a = self._answers(tmp_path, [
-            {"id": "city", "match": ["currently located"], "answer": "San Francisco"},
-            {"id": "ny", "exact": ["are you currently located in the new york area"],
-             "answer": ["No"]},
-        ])
+        a = self._answers(tmp_path, {
+            "city": {"answer": "San Francisco", "keywords": ["currently located"]},
+            "ny": {"answer": ["No"],
+                   "wordings": ["are you currently located in the new york area"]},
+        })
         r = resolve(field(label="Are you currently located in the New York area?",
                           options=["Yes", "No"]), a)
         assert r.value == "No" and r.source == "bank:ny"
@@ -123,18 +105,18 @@ class TestFindingAQuestion:
 
     def test_a_question_needs_a_way_to_be_found(self, tmp_path):
         with pytest.raises(AnswersError, match="wordings or keywords"):
-            self._answers(tmp_path, [{"answer": "x"}])
+            self._answers(tmp_path, {"q0": {"answer": "x"}})
 
     def test_two_questions_claiming_one_wording_is_an_error(self, tmp_path):
         with pytest.raises(AnswersError, match="both claim the wording"):
-            self._answers(tmp_path, [
-                {"exact": ["state"], "answer": "California"},
-                {"exact": ["state"], "answer": "Massachusetts"},
-            ])
+            self._answers(tmp_path, {
+                "q0": {"answer": "California", "wordings": ["state"]},
+                "q1": {"answer": "Massachusetts", "wordings": ["state"]},
+            })
 
     def test_a_work_authorization_wording_is_rejected(self, tmp_path):
         with pytest.raises(AnswersError, match="work-authorization question"):
-            self._answers(tmp_path, [{"exact": ["citizenship"], "answer": "x"}])
+            self._answers(tmp_path, {"q0": {"answer": "x", "wordings": ["citizenship"]}})
 
 
 class TestLoad:
@@ -213,14 +195,43 @@ class TestWorkAuthorizationLoading:
             load_answers(write_config(tmp_path, claims={"Yes": {"authorized": True}}))
 
 
+    def _floor(self, tmp_path, floor):
+        return load_answers(write_config(tmp_path, work_authorization=self.wa(Germany={
+            "authorized": False, "requires_sponsorship": True,
+            "visa_salary_floor": floor})))
+
+    def test_a_visa_salary_floor_is_carried_on_the_row(self, tmp_path):
+        a = self._floor(tmp_path, {"amount": 48300, "currency": "EUR", "per": "year",
+                                   "note": " EU Blue Card "})
+        assert a.facts_for("Germany").visa_salary_floor == A.SalaryFloor(
+            amount=48300, currency="EUR", per="year", note="EU Blue Card")
+        assert a.facts_for("France").visa_salary_floor is None
+
+    @pytest.mark.parametrize("floor, match", [
+        (48300, "amount, currency, per"),
+        ({"amount": 48300, "currency": "EUR"}, "per"),
+        ({"amount": 0, "currency": "EUR", "per": "year"}, "amount"),
+        ({"amount": True, "currency": "EUR", "per": "year"}, "amount"),
+        ({"amount": "48k", "currency": "EUR", "per": "year"}, "amount"),
+        ({"amount": 48300, "currency": "euro", "per": "year"}, "currency"),
+        ({"amount": 48300, "currency": "EUR", "per": "week"}, "per"),
+        ({"amount": 48300, "currency": "EUR", "per": "year", "note": 5}, "note"),
+        ({"amount": 48300, "currency": "EUR", "per": "year", "gross": True}, "unknown keys"),
+    ])
+    def test_a_malformed_visa_salary_floor_is_refused(self, tmp_path, floor, match):
+        with pytest.raises(AnswersError, match=f"visa_salary_floor.*{match}"):
+            self._floor(tmp_path, floor)
+
 class TestQuestionValidation:
     def test_a_question_needs_an_answer(self, tmp_path):
         with pytest.raises(AnswersError, match="answer"):
             load_answers(write_config(tmp_path, questions={"q": {"keywords": ["portfolio"]}}))
 
     def test_answer_may_be_a_list_of_candidates(self, tmp_path):
-        rules = [{"match": ["how did you hear"], "answer": ["Careers Page", "Other"]}]
-        loaded = load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "q0": {"answer": ["Careers Page", "Other"], "keywords": ["how did you hear"]},
+        }
+        loaded = load_answers(write_config(tmp_path, questions=qs))
         assert loaded.questions[0].answers == ("Careers Page", "Other")
 
     def test_a_fact_pointer_answers_from_the_fact(self, tmp_path):
@@ -235,16 +246,17 @@ class TestQuestionValidation:
                 "x": {"answer": {"fact": "identity.nickname"}, "keywords": ["nickname"]}}))
 
     def test_overlapping_keywords_across_questions_raise(self, tmp_path):
-        rules = [
-            {"match": ["salary"], "answer": "Open"},
-            {"match": ["desired salary"], "answer": "150000"},
-        ]
+        qs = {
+            "q0": {"answer": "Open", "keywords": ["salary"]},
+            "q1": {"answer": "150000", "keywords": ["desired salary"]},
+        }
         with pytest.raises(AnswersError, match="overlaps"):
-            load_answers(write_config(tmp_path, rules=rules))
+            load_answers(write_config(tmp_path, questions=qs))
 
     def test_a_short_keyword_is_refused(self, tmp_path):
         with pytest.raises(AnswersError, match="under"):
-            load_answers(write_config(tmp_path, rules=[{"match": ["C++"], "answer": "x"}]))
+            load_answers(write_config(tmp_path, questions={
+                "q0": {"answer": "x", "keywords": ["C++"]}}))
 
     @pytest.mark.parametrize(
         "keyword",
@@ -252,9 +264,9 @@ class TestQuestionValidation:
          "u.s. person"],
     )
     def test_a_work_authorization_keyword_cannot_be_a_question(self, tmp_path, keyword):
-        rules = [{"match": [keyword], "answer": "Yes"}]
+        qs = {"q0": {"answer": "Yes", "keywords": [keyword]}}
         with pytest.raises(AnswersError, match="work-authorization question"):
-            load_answers(write_config(tmp_path, rules=rules))
+            load_answers(write_config(tmp_path, questions=qs))
 
 
 class TestResolutionProvenance:
@@ -262,24 +274,27 @@ class TestResolutionProvenance:
     the session must confirm."""
 
     def test_a_keyword_guess_names_its_keyword(self, tmp_path):
-        rules = [{"id": "site", "match": ["portfolio", "personal site"],
-                  "answer": "https://x.example"}]
-        answers = load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "site": {"answer": "https://x.example", "keywords": ["portfolio", "personal site"]},
+        }
+        answers = load_answers(write_config(tmp_path, questions=qs))
         resolution = resolve(field(label="Link to your personal site"), answers)
         assert resolution.tier == "B"
         assert resolution.source == "bank:site~personal site"
         assert resolution.by_keyword and resolution.question_id == "site"
 
     def test_an_exact_wording_names_its_question(self, tmp_path):
-        rules = [{"id": "state", "exact": ["state"], "answer": ["Example State"]}]
-        answers = load_answers(write_config(tmp_path, rules=rules))
+        qs = {"state": {"answer": ["Example State"], "wordings": ["state"]}}
+        answers = load_answers(write_config(tmp_path, questions=qs))
         resolution = resolve(field(label="State", options=["Example State"]), answers)
         assert resolution.source == "bank:state"
         assert not resolution.by_keyword
 
     def test_a_parked_choice_still_names_its_question(self, tmp_path):
-        rules = [{"id": "heard", "match": ["how did you hear"], "answer": ["Careers Page"]}]
-        answers = load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "heard": {"answer": ["Careers Page"], "keywords": ["how did you hear"]},
+        }
+        answers = load_answers(write_config(tmp_path, questions=qs))
         resolution = resolve(
             field(label="How did you hear about this job?", required=True,
                   kind="select", options=["Acme Careers Site", "LinkedIn"]),
@@ -302,19 +317,21 @@ class TestMatchMode:
     option spelling never changes the mode."""
 
     def test_mode_defaults_to_exact(self, tmp_path):
-        rules = [{"match": ["portfolio"], "answer": "https://x.example"}]
-        loaded = load_answers(write_config(tmp_path, rules=rules))
+        qs = {"q0": {"answer": "https://x.example", "keywords": ["portfolio"]}}
+        loaded = load_answers(write_config(tmp_path, questions=qs))
         assert loaded.questions[0].mode == "exact"
 
     def test_an_invalid_mode_is_rejected(self, tmp_path):
-        rules = [{"match": ["portfolio"], "answer": "x", "mode": "fuzzy"}]
+        qs = {"q0": {"answer": "x", "keywords": ["portfolio"], "mode": "fuzzy"}}
         with pytest.raises(AnswersError, match="mode"):
-            load_answers(write_config(tmp_path, rules=rules))
+            load_answers(write_config(tmp_path, questions=qs))
 
     def test_a_contains_question_matches_inside_a_full_sentence_option(self, tmp_path):
-        rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"],
-                  "mode": "contains"}]
-        answers = load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "q0": {"answer": ["I acknowledge", "Yes"], "keywords": ["acknowledge"],
+                   "mode": "contains"},
+        }
+        answers = load_answers(write_config(tmp_path, questions=qs))
         f = field(
             label="I acknowledge that this company has an in-office culture.",
             required=True, kind="select",
@@ -329,16 +346,20 @@ class TestMatchMode:
 
     def test_a_contains_question_still_parks_when_no_option_holds_any_candidate(
             self, tmp_path):
-        rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"],
-                  "mode": "contains"}]
-        answers = load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "q0": {"answer": ["I acknowledge", "Yes"], "keywords": ["acknowledge"],
+                   "mode": "contains"},
+        }
+        answers = load_answers(write_config(tmp_path, questions=qs))
         f = field(label="I acknowledge the code of conduct.", required=True, kind="select",
                   options=["Agreed", "Declined"])
         assert resolve(f, answers).parked
 
     def test_exact_mode_does_not_match_inside_a_full_sentence(self, tmp_path):
-        rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"]}]
-        answers = load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "q0": {"answer": ["I acknowledge", "Yes"], "keywords": ["acknowledge"]},
+        }
+        answers = load_answers(write_config(tmp_path, questions=qs))
         f = field(
             label="I acknowledge that this company has an in-office culture.",
             required=True, kind="select",
@@ -581,7 +602,7 @@ class TestEeoc:
 
     def test_the_eeoc_block_is_resolved_by_section_not_by_keyword(self, answers):
         """An employer-authored question that reads like EEOC stays in
-        `questions` and is rule-matched — form_multiselect asks 'I identify my
+        `questions` and goes to the bank — form_multiselect asks 'I identify my
         race as' as its own question, and nothing here answers it."""
         assert resolve(field(label="Disability Status", required=True,
                              kind="react_select", options=["Yes", "No"]), answers).parked
@@ -640,7 +661,7 @@ class TestWorkAuthorization:
     def test_a_citizen_answers_the_two_families_differently(
         self, tmp_path, merged, answers, fixture, needle
     ):
-        """The case one keyword rule cannot express: authorized yes,
+        """The case one keyword cannot express: authorized yes,
         sponsorship no, on boards that ask both."""
         citizen = dc_replace(answers, countries={
             **answers.countries,
@@ -698,7 +719,7 @@ class TestWorkAuthorization:
         assert r.value == "Yes"          # time_limited requires it
 
 
-class TestRules:
+class TestBankQuestions:
     def test_a_keyword_matches_the_normalized_label(self, merged, answers):
         r = merged("form_minimal")
         assert resolve(by_label(r, "LinkedIn"), answers).value == "https://linkedin.com/in/example"
@@ -719,7 +740,7 @@ class TestRules:
             by_label(merged("form_employment"), "How did you hear"), answers
         ).value == "Other"
 
-    def test_the_same_rule_fills_free_text_with_its_first_candidate(self, merged, answers):
+    def test_the_same_question_fills_free_text_with_its_first_candidate(self, merged, answers):
         f = by_label(merged("form_demographic"), "How did you hear")
         assert f.kind == "text" and not f.options
         assert resolve(f, answers).value == "Careers Page"
@@ -735,16 +756,16 @@ class TestRules:
                   multi=True, options=["She/Her", "He/Him", "They/Them"])
         assert resolve(f, answers).value == ("They/Them",)
 
-    def test_a_rule_never_fills_a_file_input(self, answers):
+    def test_a_question_never_fills_a_file_input(self, answers):
         f = field(id="portfolio_upload", label="Portfolio", required=True, kind="file")
         assert resolve(f, answers).parked
 
-    def test_rule_order_is_the_precedence(self, tmp_path, merged):
-        rules = [
-            {"match": ["notice period"], "answer": "Two weeks."},
-            {"match": ["what is your"], "answer": "Fallback."},
-        ]
-        loaded = load_answers(write_config(tmp_path, rules=rules))
+    def test_question_order_is_the_precedence(self, tmp_path, merged):
+        qs = {
+            "q0": {"answer": "Two weeks.", "keywords": ["notice period"]},
+            "q1": {"answer": "Fallback.", "keywords": ["what is your"]},
+        }
+        loaded = load_answers(write_config(tmp_path, questions=qs))
         f = by_label(merged("form_multiselect"), "What is your notice period?")
         assert resolve(f, loaded).value == "Two weeks."
 
@@ -1108,13 +1129,15 @@ class TestSelfIdSignature:
         assert resolve(self._field("eeo[disabilitySignature]"), a).tier == "A2"
 
 
-class TestOnlyWhenRequiredRule:
-    """A rule flagged `only_when_required` leaves an optional field blank."""
+class TestOnlyWhenRequired:
+    """A question flagged `only_when_required` leaves an optional field blank."""
 
     def _answers(self, tmp_path):
-        rules = [{"exact": ["current company"], "answer": "Widget Corp",
-                  "only_when_required": True}]
-        return load_answers(write_config(tmp_path, rules=rules))
+        qs = {
+            "q0": {"answer": "Widget Corp", "wordings": ["current company"],
+                   "only_when_required": True},
+        }
+        return load_answers(write_config(tmp_path, questions=qs))
 
     def test_an_optional_field_is_skipped(self, tmp_path):
         r = resolve(field(label="Current company", required=False), self._answers(tmp_path))
@@ -1125,9 +1148,11 @@ class TestOnlyWhenRequiredRule:
         assert (r.action, r.value) == ("fill", "Widget Corp")
 
     def test_a_non_bool_flag_is_refused(self, tmp_path):
-        rules = [{"exact": ["current company"], "answer": "X", "only_when_required": "yes"}]
+        qs = {
+            "q0": {"answer": "X", "wordings": ["current company"], "only_when_required": "yes"},
+        }
         with pytest.raises(AnswersError, match="only_when_required"):
-            load_answers(write_config(tmp_path, rules=rules))
+            load_answers(write_config(tmp_path, questions=qs))
 
 
 MY_DEMOGRAPHICS = {"answers": {

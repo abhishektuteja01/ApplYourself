@@ -4,9 +4,9 @@
 # src/apply/answers.py. DO NOT COMMIT YOUR COPY (profile/* is gitignored).
 #
 # You write `identity` through `work_authorization` — facts only you can state.
-# `claims` and `questions` grow on their own: every /apply run you confirm saves
-# what it learned here (a new wording, a board's option spelling, a new answer),
-# so the same question is never asked twice. Review or undo with
+# `claims`, `fact_wordings` and `questions` grow on their own: every /apply run
+# you confirm saves what it learned here (a new wording, a board's option
+# spelling, a new answer), so the same question is never asked twice. Review or undo with
 # `uv run apply learn` and `uv run apply learn --undo <id>`.
 
 schema_version: 2
@@ -29,6 +29,8 @@ identity:
 
 education:
   school: "Example University"
+  # Optional: the same school as other boards spell it. Exact matches only.
+  # school_alternates: ["Example University - Exampletown, ES"]
   degree: "Master's Degree"
   discipline: "Widget Engineering"
   start_year: 2019
@@ -68,6 +70,8 @@ cover_letter: when_required
 #   status_label          answers "what is your work status" in a text box
 #   followup              answers "please explain your visa situation"
 #   start_in_days         your start date is this many days after the form is filled
+#   visa_salary_floor     optional: the lowest gross salary that country's work visa
+#                         allows, {amount, currency (ISO code), per: year | month, note}
 # us_person: park | yes | no — the export-control "U.S. person" question. Quote it.
 work_authorization:
   us_person: "park"
@@ -80,12 +84,23 @@ work_authorization:
       status_label: "F-1 STEM OPT"
       followup: "Authorized under F-1 STEM OPT; will need sponsorship when it ends."
       start_in_days: 14
+    # Germany:
+    #   authorized: false
+    #   requires_sponsorship: true
+    #   visa_salary_floor: {amount: 48300, currency: EUR, per: year, note: "EU Blue Card"}
 
 # A board's full-sentence work-authorization option -> the facts it states. An
 # option is picked only when every fact it states is true for that country.
 claims:
   "I am authorized to work in the United States and will require sponsorship in the future":
     {authorized: true, requires_sponsorship: true, country: United States}
+
+# A yes/no work-authorization or export-control label -> the fact that answers
+# it. The answer is "Yes" when the fact equals yes_when. Exact wording only.
+# Facts: us_person, authorized, requires_sponsorship, unrestricted.
+# fact_wordings:
+#   "Are you legally able to work here without a visa?":
+#     {fact: unrestricted, yes_when: true}
 
 # Every other question. `wordings` are whole labels (exact); `keywords` are
 # substrings, a guess the session confirms before it counts. `not` lists labels

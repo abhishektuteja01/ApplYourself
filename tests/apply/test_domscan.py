@@ -3,7 +3,7 @@ import pytest
 from src.apply.domscan import DomScanError, scan_form
 from src.apply.schema import parse_schema
 
-from .conftest import FORM_FIXTURES, load_fixture, load_html
+from .conftest import FORM_FIXTURES, load_fixture
 
 
 def ids(scan):

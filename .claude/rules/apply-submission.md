@@ -20,7 +20,9 @@ report lists them under `manual`, not `failed`.
   `demographics.answers` (topic -> spellings: `gender`, `race`,
   `hispanic_ethnicity`, `veteran_status`, `disability_status`), and `work_authorization` (`us_person`, `nationalities`, and a
   per-country table of `authorized`, `requires_sponsorship`, `unrestricted`,
-  `status_label`, `followup`, `start_in_days`, with a required `default` row);
+  `status_label`, `followup`, `start_in_days`, `visa_salary_floor`
+  (`{amount, currency, per: year|month, note}`, the visa's lowest gross salary),
+  with a required `default` row);
 - **`claims`**: a board's full-sentence work-authorization option -> the facts it
   states. An option is picked only when every stated fact is true for the
   question's country;
@@ -71,7 +73,7 @@ question, only from an explicit `us_person`; every other one parks until judged.
 
 ## Overrides: one gate
 
-`answers_override.json` maps field id -> `{value, source, question, claim, label}`.
+`answers_override.json` maps field id -> `{value, source, question, claim, keyword, fact, label}`.
 An override answers any field except identity/EEOC. Export control takes only
 a `fact` override (`{fact, yes_when}`), which is computed, never typed. A
 free-text override is linted: mechanical fixes applied, a banned phrase parks the

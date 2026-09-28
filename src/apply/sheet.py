@@ -18,6 +18,7 @@ import pandas as pd
 import yaml
 
 from src import paths, state_io
+from src.app_cli import built_folder
 from src.apply import detect, ledger
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note",
@@ -54,10 +55,10 @@ def latest_outcomes(runs_dir: Path) -> dict[str, tuple[str, str, str]]:
 def _waiting(state: dict, since: str) -> str:
     """The answers file, when /apply drafted answers after the role's latest
     run and is waiting for the user to confirm them."""
-    dirs = state.get("tailored_dirs") or []
-    if not dirs:
+    folder = built_folder(state)
+    if folder is None:
         return ""
-    path = paths.APPLICATIONS / dirs[-1] / "answers_override.json"
+    path = folder / "answers_override.json"
     if not path.is_file():
         return ""
     try:
@@ -103,7 +104,7 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
     if outcome:
         category, detail, _ = outcome
         if category == "ready":
-            folder = paths.APPLICATIONS / state["tailored_dirs"][-1]
+            folder = built_folder(state)
             answers = folder / "answers_override.json"
             return ("Submittable", "",
                     f"uv run apply run --job-id {job_id} --answers {answers} "

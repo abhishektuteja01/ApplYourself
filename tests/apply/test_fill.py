@@ -523,7 +523,7 @@ class TestRecovery:
         result = fill_plan(self._plan_with(self._parked(
             id="question_9", section="questions", tier="C",
             label="What interests you about our product?",
-            reason="no rule matches this question",
+            reason="no question in the bank asks this",
         )), d, answers)
         assert result.recovered == []
 
@@ -693,8 +693,6 @@ class TestLeverCardRadios:
             return Span()
 
     def _driver(self, radios):
-        outer = self
-
         class Group:
             def count(self_inner):
                 return len(radios)
@@ -2100,7 +2098,7 @@ class TestFormManifest:
             unmapped=(Unmapped(id="q9", label="Did you use AI for this application?",
                                 required=True, kind="react_select",
                                 section="questions", tier="C",
-                                reason="no rule matches this question"),),
+                                reason="no question in the bank asks this"),),
         )
 
     def test_it_pairs_planned_against_what_the_page_holds(self):

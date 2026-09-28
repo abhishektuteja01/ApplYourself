@@ -10,7 +10,7 @@ argument-hint: <job_id> <state> [--note "..."]  |  outreach-sent <job_id> --chan
 Run and print the output verbatim, nothing added:
 
 ```bash
-uv run python -m src.track_cli $ARGUMENTS
+uv run track $ARGUMENTS
 ```
 
 If it exits nonzero, the stderr line already says what's wrong -- stop, don't retry or work around it.

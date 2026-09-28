@@ -20,7 +20,7 @@ import pytest
 from lxml import html as lxml_html
 
 from src.apply import fill as F
-from src.apply.fill import FillError, FillResult, fill_plan
+from src.apply.fill import FillError, fill_plan
 from src.apply.plan import FieldPlan, Plan
 
 FIXTURES = Path(__file__).parent / "fixtures"

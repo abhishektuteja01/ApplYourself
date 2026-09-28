@@ -441,8 +441,8 @@ class BrowserDriver:
         return self.selected_label(field_id)
 
     def selected_label(self, field_id: str) -> str:
-        container = self._locator(field_id).locator(f"xpath=ancestor::*[contains(@class,"
-                                                    f"'select__container')][1]")
+        container = self._locator(field_id).locator("xpath=ancestor::*[contains(@class,"
+                                                    "'select__container')][1]")
         if container.count() == 0:
             return ""
         parts = []
@@ -1811,10 +1811,6 @@ def _planned_text(value) -> str:
     if isinstance(value, bool):
         return str(value)
     return str(value)
-
-
-def _same(planned: str, actual: str) -> bool:
-    return planned.strip().casefold() == actual.strip().casefold()
 
 
 _CHOICE_KINDS = frozenset({"select", "react_select", "yesno", "radio_group",
