@@ -110,7 +110,7 @@ class FieldPlan:
     @property
     def needs_selection_assert(self) -> bool:
         """react-select accepts a typed string that matches no option and ends
-        up empty, so fill.py has to prove the selection stuck (§9). It is the
+        up empty, so fill.py has to prove the selection stuck. It is the
         only widget that can fail that quietly."""
         return self.kind == "react_select"
 
@@ -193,7 +193,7 @@ class Plan:
     by `name`; `fill.py` picks its driver off this, not off `board` (a slug,
     not an ATS name)."""
     requires_captcha: bool = False
-    """Lever renders hCaptcha on every form (§12a). Unattended submission is
+    """Lever renders hCaptcha on every form. Unattended submission is
     not possible on one of these — `submit()` blocks for a human to solve it
     rather than clicking blind."""
     ignored_overrides: tuple[str, ...] = ()

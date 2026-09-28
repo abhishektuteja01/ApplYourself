@@ -66,7 +66,7 @@ class FakeSubmitDriver:
 
     def click_submit(self, selector):
         self.clicked.append(selector)
-        # Plan defaults to greenhouse, which is now a measured board (§1).
+        # Plan defaults to greenhouse, which is now a measured board.
         # This file tests the guard, not the marker feature, so a plain click
         # simulates the real board firing its own submit request — the same
         # way a click that actually lands behaves.
@@ -106,7 +106,7 @@ class TestBlockingQuestions:
         assert d.clicked == []
 
     def test_recovered_at_fill_time_no_longer_blocks(self):
-        # This is the case §9 exists for: hispanic_ethnicity and country park
+        # The fill-time recovery case: hispanic_ethnicity and country park
         # in the plan but resolve once fill.py can read the widget's real
         # options. The guard must not re-park what fill_plan already fixed.
         d = FakeSubmitDriver()
@@ -209,7 +209,7 @@ class TestRunOneNeverSubmitsByDefault:
         assert result.submit_error == ""
 
     def test_a_guard_refusal_is_recorded_not_raised(self, monkeypatch):
-        # One parked role in a queue must not kill the run (§13).
+        # One parked role in a queue must not kill the run.
         class Ctx:
             pages = []
             def new_page(self):

@@ -24,13 +24,13 @@ that reads every field's sibling description div generically, keyed by
 `apply plan`'s otherwise browser-free path opens a browser, and it degrades to
 no descriptions rather than failing the plan if that browser is unavailable.
 
-Filling is `fill.AshbyBrowserDriver` (§12a), which reads each field's widget
+Filling is `fill.AshbyBrowserDriver`, which reads each field's widget
 off the live DOM — the API type does not name it.
 
 Every `MergedField.id`/`.name` is that path verbatim, except the resume and
 cover-letter uploads, aliased to Greenhouse's "resume"/"cover_letter" so
 `answers.py`'s `FILE_IDS` and `plan.py`'s `find_artifact` recognize them
-(§12a). A boolean is `kind="yesno"` with a fixed Yes/No option pair, so the
+. A boolean is `kind="yesno"` with a fixed Yes/No option pair, so the
 A2/B0 opt-out and work-authorization logic (which reads `field.options`)
 works unchanged.
 
@@ -95,7 +95,7 @@ _TYPE_KINDS = {
     "MultiValueSelect": "select",
     # A remote place-name taxonomy with no option list of its own — and one
     # asking a different question per board: city-level on most, country-only
-    # on some (§12a).
+    # on some.
     "Location": "combobox",
 }
 
@@ -203,7 +203,7 @@ class _Schema:
 @dataclass(frozen=True)
 class AshbyBoard:
     """Same attribute shape as `greenhouse.BoardForm` — `plan_for_board` is
-    duck-typed over it on purpose (§12a)."""
+    duck-typed over it on purpose."""
     posting: Posting
     slug: str
     scan: _Scan
@@ -498,7 +498,7 @@ def load_board(url: str, timeout: int = 30) -> AshbyBoard:
 
     One more network trip than the API alone needs: `_with_dom_descriptions`
     opens a headless browser to read whatever instructional text a board
-    renders under a label but never declares in `applicationForm` (§12a). This
+    renders under a label but never declares in `applicationForm`. This
     is the one place in `/apply`'s "plan" path that touches a browser at all —
     everywhere else, `apply plan` is deliberately browser-free — and it is
     scoped to Ashby only, best-effort, and never blocks the plan if it fails.

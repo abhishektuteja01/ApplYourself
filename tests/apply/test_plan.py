@@ -96,7 +96,7 @@ class TestEveryFixture:
     def test_react_selects_are_flagged_for_the_selection_assert(
         self, name, merged, answers, tailor_dir
     ):
-        # The widget that silently accepts a string matching no option (§9).
+        # The widget that silently accepts a string matching no option.
         for f in build_plan(merged(name), answers, tailor_dir).fields:
             assert f.needs_selection_assert == (f.kind == "react_select")
 

@@ -3,7 +3,7 @@
 Split out of `apply_cli` so `shortlist.py` can ask the question without
 importing the whole submission CLI. Both callers must agree: a role the
 shortlist calls auto-submittable and the queue calls manual-apply is exactly
-the silent gap §13 exists to close.
+a silent gap.
 
 Board identity itself lives in one table, `src/ats_registry.py`,
 shared with discovery — so dedupe, ingest and submission cannot drift on what

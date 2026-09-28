@@ -83,7 +83,7 @@ class ManualApplyOnly(ApplyCliError):
     — Workday, LinkedIn, or a company careers page.
 
     Distinct from a failure on purpose. These roles have to be applied to by
-    hand, and §13 requires the run report to say so in its own category rather
+    hand, and the run report says so in its own category rather
     than burying them in `failed`, where they read as breakage and drive the
     exit code."""
 
@@ -220,7 +220,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     # Persisted next to the role's other artifacts instead of a /tmp scratch
     # file -- an audit trail of what was submitted and why. Overwritten fresh
     # at the start of every run, so every key present by the end belongs to
-    # this run only (§15).
+    # this run only.
     overrides_file = out_dir / "answers_override.json"
     overrides_file.write_text(json.dumps({"job_id": job_id}) + "\n", encoding="utf-8")
 
@@ -400,7 +400,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
 
 # Every exception `build()` can raise that names a per-role problem rather
 # than a bug in this CLI. `PostingExpired` is handled separately — it is an
-# ordinary outcome (§14: 6/45 live postings), not a failure.
+# ordinary outcome, not a failure.
 BUILD_ERRORS = (ApplyCliError, ApplyUrlError, AnswersError, PlanError, CareersError,
                  SchemaError, DomScanError, ReconcileError)
 

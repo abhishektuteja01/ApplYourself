@@ -331,7 +331,7 @@ def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
       let one ticked nameless box clear unrelated empty fields.
     - Only when every reported member is a checkbox. A shared name is not a
       shared type: Lever's pronouns group is ten checkboxes plus a free-text
-      `customPronounsTextField` (§`LeverBrowserDriver._checkbox_options`), and
+      `customPronounsTextField`, and
       that text input being required-and-empty must still refuse.
     - Only for `valueMissing`. A pattern or `type=email` failure is not an
       unticked sibling and is never satisfied by one.
@@ -665,7 +665,7 @@ class BrowserDriver:
         """Filenames the input holds, or None if that cannot be determined.
 
         `input_value()` refuses a file input, so this reads `.files` directly.
-        A read, not a write, so §2b's "setting .value will not update React
+        A read, not a write, so the "setting .value will not update React
         state" caveat does not apply.
 
         **None and () mean different things, and conflating them blocks real
@@ -728,7 +728,7 @@ class BrowserDriver:
 
     def select_native(self, field_id: str, label: str) -> None:
         """A real `<select>` — no typing, no listbox, `select_option()` just
-        works. Lever's fields carry no react-select at all (§12a)."""
+        works. Lever's fields carry no react-select at all."""
         self._locator(field_id).first.select_option(label=label)
 
     def selected_option_label(self, field_id: str) -> str:
@@ -754,7 +754,7 @@ class BrowserDriver:
 
     def check_radio_group(self, field_id: str, label: str) -> None:
         """One radio in a same-named group, matched on its visible label —
-        Lever's EEOC race question (§12a).
+        Lever's EEOC race question.
 
         `label` is stripped before comparing everywhere in this file, not just
         the DOM side: a work-authorization option's own rendered text can
@@ -791,8 +791,8 @@ class BrowserDriver:
     def wait_for_captcha(self, timeout_ms: int = 600_000) -> None:
         """Block until a human solves the hCaptcha challenge Lever's own JS
         just opened — proxied by the hidden response token going non-empty.
-        Unattended submission is not possible on a board that renders one
-        (§12a, §12c): this is the wait, not a bypass.
+        Unattended submission is not possible on a board that renders one:
+        this is the wait, not a bypass.
 
         Only ever called after `clear_captcha_token`, because "non-empty" is
         not the same question as "freshly solved". An hCaptcha token is
@@ -903,7 +903,7 @@ class BrowserDriver:
 
 class LeverBrowserDriver(BrowserDriver):
     """Same sequence, different selector: Lever's fields carry no `id`
-    attribute at all, so every lookup is by `name` instead (§12a)."""
+    attribute at all, so every lookup is by `name` instead."""
 
     def _locator(self, field_id: str):
         return self.page.locator(FIELD_BY_NAME.format(form=FORM_SELECTOR, id=field_id))
@@ -1327,8 +1327,7 @@ class AshbyBrowserDriver(BrowserDriver):
 
     def click_submit(self, selector: str) -> None:
         """Ashby's submit handler is wired to React's `onClick`, not a native
-        form submit (§ASHBY: the field-entry root is a `<div role="tabpanel">`,
-        not a `<form>`) — and a plain Playwright click misses that handler on
+        form submit — and a plain Playwright click misses that handler on
         the first try more often than not, a documented Playwright/React gap
         (upstream playwright#26340) rather than anything Ashby-specific.
 
@@ -1664,7 +1663,7 @@ def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
     whole of what a parked role's report line said, while the label, the reason
     it parked and the options the widget offered were all sitting in
     `plan.unmapped`. Kept as a sibling rather than a wider return type because
-    `blocking_questions` is also the submit guard's own check (§9), where the
+    `blocking_questions` is also the submit guard's own check, where the
     ids are exactly right.
 
     `options` prefers what the browser actually read (`observed_options`) over
@@ -1952,7 +1951,7 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
                 "required and empty. Nothing was clicked."
             )
         # Registered fresh, right here, never earlier: Ashby's location combobox
-        # queries the same GraphQL gateway on every keystroke (§12a), and
+        # queries the same GraphQL gateway on every keystroke, and
         # `_reverify_fields` above — or a prior attempt's post-refusal
         # reapply of a named combobox field — can retype one. Watching from
         # before the loop (or reusing one sink across attempts) would let that
@@ -2144,9 +2143,8 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
     `after(result)` runs with the window still open, so a caller can report and
     let someone look at the form before it closes.
 
-    `submit_after` is the caller's decision made once per invocation (§13 —
-    `--submit` is never a config default); this function does not default it
-    on, and a guard refusal is recorded in `result.submit_error` rather than
+    `submit_after` is the caller's decision made once per invocation, never a
+    config default; this function does not default it on, and a guard refusal is recorded in `result.submit_error` rather than
     raised, so one parked role in a queue does not kill the run.
     """
     # Built and published BEFORE the browser opens. `submitted` is the record

@@ -596,7 +596,7 @@ class TestOtherWidgets:
 
 
 class TestNativeSelect:
-    """Lever's `<select>` — no react-select, no listbox, no typing (§12a)."""
+    """Lever's `<select>` — no react-select, no listbox, no typing."""
 
     def test_selecting_a_real_option_is_a_fill(self):
         d = FakeDriver(options={"eeo[gender]": ("Male", "Female")})
@@ -859,7 +859,7 @@ class TestFailureIsolation:
 
 class TestDriverGuards:
     def test_no_module_but_fill_names_the_driver(self):
-        """The driver swap point (§9): if the driver is *imported* anywhere
+        """The driver swap point: if the driver is *imported* anywhere
         else under src/, swapping it stops being a one-line change.
 
         `browser.py` is the one place the driver is named now — `fill.py` and
@@ -935,7 +935,7 @@ class TestDriverGuards:
 
 
 class TestAnUploadIsReadBack:
-    """The file input was the one write with no read-back (§9 step 4).
+    """The file input was the one write with no read-back.
 
     An input that silently ends up empty leaves `failures` empty, so
     `blocking_questions` is empty, the submit guard passes, and the
@@ -2182,7 +2182,7 @@ def box(name: str, *, checked: bool) -> dict:
 
 
 class TestRefusedFieldNames:
-    """Which browser refusals are real, given one DOM read (§`invalid_fields`)."""
+    """Which browser refusals are real, given one DOM read."""
 
     def test_a_ticked_checkbox_group_is_not_a_refusal(self):
         """Greenhouse marks all 8 boxes `required`; one tick answers the group."""
@@ -2245,7 +2245,7 @@ class TestRefusedFieldNames:
 
 
 class TestDatePickerIsDismissed:
-    """Ashby's calendar overlay intercepts every later field (§`_apply_field`)."""
+    """Ashby's calendar overlay intercepts every later field."""
 
     def test_a_date_is_closed_before_the_read_back(self):
         p = plan(fields=[field(id="start", kind="date", value="2026-09-18")])

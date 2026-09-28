@@ -185,7 +185,7 @@ def _is_multi_select(el) -> bool:
     """react-select renders an identical input for single and multi; the only
     tell is the value-container class on an ancestor."""
     # A native <select multiple> is the plainest possible multi widget, and
-    # reading only react-select's class names called it single — §13's "a
+    # reading only react-select's class names called it single — the "a
     # mark-all-that-apply filled as a single select, silently submitting one
     # option", with nothing to catch it: the education/employment/eeoc blocks
     # are all dom_only, so reconcile's multi cross-check never runs there.
@@ -205,7 +205,7 @@ def _is_multi_select(el) -> bool:
 def _file_group(el):
     """The role=group wrapper that carries a file input's real label and
     required flag."""
-    # §2b's verified contract is `div[role=group][aria-labelledby]
+    # the verified contract is `div[role=group][aria-labelledby]
     # [aria-required]` — the `file-upload` class is not part of it. Requiring
     # the class made a cosmetic rename hard-park every board, so it is now a
     # preference between candidate wrappers rather than a precondition.
@@ -288,7 +288,7 @@ def scan_form(page_html: str) -> FormScan:
         grouped.update(fieldset.xpath('.//input[@type="checkbox"]'))
 
     # One union xpath so fields come back in document order. `role=combobox` is
-    # in here because tag name alone is not sufficient (§6b heuristic 2): a
+    # in here because tag name alone is not sufficient: a
     # react-select rendered on a <div role="combobox"> is a real, often
     # required field, and selecting by tag first made it invisible — no field,
     # no raise, and not even an `api_only` diagnostic.

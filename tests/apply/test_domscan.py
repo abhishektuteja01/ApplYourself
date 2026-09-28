@@ -352,7 +352,7 @@ def test_dom_only_fields_survive_that_the_api_never_declares(scan, name):
 
 def test_location_and_latlong_are_declared_but_not_rendered(scan):
     """`location` renders under a different id; lat/long render nowhere at all,
-    so nothing can assert them (§2b)."""
+    so nothing can assert them."""
     s = scan("form_minimal")
     api_names = {
         f.name for q in parse_schema(load_fixture("form_minimal")).questions for f in q.fields

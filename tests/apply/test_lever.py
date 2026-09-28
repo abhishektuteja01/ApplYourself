@@ -1,5 +1,5 @@
 """Lever's rendered form -> a merged field set, with no API to reconcile
-against — the scan output is the merge, straight from the DOM (§12a).
+against — the scan output is the merge, straight from the DOM.
 
 No network: fetch_text is stubbed everywhere.
 """

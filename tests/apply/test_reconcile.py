@@ -59,7 +59,7 @@ def test_dom_only_fields_are_planned_and_flagged(merged, name):
 
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_the_2b_dom_only_census_survives_with_its_required_flags(merged, name):
-    """§2b's census of ids that appear in NO question array. Building the plan
+    """the census of ids that appear in NO question array. Building the plan
     from the schema alone drops every one of them; several are required, so the
     submit would fail on a field the planner never knew existed."""
     census = {

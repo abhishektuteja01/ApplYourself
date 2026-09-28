@@ -794,7 +794,7 @@ class TestTheShippedTemplate:
 
 def _yes_no_field(label: str, *, required: bool = True):
     """A required Yes/No select — the shape every work-authorization question
-    in the fixtures actually has (§5)."""
+    in the fixtures actually has."""
     from src.apply.domscan import DomOption
     return MergedField(
         id="q", name="q", label=label, required=required, kind="select",

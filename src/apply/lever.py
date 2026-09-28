@@ -22,7 +22,7 @@ Two things Greenhouse never needed to handle:
 - **hCaptcha on every form**, with a JS-driven `type="button"` submit rather
   than a native `type="submit"`. Unattended submission is not possible on a
   Lever role; `Plan.requires_captcha` carries that forward so `fill.py`'s
-  `submit()` can block for a human rather than clicking blind (§12a).
+  `submit()` can block for a human rather than clicking blind.
 
 Pure functions over an HTML string for the scan and the page's company and
 title; network lives in `load_board`.
@@ -97,7 +97,7 @@ class _Schema:
 @dataclass(frozen=True)
 class LeverBoard:
     """Same attribute shape as `greenhouse.BoardForm` — `plan_for_board` is
-    duck-typed over it on purpose (§12a)."""
+    duck-typed over it on purpose."""
     posting: Posting
     slug: str
     scan: _Scan
@@ -169,7 +169,7 @@ def _label_text(question_el) -> str:
     if labels:
         label = labels[0]
         # Strip the required-marker span's own text ("✱") — it is not part of
-        # the label a person reads, same treatment as Greenhouse's asterisk (§6).
+        # the label a person reads, same treatment as Greenhouse's asterisk.
         parts = [label.text or ""]
         for child in label:
             if "required" in (child.get("class") or "").split():
@@ -307,7 +307,7 @@ def _scan_question(question_el) -> MergedField | None:
             # not the typed text. Typing alone leaves that hidden partner
             # empty and the submission is refused. `react_select` is the kind
             # fill.py drives as type-and-pick; the Lever driver supplies the
-            # selectors, since Lever renders no react-select markup (§12a).
+            # selectors, since Lever renders no react-select markup.
             #
             # Detected by the hidden partner rather than by the field's name,
             # so a board that renames the visible input still resolves.
@@ -374,7 +374,7 @@ def has_captcha(page_html: str) -> bool:
 
 def fetch_form(posting: Posting, timeout: int = 30) -> str:
     """The rendered apply page. Raises PostingExpired on 404 — same ordinary
-    outcome as a stale Greenhouse token (§14)."""
+    outcome as a stale Greenhouse token."""
     try:
         return fetch_text(posting.form_url, timeout=timeout)
     except CareersError as exc:
