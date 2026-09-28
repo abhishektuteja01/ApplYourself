@@ -10,15 +10,24 @@ over 60 live boards:
 - rendered under a different name: API `location` -> DOM `candidate-location`
 
 So the DOM decides what exists and what is required; the API contributes the
-clean label and the option list for selects. A field the DOM renders is always
-planned, whether the API declared it or not — that is the regression this module
-exists to prevent.
+clean label, the description and the option list for selects. A field the DOM
+renders is always planned, whether the API declared it or not — that is the
+regression this module exists to prevent. The one exception runs the other way:
+the GDPR consent boxes are drawn client-side only, so they come from the API's
+`data_compliance` (see `schema._CONSENT_BOXES`).
+
+`MergedField` is also the shared field model: Lever and Ashby emit it directly.
 
 Pure function over the two parsed halves: no browser, no network.
 """
 from __future__ import annotations
 
+import html
+import re
 from dataclasses import dataclass
+
+from lxml import html as lxml_html
+from lxml.etree import ParserError
 
 from src.apply.domscan import FormScan
 from src.apply.schema import BoardSchema
@@ -29,6 +38,11 @@ DOM_TO_API_ALIASES = {"candidate-location": "location"}
 # Marks a merged field whose enrichment came from `demographic_questions`,
 # which is a different object shape and joins on id rather than name.
 DEMOGRAPHIC_SOURCE = "demographic_questions"
+
+# Marks a consent box built from `data_compliance` rather than scanned.
+CONSENT_SOURCE = "data_compliance"
+
+_SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,;:!?)])")
 
 
 class ReconcileError(Exception):
@@ -56,9 +70,9 @@ class MergedField:
     api_source: str | None = None   # question source, or DEMOGRAPHIC_SOURCE
     api_type: str | None = None
     description: str = ""
-    """Instructional text a board renders under the label but declares nowhere
-    in its own schema/API — e.g. Ashby's sibling description div (§12a). Empty
-    for every board/field that has none; Greenhouse and Lever never set it."""
+    """Instructional text under the label, as plain text: Greenhouse's
+    question `description`, Ashby's sibling description div. Empty where the
+    board has none; Lever never sets it."""
 
     dom_path: str = ""
     """Where the field really is, when `id` is an alias and cannot find it.
@@ -96,17 +110,23 @@ class Reconciled:
     def by_section(self, section: str) -> tuple[MergedField, ...]:
         return tuple(f for f in self.fields if f.section == section)
 
-    @property
-    def required_ids(self) -> tuple[str, ...]:
-        return tuple(f.id for f in self.fields if f.required)
-
-    @property
-    def dom_only_ids(self) -> tuple[str, ...]:
-        return tuple(f.id for f in self.fields if f.dom_only)
-
 
 def _label(text: str) -> str:
     return " ".join((text or "").split())
+
+
+def _plain_text(markup: str | None) -> str:
+    """An API description as the text a person reads. Some boards send the
+    HTML entity-escaped, so unescape before parsing."""
+    text = html.unescape(markup or "").strip()
+    if not text:
+        return ""
+    try:
+        # Joined with spaces so two paragraphs do not run together.
+        text = " ".join(lxml_html.fragment_fromstring(text, create_parent="div").itertext())
+    except (ParserError, ValueError):
+        pass
+    return _SPACE_BEFORE_PUNCT.sub(r"\1", _label(text))
 
 
 def _index_api(schema: BoardSchema):
@@ -149,6 +169,7 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
         seen_ids.add(dom.id)
 
         label, options, api_source, api_type = dom.label, (), None, None
+        description = ""
 
         if dom.section == "demographic":
             question = demo_index.get(dom.id)
@@ -171,6 +192,7 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
                 qi, question, api_field = hit
                 reached_questions.add(qi)
                 label = question.label or dom.label
+                description = _plain_text(question.description)
                 api_source, api_type = question.source, api_field.type
                 options = tuple(
                     MergedOption(label=o.label, value=o.value) for o in api_field.options
@@ -202,6 +224,24 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
             options=options,
             api_source=api_source,
             api_type=api_type,
+            description=description,
+        ))
+
+    scanned_names = {dom.name for dom in scan.fields}
+    for box in schema.consent:
+        # Greenhouse renders the input as `<name>_<value>`, value 1.
+        box_id = f"{box.name}_1"
+        if box.name in scanned_names or box_id in seen_ids:
+            continue
+        fields.append(MergedField(
+            id=box_id,
+            name=box.name,
+            label=box.label,
+            required=box.required,
+            kind="checkbox",
+            section="questions",
+            multi=False,
+            api_source=CONSENT_SOURCE,
         ))
 
     # A question counts as reached when ANY of its fields matched a rendered

@@ -21,6 +21,8 @@ from src.ats_registry import (
     detect_source,
 )
 
+# Never read. Kept only because `apply_cli` still imports it; drop both
+# together.
 _ATS_PARSERS = {
     "greenhouse": parse_posting,
     "lever": lever.parse_posting,

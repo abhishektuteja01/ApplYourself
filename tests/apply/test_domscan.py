@@ -10,8 +10,12 @@ def ids(scan):
     return [f.id for f in scan.fields]
 
 
+def by_id(scan, field_id):
+    return next((f for f in scan.fields if f.id == field_id), None)
+
+
 def field(scan, field_id):
-    found = scan.by_id(field_id)
+    found = by_id(scan, field_id)
     assert found is not None, f"{field_id} not scanned; got {ids(scan)}"
     return found
 
@@ -27,7 +31,7 @@ def test_every_board_yields_identity_files_and_one_submit(scan, name):
     # live boards sampled, and on form_employment. Do not assert it required.
     assert field(s, "resume").kind == "file"
     # Cover letter is not universal (26/30 boards); when rendered it is a file.
-    cover = s.by_id("cover_letter")
+    cover = by_id(s, "cover_letter")
     assert cover is None or cover.kind == "file"
     assert s.submit_selector == '#application-form button[type="submit"]'
     assert s.submit_disabled is False
@@ -136,8 +140,8 @@ def test_toggle_gated_text_twins_are_absent(scan):
     """resume_text / cover_letter_text have a <label for> but no input until the
     "Enter manually" toggle is pressed."""
     s = scan("form_minimal")
-    assert s.by_id("resume_text") is None
-    assert s.by_id("cover_letter_text") is None
+    assert by_id(s, "resume_text") is None
+    assert by_id(s, "cover_letter_text") is None
 
 
 # --- labels ------------------------------------------------------------------
@@ -243,9 +247,9 @@ def test_education_required_varies_by_board(scan):
 
 def test_education_shape_varies_by_board(scan):
     """Months are present on some boards and absent on others."""
-    assert scan("form_education").by_id("start-month--0") is not None
-    assert scan("form_demographic").by_id("start-month--0") is None
-    assert scan("form_demographic").by_id("discipline--0") is None
+    assert by_id(scan("form_education"), "start-month--0") is not None
+    assert by_id(scan("form_demographic"), "start-month--0") is None
+    assert by_id(scan("form_demographic"), "discipline--0") is None
 
 
 def test_employment_block_is_tagged(scan):
@@ -354,9 +358,9 @@ def test_location_and_latlong_are_declared_but_not_rendered(scan):
         f.name for q in parse_schema(load_fixture("form_minimal")).questions for f in q.fields
     }
     assert {"location", "latitude", "longitude"} <= api_names
-    assert s.by_id("location") is None
-    assert s.by_id("latitude") is None
-    assert s.by_id("longitude") is None
+    assert by_id(s, "location") is None
+    assert by_id(s, "latitude") is None
+    assert by_id(s, "longitude") is None
     assert field(s, "candidate-location").kind == "react_select"
 
 

@@ -57,7 +57,7 @@ ATS_SOURCES: tuple[AtsSource, ...] = (
         host_suffixes=("greenhouse.io",),
         posting_url_re=re.compile(
             r"^https?://(?:job-boards|boards)\.(?:(?P<region>eu)\.)?greenhouse\.io/"
-            r"(?:embed/job_app/)?(?P<slug>[^/?#]+)/jobs/(?P<posting_id>\d+)",
+            r"(?:embed/job_app/)?(?P<slug>[^/?#]+)/jobs/(?P<posting_id>\d+)(?:[/?#]|$)",
             re.IGNORECASE,
         ),
         slug_query_keys=("for", "board"),
@@ -136,24 +136,33 @@ def _host(url: str) -> str:
         return ""
 
 
+def query_values(src: AtsSource, url: str) -> tuple[set[str], set[str]]:
+    """(ids, slugs): the distinct non-empty values under the board's id and
+    slug query keys. Duplicated params are real (one live row spells
+    ?gh_jid=X&gh_jid=X), so values are deduped across keys."""
+    try:
+        query = parse_qs(urlparse(url).query)
+    except ValueError:
+        return set(), set()
+
+    def values(keys: tuple[str, ...]) -> set[str]:
+        return {v.strip() for k in keys for v in query.get(k, []) if v.strip()}
+
+    return values(src.id_query_keys), values(src.slug_query_keys)
+
+
 def _query_fallback(src: AtsSource, url: str) -> PostingUrl | None:
     """Identify a posting off query params alone — a company careers page
     carrying `?gh_jid=`, or Greenhouse's own `?for=&token=` embed form."""
     if not src.id_query_keys:
         return None
-    try:
-        query = parse_qs(urlparse(url).query)
-    except ValueError:
-        return None
-    ids = {v.strip() for k in src.id_query_keys for v in query.get(k, []) if v.strip()}
-    # Duplicated params are real (one live row spells ?gh_jid=X&gh_jid=X);
-    # two *different* ids are not resolvable and stay unrecognized.
+    ids, slugs = query_values(src, url)
+    # Two *different* ids are not resolvable and stay unrecognized.
     if len(ids) != 1:
         return None
     posting_id = ids.pop()
     if not posting_id.isdigit():
         return None
-    slugs = {v.strip() for k in src.slug_query_keys for v in query.get(k, []) if v.strip()}
     return PostingUrl(source=src.name, slug=slugs.pop() if len(slugs) == 1 else "",
                       posting_id=posting_id)
 

@@ -24,7 +24,8 @@ Two things Greenhouse never needed to handle:
   Lever role; `Plan.requires_captcha` carries that forward so `fill.py`'s
   `submit()` can block for a human rather than clicking blind (§12a).
 
-Pure function over an HTML string for the scan; network lives in `load_board`.
+Pure functions over an HTML string for the scan and the page's company and
+title; network lives in `load_board`.
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from lxml import html as lxml_html
+from lxml.etree import ParserError
 
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
@@ -47,6 +49,15 @@ _URL = ats_registry.get_source("lever").posting_url_re
 
 _INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
 _WS = re.compile(r"\s+")
+
+# og:title / <title> read "<company> - <posting title>".
+_TITLE_SEPARATOR = " - "
+
+
+def _class_token(name: str) -> str:
+    """XPath predicate: `@class` holds `name` as a whole token, so
+    "required" does not match "not-required-hint"."""
+    return f'contains(concat(" ", normalize-space(@class), " "), " {name} ")'
 
 
 class LeverScanError(DomScanError):
@@ -113,6 +124,46 @@ def _text(el) -> str:
     return _WS.sub(" ", "".join(el.itertext())).strip()
 
 
+def _document(page_html: str):
+    """Parse a page, or raise `LeverScanError` (a `DomScanError`, so one bad
+    page fails its role rather than the whole run)."""
+    if not page_html or not page_html.strip():
+        raise LeverScanError("empty document")
+    try:
+        return lxml_html.fromstring(page_html)
+    except (ParserError, ValueError) as exc:
+        raise LeverScanError(f"could not parse the document: "
+                             f"{type(exc).__name__}: {exc}") from exc
+
+
+def page_identity(page_html: str) -> tuple[str, str]:
+    """(company, title) as the apply page states them, "" where it does not.
+
+    The title is the posting header's `<h2>`. The company is og:title (or
+    `<title>`) minus that title, else the header logo's alt text.
+    """
+    doc = _document(page_html)
+    headers = doc.xpath('//*[contains(@class, "posting-header")]//h2')
+    title = _text(headers[0]) if headers else ""
+
+    og = doc.xpath('//meta[@property="og:title"]/@content')
+    titles = doc.xpath("//title")
+    heading = _WS.sub(" ", (og[0] if og else "") or
+                      (_text(titles[0]) if titles else "")).strip()
+
+    company = ""
+    if heading and title and heading.endswith(_TITLE_SEPARATOR + title):
+        company = heading[: -len(_TITLE_SEPARATOR + title)].strip()
+    elif _TITLE_SEPARATOR in heading:
+        company, rest = (part.strip() for part in heading.split(_TITLE_SEPARATOR, 1))
+        title = title or rest
+    if not company:
+        alts = doc.xpath('//*[contains(@class, "main-header-logo")]//img/@alt')
+        if alts:
+            company = re.sub(r"\s+logo$", "", alts[0].strip(), flags=re.IGNORECASE)
+    return company, title
+
+
 def _label_text(question_el) -> str:
     labels = question_el.xpath('.//*[contains(@class, "application-label")]')
     if labels:
@@ -136,7 +187,11 @@ def _label_text(question_el) -> str:
 
 
 def _has_required_marker(question_el) -> bool:
-    return bool(question_el.xpath('.//span[contains(@class, "required")]'))
+    """Lever's asterisk `<span class="required">`, or a `required-field`
+    wrapper on a card. Whole class tokens only."""
+    return bool(question_el.xpath(
+        f'.//span[{_class_token("required")}] | .//*[{_class_token("required-field")}]'
+    ))
 
 
 def _is_eeoc(question_el) -> bool:
@@ -176,9 +231,7 @@ def _select_options(select_el) -> tuple[MergedOption, ...]:
 def _scan_question(question_el) -> MergedField | None:
     section = "eeoc" if _is_eeoc(question_el) else "questions"
     label = _label_text(question_el)
-    required = _has_required_marker(question_el) or bool(
-        question_el.xpath('.//*[contains(@class, "required-field")]')
-    )
+    required = _has_required_marker(question_el)
 
     radios = question_el.xpath('.//input[@type="radio"]')
     if radios:
@@ -273,13 +326,7 @@ def _scan_question(question_el) -> MergedField | None:
 
 def scan_lever_form(page_html: str) -> Reconciled:
     """Read every fillable control out of a rendered Lever application form."""
-    if not page_html or not page_html.strip():
-        raise LeverScanError("empty document")
-    doc = lxml_html.fromstring(page_html)
-    forms = doc.xpath(f'//form[@id="{FORM_ID}"]')
-    if not forms:
-        raise LeverScanError(f"no <form id={FORM_ID!r}> in the document")
-    form = forms[0]
+    form = _form(_document(page_html))
 
     questions = form.xpath(
         './/*[contains(concat(" ", normalize-space(@class), " "), " application-question ")]'
@@ -300,6 +347,13 @@ def scan_lever_form(page_html: str) -> Reconciled:
     return Reconciled(fields=tuple(fields), api_only=())
 
 
+def _form(doc):
+    forms = doc.xpath(f'//form[@id="{FORM_ID}"]')
+    if not forms:
+        raise LeverScanError(f"no <form id={FORM_ID!r}> in the document")
+    return forms[0]
+
+
 def _submit_scan(form) -> _Scan:
     submits = form.xpath('.//button[@data-qa="btn-submit"]')
     if len(submits) > 1:
@@ -314,7 +368,7 @@ def _submit_scan(form) -> _Scan:
 
 
 def has_captcha(page_html: str) -> bool:
-    doc = lxml_html.fromstring(page_html)
+    doc = _document(page_html)
     return bool(doc.xpath('//*[@id="h-captcha" or contains(@class, "h-captcha")]'))
 
 
@@ -335,17 +389,14 @@ def load_board(url: str, timeout: int = 30) -> LeverBoard:
     """Posting URL -> a Lever board, `plan_for_board`-shaped. One GET."""
     posting = parse_posting(url)
     html = fetch_form(posting, timeout=timeout)
-    doc = lxml_html.fromstring(html)
-    forms = doc.xpath(f'//form[@id="{FORM_ID}"]')
-    if not forms:
-        raise LeverScanError(f"no <form id={FORM_ID!r}> in the document")
-    scan = _submit_scan(forms[0])
+    scan = _submit_scan(_form(_document(html)))
     reconciled = scan_lever_form(html)
+    company, title = page_identity(html)
     return LeverBoard(
         posting=posting,
         slug=posting.slug,
         scan=scan,
-        schema=_Schema(company_name="", title=""),
+        schema=_Schema(company_name=company, title=title),
         reconciled=reconciled,
         html=html,
         requires_captcha=has_captcha(html),

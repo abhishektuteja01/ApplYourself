@@ -1,8 +1,10 @@
-"""Greenhouse application form: read the rendered DOM into a field inventory.
+"""Greenhouse application form: read the served DOM into a field inventory.
 
 The source of truth for what must be filled. The question API is enrichment on
-top of this (clean labels, select option lists) — it omits `country`, the EEOC
-block, the education block and the demographic block entirely.
+top of this (clean labels, descriptions, select option lists); it omits
+`country`, `hispanic_ethnicity` and the education and employment blocks. The
+GDPR consent boxes are drawn client-side only, so they are not in the served
+DOM at all — `reconcile.py` adds them from the API.
 
 Pure function over an HTML string: no browser, no network.
 """
@@ -99,16 +101,6 @@ class FormScan:
     fields: tuple[DomField, ...]
     submit_selector: str | None
     submit_disabled: bool
-
-    def by_id(self, field_id: str) -> DomField | None:
-        for f in self.fields:
-            if f.id == field_id:
-                return f
-        return None
-
-    @property
-    def required_ids(self) -> tuple[str, ...]:
-        return tuple(f.id for f in self.fields if f.required)
 
 
 def _text(el) -> str:

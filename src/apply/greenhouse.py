@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from src.apply.domscan import FormScan, scan_form
 from src.apply.reconcile import Reconciled, reconcile
@@ -28,16 +28,14 @@ from src import ats_registry
 
 EMBED_URL = "https://boards.greenhouse.io/embed/job_app?token={token}"
 
-# Shared board table: host variants (.eu included) and posting shape live in
-# one place. The slug is captured for cross-checking only.
+# Shared board table: host variants (.eu included), posting shape and query
+# keys live in one place. The slug is captured for cross-checking only.
 _GH = ats_registry.get_source("greenhouse")
-_PATH_URL = _GH.posting_url_re
 # The slug as it appears in the rendered form's action. `&` arrives escaped.
 _FORM_ACTION = re.compile(
     r'<form[^>]*\baction="/embed/job_app\?for=(?P<slug>[^&"]+)&(?:amp;)?token=(?P<token>\d+)"',
     re.IGNORECASE,
 )
-_TOKEN = re.compile(r"^\d+$")
 
 
 class ApplyUrlError(Exception):
@@ -69,44 +67,32 @@ class BoardForm:
     reconciled: Reconciled
 
 
-def _query_values(query: dict[str, list[str]], keys: tuple[str, ...]) -> set[str]:
-    """Non-empty values under any of `keys`, deduped across all of them."""
-    return {v.strip() for k in keys for v in query.get(k, []) if v.strip()}
-
-
 def parse_posting(url: str) -> Posting:
     """Pull the job token out of a posting URL.
 
     Three shapes, all live in clean.parquet: the board path form, a company
     careers page carrying `?gh_jid=`, and the embed form `?for=<slug>&token=<id>`.
-    The query-param spellings come from the shared registry rather than being
-    named here, so detection and parsing cannot drift. The slug is read where
-    present, but nothing depends on it.
+    Parsing is the shared registry's, so detection and parsing cannot drift;
+    this only adds the reason when it recognizes nothing. The slug is read
+    where present, but nothing depends on it.
     """
     text = (url or "").strip()
     if not text:
         raise ApplyUrlError("no URL")
 
-    match = _PATH_URL.match(text)
-    if match:
-        return Posting(token=match.group("posting_id"), url_slug=match.group("slug"))
+    hit = ats_registry.parse_posting_url(text)
+    if hit is not None and hit.source == _GH.name:
+        return Posting(token=hit.posting_id, url_slug=hit.slug or None)
 
-    parsed = urlparse(text)
-    query = parse_qs(parsed.query)
-    # Duplicated params are real: one live row spells ?gh_jid=X&gh_jid=X.
-    tokens = _query_values(query, _GH.id_query_keys)
-    if not tokens:
-        if _GH.matches_host((parsed.hostname or "").lower()):
-            raise ApplyUrlError(f"Greenhouse URL with no job token: {text}")
-        raise ApplyUrlError(f"not a Greenhouse posting URL: {text}")
+    tokens, _ = ats_registry.query_values(_GH, text)
     if len(tokens) > 1:
         raise ApplyUrlError(f"URL carries {len(tokens)} different job tokens: {text}")
-    token = tokens.pop()
-    if not _TOKEN.match(token):
+    token = next(iter(tokens), "")
+    if token and not token.isdigit():
         raise ApplyUrlError(f"job token is not numeric ({token!r}): {text}")
-
-    boards = _query_values(query, _GH.slug_query_keys)
-    return Posting(token=token, url_slug=boards.pop() if len(boards) == 1 else None)
+    if _GH.matches_host((urlparse(text).hostname or "").lower()):
+        raise ApplyUrlError(f"Greenhouse URL with no job token: {text}")
+    raise ApplyUrlError(f"not a Greenhouse posting URL: {text}")
 
 
 def slug_from_form(html: str, token: str) -> str:
@@ -146,8 +132,8 @@ def load_board(url: str, timeout: int = 30) -> BoardForm:
     posting = parse_posting(url)
     html, slug = fetch_form(posting, timeout=timeout)
     if posting.url_slug and posting.url_slug.casefold() != slug.casefold():
-        # Never seen live (0 of 22 sampled). The rendered form wins — it is what
-        # the token actually resolves to — but a silent swap is worth a shout.
+        # Never seen live (0 of 22 sampled). Refused rather than trusting
+        # either side: one of them names another board's posting.
         raise CareersError(
             f"URL names board {posting.url_slug!r} but token {posting.token} "
             f"resolves to {slug!r}"

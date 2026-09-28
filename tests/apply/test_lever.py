@@ -16,6 +16,7 @@ from src.apply.lever import (
     fetch_form,
     has_captcha,
     load_board,
+    page_identity,
     parse_posting,
     scan_lever_form,
 )
@@ -95,6 +96,22 @@ class TestScanLeverForm:
         assert previous_employee.kind == "select"
         assert {o.label for o in previous_employee.options} == {"Yes", "No"}
 
+    def test_a_class_merely_containing_required_is_not_the_marker(self):
+        """`contains(@class, "required")` matched "not-required-hint" and
+        marked an optional field required."""
+        html = load_html("form_lever_minimal").replace(
+            '<li class="application-question resume">',
+            '<li class="application-question"><label><div class="application-label">'
+            'Portfolio<span class="not-required-hint">(optional)</span></div>'
+            '<input type="text" name="urls[Portfolio]"></label></li>'
+            '<li class="application-question resume">',
+            1,
+        )
+        by_id = {f.id: f for f in scan_lever_form(html).fields}
+        assert by_id["urls[Portfolio]"].required is False
+        assert by_id["urls[Portfolio]"].label == "Portfolio(optional)"
+        assert by_id["name"].required is True
+
     def test_native_select_options_exclude_the_placeholder(self):
         r = scan_lever_form(load_html("form_lever_full"))
         by_id = {f.id: f for f in r.fields}
@@ -150,6 +167,12 @@ class TestScanLeverForm:
         with pytest.raises(LeverScanError, match="no <form"):
             scan_lever_form("<html><body>not a form</body></html>")
 
+    def test_an_unparseable_page_is_a_scan_error_not_a_traceback(self):
+        """lxml raises its own ParserError on a bodyless doctype, which is not
+        in `apply_cli.BUILD_ERRORS`."""
+        with pytest.raises(LeverScanError, match="could not parse"):
+            scan_lever_form("<!DOCTYPE html>")
+
     def test_unknown_input_type_raises(self):
         html = load_html("form_lever_minimal").replace(
             '<input type="text" data-qa="org-input" name="org">',
@@ -166,6 +189,39 @@ class TestHasCaptcha:
 
     def test_absent_is_false(self):
         assert has_captcha("<html><body><form id='application-form'></form></body></html>") is False
+
+
+# The head and posting header of a live Lever apply page, trimmed.
+_LIVE_HEAD = (
+    '<html><head><title>Gasket Works - Agentic Software Engineer (f/m/d)</title>'
+    '<meta property="og:title" content="Gasket Works - Agentic Software Engineer (f/m/d)" />'
+    '</head><body><div class="main-header-content"><a class="main-header-logo">'
+    '<img alt="Gasket Works logo" src="x.png"></a></div>'
+    '<div class="section page-centered posting-header">'
+    '<h2>Agentic Software Engineer (f/m/d)</h2></div>'
+)
+
+
+class TestPageIdentity:
+    """`load_board` hard-coded an empty company, so every Lever plan read
+    "(unknown company) — (unknown title)"."""
+
+    def test_company_is_og_title_minus_the_posting_title(self):
+        assert page_identity(_LIVE_HEAD + "</body></html>") == (
+            "Gasket Works", "Agentic Software Engineer (f/m/d)")
+
+    def test_a_dash_inside_the_title_stays_in_the_title(self):
+        html = _LIVE_HEAD.replace("Agentic Software Engineer (f/m/d)",
+                                  "Engineer - Platform") + "</body></html>"
+        assert page_identity(html) == ("Gasket Works", "Engineer - Platform")
+
+    def test_the_logo_alt_is_the_fallback(self):
+        html = ('<html><body><a class="main-header-logo"><img alt="Ratchet Co logo">'
+                "</a></body></html>")
+        assert page_identity(html) == ("Ratchet Co", "")
+
+    def test_a_page_that_states_neither_gives_empty_strings(self):
+        assert page_identity(load_html("form_lever_minimal")) == ("", "")
 
 
 class TestFetchForm:
@@ -189,6 +245,15 @@ class TestLoadBoard:
         assert board.scan.submit_disabled is False
         assert board.requires_captcha is True
         assert board.slug == "widgetco"
+
+    def test_company_and_title_come_from_the_page(self):
+        html = _LIVE_HEAD + load_html("form_lever_minimal") + "</body></html>"
+        with patch("src.apply.lever.fetch_text", return_value=html):
+            board = load_board(
+                "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+            )
+        assert (board.schema.company_name, board.schema.title) == (
+            "Gasket Works", "Agentic Software Engineer (f/m/d)")
 
     def test_two_submit_buttons_raise_rather_than_picking_one(self):
         """`btn-submit` is a data-qa attribute, not a unique id — a board that

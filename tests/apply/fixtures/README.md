@@ -53,28 +53,15 @@ Do not re-capture into these filenames without re-running the scrub. A raw
 Greenhouse form names the employer in its EEOC text, its question labels, its
 logo URL and its form action.
 
-**`form_lever_*.html` / `form_ashby_*.html`** — phase 2 (§12a). Same scrub
-rule, same fictional widget world. No `.json` twin — neither board exposes a
-public question API for the *rendered* form, so the HTML alone is the fixture
-there; `lever.py`/`ashby.py`
-
-> **The `form_ashby_*.html` fixtures are browser-DOM snapshots, not served
-> responses.** They carry computed inline styles and hashed CSS-module class
-> names that exist only after JS runs. A static GET of a live Ashby posting
-> returns a ~32 KB shell with **no** `<form>` and no `data-field-path`
-> (measured over 6 orgs), so `scan_ashby_form` can never run against one
-> without a browser. These fixtures therefore prove the scanner's parsing is
-> correct and prove **nothing** about reachability. `load_board` no longer
-> reads HTML for Ashby at all — it POSTs the `ApplicationForm` GraphQL query
-> and `api_ashby_form.json` is the fixture for that path. These snapshots now
-> cover only `scan_ashby_form`, which a future fill driver will need. Lever's
-> fixtures are ordinary served HTML; only Ashby's are snapshots.
-
-emit `MergedField`s straight from the scan (`reconcile.py` is Greenhouse-only).
+**`form_lever_*.html` / `form_ashby_widgets.html`** — phase 2 (§12a). Same
+scrub rule, same fictional widget world. Lever has no public question API, so
+the served HTML alone is the fixture and `lever.py` emits `MergedField`s
+straight from the scan. Ashby's form is client-rendered: `load_board` POSTs the
+`ApplicationForm` GraphQL query, so `api_ashby_form.json` is the fixture for
+planning. `form_ashby_widgets.html` is a browser-DOM snapshot (computed styles,
+hashed class names) used only by the Ashby fill-driver tests.
 
 | fixture | covers |
 |---|---|
 | `form_lever_minimal` | core identity + links, resume and location both required |
 | `form_lever_full` | employer-authored "cards" (select/textarea), EEOC block including the `race` radio group and the disability signature/date pair, work-authorization dropdowns, hCaptcha |
-| `form_ashby_minimal` | yes/no toggle widgets, SMS-consent radio group, no diversity block |
-| `form_ashby_diversity` | yes/no toggles, a `role=combobox` location field, the diversity survey block |

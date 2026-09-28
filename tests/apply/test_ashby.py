@@ -1,14 +1,9 @@
 """Ashby's application form -> a merged field set.
 
-Two readers, two roles. `load_board` reads the GraphQL API, because a live
-Ashby posting serves no form in its HTML at all; `scan_ashby_form` reads a
-*rendered* form and is exercised here against browser-DOM snapshots, since
-that is what a future fill driver will hold.
+`load_board` reads the GraphQL API, because a live Ashby posting serves no
+form in its HTML at all.
 
-Plan-only: this module has no fill driver (see ashby.py's module docstring),
-so there is no submit/captcha/driver coverage here, unlike test_lever.py.
-
-No network: fetch_text and fetch_json_post are stubbed everywhere, and every
+No network: fetch_json_post is stubbed everywhere, and every
 `load_board` call also stubs `fetch_dom_enrichment` — otherwise it would open a
 real headless browser against a fake URL. `TestDomEnrichment` below is the one
 place that exercises `fetch_dom_enrichment` itself, against a fake Playwright.
@@ -24,15 +19,13 @@ from src.apply.ashby import (
     AshbyScanError,
     ApplyUrlError,
     PostingExpired,
-    fetch_form,
     fields_from_application_form,
     load_board,
     parse_posting,
-    scan_ashby_form,
 )
 from src.apply.plan import build_plan, plan_for_board
 
-from .conftest import load_api, load_html
+from .conftest import load_api
 
 
 class TestParsePosting:
@@ -83,154 +76,6 @@ class TestParsePosting:
             parse_posting("https://boards.greenhouse.io/widgetco/jobs/123")
 
 
-class TestScanAshbyForm:
-    def test_identity_fields_key_off_data_field_path(self):
-        r = scan_ashby_form(load_html("form_ashby_minimal"))
-        by_id = {f.id: f for f in r.fields}
-        assert "_systemfield_name" in by_id
-        assert "_systemfield_email" in by_id
-        assert "_systemfield_location" in by_id
-        assert by_id["_systemfield_location"].kind == "combobox"
-
-    def test_resume_field_is_aliased_to_the_greenhouse_artifact_id(self):
-        r = scan_ashby_form(load_html("form_ashby_minimal"))
-        by_id = {f.id: f for f in r.fields}
-        assert "resume" in by_id
-        assert by_id["resume"].kind == "file"
-        assert by_id["resume"].required is True
-
-    def test_required_signal_is_a_class_prefix_not_a_fixed_hash(self):
-        # LinkedIn is required on the minimal fixture, optional on the
-        # diversity one — read per field, never assumed (§12a).
-        minimal = {f.label: f.required for f in scan_ashby_form(load_html("form_ashby_minimal")).fields}
-        diversity = {f.label: f.required for f in scan_ashby_form(load_html("form_ashby_diversity")).fields}
-        assert minimal["LinkedIn Profile"] is True
-        assert diversity["LinkedIn Profile"] is False
-
-    def test_yesno_widget_is_scanned_with_a_fixed_yes_no_option_pair(self):
-        r = scan_ashby_form(load_html("form_ashby_minimal"))
-        toggle = next(f for f in r.fields if "NY or SF office" in f.label)
-        assert toggle.kind == "yesno"
-        assert [o.label for o in toggle.options] == ["Yes", "No"]
-
-    def test_combobox_location_has_no_options_but_a_stable_id(self):
-        r = scan_ashby_form(load_html("form_ashby_diversity"))
-        location = next(f for f in r.fields if f.id == "_systemfield_location")
-        assert location.kind == "combobox"
-        assert location.options == ()
-        assert location.required is True
-
-    def test_diversity_radio_group_is_single_select_demographic(self):
-        r = scan_ashby_form(load_html("form_ashby_diversity"))
-        age = next(f for f in r.fields if f.label == "What is your current age?")
-        assert age.kind == "radio_group"
-        assert age.multi is False
-        assert age.section == "demographic"
-        assert "I prefer not to answer" in [o.label for o in age.options]
-
-    def test_diversity_checkbox_group_options_are_the_boxes_own_names(self):
-        r = scan_ashby_form(load_html("form_ashby_diversity"))
-        ethnicity = next(
-            f for f in r.fields
-            if f.label.startswith("Which ethnicity")
-        )
-        assert ethnicity.kind == "checkbox_group"
-        assert ethnicity.multi is True
-        assert ethnicity.section == "demographic"
-        values = {o.value for o in ethnicity.options}
-        assert "Asian or Asian American" in values
-        assert "White" in values
-        assert "I prefer not to answer" in values
-
-    def test_diversity_survey_fields_are_never_required(self):
-        r = scan_ashby_form(load_html("form_ashby_diversity"))
-        for f in r.fields:
-            if f.section == "demographic":
-                assert f.required is False
-
-    def test_a_field_never_appears_twice(self):
-        r = scan_ashby_form(load_html("form_ashby_diversity"))
-        ids = [f.id for f in r.fields]
-        assert len(ids) == len(set(ids))
-
-    def test_no_api_only_ever_since_there_is_no_api(self):
-        r = scan_ashby_form(load_html("form_ashby_minimal"))
-        assert r.api_only == ()
-
-    def test_empty_document_raises(self):
-        with pytest.raises(AshbyScanError, match="empty"):
-            scan_ashby_form("")
-
-    def test_no_form_root_raises(self):
-        with pytest.raises(AshbyScanError, match='id="form"'):
-            scan_ashby_form("<html><body>not a form</body></html>")
-
-    def test_unknown_input_type_raises(self):
-        html = load_html("form_ashby_minimal").replace(
-            'name="00000004-0000-0000-0000-000000000004" required="" '
-            'id="00000004-0000-0000-0000-000000000004" type="text"',
-            'name="00000004-0000-0000-0000-000000000004" required="" '
-            'id="00000004-0000-0000-0000-000000000004" type="color"',
-        )
-        with pytest.raises(AshbyScanError, match="unknown input type"):
-            scan_ashby_form(html)
-
-
-class TestTheSubmitButtonMustBeUnambiguous:
-    """`SUBMIT_SELECTOR` is a *class*, not an id — the one selector in
-    /apply that could match more than one element and still look fine. The
-    DOM-scan path is the only one that can count them (the API path has no
-    HTML), so this is where the ambiguity has to be refused.
-    """
-
-    def _root(self, html: str):
-        from lxml import html as lxml_html
-
-        return lxml_html.fromstring(html).xpath('//*[@id="form"]')[0]
-
-    def _form(self, buttons: str) -> str:
-        return f'<html><body><div id="form">{buttons}</div></body></html>'
-
-    def test_one_button_yields_the_shared_selector(self):
-        scan = ashby._submit_scan(self._root(self._form(
-            '<button class="_button_x ashby-application-form-submit-button">'
-            "Submit Application</button>"
-        )))
-        assert scan.submit_selector == ashby.SUBMIT_SELECTOR
-        assert scan.submit_disabled is False
-
-    def test_a_disabled_button_is_reported_disabled(self):
-        scan = ashby._submit_scan(self._root(self._form(
-            '<button disabled class="ashby-application-form-submit-button">'
-            "Submit Application</button>"
-        )))
-        assert scan.submit_disabled is True
-
-    def test_no_button_at_all_is_no_selector_not_a_raise(self):
-        scan = ashby._submit_scan(self._root(self._form("<p>still loading</p>")))
-        assert scan.submit_selector is None
-
-    def test_two_matching_buttons_raise_rather_than_picking_one(self):
-        with pytest.raises(AshbyScanError,
-                           match="expected one submit button, found 2"):
-            ashby._submit_scan(self._root(self._form(
-                '<button class="ashby-application-form-submit-button">'
-                "Submit Application</button>"
-                '<button class="ashby-application-form-submit-button _hidden">'
-                "Submit Application</button>"
-            )))
-
-
-class TestFetchForm:
-    def test_a_404_is_an_ordinary_expiry(self):
-        from src.ats_http import CareersError
-
-        posting = parse_posting("https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001")
-        with patch("src.apply.ashby.fetch_text", side_effect=CareersError("gone", status=404)):
-            with pytest.raises(PostingExpired):
-                fetch_form(posting)
-
-
 ASHBY_URL = "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
 
 
@@ -246,10 +91,7 @@ class TestLoadBoard:
              patch("src.apply.ashby.fetch_dom_enrichment", return_value={}):
             return load_board(ASHBY_URL)
 
-    def test_the_submit_selector_matches_the_dom_scan(self):
-        """Two spellings of the same button would be two guesses, and only one
-        of them gets exercised. The API path has no HTML to check, so it takes
-        the scanner's selector rather than restating it."""
+    def test_the_submit_selector_is_the_shared_one(self):
         board = self._board()
         assert board.scan.submit_selector == ashby.SUBMIT_SELECTOR
         assert ashby._SUBMIT_CLASS in ashby.SUBMIT_SELECTOR
@@ -464,6 +306,53 @@ class TestApiFieldMapping:
         assert other.kind == "file"
         assert other.required is False
 
+    def test_a_second_upload_titled_cv_keeps_its_own_id(self):
+        """Only the resume systemfield is `resume`. A required upload whose
+        title also says CV used to take the same id and be dropped by the
+        dedupe, so it never reached the plan or the user."""
+        form = _form_with_files(
+            ("_systemfield_resume", "Resume", True),
+            ("30000000-0000-0000-0000-000000000001", "Writing sample (not your CV)", True),
+        )
+        by_id = {f.id: f for f in fields_from_application_form(form).fields}
+        assert by_id["resume"].name == "_systemfield_resume"
+        sample = by_id["30000000-0000-0000-0000-000000000001"]
+        assert (sample.kind, sample.required) == ("file", True)
+
+    def test_the_systemfield_wins_even_when_a_titled_upload_comes_first(self):
+        form = _form_with_files(
+            ("30000000-0000-0000-0000-000000000001", "CV / portfolio link", False),
+            ("_systemfield_resume", "Resume", True),
+        )
+        by_id = {f.id: f for f in fields_from_application_form(form).fields}
+        assert by_id["resume"].name == "_systemfield_resume"
+        assert "30000000-0000-0000-0000-000000000001" in by_id
+
+    def test_with_no_systemfield_the_first_titled_upload_is_the_resume(self):
+        """Some boards render the resume under a UUID path."""
+        form = _form_with_files(
+            ("30000000-0000-0000-0000-000000000001", "Resume/CV", True),
+            ("30000000-0000-0000-0000-000000000002", "Another CV", False),
+        )
+        by_id = {f.id: f for f in fields_from_application_form(form).fields}
+        assert by_id["resume"].name == "30000000-0000-0000-0000-000000000001"
+        assert "30000000-0000-0000-0000-000000000002" in by_id
+
+    def test_two_different_fields_on_one_id_raise(self):
+        form = _form_with_files(
+            ("30000000-0000-0000-0000-000000000001", "Portfolio", True),
+            ("30000000-0000-0000-0000-000000000001", "Portfolio", True),
+        )
+        # The same path twice is one field, kept once.
+        assert len(fields_from_application_form(form).fields) == 1
+        entries = form["applicationForm"]["sections"][0]["fieldEntries"]
+        entries.append({"id": "e-x", "isRequired": False, "field": {
+            "type": "String", "path": "cover_letter", "title": "Cover letter note"}})
+        entries.append({"id": "e-y", "isRequired": False, "field": {
+            "type": "File", "path": "_systemfield_coverletter", "title": "Cover Letter"}})
+        with pytest.raises(AshbyScanError, match="two fields map to id 'cover_letter'"):
+            fields_from_application_form(form)
+
     def test_required_comes_from_the_entry_not_the_field(self):
         by_id = self._fields()
         assert by_id["_systemfield_name"].required is True
@@ -592,43 +481,10 @@ class TestApiEndToEndResolution:
         assert by_id["20000000-0000-0000-0000-000000000006"] == "Yes"
 
 
-class TestEndToEndResolution:
-    """The two fixtures resolved against the shared synthetic answers config —
-    the same cross-check test_plan.py runs for every Greenhouse fixture."""
-
-    def test_minimal_resolves_identity_location_resume_and_the_linkedin_rule(self, answers, tailor_dir):
-        reconciled = scan_ashby_form(load_html("form_ashby_minimal"))
-        plan = build_plan(reconciled, answers, tailor_dir, ats="ashby")
-        assert plan.files and plan.files[0].id == "resume"
-        by_id = {f.id: f.value for f in plan.fields}
-        assert by_id["_systemfield_name"] == "Alex Example"
-        assert by_id["_systemfield_location"] == answers.identity["location"]
-
-    def test_minimal_parks_only_on_genuinely_unanswerable_customs(self, answers, tailor_dir):
-        reconciled = scan_ashby_form(load_html("form_ashby_minimal"))
-        plan = build_plan(reconciled, answers, tailor_dir, ats="ashby")
-        # Phone (no rule) and two custom yes/no + one textarea question with no
-        # matching rule are the only fields nothing here can answer.
-        parked_labels = {u.label for u in plan.unmapped}
-        assert "Phone" in parked_labels
-        assert any("NY or SF office" in label for label in parked_labels)
-
-    def test_diversity_survey_resolves_to_decline_answers(self, answers, tailor_dir):
-        reconciled = scan_ashby_form(load_html("form_ashby_diversity"))
-        plan = build_plan(reconciled, answers, tailor_dir, ats="ashby")
-        demographic_values = {
-            f.label: f.value for f in plan.fields
-            if f.id in {o.id for o in reconciled.fields if o.section == "demographic"}
-        }
-        assert demographic_values["What is your current age?"] == "I prefer not to answer"
-        assert demographic_values["Which ethnicity(ies) do you identify with? Please select all that apply."] == (
-            "I prefer not to answer",
-        )
-
-    def test_diversity_sponsorship_question_resolves_via_work_authorization(self, answers, tailor_dir):
-        reconciled = scan_ashby_form(load_html("form_ashby_diversity"))
-        plan = build_plan(reconciled, answers, tailor_dir, ats="ashby")
-        sponsorship = next(
-            f for f in plan.fields if "require sponsorship" in f.label
-        )
-        assert sponsorship.tier == "B0"
+def _form_with_files(*files):
+    """A `jobPosting` node holding only upload fields: (path, title, required)."""
+    return {"applicationForm": {"sections": [{"fieldEntries": [
+        {"id": f"entry-{i}", "isRequired": required,
+         "field": {"type": "File", "path": path, "title": title}}
+        for i, (path, title, required) in enumerate(files)
+    ]}]}}

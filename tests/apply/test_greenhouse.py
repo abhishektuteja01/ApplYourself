@@ -116,6 +116,32 @@ class TestParsePosting:
         with pytest.raises(ApplyUrlError, match="not a Greenhouse"):
             parse_posting(url)
 
+    def test_a_path_token_must_end_at_a_boundary(self):
+        """The path pattern had no end anchor, so `/jobs/12abc` parsed as 12:
+        a guessed token for some other posting."""
+        from src import ats_registry
+
+        with pytest.raises(ApplyUrlError, match="no job token"):
+            parse_posting("https://job-boards.greenhouse.io/someco/jobs/12abc")
+        assert ats_registry.parse_posting_url(
+            "https://job-boards.greenhouse.io/someco/jobs/12abc") is None
+        for tail in ("", "/", "?gh_src=x", "#apply"):
+            url = f"https://job-boards.greenhouse.io/someco/jobs/12{tail}"
+            assert parse_posting(url).token == "12"
+
+    def test_parsing_is_the_registrys(self):
+        """One parser for detection and apply: they agree on every shape."""
+        from src import ats_registry
+
+        for url in (
+            "https://job-boards.greenhouse.io/asteralabs/jobs/4719162005",
+            "https://www.hubspot.com/careers/jobs/8084478?gh_jid=8084478",
+            "https://coreweave.com/careers/job?4703200006&board=coreweave&gh_jid=4703200006",
+        ):
+            hit = ats_registry.parse_posting_url(url)
+            posting = parse_posting(url)
+            assert (posting.token, posting.url_slug or "") == (hit.posting_id, hit.slug)
+
     def test_greenhouse_url_with_no_token_says_so(self):
         with pytest.raises(ApplyUrlError, match="no job token"):
             parse_posting("https://job-boards.greenhouse.io/asteralabs")

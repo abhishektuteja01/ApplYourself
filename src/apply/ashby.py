@@ -11,12 +11,9 @@ rather than as a selectable sub-object. The query was recovered from the
 compiled AST in the frontend bundle (search `FormRenderParts` in
 `cdn.ashbyprd.com/frontend_non_user/<hash>/assets/index-*.js`); the hash
 changes on deploy, so re-read the bundle if the query stops resolving.
-`field.path` is the id space this module already keyed on (`_systemfield_*`, a
-UUID for employer-authored questions).
-
-`scan_ashby_form` reads a *rendered* Ashby form only; it is not on the
-`load_board` path. The committed `form_ashby_*.html` fixtures are browser-DOM
-snapshots, which is what it expects.
+`field.path` is the id space everything here keys on (`_systemfield_*`, a
+UUID for employer-authored questions), and the live form carries it as
+`data-field-path` on each question's wrapper.
 
 The API is not the whole story either: a board can render instructional text
 under a label ("if yes, please explain briefly", "please don't write AI slop
@@ -30,30 +27,14 @@ no descriptions rather than failing the plan if that browser is unavailable.
 Filling is `fill.AshbyBrowserDriver` (§12a), which reads each field's widget
 off the live DOM — the API type does not name it.
 
-Three things Ashby needed that neither Greenhouse nor Lever did:
+Every `MergedField.id`/`.name` is that path verbatim, except the resume and
+cover-letter uploads, aliased to Greenhouse's "resume"/"cover_letter" so
+`answers.py`'s `FILE_IDS` and `plan.py`'s `find_artifact` recognize them
+(§12a). A boolean is `kind="yesno"` with a fixed Yes/No option pair, so the
+A2/B0 opt-out and work-authorization logic (which reads `field.options`)
+works unchanged.
 
-- **`data-field-path` is the universal id**, not any control's own `id`/
-  `name`. Some controls (the location combobox) carry neither attribute at
-  all; the diversity survey's checkboxes carry a `name` that is the option's
-  own label text, not a field name. `data-field-path` sits on every question's
-  wrapping element (the field-entry `<div>` itself, or the fieldset's parent
-  `<div>` for the two grouped-option shapes below) and is stable across all of
-  them, so every `MergedField.id`/`.name` here is that value verbatim — except
-  the two file fields, aliased to Greenhouse's "resume"/"cover_letter" so
-  `answers.py`'s `FILE_IDS` and `plan.py`'s `find_artifact` still recognize
-  them (§12a).
-- **Required is a CSS class, not an attribute.** Ashby's build hashes most
-  class names per-deploy, but a `_required_<hash>` token survives as a
-  detectable *prefix* on the question's `<label>` — matched by prefix, never
-  the full hashed name, since the suffix is expected to change between
-  deploys/versions.
-- **A yes/no toggle has no native control semantics at all** — two `<button>`s
-  and a hidden, unlabelled checkbox, no ARIA role anywhere. Modelled as its
-  own `kind="yesno"` with a fixed Yes/No option pair, so the existing
-  A2/B0 opt-out and work-authorization resolution logic (which reads
-  `field.options`) works unchanged.
-
-Pure function over an HTML string for the scan; network lives in `load_board`.
+`fields_from_application_form` is pure; network lives in `load_board`.
 """
 from __future__ import annotations
 
@@ -62,13 +43,11 @@ import re
 from dataclasses import dataclass, replace
 from urllib.parse import unquote, urlparse
 
-from lxml import html as lxml_html
-
 from src.apply.browser import launch, require_playwright
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
-from src.ats_http import CareersError, fetch_json_post, fetch_text
+from src.ats_http import fetch_json_post
 from src import ats_registry
 
 log = logging.getLogger(__name__)
@@ -120,15 +99,17 @@ _TYPE_KINDS = {
     "Location": "combobox",
 }
 
-# Ashby names the resume with a systemfield on most boards, but Nen (and
-# presumably others) renders it as an employer-authored UUID path instead —
-# the same shape the cover letter already needed a title fallback for. Both
-# alias to the ids `answers.FILE_IDS` and `plan.find_artifact` already defer
-# to /tailor for.
-_RESUME_PATHS = frozenset({"_systemfield_resume"})
-_RESUME_TITLE = re.compile(r"\bresume\b|\bcv\b", re.IGNORECASE)
-_COVER_LETTER_PATHS = frozenset({"cover_letter", "_systemfield_coverletter"})
-_COVER_LETTER_TITLE = re.compile(r"cover\s*letter", re.IGNORECASE)
+# The resume and cover-letter uploads alias to the ids `answers.FILE_IDS` and
+# `plan.find_artifact` defer to /tailor for. Each alias goes to one field: the
+# systemfield when the form has one, else the first upload whose title names
+# it (some boards render the resume under a UUID path). Any other upload
+# keeps its own path, even one whose title says "CV".
+_FILE_ALIASES = (
+    ("resume", frozenset({"_systemfield_resume"}),
+     re.compile(r"\bresume\b|\bcv\b", re.IGNORECASE)),
+    ("cover_letter", frozenset({"cover_letter", "_systemfield_coverletter"}),
+     re.compile(r"cover\s*letter", re.IGNORECASE)),
+)
 
 # `EducationHistory` is not a question — it is a repeating sub-form delivered
 # as ONE field entry, with each sub-field's requirement declared inline:
@@ -168,34 +149,15 @@ _EDUCATION_KINDS = {"schoolName": "react_select"}
 
 _URL = ats_registry.get_source("ashby").posting_url_re
 
-_FIELD_ENTRY_PREFIX = re.compile(r"^_fieldEntry_")
-_REQUIRED_PREFIX = re.compile(r"^_required_")
-_YESNO_TOKEN = re.compile(r"_yesno_")
-_SURVEY_CLASS = "ashby-survey-form-container"
-_QUESTION_TITLE_CLASS = "ashby-application-form-question-title"
 _QUESTION_DESCRIPTION_CLASS = "ashby-application-form-question-description"
 _SUBMIT_CLASS = "ashby-application-form-submit-button"
-#: One selector for both paths — the DOM scan and the API `load_board`, which
-#: has no HTML to check. The class is unhashed and resolves to exactly one
-#: button on every live board measured, so stating it without the DOM in hand
-#: is a fact rather than a guess. Two spellings would be two guesses.
+#: Stated without the DOM in hand: the class is unhashed and resolves to
+#: exactly one button on every live board measured.
 SUBMIT_SELECTOR = f'#{ROOT_ID} .{_SUBMIT_CLASS}'
-
-_INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
-_WS = re.compile(r"\s+")
-
-# The two file fields' raw systemfield ids -> the ids answers.py/plan.py
-# already know how to defer to /tailor's output (§12a). DOM-scan path only;
-# the live API path aliases dynamically in `_api_file_id` and carries the
-# real DOM path through as `MergedField.name` instead of a static table.
-_FILE_FIELD_IDS = {
-    "_systemfield_resume": "resume",
-    "_systemfield_coverletter": "cover_letter",
-}
 
 
 class AshbyScanError(DomScanError):
-    """The rendered Ashby form is not shaped the way this scanner can read."""
+    """The Ashby form API returned something this module cannot represent."""
 
 
 @dataclass(frozen=True)
@@ -263,213 +225,6 @@ def parse_posting(url: str) -> Posting:
     return Posting(slug=match.group("slug"), job_id=match.group("posting_id"))
 
 
-def _classes(el) -> list[str]:
-    return (el.get("class") or "").split()
-
-
-def _text(el) -> str:
-    return _WS.sub(" ", "".join(el.itertext())).strip()
-
-
-def _has_class_prefix(el, prefix: re.Pattern) -> bool:
-    return any(prefix.match(c) for c in _classes(el))
-
-
-def _is_field_entry(el) -> bool:
-    return el.tag in ("div", "fieldset") and _has_class_prefix(el, _FIELD_ENTRY_PREFIX)
-
-
-def _label_el(container):
-    labels = container.xpath(f'.//*[contains(@class, "{_QUESTION_TITLE_CLASS}")]')
-    return labels[0] if labels else None
-
-
-def _field_path(container) -> str | None:
-    fp = container.get("data-field-path")
-    if fp:
-        return fp
-    parent = container.getparent()
-    return parent.get("data-field-path") if parent is not None else None
-
-
-def _is_demographic(container) -> bool:
-    node = container.getparent()
-    while node is not None:
-        if _SURVEY_CLASS in _classes(node):
-            return True
-        node = node.getparent()
-    return False
-
-
-def _yesno_field(container, field_id: str, label: str, required: bool, section: str) -> MergedField:
-    options = (MergedOption(label="Yes", value="yes"), MergedOption(label="No", value="no"))
-    return MergedField(
-        id=field_id, name=field_id, label=label, required=required,
-        kind="yesno", section=section, multi=False, options=options,
-    )
-
-
-def _combobox_field(container, field_id: str, label: str, required: bool, section: str) -> MergedField:
-    return MergedField(
-        id=field_id, name=field_id, label=label, required=required,
-        kind="combobox", section=section, multi=False, options=(),
-    )
-
-
-def _grouped_field(container, field_id: str, label: str, required: bool, section: str) -> MergedField:
-    """The diversity survey's `<fieldset>` shapes: a shared-name radio group
-    (single-select) or a checkbox group where each option's own `name` is its
-    label text (multi-select) — never both in the same fieldset."""
-    radios = container.xpath('.//input[@type="radio"]')
-    if radios:
-        name = radios[0].get("name") or ""
-        options = []
-        for radio in radios:
-            labels = container.xpath(f'.//label[@for="{radio.get("id")}"]')
-            opt_label = _text(labels[0]) if labels else name
-            options.append(MergedOption(label=opt_label, value=radio.get("value") or opt_label))
-        return MergedField(
-            id=field_id, name=field_id, label=label, required=required,
-            kind="radio_group", section=section, multi=False, options=tuple(options),
-        )
-
-    checkboxes = container.xpath('.//input[@type="checkbox"]')
-    if checkboxes:
-        options = []
-        for box in checkboxes:
-            box_name = box.get("name") or ""
-            labels = container.xpath(f'.//label[@for="{box.get("id")}"]')
-            # `value` and `label` are the same string here only because
-            # Ashby's markup happens to spell a checkbox's name as its own
-            # label text — answers.py's opt-out matching (_pick_option) goes
-            # by label, not value, so this coincidence is not load-bearing,
-            # but a future board where the two diverge would need value read
-            # from somewhere else.
-            opt_label = _text(labels[0]) if labels else box_name
-            options.append(MergedOption(label=opt_label, value=box_name))
-        return MergedField(
-            id=field_id, name=field_id, label=label, required=required,
-            kind="checkbox_group", section=section, multi=True, options=tuple(options),
-        )
-
-    raise AshbyScanError(f"fieldset {field_id!r}: neither radio nor checkbox inputs found")
-
-
-def _select_options(select_el) -> tuple[MergedOption, ...]:
-    options = []
-    for opt in select_el.xpath("./option"):
-        value = opt.get("value") or ""
-        if not value:
-            continue  # the placeholder
-        options.append(MergedOption(label=_text(opt), value=value))
-    return tuple(options)
-
-
-def _control_field(container, field_id: str, label: str, required: bool, section: str) -> MergedField | None:
-    controls = container.xpath(
-        './/input[@type!="hidden" and @type!="radio" and @type!="checkbox"] '
-        "| .//select | .//textarea"
-    )
-    if not controls:
-        return None
-    control = controls[0]
-    required = required or control.get("required") is not None
-
-    tag = control.tag
-    if tag == "select":
-        kind, options = "select", _select_options(control)
-    elif tag == "textarea":
-        kind, options = "textarea", ()
-    else:
-        raw = (control.get("type") or "text").lower()
-        if raw == "file":
-            kind, options = "file", ()
-            field_id = _FILE_FIELD_IDS.get(field_id, field_id)
-        elif raw in _INPUT_TEXT_TYPES:
-            kind, options = "text", ()
-        else:
-            raise AshbyScanError(f"unknown input type {raw!r} on data-field-path={field_id!r}")
-
-    return MergedField(
-        id=field_id, name=field_id, label=label, required=required,
-        kind=kind, section=section, multi=False, options=options,
-    )
-
-
-def _scan_field(container) -> MergedField | None:
-    field_id = _field_path(container)
-    if not field_id:
-        raise AshbyScanError("a field-entry has no data-field-path, on itself or its parent")
-
-    label_el = _label_el(container)
-    label = _text(label_el) if label_el is not None else ""
-    required = label_el is not None and _has_class_prefix(label_el, _REQUIRED_PREFIX)
-    section = "demographic" if _is_demographic(container) else "questions"
-
-    if container.tag == "fieldset":
-        return _grouped_field(container, field_id, label, required, section)
-    if any(_YESNO_TOKEN.search(c) for el in container.iter() for c in _classes(el)):
-        return _yesno_field(container, field_id, label, required, section)
-    if container.xpath('.//*[@role="combobox"]'):
-        return _combobox_field(container, field_id, label, required, section)
-    return _control_field(container, field_id, label, required, section)
-
-
-def scan_ashby_form(page_html: str) -> Reconciled:
-    """Read every fillable control out of a rendered Ashby application form."""
-    if not page_html or not page_html.strip():
-        raise AshbyScanError("empty document")
-    doc = lxml_html.fromstring(page_html)
-    roots = doc.xpath(f'//*[@id="{ROOT_ID}"]')
-    if not roots:
-        raise AshbyScanError(f'no element with id="{ROOT_ID}" in the document')
-    root = roots[0]
-
-    seen_ids: set[str] = set()
-    fields: list[MergedField] = []
-    for el in root.iter():
-        if not _is_field_entry(el):
-            continue
-        field = _scan_field(el)
-        if field is None:
-            continue
-        if field.id in seen_ids:
-            continue
-        seen_ids.add(field.id)
-        fields.append(field)
-
-    if not fields:
-        raise AshbyScanError("no fillable fields found under the form root")
-    return Reconciled(fields=tuple(fields), api_only=())
-
-
-def _submit_scan(root) -> _Scan:
-    submits = root.xpath(f'.//button[contains(@class, "{_SUBMIT_CLASS}")]')
-    if len(submits) > 1:
-        raise AshbyScanError(f"expected one submit button, found {len(submits)}")
-    if not submits:
-        return _Scan(submit_selector=None, submit_disabled=False)
-    submit = submits[0]
-    disabled = submit.get("disabled") is not None or submit.get("aria-disabled") == "true"
-    return _Scan(
-        submit_selector=SUBMIT_SELECTOR,
-        submit_disabled=disabled,
-    )
-
-
-def fetch_form(posting: Posting, timeout: int = 30) -> str:
-    """The rendered apply page. Raises PostingExpired on 404 — same ordinary
-    outcome as a stale Greenhouse token (§14)."""
-    try:
-        return fetch_text(posting.form_url, timeout=timeout)
-    except CareersError as exc:
-        if exc.status == 404:
-            raise PostingExpired(
-                f"posting {posting.job_id} is gone (404): {posting.form_url}"
-            ) from exc
-        raise
-
-
 def fetch_application_form(posting: Posting, timeout: int = 30) -> dict:
     """The posting's `jobPosting` node, questions included.
 
@@ -510,15 +265,28 @@ def fetch_application_form(posting: Posting, timeout: int = 30) -> dict:
     return job_posting
 
 
-def _api_file_id(path: str, title: str) -> str:
-    if path in _RESUME_PATHS or _RESUME_TITLE.search(title or ""):
-        return "resume"
-    if path in _COVER_LETTER_PATHS or _COVER_LETTER_TITLE.search(title or ""):
-        return "cover_letter"
-    # "Additional Attachments", a portfolio screenshot: a real optional upload
-    # with no /tailor artifact behind it. Left under its own id so it resolves
-    # normally — skipped when optional, parked when required.
-    return path
+def _file_aliases(job_posting: dict) -> dict[str, str]:
+    """File path -> "resume"/"cover_letter", for the one upload each alias
+    goes to. Every other upload ("Additional Attachments", a writing sample)
+    is absent here and keeps its own id: skipped when optional, parked when
+    required."""
+    uploads = [
+        (field.get("path") or "", field.get("title") or "")
+        for section in job_posting["applicationForm"].get("sections") or []
+        for entry in section.get("fieldEntries") or []
+        if isinstance(entry, dict)
+        for field in [entry.get("field")]
+        if isinstance(field, dict) and field.get("type") == "File"
+    ]
+    aliases: dict[str, str] = {}
+    for alias, system_paths, title_re in _FILE_ALIASES:
+        pick = next((p for p, _ in uploads if p in system_paths), None)
+        if pick is None:
+            pick = next((p for p, t in uploads
+                         if p not in aliases and title_re.search(t)), None)
+        if pick is not None and pick not in aliases:
+            aliases[pick] = alias
+    return aliases
 
 
 def _education_history_fields(field: dict, path: str) -> list[MergedField]:
@@ -568,7 +336,7 @@ def _education_history_fields(field: dict, path: str) -> list[MergedField]:
     return fields
 
 
-def _api_field(entry: dict) -> list[MergedField]:
+def _api_field(entry: dict, file_aliases: dict[str, str]) -> list[MergedField]:
     field = entry.get("field")
     if not isinstance(field, dict):
         raise AshbyScanError(f"fieldEntry {entry.get('id')!r} carries no field object")
@@ -581,14 +349,13 @@ def _api_field(entry: dict) -> list[MergedField]:
         return _education_history_fields(field, path)
     kind = _TYPE_KINDS.get(raw_type)
     if kind is None:
-        # Loud rather than guessed, matching the DOM scanner's unknown-input
-        # behaviour.
+        # Loud rather than guessed.
         raise AshbyScanError(
             f"unknown Ashby field type {raw_type!r} on path={path!r} "
             f"({field.get('title')!r})"
         )
 
-    field_id = _api_file_id(path, field.get("title") or "") if kind == "file" else path
+    field_id = file_aliases.get(path, path) if kind == "file" else path
 
     if kind == "yesno":
         options = (MergedOption(label="Yes", value="yes"),
@@ -622,18 +389,26 @@ def _api_field(entry: dict) -> list[MergedField]:
 
 
 def fields_from_application_form(job_posting: dict) -> Reconciled:
-    """The API's `applicationForm` as the same `Reconciled` the DOM scan
-    produces. Deduped by id, in the order the form presents them."""
-    seen: set[str] = set()
+    """The API's `applicationForm` as a `Reconciled`, in the order the form
+    presents it. A field repeated under the same path is kept once; two
+    different fields landing on one id raise rather than dropping either."""
+    file_aliases = _file_aliases(job_posting)
+    seen: dict[str, str] = {}
     fields: list[MergedField] = []
     for section in job_posting["applicationForm"].get("sections") or []:
         for entry in section.get("fieldEntries") or []:
             if not isinstance(entry, dict):
                 continue
-            for merged in _api_field(entry):
+            for merged in _api_field(entry, file_aliases):
+                source = merged.dom_path or merged.name
                 if merged.id in seen:
-                    continue
-                seen.add(merged.id)
+                    if seen[merged.id] == source:
+                        continue
+                    raise AshbyScanError(
+                        f"two fields map to id {merged.id!r}: "
+                        f"{seen[merged.id]!r} and {source!r}"
+                    )
+                seen[merged.id] = source
                 fields.append(merged)
 
     if not fields:

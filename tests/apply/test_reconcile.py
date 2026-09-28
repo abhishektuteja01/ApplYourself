@@ -75,7 +75,8 @@ def test_the_2b_dom_only_census_survives_with_its_required_flags(merged, name):
     assert rendered, f"{name} renders none of the census"
     for field_id in rendered:
         assert field(rec, field_id).dom_only
-        assert field(rec, field_id).required is scan.by_id(field_id).required
+        rendered_field = next(f for f in scan.fields if f.id == field_id)
+        assert field(rec, field_id).required is rendered_field.required
 
 
 @pytest.mark.parametrize("name", FORM_FIXTURES)
@@ -249,7 +250,7 @@ def test_employer_authored_questions_keep_their_section(merged):
 def _schema(questions=(), demographic=()):
     return BoardSchema(
         questions=tuple(questions), demographic=tuple(demographic),
-        education=None, employment=None, company_name="Widget Co", title="Fitter",
+        company_name="Widget Co", title="Fitter",
     )
 
 
@@ -296,7 +297,7 @@ def test_duplicate_demographic_id_raises():
 def test_a_dom_field_with_no_match_anywhere_is_still_merged():
     rec = reconcile(_scan(_dom("surprise_field", required=True)), _schema())
     assert rec.by_id("surprise_field").dom_only
-    assert rec.required_ids == ("surprise_field",)
+    assert [f.id for f in rec.fields if f.required] == ["surprise_field"]
 
 
 def test_checkbox_group_keeps_dom_options_with_no_api_match():
@@ -354,7 +355,6 @@ def test_cardinality_is_unchecked_when_the_api_declared_nothing(merged):
 def test_a_form_with_no_fields_merges_to_nothing():
     rec = reconcile(_scan(), _schema())
     assert rec.fields == () and rec.api_only == ()
-    assert rec.required_ids == () and rec.dom_only_ids == ()
 
 
 def test_a_schema_that_renders_nothing_is_all_api_only():
@@ -399,3 +399,99 @@ def test_the_bracket_suffix_never_reaches_the_api_join_key():
     merged_field = reconcile(_scan(group), schema).by_id("question_9[]")
     assert merged_field.api_source == "questions"
     assert merged_field.options == (MergedOption(label="Alpha", value="1"),)
+
+
+# --- API-only additions --------------------------------------------------------
+
+# Verbatim from a live posting whose runs failed with
+# "gdpr_demographic_data_consent_given is required and empty".
+ASANA_DATA_COMPLIANCE = [{
+    "type": "gdpr",
+    "requires_consent": False,
+    "requires_processing_consent": False,
+    "requires_retention_consent": False,
+    "retention_period": None,
+    "demographic_data_consent_applies": True,
+}]
+
+
+def _with_compliance(name, data_compliance):
+    payload = load_fixture(name)
+    payload["data_compliance"] = data_compliance
+    return reconcile(scan_form(load_html(name)), parse_schema(payload))
+
+
+def test_the_gdpr_demographic_consent_box_is_planned_as_an_ordinary_question():
+    """Greenhouse draws the box client-side, so the served DOM never has it and
+    the browser refused the submit. It has to arrive from `data_compliance`,
+    as a question the answer rules can match, with the id the live input has."""
+    rec = _with_compliance("form_demographic", ASANA_DATA_COMPLIANCE)
+    box = field(rec, "gdpr_demographic_data_consent_given_1")
+    assert box.name == "gdpr_demographic_data_consent_given"
+    assert (box.kind, box.section, box.required, box.multi) == (
+        "checkbox", "questions", True, False)
+    assert box.label == (
+        "By checking this box, I consent to Bearing Energy collecting, storing, "
+        "and processing my responses to the demographic data surveys above."
+    )
+    assert box.api_source == "data_compliance"
+    # Every scanned field is still there, in order, ahead of it.
+    assert [f.id for f in rec.fields][:-1] == [f.id for f in dom_scan("form_demographic").fields]
+
+
+def test_processing_consent_is_planned_too():
+    rec = _with_compliance("form_minimal", [{
+        "type": "gdpr", "requires_consent": True, "requires_processing_consent": True,
+        "requires_retention_consent": True, "retention_period": 366,
+        "demographic_data_consent_applies": False,
+    }])
+    ids = [f.id for f in rec.fields]
+    assert "gdpr_processing_consent_given_1" in ids
+    assert "gdpr_demographic_data_consent_given_1" not in ids
+    # Retention renders optional and disabled until processing is ticked.
+    assert not any(i.startswith("gdpr_retention") for i in ids)
+
+
+def test_no_consent_flag_means_no_consent_box():
+    rec = _with_compliance("form_demographic", [{
+        "type": "gdpr", "demographic_data_consent_applies": False,
+    }])
+    assert not any(f.id.startswith("gdpr_") for f in rec.fields)
+
+
+def test_a_consent_box_the_dom_already_rendered_is_not_added_twice():
+    rendered = dataclasses.replace(
+        _dom("gdpr_demographic_data_consent_given_1", kind="checkbox", required=True),
+        name="gdpr_demographic_data_consent_given",
+    )
+    schema = parse_schema({"questions": [], "company_name": "Widget Co", "title": "Fitter",
+                           "data_compliance": ASANA_DATA_COMPLIANCE})
+    rec = reconcile(_scan(rendered), schema)
+    assert [f.id for f in rec.fields] == ["gdpr_demographic_data_consent_given_1"]
+    assert rec.fields[0].api_source is None
+
+
+def test_a_non_list_data_compliance_raises():
+    from src.apply.schema import SchemaError
+    with pytest.raises(SchemaError, match="data_compliance is not a list"):
+        parse_schema({"questions": [], "data_compliance": {"type": "gdpr"}})
+
+
+def test_api_descriptions_are_carried_as_plain_text(merged):
+    """Parsed off the question API, then dropped by the merge."""
+    rec = merged("form_multiselect")
+    disability = field(rec, "question_36638879002")
+    assert disability.description.startswith(
+        "In alignment with our commitment to diversity and inclusion")
+    assert "<" not in disability.description
+    assert field(rec, "first_name").description == ""
+
+
+def test_an_entity_escaped_description_is_unescaped_before_stripping():
+    schema = _schema(questions=[dataclasses.replace(
+        _question("question_1"),
+        description="&lt;p&gt;Please review the &lt;a href=&quot;x&quot;&gt;agreement&lt;/a&gt;.&lt;/p&gt;",
+    )])
+    rec = reconcile(_scan(_dom("question_1")), schema)
+    assert rec.by_id("question_1").description == "Please review the agreement."
+

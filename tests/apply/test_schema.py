@@ -54,7 +54,6 @@ def test_multi_field_question_is_or():
     resume = by_label(bs, "Resume/CV")
     assert [f.name for f in resume.fields] == ["resume", "resume_text"]
     assert [f.type for f in resume.fields] == ["input_file", "textarea"]
-    assert resume.satisfy == "any"
 
 
 def test_single_select_retains_options():
@@ -112,16 +111,18 @@ def test_demographic_without_optout_still_parses():
     assert not any(o.label == "I don't wish to answer" for o in q.options)
 
 
-@pytest.mark.parametrize("name,education,employment", [
-    ("greenhouse_minimal", None, None),
-    ("greenhouse_location_compliance", "education_optional", None),
-    ("greenhouse_demographic", "education_optional", "employment_optional"),
-    ("greenhouse_multiselect", "education_required", None),
-])
-def test_education_and_employment_blocks(name, education, employment):
-    bs = parse(name)
-    assert bs.education == education
-    assert bs.employment == employment
+def test_demographic_consent_flag_becomes_a_consent_box():
+    raw = load_fixture("greenhouse_demographic")
+    raw["data_compliance"] = [{"type": "gdpr", "demographic_data_consent_applies": True}]
+    (box,) = schema.parse_schema(raw).consent
+    assert box.name == "gdpr_demographic_data_consent_given" and box.required
+    assert raw["company_name"] in box.label
+
+
+def test_no_data_compliance_means_no_consent_boxes():
+    raw = load_fixture("greenhouse_minimal")
+    raw.pop("data_compliance", None)
+    assert schema.parse_schema(raw).consent == ()
 
 
 def test_company_and_title_carried():

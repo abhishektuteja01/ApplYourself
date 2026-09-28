@@ -1,7 +1,9 @@
-"""Greenhouse application-question schema: fetch and normalize.
+"""Greenhouse question API (`?questions=true`): fetch and normalize.
 
-Enrichment only. The rendered DOM is the source of truth for what must be
-filled; this supplies clean labels, required flags and select option lists.
+Greenhouse only; Lever and Ashby build their fields in their own modules.
+Enrichment for `reconcile.py`: the served DOM decides what must be filled,
+this supplies clean labels, descriptions and select option lists, plus the
+GDPR consent boxes the served DOM never carries.
 """
 from __future__ import annotations
 
@@ -25,6 +27,22 @@ FIELD_TYPES = frozenset({
 # groups and is handled separately; `demographic_questions` is a different
 # object shape entirely and never lands here.
 _FLAT_SOURCES = ("questions", "location_questions")
+
+# GDPR consent boxes. Greenhouse draws them client-side only, so the served
+# form the DOM scan reads never has them, yet the browser refuses a submit
+# with a required one unticked. `data_compliance` flag -> the box's `name`,
+# whether it renders required, and its label as Greenhouse renders it
+# (`{company}` is the payload's `company_name`). The retention box is left
+# out: it renders optional, and disabled until processing consent is given.
+_CONSENT_BOXES = (
+    ("demographic_data_consent_applies", "gdpr_demographic_data_consent_given", True,
+     "By checking this box, I consent to {company} collecting, storing, and "
+     "processing my responses to the demographic data surveys above."),
+    ("requires_processing_consent", "gdpr_processing_consent_given", True,
+     "By checking this box, I agree to allow {company} to store and process my "
+     "data for the purpose of considering my eligibility regarding my current "
+     "application for employment."),
+)
 
 
 class SchemaError(Exception):
@@ -53,12 +71,6 @@ class Question:
     source: str
     description: str | None = None
 
-    @property
-    def satisfy(self) -> str:
-        """A question with several fields is satisfied by any one of them:
-        Resume/CV offers resume (input_file) and resume_text (textarea)."""
-        return "any"
-
 
 @dataclass(frozen=True)
 class DemographicOption:
@@ -78,13 +90,19 @@ class DemographicQuestion:
 
 
 @dataclass(frozen=True)
+class ConsentBox:
+    name: str
+    label: str
+    required: bool
+
+
+@dataclass(frozen=True)
 class BoardSchema:
     questions: tuple[Question, ...]
     demographic: tuple[DemographicQuestion, ...]
-    education: str | None
-    employment: str | None
     company_name: str
     title: str
+    consent: tuple[ConsentBox, ...] = ()
 
 
 def _parse_option(raw) -> Option:
@@ -154,6 +172,22 @@ def _parse_demographic(raw) -> DemographicQuestion:
     )
 
 
+def _parse_consent(raw, company: str) -> tuple[ConsentBox, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise SchemaError(f"data_compliance is not a list: {type(raw).__name__}")
+    boxes: dict[str, ConsentBox] = {}
+    for group in raw:
+        if not isinstance(group, dict):
+            raise SchemaError(f"data_compliance entry is not an object: {group!r}")
+        for flag, name, required, label in _CONSENT_BOXES:
+            if group.get(flag) and name not in boxes:
+                boxes[name] = ConsentBox(name=name, label=label.format(company=company),
+                                         required=required)
+    return tuple(boxes.values())
+
+
 def parse_schema(payload) -> BoardSchema:
     """Normalize a ?questions=true payload. Pure — no network."""
     if not isinstance(payload, dict):
@@ -189,13 +223,13 @@ def parse_schema(payload) -> BoardSchema:
             raise SchemaError(f"demographic_questions is not an object: {type(dq).__name__}")
         demographic.extend(_parse_demographic(q) for q in dq.get("questions") or [])
 
+    company_name = str(payload.get("company_name") or "")
     return BoardSchema(
         questions=tuple(questions),
         demographic=tuple(demographic),
-        education=payload.get("education"),
-        employment=payload.get("employment"),
-        company_name=str(payload.get("company_name") or ""),
+        company_name=company_name,
         title=str(payload.get("title") or ""),
+        consent=_parse_consent(payload.get("data_compliance"), company_name),
     )
 
 
