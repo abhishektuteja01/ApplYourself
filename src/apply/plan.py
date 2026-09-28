@@ -302,6 +302,8 @@ class Override:
     """The bank question this label asks — the run saves the label under it."""
     claim: dict | None = None
     """For a work-authorization option: the facts its text states."""
+    keyword: str = ""
+    """Words every wording of the question shares; saved as a keyword."""
 
 
 # Fields no override may touch: identity and EEOC come from stated facts only,

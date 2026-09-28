@@ -51,6 +51,9 @@ class Lesson:
     """For a work-authorization option: the facts its text states."""
     source: str = ""
     job_id: str = ""
+    keyword: str = ""
+    """Words every wording of this question shares, so a new wording is guessed
+    (and shown for confirmation) instead of parking."""
 
 
 def read(path: Path | None = None) -> dict:
@@ -161,7 +164,29 @@ def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
             spec["answer"] = candidates[0] if len(candidates) == 1 else candidates
         if lesson.job_id:
             _add(spec, "from", lesson.job_id)
+    for lesson in lessons:
+        if lesson.keyword and lesson.question in questions:
+            changes.extend(_add_keyword(data, lesson.question, lesson.keyword))
     return changes
+
+
+def _add_keyword(data: dict, qid: str, keyword: str) -> list[str]:
+    """Add a keyword only if the bank still loads with it: a keyword that
+    shadows another question, or asks a work-authorization question, is
+    refused on its own and the rest of the lesson stands."""
+    spec = data["questions"][qid]
+    word = A.norm_label(keyword)
+    if not word or word in [A.norm_label(k) for k in spec.get("keywords") or []]:
+        return []
+    spec.setdefault("keywords", []).append(word)
+    try:
+        A.answers_from(data)
+    except A.AnswersError as exc:
+        spec["keywords"].remove(word)
+        if not spec["keywords"]:
+            spec.pop("keywords")
+        return [f"keyword refused for {qid}: {word!r} ({exc})"]
+    return [f"keyword -> {qid}: {word!r}"]
 
 
 def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:

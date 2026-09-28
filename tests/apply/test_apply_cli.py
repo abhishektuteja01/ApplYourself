@@ -1511,3 +1511,33 @@ def test_tests_never_touch_the_real_applications_folder():
     from src import paths
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
     assert paths.REPO_ROOT / "applications" != apply_cli.APPLY_RUNS.parent
+
+
+class TestKeywordsGeneralize:
+    def _bank(self, tmp_path, monkeypatch):
+        import shutil
+        from src.apply import bank
+        path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", path)
+        monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+        return path
+
+    def test_a_keyword_lets_the_next_wording_be_guessed(self, tmp_path, monkeypatch):
+        from src.apply import bank
+        from src.apply.answers import find_question, load_answers
+        path = self._bank(tmp_path, monkeypatch)
+        bank.learn([bank.Lesson(label="Tell us about a project you're proud of",
+                                question="project_proud", value="I built a widget.",
+                                keyword="proud of")])
+        found = find_question("What are you most proud of building?", load_answers(path))
+        assert found and found[0].id == "project_proud" and "~" in found[1]
+
+    def test_a_keyword_that_shadows_another_question_is_refused_alone(
+            self, tmp_path, monkeypatch):
+        from src.apply import bank
+        path = self._bank(tmp_path, monkeypatch)
+        changes = bank.learn([bank.Lesson(label="Your personal LinkedIn page",
+                                          question="linkedin_page", value="x",
+                                          keyword="linkedin page")])
+        assert any("keyword refused" in c for c in changes)
+        assert "linkedin_page" in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]

@@ -93,6 +93,13 @@ of the board's own options, verbatim. `question` is what makes the run learn:
 use the id of the bank question this label asks, or a new short id
 (`project_proud`, `years_experience`) when none does.
 
+For a question boards word many ways, also add `"keyword"`: two to four words
+every wording of it shares and no other question does (`"proud of"`, `"hardest
+problem"`, `"ai assisted coding"` — never `"experience"` or `"tell us"`). The
+next board's wording is then guessed from it and shown to the user as a guess.
+A keyword that would shadow another question is refused on its own; the answer
+is still saved.
+
 | the label asks | answer from | `source` |
 |---|---|---|
 | the same thing as a bank question, in other words | that question's answer | the id |

@@ -70,7 +70,7 @@ def ledger_path() -> Path:
 
 # What an `--answers` entry may carry. `label` and `source_id` are records for
 # the reader; the rest is read.
-OVERRIDE_KEYS = ("value", "source", "question", "claim", "label", "source_id")
+OVERRIDE_KEYS = ("value", "source", "question", "claim", "keyword", "label", "source_id")
 CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 
 
@@ -291,8 +291,9 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
             for k, v in claim.items():
                 if k != "country" and not isinstance(v, bool):
                     raise ApplyCliError(f"{where} claim.{k} must be true or false")
+        keyword = str(entry.get("keyword") or "").strip()
         overrides[field_id] = Override(value=value, source=str(entry.get("source") or ""),
-                                       question=question, claim=claim)
+                                       question=question, claim=claim, keyword=keyword)
     return overrides
 
 
@@ -814,7 +815,8 @@ def lessons_from(plan: Plan, overrides: dict[str, Override], job_id: str) -> lis
         misfired = f.replaced[5:].split("~", 1)[0] if f.replaced.startswith("bank:") else ""
         lessons.append(bank.Lesson(
             label=f.label, question=override.question, value=f.value, offered=f.options,
-            misfired=misfired, source=override.source, job_id=job_id))
+            misfired=misfired, source=override.source, job_id=job_id,
+            keyword=override.keyword))
     for f in plan.fields:
         if f.id not in overrides and f.source.startswith("bank:") and "~" in f.source:
             lessons.append(bank.Lesson(
