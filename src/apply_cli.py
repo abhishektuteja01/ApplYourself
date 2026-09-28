@@ -1100,6 +1100,15 @@ _CLICKED = ("submitted", "submitted_unconfirmed", "submitted_untracked",
 _EXIT_NONZERO = ("failed", "submitted_untracked")
 
 
+def _park_kind(row: dict) -> str:
+    """Why a question parked, in the three words that say what to do next."""
+    if row.get("source") == "export_control" or "export control" in row.get("reason", ""):
+        return "yours to answer"
+    if row.get("tier") == "C":
+        return "new question"
+    return "needs a fact"
+
+
 _TOTALS = re.compile(r"<!-- totals parked=(\d+) bank=(\d+) learned=(\d+) roles=(\d+) -->")
 
 
@@ -1140,7 +1149,7 @@ def render_report(outcomes: list[RunOutcome], started_at: datetime,
             if o.detail:
                 lines.append(f"  - {o.detail}")
             for row in o.unmapped:
-                lines.append(f"  - `{row['id']}` [{row['tier']}] {row['label']}")
+                lines.append(f"  - `{row['id']}` [{_park_kind(row)}] {row['label']}")
                 lines.append(f"    - {row['reason']}")
                 if row.get("options"):
                     lines.append(f"    - offers: {', '.join(row['options'])}")
