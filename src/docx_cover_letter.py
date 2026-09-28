@@ -8,6 +8,7 @@ and writes fresh blocks — so the two share nothing but the template contract.
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 
 from docx import Document
@@ -63,18 +64,35 @@ def _paragraph_full_text(paragraph) -> str:
 
 
 def _iter_paragraphs(doc):
-    """Every body paragraph, including those inside table cells (nested tables
-    included). doc.paragraphs walks only direct body children, and many Word
-    letter designs lay the whole page out in an invisible table -- placeholders
-    in those cells would be invisible to detection and to filling."""
-    yield from doc.paragraphs
-    tables = list(doc.tables)
-    while tables:
-        table = tables.pop()
-        for row in table.rows:
-            for cell in row.cells:
-                yield from cell.paragraphs
-                tables.extend(cell.tables)
+    """Every paragraph a placeholder can sit in: the body, table cells (nested
+    tables included; a merged cell is visited once, though python-docx returns
+    it once per column it spans), and every section's headers and footers.
+    Many Word letter designs lay the page out in an invisible table or put the
+    date in a header."""
+    containers = [doc]
+    for section in doc.sections:
+        for part in (section.header, section.first_page_header, section.even_page_header,
+                     section.footer, section.first_page_footer, section.even_page_footer):
+            if not part.is_linked_to_previous:
+                containers.append(part)
+    seen_cells: set[int] = set()
+    seen_parts: set[int] = set()
+    for container in containers:
+        part_id = id(getattr(container, "_element", container))
+        if part_id in seen_parts:
+            continue
+        seen_parts.add(part_id)
+        yield from container.paragraphs
+        tables = list(container.tables)
+        while tables:
+            table = tables.pop()
+            for row in table.rows:
+                for cell in row.cells:
+                    if id(cell._tc) in seen_cells:
+                        continue
+                    seen_cells.add(id(cell._tc))
+                    yield from cell.paragraphs
+                    tables.extend(cell.tables)
 
 
 def list_cover_letter_placeholders(template_path: Path) -> set[str]:
@@ -119,10 +137,7 @@ def _fill_cover_letter_placeholders(doc, content: dict, path: Path) -> None:
             f"wherever the generated content should go."
         )
 
-    if not content.get("salutation"):
-        raise ValueError("content['salutation'] is required and must be non-empty.")
-    if not content.get("body"):
-        raise ValueError("content['body'] is required and must be a non-empty list of paragraph strings.")
+    _check_content(content)
 
     simple_values = {
         "{{DATE}}": content.get("date"),
@@ -138,6 +153,43 @@ def _fill_cover_letter_placeholders(doc, content: dict, path: Path) -> None:
             _set_paragraph_text(found[token], value or "")
 
     _expand_body_placeholder(found["{{BODY}}"], content["body"])
+    _blank_property_tokens(doc)
+
+
+# A control character (tab, newline, vertical tab, ...) inside one paragraph's
+# text renders as a literal or crashes the save; paragraphs are list entries.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _check_content(content: dict) -> None:
+    salutation = content.get("salutation")
+    body = content.get("body")
+    if not isinstance(salutation, str) or not salutation.strip():
+        raise ValueError("content['salutation'] is required and must be a non-empty string.")
+    if (not isinstance(body, list) or not body
+            or not all(isinstance(p, str) and p.strip() for p in body)):
+        raise ValueError("content['body'] must be a non-empty list of non-empty paragraph strings.")
+    for key in ("salutation", "date", "closing", "signoff_name"):
+        value = content.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"content[{key!r}] must be a string.")
+    for key, value in [("salutation", salutation), *((f"body[{i}]", p) for i, p in enumerate(body))]:
+        if _CONTROL.search(value):
+            raise ValueError(f"content[{key!r}] contains a tab, newline or other control "
+                             f"character; split paragraphs into separate body entries.")
+
+
+_PROPERTY_FIELDS = ("title", "subject", "keywords", "comments", "category")
+
+
+def _blank_property_tokens(doc) -> None:
+    """Word can copy a content control's text into the file properties (e.g.
+    keywords = "{{SALUTATION}}"). No generated letter keeps a raw token there."""
+    props = doc.core_properties
+    for field in _PROPERTY_FIELDS:
+        value = getattr(props, field) or ""
+        if "{{" in value:
+            setattr(props, field, re.sub(r"\{\{[A-Z_]+\}\}", "", value).strip())
 
 
 def _set_paragraph_text(paragraph, text: str) -> None:

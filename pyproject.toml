@@ -32,6 +32,7 @@ dependencies = [
     "requests>=2.32",
     "geonamescache>=3.0.1",
     "pycountry>=24.0",
+    "pypdf>=6.19.0",
 ]
 
 [project.urls]

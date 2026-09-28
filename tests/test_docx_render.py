@@ -144,14 +144,16 @@ A line.
 # ---------- parse_resume_md block types ----------
 
 def test_parse_resume_md_name_block_only_first():
-    blocks = parse_resume_md("**Jane**\n\n**Other Bold**")
-    types = [b["type"] for b in blocks]
-    # First **bold** -> name; second is a single bold line treated as job_header? No,
-    # a single bold word with no trailing content isn't job_header; falls through to body.
-    assert types[0] == "name"
-    # The second bold line has no following content, so it is either section_header
-    # (if all caps) or body. "Other Bold" is mixed case -> body.
-    assert types[1] in {"body", "job_header"}
+    blocks = parse_resume_md("**Jane**\n\n**WORK EXPERIENCE**")
+    assert [b["type"] for b in blocks] == ["name", "section_header"]
+
+
+@pytest.mark.parametrize("line", ["**Other Bold**", "**Summary**", "**Languages**: Python"])
+def test_parse_resume_md_rejects_near_miss_headers(line):
+    """A bold line that is not an ALL CAPS section header, a job header or a
+    **Label:** skills line used to render silently as the wrong block."""
+    with pytest.raises(ResumeContentError, match="neither a section header"):
+        parse_resume_md(f"**Jane**\n\n{line}")
 
 
 def test_parse_resume_md_section_header_all_caps():
@@ -730,3 +732,107 @@ def test_every_configured_vertical_resume_passes_the_tab_guard():
         _validate_job_headers(blocks)   # raises ResumeContentError on regression
         checked += 1
     assert checked > 0
+
+
+# ---------- cover letter: every container, strict content, file properties ----------
+
+def test_cover_letter_placeholder_in_a_merged_cell_is_found_once(tmp_path):
+    """python-docx returns a merged cell once per column it spans; counting it
+    twice raised a false 'more than one paragraph' error."""
+    doc = Document()
+    table = doc.add_table(rows=2, cols=2)
+    merged = table.cell(0, 0).merge(table.cell(0, 1))
+    merged.paragraphs[0].text = "{{SALUTATION}}"
+    table.cell(1, 0).paragraphs[0].text = "{{BODY}}"
+    t = tmp_path / "merged.docx"
+    doc.save(str(t))
+    render_cover_letter(_content(), t, tmp_path / "cl.docx")
+
+
+def test_cover_letter_fills_a_placeholder_in_the_header(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    doc = Document(str(t))
+    doc.sections[0].header.is_linked_to_previous = False
+    doc.sections[0].header.paragraphs[0].text = "{{DATE}}"
+    doc.save(str(t))
+    assert "{{DATE}}" in list_cover_letter_placeholders(t)
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(date="June 1, 2026"), t, out)
+    assert Document(str(out)).sections[0].header.paragraphs[0].text == "June 1, 2026"
+
+
+def test_cover_letter_blanks_tokens_in_file_properties(tmp_path):
+    t = _make_cl_template(tmp_path / "t.docx")
+    doc = Document(str(t))
+    doc.core_properties.keywords = "{{SALUTATION}}"
+    doc.save(str(t))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(), t, out)
+    assert "{{" not in (Document(str(out)).core_properties.keywords or "")
+
+
+@pytest.mark.parametrize("over", [
+    {"body": "A whole letter as one string."},
+    {"body": ["Line one\nline two"]},
+    {"body": ["Tab\tinside"]},
+    {"salutation": "Dear\x0bX,"},
+    {"closing": 5},
+])
+def test_cover_letter_rejects_malformed_content(tmp_path, over):
+    t = _make_cl_template(tmp_path / "t.docx")
+    with pytest.raises(ValueError):
+        render_cover_letter(_content(**over), t, tmp_path / "cl.docx")
+
+
+# ---------- docx -> pdf ----------
+
+def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
+    from src import docx_render
+    monkeypatch.setattr(docx_render.sys, "platform", "darwin")
+    monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)          # exists
+    monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
+    monkeypatch.setattr(docx_render, "pdf_pages", lambda p: 1)
+    calls = []
+
+    def run(cmd, input, **kw):
+        calls.append(input)
+        if write_pdf:
+            staged = input.split('file name "')[1].split('"')[0]
+            Path(staged).write_bytes(b"%PDF-1.4 fake")
+        import subprocess
+        return subprocess.CompletedProcess(cmd, returncode, "", "boom" if returncode else "")
+    monkeypatch.setattr(docx_render.subprocess, "run", run)
+    return calls
+
+
+def test_export_pdf_ok(monkeypatch, tmp_path):
+    from src.docx_render import export_pdf
+    _fake_word(monkeypatch, tmp_path)
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    r = export_pdf(docx, "role1")
+    assert r["status"] == "ok" and r["pages"] == 1
+    assert (tmp_path / "A_Resume.pdf").is_file()
+    assert not list((tmp_path / "staging").iterdir())
+
+
+def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
+    """A failed re-run used to leave the previous pdf beside the new docx, and
+    a leftover staging pdf passed the non-empty check."""
+    from src.docx_render import export_pdf
+    _fake_word(monkeypatch, tmp_path, returncode=1)
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    (tmp_path / "A_Resume.pdf").write_bytes(b"old")
+    r = export_pdf(docx, "role1")
+    assert r["status"] == "failed" and "boom" in r["detail"]
+    assert not (tmp_path / "A_Resume.pdf").exists()
+    assert not list((tmp_path / "staging").iterdir())
+
+
+def test_export_pdf_skipped_without_word(monkeypatch, tmp_path):
+    from src import docx_render
+    monkeypatch.setattr(docx_render, "WORD_APP", tmp_path / "missing.app")
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    assert docx_render.export_pdf(docx, "r")["status"] == "skipped"
