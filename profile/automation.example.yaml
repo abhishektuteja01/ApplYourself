@@ -8,5 +8,5 @@ table_path: top_scored_open.xlsx
 
 schedule:
   score_time: "00:00"    # routine 1: /score, gated on discovery's completion line
-  tailor_time: "01:00"   # routine 2: filter + /tailor + PDF check
-  apply_time: "04:00"    # routine 3: apply run (fill, no submit) + submittable/parked triage
+  tailor_time: "01:00"   # routine 2: `apply sheet --add`, /tailor, PDF check
+  apply_time: "04:00"    # routine 3: /apply without --submit, then `apply sheet`

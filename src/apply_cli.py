@@ -15,8 +15,11 @@
                         a typed confirmation unless --yes, and never clicks a
                         role already in the submit ledger. Writes
                         applications/apply_runs/<timestamp>.md.
-  learn [--job J] [--undo ID [--wording W]]
+  learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT]
                         review what the bank holds, or take one thing back.
+  sheet [--add]         rebuild the status sheet's status/note/command from
+                        state.yaml, the ledger and the run reports; --add first
+                        appends newly scored roles.
 """
 from __future__ import annotations
 
@@ -684,6 +687,18 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         print(render(plan))
     # An answer that cannot apply looks like one that did, unless this fails.
     return 1 if plan.ignored_overrides else 0
+
+
+def _cmd_sheet(args: argparse.Namespace) -> int:
+    from src.apply import sheet
+
+    try:
+        counts = sheet.refresh(add=args.add)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(" · ".join(f"{status} {n}" for status, n in sorted(counts.items())))
+    return 0
 
 
 def _cmd_learn(args: argparse.Namespace) -> int:
@@ -1491,6 +1506,11 @@ def main(argv: list[str] | None = None) -> int:
 
     r.add_argument("--headless", action="store_true")
     r.set_defaults(func=_cmd_run)
+
+    sh = sub.add_parser("sheet", help="rebuild the status sheet from state, ledger and run reports")
+    sh.add_argument("--add", action="store_true",
+                    help="first append roles newly scored at or above score_threshold")
+    sh.set_defaults(func=_cmd_sheet)
 
     lrn = sub.add_parser("learn", help="review or undo what the answer bank holds")
     lrn.add_argument("--job", default=None, help="only questions this job taught")

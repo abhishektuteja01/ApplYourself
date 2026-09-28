@@ -169,6 +169,11 @@ bank. **Stop and wait for the reply.**
   `user`), re-run this step, ask again.
 - No, or no reply → stop. Report where `OVERRIDES_FILE` is. Nothing is saved.
 
+Nothing to show — no entry written, no guess left standing, nothing parked —
+means nothing needs confirming: say so and go to step 7. In a scheduled run,
+where no one can reply, stop here whenever there *is* something to show; the
+drafted file waits, and `uv run apply sheet` marks the role "Needs your OK".
+
 ## 7. Fill, and submit only with `--submit`
 
 ```bash
