@@ -23,11 +23,6 @@ from src.ats_registry import (
 
 # Never read. Kept only because `apply_cli` still imports it; drop both
 # together.
-_ATS_PARSERS = {
-    "greenhouse": parse_posting,
-    "lever": lever.parse_posting,
-    "ashby": ashby.parse_posting,
-}
 
 # Boards with a working browser driver — the ones `apply run --submit` can
 # actually reach. Derived from the registry, which `tests/apply/test_fill.py`

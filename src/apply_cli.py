@@ -80,7 +80,7 @@ from src.ats_http import CareersError
 # `apply_cli.detect_ats`. `detect_ats` recognizes Workday too, so every
 # submission path gates on SUBMITTABLE_ATS, not on "not None".
 from src.apply.detect import (  # noqa: E402
-    _ATS_PARSERS, SUBMITTABLE_ATS, detect_ats, is_auto_submittable,
+    SUBMITTABLE_ATS, detect_ats, is_auto_submittable,
 )
 
 CLEAN = paths.CLEAN

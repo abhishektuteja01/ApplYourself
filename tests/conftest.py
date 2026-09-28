@@ -44,6 +44,17 @@ def _example_resume_sources(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_git_hook_env(monkeypatch):
+    """A commit hook runs this suite with GIT_DIR and GIT_INDEX_FILE set, and a
+    test that makes a temp repo would then write to the real one (it set
+    core.bare=true once). Every git call a test makes starts clean."""
+    import os
+
+    for name in [n for n in os.environ if n.startswith("GIT_")]:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_applications(tmp_path, monkeypatch):
     """Keep run reports, post-submit evidence and the submit ledger out of the
     real `applications/`. Tests that need a specific folder still set their own."""
