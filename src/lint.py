@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Iterable, Literal, TypedDict
 
 import yaml
 from src import paths
@@ -44,18 +44,16 @@ class Violation(TypedDict):
 
 _DEFAULT_RULES_PATH = paths.PROFILE / "de_ai_rules.yaml"
 
-# Mechanical default mappings — also serve as the fallback when
-# de_ai_rules.yaml is absent (tests, fresh checkouts).
-_MECH_DEFAULTS = {
-    "em_dash": ", ",
-    "en_dash_in_range": "-",
-    "en_dash_parenthetical": ", ",
-    "smart_quote_single": "'",
-    "smart_quote_double": '"',
-    "ellipsis": "...",
-    "nbsp": " ",
-    "zero_width": "",
-}
+# The keys de_ai_rules.yaml `mechanical:` must define. The file is the only
+# source of the replacement values.
+MECH_KEYS = (
+    "em_dash", "en_dash_in_range", "en_dash_parenthetical", "hyphen",
+    "smart_quote_single", "smart_quote_double", "ellipsis", "nbsp", "zero_width",
+)
+
+
+class LintConfigError(ValueError):
+    """de_ai_rules.yaml is missing or incomplete."""
 
 
 # =====================================================================
@@ -74,119 +72,113 @@ def bullets_diction_pass_completed(rules: dict) -> bool:
     return bool(rules.get("bullets_diction_pass_completed", False))
 
 
+def _mech_rules(rules: dict | None) -> dict:
+    if rules is None:
+        rules = load_de_ai_rules()
+    m = rules.get("mechanical") or {}
+    missing = [k for k in MECH_KEYS if k not in m]
+    if missing:
+        raise LintConfigError(
+            f"profile/de_ai_rules.yaml mechanical: missing keys {missing}")
+    return m
+
+
+# =====================================================================
+# Shared token tests
+# =====================================================================
+
+_MONTHS = (r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|"
+           r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?")
+_WEEKDAYS = (r"mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs(?:day)?)?|"
+             r"fri(?:day)?|sat(?:urday)?|sun(?:day)?")
+_DATE_WORD = re.compile(rf"(?:{_MONTHS}|{_WEEKDAYS})\.?", re.IGNORECASE)
 # An open-ended range ends in a word, not a digit: "May 2022 – Present".
 # The lookahead keeps an aside out: in "in 2024 – now the standard" the word
 # continues into prose, where a real end-date terminates its field.
 _OPEN_ENDED_RANGE = re.compile(
     r"\s*(present|current|now|ongoing|to date)\b(?!\s+\w)", re.IGNORECASE)
+_EDGE_PUNCT = "()[]{},;:'\"*"
 
 
-def _endash_is_date_range(line: str, i: int) -> bool:
-    """True if line[i] is an en-dash joining two dates. Covers:
-      - compact:  "2022–2024"
-      - spacious: "May 2022 – Jul 2024"  (digit-content nearby on each side
-                   but immediate neighbor is a month abbreviation, not a digit)
-      - mixed:    "2022 – Jul 2024"
-      - open:     "May 2022 – Present"   (no digit on the right at all)
-    Falls through to "parenthetical" otherwise -- e.g. "(a small – b sized)"."""
-    WINDOW = 8
-    left = line[max(0, i - WINDOW):i]
-    right = line[i + 1:i + 1 + WINDOW]
-    if not any(c.isdigit() for c in left):
+def _is_range_end(token: str) -> bool:
+    """A number ("2024", "40%", "'26") or a month/weekday name."""
+    token = token.strip(_EDGE_PUNCT)
+    return bool(re.fullmatch(r"[~$]?\d[\d.,]*%?|'\d\d", token)
+                or _DATE_WORD.fullmatch(token))
+
+
+def _dash_is_range(line: str, i: int) -> bool:
+    """True if the dash at line[i] joins two dates, numbers or day names:
+    "2022–2024", "May 2022 – Jul 2024", "Mon–Fri", "May 2022 – Present",
+    "40%–60%". Anything else is an aside ("the plan – now revised")."""
+    left = re.search(r"(\S+)\s*$", line[:i])
+    right = re.match(r"\s*(\S+)", line[i + 1:])
+    if not left or not _is_range_end(re.split(r"[–—―]", left.group(1))[-1]):
         return False
-    # The open-ended test reads past the window so a wide gap after the dash
-    # can't truncate the word it is matching.
-    return (any(c.isdigit() for c in right)
-            or _OPEN_ENDED_RANGE.match(line[i + 1:]) is not None)
+    if _OPEN_ENDED_RANGE.match(line[i + 1:]):
+        return True
+    return bool(right) and _is_range_end(re.split(r"[–—―]", right.group(1))[0])
 
 
-def _mech_rules(rules: dict | None) -> dict:
-    if rules is None:
-        rules = load_de_ai_rules()
-    user = rules.get("mechanical", {}) or {}
-    merged = {**_MECH_DEFAULTS, **user}
-    return merged
+def _dash_is_minus(line: str, i: int) -> bool:
+    """A dash glued to a number on its right with nothing on its left: "–5%"."""
+    return (i + 1 < len(line) and line[i + 1].isdigit()
+            and (i == 0 or line[i - 1] in " (["))
 
 
 # =====================================================================
 # Tier 1 — mechanical auto-fix
 # =====================================================================
 
-# (category, characters) for the Tier-1 character swaps. Column numbers are
-# reported against the ORIGINAL line, so occurrences are found on `line` while
-# the replacement accumulates in `new_line`.
+_DASH_KIND = {"–": "en_dash", "—": "em_dash", "―": "em_dash"}
+
+# (category, characters) for the plain character swaps. Column numbers are
+# reported against the ORIGINAL line.
 _CHAR_SUBSTITUTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("smart_quote_single", ("\u2018", "\u2019")),
-    ("smart_quote_double", ("\u201c", "\u201d")),
-    ("ellipsis", ("\u2026",)),
-    ("nbsp", ("\u00a0",)),
-    ("zero_width", ("\u200b",)),
+    ("hyphen", ("‑", "‒", "−")),
+    ("smart_quote_single", ("‘", "’")),
+    ("smart_quote_double", ("“", "”")),
+    ("ellipsis", ("…",)),
+    ("nbsp", (" ", " ", " ", " ", " ")),
+    ("zero_width", ("​", "‌", "‍", "⁠", "﻿")),
 )
 
 
 def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Substitution]]:
     """Apply mechanical substitutions; return (fixed_text, subs).
 
-    Column numbers in subs reference the ORIGINAL line position so the user
-    can locate the source character in the input."""
+    One dash rule for en and em dashes: a dash joining two dates, numbers or
+    day names (or a leading minus) becomes `en_dash_in_range` with its spacing
+    kept; any other dash is an aside and collapses to its parenthetical
+    replacement. Column numbers in subs reference the ORIGINAL line."""
     m = _mech_rules(rules)
     subs: list[Substitution] = []
     out_lines: list[str] = []
 
     for lineno, line in enumerate(text.split("\n"), start=1):
-        new_line = line
-
-        # En-dash (U+2013): range vs parenthetical. "Range" = digit content
-        # within 8 chars on BOTH sides across whitespace, which covers both
-        # "2022-2024" (no spaces) and "May 2022 - Jul 2024" (spacious date
-        # ranges -- the common form in resumes).
-        # This runs before the em-dash pass so both the range decision and the
-        # reported column read the original line: collapsing " — " to ", " first
-        # would shift the columns and pull digits into the 8-char window, which
-        # flips "1 — aaaa – 2024" from parenthetical to range.
-        new_parts: list[str] = []
+        parts: list[str] = []
         last = 0
-        for endash_match in re.finditer("–", line):
-            i = endash_match.start()
-            is_range = _endash_is_date_range(line, i)
-            if is_range:
-                # Preserve surrounding whitespace; just swap the char.
-                new_parts.append(line[last:i])
-                new_parts.append(m["en_dash_in_range"])
+        for dash in re.finditer("[–—―]", line):
+            i = dash.start()
+            kind = _DASH_KIND[dash.group()]
+            if _dash_is_range(line, i) or _dash_is_minus(line, i):
+                parts.append(line[last:i])
+                repl, category = m["en_dash_in_range"], f"{kind}_in_range"
                 last = i + 1
-                subs.append(Substitution(
-                    line=lineno, column=i + 1, original="–",
-                    replacement=m["en_dash_in_range"], category="en_dash_in_range",
-                ))
             else:
-                # Parenthetical: collapse surrounding whitespace.
-                prefix = line[last:i].rstrip()
-                new_parts.append(prefix)
-                new_parts.append(m["en_dash_parenthetical"])
-                # Advance past trailing whitespace following the en-dash.
+                parts.append(line[last:i].rstrip())
+                repl = m["em_dash"] if kind == "em_dash" else m["en_dash_parenthetical"]
+                category = "em_dash" if kind == "em_dash" else "en_dash_parenthetical"
                 j = i + 1
                 while j < len(line) and line[j].isspace():
                     j += 1
                 last = j
-                subs.append(Substitution(
-                    line=lineno, column=i + 1, original="–",
-                    replacement=m["en_dash_parenthetical"],
-                    category="en_dash_parenthetical",
-                ))
-        new_parts.append(line[last:])
-        new_line = "".join(new_parts)
+            parts.append(repl)
+            subs.append(Substitution(line=lineno, column=i + 1, original=dash.group(),
+                                     replacement=repl, category=category))
+        parts.append(line[last:])
+        new_line = "".join(parts)
 
-        # Em-dash (U+2014). Collapse any surrounding whitespace so " — " -> ", "
-        # rather than ",  " (preserves resume typography).
-        for match in re.finditer("—", line):
-            subs.append(Substitution(
-                line=lineno, column=match.start() + 1,
-                original="—", replacement=m["em_dash"], category="em_dash",
-            ))
-        new_line = re.sub(r"\s*—\s*", m["em_dash"], new_line)
-
-        # Every remaining Tier-1 fix is "replace character X with the
-        # configured replacement, and log one Substitution per occurrence".
         for category, chars in _CHAR_SUBSTITUTIONS:
             for ch in chars:
                 for match in re.finditer(re.escape(ch), line):
@@ -225,20 +217,65 @@ def _strip_category_tag(phrase: str) -> str:
     return re.sub(r"\s*\(.*?\)\s*", "", phrase).strip()
 
 
+# Text that is never prose: link targets, URLs, emails, and a month name used
+# as a date ("May 2022", "May – Jul 2024", "Jan – May", "May, 2026", "May '26").
+_PROTECTED = (
+    re.compile(r"\]\([^)]*\)"),
+    re.compile(r"(?:https?://|www\.|mailto:|tel:)\S+", re.IGNORECASE),
+    re.compile(r"[\w.+!-]+@[\w-]+\.[\w.]+"),
+    re.compile(rf"\b(?:{_MONTHS})\b\.?(?=\s*(?:\d|'\d|[-–—]|,\s*\d))", re.IGNORECASE),
+    re.compile(rf"(?<=[-–—])\s*\b(?:{_MONTHS})\b", re.IGNORECASE),
+)
+# Where a sentence starts: the line start after any list marker, or after
+# sentence-ending punctuation.
+_SENTENCE_START = re.compile(
+    r"^\s*(?:[-*•]\s+|\d+[.)]\s+)?|[.!?;:][\"')\]]*\s+")
+_NUMBER_AHEAD = re.compile(r"\s*[~$]?\d")
+
+
+def _mask(line: str, keep: tuple[str, ...]) -> str:
+    """Lowercased line with protected spans and keep-terms blanked to `_`,
+    same length, so reported columns stay true to the original."""
+    chars = list(line.lower())
+
+    def blank(start: int, end: int) -> None:
+        chars[start:end] = "_" * (end - start)
+
+    for pat in _PROTECTED:
+        for m in pat.finditer(line):
+            blank(m.start(), m.end())
+    for term in keep:
+        term = term.strip()
+        if not term:
+            continue
+        pat = re.escape(term)
+        if term[0].isalnum() and term[-1].isalnum():
+            pat = rf"\b{pat}\b"
+        for m in re.finditer(pat, line, re.IGNORECASE):
+            blank(m.start(), m.end())
+    return "".join(chars)
+
+
 def find_phrase_violations(
     text: str,
     *,
     context: Literal["resume", "outreach"],
     exempt_lines: set[int] | None = None,
     rules: dict | None = None,
+    keep: Iterable[str] = (),
 ) -> list[Violation]:
     """Scan text for banned phrases; return one Violation per occurrence.
+
+    Link targets, URLs, emails, month names used as dates, and every `keep`
+    term (company, recipient, skill names — proper nouns the writer can't
+    reword) are never scanned.
 
     exempt_lines (1-indexed) skips phrase scanning on those lines — but
     ONLY for context='resume'. Outreach NEVER honors exempt_lines: fresh-
     generation text gets no bullets.md-style exemption."""
     if rules is None:
         rules = load_de_ai_rules()
+    keep = tuple(keep)
 
     if context == "outreach":
         exempt = set()
@@ -263,7 +300,8 @@ def find_phrase_violations(
     for lineno, line in enumerate(text.split("\n"), start=1):
         if lineno in exempt:
             continue
-        lower = line.lower()
+        lower = _mask(line, keep)
+        starts = sorted({m.end() for m in _SENTENCE_START.finditer(lower)})
 
         for category, phrases in phrase_cats.items():
             for raw_phrase in phrases:
@@ -274,25 +312,22 @@ def find_phrase_violations(
                 if phrase == "<greeting>!":
                     for m in re.finditer(
                         r"\b(?:hi|hello|hey|dear|greetings)[^.!?\n]*!",
-                        line, re.IGNORECASE,
+                        lower,
                     ):
                         violations.append(Violation(
                             line=lineno, column=m.start() + 1,
-                            phrase=m.group(), category=category,
+                            phrase=line[m.start():m.end()], category=category,
                         ))
                     continue
-                # filler_starters are sentence-openers, not substrings that can
-                # appear anywhere — check the start of the (stripped) line only,
-                # else "Indeed" the job-board name plus a trailing comma
-                # anywhere mid-sentence would false-positive on "Indeed,".
+                # filler_starters are sentence-openers: checked at the start of
+                # every sentence, never mid-sentence (the job board "Indeed,").
                 if category == "filler_starters":
-                    lstripped = line.lstrip()
-                    offset = len(line) - len(lstripped)
-                    if lstripped.lower().startswith(phrase.lower()):
-                        violations.append(Violation(
-                            line=lineno, column=offset + 1,
-                            phrase=phrase, category=category,
-                        ))
+                    for pos in starts:
+                        if lower.startswith(phrase.lower(), pos):
+                            violations.append(Violation(
+                                line=lineno, column=pos + 1,
+                                phrase=phrase, category=category,
+                            ))
                     continue
                 pat = re.escape(phrase.lower())
                 # Word-boundary only when phrase starts AND ends with a word char.
@@ -301,26 +336,24 @@ def find_phrase_violations(
                 if phrase[0].isalnum() and phrase[-1].isalnum():
                     pat = r"\b" + pat + r"\b"
                 for m in re.finditer(pat, lower):
-                    # Date false-positive guard: month names like "May" trip
-                    # the bare-word hedge "may". Skip when the match is
-                    # immediately followed by whitespace + a 4-digit year.
-                    if category == "hedges_when_softening_own_work":
-                        tail = lower[m.end():m.end() + 6]
-                        if re.match(r"\s\d{4}\b", tail):
-                            continue
+                    # A hedge before a number states precision, not doubt:
+                    # "approximately 40%" is the bullet's own claim.
+                    if (category == "hedges_when_softening_own_work"
+                            and _NUMBER_AHEAD.match(lower, m.end())):
+                        continue
                     violations.append(Violation(
                         line=lineno, column=m.start() + 1,
                         phrase=phrase, category=category,
                     ))
 
         if no_emoji:
-            for i, ch in enumerate(line):
+            for i, ch in enumerate(lower):
                 if _is_emoji(ch):
                     violations.append(Violation(
                         line=lineno, column=i + 1, phrase=ch, category="emoji",
                     ))
         if no_exclamation:
-            for i, ch in enumerate(line):
+            for i, ch in enumerate(lower):
                 if ch == "!":
                     violations.append(Violation(
                         line=lineno, column=i + 1, phrase="!", category="exclamation",

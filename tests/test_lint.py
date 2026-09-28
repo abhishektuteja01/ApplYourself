@@ -25,6 +25,7 @@ def _rules(**overrides) -> dict:
             "em_dash": ", ",
             "en_dash_in_range": "-",
             "en_dash_parenthetical": ", ",
+            "hyphen": "-",
             "smart_quote_single": "'",
             "smart_quote_double": '"',
             "ellipsis": "...",
@@ -366,3 +367,75 @@ def test_bullets_diction_pass_default_false_when_missing_key():
 # ===========================================================
 # Diction pass — must lint canonical only, never metadata
 # ===========================================================
+
+
+# ===========================================================
+# One dash rule, protected text, sentence starts
+# ===========================================================
+
+@pytest.mark.parametrize("text,expected", [
+    ("May 2022 — Jul 2024", "May 2022 - Jul 2024"),
+    ("Open Mon–Fri", "Open Mon-Fri"),
+    ("Jan – May 2024", "Jan - May 2024"),
+    ("Cut cost by –5%", "Cut cost by -5%"),
+    ("grew 40%–60%", "grew 40%-60%"),
+    ("the plan — now revised", "the plan, now revised"),
+])
+def test_fix_mechanical_one_dash_rule(text, expected):
+    out, _ = fix_mechanical(text, _rules())
+    assert out == expected
+
+
+def test_fix_mechanical_hyphen_variants_and_invisibles():
+    out, subs = fix_mechanical("non‑blocking − a b﻿c", _rules())
+    assert out == "non-blocking - a bc"
+    assert {"hyphen", "nbsp", "zero_width"} <= {s["category"] for s in subs}
+
+
+def test_fix_mechanical_missing_mechanical_key_fails_loud():
+    from src.lint import LintConfigError
+    rules = _rules()
+    del rules["mechanical"]["hyphen"]
+    with pytest.raises(LintConfigError, match="hyphen"):
+        fix_mechanical("x", rules)
+
+
+@pytest.mark.parametrize("text", [
+    "* Notably, the system scaled.",
+    "Built X. Furthermore, it ran nightly.",
+    "1. Notably, it shipped.",
+])
+def test_filler_starters_caught_at_every_sentence_start(text):
+    v = find_phrase_violations(text, context="resume", rules=_rules())
+    assert any(x["category"] == "filler_starters" for x in v)
+
+
+@pytest.mark.parametrize("text", [
+    "Tenure: May 2022 - Jul 2024",
+    "Tenure: May - Jul 2024",
+    "Joined May, 2026",
+    "Since May '26",
+    "Jan-May 2024",
+])
+def test_month_may_is_not_a_hedge(text):
+    v = find_phrase_violations(text, context="resume", rules=_rules())
+    assert not any(x["phrase"] == "may" for x in v)
+
+
+def test_keep_terms_are_not_scanned():
+    rules = _rules(banned_phrases={"stock_adjectives": ["myriad"], "hedges_when_softening_own_work": ["may"]})
+    v = find_phrase_violations("Dear May Chen, Myriad Genetics builds tests.",
+                               context="resume", rules=rules, keep=["Myriad Genetics", "May Chen"])
+    assert v == []
+
+
+def test_exclamation_inside_url_or_email_is_not_flagged():
+    text = "[site](https://example.com/#!/home) | https://x.io/a!b | a!b@example.com"
+    v = find_phrase_violations(text, context="resume", rules=_rules())
+    assert not any(x["category"] == "exclamation" for x in v)
+
+
+def test_hedge_before_a_number_is_precision_not_doubt():
+    rules = _rules(banned_phrases={"hedges_when_softening_own_work": ["approximately"]})
+    assert find_phrase_violations("Cut cost approximately 40%.", context="resume", rules=rules) == []
+    assert find_phrase_violations("It approximately works.", context="resume", rules=rules) != []

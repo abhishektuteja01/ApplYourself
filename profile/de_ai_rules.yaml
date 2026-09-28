@@ -8,6 +8,7 @@ mechanical:
   em_dash: ", "
   en_dash_in_range: "-"
   en_dash_parenthetical: ", "
+  hyphen: "-"
   smart_quote_single: "'"
   smart_quote_double: '"'
   ellipsis: "..."
