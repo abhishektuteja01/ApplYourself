@@ -31,11 +31,19 @@ report lists them under `manual`, not `failed`.
 `src/apply/bank.py` is its only writer. `apply run --answers <file>` calls it with
 what the user confirmed in `/apply`: a label mapped to a question joins its
 `wordings`, an unchallenged keyword guess becomes an exact wording, a corrected
-guess joins that question's `not`, a board's option spelling joins the candidates,
-a new answer becomes a question, a judged option becomes a claim. Facts are never
-written by it, and "why this company" text never enters the bank. Every write
-validates the whole bank first and keeps `<file>.bak`. `apply learn` reviews and
-undoes.
+guess joins that question's `not`, a board's option spelling joins the candidates
+(only when the board offered none of the bank's), a new answer becomes a question,
+a judged option becomes a claim. Each lesson is tried alone and kept only if the
+bank still loads and still finds that lesson's question for its label; a refused
+lesson is named and the rest stand. A new question's answer must come from
+something about the user (`B-`/`S-`/`SKILL-`, `option`, `user`), never the JD or
+a company. Facts are never written by it. Every write keeps the previous file in
+`profile/.bank_history/` (last 20). `apply learn` reviews and undoes (a question,
+one wording or keyword, one claim).
+
+Scoring reads the same table: `score_filter` derives never / later / now per
+country from `work_authorization.countries`, and refuses `sponsorship_need` or
+`visa_free_countries` in `scoring.yaml`.
 
 ## Finding an answer
 
@@ -43,8 +51,13 @@ undoes.
 education, employment) by DOM id; EEOC and demographic by section (always the
 decline option); work authorization by label shape and country; then the bank,
 exact wording first and keyword second (`source` is `bank:<id>` or
-`bank:<id>~<keyword>`); else Tier C. A question's country is the one its label
-names, else the job's (parsed from its location), else the candidate's own.
+`bank:<id>~<keyword>`); else Tier C, which lists the closest bank questions. A
+question's country is the one its label names (discovery's country vocabulary,
+with US states and look-alikes masked), else the job's: discovery's location
+in `clean.parquet`, then `state.yaml`'s, then the title, then a JD phrase saying
+where the hire works. A location nothing can read is `UNKNOWN_COUNTRY`, and
+every answer that depends on the job's country parks. No location, or
+"Remote", means the candidate's own country.
 Export control answers only a "U.S. person" question, only from an explicit
 `us_person`; every other export-control question always parks.
 
@@ -62,8 +75,13 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
   role. It asks for a typed confirmation unless `--yes`; a non-tty stdin without
   `--yes` is refused. `--rate` is floored at 30s. One submission per company per run.
 - `applications/apply_runs/submitted.jsonl` records what was sent. A line is
-  written right before every click, and a role with any line is never clicked
-  again, whatever its `state.yaml` says. Delete its lines to retry.
+  written right before every click, and a role whose latest line is anything but
+  `refused` is never clicked again, whatever its `state.yaml` says. `track
+  ensure` (the `/tailor` registration) refuses to re-create a lost `state.yaml`
+  for such a role. Delete its lines to retry.
+- Without a confirmed answers file, `apply run --submit` parks a role whose plan
+  holds a keyword guess. With `--submit`, one browser fills, reads the form back,
+  and clicks only when every filled field holds what was planned (`form_check`).
 - A click ends `accepted` (the board's submit request or confirmation text),
   `ambiguous` (no marker on an unwatched board), `unsent` (a watched board fired
   no submit request), `rejected` (the board said no: spam flag, duplicate) or
@@ -72,6 +90,13 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 - `submit()` is the only function that clicks submit; a static test enforces it.
 - `employment.only_when_required: true` fills the employment block only where a
   board requires it.
+
+## The status sheet is derived
+
+`uv run apply sheet [--add]` (`src/apply/sheet.py`) rebuilds every row's status,
+note and submit command in `profile/automation.yaml`'s `table_path` from
+`state.yaml`, the ledger, the newest run report naming the role, and answers
+waiting for confirmation. Nothing else writes those cells.
 
 ## Ashby reads a JSON API
 
