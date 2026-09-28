@@ -60,10 +60,10 @@ this job's country).
 
 From the plan:
 
-- The board **requires** a cover letter (it parks on `cover_letter`), or it
-  offers an optional one and `--letter` was passed, and the folder has no
-  letter → run the `cover-letter` skill with `<job_id>`. An optional upload
-  without `--letter` stays blank.
+- The plan parks on `cover_letter` (the board requires one, or the bank says
+  `cover_letter: when_offered`), or the board offers an optional one and
+  `--letter` was passed, and the folder has no letter → run the `cover-letter`
+  skill with `<job_id>`. Otherwise an optional upload stays blank.
 - A question asks why this company, why this role, or what excites you about
   the product (it parks naming `company_answers.yaml`, or it is NEW and
   company-specific) and `COMPANY_ANSWERS` is empty → run the `company-answers`
@@ -117,6 +117,7 @@ is still saved.
 | why this company / role / product | `company_answers.yaml`, the matching key; `question` is `why_company`, `why_role` or `what_interests_you_about_product` | `company_answers` |
 | a salary figure, and the JD states one | the figure; `question: salary` | `jd` |
 | a work-authorization option the code could not pick | the option whose every claim is true for `work_authorization`; add `"claim": {"authorized": ..., "requires_sponsorship": ...}` stating what the option says | `work_auth` |
+| a yes/no work-authorization or export-control question the code parked (deemed export, "without sponsorship", "permanent or temporary") | no `value`: `"fact": {"fact": "<us_person \| authorized \| requires_sponsorship \| unrestricted>", "yes_when": true\|false}` — the one fact whose value makes the true answer Yes. The code computes the answer and saves the wording | `work_auth` |
 | a choice the board lists every answer to | the true option, from your facts, `bullets.md` or `skills_master.md` | `option` |
 | your experience, a decision, a hard problem, a project | `profile/stories.md` for how you decided (match its `kind`), `profile/bullets.md` for what you built; 1–3 sentences, NO-FAB and REPHRASE-LICENSE, never from an `evidence:` line | the `S-` or `B-` id |
 
@@ -126,7 +127,9 @@ A question the bank already answers but that this role needs said differently
 
 **Leave these parked**, however obvious a guess looks, and say why in step 6:
 
-- export control or "U.S. person" — the user's to answer, every time;
+- an export-control or work-authorization question no single fact settles
+  (an embargoed-country list, a license you may or may not need), or one whose
+  options are sentences rather than Yes/No;
 - consent the user has not stated (AI notetakers, recordings);
 - a preference between the employer's own options (which office) that your
   files do not settle;
@@ -147,7 +150,8 @@ cd "$(git rev-parse --show-toplevel)" && uv run apply plan <job_id> --questions 
 ```
 
 - Exit 1 with `OVERRIDES IGNORED`: an id not on the form, an identity/EEOC
-  field, or export control. Fix the entry and re-run.
+  field, or export control given a `value` instead of a `fact`. Fix the entry
+  and re-run.
 - A field parked with `lint: banned phrase(s)`: rewrite that sentence
   (`no_fab.md`'s fix loop, at most 5 plans), then re-run.
 
@@ -157,6 +161,9 @@ Show the user, in full, never summarized:
 <field_id> — "<label>"
   <value>                      [<source>] -> saved as <question id>
 ```
+
+For a `fact` entry, show the answer the plan computed and the rule: `Yes when
+<fact> is <yes_when>`.
 
 for every entry you wrote, then every **GUESSED BY KEYWORD** line that you left
 standing (it will be saved as that question's wording), then every question

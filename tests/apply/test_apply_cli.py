@@ -1726,3 +1726,43 @@ def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monke
     bank.learn([bank.Lesson(label="Is LinkedIn required?", question="linkedin_required",
                             value="No", source="jd", misfired="linkedin")])
     assert not yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"].get("not")
+
+
+class TestAConfirmedFactJudgmentIsLearned:
+    LABEL = "Does the deemed export rule apply to you?"
+
+    def test_it_is_saved_answered_next_time_and_undone(self, tmp_path, monkeypatch):
+        import shutil
+        from src.apply import bank
+        from src.apply.answers import load_answers, resolve
+        from src.apply.reconcile import MergedField, MergedOption
+        path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", path)
+        changes = bank.learn([bank.Lesson(label=self.LABEL, value="Yes",
+                                          fact={"fact": "us_person", "yes_when": False})],
+                             path=path)
+        assert any("fact wording" in c for c in changes)
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["work_authorization"]["us_person"] = "no"
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        f = MergedField(id="q", name="q", label=self.LABEL, required=True, kind="select",
+                        section="questions", multi=False,
+                        options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        assert resolve(f, load_answers(path)).value == "Yes"
+        refused = bank.learn([bank.Lesson(label=self.LABEL, value="No",
+                                          fact={"fact": "us_person", "yes_when": True})],
+                             path=path)
+        assert refused and refused[0].startswith("not saved")
+        assert "removed" in bank.undo(fact=self.LABEL, path=path)
+        assert resolve(f, load_answers(path)).parked
+
+    def test_the_answers_file_takes_a_fact_without_a_value(self, tmp_path):
+        p = tmp_path / "a.json"
+        p.write_text(json.dumps({"job_id": JOB_ID, "q": {
+            "fact": {"fact": "us_person", "yes_when": False}, "source": "work_auth"}}),
+            encoding="utf-8")
+        ov = apply_cli.load_overrides(p, JOB_ID)["q"]
+        assert ov.fact == {"fact": "us_person", "yes_when": False}
+        p.write_text(json.dumps({"q": {"fact": {"fact": "us_person"}}}), encoding="utf-8")
+        with pytest.raises(apply_cli.ApplyCliError, match="yes_when"):
+            apply_cli.load_overrides(p, JOB_ID)

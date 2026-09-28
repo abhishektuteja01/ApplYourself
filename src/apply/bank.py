@@ -8,7 +8,9 @@ next form that asks the same thing is answered without anyone deciding again:
 - a keyword guess the user corrected joins the guessing question's `not:`;
 - a board's spelling of a known answer joins its candidates;
 - a confirmed answer to a new question becomes a question of its own;
-- a work-authorization option judged true or false becomes a `claims:` entry.
+- a work-authorization option judged true or false becomes a `claims:` entry;
+- a yes/no work-authorization or export-control label judged against one of
+  your facts becomes a `fact_wordings:` entry.
 
 Facts about the user (identity, work authorization per country) are never
 written here: those change only when the user states them. Every write is
@@ -56,6 +58,8 @@ class Lesson:
     keyword: str = ""
     """Words every wording of this question shares, so a new wording is guessed
     (and shown for confirmation) instead of parking."""
+    fact: dict | None = None
+    """For a yes/no work-authorization or export-control label: `{fact, yes_when}`."""
 
 
 def read(path: Path | None = None) -> dict:
@@ -143,6 +147,18 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
                 claims[option] = dict(lesson.claim)
                 changes.append(f"claim: {option!r} -> {lesson.claim}")
         return changes, ""
+    if lesson.fact is not None:
+        judged = data.get("fact_wordings") or {}
+        data["fact_wordings"] = judged
+        label = lesson.label.strip()
+        taken = next((k for k in judged if A.norm_label(k) == wording), None)
+        if taken is not None and judged[taken] != lesson.fact:
+            return changes, (f"{label!r} is already judged {judged[taken]}; "
+                             f"undo it first (apply learn --undo-fact)")
+        if taken is None:
+            judged[label] = dict(lesson.fact)
+            changes.append(f"fact wording: {label!r} -> {lesson.fact}")
+        return changes, ""
     if not wording or not lesson.question:
         return [], ""
 
@@ -201,12 +217,15 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
 def _still_answers(data: dict, lesson: Lesson) -> str:
     """"" when the bank, with this lesson in, finds the lesson's question for
     its label; else why not."""
-    if lesson.claim is not None or not lesson.question:
+    if lesson.claim is not None or (not lesson.question and lesson.fact is None):
         return ""
     try:
         bank = A.answers_from(data)
     except A.AnswersError as exc:
         return f"the bank would not load: {exc}"
+    if lesson.fact is not None:
+        return ("" if A.norm_label(lesson.label) in bank.fact_wordings
+                else f"{lesson.label.strip()!r} would not be found")
     found = A.find_question(lesson.label, bank)
     if found is None or found[0].id != lesson.question:
         got = found[0].id if found else "nothing"
@@ -272,10 +291,21 @@ def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:
 
 
 def undo(qid: str = "", wording: str = "", keyword: str = "", claim: str = "",
-         path: Path | None = None) -> str:
-    """Take one thing back: a whole question, one wording or keyword of it, or
-    one claim. A question left with no way to be found is removed whole."""
+         fact: str = "", path: Path | None = None) -> str:
+    """Take one thing back: a whole question, one wording or keyword of it, one
+    claim, or one fact wording. A question left with no way to be found is
+    removed whole."""
     data = read(path)
+    if fact:
+        judged = data.get("fact_wordings") or {}
+        key = next((k for k in judged if A.norm_label(k) == A.norm_label(fact)), None)
+        if key is None:
+            raise BankError(f"no fact wording {fact!r}")
+        judged.pop(key)
+        if not judged:
+            data.pop("fact_wordings", None)
+        write(data, path)
+        return f"removed fact wording {key!r}"
     if claim:
         claims = data.get("claims") or {}
         if claim not in claims:
@@ -328,4 +358,7 @@ def review(path: Path | None = None, since_job: str = "") -> list[str]:
             lines.append(f"    from {', '.join(taught)}")
     for option, claim in (data.get("claims") or {}).items():
         lines.append(f"claim {option!r}: {claim}")
+    for label, judged in (data.get("fact_wordings") or {}).items():
+        lines.append(f"fact wording {label!r}: Yes when {judged['fact']} is "
+                     f"{str(judged['yes_when']).lower()}")
     return lines

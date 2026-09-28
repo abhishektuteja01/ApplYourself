@@ -72,7 +72,9 @@ EMPLOYMENT_FLAGS = ("current_role", "only_when_required")
 
 TOP_LEVEL_KEYS = (
     "schema_version", "identity", "work_authorization", "education",
-    "employment", "demographics", "claims", "questions",
+    "employment", "demographics", "claims", "questions", "fact_wordings",
+    # Not an answer: whether an optional cover-letter upload gets a letter.
+    "cover_letter",
     # Not an answer: which browser drives the form. Owned and validated by
     # src/apply/browser.py.
     "browser",
@@ -143,6 +145,33 @@ _EEOC_SIGNATURE_DATE_IDS = frozenset({
     "eeo[disabilitySignatureDate]",
     "disability_signature_date",
 })
+
+#: `cover_letter:` values. `when_offered` attaches a letter wherever the board
+#: has a cover-letter upload; `when_required` only where it requires one.
+COVER_LETTER_POLICIES = ("when_required", "when_offered")
+
+# The demographic topics `demographics.answers` may state. Any other
+# demographic question (sexual orientation, transgender, pronouns) opts out.
+DEMOGRAPHIC_TOPICS = ("gender", "race", "hispanic_ethnicity", "veteran_status",
+                      "disability_status")
+_DEMOGRAPHIC_IDS = {
+    "gender": "gender", "eeo[gender]": "gender",
+    "race": "race", "eeo[race]": "race",
+    "hispanic_ethnicity": "hispanic_ethnicity",
+    "veteran_status": "veteran_status", "eeo[veteran]": "veteran_status",
+    "disability_status": "disability_status", "eeo[disability]": "disability_status",
+}
+# For the free-labelled demographic questions (Greenhouse's numeric ids), in
+# order. `\bgender\b` so "transgender" is never the gender question, and a
+# label naming race is the race question even when it also says "Hispanic".
+_RACE_LABEL = re.compile(r"\brace\b|racial|ethnic", re.IGNORECASE)
+_DEMOGRAPHIC_LABELS = (
+    ("veteran_status", re.compile(r"veteran|armed\s+forces|military\s+service", re.IGNORECASE)),
+    ("disability_status", re.compile(r"disabilit", re.IGNORECASE)),
+    ("hispanic_ethnicity", re.compile(r"hispanic|latin[oax]", re.IGNORECASE)),
+    ("race", _RACE_LABEL),
+    ("gender", re.compile(r"\bgender\b|\bsex\b", re.IGNORECASE)),
+)
 
 # Opt-out wordings, tried in order against the options the form renders. The
 # flagged decline option comes first where a board marks one.
@@ -655,7 +684,13 @@ class Answers:
     """Normalized board option text -> the facts it states. A board's
     full-sentence work-authorization option is true of you when every fact it
     states matches the country's row."""
-    demographics_no_decline_fallback: dict[str, str] = field(default_factory=dict)
+    demographic_answers: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """Topic (`DEMOGRAPHIC_TOPICS`) -> your answer's spellings, best first."""
+    fact_wordings: dict[str, dict] = field(default_factory=dict)
+    """Normalized label -> `{fact, yes_when}`: a yes/no question the code cannot
+    classify (export control, a negated sponsorship question), judged once and
+    answered from your facts on every later board."""
+    cover_letter: str = "when_required"
 
     # Per role, set by the caller after loading (see apply_cli.build()).
     job_country: str = ""
@@ -885,6 +920,57 @@ def _parse_claims(data) -> dict[str, dict]:
     return out
 
 
+def _parse_demographics(data) -> dict[str, tuple[str, ...]]:
+    block = data.get("demographics")
+    if block is None:
+        return {}
+    if not isinstance(block, dict) or set(block) - {"answers"}:
+        raise AnswersError("demographics: only `answers` is allowed")
+    raw = block.get("answers") or {}
+    if not isinstance(raw, dict):
+        raise AnswersError("demographics.answers: must map a topic to your answer")
+    out = {}
+    for topic, value in raw.items():
+        where = f"demographics.answers.{topic}"
+        if topic not in DEMOGRAPHIC_TOPICS:
+            raise AnswersError(f"{where}: a topic is one of {list(DEMOGRAPHIC_TOPICS)}")
+        values = value if isinstance(value, list) else [value]
+        if not values:
+            raise AnswersError(f"{where}: must not be empty")
+        out[topic] = tuple(_require_str(v, where) for v in values)
+    return out
+
+
+# The facts a judged wording may be answered from. `us_person` is the bank's
+# own; the rest are the question's country's row.
+FACT_WORDING_FACTS = ("us_person", "authorized", "requires_sponsorship", "unrestricted")
+
+
+def _parse_fact_wordings(data) -> dict[str, dict]:
+    raw = data.get("fact_wordings") or {}
+    if not isinstance(raw, dict):
+        raise AnswersError("fact_wordings: must map a label to {fact, yes_when}")
+    out: dict[str, dict] = {}
+    for label, spec in raw.items():
+        where = f"fact_wordings[{label!r}]"
+        key = _norm(str(label))
+        if not key:
+            raise AnswersError(f"{where}: the label normalizes to nothing")
+        if not isinstance(spec, dict) or set(spec) != {"fact", "yes_when"}:
+            raise AnswersError(f"{where}: must be {{fact, yes_when}}")
+        if spec["fact"] not in FACT_WORDING_FACTS:
+            raise AnswersError(f"{where}.fact: one of {list(FACT_WORDING_FACTS)}")
+        _require_bool(spec["yes_when"], f"{where}.yes_when")
+        if not in_work_authorization_domain(str(label)):
+            raise AnswersError(
+                f"{where}: not a work-authorization or export-control question; "
+                "an ordinary question goes under questions:")
+        if key in out:
+            raise AnswersError(f"{where}: another label normalizes to the same wording")
+        out[key] = {"fact": spec["fact"], "yes_when": spec["yes_when"]}
+    return out
+
+
 def _fact_candidates(path: str, identity, education, employment, where: str) -> tuple[str, ...]:
     blocks = {"identity": identity, "education": education, "employment": employment or {}}
     head, _, key = path.partition(".")
@@ -1040,17 +1126,10 @@ def answers_from(data, where: str = "answer bank") -> Answers:
 
     countries, nationalities, us_person = _parse_work_authorization(data)
 
-    fallback: dict[str, str] = {}
-    demographics = data.get("demographics")
-    if demographics is not None:
-        if not isinstance(demographics, dict) or set(demographics) - {"no_decline_fallback"}:
-            raise AnswersError("demographics: only `no_decline_fallback` is allowed")
-        raw = demographics.get("no_decline_fallback") or {}
-        if not isinstance(raw, dict) or not all(
-                isinstance(k, str) and isinstance(v, str) for k, v in raw.items()):
-            raise AnswersError(
-                "demographics.no_decline_fallback: must map field id to answer")
-        fallback = dict(raw)
+    cover_letter = data.get("cover_letter", "when_required")
+    if cover_letter not in COVER_LETTER_POLICIES:
+        raise AnswersError(
+            f"cover_letter: {cover_letter!r} is not one of {list(COVER_LETTER_POLICIES)}")
 
     return Answers(
         identity=identity,
@@ -1061,7 +1140,9 @@ def answers_from(data, where: str = "answer bank") -> Answers:
         nationalities=nationalities,
         us_person=us_person,
         claims=_parse_claims(data),
-        demographics_no_decline_fallback=fallback,
+        demographic_answers=_parse_demographics(data),
+        fact_wordings=_parse_fact_wordings(data),
+        cover_letter=cover_letter,
     )
 
 
@@ -1211,26 +1292,69 @@ def _today() -> date:
     return date.today()
 
 
+def demographic_topic(field: MergedField) -> str:
+    """Which `DEMOGRAPHIC_TOPICS` entry a demographic field asks, or "": by the
+    standard EEOC ids first, else by a free label."""
+    if field.id in _DEMOGRAPHIC_IDS:
+        return _DEMOGRAPHIC_IDS[field.id]
+    label = field.label or ""
+    for topic, pattern in _DEMOGRAPHIC_LABELS:
+        if pattern.search(label):
+            if topic == "hispanic_ethnicity" and _RACE_LABEL.search(label):
+                continue
+            return topic
+    return ""
+
+
+_PREFIX_MIN = 4
+
+
+def _pick_own_answer(field: MergedField, candidates: tuple[str, ...]) -> str | None:
+    """The first candidate the board offers, exactly or as the start of a longer
+    option ("Asian" in "Asian (Not Hispanic or Latino)" or "Asian: Individuals
+    with origins ..."), never inside another word ("Asian" in "South Asian")."""
+    picked = _pick_option(field, candidates)
+    if picked is not None:
+        return picked
+    for candidate in candidates:
+        want = _norm_option(candidate)
+        if len(want) < _PREFIX_MIN:
+            continue            # "No" must never pick "No, I don't wish to answer"
+        for option in field.options:
+            have = _norm_option(option.label)
+            if have.startswith(want) and not have[len(want):len(want) + 1].isalnum():
+                return option.label
+    return None
+
+
 def _resolve_eeoc(field: MergedField, answers: Answers) -> Resolution:
-    """EEOC and demographic questions alike: the label is employer-authored and
-    ignored. Take the flagged decline option, else an opt-out wording, else the
-    configured fallback for this field id, else park (required) or skip."""
+    """EEOC and demographic questions alike. A topic `demographics.answers`
+    states gets your answer, in the first spelling the board offers; anything
+    else (or a board offering none of your spellings) takes the flagged decline
+    option, else an opt-out wording, else parks (required) or skips."""
     if field.id in _EEOC_SIGNATURE_IDS:
         first, last = answers.identity["first_name"], answers.identity["last_name"]
         return _fill(f"{first} {last}".strip(), "A2")
     if field.id in _EEOC_SIGNATURE_DATE_IDS:
         return _fill(_today().strftime(DATE_FORMAT), "A2")
+    topic = demographic_topic(field)
+    own = answers.demographic_answers.get(topic) if topic else None
+    if own and field.options:
+        picked = _pick_own_answer(field, own)
+        if picked is not None:
+            return _fill((picked,) if field.multi else picked, "A2",
+                         source=f"demographics:{topic}")
     picked = None
     if field.options:
         flagged = tuple(o.label for o in field.options if o.decline_to_answer)
         picked = _pick_option(field, flagged + _OPT_OUT)
-        fallback = answers.demographics_no_decline_fallback.get(field.id)
-        if picked is None and fallback:
-            picked = _pick_option(field, (fallback,))
     if picked is None:
         return (_park(f"{field.id}: no opt-out option offered", "A2")
                 if field.required else _skip("no opt-out option offered", "A2"))
-    return _fill((picked,) if field.multi else picked, "A2")
+    reason = (f"none of demographics.answers.{topic} {list(own)} is offered; declined"
+              if own else "")
+    return Resolution("fill", value=(picked,) if field.multi else picked, tier="A2",
+                      reason=reason)
 
 
 def _yes_no(field: MergedField, value: bool, tier: str = "B0") -> Resolution | None:
@@ -1341,8 +1465,38 @@ def _resolve_by_claims(field: MergedField, answers: Answers, asked: str | None,
         f"{countries[0]}; add the true one under claims (offered: {offered})", "B0")
 
 
+def in_work_authorization_domain(label: str) -> bool:
+    """Whether a label goes to the work-authorization resolver."""
+    return bool(WORK_AUTHORIZATION_DOMAIN.search(label or "")
+                and not _NOT_WORK_AUTH.search(label or ""))
+
+
+def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> Resolution:
+    """A wording judged once: Yes exactly when the fact it names equals
+    `yes_when`, so the answer follows your facts if they change."""
+    fact = judged["fact"]
+    source = f"fact_wording:{fact}"
+    if fact == "us_person":
+        if answers.us_person == "park":
+            return _park("asks whether you are a \"U.S. person\". Set "
+                         "work_authorization.us_person to answer it", "B0", source=source)
+        value = answers.us_person == "yes"
+    else:
+        if UNKNOWN_COUNTRY in _question_countries(field.label, answers):
+            return _park("work authorization: the job's country could not be read from "
+                         "its location, and this question depends on it", "B0", source=source)
+        value, _ = _one_value(field.label, answers, lambda f: getattr(f, fact))
+    answered = _yes_no(field, value == judged["yes_when"])
+    if answered is None:
+        return _park(f"{source}: the board offers no bare Yes/No", "B0", source=source)
+    return Resolution("fill", answered.value, "B0", source=source)
+
+
 def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolution:
     label = field.label or ""
+    judged = answers.fact_wordings.get(_norm(label))
+    if judged is not None:
+        return resolve_fact_wording(field, answers, judged)
     options = tuple(o.label for o in field.options)
     category = classify_work_authorization(label, options)
     countries = _question_countries(label, answers)
@@ -1559,7 +1713,7 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
         return identity
 
     label = field.label or ""
-    if WORK_AUTHORIZATION_DOMAIN.search(label) and not _NOT_WORK_AUTH.search(label):
+    if in_work_authorization_domain(label):
         resolution = _resolve_work_authorization(field, answers)
         # Blank is never a false claim, and an optional free-text visa question
         # is not worth parking a role over.

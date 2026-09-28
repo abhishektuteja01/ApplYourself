@@ -15,7 +15,7 @@
                         a typed confirmation unless --yes, and never clicks a
                         role already in the submit ledger. Writes
                         applications/apply_runs/<timestamp>.md.
-  learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT]
+  learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                         review what the bank holds, or take one thing back.
   sheet [--add]         rebuild the status sheet's status/note/command from
                         state.yaml, the ledger and the run reports; --add first
@@ -39,7 +39,8 @@ import yaml
 
 from src import paths, state_io, track_cli
 from src.apply import ashby, bank, ledger, lever
-from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, UNKNOWN_COUNTRY, Answers,
+from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, FACT_WORDING_FACTS,
+                               UNKNOWN_COUNTRY, Answers,
                                AnswersError, load_answers)
 from src.apply.fill import (_require_playwright, blocking_details, has_driver,
                              run_one)
@@ -74,7 +75,8 @@ def ledger_path() -> Path:
 
 # What an `--answers` entry may carry. `label` and `source_id` are records for
 # the reader; the rest is read.
-OVERRIDE_KEYS = ("value", "source", "question", "claim", "keyword", "label", "source_id")
+OVERRIDE_KEYS = ("value", "source", "question", "claim", "keyword", "fact", "label",
+                 "source_id")
 CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 
 
@@ -277,6 +279,17 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
         if unknown:
             raise ApplyCliError(f"{where} has unknown keys {sorted(unknown)}; "
                                 f"allowed: {', '.join(OVERRIDE_KEYS)}")
+        fact = entry.get("fact")
+        if fact is not None:
+            if (not isinstance(fact, dict) or set(fact) != {"fact", "yes_when"}
+                    or fact["fact"] not in FACT_WORDING_FACTS
+                    or not isinstance(fact["yes_when"], bool)):
+                raise ApplyCliError(
+                    f"{where} fact is {{\"fact\": one of "
+                    f"{', '.join(FACT_WORDING_FACTS)}, \"yes_when\": true|false}}")
+            overrides[field_id] = Override(value="", source=str(entry.get("source") or ""),
+                                           fact=dict(fact))
+            continue
         value = entry.get("value")
         if isinstance(value, list):
             if not value or not all(isinstance(v, str) and v.strip() for v in value):
@@ -740,7 +753,7 @@ def render_questions(plan: Plan) -> str:
         if q.similar:
             lines.append(f"      closest in the bank: {', '.join(q.similar)}")
 
-    blockers = [u for u in plan.unmapped if u.required]
+    blockers = [u for u in plan.unmapped if u.required or u.blocks]
     lines.append("")
     lines.append(f"BLOCKING — required and unanswered ({len(blockers)})")
     for u in blockers:
@@ -803,9 +816,10 @@ def _cmd_learn(args: argparse.Namespace) -> int:
     for looking and taking back."""
     path = Path(args.path) if args.path else None
     try:
-        if args.undo or args.undo_claim:
+        if args.undo or args.undo_claim or args.undo_fact:
             print(bank.undo(args.undo or "", wording=args.wording or "",
                             keyword=args.keyword or "", claim=args.undo_claim or "",
+                            fact=args.undo_fact or "",
                             path=path))
             return 0
         for line in bank.review(path, since_job=args.job or ""):
@@ -975,6 +989,10 @@ def lessons_from(plan: Plan, overrides: dict[str, Override], job_id: str) -> lis
             continue
         if override.claim is not None:
             lessons.append(bank.Lesson(label=f.label, value=f.value, claim=override.claim,
+                                       job_id=job_id))
+            continue
+        if override.fact is not None:
+            lessons.append(bank.Lesson(label=f.label, value=f.value, fact=override.fact,
                                        job_id=job_id))
             continue
         if not override.question:
@@ -1291,7 +1309,7 @@ _EXIT_NONZERO = ("failed", "submitted_untracked")
 def _park_kind(row: dict) -> str:
     """Why a question parked, in the words that say what to do next."""
     if row.get("source") == "export_control" or "export control" in row.get("reason", ""):
-        return "yours to answer"
+        return "new question"
     if "~" in row.get("source", ""):
         return "guess to confirm"
     if row.get("tier") == "C":
@@ -1618,6 +1636,8 @@ def main(argv: list[str] | None = None) -> int:
     lrn.add_argument("--keyword", default=None, help="with --undo: one keyword only")
     lrn.add_argument("--undo-claim", default=None, metavar="OPTION_TEXT",
                      help="remove one work-authorization claim")
+    lrn.add_argument("--undo-fact", default=None, metavar="LABEL",
+                     help="remove one judged work-authorization / export-control wording")
     lrn.add_argument("--path", default=None, type=Path, help="bank path (tests)")
     lrn.set_defaults(func=_cmd_learn)
 

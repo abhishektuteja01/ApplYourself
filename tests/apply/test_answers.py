@@ -1128,3 +1128,161 @@ class TestOnlyWhenRequiredRule:
         rules = [{"exact": ["current company"], "answer": "X", "only_when_required": "yes"}]
         with pytest.raises(AnswersError, match="only_when_required"):
             load_answers(write_config(tmp_path, rules=rules))
+
+
+MY_DEMOGRAPHICS = {"answers": {
+    "gender": ["Male", "Man"],
+    "race": ["Asian", "South Asian"],
+    "hispanic_ethnicity": ["No", "Not Hispanic or Latino"],
+    "veteran_status": ["I am not a protected veteran",
+                       "No, I am not a veteran or active member", "No"],
+    "disability_status": ["No, I do not have a disability and have not had one in the past",
+                          "No"],
+}}
+
+
+class TestOwnDemographicAnswers:
+    """`demographics.answers`: your answer first, in the board's spelling;
+    decline only where the board offers none of your spellings."""
+
+    @pytest.fixture
+    def mine(self, tmp_path):
+        return load_answers(write_config(tmp_path, demographics=MY_DEMOGRAPHICS))
+
+    @pytest.mark.parametrize("field_id,options,expected", [
+        ("gender", ["Decline To Self Identify", "Female", "Male"], "Male"),
+        ("eeo[gender]", ["Male", "Female", "Decline to self-identify"], "Male"),
+        ("hispanic_ethnicity", ["Yes", "No", "Decline To Self Identify"], "No"),
+        ("race", ["Decline To Self Identify", "White", "Asian"], "Asian"),
+        ("eeo[race]", ["White (Not Hispanic or Latino)", "Asian (Not Hispanic or Latino)",
+                       "Decline to self-identify"], "Asian (Not Hispanic or Latino)"),
+        ("veteran_status", ["I identify as one or more of the classifications of a protected "
+                            "veteran", "I am not a protected veteran", "I don't wish to answer"],
+         "I am not a protected veteran"),
+        ("disability_status", ["Yes, I have a disability, or have had one in the past",
+                               "No, I do not have a disability and have not had one in the past",
+                               "I do not want to answer"],
+         "No, I do not have a disability and have not had one in the past"),
+    ])
+    def test_each_eeoc_field_takes_your_answer(self, mine, field_id, options, expected):
+        r = resolve(field(id=field_id, section="eeoc", kind="react_select", options=options),
+                    mine)
+        assert r.value == expected and r.tier == "A2"
+
+    def test_a_free_labelled_demographic_question_is_found_by_its_label(self, mine):
+        cases = [
+            ("How would you describe your gender identity? (mark all that apply)",
+             ["Man", "Non-binary", "Woman", "I don't wish to answer"], ("Man",)),
+            ("How would you describe your racial/ethnic background? (mark all that apply)",
+             ["East Asian", "South Asian", "Southeast Asian", "I don't wish to answer"],
+             ("South Asian",)),
+            ("Are you a veteran or active member of the United States Armed Forces?",
+             ["Yes, I am a veteran or active member", "No, I am not a veteran or active member",
+              "I don't wish to answer"], ("No, I am not a veteran or active member",)),
+            ("What is your race and ethnicity? (Select as many that apply.)",
+             ["Asian: Individuals with origins in any of the original peoples of Asia.",
+              "White: Individuals with origins in Europe."],
+             ("Asian: Individuals with origins in any of the original peoples of Asia.",)),
+        ]
+        for label, options, expected in cases:
+            f = field(id="4011224007", label=label, section="demographic",
+                      kind="checkbox_group", multi=True, options=options)
+            assert resolve(f, mine).value == expected, label
+
+    def test_asian_never_matches_inside_another_group(self, mine):
+        f = field(id="race", section="eeoc", kind="react_select",
+                  options=["East Asian", "Southeast Asian", "I don't wish to answer"])
+        assert resolve(f, mine).value == "I don't wish to answer"
+
+    def test_a_short_answer_never_prefix_matches_a_decline(self, mine):
+        """Your "No" is not the start of "No, prefer not to say"."""
+        f = field(id="hispanic_ethnicity", section="eeoc", kind="react_select",
+                  required=True, options=["Yes", "No, prefer not to say"])
+        assert resolve(f, mine).parked
+
+    def test_topics_you_did_not_state_still_decline(self, mine):
+        for label in ("Do you identify as transgender? (select one)",
+                      "How would you describe your sexual orientation?"):
+            f = field(id="4011227007", label=label, section="demographic",
+                      kind="react_select", options=["Yes", "No", "I don't wish to answer"])
+            assert resolve(f, mine).value == "I don't wish to answer", label
+
+    def test_none_of_your_spellings_declines_and_says_so(self, mine):
+        f = field(id="gender", section="eeoc", kind="react_select",
+                  options=["Female", "Other", "Decline To Self Identify"])
+        r = resolve(f, mine)
+        assert r.value == "Decline To Self Identify" and "none of" in r.reason
+
+    def test_without_the_block_everything_declines(self, answers):
+        f = field(id="gender", section="eeoc", kind="react_select",
+                  options=["Male", "Female", "Decline To Self Identify"])
+        assert resolve(f, answers).value == "Decline To Self Identify"
+
+    @pytest.mark.parametrize("block,needle", [
+        ({"answers": {"pronouns": ["he/him"]}}, "a topic is one of"),
+        ({"no_decline_fallback": {"gender": "Male"}}, "only `answers`"),
+        ({"answers": {"gender": []}}, "must not be empty"),
+    ])
+    def test_the_loader_refuses_a_bad_block(self, tmp_path, block, needle):
+        with pytest.raises(AnswersError, match=needle):
+            load_answers(write_config(tmp_path, demographics=block))
+
+
+class TestFactWordings:
+    """A yes/no work-authorization or export-control label, judged once against
+    one fact, answered from that fact on every later board."""
+
+    DEEMED = "Does the deemed export rule apply to you?"
+
+    def bank(self, tmp_path, us_person="no", **judged):
+        data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+        data["work_authorization"]["us_person"] = us_person
+        return load_answers(write_config(
+            tmp_path, work_authorization=data["work_authorization"],
+            fact_wordings=judged or {self.DEEMED: {"fact": "us_person", "yes_when": False}}))
+
+    def yes_no(self, label):
+        return field(id="q", label=label, kind="react_select", required=True,
+                     options=["Yes", "No"])
+
+    def test_an_export_question_parks_until_judged(self, answers):
+        assert resolve(self.yes_no(self.DEEMED), answers).parked
+
+    def test_a_judged_export_wording_follows_us_person(self, tmp_path):
+        assert resolve(self.yes_no(self.DEEMED), self.bank(tmp_path, "no")).value == "Yes"
+        assert resolve(self.yes_no(self.DEEMED), self.bank(tmp_path, "yes")).value == "No"
+
+    def test_park_us_person_still_parks(self, tmp_path):
+        assert resolve(self.yes_no(self.DEEMED), self.bank(tmp_path, "park")).parked
+
+    def test_a_negated_sponsorship_question_follows_the_country(self, tmp_path):
+        label = "Are you able to work in the United States without sponsorship?"
+        bank = self.bank(tmp_path, **{label: {"fact": "requires_sponsorship",
+                                              "yes_when": False}})
+        assert resolve(self.yes_no(label), bank).value == "No"
+
+    def test_only_the_exact_wording_is_answered(self, tmp_path):
+        other = "Does the deemed export rule apply to you in Canada?"
+        assert resolve(self.yes_no(other), self.bank(tmp_path)).parked
+
+    @pytest.mark.parametrize("spec,needle", [
+        ({"fact": "us_person"}, "fact, yes_when"),
+        ({"fact": "salary", "yes_when": True}, "fact: one of"),
+    ])
+    def test_the_loader_refuses_a_bad_entry(self, tmp_path, spec, needle):
+        with pytest.raises(AnswersError, match=needle):
+            self.bank(tmp_path, **{self.DEEMED: spec})
+
+    def test_an_ordinary_question_is_refused(self, tmp_path):
+        with pytest.raises(AnswersError, match="ordinary question"):
+            self.bank(tmp_path, **{"Are you willing to relocate?":
+                                   {"fact": "authorized", "yes_when": True}})
+
+
+class TestCoverLetterSetting:
+    def test_default_is_when_required(self, answers):
+        assert answers.cover_letter == "when_required"
+
+    def test_an_unknown_value_is_refused(self, tmp_path):
+        with pytest.raises(AnswersError, match="cover_letter"):
+            load_answers(write_config(tmp_path, cover_letter="always"))

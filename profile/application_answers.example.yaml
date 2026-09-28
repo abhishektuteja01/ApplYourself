@@ -47,9 +47,18 @@ employment:
   end_year: 2025
   current_role: false
 
-# Only for a board whose EEOC field offers no decline option: field id -> answer.
-demographics:
-  no_decline_fallback: {}
+# Optional. Your answer per EEOC topic, every spelling boards use, best first.
+# A topic you leave out, or a board offering none of your spellings, gets the
+# board's "decline to answer". Topics: gender, race, hispanic_ethnicity,
+# veteran_status, disability_status. Anything else (orientation, pronouns) declines.
+# demographics:
+#   answers:
+#     gender: ["Male", "Man"]
+#     hispanic_ethnicity: ["No", "Not Hispanic or Latino"]
+
+# when_required: attach a cover letter only where the board requires one.
+# when_offered: wherever the board has a cover-letter upload (/apply writes one).
+cover_letter: when_required
 
 # Legal facts, per country. A question names a country, or means the job's.
 # Every country you do not list answers from `default`.

@@ -667,3 +667,67 @@ class TestDraftedTextIsLinted:
                   options=(MergedOption(label=option),))
         plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value=option)})
         assert plan.fields[0].value == option
+
+
+class TestCoverLetterWhenOffered:
+    """`cover_letter: when_offered`: an optional letter upload with no letter
+    in the folder parks the role, so /apply writes one."""
+
+    def letter(self, required=False):
+        return field(id="cover_letter", name="cover_letter", label="Cover Letter",
+                     kind="file", required=required)
+
+    def folder(self, tmp_path, with_letter):
+        out = tmp_path / "role"
+        out.mkdir()
+        (out / "Alex_Example_Resume.pdf").write_bytes(b"x")
+        if with_letter:
+            (out / "Alex_Example_Cover_Letter.pdf").write_bytes(b"x")
+        return out
+
+    def test_default_leaves_an_optional_upload_blank(self, answers, tmp_path):
+        plan = build_plan(one([self.letter()]), answers, self.folder(tmp_path, False))
+        assert not plan.parked and [s.id for s in plan.skipped] == ["cover_letter"]
+
+    def test_when_offered_parks_without_a_letter(self, answers, tmp_path):
+        from dataclasses import replace
+        plan = build_plan(one([self.letter()]), replace(answers, cover_letter="when_offered"),
+                          self.folder(tmp_path, False))
+        assert plan.parked and plan.required_parked == ("cover_letter",)
+        assert "when_offered" in plan.unmapped[0].reason
+
+    def test_when_offered_attaches_the_letter_it_has(self, answers, tmp_path):
+        from dataclasses import replace
+        plan = build_plan(one([self.letter()]), replace(answers, cover_letter="when_offered"),
+                          self.folder(tmp_path, True))
+        assert not plan.parked and [f.id for f in plan.files] == ["cover_letter"]
+
+
+class TestFactJudgmentOverride:
+    """A `fact` override answers an unclassifiable yes/no work-authorization or
+    export-control label by computing it from your facts."""
+
+    def export_q(self):
+        return field(id="q", label="Does the deemed export rule apply to you?",
+                     kind="select", required=True,
+                     options=(MergedOption(label="Yes"), MergedOption(label="No")))
+
+    def test_it_answers_export_control_from_us_person(self, answers, tailor_dir):
+        from dataclasses import replace
+        plan = build_plan(one([self.export_q()]), replace(answers, us_person="no"), tailor_dir,
+                          overrides={"q": Override(value="", fact={"fact": "us_person",
+                                                                   "yes_when": False})})
+        assert plan.fields[0].value == "Yes"
+        assert plan.fields[0].source == "fact_wording:us_person"
+
+    def test_it_parks_while_us_person_is_park(self, answers, tailor_dir):
+        plan = build_plan(one([self.export_q()]), answers, tailor_dir,
+                          overrides={"q": Override(value="", fact={"fact": "us_person",
+                                                                   "yes_when": False})})
+        assert plan.parked and not plan.ignored_overrides
+
+    def test_it_is_refused_on_an_ordinary_question(self, answers, tailor_dir):
+        f = field(id="q", label="What is your LinkedIn?", kind="text")
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={
+            "q": Override(value="", fact={"fact": "authorized", "yes_when": True})})
+        assert "fact judgment" in plan.ignored_overrides[0]

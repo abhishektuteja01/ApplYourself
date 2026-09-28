@@ -32,7 +32,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.apply.answers import Answers, Resolution, match_option, resolve, similar_questions
+from src.apply.answers import (
+    Answers, Resolution, match_option, resolve, resolve_fact_wording, similar_questions,
+)
 from src.apply.reconcile import MergedField, Reconciled
 
 # Artifact suffixes in upload preference order. Greenhouse accepts
@@ -164,6 +166,10 @@ class Unmapped:
     similar: tuple[str, ...] = ()
     """For a question the bank does not know: the closest bank questions."""
 
+    blocks: bool = False
+    """Parks the role though the board marks it optional: a cover-letter upload
+    with no letter, under `cover_letter: when_offered`."""
+
 
 @dataclass(frozen=True)
 class Skipped:
@@ -221,7 +227,7 @@ class Plan:
     def required_parked(self) -> tuple[str, ...]:
         """Required fields nothing could answer — the reason a role parks that
         the run report has to name."""
-        return tuple(u.id for u in self.unmapped if u.required)
+        return tuple(u.id for u in self.unmapped if u.required or u.blocks)
 
 
 # ------------------------------------------------------------------ artifacts
@@ -306,10 +312,13 @@ class Override:
     """For a work-authorization option: the facts its text states."""
     keyword: str = ""
     """Words every wording of the question shares; saved as a keyword."""
+    fact: dict | None = None
+    """For a yes/no work-authorization or export-control label the code cannot
+    classify: `{fact, yes_when}`. The answer is computed from your facts."""
 
 
-# Fields no override may touch: identity and EEOC come from stated facts only,
-# and export control is the user's to answer every time.
+# Fields no override may touch: identity and EEOC come from stated facts only.
+# Export control takes only a `fact` judgment, never a typed value.
 _CLOSED_TIERS = frozenset({"A", "A2"})
 
 
@@ -390,7 +399,7 @@ def _work_authorization_facts(answers: Answers) -> dict[str, object]:
 
 
 def _unmapped(field: MergedField, resolution: Resolution, reason: str = "",
-              answers: Answers | None = None) -> Unmapped:
+              answers: Answers | None = None, blocks: bool = False) -> Unmapped:
     similar = (similar_questions(field.label, answers)
                if answers is not None and resolution.tier == "C" else ())
     return Unmapped(
@@ -406,6 +415,7 @@ def _unmapped(field: MergedField, resolution: Resolution, reason: str = "",
         multi=field.multi,
         description=field.description,
         source=resolution.source,
+        blocks=blocks,
     )
 
 
@@ -485,8 +495,16 @@ def build_plan(
         if override is not None and field.kind != "file":
             if resolution.tier in _CLOSED_TIERS:
                 ignored.append(f"{field.id}: identity and EEOC fields take no override")
+            elif override.fact is not None:
+                if resolution.tier != "B0":
+                    ignored.append(f"{field.id}: a fact judgment is only for a "
+                                   "work-authorization or export-control question")
+                else:
+                    replaced = resolution.source
+                    resolution = resolve_fact_wording(field, answers, override.fact)
             elif resolution.source == "export_control":
-                ignored.append(f"{field.id}: export control is yours to answer by hand")
+                ignored.append(f"{field.id}: export control takes a fact judgment "
+                               "({fact, yes_when}), never a typed value")
             else:
                 replaced = resolution.source
                 resolution = _override_resolution(field, override.value, override.source,
@@ -516,8 +534,12 @@ def build_plan(
         if resolution.action == "defer":
             path, reason = find_artifact(out_dir, field.id)
             if path is None:
-                if field.required:
-                    unmapped.append(_unmapped(field, resolution, reason))
+                wanted = (field.id == "cover_letter"
+                          and answers.cover_letter == "when_offered")
+                if field.required or wanted:
+                    if wanted and not field.required:
+                        reason += " (cover_letter: when_offered)"
+                    unmapped.append(_unmapped(field, resolution, reason, blocks=wanted))
                 else:
                     skipped.append(Skipped(
                         id=field.id, label=field.label, tier=resolution.tier,
