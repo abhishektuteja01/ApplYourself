@@ -30,7 +30,7 @@ Everything that can fail late is checked here, before a fetch or a judge.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 test -n "$2" || { echo "ERROR: /ingest requires <url> <vertical>."; exit 1; }
 uv run verticals-check || exit 1
-test -f profile/scoring_rubric.md || { echo "ERROR: profile/scoring_rubric.md missing -- score-judge reads it."; exit 1; }
+test -f profile/scoring.yaml || { echo "ERROR: profile/scoring.yaml missing -- score start reads it."; exit 1; }
 test ! -f jobs/scored.staging/run.json || { echo "ERROR: a /score run is open. Finish it with /score, then re-run /ingest."; exit 1; }
 # Step 2 writes the jobs store and rebuilds clean.parquet. It waits on the
 # store's lock, but a nightly run would rebuild clean.parquet again at its end,
@@ -72,8 +72,8 @@ On exit 1, match the message:
 | Message | Action |
 |---|---|
 | `not a recognized ATS posting` | `uv run ingest-url "$1" --dry-run` (writes nothing), read company and title off the printed text, re-run the step 2 command with `--company "..." --title "..."` added (keep `--vertical "$2"`). **One attempt.** They define the `job_id` hash. A wrong company spelling still merges against the board's own spelling if the JD matches, and the merge keeps the tracked id — but a wrong *title* does not, and mints a second id for the same role. |
-| `below the ... floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/` and run `/score`. |
-| `does not exist yet` | Stop. The jobs store has not been built; report the printed command. |
+| `below the ... floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/`, run `uv run discover --source manual`, then `/score`. |
+| `does not exist yet` | Run `uv run discover --deadline-hours 0`, then re-run the step 2 command. |
 | `did not survive cleaning` | Stop. The job was saved but the view dropped it (its retention window has passed); report the `job_id`. |
 | `location_allowlist` | Stop. Report the location and that `profile/discovery.yaml` must allow it. |
 | `not configured` / `did not classify` | Stop. Report the configured vertical list. |
@@ -95,8 +95,8 @@ print(p.exists() and sys.argv[1] in set(pd.read_parquet(p)['job_id']))
 " <job_id>
 ```
 
-`False` → `uv run score start --job-id <job_id>`. `--job-id` skips the drops,
-so a deliberately chosen role gets real subscores and `keywords_to_mirror`.
+`False` → `uv run score start --job-id <job_id>`. `--job-id` skips every drop
+except `no-lane`, so a deliberately chosen role gets real subscores and `keywords_to_mirror`.
 - Exit 1 → report the error, stop.
 - `judge=0` → the `job_id` is not in `clean.parquet`; stop.
 - One `judge ...` line → spawn one `score-judge` agent whose prompt is the

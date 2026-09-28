@@ -37,8 +37,8 @@ under `profile/`; nothing tracked changes.
   ambiguity list are printed for correction, not interviewed. Never apply
   unconfirmed text; if the user edits a draft, re-show it before applying.
 - **NO-FAB over everything drafted from the resume** — read
-  `.claude/shared/no_fab.md`. Nothing enters `bullets.md`, `skills_master.md` or
-  `application_answers.yaml` that the resume or the answers support.
+  `.claude/shared/no_fab.md`. Nothing enters `resume.yaml`, `bullets.md`,
+  `skills_master.md` or `application_answers.yaml` that the resume or the answers support.
 - **Never run `sudo`, `launchctl`, `git commit` or `git push`.** Print them.
 - Never edit `src/`, `tests/` or `.claude/`, and neither does anything you
   delegate to. If a step seems to need it, stop and report — the config
@@ -67,7 +67,7 @@ echo "--- toolchain ---"
 echo "pinned python: $(cat .python-version 2>/dev/null || echo '.python-version MISSING')"
 uv --version || echo "MISSING: uv"
 echo "--- required (pipeline cannot run without these) ---"
-for f in profile/verticals.yaml profile/preferences.md profile/scoring_rubric.md \
+for f in profile/verticals.yaml profile/resume.yaml \
          profile/bullets.md profile/skills_master.md \
          profile/resume_template.docx profile/cover_letter_template.docx; do
   test -s "$f" && echo "ok   $f" || echo "MISSING $f"; done
@@ -147,8 +147,8 @@ the resume.
    - `Need sponsorship now`
    - `Authorized now, time-limited` (F-1 OPT, STEM OPT, any visa with an end date)
 
-   One answer, three files — the scaffold flag, `preferences.md`'s
-   authorization section, `application_answers.yaml` (step 2 fills both files):
+   One answer, two places — the scaffold flag and `application_answers.yaml`
+   (step 2 fills it):
 
    | answer | `--work-auth` | `application_answers.yaml` home-country row |
    |---|---|---|
@@ -231,10 +231,7 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    - `.docx` → `uv run profile-extract <file>`
    - `.pdf` or `.md` → read it directly
 
-2. `preferences.md` — delete the two authorization variants the user did not
-   pick, and keep it short: it rides in the packet for every row scored.
-   `scoring_rubric.md` ships working defaults every judge reads, so the copy is
-   enough. Print the assumed block and move on; step 3 confirms it against real
+2. Print the assumed discovery block and move on; step 3 confirms it against real
    rows: **US-wide, every source on, and a 4-hour limit on each nightly run.**
    Step 1's first scrape is capped much shorter so it finishes while they wait.
 
@@ -271,8 +268,8 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    from the resume just parsed, with `location` and `country` as canonical place
    names; `work_authorization.countries` from step 1's question 2 (your home
    country's row as in the table above, `default` for everywhere else, a
-   citizen's row for each nationality); `claims` and `questions` as shipped —
-   they grow on their own as `/apply` runs. Show the filled file once. A field the resume cannot
+   citizen's row for each nationality); `claims`, `questions` and `fact_wordings`
+   as shipped — they grow with each confirmed `/apply`. Show the filled file once. A field the resume cannot
    answer stays empty — `/apply` parks the role rather than inventing an answer.
 
 5. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`
@@ -295,7 +292,8 @@ user answers them while it runs.
 tail -20 logs/onboarding_scrape.log
 ```
 
-`ZERO rows (likely rate-limited or no results)` or no rows at all → re-run on
+`clean rows: 0`, or the `linkedin` lane zero or crashed in
+`uv run discover-digest` → re-run on
 Indeed, backgrounded the same way, and carry on with 3.2 while it runs:
 
 ```bash
@@ -371,8 +369,8 @@ keeps only rows that passed the gate.
 Spawn **one** background agent whose whole job is to run `/score` for this repo
 and report the line it prints. Do not reimplement scoring here and do not spawn
 judge agents from this command. If that agent cannot spawn its own judge
-subagents, it judges the slices itself against the lane's `rubric.md` — slower,
-but it is in the background and the user does not feel it.
+subagents, it reads the packet and writes each slice's named answer file itself
+— slower, but it is in the background and the user does not feel it.
 
 ### 3.5 The two review questions, one `AskUserQuestion`
 
@@ -389,9 +387,8 @@ but it is in the background and the user does not feel it.
 
 - A source they turn off is `enabled: false` under that source in
   `discovery.yaml`'s `sources` block, and nowhere else.
-- Locations go into `preferences.md` and into `discovery.yaml`'s
-  `location_allowlist`, the hard geographic filter on `clean.parquet`.
-  Country names only (`countries: ["United States"]`), not every spelling a
+- Locations go into `discovery.yaml`'s `location_allowlist`, the hard
+  geographic filter on `clean.parquet`. Country names only (`countries: ["United States"]`), not every spelling a
   board might use.
 - A new years cap is the lane's `years` table; a new level band is its level
   words in `title_exclude_terms`.
@@ -504,7 +501,8 @@ Offer this only once the daily loop works. Show `pmset -g sched` first — the
 block **replaces** their wake schedule wholesale — then print it for them to run.
 Do not run any of it: it writes outside the repo, needs `sudo`, and calls
 `launchctl`. `scripts/nightly_discovery.sh` derives the repo from its own
-location and needs no editing.
+location and needs no editing; it deletes discovery logs older than
+`log_keep_days` in `profile/discovery.yaml`.
 
 ```bash
 LABEL=com.$USER.applyourself.discovery
@@ -540,7 +538,7 @@ authority when the two disagree.
 
 step_completed: 3               # 0-5; 5 means setup is done
 notes:
-  - lane: revenue_ops; contexts WID (Widget Corp), SPR (side project), EDU (degree)
+  - lane: revenue_ops; contexts WID (Widget Corp), SPR (side project)
   - time-limited authorization; the home work-auth row set by the scaffold
   - application_answers.yaml filled; apply browser not installed
   - deferred: /tune-vertical, voice samples, nightly launchd

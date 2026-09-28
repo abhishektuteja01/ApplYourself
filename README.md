@@ -273,26 +273,25 @@ browser session.
 <summary><b>Running discovery nightly (macOS)</b></summary>
 
 `scripts/nightly_discovery.sh` plus `scripts/launchagent.example.plist` schedule
-the scrape at 22:30, wrapped in `caffeinate` so sleep doesn't kill it mid-run. A
+the scrape at 20:00, wrapped in `caffeinate` so sleep doesn't kill it mid-run. A
 `launchd` job whose start time falls while the Mac is asleep is skipped rather
 than deferred, so it needs a `pmset` wake a few minutes earlier. `/onboarding`
-prints the install block for you at the end.
+prints the install block for you at the end. The script deletes discovery logs
+older than `log_keep_days` in `profile/discovery.yaml`.
 
-Scoring deliberately stays a morning decision, since it needs a Claude Code
-session.
+The 00:00 routine runs `/score`, gated on the discovery log's `code=0`.
 
 </details>
 
 <details>
 <summary><b>What a night actually polls</b></summary>
 
-Two settings in `profile/discovery.yaml` decide it:
+Which boards are due is step 1 of [the pipeline](#the-pipeline). The settings
+live in `profile/discovery.yaml`:
 
-- **`every_days`, per board lane.** A board is checked when that many days have
-  passed since its last check, oldest first. Greenhouse, Lever and Ashby ship at
-  1; Workday, the slowest lane per kept row and manual-apply anyway, at 3, so a
-  third of its tenants run each night. There is no rotation state: a missed or
-  killed night just leaves more boards due.
+- **`every_days` per board lane.** Greenhouse, Lever and Ashby ship at 1;
+  Workday, the slowest lane per kept row and manual-apply anyway, at 3, so a
+  third of its tenants run each night.
 - **Dead boards.** Three 404s in a row mark a board `dead`, re-checked every
   `dead_every_days`. That only sees boards that stopped answering — a board
   serving 200 with no postings looks healthy, which is what
@@ -317,11 +316,11 @@ in `.claude/commands/`, not in `src/`.
 |---|---|---|
 | `/onboarding` | Five-step resumable setup: eight questions, ~21 minutes, real scored jobs at step 4. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
 | `/discover` | Run the nightly scrape, then read its own run report back: a ≤10-line health digest of tonight's run against that source's own 7-day median. Read-only on every report. | `jobs/` only |
-| `/score [--all] [--vertical V]` | Score new rows and regenerate today's shortlist. Fans out judge agents over staged slices. `--all` re-judges the whole window; `--vertical` limits it to one lane. | `jobs/scored.parquet`, `shortlist/<date>.md` |
+| `/score [--all] [--vertical V]` | Score new rows and regenerate today's shortlist. Fans out judge agents over staged slices. `--all` re-judges every role not past saved/tailored; `--vertical` limits it to one lane. | `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `/tailor <job_id>` | One-page ATS-clean tailored resume. You choose bullets and wording; code assembles, checks, renders and traces it. | `applications/<vertical>/<dir>/`: `jd_snapshot.md`, `resume_plan.yaml`, `trace.md`, `_Resume.docx`, `_Resume.pdf` |
 | `/cover-letter <job_id>` | One-page letter into that role's folder, drawn from the bullets on its resume. | `cover_letter.yaml`, `_Cover_Letter.docx`, `_Cover_Letter.pdf` |
 | `/company-answers <job_id> [--refresh]` | Research the company and write its "why us" answers once. No letter. | `company_answers.yaml` in the role's folder |
-| `/apply <job_id> [--submit]` | Resolve the judgment-only form questions, then fill, or submit. | `answers_override.json`, `applications/apply_runs/<ts>.md` |
+| `/apply <job_id> [--submit] [--letter]` | Resolve the judgment-only form questions, then fill, or submit. `--letter` attaches a cover letter even when the board does not ask. | `answers_override.json`, the answer bank in `application_answers.yaml`, `applications/apply_runs/<ts>.md` |
 | `/outreach <job_id> <channel> --to "Name"` | Draft a recruiter, referral or alumni message in your voice. Never sends. | `pipeline/<job_id>/outreach/<date>_<channel>_<who>.md` |
 | `/interview <job_id \| vertical>` | Mock interviewer. Drills you on the claims your own resume makes, depth-first, and keeps a cross-session worklist of the ones that didn't hold. Never writes to `profile/` or `state.yaml`. | `interview/` (gitignored) |
 | `/track <job_id> <state>` | Move a role through the state machine. The **only** writer of state. | `pipeline/<job_id>/state.yaml` |
@@ -343,15 +342,15 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 |---|---|---|
 | `uv run discover [--deadline-hours H] [--source NAME] [--max-terms N] [--jobs-dir D] [--boards-dir D]` | Overnight scrape into the jobs store, then the `clean.parquet` rebuild. The overrides narrow one run without touching config; `--source` is repeatable and exhaustive, so naming one excludes the inbox. Needs `--group discovery`. | `jobs/jobs.parquet`, `jobs/boards.parquet`, `jobs/clean.parquet`, `jobs/raw/<run_id>.parquet`, `jobs/runs/<run_id>.json` + `.md` |
 | `uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]` | One posting into the store, then a `clean.parquet` rebuild. Needs `--group discovery`. | `jobs/jobs.parquet`, `jobs/clean.parquet` |
-| `uv run verticals-check` | Validate config plus every per-lane rubric, tailoring file and resume. | nothing |
+| `uv run verticals-check` | Validate config, every per-lane rubric and tailoring file, and the resume sources. | nothing |
 | `uv run discovery-check` | Resolve and validate the discovery config: prints the effective location allowlist, the JobSpy search locations and the enabled sources, exits 1 on any problem. `discover` runs it as preflight. | nothing |
-| `uv run discover-digest [--json] [--run-id ID] [--window N]` | Read the recent `jobs/runs/*.json` reports and print the trend facts `/discover` renders: per-lane rows against that lane's own 7-day median, error delta, zero streaks, 403/429 counts, crashed or truncated lanes, dead boards. Reader only. | nothing |
+| `uv run discover-digest [--json] [--run-id ID] [--window N] [--runs-dir D]` | Read the recent `jobs/runs/*.json` reports and print the trend facts `/discover` renders: per-lane rows against that lane's own 7-day median, error delta, zero streaks, 403/429 counts, crashed or truncated lanes, dead boards. Reader only. | nothing |
 | `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set your home country's work-authorization row in `application_answers.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
 | `uv run score start [--all] [--vertical V] [--job-id ID]` / `uv run score finish` | `/score`'s plumbing: `start` drops rows by the hard rules and stages judge slices; `finish` checks the answers, merges, prunes and writes the shortlist. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
 | `uv run app new\|dir\|build <job_id>` | The plumbing of `/tailor`, `/cover-letter` and `/company-answers`: open the role's folder, resolve it, and build a resume, letter or answer sheet from the session's YAML. `build` prints problems and exits 2 instead of rendering anything wrong. | the role's `applications/` folder, `tailored_dirs[]` |
 | `uv run profile-extract <file>` | Dump a `.docx` or `.md` resume's text. Refuses `.pdf`. | nothing; prints to stdout |
-| `uv run apply <subcommand>` | `prepare`, `plan`, `fill`, `run`. Needs `--group apply`. | see below |
+| `uv run apply <subcommand>` | `prepare`, `plan`, `run`, `learn`, `sheet`. Needs `--group apply`. | see below |
 
 Plus three scripts: `./scripts/pii_scan.sh` (the
 [PII gate](#before-you-push-the-pii-gate)),
@@ -368,7 +367,8 @@ once and says which are active, empty, stale or dead into
 | `prepare <job_id>` | Check the role (state `saved` or `tailored`, a resume on file), the answer bank and Playwright. Print the role's folder and reset its `answers_override.json`. |
 | `plan <job_id> [--json] [--questions] [--answers F]` | Print the fill plan. Writes nothing, opens no browser, except Ashby, where one headless page load fetches field descriptions. `--questions` groups the form: KNOWN (the bank or your facts), GUESSED BY KEYWORD (check these), NEW (not in the bank yet), BLOCKING. Exits 1 if an `--answers` entry cannot apply. |
 | `run [--job-id ID] [--answers F] [--manifest F] [--submit] [--yes] [--limit N] [--rate 4m]` | Fill, and click only with `--submit`. **Uploads your documents.** With `--answers` it first saves what your confirmed answers teach to the answer bank. `--manifest` dumps what the page actually holds against the plan. |
-| `learn [--job J] [--undo ID [--wording W]]` | Review what the answer bank holds, or take one question or wording back. |
+| `learn [--job J] [--undo ID [--wording W \| --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]` | Review what the answer bank holds, or take one thing back: a question, one wording or keyword of it, a work-authorization claim, or a judged work-authorization / export-control wording. |
+| `sheet [--add]` | Rebuild the overnight status sheet (`profile/automation.yaml` `table_path`) from state, the submit ledger and run reports. `--add` first appends roles newly scored at or above `score_threshold`. |
 
 The submit path is bounded, all in `src/apply_cli.py`:
 
@@ -382,17 +382,20 @@ The submit path is bounded, all in `src/apply_cli.py`:
   company goes out per run. (That last cap applies to submits only; a
   fill-and-stop walk is uncapped.)
 - `applications/apply_runs/submitted.jsonl` records every click before it
-  happens, and a role in it is never clicked again. A board that answers "we
+  happens, and a role in it is never clicked again unless its latest line is
+  `refused`. A board that answers "we
   couldn't submit your application" is reported `rejected`, and a click that
   sent nothing is `unsent`; neither is marked `applied`.
 
 A run report lands at `applications/apply_runs/<timestamp>.md`, rewritten after
 each role so a crash still leaves the record. Boards that can't be submitted to
-get their own `manual` category, not `failed`. When the post-submit confirmation
-markers are ambiguous, `/apply` also saves evidence:
-`applications/apply_runs/evidence/<ts>_<job_id>.txt` and a full-page `.png`.
+get their own `manual` category, not `failed`. After every click `/apply` saves
+evidence: `applications/apply_runs/evidence/<ts>_<job_id>.txt` and a full-page
+`.png`.
 
-A cover letter is produced only when the board's own form asks for one.
+A cover letter is made when the board's form asks for one, when it offers an
+upload and `application_answers.yaml` sets `cover_letter: when_offered`, or
+with `--letter`.
 
 </details>
 
@@ -407,30 +410,32 @@ experience. Filling them in is the work.
 | `resume.yaml` | Your name, contact line, education, and one header per job or project with its bullet budget per lane. The only place these lines live. |
 | `bullets.md` | Canonical resume bullets. **The source of truth for every generated document.** `/tailor` may reword within the synonyms you allow, never beyond them. `default_for` marks a lane's baseline picks. |
 | `skills_master.md` | Your skills inventory. The Skills section is assembled from here, not written fresh; `show` places each skill on a lane's lines. |
-| `preferences.md` | Work authorization, location, comp, deal-breakers. |
-| `scoring_rubric.md` | Shared judging guide (the four axes, the sponsorship label), layered under each lane's own `rubric.md`. Ships working defaults. |
 | `voice_samples.md` | Messages you actually sent, so outreach sounds like you. `/outreach` **refuses to run** without it, and there is no generic-voice fallback. |
-| `application_answers.yaml` | The standing answers `/apply` fills forms from: contact details, work authorization, demographics, links. A field it can't resolve here parks the role instead of guessing. |
+| `application_answers.yaml` | The standing answers `/apply` fills forms from: contact details, work authorization, demographics, links. A field it can't resolve here parks the role instead of guessing. Its `claims`, `questions` and `fact_wordings` grow with each confirmed `/apply`. |
 | `verticals.yaml` | Your lanes. See [Lanes](#lanes-verticals). |
 | `discovery.yaml` | Sources, deadlines, location allowlist, retention. |
 | `contacts.yaml` | People to reach out to. Optional. |
 | `resume_template.docx` | Word template whose five named paragraph styles the renderer fills. Its body text is discarded. |
 | `cover_letter_template.docx` | Your own letter design. Everything that isn't a `{{PLACEHOLDER}}` is **preserved into every letter**, so nothing decorative is free. |
 
-Two files ship as real defaults rather than templates, because they're rules and
-not personal data:
+Also in `profile/`, but rules rather than personal data:
 
-- `profile/de_ai_rules.yaml` holds the banned phrasing, the mechanical
-  replacements, and the stopwords a reworded bullet may add. Your sources are
-  linted against it once, by `verticals-check`.
-- `profile/scoring.yaml` holds the scoring policy: the `ineligible` drop list,
-  the action thresholds and the shortlist size. Your sponsorship need per
-  country comes from `application_answers.yaml`'s work-authorization table.
+- `de_ai_rules.yaml` ships as a committed default: the banned phrasing, the
+  mechanical replacements, and the stopwords a reworded bullet may add. Your
+  sources are linted against it once, by `verticals-check`.
+- `scoring.yaml`, copied from `scoring.example.yaml`, holds the scoring policy:
+  the `ineligible` drop list, the action thresholds and the shortlist size. Your
+  sponsorship need per country comes from `application_answers.yaml`'s
+  work-authorization table.
+
+The shared judging guide (the four axes, the answer fields, the sponsorship
+vocabulary) is `.claude/shared/scoring_rubric.md`, committed, layered under each
+lane's own `rubric.md`. The judge reports what the JD says; Python derives the
+sponsorship label.
 
 The `profile/` files you fill in are **gitignored user data**. Nothing you write
 into them is ever committed. What *is* tracked there is only scaffolding: the
-`.example.*` templates, the `example_*` lane directories, and those two rule
-files.
+`.example.*` templates, the `example_*` lane directories, and `de_ai_rules.yaml`.
 
 <details>
 <summary><b>The two Word templates, and why they have their own guard</b></summary>
@@ -483,12 +488,11 @@ pipeline.md                     the whole-pipeline view /standup rebuilds
 inbox/*.md                      manual JD clips, moved to .processed/ when read
 profile/                        your config and content
 .apply_profile/                 the throwaway Chrome profile /apply drives
-data/universe/<ats>.csv         vendored company slug lists
 ```
 
 `applications/<vertical>/<dir>/` is allocated by `uv run app new` as
-`<date>_<company>_<title>_<job_id>` with `_vN` appended once a resume is built
-there. An unfinished folder is reused, version numbers are never reused, and
+`<date>_<company>_<title>_<job_id>`, with `_vN` appended when the role already
+has a folder. An unfinished folder is reused, version numbers are never reused, and
 everything downstream reads the **last** entry in `tailored_dirs[]`.
 
 </details>
@@ -583,7 +587,8 @@ and its own context stays counts-only.
    sponsorship now at home, the `no_sponsorship` phrases drop too.
 3. **`phrase`**: the JD holds one of the lane's `drop_phrases`.
 4. **`years`**: the JD asks more years than the lane's largest `years` key.
-   The years regex reads the *lower* bound, so "3-6 years" counts as 3.
+   The years regex reads the *lower* bound, so "3-6 years" counts as 3. When
+   the judge reads more years than the regex did, `score finish` forces a skip.
 
 Degree requirements are deliberately left to the judge.
 
@@ -602,9 +607,9 @@ the role's country, the lane's years limit and
 seniority cap, discovery's countries per lane, the vague-JD skills cap, the
 total and the action. A judge may only lower the action.
 
-`/score --all` re-judges the whole window; `/score --all --vertical <name>`
-re-judges one lane. Run it after editing your bullets, a rubric, your
-preferences, `scoring.yaml`, or on a model upgrade.
+`/score --all` re-judges every role not past saved/tailored;
+`/score --all --vertical <name>` re-judges one lane. Run it after editing your
+bullets, a rubric, `scoring.yaml`, or on a model upgrade.
 
 </details>
 
@@ -631,23 +636,24 @@ banned phrase in a bullet is fixed in `bullets.md`, not worked around per role.
 <details>
 <summary><b>The Claude Code hooks</b></summary>
 
-Four rules are enforced mechanically rather than by memory. All wired in
+Three rules are enforced mechanically rather than by memory. All wired in
 `.claude/settings.json`, all fail with exit 2.
 
 | hook | when | blocks |
 |---|---|---|
 | `state_yaml_guard.sh` | before Edit/Write | any edit targeting a `pipeline/*/state.yaml` (R10) |
 | `r7_no_llm_in_src.sh` | after Edit/Write | LLM SDK imports or API endpoints under `src/**/*.py` (R7) |
-| `fixture_mirrors.sh` | after Edit/Write | `tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml` drifting apart |
 | `pii_gate.sh` | before `git commit` | a commit whose index fails `scripts/pii_scan.sh` |
 
 The per-area detail lives in `.claude/rules/*.md`, each scoped by `paths:` so it
 loads only when you open the code it governs: `src-boundary`, `state-machine`,
 `verticals-config`, `scoring`, `apply-submission`, `linting`,
-`profile-templates`, `pii-gate`. Run `/context` to see what actually loaded.
+`profile-templates`, `pii-gate`, `discovery`. Run `/context` to see what actually loaded.
 
 The test suite runs from `.githooks/pre-commit` instead: any commit that stages
-`src/` or a fixture is blocked while the suite is red. Enable it once per clone
+`src/` or `tests/fixtures/` is blocked while the suite is red, and any commit
+that stages a `.py` file is blocked on an unused import or variable
+(`ruff check --select F401,F841`). Enable it once per clone
 with `git config core.hooksPath .githooks`.
 
 </details>
@@ -668,13 +674,12 @@ lies to you differently.
 | `lever.py` | Server-rendered form straight to merged fields. Keys off `name`, not `id`. |
 | `ashby.py` | Client-rendered, so it POSTs the `ApplicationForm` GraphQL query, plus one headless page load for the per-field description text that query never returns. |
 | `answers.py` | Resolves each field to a value from `application_answers.yaml`. Anything unresolvable parks the role, which blocks submit. |
+| `bank.py` | The answer bank: saves what each confirmed run teaches, and takes it back for `apply learn`. |
 | `plan.py` | Form plus answers to an ordered fill plan. The whole contract with the browser. |
-| `fill.py` | Executes the plan. Fill only, no submit decision. Config always wins; a react-select that didn't stick is a failure, not a warning. |
+| `fill.py` | Executes the plan and makes the one guarded submit click. Config always wins; a react-select that didn't stick is a failure, not a warning. |
+| `ledger.py` | `submitted.jsonl`, the submit ledger: one line per click, read before any click. |
+| `sheet.py` | The overnight status sheet, rebuilt from the records that own each fact. |
 | `browser.py` | The only module that names Playwright's driver, and it defers the import into a function so a clone without `--group apply` still works. |
-
-One import edge to be aware of: `shortlist.py` imports `detect.py`, which pulls
-the browser bootstrap and the ATS HTTP client into the scoring path at import
-time. The deferred Playwright import is what keeps that harmless.
 
 </details>
 
@@ -737,7 +742,7 @@ Three behaviors worth knowing:
 - It reads the git **index**, so it only sees tracked files. Run it *after*
   staging, and never put a real pattern in a committed file.
 
-`LICENSE`, the denylist template, each `data/universe/` CSV and the two example
+`LICENSE`, the denylist template, `data/universe/boards.csv` and the two example
 `.docx` are allowlisted in the script by **exact path, never by glob**. MIT
 attribution and vendored company names are supposed to be there. A new universe
 CSV isn't covered until it's added to that list by name.

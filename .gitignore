@@ -50,24 +50,11 @@ jobs/*
 !jobs/.gitkeep
 
 # =============================================================================
-# data/universe/*.local.csv — bulk ATS slug lists from a CC BY-NC source. The
-# repo is MIT, so they stay local; only self-verified slugs go in the tracked
-# <ats>.csv beside them. See data/universe/README.md.
+# data/universe/*.local.csv — your own board additions, and bulk ATS slug lists
+# from a CC BY-NC source. The repo is MIT, so they stay local; only self-verified
+# slugs go in the tracked boards.csv beside them. See data/universe/README.md.
 # =============================================================================
 data/universe/*.local.csv
-
-# =============================================================================
-# Slug-universe exports, kept local for the same reason as the <ats>.local.csv
-# overlay: bulk third-party dumps whose licence does not permit redistribution
-# under this repo's MIT licence. `main_companies.csv` is the wide one — ~80k
-# boards across 30 ATS platforms — and is the name-match source for
-# `scripts/reconcile_slugs.py`, which reads it to prove a company still exists
-# somewhere before that company's dead slug may be retired. Regenerable, and
-# absent on a fresh clone: the reconcile pass falls back to companies.csv and
-# then to no name-match tier at all.
-# =============================================================================
-/companies.csv
-/main_companies.csv
 
 # =============================================================================
 # .apply_profile/ — the persistent Chrome profile /apply drives the browser
@@ -84,9 +71,6 @@ pipeline.md
 # interview/ — mock-interview transcripts and the gap report. They carry real
 # spoken claims, employer names, and the specific ways an answer fell apart.
 interview/
-# research/ — market analyses run against jobs/*.parquet and profile/. They carry
-# scraped JD text and which of the user's own claims lack evidence.
-/research/
 /top_scored_open.xlsx
 # Nightly discovery logs (scheduler job). The directory itself is committed via
 # .gitkeep: launchd will not create the intermediate directory for
@@ -108,12 +92,6 @@ interview/
 /HANDOFF.md
 /publish.md
 /main.md
-/test.md
-/plan.md
-/plan_discovery.md
-/submit_plan.md
-/debug_application.md
-/onboarding_plan.md
 
 # =============================================================================
 # Python / uv / tooling
@@ -144,10 +122,3 @@ __pycache__/
 # Machine-local Claude Code permissions — was covered only by the user's global
 # gitignore, so it was exposed on any fresh clone.
 .claude/settings.local.json
-
-# =============================================================================
-# Universe CSV backups, written by `scripts/apply_reconcile.py --backup` before
-# it changes a file. Local safety net for a retirement that is hard to undo by
-# hand; the file itself carries the state worth tracking.
-# =============================================================================
-data/universe/*.bak-*

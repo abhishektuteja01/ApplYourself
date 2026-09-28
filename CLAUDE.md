@@ -39,12 +39,13 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 `.claude/rules/*.md` hold the per-area detail, each scoped by `paths:` so it loads
 only when you open the code it governs — `src-boundary`, `state-machine`,
 `verticals-config`, `scoring`, `apply-submission`, `linting`, `profile-templates`,
-`pii-gate`. Run `/context` to see what actually loaded.
+`pii-gate`, `discovery`. Run `/context` to see what actually loaded.
 
-`.claude/hooks/*.sh` enforce four of these mechanically rather than by memory: the
-R7 boundary, the R10 state.yaml writer, the two fixture mirrors, and the PII gate.
-`.githooks/pre-commit` runs the test suite on any commit that stages `src/` or a
-fixture (`git config core.hooksPath .githooks`, once per clone).
+`.claude/hooks/*.sh` enforce three of these mechanically rather than by memory: the
+R7 boundary, the R10 state.yaml writer, and the PII gate.
+`.githooks/pre-commit` runs the test suite on any commit that stages `src/` or
+`tests/fixtures/`, and `ruff check --select F401,F841` on any commit that stages
+a `.py` file (`git config core.hooksPath .githooks`, once per clone).
 
 ## Pipeline stages (data flow)
 
@@ -155,9 +156,12 @@ uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers
                                       # --submit needs --limit (unless --job-id),
                                       # a typed confirmation unless --yes; never
                                       # clicks a role in apply_runs/submitted.jsonl
+                                      # unless its latest line is `refused`
                                       # --rate floors at 30s, one submit per company per run
-uv run apply learn [--job J] [--undo ID [--wording W]]
+uv run apply learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                                       # review the answer bank, or take one thing back
+uv run apply sheet [--add]            # rebuild the overnight status sheet; --add first
+                                      # appends roles scored >= score_threshold
 uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] [--limit N] [--resume]
                                       # one-off liveness audit of the ATS slug
                                       # universe -> jobs/slug_audit_<date>.csv:
