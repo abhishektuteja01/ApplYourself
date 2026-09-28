@@ -6,86 +6,74 @@ paths:
 
 # Submission (`/apply`)
 
-Consumes roles with a resume on file (`saved` or `tailored`; a cover letter is
-produced only when the board's own form asks for one), fills the board's
-application form from `profile/application_answers.yaml`, and either submits
-(transitioning to `applied` through `/track`) or parks the role on whatever it
-could not resolve.
+Takes a role with a resume on file (`saved` or `tailored`), fills the board's form
+from the answer bank, and either submits (moving the role to `applied` through
+`/track`) or parks it on what it could not answer. Greenhouse, Lever and Ashby
+submit. Workday, LinkedIn, Indeed and company careers pages are manual; the run
+report lists them under `manual`, not `failed`.
 
-Greenhouse, Lever and Ashby all submit. Workday is discovered and scored like any
-other row but is **manual-apply only** — `src/apply/` never submits to one. Workday
-is not alone: the shortlist and `/apply run`'s report both derive the flag from
-`apply.detect.is_auto_submittable`, so LinkedIn, Indeed and company careers pages
-carry it too, and the run report gives them their own `manual` category rather than
-`failed`.
+## One answer bank, one writer
 
-Read `submit_plan.md` (gitignored) for the phase detail.
+`profile/application_answers.yaml` (schema 2) is the whole bank:
+
+- **facts the user states**: `identity`, `education`, `employment`,
+  `demographics`, and `work_authorization` (`us_person`, `nationalities`, and a
+  per-country table of `authorized`, `requires_sponsorship`, `unrestricted`,
+  `status_label`, `followup`, `start_in_days`, with a required `default` row);
+- **`claims`**: a board's full-sentence work-authorization option -> the facts it
+  states. An option is picked only when every stated fact is true for the
+  question's country;
+- **`questions`**: one entry per real question. `answer` is text, a list of
+  spellings, `{fact: ...}`, `{computed: salary | start_date | how_heard}`, or
+  `{role_file: ...}` (the role's `company_answers.yaml`). `wordings` are exact
+  labels, `keywords` substring guesses, `not` labels a keyword must never answer.
+
+`src/apply/bank.py` is its only writer. `apply run --answers <file>` calls it with
+what the user confirmed in `/apply`: a label mapped to a question joins its
+`wordings`, an unchallenged keyword guess becomes an exact wording, a corrected
+guess joins that question's `not`, a board's option spelling joins the candidates,
+a new answer becomes a question, a judged option becomes a claim. Facts are never
+written by it, and "why this company" text never enters the bank. Every write
+validates the whole bank first and keeps `<file>.bak`. `apply learn` reviews and
+undoes.
+
+## Finding an answer
+
+`answers.resolve()` tries, in order: structural fields (identity, uploads,
+education, employment) by DOM id; EEOC and demographic by section (always the
+decline option); work authorization by label shape and country; then the bank,
+exact wording first and keyword second (`source` is `bank:<id>` or
+`bank:<id>~<keyword>`); else Tier C. A question's country is the one its label
+names, else the job's (parsed from its location), else the candidate's own.
+Export control answers only a "U.S. person" question, only from an explicit
+`us_person`; every other export-control question always parks.
+
+## Overrides: one gate
+
+`answers_override.json` maps field id -> `{value, source, question, claim, label}`.
+An override answers any field except identity/EEOC and export control. A
+free-text override is linted: mechanical fixes applied, a banned phrase parks the
+field naming it. An id not on the form, a closed field, or a missing file lands
+in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 
 ## Submission is bounded
 
-- `--submit` is off by default.
-- `apply run --submit` requires an explicit `--limit`, unless `--job-id` names one
-  role.
-- It prints the roles it is about to apply to and requires a typed confirmation
-  unless `--yes` is passed. A non-tty stdin without `--yes` is refused, never
-  auto-confirmed. `/apply` passes `--yes` because its Step 6b is the confirmation.
-- `--rate` is clamped to a 30s minimum.
-- At most one role per company is submitted per run.
+- `--submit` is off by default and needs `--limit`, unless `--job-id` names one
+  role. It asks for a typed confirmation unless `--yes`; a non-tty stdin without
+  `--yes` is refused. `--rate` is floored at 30s. One submission per company per run.
+- `applications/apply_runs/submitted.jsonl` records what was sent. A line is
+  written right before every click, and a role with any line is never clicked
+  again, whatever its `state.yaml` says. Delete its lines to retry.
+- A click ends `accepted` (the board's submit request or confirmation text),
+  `ambiguous` (no marker on an unwatched board), `unsent` (a watched board fired
+  no submit request), `rejected` (the board said no: spam flag, duplicate) or
+  `refused` (the board declined every click). Only `accepted` and `ambiguous`
+  are tracked as `applied`.
+- `submit()` is the only function that clicks submit; a static test enforces it.
+- `employment.only_when_required: true` fills the employment block only where a
+  board requires it.
 
-## Optional blocks are a config switch, not a fixed policy
+## Ashby reads a JSON API
 
-`employment.only_when_required: true` in `profile/application_answers.yaml` fills
-the employment block only on boards that mark one of its fields required, and
-skips it everywhere else — `plan.skipped` names the key as the reason. Absent or
-false, the block fills wherever the form renders it. The flag is accepted on
-`employment` alone; on any other block it is an unknown key and raises.
-
-## Two answer stores, and only one of them is the user's
-
-`profile/application_answers.yaml` is hand-written and holds what the user
-*stated*: identity, work-authorization status, education, real preferences. It is
-fail-closed — any validation error refuses the run — and **no command ever edits
-it**. A person reads this file when an answer looks wrong, so it stays small.
-
-`profile/.apply_learned.jsonl` (`src/apply/learned.py`) holds what `/apply` has
-*learned* from forms already seen: another wording of a question, a spelling of an
-option some board offers, a veto stopping a keyword from matching a label it gets
-backwards, or a standalone question with a stable factual answer. Append-only,
-gitignored, no `.example` template (the leading dot is what exempts it — see
-`profile-templates.md`), and fail-open: a malformed line is skipped with a warning,
-because a convenience must never block a submission.
-
-`load_answers(learned_path=...)` folds the store into `rules:` **before**
-`_parse_rules` validates anything, so a learned wording faces the same overlap
-check, keyword-length floor and work-authorization keyword ban as a written one. A
-learned wording is absorbed into the rule it belongs to rather than appended as a
-new rule, because a new rule whose keyword is a superstring of an existing one is
-exactly what the overlap check rejects. Learned candidates always append *after*
-configured ones, so a stated preference wins.
-
-`uv run apply learn` is the store's sole writer. **R7 is intact:** the command
-session decides what is worth learning, `src/` validates and appends — the same
-split as `/track` owning `state.yaml` through `src/state_io.py`.
-
-## The plan names what answered each field, and what it was chosen from
-
-`Resolution.source` carries the `match:`/`exact:` keyword that fired (or
-`how_heard`, or `override:<tier>`), and `FieldPlan.options` carries what the widget
-offered even for a field that filled. Both reach the plan JSON. `/apply`'s audit
-step exists because a Tier B answer is a keyword match against employer-authored
-prose: the same keyword can answer one label correctly and another backwards, and
-neither case is visible from the value alone.
-
-Override tiers are declared in `apply_cli.OVERRIDE_TIERS`; which of them may
-supersede which resolution tier is decided in `build_plan` alone. `PICK` reaches a
-parked Tier B or C choice and names one of the board's own options. Tier B0 keeps
-`B0-LLM`; Tier A and A2 accept nothing, and an override aimed at one is reported in
-`Plan.ignored_overrides` rather than dropped in silence.
-
-## Ashby reads a JSON API, not HTML
-
-Ashby's form is client-rendered, so `ashby.load_board` POSTs the `ApplicationForm`
-GraphQL query. The one thing that query never declares is per-field description
-text, so `load_board` folds in `fetch_dom_enrichment`, one headless page load.
-`scan_ashby_form` is not on that path and has no caller in `src/`: it reads a
-rendered Ashby form only, held for a future fill driver.
+`ashby.load_board` POSTs the `ApplicationForm` GraphQL query and folds in
+`fetch_dom_enrichment`, one headless page load, for field descriptions.

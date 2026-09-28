@@ -1,48 +1,22 @@
 """Deterministic CLI for /apply (R7: no LLM calls; R10: never writes state).
 
-  prepare <job_id>                  /apply's Step 1: validate prerequisites
-                                    (state.yaml exists and is saved/tailored,
-                                    application_answers.yaml exists, playwright
-                                    importable), derive out_dir/vertical/
-                                    company_answers from state.yaml, and reset
-                                    that role's answers_override.json. Prints
-                                    JOB_ID/STATE/OUT_DIR/VERTICAL/
-                                    COMPANY_ANSWERS/OVERRIDES_FILE=value lines
-                                    meant for `eval` in the command session.
-  plan <job_id> [--json] [--questions] [--url URL] [--out-dir DIR]
-                                    fetch the board's rendered form and its
-                                    question schema, resolve every field against
-                                    profile/application_answers.yaml, and print
-                                    the plan. No submission, nothing written
-                                    anywhere; no browser either, except on Ashby,
-                                    which opens one headless page for field text
-                                    the API does not carry.
-  fill <job_id> [--force] [--headless] [--no-pause] [--manifest PATH]
-                                    fill one real form and stop; never submits.
-                                    --manifest dumps what the page actually
-                                    holds for every field, read after the fill.
-  learn [--list] [--kind K --group G ...] [--dry-run]
-                                    read or extend the learned answer store,
-                                    profile/.apply_learned.jsonl — the board
-                                    wordings and option spellings /apply has
-                                    picked up, kept out of the hand-written
-                                    config. Validated by loading the whole
-                                    answer config with the record in place.
-  run [--limit N] [--rate 4m] [--jitter 60s] [--submit] [--yes] [--job-id X]
-                                    walk the eligible queue (state == tailored,
-                                    tailored_dirs[] non-empty). Default is
-                                    fill-and-stop; --submit is required to
-                                    click. With --submit, --limit is required
-                                    unless --job-id names one role; the roles
-                                    to be applied to are printed and a typed
-                                    confirmation is required unless --yes is
-                                    passed; --rate is floored at 30s; and at
-                                    most one role per company is submitted per
-                                    run. Writes
-                                    applications/apply_runs/<timestamp>.md.
-
-Run directly: `uv run python -m src.apply_cli plan <job_id>` or `uv run apply
-plan <job_id>`.
+  prepare <job_id>      check the role, the answer bank and Playwright; print
+                        OUT_DIR / VERTICAL / COMPANY_ANSWERS / OVERRIDES_FILE and
+                        reset that role's answers_override.json.
+  plan <job_id> [--json] [--questions] [--answers F] [--url U] [--out-dir D]
+                        read the form, answer it from the bank, print the plan.
+                        No browser (Ashby opens one headless page for field
+                        text). Exits 1 when an --answers entry cannot apply.
+  run [--job-id X] [--answers F] [--manifest F] [--submit] [--yes] [--limit N]
+      [--rate 4m] [--jitter 60s] [--headless]
+                        fill, and click only with --submit. With --answers (the
+                        session's confirmed answers) it first saves what they
+                        teach to the bank. --submit needs --limit or --job-id,
+                        a typed confirmation unless --yes, and never clicks a
+                        role already in the submit ledger. Writes
+                        applications/apply_runs/<timestamp>.md.
+  learn [--job J] [--undo ID [--wording W]]
+                        review what the bank holds, or take one thing back.
 """
 from __future__ import annotations
 

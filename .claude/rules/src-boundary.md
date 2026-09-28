@@ -14,8 +14,7 @@ of `src/` and keep parquet/state mutation out of the command prose.
 
 `.claude/hooks/r7_no_llm_in_src.sh` enforces this after every edit to `src/`. It
 matches import lines and LLM API endpoints, so the `score-judge:<model>` stamp
-`score_store` reads from the judge agent's frontmatter and the `B0-LLM` answer-tier
-labels do not trip it.
+`score_store` reads from the judge agent's frontmatter does not trip it.
 
 ## `src/` is vertical-agnostic and company-agnostic
 

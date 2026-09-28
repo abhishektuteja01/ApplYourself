@@ -639,3 +639,31 @@ class TestPassThrough:
         assert plan.form_url.endswith("token=1000003")
         assert plan.submit_selector == board.scan.submit_selector
         assert plan.company == board.schema.company_name
+
+
+class TestDraftedTextIsLinted:
+    """A drafted answer in a free-text box gets the same lint as every other
+    drafted text: mechanical fixes applied, a banned phrase parks the field."""
+
+    def why_us(self):
+        return field(id="q", label="Why us?", kind="textarea", required=True)
+
+    def test_mechanical_fixes_are_applied(self, answers, tailor_dir):
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
+                          overrides={"q": Override(value="I build widgets — fast.")})
+        assert "—" not in plan.fields[0].value
+
+    def test_a_banned_phrase_parks_naming_it(self, answers, tailor_dir):
+        from src.lint import load_de_ai_rules
+        banned = next(p for v in load_de_ai_rules()["banned_phrases"].values()
+                      if isinstance(v, list) for p in v if p.isalpha())
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
+                          overrides={"q": Override(value=f"I {banned} widgets.")})
+        assert plan.unmapped and "lint" in plan.unmapped[0].reason
+
+    def test_an_option_is_never_linted(self, answers, tailor_dir):
+        option = "Open — happy to discuss"
+        f = field(id="q", label="Pick", kind="select", required=True,
+                  options=(MergedOption(label=option),))
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value=option)})
+        assert plan.fields[0].value == option

@@ -4,8 +4,7 @@
 # Fires after an edit to any src/**/*.py. Matches on import lines and on LLM
 # API endpoints, never on bare substrings -- src/ is full of legitimate R7
 # docstrings, the `score-judge:<model>` stamp score_store reads from the judge
-# agent's frontmatter, and the "B0-LLM" answer tier labels. A substring grep flags all of
-# them.
+# agent's frontmatter. A substring grep flags all of them.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 

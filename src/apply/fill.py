@@ -2204,13 +2204,3 @@ def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = N
             except Exception as exc:  # noqa: BLE001
                 log.debug("closing the browser context failed: %s", exc)
     return result
-
-
-def fill(plan: Plan, answers: Answers | None = None, *,
-         headless: bool = False, after=None, sink: list | None = None) -> FillResult:
-    """Fill only, never submit — `run_one` with `submit_after` left at its
-    default. Kept as its own name because `apply fill` (no `--submit` in
-    reach at all) is a distinct, deliberately narrower CLI surface than
-    `apply run`.
-    """
-    return run_one(plan, answers, headless=headless, after=after, sink=sink)

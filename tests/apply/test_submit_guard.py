@@ -239,13 +239,9 @@ class TestRunOneNeverSubmitsByDefault:
         assert "boom" in result.submit_error
 
 
-class TestTheFillEntryPointCannotSubmit:
-    """`fill()` is the documented no-submit API surface — `apply fill` reaches
-    it and has no `--submit` in reach at all. Every other test drives
-    `fill_plan` or `run_one` directly, so the one function the narrow CLI
-    actually calls was never checked against a driver that would have
-    clicked.
-    """
+class TestRunOneWithoutSubmitCannotClick:
+    """`run_one` without `submit_after` is how `apply run` fills and stops. A
+    driver that would have clicked is never asked to."""
 
     def _playwright(self):
         class Ctx:
@@ -276,7 +272,7 @@ class TestTheFillEntryPointCannotSubmit:
                             lambda plan, drv, answers, result=None: result)
         monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
 
-        result = F.fill(plan())
+        result = F.run_one(plan())
 
         assert driver.clicked == []
         assert result.submitted is False
@@ -306,7 +302,7 @@ class TestTheFillEntryPointCannotSubmit:
                             lambda plan, drv, answers, result=None: result)
         monkeypatch.setattr(F, "_driver_for", lambda ats, page: FakeSubmitDriver())
 
-        result = F.fill(plan(), sink=sink)
+        result = F.run_one(plan(), sink=sink)
         assert sink == [result]
 
 

@@ -8,10 +8,11 @@ A personal, human-gated job-search pipeline, sponsorship-aware throughout (the
 scoring filter and the outreach disclosure rules both know about it). It scrapes
 jobs, scores them against a profile, and generates tailored application material.
 Outreach is always gated on the user. Application submission is automatable via
-`/apply`, which submits only when every required field resolves — from config, or
-from a per-run Tier C answers file the command session drafts under NO-FAB (generic
-answers from `bullets.md`, company-specific ones from that role's
-`company_answers.yaml`). Anything still unresolved parks the role for review.
+`/apply`, which submits only when every required field resolves — from the answer
+bank (`profile/application_answers.yaml`), or from answers the command session
+drafts under NO-FAB and the user confirms. Every confirmed answer is saved to the
+bank, so each form parks less than the last. Anything still unresolved parks the
+role for review.
 
 ## Instructions
 
@@ -143,27 +144,20 @@ uv run apply prepare <job_id>         # validate prereqs, resolve out dir/vertic
 uv run apply plan <job_id> [--json] [--questions] [--url U] [--out-dir D] [--answers F]
                                       # print the fill plan, no browser
                                       # (Ashby opens a headless one for DOM-only field text)
-                                      # --questions groups the form by who
-                                      # answers it: FACTS (from config, each
-                                      # naming the rule keyword and the options
-                                      # it beat), QUESTIONS (need judgment),
-                                      # BLOCKING (required and unanswered)
-uv run apply learn [--list] [--kind wording|option|veto|answer --group G ...] [--dry-run]
-                                      # read or extend profile/.apply_learned.jsonl,
-                                      # the agent-owned store of board wordings and
-                                      # option spellings. Sole writer of that file;
-                                      # validates by loading the whole answer config
-                                      # with the record folded in
-uv run apply fill <job_id> [--url U] [--out-dir D] [--answers F] [--force] [--headless] [--no-pause] [--manifest F]
-                                      # fill one real form and stop; never submits
-                                      # --manifest dumps the post-fill read-back:
-                                      # planned vs what the page actually holds,
-                                      # every question incl. the parked ones
+                                      # --questions: KNOWN / GUESSED BY KEYWORD /
+                                      # NEW / BLOCKING. Exit 1 if an --answers
+                                      # entry cannot apply
 uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers F] [--manifest F] [--headless] [--submit] [--yes]
-                                      # walk the eligible queue; --submit needs --limit
-                                      #   (unless --job-id names one role),
-                                      # --submit prompts for a typed confirmation unless --yes,
+                                      # fill, and click only with --submit
+                                      # --answers: the session's confirmed answers;
+                                      #   what they teach is saved to the bank first
+                                      # --manifest: planned vs what the page holds
+                                      # --submit needs --limit (unless --job-id),
+                                      # a typed confirmation unless --yes; never
+                                      # clicks a role in apply_runs/submitted.jsonl
                                       # --rate floors at 30s, one submit per company per run
+uv run apply learn [--job J] [--undo ID [--wording W]]
+                                      # review the answer bank, or take one thing back
 uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] [--limit N] [--resume]
                                       # one-off liveness audit of the ATS slug
                                       # universe -> jobs/slug_audit_<date>.csv:

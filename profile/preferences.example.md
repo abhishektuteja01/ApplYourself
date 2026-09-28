@@ -1,22 +1,16 @@
 # TEMPLATE — copy to profile/preferences.md and edit.
 #
-# Read by /apply. Plain guidance, not a strict filter. /score
-# does not read this file: its rules live in profile/scoring.yaml
-# (sponsorship_need, visa_free_countries, ineligible), profile/verticals.yaml
-# (drop_phrases, years) and profile/discovery.yaml (countries per lane). The
-# one exception is the Work authorization section below, which /apply reads
-# strictly.
+# Plain guidance for the writing commands, not a strict filter. /score reads
+# profile/scoring.yaml (sponsorship_need, visa_free_countries, ineligible),
+# profile/verticals.yaml (drop_phrases, years) and profile/discovery.yaml
+# (countries per lane). /apply answers work-authorization questions from
+# profile/application_answers.yaml's per-country table, not from this file.
 
 ## Work authorization
 
 Keep ONE of these three and delete the rest. Match it in
-profile/scoring.yaml's `sponsorship_need` (never / now / later).
-
-/apply enforces that. Before it fills a form it cross-checks
-profile/application_answers.yaml's `work_authorization.status` against this
-section, and refuses to run if the two disagree, if no status is stated, or if
-more than one is — as in this unedited template. Those questions are answered
-under your name on a legal point, so there is no default and no guess.
+profile/scoring.yaml's `sponsorship_need` (never / now / later) and in
+application_answers.yaml's `work_authorization.countries`.
 
 - **Citizen / permanent resident:** No sponsorship needed, ever. Hard exclude:
   nothing on authorization grounds. Roles requiring an active security

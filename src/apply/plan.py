@@ -309,7 +309,28 @@ class Override:
 _CLOSED_TIERS = frozenset({"A", "A2"})
 
 
-def _override_resolution(field: MergedField, value, source: str, tier: str) -> Resolution:
+# Free text a person types. A drafted answer here gets the same lint every
+# other drafted text does; an option string never does, since the board wrote it.
+_PROSE_KINDS = frozenset({"text", "textarea"})
+
+
+def _linted(text: str, company: str) -> tuple[str, str]:
+    """`(text with mechanical fixes, problem)`. A banned phrase is a problem:
+    the field parks naming it, and the session rewrites that sentence."""
+    from src.lint import find_phrase_violations, fix_mechanical, load_de_ai_rules
+
+    rules = load_de_ai_rules()
+    fixed, _ = fix_mechanical(text, rules)
+    found = find_phrase_violations(fixed, context="resume", rules=rules,
+                                   keep=[company] if company else [])
+    if found:
+        phrases = sorted({v["phrase"] for v in found})
+        return fixed, f"lint: banned phrase(s) {phrases}"
+    return fixed, ""
+
+
+def _override_resolution(field: MergedField, value, source: str, tier: str,
+                         company: str = "") -> Resolution:
     """Apply an override, held to the same standard as every other answer: a
     select takes only an option it offers, spelled the board's way. A value the
     widget does not take parks, and the reason says why."""
@@ -323,6 +344,11 @@ def _override_resolution(field: MergedField, value, source: str, tier: str) -> R
         return Resolution("park", tier=tier, source=tag,
                           reason="a single checkbox takes no text override")
     if not field.options:
+        if field.kind in _PROSE_KINDS and not multi:
+            text, problem = _linted(candidates[0], company)
+            if problem:
+                return Resolution("park", tier=tier, source=tag, reason=problem)
+            return Resolution("fill", value=text, tier=tier, source=tag)
         chosen = candidates if multi else candidates[0]
         return Resolution("fill", value=chosen, tier=tier, source=tag)
     picked = tuple(p for p in (match_option(field, c) for c in candidates) if p)
@@ -448,7 +474,7 @@ def build_plan(
             else:
                 replaced = resolution.source
                 resolution = _override_resolution(field, override.value, override.source,
-                                                  resolution.tier)
+                                                  resolution.tier, company)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))

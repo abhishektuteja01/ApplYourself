@@ -36,16 +36,13 @@ discovered and scored like anything else, and never submitted to.
 
 > **Two things to know before you use `--submit`.**
 >
-> **The typed confirmation can be skipped.** `/apply` always passes `--yes`,
-> because its own Step 6b is meant to be the confirmation, and that step is
-> skipped when the form needed no drafted answers. For a role whose form is
-> entirely standard fields, `/apply <job_id> --submit` submits for real with no
-> second prompt.
+> **The typed confirmation is `/apply`'s own.** `/apply` passes `--yes` because
+> its step 6 shows you every answer and waits for your OK. `/apply <job_id>
+> --submit` submits for real once you confirm there.
 >
 > **Filling is not a dry run.** A fill uploads your resume and cover letter to
-> the ATS before any submit decision is made. `apply fill` and a default
-> `apply run` both leave files on the employer's server. They just don't press
-> the button.
+> the ATS before any submit decision is made. A default `apply run` leaves files
+> on the employer's server. It just doesn't press the button.
 
 It is sponsorship-aware throughout. The scoring filter drops postings that
 state a hard ineligibility, and the outreach drafts have per-channel rules for
@@ -368,13 +365,12 @@ once and says which are active, empty, stale or dead into
 
 | subcommand | behavior |
 |---|---|
-| `prepare <job_id>` | Validate prereqs, resolve the output dir, vertical and answers file. Requires state `saved` or `tailored` with a non-empty `tailored_dirs[]`. Resets `answers_override.json`. |
-| `plan <job_id> [--json] [--questions]` | Print the fill plan. Writes nothing, opens no browser, except Ashby, whose form is client-rendered, so one headless page load fetches the field description text its API doesn't return. `--questions` regroups the form by who answers it: FACTS (from config, each naming the rule keyword and the options it beat), QUESTIONS (need judgment), BLOCKING (required and unanswered). |
-| `fill <job_id> [--manifest F]` | Fill one real form and stop. **Uploads your documents.** Never submits. `--manifest` dumps the post-fill read-back: what was planned against what the page actually holds, every question including the parked ones. |
-| `run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--submit] [--yes]` | Walk the eligible queue: roles in state `tailored` with a resume on file. |
-| `learn [--list] [--kind wording\|option\|veto\|answer --group G ...]` | Read or extend `profile/.apply_learned.jsonl`, the agent-owned store of board wordings and option spellings. Sole writer of that file; validates by loading the whole answer config with the new record folded in. |
+| `prepare <job_id>` | Check the role (state `saved` or `tailored`, a resume on file), the answer bank and Playwright. Print the role's folder and reset its `answers_override.json`. |
+| `plan <job_id> [--json] [--questions] [--answers F]` | Print the fill plan. Writes nothing, opens no browser, except Ashby, where one headless page load fetches field descriptions. `--questions` groups the form: KNOWN (the bank or your facts), GUESSED BY KEYWORD (check these), NEW (not in the bank yet), BLOCKING. Exits 1 if an `--answers` entry cannot apply. |
+| `run [--job-id ID] [--answers F] [--manifest F] [--submit] [--yes] [--limit N] [--rate 4m]` | Fill, and click only with `--submit`. **Uploads your documents.** With `--answers` it first saves what your confirmed answers teach to the answer bank. `--manifest` dumps what the page actually holds against the plan. |
+| `learn [--job J] [--undo ID [--wording W]]` | Review what the answer bank holds, or take one question or wording back. |
 
-The submit path is bounded in four ways, all in `src/apply_cli.py`:
+The submit path is bounded, all in `src/apply_cli.py`:
 
 - `--submit` is off by default and is the only thing that presses submit.
 - `apply run --submit` requires an explicit `--limit`, unless `--job-id` names
@@ -385,6 +381,10 @@ The submit path is bounded in four ways, all in `src/apply_cli.py`:
 - `--rate` is clamped to a 30-second minimum, and at most one application per
   company goes out per run. (That last cap applies to submits only; a
   fill-and-stop walk is uncapped.)
+- `applications/apply_runs/submitted.jsonl` records every click before it
+  happens, and a role in it is never clicked again. A board that answers "we
+  couldn't submit your application" is reported `rejected`, and a click that
+  sent nothing is `unsent`; neither is marked `applied`.
 
 A run report lands at `applications/apply_runs/<timestamp>.md`, rewritten after
 each role so a crash still leaves the record. Boards that can't be submitted to

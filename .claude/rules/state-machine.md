@@ -27,9 +27,8 @@ Both route through `/track` and both are guarded to fire only from `saved`:
 
 - `/cover-letter` fires it after `uv run app build letter` succeeds, with
   `uv run track <id> tailored --if saved`.
-- `/apply` fires it itself, on a `saved` role, the moment its own plan-check
-  confirms the board genuinely needs no cover letter (no required cover-letter
-  upload, no unresolved company-specific question).
+- `/apply` fires it itself, on a `saved` role, once its plan shows no
+  cover-letter park (the board has no letter upload, or the letter now exists).
 
 A cover letter is a per-board prerequisite, decided by that plan-check.
 
@@ -38,7 +37,8 @@ A cover letter is a per-board prerequisite, decided by that plan-check.
 - `apply prepare` — the per-role path `/apply` uses — accepts state `saved` or
   `tailored` with non-empty `tailored_dirs[]`. This is what lets the
   self-promotion fire.
-- `apply run`'s `eligible_queue()` takes `tailored` only, and `--job-id` is checked
-  against that same queue, so a `saved` role is rejected by name there.
+- `apply run`'s `eligible_queue()` takes `tailored` only and leaves out every
+  role in the submit ledger (`applications/apply_runs/submitted.jsonl`);
+  `--job-id` is checked against that same queue.
 
 A board that DOES need a cover letter blocks inside the plan-check either way.

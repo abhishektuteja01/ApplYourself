@@ -150,11 +150,11 @@ the resume.
    One answer, three files — the scaffold flag, `preferences.md`'s
    authorization section, `application_answers.yaml` (step 2 fills both files):
 
-   | answer | `--work-auth` | `application_answers.yaml` |
+   | answer | `--work-auth` | `application_answers.yaml` home-country row |
    |---|---|---|
-   | citizen or PR | `citizen` | `citizen_or_pr` |
-   | needs sponsorship now | `needs_now` | `needs_sponsorship_now` |
-   | time-limited | `time_limited` | `time_limited` |
+   | citizen or PR | `citizen` | `authorized: true, requires_sponsorship: false, unrestricted: true` |
+   | needs sponsorship now | `needs_now` | `authorized: false, requires_sponsorship: true` |
+   | time-limited | `time_limited` | `authorized: true, requires_sponsorship: true` |
 
 3. Bootstrap, continued — both scaffold inputs now exist. Derive the lane name
    from the stated roles (snake_case, `^[a-z][a-z0-9_]*$`); 1.4 carries it into
@@ -269,9 +269,10 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
 4. `profile/application_answers.yaml`, which the scaffold always copies:
    **fill it, never interview for it.** `identity`, `education` and `employment`
    from the resume just parsed, with `location` and `country` as canonical place
-   names; `work_authorization` from step 1's question 2, which the loader
-   cross-checks against `preferences.md`'s "## Work authorization" section;
-   `rules` as shipped. Show the filled file once. A field the resume cannot
+   names; `work_authorization.countries` from step 1's question 2 (your home
+   country's row as in the table above, `default` for everywhere else, a
+   citizen's row for each nationality); `claims` and `questions` as shipped —
+   they grow on their own as `/apply` runs. Show the filled file once. A field the resume cannot
    answer stays empty — `/apply` parks the role rather than inventing an answer.
 
 5. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`
