@@ -57,17 +57,13 @@ def _isolate_applications(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_learned_store(tmp_path, monkeypatch):
-    """Keep the user's real `profile/.apply_learned.jsonl` out of every test.
+def _isolate_answer_bank(tmp_path, monkeypatch):
+    """Keep the user's real answer bank out of every test: a lesson written by
+    a test must never reach profile/application_answers.yaml."""
+    from src.apply import answers, bank
 
-    `load_answers` folds that store into `rules:` by default, so without this a
-    record learned from one live board would silently change what the fixture
-    boards resolve to — and the failure would land in whichever test happened
-    to share a keyword. Tests that exercise the store pass an explicit path.
-    """
-    from src.apply import learned
-
-    monkeypatch.setattr(learned, "DEFAULT_LEARNED_PATH", tmp_path / "no-store.jsonl")
+    monkeypatch.setattr(answers, "DEFAULT_PATH", tmp_path / "no-bank.yaml")
+    monkeypatch.setattr(bank, "DEFAULT_PATH", tmp_path / "no-bank.yaml")
 
 
 @pytest.fixture(autouse=True)

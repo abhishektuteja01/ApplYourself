@@ -98,9 +98,7 @@ def stub_answers(monkeypatch):
     """The synthetic widget-world config, never the user's real one."""
     from src.apply.answers import load_answers
 
-    loaded = load_answers(
-        FIXTURES / "application_answers.yaml", FIXTURES / "preferences_time_limited.md"
-    )
+    loaded = load_answers(FIXTURES / "application_answers.yaml")
     monkeypatch.setattr(apply_cli, "load_answers", lambda *a, **k: loaded)
 
 
@@ -254,10 +252,9 @@ class TestResolveOutDir:
             apply_cli.resolve_out_dir(JOB_ID, {"tailored_dirs": ["example_primary/deleted"]})
 
 
-class TestParsedSalaryFor:
-    """`_parsed_salary_for()` — the deterministic bridge between a job's
-    parsed compensation columns and `Answers.parsed_salary` (§ discussion:
-    no JD text, no LLM, just clean.parquet + verticals.yaml)."""
+class TestSalaryFor:
+    """`salary_for()` — the figure a salary question asks for, from this
+    posting's parsed compensation and the lane's `salary_expectation`."""
 
     def _write_clean(self, path, job_id, salary_min, salary_currency):
         pd.DataFrame([{
@@ -265,49 +262,44 @@ class TestParsedSalaryFor:
             "salary_min": salary_min, "salary_currency": salary_currency,
         }]).to_parquet(path)
 
-    def _write_verticals(self, tmp_path, vertical, markup_pct):
-        monkeypatch_target = tmp_path / "verticals.yaml"
-        monkeypatch_target.write_text(yaml.safe_dump({
-            "verticals": {vertical: {"salary_expectation": {"markup_pct": markup_pct}}},
+    def _verticals(self, tmp_path, monkeypatch, expectation):
+        path = tmp_path / "verticals.yaml"
+        path.write_text(yaml.safe_dump({
+            "verticals": {"example_primary": {"salary_expectation": expectation}},
         }), encoding="utf-8")
-        return monkeypatch_target
+        monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
 
-    def test_usd_salary_min_computes_the_marked_up_figure(self, tmp_path, monkeypatch):
+    def test_a_us_role_marks_up_its_posted_minimum(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
         self._write_clean(clean, JOB_ID, 120000, "USD")
         monkeypatch.setattr(apply_cli, "CLEAN", clean)
-        monkeypatch.setattr(apply_cli.paths, "PROFILE",
-                             self._write_verticals(tmp_path, "example_primary", 10).parent)
-        assert apply_cli._parsed_salary_for(JOB_ID, "example_primary") == 132000.0
+        self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 132000.0
 
-    def test_non_usd_currency_returns_none(self, tmp_path, monkeypatch):
-        clean = tmp_path / "clean.parquet"
-        self._write_clean(clean, JOB_ID, 120000, "GBP")
-        monkeypatch.setattr(apply_cli, "CLEAN", clean)
-        monkeypatch.setattr(apply_cli.paths, "PROFILE",
-                             self._write_verticals(tmp_path, "example_primary", 10).parent)
-        assert apply_cli._parsed_salary_for(JOB_ID, "example_primary") is None
-
-    def test_no_salary_expectation_configured_returns_none(self, tmp_path, monkeypatch):
-        clean = tmp_path / "clean.parquet"
-        self._write_clean(clean, JOB_ID, 120000, "USD")
-        monkeypatch.setattr(apply_cli, "CLEAN", clean)
-        verticals = tmp_path / "verticals.yaml"
-        verticals.write_text(yaml.safe_dump({"verticals": {"example_primary": {}}}), encoding="utf-8")
-        monkeypatch.setattr(apply_cli.paths, "PROFILE", verticals.parent)
-        assert apply_cli._parsed_salary_for(JOB_ID, "example_primary") is None
-
-    def test_missing_salary_min_returns_none(self, tmp_path, monkeypatch):
+    def test_no_posted_minimum_uses_the_lane_fallback(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
         self._write_clean(clean, JOB_ID, None, "USD")
         monkeypatch.setattr(apply_cli, "CLEAN", clean)
-        monkeypatch.setattr(apply_cli.paths, "PROFILE",
-                             self._write_verticals(tmp_path, "example_primary", 10).parent)
-        assert apply_cli._parsed_salary_for(JOB_ID, "example_primary") is None
+        self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
 
-    def test_no_clean_parquet_returns_none(self, tmp_path, monkeypatch):
+    def test_a_plain_fallback_is_a_us_figure_only(self, tmp_path, monkeypatch):
         monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
-        assert apply_cli._parsed_salary_for(JOB_ID, "example_primary") is None
+        self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") is None
+
+    def test_a_per_country_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+        self._verticals(tmp_path, monkeypatch,
+                        {"fallback": {"United States": 110000, "Germany": 70000}})
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") == 70000.0
+
+    def test_no_salary_expectation_is_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+        (tmp_path / "verticals.yaml").write_text(
+            yaml.safe_dump({"verticals": {"example_primary": {}}}), encoding="utf-8")
+        monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") is None
 
 
 class TestPlanCommand:
@@ -368,8 +360,9 @@ class TestPlanCommand:
         repo.write_state()
         assert apply_cli.main(["plan", JOB_ID, "--questions"]) == 0
         out = capsys.readouterr().out
-        assert "FACTS — answered from config" in out
-        assert "QUESTIONS — need judgment" in out
+        assert "KNOWN — answered from the bank or your facts" in out
+        assert "GUESSED BY KEYWORD — confirm or correct" in out
+        assert "NEW — not in the bank yet" in out
         assert "BLOCKING — required and unanswered" in out
         assert "alex@example.com" in out
 
@@ -566,30 +559,6 @@ class TestManifest:
              "planned": "Immediately.", "actual": "September 2026", "matches": False,
              "prefilled": True, "before": "September 2026", "invalid": False,
              "options": []}]
-
-    def test_fill_writes_it_where_asked(self, repo, monkeypatch, tmp_path, capsys):
-        repo.write_state()
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "fill",
-                             lambda plan, answers, **kw: _fake_result(manifest=self.ROWS))
-        out_path = tmp_path / "m.json"
-        assert apply_cli.main(
-            ["fill", JOB_ID, "--headless", "--manifest", str(out_path)]) == 0
-        data = json.loads(out_path.read_text(encoding="utf-8"))
-        assert data["job_id"] == JOB_ID
-        assert data["fields"][0]["actual"] == "September 2026"
-        assert data["fields"][0]["matches"] is False
-        assert "manifest:" in capsys.readouterr().out
-
-    def test_nothing_is_written_without_the_flag(self, repo, monkeypatch, tmp_path):
-        repo.write_state()
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "fill",
-                             lambda plan, answers, **kw: _fake_result(manifest=self.ROWS))
-        assert apply_cli.main(["fill", JOB_ID, "--headless"]) == 0
-        assert list(tmp_path.glob("*.json")) == []
 
     def test_a_queue_walk_refuses_one_manifest_path(self, repo, tmp_path):
         """Every role would overwrite the last one's read-back."""
@@ -941,82 +910,47 @@ class TestTheReportSurvivesACrash:
 
 
 class TestOverridesAreBoundToOneRole:
-    def test_a_file_drafted_for_another_role_is_refused(self, tmp_path):
-        # Tier C2 answers are company-specific by construction, so reusing a
-        # file sends the wrong company's "why us" under the user's name.
+    def _write(self, tmp_path, data):
         p = tmp_path / "answers.json"
-        p.write_text(json.dumps({
-            "job_id": "other123",
-            "question_1": {"value": "Because I admire their work.", "tier": "C2"},
-        }), encoding="utf-8")
+        p.write_text(json.dumps(data), encoding="utf-8")
+        return p
+
+    def test_a_file_drafted_for_another_role_is_refused(self, tmp_path):
+        p = self._write(tmp_path, {"job_id": "other123",
+                                   "question_1": {"value": "Because I admire their work."}})
         with pytest.raises(apply_cli.ApplyCliError, match="drafted for job_id"):
             apply_cli.load_overrides(p, JOB_ID)
 
     def test_a_matching_job_id_loads(self, tmp_path):
-        p = tmp_path / "answers.json"
-        p.write_text(json.dumps({
-            "job_id": JOB_ID,
-            "question_1": {"value": "An answer.", "tier": "C1"},
-        }), encoding="utf-8")
-        assert apply_cli.load_overrides(p, JOB_ID) == {
-            "question_1": ("An answer.", "C1")}
+        p = self._write(tmp_path, {"job_id": JOB_ID, "question_1": {
+            "value": "An answer.", "source": "bullets:B-1", "question": "project_proud"}})
+        loaded = apply_cli.load_overrides(p, JOB_ID)
+        assert loaded["question_1"].value == "An answer."
+        assert loaded["question_1"].question == "project_proud"
 
     def test_a_file_without_a_job_id_still_loads(self, tmp_path):
-        # Hand-written override files stay valid; the key is a guard, not a
-        # new required field.
-        p = tmp_path / "answers.json"
-        p.write_text(json.dumps({"question_1": {"value": "x", "tier": "C1"}}),
-                      encoding="utf-8")
-        assert apply_cli.load_overrides(p, JOB_ID) == {"question_1": ("x", "C1")}
+        p = self._write(tmp_path, {"question_1": {"value": "x"}})
+        assert apply_cli.load_overrides(p, JOB_ID)["question_1"].value == "x"
 
-    def test_a_jd_tagged_entry_loads(self, tmp_path):
-        # "JD" is the one tier build_plan() lets supersede a static Tier B
-        # rules[] match -- a salary figure read from the JD itself.
-        p = tmp_path / "answers.json"
-        p.write_text(json.dumps({
-            "job_id": JOB_ID,
-            "salary_expectation": {"value": "145000", "tier": "JD"},
-        }), encoding="utf-8")
-        assert apply_cli.load_overrides(p, JOB_ID) == {
-            "salary_expectation": ("145000", "JD")}
+    def test_a_list_value_is_a_tuple(self, tmp_path):
+        p = self._write(tmp_path, {"q": {"value": ["a", "b"]}})
+        assert apply_cli.load_overrides(p, JOB_ID)["q"].value == ("a", "b")
 
-    def test_an_unrecognized_tier_still_raises(self, tmp_path):
-        p = tmp_path / "answers.json"
-        p.write_text(json.dumps({
-            "job_id": JOB_ID,
-            "question_1": {"value": "x", "tier": "B0"},
-        }), encoding="utf-8")
-        with pytest.raises(apply_cli.ApplyCliError, match="has tier 'B0'"):
+    @pytest.mark.parametrize("value", ["", "   ", [], [""], [1], 3, None])
+    def test_a_bad_value_is_refused_by_name(self, tmp_path, value):
+        p = self._write(tmp_path, {"q": {"value": value}})
+        with pytest.raises(apply_cli.ApplyCliError, match="'q'"):
             apply_cli.load_overrides(p, JOB_ID)
 
-    def test_a_b0_llm_tagged_entry_loads(self, tmp_path):
-        # "B0-LLM" is the one tier build_plan() lets supersede a Tier B0
-        # work-authorization park -- a full-sentence option judged true
-        # against plan["work_authorization"], not a static candidate match.
-        p = tmp_path / "answers.json"
-        p.write_text(json.dumps({
-            "job_id": JOB_ID,
-            "visa_status": {"value": "Yes, I will need sponsorship in the future.",
-                             "tier": "B0-LLM"},
-        }), encoding="utf-8")
-        assert apply_cli.load_overrides(p, JOB_ID) == {
-            "visa_status": ("Yes, I will need sponsorship in the future.", "B0-LLM")}
+    def test_an_unknown_key_is_refused(self, tmp_path):
+        p = self._write(tmp_path, {"q": {"value": "x", "tier": "C1"}})
+        with pytest.raises(apply_cli.ApplyCliError, match="unknown keys"):
+            apply_cli.load_overrides(p, JOB_ID)
 
-    def test_an_audit_tagged_entry_loads(self, tmp_path):
-        # "AUDIT" supersedes an already-resolved Tier B/B0 field the audit
-        # step judged wrong or incomplete -- not tied to one specific
-        # category the way "JD" (money) and "B0-LLM" (work-auth wording) are.
-        p = tmp_path / "answers.json"
-        p.write_text(json.dumps({
-            "job_id": JOB_ID,
-            "how_did_you_hear": {
-                "value": "Careers Page. I'm drawn to the team's focus on...",
-                "tier": "AUDIT",
-            },
-        }), encoding="utf-8")
-        assert apply_cli.load_overrides(p, JOB_ID) == {
-            "how_did_you_hear": (
-                "Careers Page. I'm drawn to the team's focus on...", "AUDIT")}
+    def test_a_claim_must_state_booleans(self, tmp_path):
+        p = self._write(tmp_path, {"q": {"value": "x", "claim": {"authorized": "yes"}}})
+        with pytest.raises(apply_cli.ApplyCliError, match="true or false"):
+            apply_cli.load_overrides(p, JOB_ID)
 
 
 class TestTheReportNeverOverwritesAnotherRun:
@@ -1376,297 +1310,124 @@ class TestQueueCompanies:
                         "nosuchrole": ""}
 
 
-class TestFillRefusesAParkedRole:
-    """`apply fill` opens a real browser. A role whose plan already parks has
-    a required question nothing can answer, so the browser would only be
-    opened to show a form that cannot be completed."""
-
-    def test_a_parked_role_does_not_reach_the_browser(self, repo, monkeypatch, capsys):
-        repo.write_state()
-        monkeypatch.setattr(
-            apply_cli, "build",
-            lambda job_id, **kw: (_fake_plan(job_id, unmapped=[_unmapped()]), None))
-        monkeypatch.setattr(apply_cli, "fill",
-                             _raise(AssertionError("must not open a browser")))
-
-        assert apply_cli.main(["fill", JOB_ID]) == 1
-        out, err = capsys.readouterr()
-        assert "Refusing to open a browser" in err
-        assert "PARKED" in out, "the plan is printed so the park is legible"
-
-    def test_force_opens_it_anyway(self, repo, monkeypatch):
-        repo.write_state()
-        monkeypatch.setattr(
-            apply_cli, "build",
-            lambda job_id, **kw: (_fake_plan(job_id, unmapped=[_unmapped()]), None))
-        opened: list[str] = []
-        monkeypatch.setattr(
-            apply_cli, "fill",
-            lambda plan, answers, **kw: (opened.append(plan.job_id),
-                                          _fake_result())[1])
-        assert apply_cli.main(["fill", JOB_ID, "--force", "--headless"]) == 0
-        assert opened == [JOB_ID]
-
-    def test_an_unparked_role_needs_no_force(self, repo, monkeypatch):
-        repo.write_state()
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        opened: list[str] = []
-        monkeypatch.setattr(
-            apply_cli, "fill",
-            lambda plan, answers, **kw: (opened.append(plan.job_id),
-                                          _fake_result())[1])
-        assert apply_cli.main(["fill", JOB_ID, "--headless"]) == 0
-        assert opened == [JOB_ID]
-
-
-class TestSubmitAsksBeforeItSends:
-    """`--submit` presses submit on someone else's employer form. Driving the
-    CLI directly used to do that unattended; now it prints what it is about to
-    send and demands a typed yes, and `--yes` is the only way past that."""
-
-    @pytest.fixture
-    def answering(self, monkeypatch):
-        """Stand in for a human at a terminal answering the prompt."""
-        def at_the_keyboard(reply, tty=True):
-            monkeypatch.setattr(apply_cli.sys.stdin, "isatty", lambda: tty,
-                                 raising=False)
-            monkeypatch.setattr("builtins.input", lambda prompt="": reply)
-        return at_the_keyboard
-
-    @pytest.fixture
-    def never_opens(self, monkeypatch, tmp_path):
-        """Every path past the gate blows up, so reaching one is a failure."""
-        runs = tmp_path / "apply_runs"
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", runs)
-        monkeypatch.setattr(apply_cli, "build",
-                             _raise(AssertionError("must not fetch a board")))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             _raise(AssertionError("must not open a browser")))
-        monkeypatch.setattr(apply_cli.track_cli, "main",
-                             _raise(AssertionError("must not write state")))
-        return runs
-
-    def _submitting(self, monkeypatch, tmp_path):
-        """Record what actually got submitted."""
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        seen: list = []
-        monkeypatch.setattr(
-            apply_cli, "run_one",
-            lambda plan, answers, **kw: (seen.append((plan.job_id,
-                                                      kw.get("submit_after"))),
-                                          _fake_result())[1])
-        return seen
-
-    @pytest.mark.parametrize("reply", ["", "   ", "n", "no", "yeah maybe", "Y E S"])
-    def test_anything_but_a_typed_yes_aborts(
-        self, repo, monkeypatch, capsys, answering, never_opens, reply
-    ):
-        repo.write_state()
-        answering(reply)
-        assert apply_cli.main(
-            ["run", "--submit", "--limit", "1", "--rate", "0s", "--jitter", "0s"]) == 1
-        assert "ABORTED" in capsys.readouterr().err
-        assert not never_opens.exists(), "an aborted run owns no report"
-
-    @pytest.mark.parametrize("reply", ["yes", "y", "YES", " yes "])
-    def test_a_typed_yes_proceeds_and_submits(
-        self, repo, monkeypatch, tmp_path, answering, reply
-    ):
-        repo.write_state()
-        seen = self._submitting(monkeypatch, tmp_path)
-        answering(reply)
-        assert apply_cli.main(
-            ["run", "--submit", "--limit", "1", "--rate", "0s"]) == 0
-        assert seen == [(JOB_ID, True)]
-
-    def test_a_non_tty_without_yes_refuses_instead_of_proceeding(
-        self, repo, monkeypatch, capsys, answering, never_opens
-    ):
-        # Fail closed: nobody can answer, so nothing may go out. `input` would
-        # raise here anyway, but the point is that it is never reached.
-        repo.write_state()
-        answering("yes", tty=False)
-        monkeypatch.setattr("builtins.input",
-                             _raise(AssertionError("must not prompt")))
-        assert apply_cli.main(
-            ["run", "--submit", "--limit", "1", "--rate", "0s", "--jitter", "0s"]) == 1
-        err = capsys.readouterr().err
-        assert "--yes" in err and "not a terminal" in err
-        assert not never_opens.exists()
-
-    def test_yes_skips_the_prompt_entirely(
-        self, repo, monkeypatch, tmp_path, answering
-    ):
-        repo.write_state()
-        seen = self._submitting(monkeypatch, tmp_path)
-        answering("no", tty=False)
-        monkeypatch.setattr("builtins.input",
-                             _raise(AssertionError("must not prompt")))
-        assert apply_cli.main(
-            ["run", "--submit", "--limit", "1", "--yes", "--rate", "0s"]) == 0
-        assert seen == [(JOB_ID, True)]
-
-    def test_a_fill_and_stop_run_is_never_gated(
-        self, repo, monkeypatch, tmp_path, answering
-    ):
-        # Nothing is sent without --submit, so there is nothing to confirm —
-        # not even on a non-tty, where the gate refuses.
-        repo.write_state()
-        seen = self._submitting(monkeypatch, tmp_path)
-        answering("no", tty=False)
-        monkeypatch.setattr("builtins.input",
-                             _raise(AssertionError("must not prompt")))
-        assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
-        assert seen == [(JOB_ID, False)]
-
-    def test_yes_without_submit_changes_nothing(self, repo, monkeypatch, tmp_path):
-        repo.write_state()
-        seen = self._submitting(monkeypatch, tmp_path)
-        assert apply_cli.main(
-            ["run", "--yes", "--rate", "0s", "--jitter", "0s"]) == 0
-        assert seen == [(JOB_ID, False)]
-
-    def _four_roles(self, repo):
-        """Four eligible roles, two of them at the same company."""
-        for job_id, company in (("aaaa1111", "Bushing Group"),
-                                 ("bbbb2222", "Bushing Group, Inc."),
-                                 ("cccc3333", "Gasket Works"),
-                                 ("dddd4444", "Sprocket Ltd")):
-            repo.write_state(job_id=job_id)
-            path = repo.pipeline / job_id / "state.yaml"
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-            data["company"] = company
-            path.write_text(yaml.safe_dump(data), encoding="utf-8")
-
-    def test_the_preview_is_the_queue_that_will_actually_be_walked(
-        self, repo, monkeypatch, capsys, answering, never_opens
-    ):
-        # --limit drops the fourth role; the one-per-company cap drops the
-        # second. Showing the raw queue would promise two applications that
-        # were never going to be sent.
-        self._four_roles(repo)
-        answering("no")
-        assert apply_cli.main(
-            ["run", "--submit", "--limit", "3", "--rate", "0s", "--jitter", "0s"]) == 1
-        out = capsys.readouterr().out
-        assert "About to SUBMIT 2 real application(s):" in out
-        assert "aaaa1111" in out and "cccc3333" in out
-        assert "bbbb2222" not in out, "the per-company cap drops it"
-        assert "dddd4444" not in out, "--limit drops it"
-
-    def test_the_preview_identifies_each_role(
-        self, repo, monkeypatch, capsys, answering, never_opens
-    ):
-        repo.write_state()
-        answering("no")
-        assert apply_cli.main(
-            ["run", "--submit", "--limit", "1", "--rate", "0s", "--jitter", "0s"]) == 1
-        out = capsys.readouterr().out
-        assert JOB_ID in out
-        assert "Bushing Group" in out
-        assert "Widget Engineer" in out
-        assert "greenhouse" in out
-
-    def test_the_preview_names_the_board_per_role(self, repo):
-        # A LinkedIn url is manual-apply: real, reachable, and nothing this
-        # CLI can press submit on.
-        for job_id, url in (("aaaa1111", LEVER_URL), ("bbbb2222", LINKEDIN_URL)):
-            repo.write_state(job_id=job_id, url=url)
-            path = repo.pipeline / job_id / "state.yaml"
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-            data["company"] = f"Company {job_id}"
-            path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        rows = apply_cli.submission_preview(["aaaa1111", "bbbb2222"], repo.pipeline)
-        assert [r[3] for r in rows] == ["lever", "manual-apply"]
-
-
 class TestLearnCommand:
-    """`apply learn` — the store's only writer. Its validation is the real
-    loader over the merged result, not a lookalike, so a record that would
-    break the config fails here with the loader's own message."""
+    """`apply learn` reviews and undoes; the run itself does the learning."""
 
-    @pytest.fixture(autouse=True)
-    def _real_loader(self, monkeypatch):
-        """The file-wide `stub_answers` returns one pre-loaded config and
-        ignores its arguments, which would make this command's whole
-        validation step a no-op. Bind the real loader to the synthetic config
-        instead, so `learned_path` is actually honoured."""
-        from src.apply.answers import load_answers
+    def _bank(self, tmp_path):
+        import shutil
+        path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", path)
+        return path
 
-        monkeypatch.setattr(
-            apply_cli, "load_answers",
-            lambda *a, **kw: load_answers(
-                FIXTURES / "application_answers.yaml",
-                FIXTURES / "preferences_time_limited.md",
-                learned_path=kw.get("learned_path"),
-            ),
-        )
-
-    def test_list_names_every_group(self, capsys):
-        assert apply_cli.main(["learn", "--list"]) == 0
+    def test_review_lists_every_question(self, tmp_path, capsys):
+        assert apply_cli.main(["learn", "--path", str(self._bank(tmp_path))]) == 0
         out = capsys.readouterr().out
-        assert "rule group(s)" in out
-        assert "learned record(s)" in out
+        assert "linkedin:" in out and "~ linkedin" in out
 
-    def test_a_dry_run_writes_nothing(self, tmp_path, capsys):
-        path = tmp_path / ".apply_learned.jsonl"
-        assert apply_cli.main([
-            "learn", "--kind", "option", "--group", "how did you hear",
-            "--option", "Acme Careers Site", "--path", str(path), "--dry-run",
-        ]) == 0
-        assert not path.exists()
-        assert "--dry-run: nothing written." in capsys.readouterr().out
+    def test_undo_removes_a_question(self, tmp_path, capsys):
+        path = self._bank(tmp_path)
+        assert apply_cli.main(["learn", "--path", str(path), "--undo", "pronouns"]) == 0
+        assert "pronouns" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
-    def test_a_record_is_appended(self, tmp_path):
-        path = tmp_path / ".apply_learned.jsonl"
-        assert apply_cli.main([
-            "learn", "--kind", "option", "--group", "how did you hear",
-            "--option", "Acme Careers Site", "--job-id", JOB_ID,
-            "--board", "acme", "--path", str(path),
-        ]) == 0
-        record = json.loads(path.read_text(encoding="utf-8").strip())
-        assert record == {
-            "kind": "option", "group": "how did you hear",
-            "option": "Acme Careers Site", "job_id": JOB_ID, "board": "acme",
-            "learned": record["learned"],
-        }
+    def test_undo_of_an_unknown_question_fails(self, tmp_path, capsys):
+        assert apply_cli.main(["learn", "--path", str(self._bank(tmp_path)),
+                               "--undo", "nope"]) == 1
+        assert "no question" in capsys.readouterr().err
 
-    def test_a_record_that_would_break_the_config_is_refused(self, tmp_path):
-        """The loader's overlap check, reached through a real load rather than
-        re-implemented here."""
-        path = tmp_path / ".apply_learned.jsonl"
-        rc = apply_cli.main([
-            "learn", "--kind", "wording", "--group", "linkedin",
-            "--wording", "portfolio link", "--path", str(path),
-        ])
-        assert rc == 1
-        assert not path.exists()
 
-    def test_a_work_authorization_keyword_is_refused(self, tmp_path, capsys):
-        """Config-independent: no config anywhere lets a rule answer these."""
-        path = tmp_path / ".apply_learned.jsonl"
-        assert apply_cli.main([
-            "learn", "--kind", "answer", "--wording", "will you require visa sponsorship",
-            "--answer", "No", "--path", str(path),
-        ]) == 1
-        assert "work-authorization keyword" in capsys.readouterr().err
-        assert not path.exists()
+class TestARunLearnsWhatWasConfirmed:
+    """`run --answers` saves every mapping the session made and every keyword
+    guess that went unchallenged, before the browser opens."""
 
-    def test_a_malformed_record_is_refused_before_any_load(self, tmp_path, capsys):
-        path = tmp_path / ".apply_learned.jsonl"
-        assert apply_cli.main([
-            "learn", "--kind", "wording", "--group", "linkedin",
-            "--wording", "ai", "--path", str(path),
-        ]) == 1
-        assert "shorter than" in capsys.readouterr().err
-        assert not path.exists()
+    def _bank(self, tmp_path, monkeypatch):
+        import shutil
+        from src.apply import bank
+        path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", path)
+        monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+        return path
 
-    def test_neither_list_nor_kind_is_an_error(self, capsys):
-        assert apply_cli.main(["learn"]) == 1
-        assert "pass --list" in capsys.readouterr().err
+    def _plan(self, fields):
+        from dataclasses import replace
+        return replace(_fake_plan(JOB_ID), fields=tuple(fields))
+
+    def _field(self, fid, label, value, source="", options=(), replaced=""):
+        from src.apply.plan import FieldPlan
+        return FieldPlan(id=fid, name=fid, label=label, kind="select" if options else "text",
+                         section="questions", required=True, multi=False, value=value,
+                         tier="C", options=tuple(options), source=source, replaced=replaced)
+
+    def _run(self, tmp_path, monkeypatch, plan, overrides):
+        answers_path = tmp_path / "answers.json"
+        answers_path.write_text(json.dumps({"job_id": JOB_ID, **overrides}), encoding="utf-8")
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
+        monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
+        return apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None,
+                                   answers_path=answers_path)[0]
+
+    def test_a_mapped_wording_joins_its_question(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        plan = self._plan([self._field("q", "Your LinkedIn URL please", "https://x",
+                                       source="override")])
+        out = self._run(tmp_path, monkeypatch, plan, {"q": {
+            "value": "https://x", "question": "linkedin"}})
+        bank_data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert "Your LinkedIn URL please" in bank_data["questions"]["linkedin"]["wordings"]
+        assert out.learned
+
+    def test_a_new_question_is_created_with_its_answer(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        label = "Tell us about a project you're proud of"
+        plan = self._plan([self._field("q", label, "I built a widget.", source="override")])
+        self._run(tmp_path, monkeypatch, plan, {"q": {
+            "value": "I built a widget.", "question": "project_proud",
+            "source": "bullets:B-1"}})
+        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["project_proud"]
+        assert q["answer"] == "I built a widget." and q["wordings"] == [label]
+        assert q["source"] == "bullets:B-1"
+
+    def test_a_why_us_answer_never_becomes_a_bank_answer(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        plan = self._plan([self._field("q", "Why Acme?", "Because Acme.", source="override")])
+        self._run(tmp_path, monkeypatch, plan, {"q": {
+            "value": "Because Acme.", "question": "why_acme", "source": "company_answers"}})
+        assert "why_acme" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+
+    def test_an_unchallenged_keyword_guess_becomes_exact(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        plan = self._plan([self._field("q", "What's your LinkedIn?", "https://linkedin.com/in/example",
+                                       source="bank:linkedin~linkedin")])
+        self._run(tmp_path, monkeypatch, plan, {})
+        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"]
+        assert "What's your LinkedIn?" in q["wordings"]
+
+    def test_a_corrected_keyword_guess_is_never_guessed_again(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        plan = self._plan([self._field("q", "Is LinkedIn required?", "No",
+                                       source="override",
+                                       replaced="bank:linkedin~linkedin")])
+        self._run(tmp_path, monkeypatch, plan, {"q": {"value": "No",
+                                                      "question": "linkedin_required"}})
+        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+        assert "is linkedin required" in q["linkedin"]["not"]
+        assert q["linkedin_required"]["answer"] == "No"
+
+    def test_a_confirmed_claim_is_saved(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        option = "Yes, I will require sponsorship in the future."
+        plan = self._plan([self._field("q", "Sponsorship?", option, source="override",
+                                       options=[option, "No"])])
+        self._run(tmp_path, monkeypatch, plan, {"q": {
+            "value": option, "claim": {"requires_sponsorship": True}}})
+        claims = yaml.safe_load(path.read_text(encoding="utf-8"))["claims"]
+        assert claims[option] == {"requires_sponsorship": True}
+
+    def test_answers_that_cannot_apply_fail_the_role(self, tmp_path, monkeypatch):
+        self._bank(tmp_path, monkeypatch)
+        from dataclasses import replace
+        plan = replace(_fake_plan(JOB_ID), ignored_overrides=("q: not a field on this form",))
+        out = self._run(tmp_path, monkeypatch, plan, {})
+        assert out.category == "failed" and "cannot apply" in out.detail
 
 
 class TestWorkdayIsRecognisedButNeverSubmitted:

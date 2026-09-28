@@ -242,59 +242,16 @@ class TestEndToEndResolution:
         for u in plan.unmapped:
             assert u.id.startswith("cards[")
 
-    def test_the_sponsorship_card_resolves_and_the_qualified_one_parks(
-        self, answers, tailor_dir
-    ):
-        """This fixture is why the qualifier guard exists.
-
-        Card 1 is the real-board label "Are you permanently authorized to work
-        for **any employer** in the United States?" — for a `time_limited`
-        status that is No, but it used to be answered Yes off
-        `authorized_now`, which answers only "may you work here today". A
-        scope-qualified authorization question is not answerable from the
-        status alone, so it parks (§5's never-guess policy, previously applied
-        to the sponsorship family only).
-
-        Card 2 is the plain sponsorship question and still resolves.
-        """
+    def test_both_work_authorization_cards_resolve_truthfully(self, answers, tailor_dir):
+        """Card 1, "Are you permanently authorized to work for any employer in
+        the United States?", is No for an OPT holder (not unrestricted); card 2,
+        the plain sponsorship question, is Yes."""
         reconciled = scan_lever_form(load_html("form_lever_full"))
         plan = build_plan(reconciled, answers, tailor_dir, ats="lever")
         card = "cards[00000020-0000-0000-0000-000000000020]"
-
-        resolved = [f for f in plan.fields if f.id.startswith(card)]
-        # Optional on this board, so it is left blank rather than parked —
-        # §6's contract is unanswerable+required -> park, +optional -> skip.
-        # Either way nothing false is submitted, which is the whole point.
-        left_blank = [s for s in plan.skipped if s.id.startswith(card)]
-
-        assert [f.tier for f in resolved] == ["B0"]
-        assert "sponsorship" in resolved[0].label.casefold()
-        assert resolved[0].value == "Yes"          # time_limited requires it
-
-        assert len(left_blank) == 1
-        assert "permanently authorized" in left_blank[0].label.casefold()
-        assert "qualifies the scope" in left_blank[0].reason
-
-    def test_the_same_question_parks_the_role_when_the_board_requires_it(
-        self, answers, tailor_dir
-    ):
-        """The optional case above is only safe because the required case
-        blocks. A board that makes the qualified question mandatory must stop
-        the submission, not answer it."""
-        from src.apply.answers import resolve
-        from src.apply.domscan import DomOption
-        from src.apply.reconcile import MergedField
-
-        field = MergedField(
-            id="q", name="q", required=True, kind="select", section="questions",
-            multi=False, api_type="multi_value_single_select",
-            label="Are you permanently authorized to work for any employer in "
-                  "the United States?",
-            options=(DomOption(value="1", label="Yes"), DomOption(value="0", label="No")),
-        )
-        r = resolve(field, answers)
-        assert r.action == "park"
-        assert r.tier == "B0"
+        resolved = {f.label.casefold(): f.value for f in plan.fields if f.id.startswith(card)}
+        assert [v for k, v in resolved.items() if "permanently authorized" in k] == ["No"]
+        assert [v for k, v in resolved.items() if "sponsorship" in k] == ["Yes"]
 
     def test_eeoc_block_resolves_to_opt_outs(self, answers, tailor_dir):
         reconciled = scan_lever_form(load_html("form_lever_full"))

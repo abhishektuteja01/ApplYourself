@@ -20,8 +20,24 @@ from src.apply.reconcile import MergedField, MergedOption
 
 from .conftest import FIXTURES
 
-PREFS = FIXTURES / "preferences_time_limited.md"
 CONFIG = FIXTURES / "application_answers.yaml"
+
+
+def questions(rules) -> dict:
+    """Rules in the old shorthand (`match`/`exact`/`answer`/`mode`) as bank
+    questions — the tests below were written against that shape."""
+    out = {}
+    for i, rule in enumerate(rules):
+        spec = {"answer": rule["answer"]}
+        if rule.get("match") is not None:
+            spec["keywords"] = rule["match"]
+        if rule.get("exact") is not None:
+            spec["wordings"] = rule["exact"]
+        for key in ("mode", "only_when_required"):
+            if key in rule:
+                spec[key] = rule[key]
+        out[rule.get("id", f"q{i}")] = spec
+    return out
 
 
 def field(**kw) -> MergedField:
@@ -47,6 +63,8 @@ def by_label(reconciled, needle: str) -> MergedField:
 
 def write_config(tmp_path, **overrides):
     data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    if "rules" in overrides:
+        overrides["questions"] = questions(overrides.pop("rules") or [])
     for key, value in overrides.items():
         if value is None:
             data.pop(key, None)
@@ -57,58 +75,65 @@ def write_config(tmp_path, **overrides):
     return path
 
 
-class TestExactRules:
-    """Some labels are too short to keyword. "State" is a required dropdown on
-    3 of 39 live boards, and a `state` substring also hits "United States" and
-    "please state their name"."""
+class TestFindingAQuestion:
+    """An exact wording beats every keyword; a keyword is a guess, named as one;
+    a `not:` wording is never guessed again."""
 
     def _answers(self, tmp_path, rules):
-        return load_answers(write_config(tmp_path, rules=rules), PREFS)
+        return load_answers(write_config(tmp_path, rules=rules))
 
-    def test_an_exact_rule_matches_the_whole_label(self, tmp_path):
+    def test_a_wording_matches_the_whole_label(self, tmp_path):
         a = self._answers(tmp_path, [{"exact": ["state"], "answer": ["California"]}])
         assert resolve(field(label="State", options=["California"]), a).value == "California"
 
-    def test_an_exact_rule_does_not_match_a_label_containing_it(self, tmp_path):
+    def test_a_wording_does_not_match_a_label_containing_it(self, tmp_path):
         a = self._answers(tmp_path, [{"exact": ["state"], "answer": ["California"]}])
         for label in ("United States", "Please state their name", "Home state address"):
             assert resolve(field(label=label), a).action == "skip"
 
-    def test_punctuation_and_case_do_not_break_an_exact_match(self, tmp_path):
+    def test_punctuation_and_case_do_not_break_a_wording(self, tmp_path):
         a = self._answers(tmp_path, [
             {"exact": ["current position title"], "answer": "Teaching Assistant"},
         ])
         assert resolve(field(label="Current Position/Title"), a).value == "Teaching Assistant"
 
-    def test_a_rule_may_carry_both_match_and_exact(self, tmp_path):
+    def test_a_question_may_carry_both(self, tmp_path):
         a = self._answers(tmp_path, [
-            {"match": ["pay expectation"], "exact": ["salary"], "answer": "Open"},
+            {"match": ["pay expectation"], "exact": ["expected pay"], "answer": "Open"},
         ])
-        assert resolve(field(label="Salary"), a).value == "Open"
+        assert resolve(field(label="Expected pay"), a).value == "Open"
         assert resolve(field(label="What is your pay expectation?"), a).value == "Open"
 
-    def test_a_rule_with_neither_is_rejected(self, tmp_path):
-        with pytest.raises(AnswersError, match="non-empty match or exact"):
+    def test_an_exact_wording_beats_an_earlier_keyword(self, tmp_path):
+        a = self._answers(tmp_path, [
+            {"id": "city", "match": ["currently located"], "answer": "San Francisco"},
+            {"id": "ny", "exact": ["are you currently located in the new york area"],
+             "answer": ["No"]},
+        ])
+        r = resolve(field(label="Are you currently located in the New York area?",
+                          options=["Yes", "No"]), a)
+        assert r.value == "No" and r.source == "bank:ny"
+
+    def test_a_not_wording_is_never_guessed(self, tmp_path):
+        a = load_answers(write_config(tmp_path, questions={
+            "referral": {"answer": ["No"], "keywords": ["employee referral"],
+                         "not": ["If employee referral, referred by"]}}))
+        assert resolve(field(label="If employee referral, referred by"), a).action == "skip"
+        assert resolve(field(label="Employee referral?"), a).value == "No"
+
+    def test_a_question_needs_a_way_to_be_found(self, tmp_path):
+        with pytest.raises(AnswersError, match="wordings or keywords"):
             self._answers(tmp_path, [{"answer": "x"}])
 
-    def test_two_rules_claiming_the_same_exact_label_is_an_error(self, tmp_path):
-        with pytest.raises(AnswersError, match="both match the exact label"):
+    def test_two_questions_claiming_one_wording_is_an_error(self, tmp_path):
+        with pytest.raises(AnswersError, match="both claim the wording"):
             self._answers(tmp_path, [
                 {"exact": ["state"], "answer": "California"},
                 {"exact": ["state"], "answer": "Massachusetts"},
             ])
 
-    def test_a_substring_rule_shadowing_an_exact_one_is_an_error(self, tmp_path):
-        # Otherwise which one wins depends on file order, and the exact rule
-        # exists precisely because that label is dangerous to keyword.
-        with pytest.raises(AnswersError, match="would shadow"):
-            self._answers(tmp_path, [
-                {"exact": ["state"], "answer": "California"},
-                {"match": ["stat"], "answer": "something else"},
-            ])
-
-    def test_a_work_authorization_keyword_is_rejected_in_exact_too(self, tmp_path):
-        with pytest.raises(AnswersError, match="work-authorization keyword"):
+    def test_a_work_authorization_wording_is_rejected(self, tmp_path):
+        with pytest.raises(AnswersError, match="work-authorization question"):
             self._answers(tmp_path, [{"exact": ["citizenship"], "answer": "x"}])
 
 
@@ -117,130 +142,153 @@ class TestLoad:
         assert answers.identity["email"] == "alex@example.com"
         assert answers.education["degree"] == "Master's Degree"
         assert answers.employment["company_name"] == "Widget Corp"
-        assert answers.status == "time_limited"
-        assert answers.rules
+        assert answers.authorized_now and answers.requires_sponsorship
+        assert answers.questions
 
     def test_missing_file_points_at_the_template(self, tmp_path):
         with pytest.raises(AnswersError, match="application_answers.example.yaml"):
-            load_answers(tmp_path / "nope.yaml", PREFS)
+            load_answers(tmp_path / "nope.yaml")
 
     def test_schema_version_must_match(self, tmp_path):
         with pytest.raises(AnswersError, match="schema_version"):
-            load_answers(write_config(tmp_path, schema_version=2), PREFS)
+            load_answers(write_config(tmp_path, schema_version=1))
 
     @pytest.mark.parametrize("key", A.IDENTITY_KEYS)
     def test_every_identity_key_is_required(self, tmp_path, answers, key):
         identity = dict(answers.identity)
         del identity[key]
         with pytest.raises(AnswersError, match=f"identity.{key}"):
-            load_answers(write_config(tmp_path, identity=identity), PREFS)
+            load_answers(write_config(tmp_path, identity=identity))
 
     def test_an_empty_identity_value_is_not_a_value(self, tmp_path, answers):
         identity = dict(answers.identity, phone="   ")
         with pytest.raises(AnswersError, match="identity.phone"):
-            load_answers(write_config(tmp_path, identity=identity), PREFS)
+            load_answers(write_config(tmp_path, identity=identity))
 
     def test_a_typo_in_a_block_key_is_not_silently_ignored(self, tmp_path, answers):
         identity = dict(answers.identity, emial="alex@example.com")
         with pytest.raises(AnswersError, match="unknown keys"):
-            load_answers(write_config(tmp_path, identity=identity), PREFS)
+            load_answers(write_config(tmp_path, identity=identity))
 
     def test_education_months_are_optional(self, tmp_path, answers):
         education = {k: v for k, v in answers.education.items()
                      if k not in ("start_month", "end_month")}
-        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        loaded = load_answers(write_config(tmp_path, education=education))
         assert "start_month" not in loaded.education
 
     def test_the_employment_block_may_be_absent(self, tmp_path):
-        assert load_answers(write_config(tmp_path, employment=None), PREFS).employment is None
-
-    def test_status_must_be_one_of_the_three(self, tmp_path):
-        with pytest.raises(AnswersError, match="citizen_or_pr"):
-            load_answers(write_config(tmp_path, work_authorization={"status": "maybe"}), PREFS)
-
-    def test_the_two_work_authorization_answers_are_derived_not_configured(self):
-        """Independently settable booleans are booleans that can contradict
-        each other, so the file states a status and nothing else."""
-        assert A.WORK_AUTHORIZATION_STATUSES["citizen_or_pr"] == (True, False)
-        assert A.WORK_AUTHORIZATION_STATUSES["needs_sponsorship_now"] == (False, True)
-        assert A.WORK_AUTHORIZATION_STATUSES["time_limited"] == (True, True)
+        assert load_answers(write_config(tmp_path, employment=None)).employment is None
 
 
-class TestRuleValidation:
-    def test_a_rule_needs_a_non_empty_match(self, tmp_path):
-        with pytest.raises(AnswersError, match="match"):
-            load_answers(write_config(tmp_path, rules=[{"match": [], "answer": "x"}]), PREFS)
+class TestWorkAuthorizationLoading:
+    def wa(self, **countries):
+        return {"us_person": "park", "nationalities": [], "countries": {
+            "default": {"authorized": False, "requires_sponsorship": True}, **countries}}
 
-    def test_a_rule_needs_an_answer(self, tmp_path):
+    def test_a_default_row_is_required(self, tmp_path):
+        with pytest.raises(AnswersError, match="default"):
+            load_answers(write_config(tmp_path, work_authorization={
+                "countries": {"United States": {"authorized": True,
+                                                "requires_sponsorship": False}}}))
+
+    def test_country_names_are_canonical(self, tmp_path):
+        a = load_answers(write_config(tmp_path, work_authorization=self.wa(
+            USA={"authorized": True, "requires_sponsorship": False, "unrestricted": True})))
+        assert a.facts_for("United States").unrestricted
+
+    def test_unrestricted_cannot_contradict_the_row(self, tmp_path):
+        with pytest.raises(AnswersError, match="contradicts"):
+            load_answers(write_config(tmp_path, work_authorization=self.wa(**{
+                "United States": {"authorized": True, "requires_sponsorship": True,
+                                  "unrestricted": True}})))
+
+    def test_a_bare_yes_no_for_us_person_is_refused(self, tmp_path):
+        wa = self.wa()
+        wa["us_person"] = False
+        with pytest.raises(AnswersError, match="quote it"):
+            load_answers(write_config(tmp_path, work_authorization=wa))
+
+    def test_a_bare_yes_is_too_generic_to_be_a_claim(self, tmp_path):
+        with pytest.raises(AnswersError, match="too generic"):
+            load_answers(write_config(tmp_path, claims={"Yes": {"authorized": True}}))
+
+
+class TestQuestionValidation:
+    def test_a_question_needs_an_answer(self, tmp_path):
         with pytest.raises(AnswersError, match="answer"):
-            load_answers(write_config(tmp_path, rules=[{"match": ["portfolio"]}]), PREFS)
+            load_answers(write_config(tmp_path, questions={"q": {"keywords": ["portfolio"]}}))
 
     def test_answer_may_be_a_list_of_candidates(self, tmp_path):
         rules = [{"match": ["how did you hear"], "answer": ["Careers Page", "Other"]}]
-        loaded = load_answers(write_config(tmp_path, rules=rules), PREFS)
-        assert loaded.rules[0].answers == ("Careers Page", "Other")
+        loaded = load_answers(write_config(tmp_path, rules=rules))
+        assert loaded.questions[0].answers == ("Careers Page", "Other")
 
-    def test_overlapping_keywords_across_rules_raise(self, tmp_path):
+    def test_a_fact_pointer_answers_from_the_fact(self, tmp_path):
+        loaded = load_answers(write_config(tmp_path, questions={
+            "legal_first_name": {"answer": {"fact": "identity.first_name"},
+                                 "keywords": ["legal first name"]}}))
+        assert resolve(field(label="Legal first name"), loaded).value == "Alex"
+
+    def test_a_fact_that_is_not_set_is_refused(self, tmp_path):
+        with pytest.raises(AnswersError, match="not set"):
+            load_answers(write_config(tmp_path, questions={
+                "x": {"answer": {"fact": "identity.nickname"}, "keywords": ["nickname"]}}))
+
+    def test_overlapping_keywords_across_questions_raise(self, tmp_path):
         rules = [
             {"match": ["salary"], "answer": "Open"},
             {"match": ["desired salary"], "answer": "150000"},
         ]
         with pytest.raises(AnswersError, match="overlaps"):
-            load_answers(write_config(tmp_path, rules=rules), PREFS)
+            load_answers(write_config(tmp_path, rules=rules))
+
+    def test_a_short_keyword_is_refused(self, tmp_path):
+        with pytest.raises(AnswersError, match="under"):
+            load_answers(write_config(tmp_path, rules=[{"match": ["C++"], "answer": "x"}]))
 
     @pytest.mark.parametrize(
         "keyword",
-        ["sponsor", "visa", "work authorization", "authorized to work", "citizenship"],
+        ["sponsor", "visa", "work authorization", "authorized to work", "citizenship",
+         "u.s. person"],
     )
-    def test_a_work_authorization_keyword_cannot_be_a_rule(self, tmp_path, keyword):
-        """One rule cannot answer both 'are you authorized to work' and 'will
-        you require sponsorship' — five of the captured boards ask both."""
+    def test_a_work_authorization_keyword_cannot_be_a_question(self, tmp_path, keyword):
         rules = [{"match": [keyword], "answer": "Yes"}]
-        with pytest.raises(AnswersError, match="work_authorization.status"):
-            load_answers(write_config(tmp_path, rules=rules), PREFS)
+        with pytest.raises(AnswersError, match="work-authorization question"):
+            load_answers(write_config(tmp_path, rules=rules))
 
 
 class TestResolutionProvenance:
-    """A resolution names what answered it, not just which tier did.
+    """A resolution names what answered it: an exact wording, or a keyword guess
+    the session must confirm."""
 
-    A Tier B answer is a keyword match against employer-authored prose, and the
-    keyword that matched is the difference between an answer and a coincidence:
-    a nine-keyword rule that hit on one word of a compound label half-answers
-    the question and reads, from the value alone, exactly like a correct
-    answer. The /apply session audits these, and it cannot audit what it
-    cannot see.
-    """
-
-    def test_a_rule_names_the_keyword_that_matched(self, tmp_path):
-        rules = [{"match": ["portfolio", "personal site"], "answer": "https://x.example"}]
-        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+    def test_a_keyword_guess_names_its_keyword(self, tmp_path):
+        rules = [{"id": "site", "match": ["portfolio", "personal site"],
+                  "answer": "https://x.example"}]
+        answers = load_answers(write_config(tmp_path, rules=rules))
         resolution = resolve(field(label="Link to your personal site"), answers)
         assert resolution.tier == "B"
-        assert resolution.source == "personal site"
+        assert resolution.source == "bank:site~personal site"
+        assert resolution.by_keyword and resolution.question_id == "site"
 
-    def test_an_exact_rule_names_the_whole_label(self, tmp_path):
-        rules = [{"exact": ["state"], "answer": ["Example State"]}]
-        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+    def test_an_exact_wording_names_its_question(self, tmp_path):
+        rules = [{"id": "state", "exact": ["state"], "answer": ["Example State"]}]
+        answers = load_answers(write_config(tmp_path, rules=rules))
         resolution = resolve(field(label="State", options=["Example State"]), answers)
-        assert resolution.source == "state"
+        assert resolution.source == "bank:state"
+        assert not resolution.by_keyword
 
-    def test_a_parked_choice_still_names_its_rule(self, tmp_path):
-        """The park that most needs explaining: a rule matched the label and
-        then offered the board nothing it takes. Without the keyword, the next
-        pass cannot tell which rule to teach."""
-        rules = [{"match": ["how did you hear"], "answer": ["Careers Page"]}]
-        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+    def test_a_parked_choice_still_names_its_question(self, tmp_path):
+        rules = [{"id": "heard", "match": ["how did you hear"], "answer": ["Careers Page"]}]
+        answers = load_answers(write_config(tmp_path, rules=rules))
         resolution = resolve(
             field(label="How did you hear about this job?", required=True,
                   kind="select", options=["Acme Careers Site", "LinkedIn"]),
             answers,
         )
         assert resolution.action == "park"
-        assert resolution.source == "how did you hear"
+        assert resolution.source == "bank:heard~how did you hear"
 
     def test_a_structural_tier_leaves_the_source_empty(self, answers, merged):
-        """Identity and EEOC are matched on DOM id and section, so the tier is
-        already the whole story."""
         reconciled = merged("form_minimal")
         email = next(f for f in reconciled.fields if f.id == "email")
         resolution = resolve(email, answers)
@@ -248,29 +296,25 @@ class TestResolutionProvenance:
         assert resolution.source == ""
 
 
-class TestRuleMatchMode:
-    """`mode: contains` — an opt-in match mode for a Tier B rule whose
-    candidate answers are short affirmations that a board's real option
-    wraps in a full sentence ("Yes" inside "Yes, I am able and willing to
-    work in the office location listed..."). Default stays `exact`."""
+class TestMatchMode:
+    """`mode: contains` — for short affirmations a board wraps in a full
+    sentence ("Yes" inside "Yes, I am able and willing to work..."). A learned
+    option spelling never changes the mode."""
 
     def test_mode_defaults_to_exact(self, tmp_path):
         rules = [{"match": ["portfolio"], "answer": "https://x.example"}]
-        loaded = load_answers(write_config(tmp_path, rules=rules), PREFS)
-        assert loaded.rules[0].mode == "exact"
+        loaded = load_answers(write_config(tmp_path, rules=rules))
+        assert loaded.questions[0].mode == "exact"
 
     def test_an_invalid_mode_is_rejected(self, tmp_path):
         rules = [{"match": ["portfolio"], "answer": "x", "mode": "fuzzy"}]
         with pytest.raises(AnswersError, match="mode"):
-            load_answers(write_config(tmp_path, rules=rules), PREFS)
+            load_answers(write_config(tmp_path, rules=rules))
 
-    def test_a_contains_rule_matches_inside_a_full_sentence_option(self, tmp_path):
-        rules = [{
-            "match": ["acknowledge"],
-            "answer": ["I acknowledge", "Yes"],
-            "mode": "contains",
-        }]
-        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+    def test_a_contains_question_matches_inside_a_full_sentence_option(self, tmp_path):
+        rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"],
+                  "mode": "contains"}]
+        answers = load_answers(write_config(tmp_path, rules=rules))
         f = field(
             label="I acknowledge that this company has an in-office culture.",
             required=True, kind="select",
@@ -283,27 +327,18 @@ class TestRuleMatchMode:
             "Yes, I am able and willing to work in the office location listed."
         )
 
-    def test_a_contains_rule_still_parks_when_no_option_holds_any_candidate(self, tmp_path):
-        """Never guess — a candidate absent from every option parks exactly
-        like exact mode does."""
-        rules = [{
-            "match": ["acknowledge"],
-            "answer": ["I acknowledge", "Yes"],
-            "mode": "contains",
-        }]
-        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
-        f = field(
-            label="I acknowledge the code of conduct.",
-            required=True, kind="select",
-            options=["Agreed", "Declined"],
-        )
+    def test_a_contains_question_still_parks_when_no_option_holds_any_candidate(
+            self, tmp_path):
+        rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"],
+                  "mode": "contains"}]
+        answers = load_answers(write_config(tmp_path, rules=rules))
+        f = field(label="I acknowledge the code of conduct.", required=True, kind="select",
+                  options=["Agreed", "Declined"])
         assert resolve(f, answers).parked
 
     def test_exact_mode_does_not_match_inside_a_full_sentence(self, tmp_path):
-        """The regression contains-mode exists to fix: the default `exact`
-        mode leaves the same full-sentence option parked."""
         rules = [{"match": ["acknowledge"], "answer": ["I acknowledge", "Yes"]}]
-        answers = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        answers = load_answers(write_config(tmp_path, rules=rules))
         f = field(
             label="I acknowledge that this company has an in-office culture.",
             required=True, kind="select",
@@ -313,47 +348,6 @@ class TestRuleMatchMode:
             ],
         )
         assert resolve(f, answers).parked
-
-
-class TestPreferencesCrossCheck:
-    def test_the_real_preferences_section_reads_as_one_status(self):
-        """The repo's own preferences.md states F-1 OPT and, two lines later,
-        'requiring US security clearance or citizenship'. The second must not
-        register as a citizenship claim."""
-        assert A.preferences_statuses(PREFS.read_text(encoding="utf-8")) == {"time_limited"}
-        assert A.preferences_statuses(
-            (FIXTURES / "preferences_citizen.md").read_text(encoding="utf-8")
-        ) == {"citizen_or_pr"}
-
-    def test_a_contradiction_is_a_hard_error(self, tmp_path):
-        config = write_config(tmp_path, work_authorization={"status": "citizen_or_pr"})
-        with pytest.raises(AnswersError, match="states 'time_limited'"):
-            load_answers(config, PREFS)
-
-    def test_no_derivable_status_is_a_hard_error(self, tmp_path):
-        prefs = tmp_path / "preferences.md"
-        prefs.write_text("## Work authorization\n- It's complicated.\n", encoding="utf-8")
-        with pytest.raises(AnswersError, match="no recognizable status"):
-            load_answers(CONFIG, prefs)
-
-    def test_the_preferences_template_states_all_three_and_is_rejected(self, tmp_path):
-        """preferences.example.md carries all three bullets and says to keep
-        one. An unedited copy must not pass the check."""
-        with pytest.raises(AnswersError, match="at once"):
-            load_answers(CONFIG, A.PROFILE / "preferences.example.md")
-
-    def test_a_missing_preferences_file_does_not_skip_the_check(self, tmp_path):
-        with pytest.raises(AnswersError, match="cannot be cross-checked"):
-            load_answers(CONFIG, tmp_path / "gone.md")
-
-    def test_only_the_work_authorization_section_is_read(self, tmp_path):
-        prefs = tmp_path / "preferences.md"
-        prefs.write_text(
-            "## Work authorization\n- F-1 OPT, STEM-eligible.\n\n"
-            "## Preferences\n- Would relocate for a green card sponsor.\n",
-            encoding="utf-8",
-        )
-        assert load_answers(CONFIG, prefs).status == "time_limited"
 
 
 class TestIdentity:
@@ -434,38 +428,28 @@ class TestIdentity:
 
 
 class TestDateFields:
-    """Ashby's `Date`-typed fields (kind `date`) resolve to today, computed —
-    never a Tier B free-text default. The board's own `react-datepicker`
-    widget silently clears whatever it cannot parse as a date on blur, so a
-    sentence like "Immediately." looked filled at fill-time and then vanished
-    with no error anywhere."""
+    """A date field is the start-date question only when its label says so;
+    "Date of birth" or "visa expiry" must never get the start date."""
 
-    def test_resolves_to_today_not_a_tier_b_rule(self, answers):
-        import datetime
+    def _pin(self, monkeypatch):
+        from datetime import date as _date
+        monkeypatch.setattr(A, "_today", lambda: _date(2026, 9, 27))
+
+    def test_a_start_date_field_gets_the_country_start_date(self, answers, monkeypatch):
+        self._pin(monkeypatch)
         f = field(id="question_1", label="When can you start a new role?", kind="date")
         r = resolve(f, answers)
-        assert r.action == "fill"
-        assert r.tier == "A"
-        assert r.value == datetime.date.today().strftime("%m/%d/%Y")
+        assert (r.action, r.value) == ("fill", "10/11/2026")   # fixture: 14 days
 
-    def test_a_configured_rule_never_overrides_a_date_field(self, tmp_path, answers):
-        """Even a rule whose `match:` would otherwise hit this label must not
-        win — the format a rule's author chose (a sentence) is exactly what
-        the picker silently rejects."""
-        config = write_config(
-            tmp_path,
-            rules=[{"match": ["start", "when can you"], "answer": "Immediately."}],
-        )
-        scoped = load_answers(path=config, preferences_path=PREFS)
-        f = field(id="question_1", label="When can you start a new role?", kind="date")
-        assert resolve(f, scoped).value != "Immediately."
+    def test_another_date_question_is_not_the_start_date(self, answers):
+        for label in ("Date of birth", "When does your OPT/visa expire?"):
+            r = resolve(field(id="q", label=label, kind="date", required=True), answers)
+            assert r.action == "park", label
 
-    def test_a_plain_text_field_is_unaffected(self, answers):
-        """Only `kind == "date"` triggers this path — an ordinary text field
-        asking the same question in different words still goes through the
-        normal Tier B/C path."""
-        f = field(id="question_1", label="When can you start a new role?", kind="text")
-        assert resolve(f, answers).tier != "A"
+    def test_a_country_with_no_start_in_days_parks(self, answers):
+        a = dc_replace(answers, job_country="Germany")
+        r = resolve(field(label="When can you start?", required=True), a)
+        assert r.action == "park" and "Germany" in r.reason
 
 
 class TestEducationAndEmployment:
@@ -486,7 +470,7 @@ class TestEducationAndEmployment:
 
     def test_an_unset_optional_education_field_is_skipped(self, tmp_path, merged, answers):
         education = {k: v for k, v in answers.education.items() if k != "start_month"}
-        thin = load_answers(write_config(tmp_path, education=education), PREFS)
+        thin = load_answers(write_config(tmp_path, education=education))
         assert resolve(merged("form_education").by_id("start-month--0"), thin).action == "skip"
 
     def test_a_school_alternate_is_offered_when_the_board_words_it_differently(
@@ -495,7 +479,7 @@ class TestEducationAndEmployment:
         """Ashby stacks name/country/domain into one option label."""
         listed = "Example University\nUnited States\nexample.edu"
         education = dict(answers.education, school_alternates=[listed])
-        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        loaded = load_answers(write_config(tmp_path, education=education))
         f = field(id="school--0", section="education", kind="react_select",
                   required=True, options=[listed, "Example University\nChina\nex.cn"])
         assert resolve(f, loaded).value == listed
@@ -505,7 +489,7 @@ class TestEducationAndEmployment:
     ):
         education = dict(answers.education,
                          school_alternates=["Example University\nUnited States\nexample.edu"])
-        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        loaded = load_answers(write_config(tmp_path, education=education))
         f = field(id="school--0", section="education", kind="react_select",
                   required=True, options=["Example University"])
         assert resolve(f, loaded).value == "Example University"
@@ -514,7 +498,7 @@ class TestEducationAndEmployment:
         """Never a guess between two same-named schools in two countries."""
         education = dict(answers.education,
                          school_alternates=["Example University\nUnited States\nexample.edu"])
-        loaded = load_answers(write_config(tmp_path, education=education), PREFS)
+        loaded = load_answers(write_config(tmp_path, education=education))
         f = field(id="school--0", section="education", kind="react_select",
                   required=True, options=["Example University\nChina\nex.cn"])
         assert resolve(f, loaded).action == "park"
@@ -529,7 +513,7 @@ class TestEducationAndEmployment:
     def test_an_empty_school_alternates_list_is_refused(self, tmp_path, answers):
         education = dict(answers.education, school_alternates=[])
         with pytest.raises(AnswersError):
-            load_answers(write_config(tmp_path, education=education), PREFS)
+            load_answers(write_config(tmp_path, education=education))
 
     def test_the_employment_block_fills_including_the_checkbox(self, merged, answers):
         r = merged("form_employment")
@@ -542,7 +526,7 @@ class TestEducationAndEmployment:
         self, tmp_path, merged
     ):
         """Rare — 1 board in 60 — but six of its seven fields are required."""
-        without = load_answers(write_config(tmp_path, employment=None), PREFS)
+        without = load_answers(write_config(tmp_path, employment=None))
         parked = [
             f.id for f in merged("form_employment").by_section("employment")
             if resolve(f, without).parked
@@ -658,18 +642,19 @@ class TestWorkAuthorization:
     ):
         """The case one keyword rule cannot express: authorized yes,
         sponsorship no, on boards that ask both."""
-        citizen = load_answers(
-            write_config(tmp_path, work_authorization={"status": "citizen_or_pr"}),
-            FIXTURES / "preferences_citizen.md",
-        )
+        citizen = dc_replace(answers, countries={
+            **answers.countries,
+            "United States": A.CountryFacts(authorized=True, requires_sponsorship=False,
+                                            unrestricted=True)})
         expected = "Yes" if (fixture, needle) in self.AUTHORIZED else "No"
         assert resolve(by_label(merged(fixture), needle), citizen).value == expected
 
-    def test_an_authorization_question_naming_another_country_parks(self, merged, answers):
-        """'Are you legally authourized to work in South Africa?' — misspelled,
-        and US authorization says nothing about it."""
+    def test_an_authorization_question_naming_another_country_uses_its_row(
+            self, merged, answers):
+        """'Are you legally authourized to work in South Africa?' — no row for
+        South Africa, so the default row answers: not authorized."""
         f = by_label(merged("form_multiselect"), "authourized to work in South Africa")
-        assert resolve(f, answers).parked
+        assert resolve(f, answers).value == "No"
 
     def test_a_dropdown_of_prose_options_parks(self, answers):
         """A real board's 'Work Authorization' select offers three sentences,
@@ -759,7 +744,7 @@ class TestRules:
             {"match": ["notice period"], "answer": "Two weeks."},
             {"match": ["what is your"], "answer": "Fallback."},
         ]
-        loaded = load_answers(write_config(tmp_path, rules=rules), PREFS)
+        loaded = load_answers(write_config(tmp_path, rules=rules))
         f = by_label(merged("form_multiselect"), "What is your notice period?")
         assert resolve(f, loaded).value == "Two weeks."
 
@@ -795,13 +780,13 @@ class TestTierC:
 
 class TestTheShippedTemplate:
     def test_it_loads_through_the_real_loader(self):
-        loaded = load_answers(A.EXAMPLE_PATH, PREFS)
+        loaded = load_answers(A.EXAMPLE_PATH)
         assert loaded.identity["first_name"]
-        assert loaded.status in A.WORK_AUTHORIZATION_STATUSES
+        assert "default" in loaded.countries
 
-    def test_its_rules_answer_the_boards_in_the_fixtures(self, merged):
-        """A template whose rules match nothing teaches the wrong shape."""
-        loaded = load_answers(A.EXAMPLE_PATH, PREFS)
+    def test_its_questions_answer_the_boards_in_the_fixtures(self, merged):
+        """A template whose questions match nothing teaches the wrong shape."""
+        loaded = load_answers(A.EXAMPLE_PATH)
         r = merged("form_minimal")
         assert resolve(by_label(r, "How did you hear"), loaded).action == "fill"
         assert resolve(by_label(r, "LinkedIn"), loaded).action == "fill"
@@ -819,15 +804,10 @@ def _yes_no_field(label: str, *, required: bool = True):
 
 
 
-class TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion:
-    """`authorized_now` answers exactly one question: may you work in the US
-    today. Any scope qualifier asks something else, and answering it from the
-    status states a falsehood for `time_limited` — a false legal claim
-    submitted under the user's real name.
-
-    Both wrong labels below are verbatim from the captured live-board
-    fixtures, not invented.
-    """
+class TestTheQualifiedFamily:
+    """A scope qualifier (permanence, freedom from sponsorship) is answered from
+    the country's `unrestricted` fact — No for an OPT holder, Yes for a citizen.
+    The plain question is answered from `authorized` alone."""
 
     QUALIFIED = [
         "Are you permanently authorized to work for any employer in the United States?",
@@ -839,146 +819,12 @@ class TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion:
         "Are you legally authorized to work in the United States without sponsorship?",
         "Do you have unrestricted authorization to work in the United States?",
     ]
-
     PLAIN = [
         "Are you legally authorized to work in the United States today?",
         "Are you legally authorized to work in the U.S.?",
         "Are you legally authorized to work in the United States of America?",
+        "Are you legally authorized to work in the United States for any employer?",
     ]
-
-    @pytest.mark.parametrize("label", QUALIFIED)
-    def test_a_qualified_question_is_never_answered(self, answers, label):
-        r = resolve(_yes_no_field(label), answers)
-        assert r.action == "park", f"answered {r.value!r} to a question it cannot know"
-        assert r.tier == "B0"
-
-    @pytest.mark.parametrize("label", PLAIN)
-    def test_the_plain_question_still_resolves(self, answers, label):
-        # The guard must not park everything — that would block every board.
-        r = resolve(_yes_no_field(label), answers)
-        assert r.action == "fill"
-        assert r.value == "Yes"          # time_limited is authorized today
-
-    def test_the_sponsorship_family_is_untouched_by_the_guard(self, answers):
-        # "now or in the future" is a qualifier on the authorization question
-        # but the normal phrasing of the sponsorship one.
-        r = resolve(_yes_no_field(
-            "Will you now or in the future require sponsorship for employment "
-            "visa status?"), answers)
-        assert r.action == "fill"
-        assert r.value == "Yes"          # time_limited will need it later
-
-
-class TestEmployerBreadthIsNotAScopeQualifier:
-    """"for any employer" reads like a qualifier and is not one. It asks about
-    employer-tying, and a time-limited status is not employer-tied the way an
-    H-1B is — the honest answer is Yes."""
-
-    def test_for_any_employer_alone_resolves_from_the_status(self, answers):
-        r = resolve(_yes_no_field(
-            "Are you legally authorized to work in the United States for any "
-            "employer?"), answers)
-        assert r.action == "fill"
-        assert r.value == "Yes"
-
-    def test_paired_with_a_real_qualifier_it_still_parks(self, answers):
-        """The permanence claim is the thing that cannot be answered; dropping
-        "for any employer" from the qualifier set must not take this with it."""
-        r = resolve(_yes_no_field(
-            "Are you permanently authorized to work for any employer in the "
-            "United States?"), answers)
-        assert r.action == "park"
-
-
-class TestAnUnnamedCountryIsTheJobsCountry:
-    """The queue only ever holds roles that passed discovery's US location
-    allowlist, so "the country where this role is located" is a US question.
-    Demanding an explicit "United States" parked 14 of 21 required work-auth
-    questions across 53 live Ashby boards for no gain."""
-
-    COUNTRY_RELATIVE = [
-        "Are you authorized to work in the country where the job is located?",
-        "Are you legally authorized to work in the country this position is in?",
-        "Are you authorized to work in the stated location of this role?",
-        "Are you legally authorized to work in your current country of employment?",
-    ]
-    # "Do you have the legal **right** to work in..." reaches the country check
-    # too now — `_AUTHORIZED_FAMILY` learned that spelling, along with "eligible
-    # to work" and "have valid work authorization", in the corpus pass. Every
-    # real phrasing of all three lives in test_work_auth_corpus.py.
-
-    @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
-    def test_a_country_relative_question_resolves(self, answers, label):
-        r = resolve(_yes_no_field(label), answers)
-        assert r.action == "fill"
-        assert r.value == "Yes"          # time_limited is authorized today
-
-    NAMES_ELSEWHERE = [
-        "Are you legally authorised to work in the UK without employer sponsorship?",
-        "Are you authorized to work in Canada?",
-        "Are you legally authourized to work in South Africa?",
-        "Are you authorized to work in Germany?",
-    ]
-
-    @pytest.mark.parametrize("label", NAMES_ELSEWHERE)
-    def test_a_question_naming_another_country_still_parks(self, answers, label):
-        """US authorization says nothing about these, and the location
-        allowlist gives no cover for a country the question names outright."""
-        r = resolve(_yes_no_field(label), answers)
-        assert r.action == "park"
-        assert r.tier == "B0"
-
-    def test_the_us_named_alongside_another_country_resolves(self, answers):
-        """Checked after the US test on purpose, so an either/or question is
-        answered rather than parked."""
-        r = resolve(_yes_no_field(
-            "Are you legally authorized to work in the US or Canada?"), answers)
-        assert r.action == "fill"
-        assert r.value == "Yes"
-
-
-class TestScopeQualifiedAnswerIsConfiguredNotInferred:
-    """The park above is the *default*, not a policy. Whether "permanently
-    authorized for any employer" is Yes or No is a fact about the user, so it
-    is theirs to state once in config; `src/` only reads it (R7).
-
-    Without this the questions are unanswerable by anything: they resolve at
-    tier B0, and B0 parks are deliberately not reachable by the command
-    session's Tier C overrides, so a parked one means applying by hand.
-    """
-
-    QUALIFIED = TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion.QUALIFIED
-    PLAIN = TestTheAuthorizationFamilyNeverGuessesAQualifiedQuestion.PLAIN
-
-    @pytest.mark.parametrize("label", QUALIFIED)
-    def test_no_answers_every_qualified_question_no(self, answers, label):
-        a = dc_replace(answers, scope_qualified_answer="no")
-        r = resolve(_yes_no_field(label), a)
-        assert r.action == "fill"
-        assert r.value == "No"
-        assert r.tier == "B0"
-
-    @pytest.mark.parametrize("label", QUALIFIED)
-    def test_yes_answers_every_qualified_question_yes(self, answers, label):
-        a = dc_replace(answers, scope_qualified_answer="yes")
-        r = resolve(_yes_no_field(label), a)
-        assert r.action == "fill"
-        assert r.value == "Yes"
-
-    @pytest.mark.parametrize("label", PLAIN)
-    @pytest.mark.parametrize("setting", ["park", "yes", "no"])
-    def test_the_plain_question_never_consults_the_setting(self, answers, label, setting):
-        """The setting governs qualified questions only. "Are you authorized to
-        work in the US today?" is answered by `status`, and a user who sets
-        `no` for the qualified family must not start telling boards they cannot
-        work here at all."""
-        a = dc_replace(answers, scope_qualified_answer=setting)
-        r = resolve(_yes_no_field(label), a)
-        assert r.action == "fill"
-        assert r.value == "Yes"
-
-    # The qualifier is one branch of an alternation, so the question is wider
-    # than the setting assumes and "No" would be a false self-disqualification.
     OFFERED_AS_ALTERNATIVE = [
         "Are you authorized to work in the United States on a permanent or "
         "temporary basis?",
@@ -987,169 +833,156 @@ class TestScopeQualifiedAnswerIsConfiguredNotInferred:
         "without sponsorship?",
     ]
 
-    @pytest.mark.parametrize("label", OFFERED_AS_ALTERNATIVE)
-    @pytest.mark.parametrize("setting", ["park", "yes", "no"])
-    def test_an_alternation_parks_whatever_the_setting_says(self, answers, label,
-                                                            setting):
-        a = dc_replace(answers, scope_qualified_answer=setting)
-        r = resolve(_yes_no_field(label), a)
-        assert r.action == "park", f"answered {r.value!r} to a widened question"
-        assert r.tier == "B0"
+    @pytest.mark.parametrize("label", QUALIFIED)
+    def test_an_opt_holder_answers_no(self, answers, label):
+        r = resolve(_yes_no_field(label), answers)
+        assert (r.action, r.value, r.tier) == ("fill", "No", "B0")
 
-    def test_a_citizen_never_reaches_the_setting(self, answers):
-        """`citizen_or_pr` already answers the qualified family from `status`
-        — the switch exists for the statuses that cannot."""
-        a = dc_replace(answers, status="citizen_or_pr", scope_qualified_answer="no")
-        r = resolve(_yes_no_field(self.QUALIFIED[0]), a)
-        assert r.action == "fill"
+    @pytest.mark.parametrize("label", QUALIFIED)
+    def test_a_citizen_answers_yes(self, answers, label):
+        citizen = dc_replace(answers, countries={
+            **answers.countries,
+            "United States": A.CountryFacts(authorized=True, requires_sponsorship=False,
+                                            unrestricted=True)})
+        assert resolve(_yes_no_field(label), citizen).value == "Yes"
+
+    @pytest.mark.parametrize("label", PLAIN)
+    def test_the_plain_question_answers_from_authorized(self, answers, label):
+        assert resolve(_yes_no_field(label), answers).value == "Yes"
+
+    @pytest.mark.parametrize("label", OFFERED_AS_ALTERNATIVE)
+    def test_an_alternation_parks(self, answers, label):
+        r = resolve(_yes_no_field(label), answers)
+        assert (r.action, r.tier) == ("park", "B0")
+
+    def test_sponsorship_is_untouched_by_the_qualifier(self, answers):
+        r = resolve(_yes_no_field(
+            "Will you now or in the future require sponsorship for employment "
+            "visa status?"), answers)
         assert r.value == "Yes"
 
-    def test_the_default_is_park(self, answers):
-        assert answers.scope_qualified_answer == "park"
 
+class TestTheJobsCountry:
+    """An unnamed country is the job's country; a named one is its own row."""
 
-class TestScopeQualifiedAnswerLoading:
-    def _cfg(self, tmp_path, value):
-        base = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(
-            encoding="utf-8"))
-        base["work_authorization"]["scope_qualified_answer"] = value
-        p = tmp_path / "answers.yaml"
-        p.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
-        return p
+    COUNTRY_RELATIVE = [
+        "Are you authorized to work in the country where the job is located?",
+        "Are you legally authorized to work in the country this position is in?",
+        "Are you authorized to work in the stated location of this role?",
+        "Are you legally authorized to work in your current country of employment?",
+    ]
 
-    def _load(self, path):
-        return load_answers(path, FIXTURES / "preferences_time_limited.md")
+    @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
+    def test_a_us_role_answers_yes(self, answers, label):
+        assert resolve(_yes_no_field(label), answers).value == "Yes"
 
-    @pytest.mark.parametrize("value", ["park", "yes", "no"])
-    def test_the_three_settings_load(self, tmp_path, value):
-        assert self._load(self._cfg(tmp_path, value)).scope_qualified_answer == value
+    @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
+    def test_a_german_role_answers_from_the_default_row(self, answers, label):
+        assert resolve(_yes_no_field(label), dc_replace(answers, job_country="Germany")
+                       ).value == "No"
 
-    def test_an_unquoted_yaml_boolean_is_refused_not_coerced(self, tmp_path):
-        """`scope_qualified_answer: no` (unquoted) parses as the boolean False.
-        Mapping that to "no" would let YAML's own quirk decide a legal answer,
-        so it is an error and the message says to quote it."""
-        with pytest.raises(AnswersError, match="quote it"):
-            self._load(self._cfg(tmp_path, False))
+    @pytest.mark.parametrize("label", [
+        "Are you legally authorised to work in the UK without employer sponsorship?",
+        "Are you authorized to work in Canada?",
+        "Are you authorized to work in Germany?",
+    ])
+    def test_a_named_country_answers_from_its_own_row(self, answers, label):
+        assert resolve(_yes_no_field(label), answers).value == "No"
 
-    def test_an_unrecognized_setting_is_refused(self, tmp_path):
-        with pytest.raises(AnswersError, match="scope_qualified_answer"):
-            self._load(self._cfg(tmp_path, "maybe"))
-
-    def test_an_unknown_key_in_the_block_is_refused(self, tmp_path):
-        """The block was the one place with no unknown-key check, so
-        `scope_qualifed_answer` (typo) would silently leave the default."""
-        base = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(
-            encoding="utf-8"))
-        base["work_authorization"]["scope_qualifed_answer"] = "no"
-        p = tmp_path / "answers.yaml"
-        p.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
-        with pytest.raises(AnswersError, match="unknown keys"):
-            self._load(p)
+    def test_either_country_is_enough(self, answers):
+        r = resolve(_yes_no_field(
+            "Are you legally authorized to work in the US or Canada?"), answers)
+        assert r.value == "Yes"
 
 
 class TestLoaderRejectsSilentMisconfiguration:
     """Every case here used to load clean and then quietly do nothing."""
 
     def _cfg(self, tmp_path, mutate):
-        base = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(
-            encoding="utf-8"))
+        base = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
         mutate(base)
         p = tmp_path / "answers.yaml"
         p.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
         return p
 
     def test_a_mistyped_top_level_key_is_an_error(self, tmp_path):
-        # `rulez:` loaded with zero rules; every Tier B question then parked
-        # and nothing said why.
         def rename(d):
-            d["rulez"] = d.pop("rules")
+            d["questionz"] = d.pop("questions")
         with pytest.raises(AnswersError, match="unknown top-level keys"):
-            load_answers(self._cfg(tmp_path, rename),
-                          FIXTURES / "preferences_time_limited.md")
+            load_answers(self._cfg(tmp_path, rename))
 
     def test_employment_flags_are_rejected_outside_the_employment_block(self, tmp_path):
         def stray(d):
             d["identity"]["current_role"] = True
         with pytest.raises(AnswersError, match="unknown keys"):
-            load_answers(self._cfg(tmp_path, stray),
-                          FIXTURES / "preferences_time_limited.md")
+            load_answers(self._cfg(tmp_path, stray))
 
     def test_the_flags_still_work_where_they_belong(self, tmp_path):
         def ok(d):
-            d.setdefault("employment", {
-                "company_name": "Widget Corp", "title": "Widget Engineer",
-                "start_month": "January", "start_year": "2020",
-                "end_month": "June", "end_year": "2024",
-            })
             d["employment"]["only_when_required"] = True
-        answers = load_answers(self._cfg(tmp_path, ok),
-                                FIXTURES / "preferences_time_limited.md")
-        assert answers.employment["only_when_required"] is True
+        assert load_answers(self._cfg(tmp_path, ok)).employment["only_when_required"] is True
 
-    def test_a_keyword_that_collapses_to_one_character_is_refused(self, tmp_path):
-        # `C++` -> `c`, which matched "What are your salary expectations?".
-        def degenerate(d):
-            d["rules"] = [{"match": ["C++"], "answer": "5 years"}]
-        with pytest.raises(AnswersError, match="under 3 characters"):
-            load_answers(self._cfg(tmp_path, degenerate),
-                          FIXTURES / "preferences_time_limited.md")
-
-    def test_a_short_exact_label_is_still_allowed(self, tmp_path):
-        # `exact:` compares the whole label, so shortness is harmless — this is
-        # the documented escape for labels that cannot be keyworded (§4's
-        # `State` dropdown).
+    def test_a_short_wording_is_still_allowed(self, tmp_path):
         def ok(d):
-            d["rules"] = [{"exact": ["State"], "answer": "Massachusetts"}]
-        answers = load_answers(self._cfg(tmp_path, ok),
-                                FIXTURES / "preferences_time_limited.md")
-        assert answers.rules[0].exact == ("state",)
+            d["questions"] = {"state": {"answer": "Massachusetts", "wordings": ["State"]}}
+        assert load_answers(self._cfg(tmp_path, ok)).questions[0].wordings == ("state",)
+
+    def test_an_unknown_question_key_is_refused(self, tmp_path):
+        def typo(d):
+            d["questions"]["linkedin"]["keyword"] = ["x"]
+        with pytest.raises(AnswersError, match="unknown keys"):
+            load_answers(self._cfg(tmp_path, typo))
 
 
-class TestParsedSalary:
-    """`Answers.parsed_salary` — a figure computed upstream in
-    `apply_cli._parsed_salary_for()` from this job's own parsed compensation
-    columns, not config or JD prose. `resolve()` must fill a money-shaped
-    question from it outright, ahead of and superseding any static `rules:`
-    default, and leave every other field untouched."""
+class TestSalary:
+    """A figure question takes the figure the run computed for this role; a
+    Yes/No money question takes the literal fallback; no figure parks."""
 
-    def _answers(self, tmp_path, parsed_salary):
-        base = load_answers(write_config(tmp_path, rules=[
-            {"match": ["salary", "compensation"], "answer": "Open to conversation"},
-        ]), PREFS)
-        return dc_replace(base, parsed_salary=parsed_salary)
+    def _answers(self, tmp_path, figure):
+        base = load_answers(write_config(tmp_path, questions={"salary": {
+            "answer": {"computed": "salary", "fallback": ["Yes"]},
+            "keywords": ["salary", "compensation"]}}))
+        return dc_replace(base, salary_figure=figure)
 
-    def test_fills_a_money_field_from_parsed_salary_over_the_configured_rule(self, tmp_path):
-        a = self._answers(tmp_path, 132000.0)
-        r = resolve(field(label="What are your salary expectations?"), a)
-        assert r.action == "fill"
-        assert r.value == "132000"
-        assert r.tier == "PARSED"
+    def test_a_text_field_takes_the_figure(self, tmp_path):
+        r = resolve(field(label="What are your salary expectations?"),
+                    self._answers(tmp_path, 132000.0))
+        assert (r.action, r.value) == ("fill", "132000")
 
-    def test_a_select_kind_field_matches_the_computed_figure_as_an_option(self, tmp_path):
-        a = self._answers(tmp_path, 132000.0)
-        r = resolve(field(label="Desired compensation", options=["$132,000", "$150,000"]), a)
-        assert r.action == "fill"
+    def test_a_select_matches_the_figure_as_an_option(self, tmp_path):
+        r = resolve(field(label="Desired compensation", options=["$132,000", "$150,000"]),
+                    self._answers(tmp_path, 132000.0))
         assert r.value == "$132,000"
-        assert r.tier == "PARSED"
 
-    def test_a_select_kind_field_parks_when_no_option_matches(self, tmp_path):
-        a = self._answers(tmp_path, 132000.0)
-        r = resolve(field(label="Desired compensation", required=True,
-                           options=["$150,000", "$200,000"]), a)
+    def test_a_yes_no_money_question_is_not_a_figure(self, tmp_path):
+        r = resolve(field(label="Are you comfortable with the salary range posted?",
+                          options=["Yes", "No"]), self._answers(tmp_path, 132000.0))
+        assert r.value == "Yes"
+
+    def test_no_figure_parks(self, tmp_path):
+        r = resolve(field(label="What are your salary expectations?", required=True),
+                    self._answers(tmp_path, None))
         assert r.action == "park"
-        assert r.tier == "PARSED"
 
-    def test_a_non_money_field_is_untouched(self, tmp_path):
-        a = self._answers(tmp_path, 132000.0)
-        r = resolve(field(label="What is your notice period?"), a)
-        assert r.tier != "PARSED"
 
-    def test_no_parsed_salary_falls_through_to_the_configured_rule(self, tmp_path):
-        a = self._answers(tmp_path, None)
-        r = resolve(field(label="What are your salary expectations?"), a)
-        assert r.action == "fill"
-        assert r.value == "Open to conversation"
-        assert r.tier == "B"
+class TestRoleFileAnswers:
+    """"Why us" comes from this role's company_answers.yaml, never the bank."""
+
+    def _answers(self, tmp_path, company_answers):
+        base = load_answers(write_config(tmp_path, questions={"why_company": {
+            "answer": {"role_file": "why_company"}, "keywords": ["why do you want to work"]}}))
+        return dc_replace(base, company_answers=company_answers)
+
+    def test_it_fills_from_the_role_file(self, tmp_path):
+        a = self._answers(tmp_path, {"why_company": "Because widgets."})
+        r = resolve(field(label="Why do you want to work here?", kind="textarea"), a)
+        assert r.value == "Because widgets."
+
+    def test_it_parks_without_one(self, tmp_path):
+        a = self._answers(tmp_path, {})
+        r = resolve(field(label="Why do you want to work here?", kind="textarea",
+                          required=True), a)
+        assert r.action == "park" and "company-answers" in r.reason
 
 
 class TestLocationAlternates:
@@ -1170,7 +1003,7 @@ class TestLocationAlternates:
             data["identity"]["location_alternates"] = alternates
         path = tmp_path / "application_answers.yaml"
         path.write_text(_yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        return load_answers(path, PREFS)
+        return load_answers(path)
 
     def _field(self, field_id, options):
         from src.apply.reconcile import MergedField, MergedOption
@@ -1242,7 +1075,7 @@ class TestSelfIdSignature:
         return field(id=field_id, name=field_id, section="eeoc", kind="text", **kw)
 
     def test_the_signature_is_the_configured_name(self, tmp_path):
-        a = load_answers(write_config(tmp_path), PREFS)
+        a = load_answers(write_config(tmp_path))
         r = resolve(self._field("eeo[disabilitySignature]", required=True), a)
         expected = f"{a.identity['first_name']} {a.identity['last_name']}"
         assert (r.action, r.value) == ("fill", expected)
@@ -1251,19 +1084,19 @@ class TestSelfIdSignature:
         import src.apply.answers as A
         from datetime import date as _date
         monkeypatch.setattr(A, "_today", lambda: _date(2026, 8, 19))
-        a = load_answers(write_config(tmp_path), PREFS)
+        a = load_answers(write_config(tmp_path))
         r = resolve(self._field("eeo[disabilitySignatureDate]", required=True), a)
         assert (r.action, r.value) == ("fill", "08/19/2026")
 
     def test_greenhouses_spelling_of_the_same_two_fields_resolves(self, tmp_path):
-        a = load_answers(write_config(tmp_path), PREFS)
+        a = load_answers(write_config(tmp_path))
         assert resolve(self._field("disability_signature"), a).action == "fill"
         assert resolve(self._field("disability_signature_date"), a).action == "fill"
 
     def test_the_opt_out_questions_are_untouched(self, tmp_path):
         """The signature branch must not swallow the four questions that do
         have an opt-out to pick."""
-        a = load_answers(write_config(tmp_path), PREFS)
+        a = load_answers(write_config(tmp_path))
         r = resolve(field(id="eeo[disability]", name="eeo[disability]", section="eeoc",
                           kind="select", required=False,
                           options=["Yes, I have a disability, or have had one in the past",
@@ -1271,39 +1104,8 @@ class TestSelfIdSignature:
         assert (r.action, r.value) == ("fill", "I do not want to answer")
 
     def test_it_is_tier_a2_like_the_rest_of_the_eeoc_block(self, tmp_path):
-        a = load_answers(write_config(tmp_path), PREFS)
+        a = load_answers(write_config(tmp_path))
         assert resolve(self._field("eeo[disabilitySignature]"), a).tier == "A2"
-
-
-class TestStartDate:
-    """`availability.start_date` fills a board's Date field when it is still ahead."""
-
-    def _date_field(self):
-        return field(id="question_1", label="When can you start?", kind="date")
-
-    def _pin(self, monkeypatch):
-        import src.apply.answers as A
-        from datetime import date as _date
-        monkeypatch.setattr(A, "_today", lambda: _date(2026, 9, 27))
-
-    def test_a_future_start_date_is_used(self, tmp_path, monkeypatch):
-        self._pin(monkeypatch)
-        a = load_answers(write_config(tmp_path, availability={"start_date": "12/01/2026"}), PREFS)
-        assert resolve(self._date_field(), a).value == "12/01/2026"
-
-    def test_a_past_start_date_falls_back_to_today(self, tmp_path, monkeypatch):
-        self._pin(monkeypatch)
-        a = load_answers(write_config(tmp_path, availability={"start_date": "09/01/2026"}), PREFS)
-        assert resolve(self._date_field(), a).value == "09/27/2026"
-
-    def test_no_start_date_is_today(self, tmp_path, monkeypatch):
-        self._pin(monkeypatch)
-        a = load_answers(write_config(tmp_path), PREFS)
-        assert resolve(self._date_field(), a).value == "09/27/2026"
-
-    def test_a_malformed_start_date_is_refused(self, tmp_path):
-        with pytest.raises(AnswersError, match="availability.start_date"):
-            load_answers(write_config(tmp_path, availability={"start_date": "2026-12-01"}), PREFS)
 
 
 class TestOnlyWhenRequiredRule:
@@ -1312,7 +1114,7 @@ class TestOnlyWhenRequiredRule:
     def _answers(self, tmp_path):
         rules = [{"exact": ["current company"], "answer": "Widget Corp",
                   "only_when_required": True}]
-        return load_answers(write_config(tmp_path, rules=rules), PREFS)
+        return load_answers(write_config(tmp_path, rules=rules))
 
     def test_an_optional_field_is_skipped(self, tmp_path):
         r = resolve(field(label="Current company", required=False), self._answers(tmp_path))
@@ -1325,4 +1127,4 @@ class TestOnlyWhenRequiredRule:
     def test_a_non_bool_flag_is_refused(self, tmp_path):
         rules = [{"exact": ["current company"], "answer": "X", "only_when_required": "yes"}]
         with pytest.raises(AnswersError, match="only_when_required"):
-            load_answers(write_config(tmp_path, rules=rules), PREFS)
+            load_answers(write_config(tmp_path, rules=rules))

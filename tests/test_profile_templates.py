@@ -260,37 +260,13 @@ class TestExampleConfigsAreValid:
         assert cfg.default_vertical in cfg.names
         assert cfg.classifier_rules
 
-    def test_application_answers_example_loads_through_the_real_loader(self, tmp_path):
-        """`load_answers` is the strict validator /apply hits, and existence +
-        non-empty said nothing about schema validity: a template with a bad
-        work_authorization block or an unknown top-level key shipped green.
+    def test_application_answers_example_loads_through_the_real_loader(self):
+        """`load_answers` is the strict validator /apply hits: existence says
+        nothing about whether the template is a valid bank."""
+        from src.apply.answers import load_answers
 
-        The cross-check against preferences.md is fed a synthesized file rather
-        than preferences.example.md, which deliberately states all three
-        statuses so the new user has to choose one."""
-        from src.apply.answers import load_answers, preferences_statuses
-
-        answers_path = PROFILE / "application_answers.example.yaml"
-        declared = yaml.safe_load(answers_path.read_text(encoding="utf-8"))
-        status = declared["work_authorization"]["status"]
-
-        # Reuse the template's own wording for that status, so this stays a real
-        # cross-check rather than a hand-written stand-in.
-        lines = [
-            line
-            for line in (PROFILE / "preferences.example.md").read_text(
-                encoding="utf-8"
-            ).splitlines()
-            if preferences_statuses(f"## Work authorization\n{line}\n") == {status}
-        ]
-        assert lines, f"preferences.example.md states no line for status {status!r}"
-        prefs = tmp_path / "preferences.md"
-        prefs.write_text("## Work authorization\n\n" + lines[0] + "\n", encoding="utf-8")
-
-        answers = load_answers(answers_path, prefs)
-        assert answers.status == status
-        assert answers.identity
-        assert answers.education
+        loaded = load_answers(PROFILE / "application_answers.example.yaml")
+        assert "default" in loaded.countries and loaded.questions
 
     @pytest.mark.parametrize(
         "name,version", [("contacts.example.yaml", 1), ("discovery.example.yaml", 2)]

@@ -101,8 +101,11 @@ class FieldPlan:
     """`MergedField.dom_control` — which control inside `dom_path`."""
 
     reason: str = ""
-    """`Resolution.reason`, previously discarded on the fill path. A filled
-    field can carry a caveat worth reading."""
+    """`Resolution.reason`. A filled field can carry a caveat worth reading."""
+
+    replaced: str = ""
+    """The source an override replaced — `bank:<id>~<keyword>` when the session
+    corrected a keyword guess, which is how the bank learns not to guess it."""
 
     @property
     def needs_selection_assert(self) -> bool:
@@ -156,10 +159,8 @@ class Unmapped:
     off the label alone."""
 
     source: str = ""
-    """`Resolution.source`. On a Tier B park this is the keyword whose rule
-    matched the label and then offered nothing the board takes — the single
-    most useful fact for resolving it, and the group a learned option spelling
-    belongs to."""
+    """`Resolution.source`. On a Tier B park, the bank question whose answer
+    the board did not offer."""
 
 
 @dataclass(frozen=True)
@@ -196,18 +197,13 @@ class Plan:
     not possible on one of these — `submit()` blocks for a human to solve it
     rather than clicking blind."""
     ignored_overrides: tuple[str, ...] = ()
-    """`--answers` entries that named a real field and were then dropped,
-    because the tier gate in `build_plan` does not let that override tier
-    supersede that resolution tier. Reported rather than swallowed: the
-    override file is how every judged answer reaches the form, so one that
-    silently does nothing is indistinguishable from one that worked."""
+    """`--answers` entries that could not apply: an id not on this form, an
+    identity/EEOC or export-control field, or a file path that does not exist.
+    `apply plan`/`apply run` exit non-zero while any remain."""
 
     work_authorization: dict = field(default_factory=dict)
-    """The derived work-authorization facts (`_work_authorization_facts()`),
-    exposed so `/apply`'s Step 4c can judge a board's full-sentence option
-    against them without re-deriving `authorized_now`/`requires_sponsorship`
-    from `status` in prose (R7: this module looks the facts up; the command
-    session is the one that reads a board's free text against them)."""
+    """The facts for this job's country, so the session can judge a board's
+    full-sentence work-authorization option against them."""
 
     @property
     def parked(self) -> bool:
@@ -294,73 +290,64 @@ def _check_value(field: MergedField, value) -> str | tuple[str, ...] | bool | No
     return f"value is {type(value).__name__}, not str/tuple/bool"
 
 
-def _override_resolution(field: MergedField, value, tier: str) -> Resolution:
-    """Apply an `--answers` override, held to the same standard as every
-    deterministic answer.
+@dataclass(frozen=True)
+class Override:
+    """One answer the /apply session supplied for one field."""
 
-    An override is an LLM-drafted string. Every other path into a select goes
-    through `_pick_option`, which refuses a value the widget does not offer
-    *and* canonicalizes to the board's own spelling. The override path used to
-    bypass both, so `"yes"` against an offered `"Yes"` planned the literal
-    lowercase string: the plan read READY, `/apply`'s unmapped-diff saw
-    nothing wrong, and the role died in the browser instead — with the answer
-    unavailable to the recovery path, which re-resolves without overrides.
+    value: str | tuple[str, ...]
+    source: str = ""
+    """Where it came from: `bullets:B-7`, `stories:S-3`, `company_answers`,
+    `jd`, `option`, or a bank id."""
+    question: str = ""
+    """The bank question this label asks — the run saves the label under it."""
+    claim: dict | None = None
+    """For a work-authorization option: the facts its text states."""
 
-    A value the widget does not offer parks rather than raising: the question
-    is genuinely still unanswered, which is what `unmapped[]` means, and the
-    run report then names it for the next `/apply` pass.
-    """
-    candidates = (value,) if isinstance(value, str) else tuple(value)
-    # `field.multi` alone disagrees with `_check_value` and `build_plan`, which
-    # both use `multi or kind in _MULTI_KINDS`. Using the bare flag here made a
-    # 2-item override on a single-valued select silently keep the first value
-    # and drop the second — where the old code raised. Same predicate
-    # everywhere, and a list into a single-valued widget is an error, not a
-    # truncation.
+
+# Fields no override may touch: identity and EEOC come from stated facts only,
+# and export control is the user's to answer every time.
+_CLOSED_TIERS = frozenset({"A", "A2"})
+
+
+def _override_resolution(field: MergedField, value, source: str, tier: str) -> Resolution:
+    """Apply an override, held to the same standard as every other answer: a
+    select takes only an option it offers, spelled the board's way. A value the
+    widget does not take parks, and the reason says why."""
     multi = field.multi or field.kind in _MULTI_KINDS
+    candidates = (value,) if isinstance(value, str) else tuple(value)
+    tag = f"override:{source}" if source else "override"
     if not multi and len(candidates) > 1:
-        raise PlanError(
-            f"override for single-valued field {field.id!r} supplies "
-            f"{len(candidates)} values: {list(candidates)!r}"
-        )
+        return Resolution("park", tier=tier, source=tag,
+                          reason=f"{len(candidates)} values for a single-valued field")
+    if field.kind == "checkbox":
+        return Resolution("park", tier=tier, source=tag,
+                          reason="a single checkbox takes no text override")
     if not field.options:
-        # DOM-only select or free text: nothing to validate against, and
-        # fill.py's post-selection assert is the real check (§9).
-        return Resolution("fill", value=value, tier=tier, source=f"override:{tier}")
-
+        chosen = candidates if multi else candidates[0]
+        return Resolution("fill", value=chosen, tier=tier, source=tag)
     picked = tuple(p for p in (match_option(field, c) for c in candidates) if p)
     if len(picked) != len(candidates):
         missing = [c for c in candidates if match_option(field, c) is None]
         return Resolution(
-            "park", tier=tier, source=f"override:{tier}",
+            "park", tier=tier, source=tag,
             reason=f"override {missing!r} matches none of the options this widget "
                    f"offers ({list(o.label for o in field.options)!r})",
         )
-    return Resolution("fill", value=picked if multi else picked[0], tier=tier,
-                      source=f"override:{tier}")
+    return Resolution("fill", value=picked if multi else picked[0], tier=tier, source=tag)
 
 
 def _work_authorization_facts(answers: Answers) -> dict[str, object]:
-    """The facts `answers.py` already derived, in JSON-safe form.
-
-    Read-only lookup, no judgment (R7): `/apply`'s Step 4c is the one that
-    reads a board's full-sentence option against these to resolve a
-    `status_option_candidates` wording gap it never asked the user to
-    pre-configure. `status_option_candidates` is copied to a list — a tuple
-    serializes fine via `json.dumps`, but every other list-shaped value in
-    `as_dict()` is a plain list, and this keeps the convention.
-    """
+    """The facts for this job's country, JSON-safe."""
+    facts = answers.facts_for(answers.country)
     return {
-        "status": answers.status,
-        "authorized_now": answers.authorized_now,
-        "requires_sponsorship": answers.requires_sponsorship,
-        "us_person_answer": answers.us_person_answer,
-        "nationality": answers.nationality,
-        "second_nationality": answers.second_nationality,
-        "sponsorship_followup_text": answers.sponsorship_followup_text,
-        "status_label": answers.status_label,
-        "status_option_candidates": list(answers.status_option_candidates),
-        "scope_qualified_answer": answers.scope_qualified_answer,
+        "job_country": answers.country,
+        "authorized": facts.authorized,
+        "requires_sponsorship": facts.requires_sponsorship,
+        "unrestricted": facts.unrestricted,
+        "status_label": facts.status_label,
+        "nationalities": list(answers.nationalities),
+        "us_person": answers.us_person,
+        "known_claims": len(answers.claims),
     }
 
 
@@ -396,34 +383,15 @@ def build_plan(
     title: str = "",
     submit_selector: str | None = None,
     submit_disabled: bool = False,
-    overrides: dict[str, tuple[str | tuple[str, ...], str]] | None = None,
+    overrides: dict[str, Override] | None = None,
     ats: str = "greenhouse",
     requires_captcha: bool = False,
 ) -> Plan:
     """Resolve every reconciled field into a fill, an attachment or a park.
 
-    `overrides` is a per-run, per-field lookup — `field.id -> (value, tier)`,
-    `tier` one of `"C1"`/`"C2"`/`"JD"`/`"B0-LLM"`/`"AUDIT"` — supplied by
-    `/apply` (`.claude/commands/apply.md`) after it classifies and, for C1,
-    drafts an answer, or resolves a C2 question from that role's
-    `company_answers.yaml`, or reads a salary figure off the JD, or (Step 4c)
-    judges which of a work-authorization field's full-sentence options is
-    true given `work_authorization`, or (Step 2c's audit) catches an already
-    -resolved Tier B/B0 field whose label asks for more than its value
-    covers. It exists so a required Tier C or B0 question can ever leave
-    `unmapped[]` without either judgment landing in this module (R7) or a
-    company-specific answer leaking into `profile/application_answers.yaml`
-    (§15 forbids exactly that for C1; it binds harder for C2, which is
-    company-specific by construction).
-    `"C1"`/`"C2"` are consulted only for `resolve()`'s Tier C outcomes, same
-    as always. `"JD"`, `"B0-LLM"` and `"AUDIT"` are each consulted for a
-    Tier B or B0 outcome too — `"JD"` for Tier B (a salary figure the JD
-    itself states can supersede a static `rules:` match), `"B0-LLM"` for
-    Tier B0 (a work-authorization park whose pre-configured
-    `status_option_candidates` matched none of this board's exact wording),
-    `"AUDIT"` for either (a pattern-matched Tier B/B0 result the audit step
-    judged wrong or incomplete — e.g. a compound label a keyword match only
-    half-answered) — every other tier keeps deciding itself.
+    `overrides` maps a field id to the session's answer for it. One gate: an
+    override answers anything except identity/EEOC fields and export control.
+    An override that cannot apply is listed in `ignored_overrides`.
     """
     overrides = overrides or {}
     out_dir = Path(out_dir)
@@ -454,67 +422,33 @@ def build_plan(
             ))
             continue
 
-        if field.kind == "file" and field.id in overrides:
-            # A file question's override is a path, not text — the generic
-            # tier-gate below assumes `resolution.value` is fillable, and a
-            # rule can never answer a file upload (see `_resolve_rule`), so
-            # this never reaches that gate at all. Resolved here, once,
-            # against the same /tailor out_dir every other attachment reads
-            # from, so a bare filename in the override (like the fixtures
-            # ARTIFACT_STEMS matches by convention) still resolves.
-            value, override_tier = overrides[field.id]
-            if override_tier != "FILE" or not isinstance(value, str):
-                ignored.append(
-                    f"{field.id}: a file question's override must be "
-                    f"tier FILE with a string path, got tier {override_tier!r}"
-                )
-            else:
-                candidate = Path(value)
-                if not candidate.is_absolute():
-                    candidate = out_dir / candidate
-                if candidate.is_file():
-                    files.append(FilePlan(
-                        id=field.id, name=field.name, label=field.label,
-                        required=field.required, path=candidate,
-                    ))
-                    continue
-                ignored.append(f"{field.id}: override path {candidate} does not exist")
-            # Falls through to the normal park below when the override
-            # itself could not be used, same as any other ignored override.
+        override = overrides.get(field.id)
+        if field.kind == "file" and override is not None:
+            # A file question's override is a path, resolved against the role's
+            # own folder so a bare filename works.
+            candidate = Path(override.value) if isinstance(override.value, str) else None
+            if candidate is not None and not candidate.is_absolute():
+                candidate = out_dir / candidate
+            if candidate is not None and candidate.is_file():
+                files.append(FilePlan(
+                    id=field.id, name=field.name, label=field.label,
+                    required=field.required, path=candidate,
+                ))
+                continue
+            ignored.append(f"{field.id}: override path {override.value!r} is not a file")
+            override = None
 
         resolution = resolve(field, answers)
-
-        if field.kind != "file" and field.id in overrides:
-            value, override_tier = overrides[field.id]
-            # C1/C2 only ever supersede a Tier C outcome — a drafted answer
-            # must never silently clobber an identity/EEOC/work-authorization
-            # field. Tier B and B0 each get two narrow exceptions: "JD"
-            # supersedes a static Tier B rule (a salary figure the JD itself
-            # states should win over a generic configured default), "B0-LLM"
-            # supersedes a Tier B0 park (a work-authorization wording variant
-            # of an already-known fact), and "AUDIT" supersedes either — the
-            # general case of a pattern-matched B/B0 result the audit step
-            # judged wrong or incomplete (e.g. a compound label a keyword
-            # match only half-answered). Never a Tier A identity field or a
-            # deliberate `us_person_answer`/`scope_qualified_answer` opt-out
-            # that never reaches "park" with an unmatched-candidates reason
-            # in the first place.
-            if (resolution.tier == "C"
-                    or (resolution.tier == "B"
-                        and override_tier in ("JD", "AUDIT", "PICK"))
-                    or (resolution.tier == "B0" and override_tier in ("B0-LLM", "AUDIT"))):
-                resolution = _override_resolution(field, value, override_tier)
+        replaced = ""
+        if override is not None and field.kind != "file":
+            if resolution.tier in _CLOSED_TIERS:
+                ignored.append(f"{field.id}: identity and EEOC fields take no override")
+            elif resolution.source == "export_control":
+                ignored.append(f"{field.id}: export control is yours to answer by hand")
             else:
-                # Loaded, validated, and then aimed at a field this gate does
-                # not open. Silence here cost a real correction: an override on
-                # an identity or EEOC field was dropped without a word, and the
-                # re-plan diff /apply checks its own work with showed nothing
-                # wrong, because nothing *was* wrong with the plan — the
-                # correction simply never applied.
-                ignored.append(
-                    f"{field.id}: tier {override_tier} cannot supersede a tier "
-                    f"{resolution.tier} resolution"
-                )
+                replaced = resolution.source
+                resolution = _override_resolution(field, override.value, override.source,
+                                                  resolution.tier)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))
@@ -582,7 +516,13 @@ def build_plan(
             reason=resolution.reason,
             dom_path=field.dom_path,
             dom_control=field.dom_control,
+            replaced=replaced,
         ))
+
+    on_form = {f.id for f in reconciled.fields}
+    for field_id in overrides:
+        if field_id not in on_form:
+            ignored.append(f"{field_id}: not a field on this form")
 
     plan = Plan(
         job_id=job_id,
@@ -648,7 +588,7 @@ def plan_for_board(
     answers: Answers,
     out_dir: Path,
     job_id: str = "",
-    overrides: dict[str, tuple[str | tuple[str, ...], str]] | None = None,
+    overrides: dict[str, Override] | None = None,
     ats: str = "greenhouse",
     requires_captcha: bool = False,
 ) -> Plan:

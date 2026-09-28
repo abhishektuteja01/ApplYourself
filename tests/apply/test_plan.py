@@ -21,6 +21,7 @@ from src.apply.plan import (
     PlanError,
     Skipped,
     Unmapped,
+    Override,
     build_plan,
     find_artifact,
     plan_for_board,
@@ -185,369 +186,105 @@ class TestUnmapped:
         assert [s.id for s in plan.skipped] == ["question_9"]
 
 
+def ov(value, source="", question="", claim=None) -> Override:
+    return Override(value=value, source=source, question=question, claim=claim)
+
+
 class TestOverrides:
-    """`/apply`'s per-run Tier C overrides (§10/§15) — the only way a required
-    Tier C question can ever leave unmapped[] without judgment landing in
-    this module or a company-specific answer leaking into
-    profile/application_answers.yaml."""
+    """The session's answers. One gate: anything except identity/EEOC fields
+    and export control; whatever cannot apply is named, never dropped."""
 
-    def test_an_override_resolves_a_required_tier_c_park(self, answers, tailor_dir):
-        why_us = field(id="question_9", label="Why do you want to work here?",
-                        kind="textarea", required=True)
-        plan = build_plan(one([why_us]), answers, tailor_dir)
+    def why_us(self, required=True):
+        return field(id="question_9", label="Why do you want to work here?",
+                     kind="textarea", required=required)
+
+    def test_an_override_resolves_a_required_park(self, answers, tailor_dir):
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir)
         assert [u.id for u in plan.unmapped] == ["question_9"]
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
+                          overrides={"question_9": ov("Drafted.", "bullets:B-1")})
+        assert plan.unmapped == () and not plan.parked
+        assert plan.fields[0].value == "Drafted."
+        assert plan.fields[0].source == "override:bullets:B-1"
 
-        plan = build_plan(
-            one([why_us]), answers, tailor_dir,
-            overrides={"question_9": ("Drafted from bullets.md.", "C1")},
-        )
-        assert plan.unmapped == ()
-        assert plan.parked is False
-        assert plan.fields[0].value == "Drafted from bullets.md."
-        assert plan.fields[0].tier == "C1"
-
-    def test_an_override_resolves_an_optional_tier_c_draftable(self, answers, tailor_dir):
-        why_us = field(id="question_9", label="Why do you want to work here?",
-                        kind="textarea", required=False)
-        plan = build_plan(
-            one([why_us]), answers, tailor_dir,
-            overrides={"question_9": ("From company_answers.md.", "C2")},
-        )
+    def test_an_override_resolves_an_optional_draftable(self, answers, tailor_dir):
+        plan = build_plan(one([self.why_us(required=False)]), answers, tailor_dir,
+                          overrides={"question_9": ov("From company_answers.")})
         assert plan.draftable == ()
-        assert plan.fields[0].value == "From company_answers.md."
-        assert plan.fields[0].tier == "C2"
+        assert plan.fields[0].value == "From company_answers."
 
-    def test_missing_override_still_parks(self, answers, tailor_dir):
-        why_us = field(id="question_9", label="Why do you want to work here?",
-                        kind="textarea", required=True)
-        plan = build_plan(
-            one([why_us]), answers, tailor_dir,
-            overrides={"some_other_field": ("x", "C1")},
-        )
+    def test_an_id_not_on_the_form_is_named(self, answers, tailor_dir):
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
+                          overrides={"q_typo": ov("x")})
         assert [u.id for u in plan.unmapped] == ["question_9"]
+        assert plan.ignored_overrides == ("q_typo: not a field on this form",)
 
-    def test_an_override_never_touches_a_non_tier_c_field(self, answers, tailor_dir):
-        # first_name is Tier A — an override keyed to it must be ignored, not
-        # silently overwrite an identity answer.
-        plan = build_plan(
-            one([field(id="first_name", label="First Name", kind="text")]),
-            answers, tailor_dir,
-            overrides={"first_name": ("Somebody Else", "C1")},
-        )
-        assert plan.fields[0].value != "Somebody Else"
-
-    def test_a_bad_override_value_raises_not_parks(self, answers, tailor_dir):
-        # A tuple into a single-valued textarea is exactly what _check_value
-        # exists to catch — a resolver bug (here, the command feeding a bad
-        # override) must not read as an unanswerable question.
-        why_us = field(id="question_9", label="Why do you want to work here?",
-                        kind="textarea", required=True)
-        with pytest.raises(PlanError):
-            build_plan(
-                one([why_us]), answers, tailor_dir,
-                overrides={"question_9": (("a", "b"), "C1")},
-            )
-
-    def test_plan_for_board_passes_overrides_through(
-        self, merged, answers, tailor_dir, scan, payload
-    ):
-        from src.apply.schema import parse_schema
-
-        name = "form_minimal"
-        board_form = BoardForm(
-            posting=Posting(token="1", url_slug=None), slug="gasketworks", html="",
-            scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
-        )
-        plan = plan_for_board(board_form, answers, tailor_dir, job_id="a1b2c3d4")
-        parked = {u.id: u for u in plan.unmapped}
-        assert parked  # form_minimal parks on at least one Tier C question
-
-        # The parked question here is a Yes/No react-select, so the override
-        # has to name an option the widget actually offers.
-        field_id = next(iter(parked))
-        assert parked[field_id].options == ("Yes", "No")
-
-        overridden = plan_for_board(
-            board_form, answers, tailor_dir, job_id="a1b2c3d4",
-            overrides={field_id: ("No", "C1")},
-        )
-        assert field_id not in [u.id for u in overridden.unmapped]
-        assert [f.value for f in overridden.fields if f.id == field_id] == ["No"]
-
-    def test_an_override_the_widget_does_not_offer_parks_instead_of_planning_it(
-        self, merged, answers, tailor_dir, scan, payload
-    ):
-        """An override is LLM-drafted prose. Every deterministic path into a
-        select is checked against the offered options; this one used to skip
-        that, so the plan read READY and the role died in the browser."""
-        from src.apply.schema import parse_schema
-
-        name = "form_minimal"
-        board_form = BoardForm(
-            posting=Posting(token="1", url_slug=None), slug="gasketworks", html="",
-            scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
-        )
-        field_id = next(u.id for u in
-                        plan_for_board(board_form, answers, tailor_dir,
-                                        job_id="a1b2c3d4").unmapped)
-
-        overridden = plan_for_board(
-            board_form, answers, tailor_dir, job_id="a1b2c3d4",
-            overrides={field_id: ("An answer.", "C1")},
-        )
-        still_parked = {u.id: u for u in overridden.unmapped}
-        assert field_id in still_parked
-        assert "matches none of the options" in still_parked[field_id].reason
-
-    def test_a_jd_override_supersedes_a_tier_b_rule(self, answers, tailor_dir):
-        # "salary" matches the fixture's Tier B rule ("Open -- targeting
-        # market rate"). A "JD" override -- the figure /apply read straight
-        # off the JD -- must win over that static default.
-        salary = field(id="salary_expectation", label="Salary Expectation",
-                        kind="text", required=False)
-        plan = build_plan(one([salary]), answers, tailor_dir)
-        assert plan.fields[0].value == "Open — targeting market rate for the level."
-        assert plan.fields[0].tier == "B"
-
-        plan = build_plan(
-            one([salary]), answers, tailor_dir,
-            overrides={"salary_expectation": ("145000", "JD")},
-        )
-        assert plan.fields[0].value == "145000"
-        assert plan.fields[0].tier == "JD"
-
-    def test_a_jd_tagged_override_never_touches_a_non_tier_b_field(self, answers, tailor_dir):
-        # "JD" is the one tag that can cross a tier boundary (into Tier B
-        # only) -- it must not become a general escape hatch onto identity,
-        # EEOC or work-authorization fields.
-        plan = build_plan(
-            one([field(id="first_name", label="First Name", kind="text")]),
-            answers, tailor_dir,
-            overrides={"first_name": ("Somebody Else", "JD")},
-        )
-        assert plan.fields[0].value != "Somebody Else"
-
-    def test_a_c1_tagged_override_never_supersedes_a_tier_b_rule(self, answers, tailor_dir):
-        # Only "JD" gets this power. A C1/C2 draft must stay Tier-C-only, so
-        # it can never silently clobber a configured Tier B fact.
-        salary = field(id="salary_expectation", label="Salary Expectation",
-                        kind="text", required=False)
-        plan = build_plan(
-            one([salary]), answers, tailor_dir,
-            overrides={"salary_expectation": ("145000", "C1")},
-        )
-        assert plan.fields[0].value == "Open — targeting market rate for the level."
-        assert plan.fields[0].tier == "B"
-
-    def test_a_b0_llm_override_resolves_a_compound_option_work_auth_park(
-        self, answers, tailor_dir
-    ):
-        # `answers` fixture has status: time_limited (authorized_now=True,
-        # requires_sponsorship=True) and no status_option_candidates, so this
-        # sponsorship question -- full-sentence options, no bare Yes/No --
-        # parks at B0 exactly the way a real, unconfigured board does.
-        sponsorship = field(
-            id="visa_sponsorship", label="Will you now or in the future require "
-            "sponsorship to work in the United States?", kind="react_select",
-            options=(
-                MergedOption(label="Yes, I will require sponsorship now or in "
-                                    "the future."),
-                MergedOption(label="No, I will not require sponsorship."),
-            ),
-            required=True,
-        )
-        plan = build_plan(one([sponsorship]), answers, tailor_dir)
-        assert [u.id for u in plan.unmapped] == ["visa_sponsorship"]
-        assert plan.unmapped[0].tier == "B0"
-        assert "status_option_candidates" in plan.unmapped[0].reason
-
-        plan = build_plan(
-            one([sponsorship]), answers, tailor_dir,
-            overrides={"visa_sponsorship": (
-                "Yes, I will require sponsorship now or in the future.", "B0-LLM"
-            )},
-        )
-        assert plan.unmapped == ()
-        assert plan.fields[0].value == "Yes, I will require sponsorship now or in the future."
-        assert plan.fields[0].tier == "B0-LLM"
-
-    def test_a_b0_llm_tagged_override_never_touches_a_non_b0_field(
-        self, answers, tailor_dir
-    ):
-        # "B0-LLM" is the one tag that can cross into Tier B0 -- it must not
-        # become a general escape hatch onto identity or an ordinary Tier C
-        # question the way a C1/C2 draft is scoped to Tier C only.
-        plan = build_plan(
-            one([field(id="first_name", label="First Name", kind="text")]),
-            answers, tailor_dir,
-            overrides={"first_name": ("Somebody Else", "B0-LLM")},
-        )
-        assert plan.fields[0].value != "Somebody Else"
-
-    def test_a_pick_override_rescues_a_tier_b_park(self, answers, tailor_dir):
-        """The park this exists for: a rule matched the label, and every
-        candidate it offered was absent from the board's own option list. The
-        answer here is one of the employer's own strings, so it states nothing
-        the employer did not write."""
-        heard = field(
-            id="question_7", label="How did you hear about this job?",
-            kind="react_select", required=True,
-            options=(MergedOption(label="Acme Careers Site"),
-                     MergedOption(label="LinkedIn")),
-        )
-        parked = build_plan(one([heard]), answers, tailor_dir)
-        assert [u.id for u in parked.unmapped] == ["question_7"]
-        assert parked.unmapped[0].tier == "B"
-
-        plan = build_plan(
-            one([heard]), answers, tailor_dir,
-            overrides={"question_7": ("Acme Careers Site", "PICK")},
-        )
-        assert plan.unmapped == ()
-        assert plan.parked is False
-        assert plan.fields[0].value == "Acme Careers Site"
-        assert plan.fields[0].tier == "PICK"
-
-    def test_a_pick_override_resolves_a_tier_c_choice(self, answers, tailor_dir):
-        located = field(id="question_8", label="Do you currently live in San Francisco?",
-                         kind="react_select", required=True,
-                         options=(MergedOption(label="Yes"), MergedOption(label="No")))
-        plan = build_plan(
-            one([located]), answers, tailor_dir,
-            overrides={"question_8": ("Yes", "PICK")},
-        )
-        assert plan.fields[0].value == "Yes"
-        assert plan.fields[0].tier == "PICK"
-
-    def test_a_pick_override_cannot_answer_a_work_authorization_question(
-            self, answers, tailor_dir):
-        """Tier B0 is a legal claim under the user's name. `PICK` picks from
-        what a board offers, which is exactly how a wrong sponsorship answer
-        would get sent — B0 keeps its own narrower tag."""
-        sponsorship = field(
-            id="visa_sponsorship",
-            label="Will you now or in the future require sponsorship to work "
-                  "in the United States?",
-            kind="react_select", required=True,
-            options=(MergedOption(label="Yes"), MergedOption(label="No")),
-        )
-        plan = build_plan(
-            one([sponsorship]), answers, tailor_dir,
-            overrides={"visa_sponsorship": ("No", "PICK")},
-        )
-        # The fixture status is time_limited, so B0 answers this "Yes" and the
-        # PICK entry is dropped and named.
-        assert plan.fields[0].tier == "B0"
-        assert plan.fields[0].value == "Yes"
+    def test_identity_takes_no_override(self, answers, tailor_dir):
+        plan = build_plan(one([field(id="first_name", label="First Name")]),
+                          answers, tailor_dir, overrides={"first_name": ov("Somebody Else")})
+        assert plan.fields[0].value == "Alex"
         assert plan.ignored_overrides == (
-            "visa_sponsorship: tier PICK cannot supersede a tier B0 resolution",
-        )
+            "first_name: identity and EEOC fields take no override",)
 
-    def test_an_ignored_override_is_reported_not_swallowed(self, answers, tailor_dir):
-        """An override that names a real field and then does nothing used to
-        vanish silently, and /apply's own re-plan check could not see it: the
-        plan was not wrong, the correction just never applied."""
-        plan = build_plan(
-            one([field(id="first_name", label="First Name", kind="text")]),
-            answers, tailor_dir,
-            overrides={"first_name": ("Somebody Else", "AUDIT")},
-        )
-        assert plan.fields[0].value != "Somebody Else"
-        assert plan.ignored_overrides == (
-            "first_name: tier AUDIT cannot supersede a tier A resolution",
-        )
+    def test_export_control_takes_no_override(self, answers, tailor_dir):
+        us_person = field(id="q", label="Are you a U.S. person?", kind="select",
+                          required=True, options=(MergedOption(label="Yes"),
+                                                  MergedOption(label="No")))
+        plan = build_plan(one([us_person]), answers, tailor_dir, overrides={"q": ov("No")})
+        assert [u.id for u in plan.unmapped] == ["q"]
+        assert "export control" in plan.ignored_overrides[0]
 
-    def test_an_audit_override_supersedes_a_tier_b_rule_match(self, answers, tailor_dir):
-        # "AUDIT" is the general case: a Tier B `rules:` keyword matched a
-        # compound label (e.g. "how did you hear about us and why do you
-        # want to work here") and answered only the half it recognized --
-        # the audit step supplies the full corrected answer.
-        salary = field(id="salary_expectation", label="Salary Expectation",
-                        kind="text", required=False)
-        plan = build_plan(
-            one([salary]), answers, tailor_dir,
-            overrides={"salary_expectation": ("145000 -- also, I'm drawn to "
-                                               "this team's mission.", "AUDIT")},
-        )
-        assert plan.fields[0].value == "145000 -- also, I'm drawn to this team's mission."
-        assert plan.fields[0].tier == "AUDIT"
+    def test_an_override_replaces_a_bank_answer_and_records_it(self, answers, tailor_dir):
+        f = field(id="q", label="What is your LinkedIn?", kind="text")
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": ov("https://x")})
+        assert plan.fields[0].value == "https://x"
+        assert plan.fields[0].replaced == "bank:linkedin~linkedin"
 
-    def test_an_audit_override_supersedes_a_tier_b0_result(self, answers, tailor_dir):
-        # Same general case, on the Tier B0 side -- not limited to the one
-        # narrow "B0-LLM" wording-variant category.
-        sponsorship = field(
-            id="visa_sponsorship", label="Will you now or in the future require "
-            "sponsorship to work in the United States?", kind="react_select",
-            options=(
-                MergedOption(label="Yes, I will require sponsorship now or in "
-                                    "the future."),
-                MergedOption(label="No, I will not require sponsorship."),
-            ),
-            required=True,
-        )
-        plan = build_plan(
-            one([sponsorship]), answers, tailor_dir,
-            overrides={"visa_sponsorship": (
-                "Yes, I will require sponsorship now or in the future.", "AUDIT"
-            )},
-        )
-        assert plan.unmapped == ()
-        assert plan.fields[0].tier == "AUDIT"
+    def test_an_override_supersedes_a_work_authorization_park(self, answers, tailor_dir):
+        options = ("Yes, I will require sponsorship now or in the future.",
+                   "No, I will not require sponsorship.")
+        f = field(id="visa", label="Will you now or in the future require sponsorship "
+                  "to work in the United States?", kind="select", required=True,
+                  options=tuple(MergedOption(label=o) for o in options))
+        assert [u.id for u in build_plan(one([f]), answers, tailor_dir).unmapped] == ["visa"]
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={
+            "visa": ov(options[0], claim={"requires_sponsorship": True})})
+        assert plan.fields[0].value == options[0]
 
-    def test_an_audit_tagged_override_never_touches_identity(self, answers, tailor_dir):
-        # Scoped to Tier B/B0 only, same as "JD" and "B0-LLM" -- not a
-        # general escape hatch onto identity or any other tier.
-        plan = build_plan(
-            one([field(id="first_name", label="First Name", kind="text")]),
-            answers, tailor_dir,
-            overrides={"first_name": ("Somebody Else", "AUDIT")},
-        )
-        assert plan.fields[0].value != "Somebody Else"
+    def test_a_value_the_widget_does_not_offer_parks_with_a_reason(self, answers, tailor_dir):
+        f = field(id="q", label="Pick one", kind="select", required=True,
+                  options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": ov("Maybe")})
+        assert "matches none of the options" in plan.unmapped[0].reason
 
-    def test_a_c1_tagged_override_never_supersedes_a_tier_b0_park(
-        self, answers, tailor_dir
-    ):
-        # Only "B0-LLM" gets this power -- a C1 draft must stay Tier-C-only,
-        # so it can never silently clobber a work-authorization park.
-        sponsorship = field(
-            id="visa_sponsorship", label="Will you now or in the future require "
-            "sponsorship to work in the United States?", kind="react_select",
-            options=(
-                MergedOption(label="Yes, I will require sponsorship now or in "
-                                    "the future."),
-                MergedOption(label="No, I will not require sponsorship."),
-            ),
-            required=True,
-        )
-        plan = build_plan(
-            one([sponsorship]), answers, tailor_dir,
-            overrides={"visa_sponsorship": ("Yes, I will require sponsorship now "
-                                            "or in the future.", "C1")},
-        )
-        assert [u.id for u in plan.unmapped] == ["visa_sponsorship"]
+    def test_two_values_for_a_single_select_park_rather_than_crash(self, answers, tailor_dir):
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
+                          overrides={"question_9": ov(("a", "b"))})
+        assert "single-valued" in plan.unmapped[0].reason
 
-    def test_an_override_is_canonicalized_to_the_boards_own_spelling(
-        self, merged, answers, tailor_dir, scan, payload
-    ):
-        """`"no"` is the right answer spelled wrong. react-select matches on
-        exact visible text, so planning the literal lowercase string would
-        fail at fill time for no reason."""
-        from src.apply.schema import parse_schema
+    def test_a_one_item_list_into_free_text_is_its_value(self, answers, tailor_dir):
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
+                          overrides={"question_9": ov(("Python",))})
+        assert plan.fields[0].value == "Python"
 
-        name = "form_minimal"
-        board_form = BoardForm(
-            posting=Posting(token="1", url_slug=None), slug="gasketworks", html="",
-            scan=scan(name), schema=parse_schema(payload(name)), reconciled=merged(name),
-        )
-        field_id = next(u.id for u in
-                        plan_for_board(board_form, answers, tailor_dir,
-                                        job_id="a1b2c3d4").unmapped)
+    def test_an_override_is_canonicalized_to_the_boards_spelling(self, answers, tailor_dir):
+        f = field(id="q", label="Pick one", kind="select", required=True,
+                  options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": ov("yes")})
+        assert plan.fields[0].value == "Yes"
 
-        overridden = plan_for_board(
-            board_form, answers, tailor_dir, job_id="a1b2c3d4",
-            overrides={field_id: ("no", "C1")},
-        )
-        assert [f.value for f in overridden.fields if f.id == field_id] == ["No"]
+    def test_a_file_override_attaches_a_file_from_the_role_folder(self, answers, tailor_dir):
+        (tailor_dir / "transcript.pdf").write_bytes(b"x")
+        f = field(id="transcript", label="Transcript", kind="file", required=True)
+        plan = build_plan(one([f]), answers, tailor_dir,
+                          overrides={"transcript": ov("transcript.pdf")})
+        assert plan.files[0].path.name == "transcript.pdf"
+
+    def test_a_missing_file_override_is_named(self, answers, tailor_dir):
+        f = field(id="transcript", label="Transcript", kind="file", required=True)
+        plan = build_plan(one([f]), answers, tailor_dir,
+                          overrides={"transcript": ov("nope.pdf")})
+        assert "is not a file" in plan.ignored_overrides[0]
 
 
 class TestEmploymentSwitch:
@@ -565,7 +302,7 @@ class TestEmploymentSwitch:
         data["employment"] = {**data["employment"], **employment}
         path = tmp_path / "answers.yaml"
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        return load_answers(path, FIXTURES / "preferences_time_limited.md")
+        return load_answers(path)
 
     def _block(self, required: bool):
         return one([
