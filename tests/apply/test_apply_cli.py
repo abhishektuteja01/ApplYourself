@@ -1552,3 +1552,16 @@ def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
     changes = bank.learn([bank.Lesson(label="Your LinkedIn?", question="linked", value="x")])
     assert changes == ["skipped 'linked': did you mean 'linkedin'?"]
     assert "linked" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+
+
+def test_a_batch_submit_never_sends_an_unconfirmed_keyword_guess(monkeypatch):
+    from dataclasses import replace
+    from src.apply.plan import FieldPlan
+    guess = FieldPlan(id="q", name="q", label="LinkedIn?", kind="text", section="questions",
+                      required=True, multi=False, value="https://x", tier="B",
+                      source="bank:linkedin~linkedin")
+    plan = replace(_fake_plan(JOB_ID), fields=(guess,))
+    monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
+    monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not fill")))
+    out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
+    assert out[0].category == "parked" and "not confirmed" in out[0].detail

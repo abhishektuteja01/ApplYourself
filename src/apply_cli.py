@@ -36,7 +36,8 @@ import yaml
 
 from src import paths, state_io, track_cli
 from src.apply import ashby, bank, ledger, lever
-from src.apply.answers import DEFAULT_PATH, EXAMPLE_PATH, Answers, AnswersError, load_answers
+from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, UNKNOWN_COUNTRY, Answers,
+                               AnswersError, load_answers)
 from src.apply.fill import (_require_playwright, blocking_details, has_driver,
                              run_one)
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board, parse_posting
@@ -335,23 +336,60 @@ def salary_for(job_id: str, vertical: str, country: str) -> float | None:
 
 
 def job_country(state: dict | None, answers: Answers) -> str:
-    """The job's country from its location, else its title's residency
-    qualifier ("(Germany)"), else "" — the candidate's own country applies."""
+    """The job's country: from discovery's location for it (`clean.parquet`,
+    already cleaned), else `state.yaml`'s copy, else its title's residency
+    qualifier ("(Germany)"), else the one country its JD names. A location that
+    reads as no country is `UNKNOWN_COUNTRY`; no location at all, or "Remote",
+    is "" (the candidate's own country applies)."""
     state = state or {}
+    job_id = str(state.get("job_id") or "")
     try:
         from src.discovery.location import parse_location, residency_countries
     except Exception:  # noqa: BLE001 - the parser is optional plumbing
         return ""
-    try:
-        parsed = parse_location(str(state.get("location") or ""))
-    except Exception:  # noqa: BLE001 - libpostal missing: no country, not a crash
-        parsed = None
-    if parsed is not None and parsed.country:
-        return parsed.country
-    if parsed is not None and answers.home_country in parsed.candidate_countries:
-        return answers.home_country
+    for raw in (_clean_value(job_id, "location"), str(state.get("location") or "")):
+        try:
+            parsed = parse_location(raw)
+        except Exception:  # noqa: BLE001 - libpostal missing: no country, not a crash
+            continue
+        if parsed.country:
+            return parsed.country
+        if answers.home_country in parsed.candidate_countries:
+            return answers.home_country
     named = residency_countries(str(state.get("title") or ""))
-    return next(iter(named)) if len(named) == 1 else ""
+    if len(named) == 1:
+        return next(iter(named))
+    found = _jd_country(job_id)
+    if found:
+        return found
+    raw = _clean_value(job_id, "location") or str(state.get("location") or "")
+    # A place was given and nothing could read it: guessing home would answer
+    # a Polish job's work-authorization questions as a US one.
+    if raw.strip() and "remote" not in raw.casefold():
+        return UNKNOWN_COUNTRY
+    return ""
+
+
+def _clean_value(job_id: str, column: str) -> str:
+    if not job_id or not CLEAN.exists():
+        return ""
+    import pyarrow.parquet as pq
+
+    if column not in pq.read_schema(CLEAN).names:
+        return ""
+    clean = pd.read_parquet(CLEAN, columns=["job_id", column])
+    row = clean.loc[clean["job_id"] == job_id]
+    return "" if row.empty else str(row.iloc[0][column] or "")
+
+
+def _jd_country(job_id: str) -> str:
+    """The one country the JD names, for a posting whose location says only
+    "Remote". Two countries, or none, is no answer."""
+    from src.apply.answers import places_named
+
+    countries = {p for p in places_named(_clean_value(job_id, "jd_text"))
+                 if p not in ("European Union", "Latin America", "Asia Pacific")}
+    return countries.pop() if len(countries) == 1 else ""
 
 
 def company_answers_for(out_dir: Path) -> dict[str, str]:
@@ -860,6 +898,16 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
         except (bank.BankError, AnswersError, ApplyCliError, OSError) as exc:
             print(f"WARNING: nothing saved to the answer bank: {exc}", file=sys.stderr)
 
+    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
+    if submit and answers_path is None and guesses:
+        # A keyword guess is only an answer once someone has confirmed it, and
+        # only /apply's step 6 does that.
+        return RunOutcome(
+            job_id, plan.company, plan.title, "parked",
+            detail=f"{len(guesses)} keyword guess(es) not confirmed — run /apply {job_id}",
+            unmapped=tuple({"id": f.id, "label": f.label, "tier": "B",
+                            "reason": f"guessed {f.value!r} {f.source}", "source": f.source}
+                           for f in guesses))
     outcome = _attempt(job_id, plan, answers, submit=submit, headless=headless,
                        manifest_path=manifest_path)
     from_bank = sum(1 for f in plan.fields if f.source.startswith("bank:"))
@@ -1101,9 +1149,11 @@ _EXIT_NONZERO = ("failed", "submitted_untracked")
 
 
 def _park_kind(row: dict) -> str:
-    """Why a question parked, in the three words that say what to do next."""
+    """Why a question parked, in the words that say what to do next."""
     if row.get("source") == "export_control" or "export control" in row.get("reason", ""):
         return "yours to answer"
+    if "~" in row.get("source", ""):
+        return "guess to confirm"
     if row.get("tier") == "C":
         return "new question"
     return "needs a fact"

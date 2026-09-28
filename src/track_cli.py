@@ -116,6 +116,17 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sent_before(job_id: str) -> dict | None:
+    """The submit ledger's latest line for this role, unless the board turned
+    the application down."""
+    from src.apply import ledger
+
+    rec = ledger.prior(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, job_id)
+    if rec is None or rec.get("status") == "rejected" or "rejected" in rec.get("detail", ""):
+        return None
+    return rec
+
+
 def _cmd_ensure(args: argparse.Namespace) -> int:
     job_id = args.job_id
     p = state_path_for(PIPELINE, job_id)
@@ -124,6 +135,15 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    if existing is None:
+        sent = _sent_before(job_id)
+        if sent is not None:
+            # The role's history is gone but the board has it. Registering it
+            # fresh at `saved` is how 68 roles were applied to twice.
+            print(f"ERROR: {job_id} has no state.yaml, but the submit ledger says it was "
+                  f"sent on {sent.get('at', '?')}. Restore it with: uv run track {job_id} "
+                  f"applied --note \"restored from the submit ledger\"", file=sys.stderr)
+            return 1
     initial = None if existing is not None else _gather_initial_fields(job_id)
     try:
         data, created = ensure_state(p, initial_fields=initial or {})

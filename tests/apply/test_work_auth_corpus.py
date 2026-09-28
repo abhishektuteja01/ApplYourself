@@ -387,3 +387,16 @@ class TestCountries:
     def test_us_person_is_never_a_bank_question(self, opt_holder):
         r = resolve(self.field("Are you a U.S. Person?"), opt_holder)
         assert r.tier == "B0"
+
+
+def test_an_unreadable_job_country_parks_instead_of_guessing_home(opt_holder):
+    from src.apply.answers import UNKNOWN_COUNTRY
+    f = MergedField(id="q", name="q", label="Are you authorized to work in the country "
+                    "where this role is located?", required=True, kind="select",
+                    section="questions", multi=False, api_type="x",
+                    options=(MergedOption(value="Yes", label="Yes"),
+                             MergedOption(value="No", label="No")))
+    r = resolve(f, dc_replace(opt_holder, job_country=UNKNOWN_COUNTRY))
+    assert r.action == "park" and "could not be read" in r.reason
+    named = MergedField(**{**f.__dict__, "label": "Are you authorized to work in the US?"})
+    assert resolve(named, dc_replace(opt_holder, job_country=UNKNOWN_COUNTRY)).value == "Yes"

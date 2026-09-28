@@ -365,6 +365,8 @@ _PLACE_PATTERNS: dict[str, str] = {
 }
 _PLACES = {name: re.compile(p, re.IGNORECASE) for name, p in _PLACE_PATTERNS.items()}
 _US_ABBREV = re.compile(r"\bUS\b")
+#: The job's country when its location names a place nothing could read.
+UNKNOWN_COUNTRY = "(unknown)"
 _OR_BETWEEN = re.compile(r"\bor\b", re.IGNORECASE)
 
 
@@ -1300,6 +1302,10 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
     options = tuple(o.label for o in field.options)
     category = classify_work_authorization(label, options)
     countries = _question_countries(label, answers)
+    if UNKNOWN_COUNTRY in countries and category not in ("nationality", "export_control",
+                                                         "not_work_auth"):
+        return _park("work authorization: the job's country could not be read from "
+                     "its location, and this question depends on it", "B0")
     facts = answers.facts_for(countries[0])
 
     if category == "export_control":
@@ -1381,6 +1387,9 @@ def _how_heard_candidates(answers: Answers) -> tuple[str, ...]:
 def _computed(question: Question, field: MergedField, answers: Answers,
               source: str) -> Resolution:
     country = answers.country
+    if country == UNKNOWN_COUNTRY and question.computed in ("salary", "start_date"):
+        return _park(f"{question.computed}: the job's country could not be read "
+                     f"from its location", "B", source=source)
     if question.computed == "start_date":
         days = answers.facts_for(country).start_in_days
         if days is None:
