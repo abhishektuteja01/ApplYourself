@@ -1541,3 +1541,14 @@ class TestKeywordsGeneralize:
                                           keyword="linkedin page")])
         assert any("keyword refused" in c for c in changes)
         assert "linkedin_page" in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
+
+
+def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
+    import shutil
+    from src.apply import bank
+    path = tmp_path / "bank.yaml"
+    shutil.copy(FIXTURES / "application_answers.yaml", path)
+    monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+    changes = bank.learn([bank.Lesson(label="Your LinkedIn?", question="linked", value="x")])
+    assert changes == ["skipped 'linked': did you mean 'linkedin'?"]
+    assert "linked" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]

@@ -134,6 +134,12 @@ def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
                 # A company's own answer is per role; the bank only ever points
                 # at company_answers.yaml for it.
                 continue
+            near = [q for q in questions if q.startswith(qid)]
+            if near:
+                # A shortened spelling of an id the bank has: a typo, not a new
+                # question.
+                changes.append(f"skipped {qid!r}: did you mean {near[0]!r}?")
+                continue
             if not _as_list(lesson.value):
                 raise BankError(f"new question {qid!r} needs an answer")
             values = _as_list(lesson.value)
