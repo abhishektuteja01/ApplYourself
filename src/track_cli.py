@@ -1,10 +1,14 @@
 """Deterministic CLI for /track (R7: no LLM calls; R10: sole state writer).
 
-  transition <job_id> <state> [--note "..."]      move a role through the
+  transition <job_id> <state> [--note "..."] [--if S]
+                                                   move a role through the
                                                    11-state machine, creating
                                                    pipeline/<job_id>/state.yaml
                                                    from clean/scored parquet
-                                                   on first transition
+                                                   on first transition.
+                                                   --if S: only when the role
+                                                   is currently in state S;
+                                                   otherwise a no-op, exit 0
   outreach-sent <job_id> --channel C --to "N"     flip the latest matching
                                                    draft outreach[] entry to
                                                    sent
@@ -42,7 +46,7 @@ SCORED = paths.SCORED
 
 NEXT_ACTION = {
     "saved": "ready for `/tailor {job_id}` once you've eyeballed the JD",
-    "tailored": "review applications/<vertical>/<dir>/; submit manually; then `/track {job_id} applied`",
+    "tailored": "`/apply {job_id}`, or submit it yourself and then `/track {job_id} applied`",
     "applied": "verify E-Verify; await response; consider `/outreach {job_id} recruiter` if you have a contact",
     "screen": "good luck; update with the outcome",
     "interview": "good luck; update with the outcome",
@@ -91,6 +95,12 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    if args.if_state is not None:
+        current = (existing or {}).get("state")
+        if current != args.if_state:
+            print(f"OK: {job_id} is {current or 'untracked'}, not {args.if_state} "
+                  f"-- left unchanged")
+            return 0
     initial = None if existing is not None else _gather_initial_fields(job_id)
     try:
         data = transition(p, new_state, note=note, initial_fields=initial)
@@ -165,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("job_id")
     parser.add_argument("state", choices=sorted(VALID_STATES))
     parser.add_argument("--note", default=None)
+    parser.add_argument("--if", dest="if_state", choices=sorted(VALID_STATES), default=None)
     args = parser.parse_args(argv)
     return _cmd_transition(args)
 

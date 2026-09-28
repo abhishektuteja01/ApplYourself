@@ -177,3 +177,23 @@ def test_ensure_does_not_raise_on_terminal_state(tmp_path):
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
     assert p.read_text(encoding="utf-8") == before
+
+
+def test_if_guard_fires_only_from_the_named_state(tmp_path, capsys):
+    """`--if saved` lets /cover-letter and /apply promote a role without
+    reading its state in a separate shell call first."""
+    _write_clean(tmp_path, [{
+        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
+        "source": "", "url": "", "location": "", "vertical": "example_primary",
+    }])
+    state_file = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
+    assert not state_file.exists()                       # untracked: no-op
+    assert track_cli.main(["aaaaaaaa", "saved"]) == 0
+    assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
+    assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "tailored"
+    assert track_cli.main(["aaaaaaaa", "applied"]) == 0
+    capsys.readouterr()
+    assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
+    assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "applied"
+    assert "left unchanged" in capsys.readouterr().out
