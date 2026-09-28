@@ -1359,7 +1359,8 @@ class TestARunLearnsWhatWasConfirmed:
 
     def _run(self, tmp_path, monkeypatch, plan, overrides):
         answers_path = tmp_path / "answers.json"
-        answers_path.write_text(json.dumps({"job_id": JOB_ID, **overrides}), encoding="utf-8")
+        answers_path.write_text(json.dumps({"job_id": JOB_ID, "confirmed": True, **overrides}),
+                                encoding="utf-8")
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
         monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         return apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None,
@@ -1658,3 +1659,59 @@ def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
     assert apply_cli._jd_country("a") == "United States"
     assert apply_cli._jd_country("b") == ""
+
+
+def _has_libpostal() -> bool:
+    try:
+        import postal.parser  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _has_libpostal(), reason="needs `uv sync --group discovery`")
+class TestTheJobsCountry:
+    """Where a role is, read from discovery's location in every shape seen live."""
+
+    @pytest.mark.parametrize("location,country", [
+        ("VA - Tysons Corner", "United States"),
+        ("USA-CA San Jose Innovation Drive", "United States"),
+        ("US, CA, Santa Clara", "United States"),
+        ("IN Pune", "India"),
+        ("MH, IN", "India"),
+        ("Wrocław, DO, PL", "Poland"),
+        ("München, BY, DE", "Germany"),
+        ("SGP Work-at-Home", "Singapore"),
+        ("Northern Virginia - On-site", "United States"),
+        ("Hybrid", ""),
+        ("Remote", ""),
+    ])
+    def test_a_location_names_its_country(self, answers, location, country):
+        assert apply_cli.job_country({"job_id": "", "location": location}, answers) == country
+
+    def test_a_location_nothing_reads_is_unknown(self, answers):
+        from src.apply.answers import UNKNOWN_COUNTRY
+        assert apply_cli.job_country({"job_id": "", "location": "HLT-Hong Leong Tower"},
+                                     answers) == UNKNOWN_COUNTRY
+
+
+def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path, monkeypatch):
+    import shutil
+    from dataclasses import replace
+    from src.apply import bank
+    from src.apply.plan import FieldPlan
+    path = tmp_path / "bank.yaml"
+    shutil.copy(FIXTURES / "application_answers.yaml", path)
+    monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+    guess = FieldPlan(id="q", name="q", label="What's your LinkedIn?", kind="text",
+                      section="questions", required=True, multi=False, value="https://x",
+                      tier="B", source="bank:linkedin~linkedin")
+    monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (
+        replace(_fake_plan(JOB_ID), fields=(guess,)), None))
+    monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not fill")))
+    stale = tmp_path / "answers.json"
+    stale.write_text(json.dumps({"job_id": JOB_ID}), encoding="utf-8")
+    out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None, answers_path=stale)
+    assert out[0].category == "parked" and not out[0].learned
+    assert "What's your LinkedIn?" not in (yaml.safe_load(path.read_text(encoding="utf-8"))
+                                          ["questions"]["linkedin"].get("wordings") or [])

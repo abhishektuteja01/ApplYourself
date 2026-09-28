@@ -138,11 +138,18 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
     if existing is None:
         sent = _sent_before(job_id)
         if sent is not None:
-            # The role's history is gone but the board has it. Registering it
-            # fresh at `saved` is how 68 roles were applied to twice.
-            print(f"ERROR: {job_id} has no state.yaml, but the submit ledger says it was "
-                  f"sent on {sent.get('at', '?')}. Restore it with: uv run track {job_id} "
-                  f"applied --note \"restored from the submit ledger\"", file=sys.stderr)
+            # The role's history is gone but the board may have it. Registering
+            # it fresh at `saved` is how 68 roles were applied to twice.
+            if sent.get("status") in ("unsent", "clicking"):
+                advice = ("The click may not have reached the board: check it, then run "
+                          f"`uv run track {job_id} applied` if it did, or delete its "
+                          "lines from the ledger if it did not")
+            else:
+                advice = (f"Restore it with: uv run track {job_id} applied --note "
+                          "\"restored from the submit ledger\"")
+            print(f"ERROR: {job_id} has no state.yaml, but the submit ledger has a "
+                  f"`{sent.get('status', '')}` line from {sent.get('at', '?')}. {advice}",
+                  file=sys.stderr)
             return 1
     initial = None if existing is not None else _gather_initial_fields(job_id)
     try:

@@ -82,6 +82,9 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
     if sent is not None and sent.get("status") == "rejected" or \
             (sent is not None and "rejected" in sent.get("detail", "")):
         return "Rejected by board", sent.get("detail", ""), ""
+    if sent is not None and sent.get("status") in ("unsent", "clicking"):
+        return ("Unsent — verify on board",
+                f"clicked {sent.get('at', '')[:10]}; the board fired no submit request", "")
     if sent is not None or current in _DONE:
         when = (sent or {}).get("at", "") or state.get("applied_at", "")
         return "Applied", f"{current or 'sent'} {str(when)[:10]}".strip(), ""

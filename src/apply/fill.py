@@ -1749,6 +1749,10 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
     def row(field_id, label, kind, planned, group, **extra):
         outcome = outcomes.get(field_id)
         actual = read_back(driver, field_id, kind)
+        try:
+            live = driver.resolve_kind(field_id, kind)
+        except Exception:  # noqa: BLE001 - a read must never fail a run
+            live = kind
         # Popped unconditionally: computing it inside the dict display let the
         # `or` short-circuit skip the pop, and `**extra` then put the plan's
         # empty list back over the options the browser had just read.
@@ -1760,7 +1764,7 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
             "group": group,
             "planned": planned,
             "actual": actual,
-            "matches": _matches(field_id, kind, planned, actual),
+            "matches": _matches(field_id, live, planned, actual),
             "prefilled": bool(outcome.was_prefilled) if outcome else False,
             "before": outcome.before if outcome else "",
             "invalid": field_id in invalid,
@@ -1814,16 +1818,23 @@ _CHOICE_KINDS = frozenset({"select", "react_select", "yesno", "radio_group",
 
 def _matches(field_id: str, kind: str, planned: str, actual: str) -> bool:
     """Whether the page holds what was planned, read the way each widget shows
-    it: a single checkbox has no text to compare, Greenhouse's country field
-    shows its dial code ("+1"), and a chooser may show a longer or shorter
-    spelling of the option picked (Ashby stacks name, country and domain)."""
+    it: a single checkbox has no text to compare; Greenhouse's country field
+    shows its dial code ("+1"); a phone box may reformat the number; a
+    multi-select lists its picks in any order; a chooser may show a longer
+    label that starts with the one picked (Ashby stacks name, country and
+    domain). "Male" never matches "Female"."""
     if kind == "checkbox":
         return True
     if field_id == "country" and actual.strip().startswith("+"):
         return True
     p, a = " ".join(planned.casefold().split()), " ".join(actual.casefold().split())
-    if kind in _CHOICE_KINDS and p and a:
-        return p == a or p in a or a in p
+    if "phone" in field_id.casefold():
+        return re.sub(r"\D", "", p).endswith(re.sub(r"\D", "", a)[-10:]) if a else not p
+    if kind == "checkbox_group":
+        return {x.strip() for x in p.split(",")} == {x.strip() for x in a.split(",")}
+    if kind in _CHOICE_KINDS and p and a and p != a:
+        short, long = sorted((p, a), key=len)
+        return long.startswith(short) and not long[len(short)].isalnum()
     return p == a
 
 

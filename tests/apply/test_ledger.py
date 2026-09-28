@@ -31,7 +31,7 @@ def test_registration_refuses_a_role_the_ledger_says_was_sent(tmp_path, monkeypa
     ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "aaaa1111",
                   "accepted", at="2026-08-12T20:38:54")
     assert track_cli.main(["ensure", "aaaa1111"]) == 1
-    assert "sent on 2026-08-12T20:38:54" in capsys.readouterr().err
+    assert "line from 2026-08-12T20:38:54" in capsys.readouterr().err
     assert not (tmp_path / "pipeline" / "aaaa1111").exists()
 
 

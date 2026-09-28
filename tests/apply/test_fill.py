@@ -2295,3 +2295,27 @@ class TestDomAliasesReachTheDriver:
         fill_plan(plan(fields=[field(id="phone", value="+1 555 0100")]), d)
         assert d._dom_paths == {}
         assert d._dom_controls == {}
+
+
+class TestTheReadBackComparison:
+    @pytest.mark.parametrize("kind,planned,actual,same", [
+        ("select", "Female", "Male", False),
+        ("select", "Man", "Woman", False),
+        ("select", "No", "None of the above", False),
+        ("select", "No", "Unknown", False),
+        ("react_select", "Northeastern University",
+         "Northeastern University United States northeastern.edu", True),
+        ("checkbox_group", "Python, SQL", "SQL, Python", True),
+        ("checkbox_group", "Python, SQL", "Python", False),
+        ("text", "Hello ", "Hello", True),
+        ("checkbox", "True", "on", True),
+    ])
+    def test_it_compares_the_way_each_widget_shows_a_value(self, kind, planned, actual, same):
+        assert F._matches("q", kind, planned, actual) is same
+
+    def test_a_reformatted_phone_number_is_the_same_number(self):
+        assert F._matches("phone", "text", "+1 555 010 0199", "(555) 010-0199")
+        assert not F._matches("phone", "text", "+1 555 010 0199", "(555) 010-0000")
+
+    def test_greenhouses_country_shows_its_dial_code(self):
+        assert F._matches("country", "react_select", "United States", "+1")

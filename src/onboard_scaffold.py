@@ -262,23 +262,33 @@ def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
         rep.failed.append(f"{_rel(target)} missing and no template to copy it from")
         return
     data = bank.read(source)
-    home = A.canonical_place((data.get("identity") or {}).get("country", "")) or "United States"
+    home = A.canonical_place((data.get("identity") or {}).get("country", ""))
+    if not home:
+        rep.failed.append(f"{_rel(target)}: identity.country names no country, so the "
+                          "home work-authorization row cannot be set")
+        return
     countries = data.setdefault("work_authorization", {}).setdefault("countries", {})
-    old = dict(countries.get(home) or {})
+    key = next((k for k in countries if A.canonical_place(str(k)) == home), home)
+    old = dict(countries.get(key) or {})
     row = dict(_ROW_BY_WORK_AUTH[work_auth])
-    if "start_in_days" in old:
-        row["start_in_days"] = old["start_in_days"]
-    if all(old.get(k) == v for k, v in row.items()) and \
-            bool(old.get("unrestricted")) == bool(row.get("unrestricted")):
+    same = all(old.get(k) == v for k, v in row.items()) and \
+        bool(old.get("unrestricted")) == bool(row.get("unrestricted"))
+    if same:
         rep.notes.append(f"{_rel(target)} already says {work_auth} for {home}")
         return
+    if "start_in_days" in old:
+        row["start_in_days"] = old["start_in_days"]
+    cleared = [k for k in ("status_label", "followup") if old.get(k)]
     label = f"set {home}'s work authorization: {work_auth}"
     if dry_run:
         rep.done.append(f"would {label} in {_rel(target)}")
         return
-    countries[home] = row
+    countries[key] = row
     bank.write(data, target)
     rep.done.append(f"{label} — {_rel(target)}")
+    if cleared:
+        rep.notes.append(f"{_rel(target)}: {', '.join(cleared)} described the old status "
+                         f"and were cleared; set them for {home} if a form should use them")
 
 
 # --- advisory probes and the optional apply path --------------------------

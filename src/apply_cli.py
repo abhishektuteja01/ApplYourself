@@ -259,6 +259,7 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
     if not isinstance(raw, dict):
         raise ApplyCliError(f"{path}: top level must be a JSON object")
 
+    raw.pop("confirmed", None)
     declared = raw.pop("job_id", None)
     if declared is not None and job_id is not None and declared != job_id:
         raise ApplyCliError(
@@ -301,6 +302,18 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
     return overrides
 
 
+def answers_confirmed(path: Path | None) -> bool:
+    """Whether the user confirmed this answers file (/apply's step 6 writes
+    `"confirmed": true`). Only a confirmed file teaches the bank or lets a
+    keyword guess through a submit."""
+    if path is None:
+        return False
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8")).get("confirmed") is True
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return False
+
+
 def _salary_expectation(vertical: str) -> dict:
     verticals_path = paths.PROFILE / "verticals.yaml"
     if not vertical or not verticals_path.is_file():
@@ -308,6 +321,10 @@ def _salary_expectation(vertical: str) -> dict:
     config = yaml.safe_load(verticals_path.read_text(encoding="utf-8")) or {}
     block = (config.get("verticals") or {}).get(vertical) or {}
     return block.get("salary_expectation") or {}
+
+
+#: A posted minimum below this is a rate per hour or month, not per year.
+MIN_ANNUAL_SALARY = 20000
 
 
 def salary_for(job_id: str, vertical: str, country: str) -> float | None:
@@ -329,9 +346,10 @@ def salary_for(job_id: str, vertical: str, country: str) -> float | None:
             if not row.empty:
                 salary_min = row.iloc[0]["salary_min"]
                 currency = str(row.iloc[0]["salary_currency"] or "").strip().upper()
-                # Under a thousand is an hourly rate, not a salary: the form
-                # asks for a year's pay, so the lane's fallback answers.
-                if currency == "USD" and not pd.isna(salary_min) and salary_min >= 1000:
+                # Under this is an hourly or monthly rate, not a year's pay:
+                # the lane's fallback answers instead.
+                if currency == "USD" and not pd.isna(salary_min) and \
+                        salary_min >= MIN_ANNUAL_SALARY:
                     return float(salary_min) * (1 + float(markup) / 100)
     fallback = expectation.get("fallback")
     if isinstance(fallback, dict):
@@ -361,17 +379,96 @@ def job_country(state: dict | None, answers: Answers) -> str:
             return parsed.country
         if answers.home_country in parsed.candidate_countries:
             return answers.home_country
+    raw = _clean_value(job_id, "location") or str(state.get("location") or "")
+    found = _pieces_country(raw, parse_location) or _code_country(raw)
+    if found:
+        return found
     named = residency_countries(str(state.get("title") or ""))
     if len(named) == 1:
         return next(iter(named))
     found = _jd_country(job_id)
     if found:
         return found
-    raw = _clean_value(job_id, "location") or str(state.get("location") or "")
+    if _US_STATE_START.match(raw.strip()):
+        return "United States"
     # A place was given and nothing could read it: guessing home would answer
     # a Polish job's work-authorization questions as a US one.
-    if raw.strip() and "remote" not in raw.casefold():
+    if raw.strip() and not _NO_PLACE.search(raw):
         return UNKNOWN_COUNTRY
+    return ""
+
+
+def _us_state_start() -> re.Pattern:
+    import pycountry
+
+    codes = "|".join(sub.code.split("-")[1]
+                     for sub in pycountry.subdivisions.get(country_code="US"))
+    return re.compile(r"^(?:USA?-)?(?:" + codes + r")(?:\b|$)")
+
+
+_US_STATE_START = _us_state_start()
+# A location that says how, not where: the candidate's own country applies.
+_NO_PLACE = re.compile(r"\b(?:remote|remoto|remota|hybrid|anywhere|work from home|wfh)\b",
+                       re.IGNORECASE)
+
+
+def _pieces_country(raw: str, parse_location) -> str:
+    """The one country the pieces of a location name, when the whole string
+    parses as none ("IN Pune", "USA-CA San Jose", "Wrocław, DO, PL")."""
+    from src.apply.answers import places_named
+
+    if re.match(r"^\s*(?:US|USA|U\.S\.A?\.?|United States)\b", raw):
+        return "United States"
+    named = {p for p in places_named(raw)
+             if p not in ("European Union", "Latin America", "Asia Pacific")}
+    if len(named) == 1:
+        # A country the location names outright beats a city that could be
+        # in two ("Santa Clara" is in California and in Cuba).
+        return named.pop()
+    found = set(named)
+    words = [w for w in re.split(r"[\s,;/|()-]+", raw) if w]
+    for n in (3, 2, 1):
+        for i in range(len(words) - n + 1):
+            piece = " ".join(words[i:i + n])
+            if len(piece) < 4:
+                continue
+            try:
+                country = parse_location(piece).country
+            except Exception:  # noqa: BLE001 - libpostal missing
+                return ""
+            if country:
+                found.add(country)
+    return found.pop() if len(found) == 1 else ""
+
+
+def _code_country(raw: str) -> str:
+    """A country code closing the location ("München, BY, DE", "SGP Work-at-Home",
+    "TUN - ARIANA"), or a US state's full name ("Northern Virginia"). A two-letter
+    code that is also a US state ("IN", "IL") counts only after a region code
+    that is not one ("MH, IN" is Maharashtra, India; "Chicago, IL" is Illinois)."""
+    import pycountry
+
+    us_codes = {sub.code.split("-")[1] for sub in pycountry.subdivisions.get(country_code="US")}
+    us_names = [sub.name.casefold() for sub in pycountry.subdivisions.get(country_code="US")]
+    text = raw.strip()
+    if any(re.search(rf"\b{re.escape(n)}\b", text.casefold()) for n in us_names):
+        return "United States"
+    parts = [p.strip() for p in re.split(r"[,;]", text) if p.strip()]
+    tokens = re.findall(r"\b[A-Z]{2,3}\b", text)
+    for code in ([parts[-1]] if parts else []) + tokens[:1]:
+        if len(code) == 3:
+            country = pycountry.countries.get(alpha_3=code)
+            if country:
+                return country.name
+        if len(code) == 2 and code not in ("US",):
+            country = pycountry.countries.get(alpha_2=code)
+            if country is None:
+                continue
+            if code not in us_codes:
+                return country.name
+            if len(parts) >= 2 and re.fullmatch(r"[A-Z]{2}", parts[-2]) \
+                    and parts[-2] not in us_codes:
+                return country.name
     return ""
 
 
@@ -923,7 +1020,8 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
                                  + "; ".join(plan.ignored_overrides))
 
     learned: tuple[str, ...] = ()
-    if answers_path is not None:
+    confirmed = answers_confirmed(answers_path)
+    if confirmed:
         try:
             lessons = lessons_from(plan, load_overrides(Path(answers_path), job_id), job_id)
             learned = tuple(bank.learn(lessons))
@@ -931,7 +1029,7 @@ def _run_role(job_id: str, *, submit: bool, headless: bool,
             print(f"WARNING: nothing saved to the answer bank: {exc}", file=sys.stderr)
 
     guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
-    if submit and answers_path is None and guesses:
+    if submit and not confirmed and guesses:
         # A keyword guess is only an answer once someone has confirmed it, and
         # only /apply's step 6 does that.
         return RunOutcome(

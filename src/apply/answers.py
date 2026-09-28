@@ -317,27 +317,57 @@ _NOT_COUNTRIES = (
 _SHORT_NAMES = {"us": "United States", "usa": "United States", "u.s.": "United States",
                 "u.s.a.": "United States", "uk": "United Kingdom",
                 "u.k.": "United Kingdom", "uae": "United Arab Emirates"}
-_UK_NATIONS = {"england": "United Kingdom", "scotland": "United Kingdom",
-               "wales": "United Kingdom", "northern ireland": "United Kingdom",
-               "great britain": "United Kingdom", "britain": "United Kingdom"}
-_OR_BETWEEN = re.compile(r"\bor\b", re.IGNORECASE)
+_ALIASES = {"england": "United Kingdom", "scotland": "United Kingdom",
+            "wales": "United Kingdom", "northern ireland": "United Kingdom",
+            "great britain": "United Kingdom", "britain": "United Kingdom",
+            "united states of america": "United States", "america": "United States",
+            "holland": "Netherlands", "the netherlands": "Netherlands",
+            "turkiye": "Turkey", "czech republic": "Czechia", "south korea": "Korea, Republic of",
+            "korea": "Korea, Republic of", "russia": "Russian Federation",
+            "vietnam": "Viet Nam", "taiwan": "Taiwan, Province of China",
+            "iran": "Iran, Islamic Republic of", "bolivia": "Bolivia, Plurinational State of",
+            "venezuela": "Venezuela, Bolivarian Republic of", "tanzania": "Tanzania, United Republic of",
+            "moldova": "Moldova, Republic of", "syria": "Syrian Arab Republic",
+            "laos": "Lao People's Democratic Republic", "republic of ireland": "Ireland"}
+# Country names that are also ordinary words or US places in a form label.
+_NOT_A_COUNTRY_WORD = frozenset({"jersey", "georgia", "chad", "jordan", "guinea", "niger",
+                                 "turkey", "man", "norfolk island", "christmas island"})
+_OR_BETWEEN = re.compile(r"\bor\b|/", re.IGNORECASE)
 #: The job's country when its location names a place nothing could read.
 UNKNOWN_COUNTRY = "(unknown)"
 
 
+def _fold_accents(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", text or "")
+                   if not unicodedata.combining(c))
+
+
 @functools.lru_cache(maxsize=1)
-def _vocabulary() -> tuple[dict[str, str], re.Pattern, re.Pattern, tuple]:
-    from src.discovery.location import COUNTRY_NAMES
+def _vocabulary() -> tuple[dict[str, str], tuple, re.Pattern, tuple]:
     import pycountry
 
-    names = {k: v for k, v in COUNTRY_NAMES.items()
-             if len(k) >= 4 and k.isascii() and not k.startswith("u.s")}
+    names: dict[str, str] = {}
+    for c in pycountry.countries:
+        for attr in ("name", "common_name", "official_name"):
+            value = getattr(c, attr, "")
+            if value:
+                names[_fold_accents(value).casefold()] = c.name
+    names = {k: v for k, v in names.items() if k not in _NOT_A_COUNTRY_WORD}
+    names["turkey"] = "Turkey"  # the country name itself, once "Turkiye" is folded
+    names.update(_ALIASES)
     names.update(_SHORT_NAMES)
-    names.update(_UK_NATIONS)
     us_states = [s.name.casefold() for s in pycountry.subdivisions.get(country_code="US")]
     masked = sorted({*_NOT_COUNTRIES, *us_states}, key=len, reverse=True)
-    mask = re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(m) for m in masked) + r")(?![\w])",
-                      re.IGNORECASE)
+    codes = "|".join(sub.code.split("-")[1]
+                     for sub in pycountry.subdivisions.get(country_code="US"))
+    mask = (
+        re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(m) for m in masked) + r")(?![\w])",
+                   re.IGNORECASE),
+        # "Columbia, MD", "Norfolk, VA": a place and a US state code.
+        re.compile(r"\b[A-Z][\w.' -]{1,30},\s*(?:" + codes + r")\b"),
+        # "Jersey City", "Mexico City": a city, not the country.
+        re.compile(r"\b\w+\s+City\b"),
+    )
     ordered = sorted((k for k in names if k != "us"), key=len, reverse=True)
     country = re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(k) for k in ordered)
                          + r")(?![\w])", re.IGNORECASE)
@@ -351,8 +381,7 @@ def canonical_place(text: str) -> str:
     if raw.casefold() == "default":
         return "default"
     names, _, _, regions = _vocabulary()
-    key = unicodedata.normalize("NFKD", raw)
-    key = "".join(c for c in key if not unicodedata.combining(c)).casefold()
+    key = _fold_accents(raw).casefold()
     if key in names:
         return names[key]
     if key.startswith("the ") and key[4:] in names:
@@ -367,15 +396,19 @@ def canonical_place(text: str) -> str:
 
 
 def _place_hits(label: str) -> list[tuple[int, int, str]]:
+    """(start, end, place) for every place in the accent-folded label."""
     names, mask, country, regions = _vocabulary()
-    text = mask.sub(lambda m: " " * len(m.group(0)), label or "")
-    hits = [(m.start(), m.end(), names[m.group(0).casefold()]) for m in country.finditer(text)]
+    folded = _fold_accents(label)
+    lowered = folded
+    for pattern in mask:
+        lowered = pattern.sub(lambda m: " " * len(m.group(0)), lowered)
+    hits = [(m.start(), m.end(), names[m.group(0).casefold()])
+            for m in country.finditer(lowered)]
     hits += [(m.start(), m.end(), name) for name, pattern in regions
-             for m in [pattern.search(label or "")] if m]
-    # "US" in capitals only, and not in a label written all in capitals.
-    if not (label or "").isupper():
-        hits += [(m.start(), m.end(), "United States")
-                 for m in re.finditer(r"(?<![\w.])US(?![\w])", text)]
+             for m in [pattern.search(folded)] if m]
+    # "US" in capitals only; in a label written all in capitals, only after "THE".
+    us = r"(?<=\bTHE )US(?![\w])" if folded.isupper() else r"(?<![\w.])US(?![\w])"
+    hits += [(m.start(), m.end(), "United States") for m in re.finditer(us, lowered)]
     return sorted(hits)
 
 
@@ -389,10 +422,12 @@ def places_named(label: str) -> list[str]:
 
 
 def _either_place(label: str) -> bool:
-    """Whether the label offers its places as alternatives: an "or" between two
-    of them ("the US or Canada"), not anywhere ("now or in the future")."""
+    """Whether the label offers its places as alternatives: an "or" or a "/"
+    between two of them ("the US or Canada", "US/Canada"), not anywhere ("now
+    or in the future")."""
     hits = _place_hits(label)
-    return any(_OR_BETWEEN.search(label[a[1]:b[0]]) for a, b in zip(hits, hits[1:])
+    folded = _fold_accents(label)
+    return any(_OR_BETWEEN.search(folded[a[1]:b[0]]) for a, b in zip(hits, hits[1:])
                if a[2] != b[2])
 
 

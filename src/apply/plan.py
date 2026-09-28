@@ -367,7 +367,15 @@ def _override_resolution(field: MergedField, value, source: str, tier: str,
 
 
 def _work_authorization_facts(answers: Answers) -> dict[str, object]:
-    """The facts for this job's country, JSON-safe."""
+    """The facts for this job's country, JSON-safe. An unknown country has no
+    facts: the session must not pick an option from the default row's."""
+    from src.apply.answers import UNKNOWN_COUNTRY
+
+    if answers.country == UNKNOWN_COUNTRY:
+        return {"job_country": None, "authorized": None, "requires_sponsorship": None,
+                "unrestricted": None, "status_label": None,
+                "nationalities": list(answers.nationalities), "us_person": answers.us_person,
+                "known_claims": len(answers.claims)}
     facts = answers.facts_for(answers.country)
     return {
         "job_country": answers.country,

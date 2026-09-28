@@ -447,3 +447,35 @@ class TestPlaceNames:
         p.write_text(yaml.safe_dump(data), encoding="utf-8")
         with pytest.raises(AnswersError, match="Narnia"):
             load_answers(p)
+
+
+class TestPlacesThatAreNotCountries:
+    @pytest.mark.parametrize("label", [
+        "Are you authorized to work in the United States? (Role based in Columbia, MD)",
+        "Are you authorized to work in the US, at our Jersey City office?",
+        "Are you authorized to work in the US (Long Island)?",
+        "Are you authorized to work in the US, at our Norfolk, VA site?",
+    ])
+    def test_a_us_place_never_reads_as_another_country(self, label, opt_holder):
+        f = MergedField(id="q", name="q", label=label, required=True, kind="select",
+                        section="questions", multi=False, api_type="x",
+                        options=(MergedOption(value="Yes", label="Yes"),
+                                 MergedOption(value="No", label="No")))
+        assert says(resolve(f, opt_holder).value, "Yes")
+
+    @pytest.mark.parametrize("label,expected", [
+        ("Are you authorized to work in Türkiye?", ["Turkey"]),
+        ("WILL YOU REQUIRE VISA SPONSORSHIP TO WORK IN THE US?", ["United States"]),
+        ("Will you require sponsorship to work in the US/India?", ["United States", "India"]),
+    ])
+    def test_accents_capitals_and_slashes(self, label, expected):
+        from src.apply.answers import places_named
+        assert places_named(label) == expected
+
+    def test_a_slash_between_places_is_either(self, opt_holder):
+        f = MergedField(id="q", name="q", label="Will you require sponsorship to work in "
+                        "the US/India?", required=True, kind="select", section="questions",
+                        multi=False, api_type="x",
+                        options=(MergedOption(value="Yes", label="Yes"),
+                                 MergedOption(value="No", label="No")))
+        assert says(resolve(f, opt_holder).value, "Yes")

@@ -163,7 +163,9 @@ standing (it will be saved as that question's wording), then every question
 still parked and why. Say plainly that confirming saves these to the answer
 bank. **Stop and wait for the reply.**
 
-- Confirmed → step 7.
+- Confirmed → add `"confirmed": true` to `OVERRIDES_FILE` (beside `job_id`), then
+  step 7. Only a confirmed file teaches the bank or lets a keyword guess through
+  a submit.
 - A change → edit the file, re-run this step, ask again.
 - A fact the user states for a parked question → add it as an entry (source
   `user`), re-run this step, ask again.
