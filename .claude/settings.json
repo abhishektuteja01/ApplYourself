@@ -16,6 +16,7 @@
       "Bash(uv run python -m src.score_cli:*)",
       "Bash(uv run python -m src.track_cli:*)",
       "Bash(./scripts/pii_scan.sh)",
+      "Bash(./scripts/render_pdf.sh:*)",
       "Bash(uv run python scripts/scrub_example_templates.py:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",

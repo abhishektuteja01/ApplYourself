@@ -1,6 +1,6 @@
 ---
 description: Research a company and draft company_answers.md (why_company/why_role/what_interests_you_about_product) into a job_id's existing /tailor output dir. Extracted from /cover-letter Step 2b so /apply can call it directly for roles that need no full letter.
-model: sonnet
+model: opus
 effort: medium
 allowed-tools:
   - Bash

@@ -1,6 +1,6 @@
 ---
 description: Generate a one-page, lint-clean cover letter for a job_id into that role's existing /tailor output dir. Same no-fabrication discipline as /tailor.
-model: sonnet
+model: opus
 effort: medium
 allowed-tools:
   - Bash
@@ -281,16 +281,12 @@ message verbatim and stop — `TemplateError` here means the template is
 missing `{{SALUTATION}}` or `{{BODY}}`; tell the user to add the missing
 placeholder paragraph(s) to `profile/cover_letter_template.docx`.
 
-Then convert to PDF: set the variables and follow
-`.claude/shared/render_pdf.md` verbatim.
+Then convert to PDF per `.claude/shared/render_pdf.md`, in ONE Bash call:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && . /tmp/cover_letter_$1_env.sh
-BASENAME=Cover_Letter
+./scripts/render_pdf.sh "${OUT_DIR}" "${FILE_SLUG}" Cover_Letter
 ```
-
-Read that file now and run its block. Do not reconstruct the AppleScript from
-memory — the fixed staging dir it uses is what keeps Word's sandbox grant valid.
 
 ## Step 7 — append the dir to state.yaml.cover_letters[]
 

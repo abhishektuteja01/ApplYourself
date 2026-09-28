@@ -1,6 +1,6 @@
 ---
 description: Finishes a tailored role's application — drafts answers for the remaining generic, company-specific, salary and work-authorization questions, then submits (or fills and stops) via the deterministic apply CLI.
-model: sonnet
+model: opus
 effort: medium
 allowed-tools:
   - Bash

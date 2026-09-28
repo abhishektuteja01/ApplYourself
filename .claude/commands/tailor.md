@@ -1,6 +1,6 @@
 ---
 description: Generate a one-page ATS-clean, vertical-aware tailored resume for a job_id — vertical defaults from profile/verticals/<vertical>/tailoring.md, canonical bullets only, rephrase within allowable_synonyms, Skills from skills_master.md. Writes docx/pdf + audit artifacts to applications/<vertical>/<dir>/ and appends the dir to state.yaml.tailored_dirs[].
-model: sonnet
+model: opus
 effort: medium
 allowed-tools:
   - Bash
@@ -313,14 +313,11 @@ print('rendered:', '${OUT_DIR}/${FILE_SLUG}_Resume.docx')
 
 On `TemplateMissingError`/`TemplateError`: surface the message verbatim and stop.
 
-Then convert to PDF: run `.claude/shared/render_pdf.md`'s block verbatim in ONE
-Bash call, prefixed with the Step 1 preamble and `BASENAME=Resume`. Read that
-file; do not reconstruct the AppleScript from memory.
+Then convert to PDF per `.claude/shared/render_pdf.md`, in ONE Bash call:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && . /tmp/tailor_$1_env.sh
-BASENAME=Resume
-# ...then the render_pdf.md block, unchanged.
+./scripts/render_pdf.sh "${OUT_DIR}" "${FILE_SLUG}" Resume
 ```
 
 ## Step 7 — write the audit artifacts
