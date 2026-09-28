@@ -19,6 +19,18 @@ verticals:
   example_primary:
     display_name: Widget Engineering
     resume_file: profile/verticals/example_primary/resume_example_primary.md
+    # The lane's resume shape. Picks live on bullets (default_for) and
+    # skills (show), so this block names no ids.
+    resume:
+      sections: [summary, work, projects, education, skills]
+      bullets: [4, 6]
+      skill_lines:
+        - "Domain & Enterprise"
+        - "Programming"
+        - "AI & Machine Learning"
+        - "Databases & Tools"
+      summary: >-
+        Widget operations analyst who reconciles plant output, configures assembly lines and builds Python and SQL tooling for sprocket compliance data.
     # No term contains "Engineer" — "engineer" is a title exclude term here.
     search_terms:
       - Widget Functional Consultant
@@ -68,6 +80,18 @@ verticals:
   example_secondary:
     display_name: Sprocket Compliance
     resume_file: profile/verticals/example_secondary/resume_example_secondary.md
+    # The lane's resume shape. Picks live on bullets (default_for) and
+    # skills (show), so this block names no ids.
+    resume:
+      sections: [summary, projects, work, education, skills]
+      bullets: [4, 6]
+      skill_lines:
+        - "AI & Machine Learning"
+        - "Programming"
+        - "Databases & Tools"
+        - "Domain & Enterprise"
+      summary: >-
+        Builds and tests validation and LLM tooling for sprocket compliance and cog maintenance, backed by two years of widget plant operations.
     search_terms:
       - Sprocket Risk
       - Sprocket Validation

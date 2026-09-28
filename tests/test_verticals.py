@@ -235,6 +235,10 @@ class TestMainCli:
                             tmp_path / "profile" / "verticals")
         (tmp_path / "profile").mkdir()
         (tmp_path / "profile" / "verticals.yaml").write_text(FIXTURE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        from src import resume_model
+        for attr, name in (("RESUME", "resume.example.yaml"), ("BULLETS", "bullets.example.md"),
+                           ("SKILLS", "skills_master.example.md")):
+            monkeypatch.setattr(resume_model, attr, REPO_ROOT / "profile" / name)
         cfg = verticals.load_verticals(FIXTURE_PATH)
         for name, v in cfg.verticals.items():
             d = tmp_path / "profile" / "verticals" / name
@@ -301,25 +305,29 @@ class TestMainCli:
             assert expected in out
 
     def test_missing_resume_file_is_named(self, tmp_path, monkeypatch, capsys):
-        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"example_primary"})
+        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"example_tertiary"})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "missing per-vertical scoring resume files (resume_file)" in out
-        assert cfg.verticals["example_primary"].resume_file in out
+        assert cfg.verticals["example_tertiary"].resume_file in out
 
-    def test_every_missing_resume_is_listed(self, tmp_path, monkeypatch, capsys):
-        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"example_primary", "example_secondary"})
+    def test_a_source_problem_is_reported(self, tmp_path, monkeypatch, capsys):
+        from src import resume_model
+        self._setup(tmp_path, monkeypatch)
+        broken = tmp_path / "bullets.md"
+        broken.write_text((REPO_ROOT / "profile" / "bullets.example.md").read_text(encoding="utf-8")
+                          .replace("## B-WID-01", "## B-ZZZ-01"), encoding="utf-8")
+        monkeypatch.setattr(resume_model, "BULLETS", broken)
         assert verticals.main() == 1
         out = capsys.readouterr().out
-        assert cfg.verticals["example_primary"].resume_file in out
-        assert cfg.verticals["example_secondary"].resume_file in out
+        assert "problem(s) in the resume sources" in out and "no context 'ZZZ'" in out
 
     def test_prose_check_reports_before_the_resume_check(
             self, tmp_path, monkeypatch, capsys):
         """Both are broken; the prose error returns first. Pin the order so a
         reshuffle doesn't silently change what the user sees."""
         self._setup(tmp_path, monkeypatch,
-                    drop_prose={("example_primary", "rubric.md")}, drop_resume={"example_primary"})
+                    drop_prose={("example_primary", "rubric.md")}, drop_resume={"example_tertiary"})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "prose files" in out

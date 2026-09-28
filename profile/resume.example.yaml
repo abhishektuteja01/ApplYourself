@@ -1,0 +1,52 @@
+# TEMPLATE — copy to profile/resume.yaml and replace with your own.
+#
+# The one home for the fixed parts of every resume: your name, contact line,
+# education, and one `contexts:` entry per job or project. /tailor and /score
+# build every lane's resume from this file, profile/bullets.md and
+# profile/skills_master.md; nothing retypes these lines.
+#
+# contexts: keyed by the bullet prefix — B-WID-01 belongs to WID.
+#   section:   work | projects
+#   title, dates (all), org + location (work), subtitle (projects, optional)
+#   lanes:     {lane: [min, max]} bullets this context gets on that lane's
+#              resume. A lane not listed never shows the context.
+
+name: Alex Example
+contact:
+  - text: "Exampletown, ST"
+  - text: "alex@example.com"
+    url: "mailto:alex@example.com"
+  - text: Portfolio
+    url: "https://example.com"
+
+education:
+  - degree: "B.S. Industrial Engineering"
+    dates: "Sep 2019 - Dec 2022"
+    detail: "Example University, Exampletown | Coursework: Statistics, Database Systems"
+
+contexts:
+  WID:
+    section: work
+    title: Widget Operations Analyst
+    org: Widget Corp
+    location: "Exampletown, ST"
+    dates: "Jan 2023 - Jun 2025"
+    lanes: {example_primary: [2, 3], example_secondary: [1, 2]}
+  SPR:
+    section: projects
+    title: Sprocket Validator
+    subtitle: tolerance compliance harness
+    dates: "Jul 2025 - Oct 2025"
+    lanes: {example_primary: [1, 2], example_secondary: [1, 2]}
+  COG:
+    section: projects
+    title: Cog Assistant
+    subtitle: maintenance question answering
+    dates: "Nov 2025 - Feb 2026"
+    lanes: {example_primary: [0, 2], example_secondary: [1, 2]}
+  EDU:
+    section: projects
+    title: Plant Demand Forecast
+    subtitle: capstone
+    dates: "Sep 2022 - Dec 2022"
+    lanes: {}

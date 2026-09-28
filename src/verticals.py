@@ -37,6 +37,40 @@ _SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
+class LaneResume:
+    """A lane's resume shape (verticals.yaml `resume:`). No ids: bullets say
+    which lanes pick them by default, skills say which line they show on."""
+    sections: tuple[str, ...]          # a permutation of summary/work/projects/education/skills
+    bullets: tuple[int, int]           # total (min, max)
+    skill_lines: tuple[str, ...]       # line labels, in order
+    summary: str                       # the baseline summary
+
+
+_RESUME_SECTIONS = {"summary", "work", "projects", "education", "skills"}
+
+
+def _parse_lane_resume(raw, path: Path, where: str) -> LaneResume:
+    if not isinstance(raw, dict):
+        raise _fail(path, f"{where} must be a mapping")
+    unknown = set(raw) - {"sections", "bullets", "skill_lines", "summary"}
+    if unknown:
+        raise _fail(path, f"{where}: unknown keys {sorted(unknown)}")
+    sections = _str_list(_require(raw, "sections", path, where), path, f"{where}.sections")
+    if sorted(sections) != sorted(_RESUME_SECTIONS):
+        raise _fail(path, f"{where}.sections must list each of {sorted(_RESUME_SECTIONS)} once")
+    bullets = _require(raw, "bullets", path, where)
+    if not (isinstance(bullets, list) and len(bullets) == 2
+            and all(type(x) is int for x in bullets) and 1 <= bullets[0] <= bullets[1]):
+        raise _fail(path, f"{where}.bullets must be [min, max]")
+    skill_lines = _str_list(_require(raw, "skill_lines", path, where), path, f"{where}.skill_lines")
+    summary = _require(raw, "summary", path, where)
+    if not isinstance(summary, str) or not summary.strip():
+        raise _fail(path, f"{where}.summary must be a nonempty string")
+    return LaneResume(sections=sections, bullets=(bullets[0], bullets[1]),
+                      skill_lines=skill_lines, summary=" ".join(summary.split()))
+
+
+@dataclass(frozen=True)
 class Vertical:
     name: str
     display_name: str
@@ -45,7 +79,8 @@ class Vertical:
     title_exclude_terms: tuple[str, ...]
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
-    resume_file: str  # repo-relative path to the attested resume judges score against (read by score-judge.md)
+    resume_file: str = ""  # legacy per-lane resume; replaced by `resume`
+    resume: LaneResume | None = None
     # Optional. The terms a jobspy lane's `abroad` block queries per country.
     abroad_terms: tuple[str, ...] = ()
     # /score's lane rules (src/score_filter.py). A JD holding a drop phrase is
@@ -179,9 +214,12 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     # score-judge.md (also the tailoring frozen-section/summary source).
     # Required: a shared default silently scored a lane against another
     # lane's resume. Existence is enforced in main().
-    resume_file = raw.get("resume_file")
-    if not isinstance(resume_file, str) or not resume_file.strip():
-        raise _fail(path, f"{where}.resume_file must be a nonempty string")
+    resume_file = raw.get("resume_file", "")
+    if not isinstance(resume_file, str):
+        raise _fail(path, f"{where}.resume_file must be a string")
+    resume = _parse_lane_resume(raw["resume"], path, f"{where}.resume") if "resume" in raw else None
+    if resume is None and not resume_file.strip():
+        raise _fail(path, f"{where} needs a `resume:` block")
 
     return Vertical(
         name=name,
@@ -193,6 +231,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         title_include_terms=tuple(include_terms),
         title_strong_keep_terms=tuple(strong_keep_terms),
         resume_file=resume_file.strip(),
+        resume=resume,
         drop_phrases=drop_phrases,
         years=dict(sorted(years.items())),
         skill_weights=skill_weights,
@@ -303,13 +342,24 @@ def main() -> int:
     missing_resumes = sorted({
         v.resume_file
         for v in cfg.verticals.values()
-        if not (REPO_ROOT / v.resume_file).is_file()
+        if v.resume is None and not (REPO_ROOT / v.resume_file).is_file()
     })
     if missing_resumes:
         print("ERROR: missing per-vertical scoring resume files (resume_file):")
         for m in missing_resumes:
             print(f"  {m}")
         return 1
+    if any(v.resume is not None for v in cfg.verticals.values()):
+        from src import resume_model
+        try:
+            problems = resume_model.check_sources(resume_model.load_sources(), cfg)
+        except (resume_model.SourceError, ValueError) as exc:
+            problems = [str(exc)]
+        if problems:
+            print(f"ERROR: {len(problems)} problem(s) in the resume sources:")
+            for m in problems:
+                print(f"  {m}")
+            return 1
     print(f"verticals={','.join(cfg.names)} default={cfg.default_vertical}")
     return 0
 

@@ -320,67 +320,53 @@ class TestExampleConfigsAreValid:
         assert used <= {"recruiter", "referral", "alumni", "other"}
 
 
-class TestExampleLaneIdsResolve:
-    """The example_* lanes name SKILL ids in their Skills layouts. Those ids
-    resolved to nothing before skills_master.example.md existed, so the shipped
-    configuration could not render a Skills section at all."""
+class TestExampleSourcesResolve:
+    """The shipped example world must pass the same source check
+    `verticals-check` runs on real config: every pointer between resume.yaml,
+    bullets.md, skills_master.md and the lane `resume:` blocks resolves, every
+    budget can be met, and every example lane's baseline resume builds."""
 
     @staticmethod
-    def _lane_skill_ids() -> set[str]:
-        ids: set[str] = set()
-        for path in (PROFILE / "verticals").glob("example_*/*.md"):
-            ids |= set(
-                re.findall(
-                    r"SKILL-[A-Z0-9]+(?:-[A-Z0-9]+)*",
-                    path.read_text(encoding="utf-8"),
-                )
-            )
-        return ids
+    def _example_world(monkeypatch):
+        from src import resume_model, verticals
+        monkeypatch.setattr(resume_model, "RESUME", PROFILE / "resume.example.yaml")
+        monkeypatch.setattr(resume_model, "BULLETS", PROFILE / "bullets.example.md")
+        monkeypatch.setattr(resume_model, "SKILLS", PROFILE / "skills_master.example.md")
+        cfg = verticals.load_verticals(PROFILE / "verticals.example.yaml")
+        verticals.set_config(cfg)
+        return resume_model, cfg
 
-    @staticmethod
-    def _defined_skill_ids() -> set[str]:
-        text = (PROFILE / "skills_master.example.md").read_text(encoding="utf-8")
-        return set(re.findall(r"^## (SKILL-\S+)", text, re.M))
+    def test_example_sources_check_clean(self, monkeypatch):
+        resume_model, cfg = self._example_world(monkeypatch)
+        try:
+            assert resume_model.check_sources(resume_model.load_sources(), cfg) == []
+        finally:
+            from src import verticals
+            verticals.set_config(None)
 
-    @staticmethod
-    def _defined_bullet_ids() -> set[str]:
-        text = (PROFILE / "bullets.example.md").read_text(encoding="utf-8")
-        return set(re.findall(r"^## (B-\S+)", text, re.M))
-
-    def test_every_lane_skill_id_is_defined(self):
-        undefined = self._lane_skill_ids() - self._defined_skill_ids()
-        assert not undefined, (
-            f"example lanes reference SKILL ids nothing defines: {sorted(undefined)}"
-        )
-
-    def test_no_orphan_skills_in_the_template(self):
-        orphans = self._defined_skill_ids() - self._lane_skill_ids()
-        assert not orphans, (
-            f"skills_master.example.md defines ids no lane renders: {sorted(orphans)}"
-        )
-
-    def test_skill_evidence_cites_bullets_that_exist(self):
-        text = (PROFILE / "skills_master.example.md").read_text(encoding="utf-8")
-        cited = set(re.findall(r"B-[A-Z]+-\d+", text))
-        missing = cited - self._defined_bullet_ids()
-        assert not missing, f"evidence cites undefined bullet ids: {sorted(missing)}"
+    def test_every_example_lane_baseline_builds(self, monkeypatch):
+        resume_model, cfg = self._example_world(monkeypatch)
+        try:
+            src = resume_model.load_sources()
+            for lane in cfg.names:
+                built = resume_model.build(src, lane, resume_model.baseline_plan(src, lane))
+                assert built.problems == [], (lane, built.problems)
+                assert built.markdown.startswith("**Alex Example**")
+        finally:
+            from src import verticals
+            verticals.set_config(None)
 
     def test_every_bullet_is_cited_by_some_skill(self):
         text = (PROFILE / "skills_master.example.md").read_text(encoding="utf-8")
         cited = set(re.findall(r"B-[A-Z]+-\d+", text))
-        assert not (self._defined_bullet_ids() - cited)
-
-    def test_vertical_lean_values_are_example_lane_names(self):
-        text = (PROFILE / "skills_master.example.md").read_text(encoding="utf-8")
-        lanes = {p.name for p in (PROFILE / "verticals").glob("example_*")}
-        for block in re.findall(r"^vertical_lean: \[(.*)\]$", text, re.M):
-            for value in (v.strip() for v in block.split(",") if v.strip()):
-                assert value in lanes, f"vertical_lean {value!r} is not a lane dir"
+        defined = set(re.findall(r"^## (B-\S+)", (PROFILE / "bullets.example.md")
+                                 .read_text(encoding="utf-8"), re.M))
+        assert not (defined - cited)
 
 
 class TestExampleEntrySchemas:
-    BULLET_KEYS = ("source:", "canonical:", "tags:", "evidence:", "allowable_synonyms:")
-    SKILL_KEYS = ("name:", "category:", "evidence:", "allowable_synonyms:", "vertical_lean:")
+    BULLET_KEYS = ("canonical:", "tags:", "evidence:", "allowable_synonyms:")
+    SKILL_KEYS = ("name:", "evidence:", "allowable_synonyms:")
 
     @staticmethod
     def _entries(name: str) -> list[str]:

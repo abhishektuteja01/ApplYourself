@@ -188,3 +188,13 @@ outreach_only:
 # Flip to true ONLY after the one-time onboarding diction pass over bullets.md.
 # Until true, bullets.md text is fully linted in tailored docx context.
 bullets_diction_pass_completed: false
+
+# Function words a rewording may add freely. Every other word in a reworded
+# bullet must come from that bullet's canonical text or allowable_synonyms.
+stopwords: >-
+  a an the and or but of to in on for with by from at as into onto over via
+  across while that which who whose it its this these those their them they
+  each every per than then so up out off about through within without
+  between under after before during is are was were be been being has have
+  had not no only more most less all any both also plus using used one two
+  three
