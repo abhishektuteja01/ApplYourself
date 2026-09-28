@@ -130,7 +130,8 @@ def test_session_is_reused_per_thread_and_refuses_cookies():
     assert a is b
     other = []
     t = threading.Thread(target=lambda: other.append(http._session()))
-    t.start(); t.join()
+    t.start()
+    t.join()
     assert other[0] is not a
     assert not a.cookies.get_policy().allowed_domains()
 
@@ -208,7 +209,7 @@ def test_deadline_ts_zero_means_no_deadline(responses, sleeps):
     ([requests.ConnectionError("reset")], None, False),
 ])
 def test_error_carries_structured_status_and_permanence(responses, sleeps, queue, status, permanent):
-    """Only a 404 or a non-JSON 200 is permanent; nothing else may prune a board."""
+    """Only a 404 or a non-JSON 200 is permanent; nothing else may strike a board."""
     responses(queue)
     with pytest.raises(CareersError) as exc_info:
         fetch_json("https://x/board")
@@ -224,7 +225,7 @@ def test_deadline_error_is_not_permanent(responses, sleeps, monkeypatch):
 
 
 def test_status_404_is_not_inferred_from_a_url_containing_404(responses, sleeps):
-    """The old `"404" in str(e)` sniff misread any URL or slug with 404 in it."""
+    """A slug containing 404 must not read as a 404."""
     responses([FakeResponse(500)])
     with pytest.raises(CareersError) as exc_info:
         fetch_json("https://x/boards/acme-404/jobs")
@@ -238,9 +239,8 @@ def test_an_observer_sees_every_attempt_including_the_retry(responses, sleeps):
     events = []
     with http.observe(events.append):
         assert fetch_json("https://x/board") == {"ok": 1}
-    assert [(e["status"], e["attempt"]) for e in events] == [(429, 1), (200, 2)]
-    assert events[0]["retry_after"] == "2"
-    assert events[0]["cf_mitigated"] == "challenge"
+    assert [(e["url"], e["status"]) for e in events] == [
+        ("https://x/board", 429), ("https://x/board", 200)]
     assert all(e["secs"] >= 0 for e in events)
 
 
@@ -249,8 +249,7 @@ def test_an_observer_sees_a_network_error(responses, sleeps):
     events = []
     with http.observe(events.append):
         fetch_json("https://x/board")
-    assert events[0]["status"] is None
-    assert events[0]["error"] == "ConnectionError"
+    assert [e["status"] for e in events] == [None, 200]
 
 
 def test_a_failing_observer_does_not_fail_the_fetch(responses, sleeps):

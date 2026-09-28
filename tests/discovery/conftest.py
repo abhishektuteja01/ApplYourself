@@ -1,23 +1,6 @@
-"""Shared fixtures. Tests never read the gitignored profile/verticals.yaml —
-the committed tests/discovery/fixtures/verticals.yaml (three synthetic
-verticals, a byte-identical mirror of tests/fixtures/verticals.yaml) is
-injected into the src.verticals singleton for every test."""
-
-from pathlib import Path
+"""Discovery fixtures. The verticals fixture comes from tests/conftest.py."""
 
 import pytest
-
-from src import verticals
-
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
-
-
-@pytest.fixture(autouse=True)
-def cfg():
-    config = verticals.load_verticals(FIXTURE_PATH)
-    verticals.set_config(config)
-    yield config
-    verticals.set_config(None)
 
 
 @pytest.fixture(autouse=True)

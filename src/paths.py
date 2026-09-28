@@ -9,6 +9,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 JOBS = REPO_ROOT / "jobs"
+STORE = JOBS / "jobs.parquet"
+BOARD_STATE = JOBS / "boards.parquet"
 CLEAN = JOBS / "clean.parquet"
 SCORED = JOBS / "scored.parquet"
 STAGING = JOBS / "scored.staging"

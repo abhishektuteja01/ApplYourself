@@ -1,7 +1,7 @@
 """One table per ATS board: which hosts are it, how its posting URLs are
 shaped, and whether `/apply` can submit to it.
 
-Single source of truth for board identity. Discovery (dedupe, ingest) and
+Single source of truth for board identity. Discovery (posting keys, one row per job, ingest) and
 submission (`src/apply/`) both read it, so the shortlist and the queue cannot
 disagree about what a URL is.
 
@@ -216,7 +216,8 @@ def is_applyable(url: str) -> bool:
     """Whether this url leads to a board's own application form.
 
     Broader than `detect_source`: a board host with no posting id on it is
-    still the board, and still beats an aggregator repost in dedupe. Narrower
+    still the board, and still beats an aggregator repost when clean.parquet
+    picks one posting per job_id. Narrower
     than a substring test: the match is on the hostname, so
     `evilgreenhouse.io.example.com` is not Greenhouse.
     """

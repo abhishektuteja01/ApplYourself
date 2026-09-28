@@ -6,7 +6,6 @@ paths:
   - "profile/resume.yaml"
   - "profile/verticals.example.yaml"
   - "tests/fixtures/**"
-  - "tests/discovery/fixtures/**"
 ---
 
 # Verticals: the config spine
@@ -28,17 +27,14 @@ A "vertical" is a job lane. `src/verticals.py` is the single source of truth loa
 - The loader is **strict**: every vertical block must have all current required
   keys or it raises `ValueError`. Because `tests/conftest.py` injects the config
   via an autouse fixture, a malformed block errors the *entire* test suite.
-- **Two fixture mirrors must stay byte-identical to each other** for tests to
-  pass: `tests/fixtures/verticals.yaml` and `tests/discovery/fixtures/verticals.yaml`.
-  Any schema change must be mirrored into both in the same change.
-  `TestFixtureMirrors` enforces it, and
-  `.claude/hooks/fixture_mirrors.sh` fails immediately at edit time.
+- One fixture, `tests/fixtures/verticals.yaml`, serves the whole suite. A schema
+  change updates it in the same change.
 - Templates for onboarding a new vertical: `profile/verticals.example.yaml` and
   `profile/verticals/example_*/` (three: primary, secondary, tertiary — the
   fixtures' `default_vertical` is tertiary). Use `/new-vertical` to add a lane,
   `/tune-vertical` to sharpen one.
 
-> The two fixture files are **synthetic** — three fictional verticals
+> The fixture is **synthetic** — three fictional verticals
 > (`example_primary/secondary/tertiary`), no real search terms or skill weights.
 > The real config is covered separately by `tests/test_real_config_drift.py`,
 > which skips when `profile/verticals.yaml` is absent. Keep real strategy out of

@@ -20,14 +20,14 @@ classifiers = [
     "Private :: Do Not Upload",
 ]
 dependencies = [
-    # Upper bound: jobspy_source calls LinkedIn._get_job_details, a private API.
+    # Upper bound: src/discovery/sources/search.py calls LinkedIn._get_job_details, a private API.
     "python-jobspy>=1.1.80,<1.2",
     "pandas>=2.2",
     "pyarrow>=15.0",  # parquet engine for pandas — no direct imports
-    "openpyxl>=3.1",  # xlsx engine for pandas — top_scored_open.xlsx, no direct imports
+    "openpyxl>=3.1",  # xlsx engine for pandas; src/apply/sheet.py imports it directly
     "rapidfuzz>=3.6",
     "python-docx>=1.1",
-    "lxml>=5.0",  # direct XML surgery in scripts/scrub_example_templates.py
+    "lxml>=5.0",  # src/apply HTML parsing; XML surgery in scripts/scrub_example_templates.py
     "pyyaml>=6.0",
     "requests>=2.32",
     "geonamescache>=3.0.1",
@@ -57,6 +57,7 @@ apply = "src.apply_cli:main"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "ruff>=0.6",
 ]
 # Opt-in: `uv sync --group apply`. Discovery, scoring and tailoring must keep
 # working on a clone that never installs it.

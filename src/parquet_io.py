@@ -1,6 +1,6 @@
 """Atomic parquet writes.
 
-Every canonical parquet in this repo (clean, scored, seen, health) is read by
+Every canonical parquet in this repo (store, boards, clean, scored) is read by
 the next stage and by the slash commands. A crash or a full disk mid-write
 leaves a truncated file that pandas cannot open, which takes the whole pipeline
 down until it is deleted by hand. state_io._write_state already writes through

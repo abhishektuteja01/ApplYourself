@@ -28,7 +28,7 @@ import pandas as pd
 
 from src import ats_http, paths, verticals
 from src.discovery import store as S
-from src.discovery.config import load_config
+from src.discovery.config import JOBSPY_SOURCES, SOURCE_NAMES, load_config
 from src.discovery.sources import boards as B
 from src.discovery.sources.ashby import AshbyLane
 from src.discovery.sources.greenhouse import GreenhouseLane
@@ -41,8 +41,7 @@ from src.state_io import load_state_index
 log = logging.getLogger(__name__)
 
 RUN_ID_FMT = "%Y-%m-%d_%H%M"
-LANE_NAMES = ("manual", "linkedin", "indeed", "greenhouse", "lever", "ashby", "workday")
-SEARCH_LANES = ("linkedin", "indeed")
+LANE_NAMES = ("manual", *SOURCE_NAMES)
 FLUSH_SECONDS = 300
 
 
@@ -52,37 +51,40 @@ def current_run_id(now: datetime | None = None) -> str:
 
 @dataclass
 class Paths:
+    """The canonical file names under `jobs`, so a shadow run keeps its own.
+    `boards_dir` None means the board lists' own default."""
+
     jobs: Path
-    boards_dir: Path
+    boards_dir: Path | None = None
     pipeline: Path = paths.PIPELINE
 
     @property
     def store(self) -> Path:
-        return self.jobs / "jobs.parquet"
+        return self.jobs / paths.STORE.name
 
     @property
     def clean(self) -> Path:
-        return self.jobs / "clean.parquet"
+        return self.jobs / paths.CLEAN.name
 
     @property
     def scored(self) -> Path:
-        return self.jobs / "scored.parquet"
+        return self.jobs / paths.SCORED.name
 
     @property
     def board_state(self) -> Path:
-        return self.jobs / "boards.parquet"
+        return self.jobs / paths.BOARD_STATE.name
 
     @property
     def raw(self) -> Path:
-        return self.jobs / "raw"
+        return self.jobs / paths.JOBS_RAW.name
 
     @property
     def runs(self) -> Path:
-        return self.jobs / "runs"
+        return self.jobs / paths.JOBS_RUNS.name
 
 
 def _lane(name: str):
-    if name in SEARCH_LANES:
+    if name in JOBSPY_SOURCES:
         from src.discovery.sources.search import SearchLane  # jobspy is slow to import
         return SearchLane(name)
     return {"greenhouse": GreenhouseLane, "lever": LeverLane,
@@ -139,7 +141,7 @@ def _run_lane(lane, crawl) -> dict:
     tally = ats_http.HttpTally()
     try:
         with ats_http.observe(tally.on_http):
-            stats = lane.run(crawl, tally) if lane.name in SEARCH_LANES else lane.run(crawl)
+            stats = lane.run(crawl, tally) if lane.name in JOBSPY_SOURCES else lane.run(crawl)
     except Exception:  # noqa: BLE001 -- one lane's crash costs the others nothing
         log.exception("lane %s crashed; continuing", lane.name)
         return {"status": "crashed", "duration_s": round(time.time() - t0, 1),
@@ -205,7 +207,7 @@ def render_md(report: dict) -> str:
     lines += ["", "## Boards", "",
               "| lane | due | checked | ok | empty | 404 | error |", "|---|---|---|---|---|---|---|"]
     for name, lane in report["lanes"].items():
-        if "boards_due" in lane and name not in SEARCH_LANES and name != "manual":
+        if "boards_due" in lane and name not in JOBSPY_SOURCES and name != "manual":
             lines.append(f"| {name} | {lane['boards_due']} | {lane['boards_checked']} "
                          f"| {lane['boards_ok']} | {lane['boards_empty']} | {lane['boards_404']} "
                          f"| {lane['boards_error']} |")

@@ -63,12 +63,6 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/r7_no_llm_in_src.sh",
             "timeout": 30,
             "statusMessage": "R7: checking src/ calls no LLM"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/fixture_mirrors.sh",
-            "timeout": 30,
-            "statusMessage": "Checking the two verticals fixtures still match"
           }
         ]
       }

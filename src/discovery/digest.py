@@ -15,7 +15,7 @@ from pathlib import Path
 from src import paths
 
 JOBS_RUNS = paths.JOBS_RUNS
-BOARD_STATE = paths.JOBS / "boards.parquet"
+BOARD_STATE = paths.BOARD_STATE
 DEFAULT_WINDOW = 7
 # How far below its own median a lane has to fall before it is called out.
 BELOW_MEDIAN_FRACTION = 0.5

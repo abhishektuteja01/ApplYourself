@@ -17,6 +17,8 @@ retention: {score_threshold: 80, high_days: 60, low_days: 15}
 forget_after_days: 120
 # Nightly debug shards under jobs/raw/.
 raw_keep_days: 3
+# Nightly logs under logs/ (discovery_*.log).
+log_keep_days: 30
 # A board that 404s three checks in a row is re-checked this often.
 dead_every_days: 14
 # Every source the loader accepts. every_days: days between checks of one

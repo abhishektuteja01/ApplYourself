@@ -6,7 +6,7 @@ only adds to it: known postings are touched, new ones get an id. Nothing is
 re-derived from raw files.
 
 `jobs/clean.parquet` is the view downstream reads: one row per live `job_id`,
-same columns as always.
+exactly CLEAN_COLUMNS.
 
 Deterministic and LLM-free (R7). Reads pipeline/*/state.yaml, never writes it
 (R10).
@@ -25,12 +25,13 @@ from rapidfuzz import fuzz
 from src import paths
 from src.ats_registry import board_slug, is_applyable
 from src.discovery import normalize as N
+from src.discovery.config import JOBSPY_SOURCES
 from src.parquet_io import locked, write_parquet
 from src.state_io import ACTIVE_STATES
 
 log = logging.getLogger(__name__)
 
-STORE = paths.JOBS / "jobs.parquet"
+STORE = paths.STORE
 CLEAN = paths.CLEAN
 
 STORE_COLUMNS: list[str] = [
@@ -64,9 +65,6 @@ CLEAN_COLUMNS: list[str] = [
     "employment_type", "seniority_raw", "vertical", "application_status",
 ]
 
-# The search lanes, whose rows carry a posted date worth cutting on. A board
-# listing is its own liveness signal.
-SEARCH_SOURCES = frozenset({"linkedin", "indeed"})
 
 
 # ---------------------------------------------------------------------
@@ -90,13 +88,15 @@ def coerce_store(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def load_store(path: Path = STORE) -> pd.DataFrame:
+def load_store(path: Path | None = None) -> pd.DataFrame:
+    path = path or STORE
     if not Path(path).exists():
         return empty_store()
     return coerce_store(pd.read_parquet(path))
 
 
-def save_store(df: pd.DataFrame, path: Path = STORE) -> None:
+def save_store(df: pd.DataFrame, path: Path | None = None) -> None:
+    path = path or STORE
     df = coerce_store(df).sort_values("posting_key", kind="stable")
     write_parquet(df.reset_index(drop=True), path)
 
@@ -377,9 +377,10 @@ def apply_batch(store: pd.DataFrame, batch: Batch, today: pd.Timestamp,
 
 
 def flush(batch: Batch, today: pd.Timestamp, tracked: frozenset[str], live_days: int,
-          path: Path = STORE) -> ApplyStats:
+          path: Path | None = None) -> ApplyStats:
     """Empty `batch` into the store: read, fold in, write, under the store's
     lock, so a concurrent `ingest-url` waits rather than being overwritten."""
+    path = path or STORE
     pending = batch.take()
     with locked(path):
         store, stats = apply_batch(load_store(path), pending, today, tracked, live_days)
@@ -456,9 +457,10 @@ def build_view(store: pd.DataFrame, allowlist, inp: ViewInputs,
     df_live = df[live]
     funnel["live"] = len(df_live)
 
-    # A search row with no posted date is kept: retention bounds it instead.
+    # Only search rows are cut on age; a board listing is its own liveness
+    # signal. A search row with no posted date is kept: retention bounds it.
     posted = df_live["posted_date"]
-    fresh = (~df_live["source"].isin(SEARCH_SOURCES) | posted.isna()
+    fresh = (~df_live["source"].isin(JOBSPY_SOURCES) | posted.isna()
              | (posted >= today - pd.Timedelta(days=inp.search_max_age_days))
              | df_live["job_id"].isin(tracked))
     df_live = df_live[fresh]
@@ -529,6 +531,7 @@ def _one_per_job(df: pd.DataFrame) -> pd.DataFrame:
     return out.drop(columns=["_apply", "_unres", "_jd", "_resolved"])
 
 
-def write_view(view: pd.DataFrame, path: Path = CLEAN) -> None:
+def write_view(view: pd.DataFrame, path: Path | None = None) -> None:
+    path = path or CLEAN
     with locked(path):
         write_parquet(view, path)

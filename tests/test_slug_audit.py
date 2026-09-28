@@ -115,10 +115,13 @@ class TestWorkday:
 
 
 class TestBoardUrls:
-    def test_the_audit_fetches_lighter_payloads_than_the_scrapers(self, audit):
-        """A liveness call needs titles and dates, not every full JD."""
-        assert "content=true" not in audit.board_url("greenhouse", "acme")
-        assert "includeCompensation" not in audit.board_url("ashby", "acme")
+    def test_the_audit_uses_the_scrapers_list_urls(self, audit):
+        """Same list endpoints as the lanes; Ashby skips the pay bands."""
+        from src.discovery.sources import ashby, greenhouse
+
+        assert audit.board_url("greenhouse", "acme") == f"{greenhouse.API}/acme/jobs"
+        assert audit.board_url("ashby", "acme") == f"{ashby.API}/acme"
+        assert audit.board_url("lever", "acme") == "https://api.lever.co/v0/postings/acme?mode=json"
 
     def test_every_summarizer_has_a_lane_and_vice_versa(self, audit):
         from src.ats_registry import ATS_SOURCE_NAMES

@@ -58,11 +58,11 @@ def _no_git_hook_env(monkeypatch):
 def _isolate_applications(tmp_path, monkeypatch):
     """Keep run reports, post-submit evidence and the submit ledger out of the
     real `applications/`. Tests that need a specific folder still set their own."""
-    from src import paths
-    from src import apply_cli
+    from src import app_cli, apply_cli, paths
 
     apps = tmp_path / "applications"
     monkeypatch.setattr(paths, "APPLICATIONS", apps)
+    monkeypatch.setattr(app_cli, "APPLICATIONS", apps)
     monkeypatch.setattr(apply_cli, "APPLICATIONS", apps)
     monkeypatch.setattr(apply_cli, "APPLY_RUNS", apps / "apply_runs")
 
@@ -81,11 +81,13 @@ def _isolate_answer_bank(tmp_path, monkeypatch):
 def _isolate_discovery_state(tmp_path, monkeypatch):
     """Keep the jobs store, board state, board lists and inbox out of the real
     repo. Every discovery writer resolves these names at call time."""
-    from src.discovery import store
+    from src.discovery import digest, store
     from src.discovery.sources import boards, inbox
 
     monkeypatch.setattr(store, "STORE", tmp_path / "jobs" / "jobs.parquet")
     monkeypatch.setattr(store, "CLEAN", tmp_path / "jobs" / "clean.parquet")
     monkeypatch.setattr(boards, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
+    monkeypatch.setattr(digest, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
+    monkeypatch.setattr(digest, "JOBS_RUNS", tmp_path / "jobs" / "runs")
     monkeypatch.setattr(boards, "BOARDS_DIR", tmp_path / "universe")
     monkeypatch.setattr(inbox, "INBOX", tmp_path / "inbox")

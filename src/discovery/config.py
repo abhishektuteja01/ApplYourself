@@ -13,19 +13,21 @@ from pathlib import Path
 import yaml
 
 from src import paths, verticals
+from src.ats_registry import ATS_SOURCE_NAMES
 
 log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = paths.REPO_ROOT / "profile" / "discovery.yaml"
 SCHEMA_VERSION = 2
 
-SOURCE_NAMES = ("linkedin", "indeed", "greenhouse", "lever", "ashby", "workday")
-JOBSPY_SOURCES = frozenset({"linkedin", "indeed"})
+# The search lanes (jobspy); every other source is an ATS board lane.
+JOBSPY_SOURCES = ("linkedin", "indeed")
+SOURCE_NAMES = JOBSPY_SOURCES + ATS_SOURCE_NAMES
 
 _TOP_LEVEL_KEYS = frozenset({
     "schema_version", "deadline_hours", "location_allowlist", "search_locations", "sources",
     "live_days", "search_max_age_days", "retention", "forget_after_days", "raw_keep_days",
-    "dead_every_days",
+    "log_keep_days", "dead_every_days",
 })
 _ALLOWLIST_KEYS = frozenset({"countries"})
 _RETENTION_KEYS = frozenset({"score_threshold", "high_days", "low_days"})
@@ -114,6 +116,7 @@ class DiscoveryConfig:
     retention_low_days: int = 15
     forget_after_days: int = 120
     raw_keep_days: int = 3
+    log_keep_days: int = 30
     dead_every_days: int = 14
     unknown_keys: list[str] = field(default_factory=list)
 
@@ -268,7 +271,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
     for key in ("live_days", "search_max_age_days", "forget_after_days", "raw_keep_days",
-                "dead_every_days"):
+                "log_keep_days", "dead_every_days"):
         setattr(cfg, key, _int(data.get(key, getattr(cfg, key)), f"{p}: {key}", 1))
     retention = data.get("retention") or {}
     if not isinstance(retention, dict):

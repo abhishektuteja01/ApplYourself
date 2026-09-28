@@ -291,6 +291,3 @@ def naive_datetime(values) -> pd.Series:
         values, errors="coerce", utc=True, format="mixed"
     ).dt.tz_localize(None)
 
-
-def utc_today() -> date:
-    return datetime.now(timezone.utc).date()

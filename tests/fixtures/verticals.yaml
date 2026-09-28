@@ -1,8 +1,6 @@
 # Synthetic test fixture — three fictional verticals. Contains no real
 # search terms, exclude lists, or skill weights.
 #
-# Mirrored byte-for-byte at tests/fixtures/verticals.yaml and
-# tests/discovery/fixtures/verticals.yaml; TestFixtureMirrors enforces it.
 # Shaped after profile/verticals.example.yaml and enriched so every schema
 # branch is covered: include-gate on, strong-keep override, drop_phrases and
 # years, regex + literal + compound classifier rules, and one vertical
@@ -73,7 +71,8 @@ verticals:
       - widget payroll module
       - solution architect
     # Required years -> seniority cap; a JD asking more than the
-    # largest key is dropped.
+    # largest key is dropped before judging, or forced to skip when
+    # the judge reads more.
     years: {3: 14, 4: 10}
 
   example_secondary:
@@ -134,7 +133,8 @@ verticals:
       - legacy sprocket ledger
       - vendor sprocket risk
     # Required years -> seniority cap; a JD asking more than the
-    # largest key is dropped.
+    # largest key is dropped before judging, or forced to skip when
+    # the judge reads more.
     years: {3: 14, 4: 10}
 
   example_tertiary:
@@ -187,7 +187,8 @@ verticals:
       - autonomous cogs
       - cog firmware
     # Required years -> seniority cap; a JD asking more than the
-    # largest key is dropped.
+    # largest key is dropped before judging, or forced to skip when
+    # the judge reads more.
     years: {3: 14, 4: 10}
 
 

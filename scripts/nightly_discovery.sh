@@ -6,7 +6,7 @@
 # Linux: schedule it with cron or a systemd timer, pointing at this same script.
 #
 # Runs ONLY the deterministic, LLM-free discovery step (R7). Scoring is a slash
-# command and needs a Claude Code session, so it stays a morning decision.
+# command: the 00:00 routine runs /score, gated on this log's code=0.
 set -uo pipefail
 
 # Derive the repo from this script's own location, so nothing here needs editing.
@@ -27,8 +27,14 @@ LOGDIR="$REPO/logs"
 mkdir -p "$LOGDIR"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 LOG="$LOGDIR/discovery_$STAMP.log"
-
 cd "$REPO" || { echo "FATAL: cannot cd to $REPO" >&2; exit 1; }
+
+# Keep log_keep_days (profile/discovery.yaml) of logs. A config that fails to
+# load skips the prune; preflight reports why.
+KEEP="$("$UV" run python -c 'from src.discovery.config import load_config; print(load_config().log_keep_days)' 2>/dev/null)"
+if [[ "$KEEP" =~ ^[0-9]+$ ]]; then
+  find "$LOGDIR" -maxdepth 1 -name 'discovery_*.log' -mtime +"$KEEP" -delete
+fi
 
 echo "=== discovery start $STAMP (repo=$REPO uv=$UV) ===" | tee -a "$LOG"
 # caffeinate -s: hold off system sleep on AC power. -i: hold off idle sleep.

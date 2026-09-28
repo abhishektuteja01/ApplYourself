@@ -12,8 +12,8 @@ import pycountry
 # libpostal is an optional install (`uv sync --group discovery`) because the
 # `postal` binding is sdist-only and compiles against a C library no distro
 # packages. Only address parsing needs it, so the import is deferred to the
-# one call site: importing this module -- and therefore cleaning, the
-# run.py and every board lane -- stays possible without it, and /score
+# one call site: importing this module -- and therefore the store, run.py
+# and every board lane -- stays possible without it, and /score
 # and /tailor keep working on a clone that never installs it.
 _POSTAL_MISSING = (
     "libpostal is required to parse job locations during discovery, and it "
@@ -64,7 +64,7 @@ class LocationParse:
     # Populated only when multiple distinct countries were found and none
     # could be picked without guessing (a real multi-region listing). The
     # caller (Allowlist.check) decides keep-vs-drop against its own allowlist —
-    # no country is privileged here, unlike the old US-hardcoded design.
+    # no country is privileged here.
     candidate_countries: frozenset[str] = field(default_factory=frozenset)
 
 

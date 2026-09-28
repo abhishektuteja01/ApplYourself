@@ -21,7 +21,7 @@ jobs:
 
       # `postal` is optional (the `discovery` group) and the core sync no
       # longer needs it — but the suite does: tests/discovery/test_location.py
-      # and the cleaning location-filter tests exercise the real parser, with
+      # and the store's location-filter tests exercise the real parser, with
       # no stub. It compiles against the libpostal C library, which no
       # Debian/Ubuntu package ships, so build it once and cache the install
       # prefix (the ~2GB model data lives in it too).
@@ -54,6 +54,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --group discovery
+      - run: uv run ruff check --select F401,F841 src tests scripts
       # Also proves the suite runs in a non-UTF-8 locale, which is how a bare
       # container and a cron job both run it.
       - run: uv run pytest tests -q

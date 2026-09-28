@@ -51,12 +51,13 @@ def test_unknown_and_retired_keys_are_named(tmp_path, data, needle):
 def test_every_value_is_read(tmp_path):
     cfg = load(tmp_path, {
         "deadline_hours": 6, "live_days": 10, "search_max_age_days": 7, "forget_after_days": 90,
-        "raw_keep_days": 2, "dead_every_days": 7,
+        "raw_keep_days": 2, "log_keep_days": 9, "dead_every_days": 7,
         "retention": {"score_threshold": 75, "high_days": 45, "low_days": 10},
         "sources": {"workday": {"every_days": 3, "max_pages": 4, "pacing_seconds": 0.5},
                     "linkedin": {"hours_old": 72, "results_wanted": 50, "remote_queries": False}},
     })
     assert (cfg.deadline_hours, cfg.live_days, cfg.search_max_age_days) == (6, 10, 7)
+    assert (cfg.raw_keep_days, cfg.log_keep_days, cfg.dead_every_days) == (2, 9, 7)
     assert (cfg.retention_score_threshold, cfg.retention_high_days, cfg.retention_low_days) == (75, 45, 10)
     w, li = cfg.sources["workday"], cfg.sources["linkedin"]
     assert (w.every_days, w.max_pages, li.hours_old, li.results_wanted, li.remote_queries) == (3, 4, 72, 50, False)

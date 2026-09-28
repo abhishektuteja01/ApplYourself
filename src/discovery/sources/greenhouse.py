@@ -45,8 +45,8 @@ class GreenhouseLane(BoardLane):
         return [p for p in (posting_from(i, board.name) for i in job_items(payload, "jobs")) if p]
 
     def stale(self, posting: dict, known: dict) -> bool:
-        # A stored copy with no updated_at yet (a migrated row) is taken as
-        # current: its list row fills the date in without a detail call.
+        # A row with no stored updated_at is taken as current: its list row
+        # fills the date in without a detail call.
         stored = known.get("updated_at", "")
         return bool(stored) and bool(posting["updated_at"]) and posting["updated_at"] != stored
 

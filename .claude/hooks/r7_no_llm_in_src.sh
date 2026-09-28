@@ -36,7 +36,7 @@ if [ -n "$SDK_HITS$URL_HITS" ]; then
     [ -n "$SDK_HITS" ] && { echo "LLM SDK imports:"; echo "$SDK_HITS"; echo; }
     [ -n "$URL_HITS" ] && { echo "LLM API endpoints:"; echo "$URL_HITS"; echo; }
     echo "src/ is deterministic plumbing. Move the judgment into the slash"
-    echo "command session (.claude/commands/ or .claude/skills/) and have it"
+    echo "command session (.claude/commands/) and have it"
     echo "call the deterministic helper via Bash."
   } >&2
   exit 2

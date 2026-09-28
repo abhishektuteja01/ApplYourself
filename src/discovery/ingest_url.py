@@ -95,12 +95,11 @@ def ingest(url: str, *, vertical: str | None = None, company: str | None = None,
     """Fetch, save into the store, rebuild clean.parquet, return the row."""
     from src.discovery.location import Allowlist
     from src.discovery.run import Paths, rebuild_view
-    from src.discovery.sources.boards import BOARDS_DIR
 
-    p = Paths(jobs=jobs_dir or paths.JOBS, boards_dir=BOARDS_DIR)
+    p = Paths(jobs=jobs_dir or paths.JOBS)
     if not p.store.exists():
         raise IngestError(f"ERROR: {p.store} does not exist yet. Run "
-                          f"`uv run python scripts/migrate_store.py --apply` first.")
+                          f"`uv run discover --deadline-hours 0` first.")
     row = fetch_row(url, company=company, title=title)
     jd = row["jd_text"].strip()
     if len(jd) < N.MIN_JD_CHARS:

@@ -191,7 +191,7 @@ def test_digest_cli_json(tmp_path, capsys):
 # ---------- ingest-url ----------
 
 def test_ingest_refuses_before_the_store_exists(tmp_path):
-    with pytest.raises(ingest_url.IngestError, match="migrate_store"):
+    with pytest.raises(ingest_url.IngestError, match="discover --deadline-hours 0"):
         ingest_url.ingest("https://job-boards.greenhouse.io/acme/jobs/1", jobs_dir=tmp_path)
 
 

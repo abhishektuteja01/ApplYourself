@@ -2,10 +2,10 @@
 """One-off liveness audit of the ATS slug universe. Report only.
 
 The nightly run learns one thing about a board: whether it answered. Three
-consecutive 404s prune it, and `last_kept_at` records when it last produced a
-row *we kept* -- which our own title gate decides. So a board serving 200 with
-zero postings, and one whose newest posting is two years old, are both
-indistinguishable from a healthy board that simply has no AI roles.
+consecutive 404s mark it `dead`, and `last_found` records when it last had a
+job that passed our own title gate. So a board serving 200 with zero postings,
+and one whose newest posting is two years old, are both indistinguishable from
+a healthy board that simply has no AI roles.
 
 This walks every slug once and says which it is. It writes a single CSV and
 prints a summary; it does not touch jobs/boards.parquet, `data/universe/boards*.csv`,
@@ -29,9 +29,9 @@ from src import paths
 from src.ats_http import CareersError, fetch_json
 from src.discovery.config import load_config, pacing_floor
 from src.discovery.normalize import iso_date, ms_date, relative_posted_date
-from src.discovery.sources import ashby
+from src.discovery.sources import ashby, greenhouse, lever
 from src.discovery.sources import workday as wd
-from src.discovery.sources.boards import load_boards
+from src.discovery.sources.boards import job_items, load_boards
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
 DEFAULT_ATS = ("ashby", "greenhouse", "lever")
@@ -52,24 +52,15 @@ def _newest(dates) -> date | None:
     return max(real) if real else None
 
 
-def _items(payload, key: str) -> list[dict]:
-    if not isinstance(payload, dict):
-        raise TypeError(f"expected a JSON object, got {type(payload).__name__}")
-    items = payload.get(key)
-    if not isinstance(items, list):
-        raise TypeError(f"expected a list under {key!r}, got {type(items).__name__}")
-    return [i for i in items if isinstance(i, dict)]
-
-
 def greenhouse_summary(payload) -> tuple[int, date | None]:
-    items = _items(payload, "jobs")
+    items = job_items(payload, "jobs")
     return len(items), _newest(
         iso_date(i.get("first_published") or i.get("updated_at")) for i in items
     )
 
 
 def ashby_summary(payload) -> tuple[int, date | None]:
-    items = _items(payload, "jobs")
+    items = job_items(payload, "jobs")
     return len(items), _newest(iso_date(i.get("publishedAt")) for i in items)
 
 
@@ -88,7 +79,7 @@ def workday_summary(payload) -> tuple[int, date | None]:
     date is therefore a lower bound on the board's newest posting -- Workday
     does not promise the default sort is by date.
     """
-    items = _items(payload, "jobPostings")
+    items = job_items(payload, "jobPostings")
     total = payload.get("total")
     count = total if isinstance(total, int) and total >= len(items) else len(items)
     return count, _newest(relative_posted_date(i.get("postedOn") or "", date.today()) for i in items)
@@ -103,17 +94,14 @@ SUMMARIZE = {
 
 
 def board_url(ats: str, slug: str) -> str:
-    """The audit's own URLs, deliberately lighter than the scrapers'.
-
-    Greenhouse drops `content=true` and Ashby drops `includeCompensation`: a
-    liveness call needs the titles and dates, not 9,000 full JDs.
-    """
+    """The scrapers' list URLs. Ashby drops `includeCompensation`: a liveness
+    call needs the titles and dates, not the pay bands."""
     if ats == "greenhouse":
-        return f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+        return f"{greenhouse.API}/{slug}/jobs"
     if ats == "ashby":
-        return f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+        return f"{ashby.API}/{slug}"
     if ats == "lever":
-        return f"https://api.lever.co/v0/postings/{slug}?mode=json"
+        return f"https://{lever.api_host()}/v0/postings/{slug}?mode=json"
     raise ValueError(f"no audit URL for ats {ats!r}")
 
 
@@ -238,8 +226,7 @@ def parse_args(argv):
     p.add_argument("--resume", action="store_true",
                    help="skip slugs already in today's output file")
     p.add_argument("--include-retired", action="store_true",
-                   help="also probe slugs the reconcile pass marked active=0, "
-                        "to re-check a verdict this script wrote itself")
+                   help="also probe slugs marked active=0 in the board lists")
     p.add_argument("--out", help="output CSV (default jobs/slug_audit_<date>.csv)")
     return p.parse_args(argv)
 

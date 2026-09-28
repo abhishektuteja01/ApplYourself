@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Blocks a commit that stages a change under src/ or a verticals fixture while
-# the test suite is red. Any other commit skips the suite entirely.
+# Blocks a commit that stages a .py file with an unused import or variable, or
+# a change under src/ or the verticals fixture while the test suite is red.
+# Any other commit skips both.
 #
 # Enable once per clone:  git config core.hooksPath .githooks
 # Bypass:                 git commit --no-verify
@@ -14,7 +15,18 @@ cd "$root" || exit 0
 [ -d tests ] || exit 0
 command -v uv >/dev/null 2>&1 || exit 0
 
-WATCHED="src tests/fixtures tests/discovery/fixtures"
+if [ -n "$(git diff --cached --name-only -- '*.py' 2>/dev/null || true)" ]; then
+  if ! LINT="$(uv run ruff check --select F401,F841 src tests scripts 2>&1)"; then
+    {
+      echo "pre-commit: FAIL — unused imports or variables."
+      echo
+      printf '%s\n' "$LINT" | tail -30
+    } >&2
+    exit 1
+  fi
+fi
+
+WATCHED="src tests/fixtures"
 STAGED="$(git diff --cached --name-only -- $WATCHED 2>/dev/null || true)"
 [ -n "$STAGED" ] || exit 0
 
@@ -32,7 +44,7 @@ OUT="$("${RUNNER[@]}" 2>&1)"
 STATUS=$?
 if [ "$STATUS" -ne 0 ]; then
   {
-    echo "pre-commit: FAIL — src/ or a verticals fixture is staged and the suite is red."
+    echo "pre-commit: FAIL — src/ or the verticals fixture is staged and the suite is red."
     [ -n "$IGNORE" ] && echo "(ran with $IGNORE: libpostal is not installed here)"
     echo
     printf '%s\n' "$OUT" | tail -30

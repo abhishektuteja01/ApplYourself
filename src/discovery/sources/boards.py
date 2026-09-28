@@ -24,14 +24,15 @@ import pandas as pd
 
 from src import paths
 from src.ats_http import CareersError
+from src.ats_registry import ATS_SOURCE_NAMES
 from src.discovery import normalize as N
+from src.discovery.config import pacing_floor
 from src.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)
 
 BOARDS_DIR = paths.REPO_ROOT / "data" / "universe"
-BOARD_STATE = paths.JOBS / "boards.parquet"
-ATS_NAMES = ("greenhouse", "lever", "ashby", "workday")
+BOARD_STATE = paths.BOARD_STATE
 
 # Three 404s in a row and a board is `dead`: checked every `dead_every_days`
 # instead, until it answers again.
@@ -87,7 +88,7 @@ def load_boards(ats: str | None = None, include_retired: bool = False,
             a = (row.get("ats") or "").strip().lower()
             name = (row.get("name") or "").strip()
             slug = (row.get("slug") or "").strip()
-            if a not in ATS_NAMES or not name or not slug:
+            if a not in ATS_SOURCE_NAMES or not name or not slug:
                 continue
             key = f"{a}|{slug.lower()}"
             active = (row.get("active") or "").strip()
@@ -107,7 +108,8 @@ def load_boards(ats: str | None = None, include_retired: bool = False,
     return sorted(boards, key=lambda b: b.key)
 
 
-def load_state(path: Path = BOARD_STATE) -> pd.DataFrame:
+def load_state(path: Path | None = None) -> pd.DataFrame:
+    path = path or BOARD_STATE
     if not Path(path).exists():
         return pd.DataFrame(columns=STATE_COLUMNS)
     df = pd.read_parquet(path).reindex(columns=STATE_COLUMNS)
@@ -145,14 +147,14 @@ class BoardResult:
     listed: int = 0
     passed: int = 0
     new: int = 0
-    error: str = ""
 
 
 def update_state(results: list[BoardResult], today: pd.Timestamp,
-                 path: Path = BOARD_STATE) -> None:
+                 path: Path | None = None) -> None:
     """Fold a batch of board results into boards.parquet, under its lock.
     An error leaves last_checked alone, so the board is first in line next
     run; a 404 counts a strike."""
+    path = path or BOARD_STATE
     if not results:
         return
     today = pd.Timestamp(today).normalize()
@@ -222,26 +224,21 @@ class LaneStats:
     truncated: bool = False
     notes: list[str] = field(default_factory=list)
 
-    @property
-    def rows(self) -> int:
-        """Postings that passed the gate tonight: the digest's trend number."""
-        return self.passed
-
 
 class Crawl:
     """What a lane needs from the run: the clock, the store's known keys, and
     the places results go. Shared by every lane thread."""
 
     def __init__(self, cfg, vcfg, today, deadline_ts: float, known: dict[str, dict], batch,
-                 board_state: Path = BOARD_STATE, boards_dir: Path = BOARDS_DIR):
+                 board_state: Path | None = None, boards_dir: Path | None = None):
         self.cfg = cfg
         self.vcfg = vcfg
         self.today = pd.Timestamp(today).normalize()
         self.deadline_ts = deadline_ts
         self.known = known
         self.batch = batch
-        self.board_state = board_state
-        self.boards_dir = boards_dir
+        self.board_state = board_state or BOARD_STATE
+        self.boards_dir = boards_dir or BOARDS_DIR
         self._lock = threading.Lock()
         self.board_results: list[BoardResult] = []
         self.listed: list[dict] = []
@@ -296,7 +293,7 @@ class BoardLane:
 
     def run(self, crawl: Crawl) -> LaneStats:
         src = crawl.cfg.sources[self.name]
-        pacing = max(_pacing_floor(self.name), src.pacing_seconds)
+        pacing = max(pacing_floor(self.name), src.pacing_seconds)
         state = load_state(crawl.board_state)
         boards = due_boards(load_boards(self.name, boards_dir=crawl.boards_dir), state, crawl.today,
                             src.every_days, crawl.cfg.dead_every_days)
@@ -323,13 +320,13 @@ class BoardLane:
                 stats.boards_error += not is_404
                 if not is_404:
                     stats.errors.append(f"{board.name}: {e}")
-                crawl.record_board(BoardResult(board, "404" if is_404 else "error", error=str(e)))
+                crawl.record_board(BoardResult(board, "404" if is_404 else "error"))
                 continue
             except PAYLOAD_SHAPE_ERRORS as e:
                 shape_errors += 1
                 stats.boards_error += 1
                 stats.errors.append(f"{board.name}: malformed board payload: {type(e).__name__}: {e}")
-                crawl.record_board(BoardResult(board, "error", error=str(e)))
+                crawl.record_board(BoardResult(board, "error"))
                 if (stats.boards_checked >= ESCALATE_MIN_BOARDS
                         and shape_errors / stats.boards_checked >= ESCALATE_FAILURE_RATE):
                     raise RuntimeError(
@@ -404,11 +401,6 @@ class BoardLane:
             return None
         stats.detail_ok += 1
         return full
-
-
-def _pacing_floor(name: str) -> float:
-    from src.discovery.config import pacing_floor
-    return pacing_floor(name)
 
 
 def job_items(payload, key: str) -> list[dict]:

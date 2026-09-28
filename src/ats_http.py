@@ -103,8 +103,8 @@ def _notify(**event) -> None:
 class CareersError(Exception):
     """Board fetch failed after retries, or the board does not exist.
 
-    `permanent` is the only thing the health ledger may act on: a permanent
-    failure counts toward pruning, a transient one never does.
+    `permanent` decides what the board ledger records: a permanent 404 is a
+    strike toward `dead`; a transient failure leaves `last_checked` alone.
     """
 
     def __init__(self, message: str, status: int | None = None, permanent: bool = False):
@@ -131,7 +131,6 @@ def _fetch(
     `read` owns what a 200 body means: a body it cannot use is a wall or a wrong
     slug rather than a blip, so it raises instead of retrying.
     """
-    method = "POST" if json_body is not None else "GET"
     for attempt in range(1, MAX_RETRIES + 1):
         t0 = time.monotonic()
         try:
@@ -141,17 +140,12 @@ def _fetch(
                 else _get(url, timeout=timeout, headers=_HEADERS)
             )
         except requests.RequestException as exc:
-            _notify(method=method, url=url, attempt=attempt, status=None,
-                    secs=time.monotonic() - t0, error=type(exc).__name__)
+            _notify(url=url, secs=time.monotonic() - t0, status=None)
             if attempt == MAX_RETRIES:
                 raise CareersError(f"fetch failed: {url}: {exc}") from exc
             _sleep_or_raise(RETRY_BASE_DELAY * attempt, deadline_ts, url)
             continue
-        if getattr(_local, "observer", None) is not None:
-            _notify(method=method, url=url, attempt=attempt, status=resp.status_code,
-                    secs=time.monotonic() - t0,
-                    retry_after=resp.headers.get("Retry-After"),
-                    cf_mitigated=resp.headers.get("cf-mitigated"))
+        _notify(url=url, secs=time.monotonic() - t0, status=resp.status_code)
         if resp.status_code == 200:
             return read(resp)
         if resp.status_code == 404:
@@ -171,7 +165,7 @@ def _fetch(
                 delay = RETRY_BASE_DELAY * (2 ** attempt)
             _sleep_or_raise(delay, deadline_ts, url)
             continue
-        # 401/403 walls included: a live board behind Cloudflare must not be pruned.
+        # 401/403 walls included: a live board behind Cloudflare must not get a strike.
         raise CareersError(f"HTTP {resp.status_code}: {url}", status=resp.status_code)
     # Unreachable: at attempt == MAX_RETRIES every branch above raises or
     # returns. Kept as a guard.
