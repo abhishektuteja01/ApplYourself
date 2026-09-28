@@ -16,10 +16,9 @@ suite until it has a template. Excluded: committed defaults
 dotfiles (runtime state a command writes).
 
 Template content lives in the fictional widget/gizmo/sprocket/cog world of the
-`example_*` lanes, and the ids must resolve: the `SKILL-*` ids those lanes name in
-their Skills layouts must exist in `profile/skills_master.example.md`, and every
-`evidence:` reference must point at a bullet in `profile/bullets.example.md`. Tests
-enforce both directions.
+`example_*` lanes, and it must pass the same `check_sources` the real config
+does, with every example lane's baseline resume building clean
+(`TestExampleSourcesResolve`).
 
 `profile/*.example.docx` are the only tracked binaries, allowlisted **by name** in
 `pii_scan.sh` (never by glob) with `tests/test_example_templates.py` standing in

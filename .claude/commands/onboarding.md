@@ -238,12 +238,16 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    rows: **US-wide, every source on, and a 4-hour limit on each nightly run.**
    Step 1's first scrape is capped much shorter so it finishes while they wait.
 
-3. `bullets.md` and `skills_master.md` — **draft both yourself** from what the
-   resume says. This is the step that decides every generated document.
-   - Group into contexts (one per employer, project or degree), pick a short
-     `<CTX>` tag, id the bullets `B-<CTX>-NN` zero-padded (`B-WID-01`) —
-     `skills_master.md`'s `evidence:` references point at them. Fill `source`,
-     `tags` and `evidence` from the resume.
+3. `resume.yaml`, `bullets.md` and `skills_master.md` — **draft all three
+   yourself** from what the resume says. This is the step that decides every
+   generated document.
+   - `resume.yaml`: name, contact line and education, copied as the resume
+     states them, plus one `contexts:` entry per employer or project (its
+     `section`, `title`, `org`, `location`, `dates`). Leave each context's
+     `lanes` empty — `/new-vertical pass-b` sets the budgets.
+   - Id the bullets `B-<CTX>-NN` zero-padded (`B-WID-01`), where `<CTX>` is the
+     context's key in `resume.yaml`. `skills_master.md`'s `evidence:`
+     references point at them. Fill `tags` and `evidence` from the resume.
    - **Every useful synonym per bullet**, lane-aware: draft the full set of
      phrasings a posting in this lane could plausibly use for that same claim —
      the process name, the artifact name, the tool-flavored name, the
@@ -255,8 +259,8 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
      evidence, each with an `evidence` reference to a real `B-*` id, the same
      maximal `allowable_synonyms` treatment, and up to two display aliases
      (`"Postgres"` for PostgreSQL). A skill with no bullet behind it does not go
-     in the file. Leave `vertical_lean` empty — `/tune-vertical` tags it once
-     real rows exist.
+     in the file. Leave `show` empty — `/new-vertical pass-b` places each skill
+     on the lane's lines.
    - **Review by exception.** Print only the 3-5 items the resume genuinely
      leaves ambiguous, each with the reading you took, then one line: everything
      else was transcribed as written, and `profile/bullets.md` is editable any
@@ -270,17 +274,13 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    `rules` as shipped. Show the filled file once. A field the resume cannot
    answer stays empty — `/apply` parks the role rather than inventing an answer.
 
-5. One line, no question: `bullets_diction_pass_completed` in
-   `profile/de_ai_rules.yaml` exempts confirmed canonical text from Tier 2
-   banned-phrase linting. Leave it `false`; flip it only if the user asks.
-
-6. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`
-   and `resume_<lane>.md` from the bullets just authored, removes the
+5. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`
+   and the lane's resume shape from the bullets just authored, removes the
    `.pass_a_only` marker, and ends with `verticals-check` passing. It asks
    nothing. If the check does not pass, stop and report.
 
    Skill weights, `title_include_terms`, rubric tier boundaries, classifier
-   collisions and `vertical_lean` tagging stay out of both passes. The include
+   collisions stay out of both passes. The include
    gate is step 3's, tested against real titles; the rest is `/tune-vertical`'s.
 
 ## Step 3 — scoring starts (~3 min, 2 questions)
@@ -468,7 +468,7 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
 
 - **`/tune-vertical <lane>`** — the deep pass on the lane: search terms, skill
   weights, the title gate, classifier collisions, `drop_phrases`, rubric
-  tiers, `vertical_lean` tags. Run it once a few days of shortlists exist. This
+  tiers, the resume shape. Run it once a few days of shortlists exist. This
   is the fix when the shortlist stays thin or keeps surfacing the wrong titles.
 - **`/suggest-synonyms`** again — step 4 ran it once, against one day of
   postings. It gets better as `shortlist/*.md` accumulates.

@@ -302,10 +302,10 @@ class TestCrossReferences:
         pointer = re.search(r"/onboarding step (\d+)", new_vertical_doc)
         assert pointer, "new-vertical.md no longer points at an `/onboarding step N`"
         authoring = [n for n, s in steps.items()
-                     if "draft both yourself" in s["body"] and "bullets.md" in s["body"]]
+                     if "draft all three" in s["body"] and "bullets.md" in s["body"]]
         assert len(authoring) == 1, (
             "cannot identify the step that authors bullets.md (looked for a step body "
-            f"containing 'draft both yourself' and 'bullets.md'; matched {authoring})")
+            f"containing 'draft all three' and 'bullets.md'; matched {authoring})")
         assert int(pointer.group(1)) == authoring[0], (
             f"new-vertical.md sends the user to /onboarding step {pointer.group(1)}, but "
             f"bullets.md is authored in step {authoring[0]}")

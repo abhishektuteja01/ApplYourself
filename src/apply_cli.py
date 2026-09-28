@@ -230,15 +230,11 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     vertical = tailored_dir.split("/", 1)[0]
     out_dir = APPLICATIONS / tailored_dir
 
-    company_answers = ""
-    letters = state.get("cover_letters") or []
-    if letters:
-        candidate = APPLICATIONS / letters[-1] / "company_answers.md"
-        if candidate.is_file():
-            company_answers = str(candidate)
-    # A missing cover letter is NOT a hard prerequisite here. /apply's Step 2c
-    # re-checks it against this role's actual plan, by which point it's known
-    # whether any C2 question or required cover-letter upload genuinely exists.
+    # The role folder is the truth: answers exist iff the file is there. A
+    # missing file is not a prerequisite — /apply's Step 2c decides from the
+    # board's form whether any company question needs one.
+    candidate = out_dir / "company_answers.yaml"
+    company_answers = str(candidate) if candidate.is_file() else ""
 
     # Persisted next to the role's other artifacts instead of a /tmp scratch
     # file -- an audit trail of what was submitted and why. Overwritten fresh
@@ -270,7 +266,7 @@ def load_overrides(path: Path, job_id: str | None = None,
     every value before this ever runs.
 
     `tier` is `"C1"` (drafted from bullets.md or stories.md), `"C2"` (from
-    company_answers.md), `"JD"` (a figure read from the role's own
+    company_answers.yaml), `"JD"` (a figure read from the role's own
     jd_snapshot.md — supersedes a static Tier B `rules:` match, since a
     salary figure the JD itself states should win over a generic configured
     default), `"B0-LLM"` (which of a work-authorization field's full-sentence

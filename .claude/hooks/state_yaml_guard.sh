@@ -17,7 +17,7 @@ case "$FILE" in
       echo "/track is the sole writer of state transitions:"
       echo "  uv run track <job_id> <state> [--note \"...\"]"
       echo
-      echo "Side lists (tailored_dirs[], cover_letters[], outreach[]) are"
+      echo "Side lists (tailored_dirs[], outreach[]) are"
       echo "appended through src/state_io.py helpers, also via Bash."
     } >&2
     exit 2

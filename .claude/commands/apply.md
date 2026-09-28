@@ -26,8 +26,8 @@ Two Tier C sub-cases, and they resolve differently:
   ("describe your experience with X"). Draft it, same NO-FAB discipline as
   `/tailor`.
 - **C2** — company-specific or motivational ("why us", "what excites you
-  about our product"). Resolved from that role's `company_answers.md`
-  (`/cover-letter` §7b already drafted it), never freshly drafted here, and
+  about our product"). Resolved from that role's `company_answers.yaml`
+  (written once by `/company-answers`), never freshly drafted here, and
   never from a generic template.
 
 A third, narrower case rides alongside C1/C2: a salary/compensation
@@ -210,47 +210,44 @@ makes no difference to what happens next.
 If the called Skill errors or hard-refuses, surface its output verbatim and
 stop; state stays untouched.
 
-After dispatch (or immediately, if skipped because `$COMPANY_ANSWERS` was
-already set):
+From here on the answers file is `${OUT_DIR}/company_answers.yaml` whenever it
+exists; read that path directly rather than a shell variable from an earlier
+call.
+
+**Self-promotion** — fires only from `saved`, so it is a no-op when
+`/cover-letter` already moved the role this run:
 
 ```bash
-cd "$(git rev-parse --show-toplevel)"
-test -f "${OUT_DIR}/company_answers.md" && COMPANY_ANSWERS="${OUT_DIR}/company_answers.md"
+cd "$(git rev-parse --show-toplevel)" && uv run track "$JOB_ID" tailored --if saved --note "resume on file; board needs no cover letter, or one already exists"
 ```
-
-**Self-promotion** — read `.claude/shared/self_promote.md` and run its
-block, with `NOTE="resume on file; board needs no cover letter, or one
-already exists"`. Re-reading state from disk there catches `/cover-letter`
-Step 7b already firing `saved -> tailored` this run, so this is a no-op
-instead of a double transition when that happened.
 
 Continue to Step 4 with the classification from above already in hand.
 
-## Step 4 — resolve C2 from `company_answers.md`
+## Step 4 — resolve C2 from `company_answers.yaml`
 
 **If Step 2c found no C2 question, skip this step entirely** — most boards
 ask none, and the file is only needed by the ones that do.
 
-`Read` `$COMPANY_ANSWERS` (printed in Step 1 — Step 2c's gate already
-guaranteed this is non-empty if a C2 question exists). It has exactly three
-sections: `why_company`, `why_role`, `what_interests_you_about_product`.
+`Read` `${OUT_DIR}/company_answers.yaml` (Step 2c's gate already guaranteed it
+exists if a C2 question does). It has exactly three answer keys: `why_company`,
+`why_role`, `what_interests_you_about_product`. A `null` value means no
+research.
 
 Match each C2 label to a section by keyword, the same mechanism as Tier B's
 `match:` keywords (§4):
 
-| label mentions | section |
+| label mentions | key |
 |---|---|
 | "why us", "why [Company]", "why do you want to work here", "why are you interested in [Company]" | `why_company` |
 | "why this role", "why are you interested in this position/role", "why do you want this job" | `why_role` |
 | "what excites you about", "what interests you about", "what do you like about our product/what we build" | `what_interests_you_about_product` |
 
-For each match: if that section's text is the literal `INSUFFICIENT_RESEARCH`,
-**do not resolve it** — leave the question exactly as the plan found it
+For each match: if that key is `null`, **do not resolve it** — leave the question exactly as the plan found it
 (parked if required, blank if optional). Otherwise add
 `"<field_id>": {"value": "<section text>", "tier": "C2"}` to
 `$OVERRIDES_FILE`.
 
-A C2 label matching no section is treated the same as `INSUFFICIENT_RESEARCH`
+A C2 label matching no key is treated the same as `null`
 — never invent a fourth theme, never fall back to a C1 draft. A required C2
 question that cannot be resolved this way parks the role; that is correct
 behavior, not a bug to work around.
@@ -464,7 +461,8 @@ answerable only from `stories.md` — `bullets.md` has no such claim in it, and
 drafting one from a bullet is fabrication.
 
 **Read first:** `profile/stories.md`, the `C1 story priority` line in
-`profile/verticals/${VERTICAL}/tailoring.md`, and `${OUT_DIR}/keywords_to_mirror.md`.
+`profile/verticals/${VERTICAL}/tailoring.md`, and the `keywords_to_mirror` list in
+`${OUT_DIR}/jd_snapshot.md`'s front matter.
 If `profile/stories.md` does not exist, skip straight to the bullets-only path
 below; it is an optional profile file.
 
@@ -475,7 +473,7 @@ below; it is an optional profile file.
    kind takes the bullets-only path.
 2. Collect every `stories.md` entry with that `kind`. If exactly one, use it.
 3. If several, rank by the lane's `C1 story priority`, then by how many of the
-   entry's `tags` and `allowable_synonyms` appear in `keywords_to_mirror.md`.
+   entry's `tags` and `allowable_synonyms` appear in `keywords_to_mirror`.
    A `kind` match always beats a higher-priority project whose `kind` does not
    match — priority breaks ties within a kind, it does not override the kind.
 4. If no entry has that kind, take the bullets-only path and say so in the
@@ -513,21 +511,21 @@ and deletable one line at a time.
 Run the `no_ai_slop` skill in **edit** mode over every C1, C2 and AUDIT value
 this run wrote into `$OVERRIDES_FILE` (skip `"JD"`-, `"B0-LLM"`- and
 `"PICK"`-tagged entries — a bare figure or a board's own option text
-verbatim, neither drafted prose) — the same deep pass `/cover-letter` Step 4 runs over its
+verbatim, neither drafted prose) — the same deep pass `/cover-letter` runs over its
 drafted paragraphs, for the same structural AI-tells the banned-phrase
 linter can't catch (binary contrasts, colon reveals, importance puffery,
 robotic rhythm).
 
 This is a voice/structure edit, NOT a rewrite of substance — no new claim,
 tool, metric, scope, or date beyond what `profile/bullets.md` (C1) or
-`company_answers.md` (C2) already attests. Take the edited text and write it
+`company_answers.yaml` (C2) already attests. Take the edited text and write it
 back into the same `$OVERRIDES_FILE` entries, keeping their `tier` and the
 `job_id` key unchanged.
 
 ## Step 5c — lint pass over the same values
 
 **Skip if Step 5b had no entries to edit.** `/tailor`, `/cover-letter` and
-`company-answers.md` all run `src/lint.py` over their own drafted prose;
+`/company-answers` all lint their own drafted prose through `uv run app build`;
 `/apply`'s C1/C2/AUDIT drafts are the same kind of fresh-generated text and
 need the same pass — otherwise a mechanical artifact (an em dash, a smart
 quote) rides straight into `answers_override.json` unfixed.
@@ -552,7 +550,8 @@ for field_id in lintable:
     fixed, subs = fix_mechanical(text, rules)
     content[field_id]["value"] = fixed
     all_subs.extend({**s, "field": field_id} for s in subs)
-    for v in find_phrase_violations(fixed, context="resume", exempt_lines=None, rules=rules):
+    for v in find_phrase_violations(fixed, context="resume", rules=rules,
+                                    keep=["$COMPANY"]):
         all_violations.append({**v, "field": field_id})
 
 path.write_text(json.dumps(content, indent=2))
@@ -563,10 +562,10 @@ print(json.dumps({
 PYEOF
 ```
 
-If `violations` is non-empty: follow `.claude/shared/lint_loop.md` — rewrite
-the flagged field's value under NO-FAB, re-run this block, at most 5
-attempts, hard-refuse (leave the role parked, do not proceed to Step 6) if
-violations remain after that.
+`$COMPANY` is the plan JSON's `"company"` value (its name is never linted).
+If `violations` is non-empty: follow the fix loop in `.claude/shared/no_fab.md`
+— rewrite the flagged value, re-run this block, at most 5 attempts; if
+violations remain, leave the role parked and do not proceed to Step 6.
 
 ## Step 6 — re-plan and confirm the overrides landed
 

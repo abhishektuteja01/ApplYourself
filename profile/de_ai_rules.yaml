@@ -1,5 +1,5 @@
-# Read by src/lint.py via /tailor (resume.md before docx render) and /outreach
-# (draft body before write).
+# Read by src/lint.py: `uv run app build` (resume, letter, answers),
+# `verticals-check` (the sources, once), /apply and /outreach.
 #
 # Mechanical violations are auto-fixed. Banned phrases are FLAGGED and Claude
 # rewrites the offending line; linter re-runs until clean.
@@ -184,10 +184,6 @@ outreach_only:
   - "You're not alone"
   - "You're not imagining it"
 
-# CONDITIONAL EXEMPTION GATE.
-# Flip to true ONLY after the one-time onboarding diction pass over bullets.md.
-# Until true, bullets.md text is fully linted in tailored docx context.
-bullets_diction_pass_completed: false
 
 # Function words a rewording may add freely. Every other word in a reworded
 # bullet must come from that bullet's canonical text or allowable_synonyms.

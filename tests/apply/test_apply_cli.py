@@ -58,14 +58,13 @@ def repo(tmp_path, monkeypatch, tailor_dir):
             ).to_parquet(clean)
 
         def write_state(self, job_id=JOB_ID, url=GH_URL, tailored_dirs=None,
-                        cover_letters=None, state="tailored"):
+                        state="tailored"):
             d = pipeline / job_id
             d.mkdir(parents=True, exist_ok=True)
             (d / "state.yaml").write_text(yaml.safe_dump({
                 "job_id": job_id, "company": "Bushing Group", "title": "Widget Engineer",
                 "state": state, "url": url,
                 "tailored_dirs": [tailored] if tailored_dirs is None else tailored_dirs,
-                "cover_letters": [tailored] if cover_letters is None else cover_letters,
             }), encoding="utf-8")
 
     return Repo()
@@ -452,7 +451,7 @@ class TestPrepareCommand:
 
     def test_happy_path_prints_every_field(self, repo, capsys):
         repo.write_state()
-        (repo.out_dir / "company_answers.md").write_text("why_company\n", encoding="utf-8")
+        (repo.out_dir / "company_answers.yaml").write_text("why_company: x\n", encoding="utf-8")
         assert apply_cli.main(["prepare", JOB_ID]) == 0
         out = capsys.readouterr().out
         lines = dict(line.split("=", 1) for line in out.strip().splitlines())
@@ -460,7 +459,7 @@ class TestPrepareCommand:
         assert shlex.split(lines["STATE"])[0] == "tailored"
         assert shlex.split(lines["OUT_DIR"])[0] == str(repo.out_dir)
         assert shlex.split(lines["VERTICAL"])[0] == "example_primary"
-        assert shlex.split(lines["COMPANY_ANSWERS"])[0] == str(repo.out_dir / "company_answers.md")
+        assert shlex.split(lines["COMPANY_ANSWERS"])[0] == str(repo.out_dir / "company_answers.yaml")
         assert shlex.split(lines["OVERRIDES_FILE"])[0] == str(repo.out_dir / "answers_override.json")
 
     def test_resets_the_overrides_file_to_just_job_id(self, repo, capsys):
@@ -471,8 +470,8 @@ class TestPrepareCommand:
         assert apply_cli.main(["prepare", JOB_ID]) == 0
         assert json.loads(stale.read_text(encoding="utf-8")) == {"job_id": JOB_ID}
 
-    def test_no_cover_letter_leaves_company_answers_blank(self, repo, capsys):
-        repo.write_state(cover_letters=[])
+    def test_no_answers_file_leaves_company_answers_blank(self, repo, capsys):
+        repo.write_state()
         assert apply_cli.main(["prepare", JOB_ID]) == 0
         out = capsys.readouterr().out
         lines = dict(line.split("=", 1) for line in out.strip().splitlines())
@@ -611,12 +610,8 @@ class TestManifest:
 
 
 class TestEligibleQueue:
-    def test_tailored_with_both_dirs_and_letters_is_eligible(self, repo):
+    def test_tailored_with_a_dir_is_eligible(self, repo):
         repo.write_state()
-        assert apply_cli.eligible_queue(repo.pipeline) == [JOB_ID]
-
-    def test_missing_cover_letters_is_still_eligible(self, repo):
-        repo.write_state(cover_letters=[])
         assert apply_cli.eligible_queue(repo.pipeline) == [JOB_ID]
 
     def test_missing_tailored_dirs_is_not_eligible(self, repo):

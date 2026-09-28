@@ -1,11 +1,11 @@
 """Deterministic state.yaml plumbing for /track, /tailor (tailored_dirs[]),
-/cover-letter (cover_letters[]), /outreach (draft append), /standup
-(read-only rollup).
+/outreach (draft append), /standup (read-only rollup).
 
 Determinism boundary: no LLM calls. /track is the sole writer
-of state transitions (R10); /tailor, /cover-letter and /outreach mutate
-only the append-only side lists (tailored_dirs[], cover_letters[],
-outreach[]); /standup is read-only.
+of state transitions (R10); /tailor and /outreach mutate only the
+append-only side lists (tailored_dirs[], outreach[]); /standup is read-only.
+Whether a role has a cover letter or company answers is whatever files its
+tailored_dirs[-1] folder holds.
 
 State.yaml schema. State set + terminal-state rules.
 """
@@ -146,7 +146,6 @@ def transition(
             "applied_at":        now_iso if new_state == "applied" else None,
             "last_touch":        now_iso,
             "tailored_dirs":     [],
-            "cover_letters":     [],
             "notes":             "",
             "outreach":          [],
         }
@@ -197,7 +196,7 @@ def ensure_state(
 
 
 # ---------------------------------------------------------------
-# Side-list mutations (/tailor + /cover-letter + /outreach helpers)
+# Side-list mutations (/tailor + /outreach helpers)
 # ---------------------------------------------------------------
 
 def append_tailored_dir(state_path: Path, dir_name: str,
@@ -214,26 +213,6 @@ def append_tailored_dir(state_path: Path, dir_name: str,
     if dir_name not in dirs:
         dirs.append(dir_name)
     data["tailored_dirs"] = dirs
-    data["last_touch"] = _now_iso(now)
-    _write_state(state_path, data)
-    return data
-
-
-def append_cover_letter(state_path: Path, dir_name: str,
-                         *, now: datetime | None = None) -> dict:
-    """Append dir_name to cover_letters[] (/cover-letter's mutation,
-    the same side-list pattern as append_tailored_dir).
-    Idempotent: appending the same dir twice keeps a single entry."""
-    data = load_state(state_path)
-    if data is None:
-        raise ValueError(
-            f"state.yaml at {state_path} does not exist; run /track "
-            "<job_id> saved first to register the role."
-        )
-    dirs = list(data.get("cover_letters") or [])
-    if dir_name not in dirs:
-        dirs.append(dir_name)
-    data["cover_letters"] = dirs
     data["last_touch"] = _now_iso(now)
     _write_state(state_path, data)
     return data

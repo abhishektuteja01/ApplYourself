@@ -403,7 +403,7 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     if s_text != shape.summary:
         s_source = "written"
         sp = [Problem("summary", "unknown_id", f"{u} is not in bullets.md") for u in s_uses if u not in src.bullets]
-        grounds = " ".join([shape.summary, _context_text(src)] + [bullet_text(src, u) for u in s_uses])
+        grounds = " ".join([shape.summary, context_text(src)] + [bullet_text(src, u) for u in s_uses])
         sp += [Problem("summary", "number", f"{n} is in none of the cited bullets") for n in ungrounded_numbers(s_text, grounds)]
         backed = {s for s in claimed_skills(src, grounds)} | {sid for sid, s in src.skills.items()
                                                               if evidence_bullets(s) & set(s_uses)}
@@ -495,7 +495,7 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     return Built(markdown=md, trace=trace, problems=problems, swapped=swapped)
 
 
-def _context_text(src: Sources) -> str:
+def context_text(src: Sources) -> str:
     return " ".join(str(c.get(k) or "") for c in src.contexts.values() for k in ("title", "org", "dates"))
 
 

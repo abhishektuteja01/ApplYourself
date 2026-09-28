@@ -1,18 +1,54 @@
-# Shared: the no-fabrication rules
+# Shared: the writing rules and the fix loop
 
-Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`,
-`/suggest-synonyms`, `/new-vertical` and `/tune-vertical`.
+Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
+`/interview`, `/suggest-synonyms`, `/new-vertical`, `/tune-vertical` and
+`/onboarding`.
 
-- **NO-FAB** — never introduce a tool, metric, scope, date, or claim absent from
-  the source (a canonical bullet, or the vertical's résumé for frozen/summary
-  text). No fabricated module-config claims.
+## The rules
+
+- **NO-FAB** — never introduce a tool, metric, scope, date or claim that no
+  source attests. The sources are `profile/bullets.md` (claims),
+  `profile/skills_master.md` (skills) and `profile/resume.yaml` (the fixed
+  lines). A sentence about the company or the role may use the JD and your
+  research. A sentence about you may only use your bullets.
 - **NO-DRIFT** — analogy is not equivalence. A specialized module's workflow is
-  not the generic workflow it resembles. Relabeling that asserts equivalence is
-  fabrication even if it reads naturally. This is the drift `trace.md` catches.
-- **REPHRASE-LICENSE** — a `rephrase` may use ONLY words in the bullet's
-  canonical text plus that bullet's `allowable_synonyms`. Every content word in
-  the result must trace to one of those; otherwise it is illegal
-  (NO-FAB / NO-DRIFT).
-- **SKILLS-SOURCE** — the Skills section is built from
-  `profile/skills_master.md` entries only, never copied from the résumé's own
-  Skills block.
+  not the generic workflow it resembles, and integration-level exposure is not
+  ownership. Relabeling that asserts equivalence is fabrication, even when it
+  reads naturally.
+- **REPHRASE-LICENSE** — a reworded bullet may use only the words in that
+  bullet's canonical text, its `allowable_synonyms`, and the stopwords in
+  `profile/de_ai_rules.yaml`.
+- **SKILLS-SOURCE** — a Skills line lists only `skills_master.md` entries whose
+  `show` names that line. A skill is shown by its `name` or one of its
+  `allowable_synonyms`.
+
+## What code checks
+
+`uv run app build ...` checks all of this and reports each break as a problem
+with a `code`:
+
+| code | means |
+|---|---|
+| `unknown_id` | a bullet or skill id that does not exist |
+| `context`, `budget`, `layout` | the plan breaks the lane's shape: a context not on this lane, a bullet count outside `{min, max}`, a skill on the wrong line, or a missing or extra key |
+| `license` | a reworded bullet uses a word outside REPHRASE-LICENSE |
+| `number` | a number that no cited bullet, and not the JD, contains |
+| `skill` | a summary names a skill no cited bullet backs, or an alias that is not an allowable synonym |
+| `lint` | a banned phrase from `profile/de_ai_rules.yaml`. Company names, the recipient's name, skill names, URLs and dates are never flagged |
+| `pages` | the pdf runs past one page |
+
+Mechanical fixes (dashes, smart quotes, ellipses, odd spaces) are applied
+silently and never count as problems. Source files are checked once, by
+`uv run verticals-check`, so a build only checks the text you wrote.
+
+## The fix loop
+
+1. Fix exactly what each problem names, under the rules above. A fix that
+   adds a new claim is worse than the phrase it removed.
+2. Re-run the same build.
+3. Stop after 5 builds. A resume then runs once with `--final`. For prose,
+   delete each sentence that still fails, then build once more. If it still
+   fails, stop and report the problem, the phrase and where it is.
+
+Never ship a flagged problem, and never delete a file you did not write this
+run. A failed build writes nothing but its report.

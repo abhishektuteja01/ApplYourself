@@ -12,8 +12,10 @@ offer, rejected, withdrawn, ghosted`. Terminal (`offer, rejected, withdrawn,
 ghosted`) reject all out-transitions.
 
 `/track` is the **sole writer of state transitions** (R10): every transition goes
-through it, and no other command writes `state:` itself. `/tailor` and `/outreach`
-only append to side lists (`tailored_dirs[]`, `outreach[]`). `/standup` is
+through it, and no other command writes `state:` itself. `/tailor` (through
+`uv run app build resume`) and `/outreach` only append to side lists
+(`tailored_dirs[]`, `outreach[]`). Whether a role has a cover letter or company
+answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
 
 `.claude/hooks/state_yaml_guard.sh` blocks the Edit/Write tools from targeting a
@@ -23,7 +25,8 @@ read-only and is the sole regenerator of `pipeline.md`.
 
 Both route through `/track` and both are guarded to fire only from `saved`:
 
-- `/cover-letter` fires it after appending to `cover_letters[]`.
+- `/cover-letter` fires it after `uv run app build letter` succeeds, with
+  `uv run track <id> tailored --if saved`.
 - `/apply` fires it itself, on a `saved` role, the moment its own plan-check
   confirms the board genuinely needs no cover letter (no required cover-letter
   upload, no unresolved company-specific question).

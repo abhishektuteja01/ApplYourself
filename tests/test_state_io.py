@@ -12,7 +12,6 @@ from src.state_io import (
     CLOSED_STATES,
     TERMINAL_STATES,
     VALID_STATES,
-    append_cover_letter,
     append_outreach_draft,
     append_tailored_dir,
     ensure_state,
@@ -298,7 +297,6 @@ def test_side_list_helpers_refuse_an_empty_file(tmp_path):
     p = _empty_state_file(tmp_path)
     for call in (
         lambda: append_tailored_dir(p, "d1"),
-        lambda: append_cover_letter(p, "c1"),
         lambda: append_outreach_draft(p, channel="recruiter", to_name="S",
                                       draft_file="d.md"),
         lambda: mark_outreach_sent(p, channel="recruiter", to_name="S"),
@@ -419,111 +417,3 @@ def test_ensure_state_preserves_applied_at_and_history(tmp_path):
     assert len(after["state_history"]) == 2
 
 
-# ---------- cover_letters[] ----------
-
-def test_append_cover_letter(tmp_path):
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial())
-    append_cover_letter(p, "example_primary/2026-06-06_acme_widget-fn_aaaaaaaa")
-    assert load_state(p)["cover_letters"] == ["example_primary/2026-06-06_acme_widget-fn_aaaaaaaa"]
-
-
-def test_append_cover_letter_idempotent(tmp_path):
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial())
-    append_cover_letter(p, "d1")
-    append_cover_letter(p, "d1")   # same again — should NOT duplicate
-    append_cover_letter(p, "d2")
-    assert load_state(p)["cover_letters"] == ["d1", "d2"]
-
-
-def test_append_cover_letter_preserves_order(tmp_path):
-    """cover-letter.md reads the LAST entry, so append order is load-bearing."""
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial())
-    for d in ("d1", "d2", "d3"):
-        append_cover_letter(p, d)
-    assert load_state(p)["cover_letters"] == ["d1", "d2", "d3"]
-
-
-def test_append_cover_letter_requires_existing_state(tmp_path):
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    with pytest.raises(ValueError, match="does not exist"):
-        append_cover_letter(p, "d1")
-
-
-def test_append_cover_letter_bumps_last_touch_only(tmp_path):
-    """R10: /cover-letter may append to a side list but must never transition."""
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "applied", initial_fields=_initial(),
-                now=datetime(2026, 6, 1, 10, 0))
-    before = load_state(p)
-    append_cover_letter(p, "d1", now=datetime(2026, 6, 6, 9, 30))
-    after = load_state(p)
-    assert after["state"] == "applied"
-    assert after["applied_at"] == before["applied_at"]
-    assert after["last_touch"] == "2026-06-06T09:30:00"
-    assert after["state_history"] == before["state_history"]
-
-
-def test_append_cover_letter_independent_of_tailored_dirs(tmp_path):
-    """Two side lists, two keys — one must not clobber the other."""
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial())
-    append_tailored_dir(p, "t1")
-    append_cover_letter(p, "c1")
-    data = load_state(p)
-    assert data["tailored_dirs"] == ["t1"]
-    assert data["cover_letters"] == ["c1"]
-
-
-def test_append_cover_letter_over_a_preexisting_null(tmp_path):
-    """A state.yaml written with `cover_letters:` (null) must not raise."""
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial())
-    data = load_state(p)
-    data["cover_letters"] = None
-    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-    append_cover_letter(p, "c1")
-    assert load_state(p)["cover_letters"] == ["c1"]
-
-
-def test_append_cover_letter_returns_the_written_state(tmp_path):
-    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial())
-    returned = append_cover_letter(p, "c1")
-    assert returned == load_state(p)
-
-
-class TestEnsureState:
-    """ensure_state is the R10 boundary: /tailor uses it to register a role
-    without becoming a transition writer. Untested until now, so nothing
-    stopped it from quietly appending history on an existing role."""
-
-    def test_creates_at_saved_when_absent(self, tmp_path):
-        p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-        data, created = ensure_state(p, _initial(), now=datetime(2026, 6, 1))
-        assert created is True
-        assert data["state"] == "saved"
-        assert len(data["state_history"]) == 1
-
-    def test_is_a_no_op_that_appends_no_history_on_an_existing_role(self, tmp_path):
-        p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-        transition(p, "saved", initial_fields=_initial(), now=datetime(2026, 6, 1))
-        transition(p, "applied", now=datetime(2026, 6, 2))
-        before = _yaml_load(p)
-
-        data, created = ensure_state(p, _initial(), now=datetime(2026, 6, 3))
-        assert created is False
-        assert data["state"] == "applied"
-        assert _yaml_load(p) == before, "ensure_state must not write anything"
-
-    def test_leaves_a_terminal_state_untouched(self, tmp_path):
-        """A re-tailor of a rejected role must not resurrect it, and must not
-        trip the terminal-state guard either."""
-        p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-        transition(p, "saved", initial_fields=_initial(), now=datetime(2026, 6, 1))
-        transition(p, "rejected", now=datetime(2026, 6, 2))
-        data, created = ensure_state(p, _initial(), now=datetime(2026, 6, 3))
-        assert created is False
-        assert data["state"] == "rejected"

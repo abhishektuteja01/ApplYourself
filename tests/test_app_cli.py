@@ -1,0 +1,235 @@
+"""Tests for src/app_cli.py — `uv run app`, the plumbing of /tailor,
+/cover-letter and /company-answers. Sources are the committed example world
+(conftest), the verticals config is the fixture, Word is never called."""
+from __future__ import annotations
+
+import json
+import shutil
+
+import pandas as pd
+import pytest
+import yaml
+
+from src import app_cli, docx_render, paths, track_cli
+
+JOB = "a1b2c3d4"
+JD = "Build widget assembly tooling in Python and SQL across 4 plants. Salary 120000."
+
+
+@pytest.fixture(autouse=True)
+def repo(tmp_path, monkeypatch):
+    for mod in (app_cli, track_cli):
+        monkeypatch.setattr(mod, "CLEAN", tmp_path / "clean.parquet")
+        monkeypatch.setattr(mod, "SCORED", tmp_path / "scored.parquet")
+        monkeypatch.setattr(mod, "PIPELINE", tmp_path / "pipeline")
+    monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
+    monkeypatch.setattr(app_cli, "APPLICATIONS", tmp_path / "applications")
+    (tmp_path / "profile").mkdir()
+    shutil.copy(paths.PROFILE / "resume_template.example.docx", tmp_path / "profile" / "resume_template.docx")
+    shutil.copy(paths.PROFILE / "cover_letter_template.example.docx",
+                tmp_path / "profile" / "cover_letter_template.docx")
+    monkeypatch.setattr(app_cli, "export_pdf",
+                        lambda docx, token: {"status": "skipped", "path": "", "pages": 0, "detail": "no Word"})
+    _parquets(tmp_path)
+    return tmp_path
+
+
+def _parquets(tmp_path, **over):
+    row = {"job_id": JOB, "company": "Acme Widgets", "title": "Widget Engineer",
+           "url": "https://example.com/j", "posted_date": pd.NaT, "jd_text": JD,
+           "vertical": "example_primary", "source": "greenhouse", "location": "Remote", **over}
+    pd.DataFrame([row]).to_parquet(tmp_path / "clean.parquet")
+    pd.DataFrame([{"job_id": JOB, "vertical": row["vertical"], "fit_score": 80,
+                   "sponsorship_label": "unknown", "keywords_to_mirror": ["SQL", "Kubernetes"]}]
+                 ).to_parquet(tmp_path / "scored.parquet")
+
+
+def _run(capsys, *argv):
+    code = app_cli.main(list(argv))
+    return code, json.loads(capsys.readouterr().out)
+
+
+def _write(repo, rel_dir, name, data):
+    (repo / rel_dir / name).write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def _baseline_plan():
+    return {"entries": [{"id": b} for b in ("B-WID-01", "B-WID-02", "B-WID-03", "B-SPR-01")]}
+
+
+def _built(repo, capsys):
+    code, out = _run(capsys, "new", JOB, "--today", "2026-09-28")
+    assert code == 0, out
+    _write(repo, out["work_dir"], "resume_plan.yaml", _baseline_plan())
+    code, built = _run(capsys, "build", "resume", JOB)
+    assert code == 0, built
+    return built["dir"]
+
+
+# ---------- new ----------
+
+def test_new_opens_a_folder_registers_the_role_and_snapshots_the_jd(repo, capsys):
+    code, out = _run(capsys, "new", JOB, "--today", "2026-09-28")
+    assert code == 0
+    assert out["work_dir"] == f"applications/example_primary/2026-09-28_acme-widgets_widget-engineer_{JOB}"
+    assert out["keywords_to_mirror"] == ["SQL", "Kubernetes"]
+    head, _, body = (repo / out["work_dir"] / "jd_snapshot.md").read_text(encoding="utf-8")[4:].partition("\n---\n")
+    facts = yaml.safe_load(head)
+    assert facts["keywords_to_mirror"] == ["SQL", "Kubernetes"] and facts["posted_date"] == ""
+    assert JD in body
+    assert yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["state"] == "saved"
+
+
+def test_new_reuses_an_unfinished_folder_instead_of_piling_up_versions(repo, capsys):
+    _, first = _run(capsys, "new", JOB, "--today", "2026-09-28")
+    _, again = _run(capsys, "new", JOB, "--today", "2026-09-29")
+    assert again["work_dir"] == first["work_dir"]
+
+
+def test_new_after_a_built_resume_opens_the_next_version_across_lanes(repo, capsys):
+    _built(repo, capsys)
+    (repo / "applications" / "example_secondary" / f"2026-01-01_x_y_{JOB}_v4").mkdir(parents=True)
+    _, out = _run(capsys, "new", JOB, "--today", "2026-09-30")
+    assert out["work_dir"].endswith(f"{JOB}_v5")
+
+
+def test_new_refuses_a_lane_without_a_resume_block(repo, capsys):
+    _parquets(repo, vertical="example_tertiary")
+    code, out = _run(capsys, "new", JOB)
+    assert code == 1 and "no resume: block" in out["error"]
+
+
+def test_new_slug_falls_back_to_the_job_id(repo, capsys):
+    _parquets(repo, company="!!!", title="Ingénieur Widgets")
+    _, out = _run(capsys, "new", JOB, "--today", "2026-09-28")
+    assert out["work_dir"].endswith(f"2026-09-28_{JOB}_ingénieur-widgets_{JOB}")
+
+
+def test_new_without_scored_parquet_errors(repo, capsys):
+    (repo / "scored.parquet").unlink()
+    code, out = _run(capsys, "new", JOB)
+    assert code == 1 and "scored.parquet" in out["error"]
+
+
+# ---------- build resume ----------
+
+def test_build_resume_writes_docx_trace_and_state(repo, capsys):
+    rel = _built(repo, capsys)
+    folder = repo / rel
+    assert (folder / "Alex_Example_Resume.docx").is_file()
+    trace = (folder / "trace.md").read_text(encoding="utf-8")
+    assert "source=B-WID-01 transformation=unchanged" in trace
+    assert "- Kubernetes: not landed" in trace
+    state = yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))
+    assert state["tailored_dirs"] == [rel.removeprefix("applications/")]
+    assert state["state"] == "saved"                     # building never transitions
+
+
+def test_build_resume_reports_problems_and_writes_nothing(repo, capsys):
+    _, out = _run(capsys, "new", JOB)
+    plan = _baseline_plan()
+    plan["entries"][0]["text"] = "Spearheaded widget work across 9 plants."
+    _write(repo, out["work_dir"], "resume_plan.yaml", plan)
+    code, res = _run(capsys, "build", "resume", JOB)
+    assert code == 2
+    assert {"license", "number", "lint"} <= {p["code"] for p in res["problems"]}
+    assert not list((repo / out["work_dir"]).glob("*.docx"))
+
+    code, res = _run(capsys, "build", "resume", JOB, "--final")
+    assert code == 0 and res["swapped"] == ["B-WID-01 -> canonical"]
+
+
+def test_build_resume_over_one_page_is_a_problem(repo, capsys, monkeypatch):
+    monkeypatch.setattr(app_cli, "export_pdf",
+                        lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""})
+    _, out = _run(capsys, "new", JOB)
+    _write(repo, out["work_dir"], "resume_plan.yaml", _baseline_plan())
+    code, res = _run(capsys, "build", "resume", JOB)
+    assert code == 2 and res["problems"][0]["code"] == "pages"
+    assert "tailored_dirs" not in yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8")) \
+        or not yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["tailored_dirs"]
+
+
+# ---------- dir ----------
+
+def test_dir_points_everything_at_the_built_folder(repo, capsys):
+    rel = _built(repo, capsys)
+    _, info = _run(capsys, "dir", JOB)
+    assert info["dir"] == rel and info["has_resume"] and not info["has_letter"] and not info["has_answers"]
+    _run(capsys, "new", JOB)                      # a newer unfinished folder
+    _, info = _run(capsys, "dir", JOB)
+    assert info["dir"] == rel and info["work_dir"] != rel
+
+
+# ---------- answers ----------
+
+def _answers(**over):
+    return {"researched_at": "2026-09-28", "sources": ["https://acme.example"], "uses": [],
+            "why_company": "Acme builds widget tooling for plants. Its teams publish their line data.",
+            "why_role": "The role builds assembly tooling in Python. It works across 4 plants.",
+            "what_interests_you_about_product": None, **over}
+
+
+def test_answers_accepts_null_for_no_research(repo, capsys):
+    rel = _built(repo, capsys)
+    _write(repo, rel, "company_answers.yaml", _answers())
+    code, out = _run(capsys, "build", "answers", JOB)
+    assert code == 0 and out["no_research"] == ["what_interests_you_about_product"]
+
+
+@pytest.mark.parametrize("over,code", [
+    ({"why_company": "One sentence only."}, "layout"),
+    ({"why_role": "The role pays well. It cut costs 40% in a year."}, "number"),
+    ({"why_company": "Acme is a robust team. It builds widgets."}, "lint"),
+    ({"extra": "x"}, "layout"),
+    ({"uses": ["B-NOPE-01"]}, "unknown_id"),
+])
+def test_answers_problems(repo, capsys, over, code):
+    rel = _built(repo, capsys)
+    _write(repo, rel, "company_answers.yaml", _answers(**over))
+    rc, out = _run(capsys, "build", "answers", JOB)
+    assert rc == 2 and code in {p["code"] for p in out["problems"]}
+
+
+def test_answers_numbers_from_a_cited_bullet_pass(repo, capsys):
+    rel = _built(repo, capsys)
+    _write(repo, rel, "company_answers.yaml", _answers(
+        uses=["B-SPR-01"], why_role="I scored 12,000 measurements before. This role does that daily."))
+    assert _run(capsys, "build", "answers", JOB)[0] == 0
+
+
+# ---------- letter ----------
+
+def _letter(**over):
+    return {"salutation": "Dear May Chen,", "uses": ["B-WID-01"],
+            "body": ["Acme builds the widget tooling I used across four plants.",
+                     "I owned the daily widget assembly throughput report for a national client."],
+            "closing": "Best,", **over}
+
+
+def test_letter_renders_and_never_transitions(repo, capsys):
+    rel = _built(repo, capsys)
+    _write(repo, rel, "cover_letter.yaml", _letter())
+    code, out = _run(capsys, "build", "letter", JOB)
+    assert code == 0, out
+    assert (repo / rel / "Alex_Example_Cover_Letter.docx").is_file()
+    assert yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["state"] == "saved"
+
+
+@pytest.mark.parametrize("over,code", [
+    ({"body": "one string"}, "layout"),
+    ({"body": ["We share a love of widgets across 97 plants at Acme."]}, "number"),
+    ({"body": ["I love widgets and want this job."]}, "layout"),     # never names the company
+    ({"uses": []}, "layout"),
+])
+def test_letter_problems(repo, capsys, over, code):
+    rel = _built(repo, capsys)
+    _write(repo, rel, "cover_letter.yaml", _letter(**over))
+    rc, out = _run(capsys, "build", "letter", JOB)
+    assert rc == 2 and code in {p["code"] for p in out["problems"]}
+
+
+def test_letter_before_a_resume_is_refused(repo, capsys):
+    _run(capsys, "new", JOB)
+    code, out = _run(capsys, "build", "letter", JOB)
+    assert code == 1 and "no built resume" in out["error"]

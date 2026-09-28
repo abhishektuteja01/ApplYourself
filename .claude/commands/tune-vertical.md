@@ -1,5 +1,5 @@
 ---
-description: Deep tuning pass on a vertical that already exists — run it after your first shortlist, against postings you have actually seen. Sharpens search terms, skill_weights, the title gate, classifier rules and collisions, drop phrases, rubric tier boundaries and vertical_lean tags. Config only, no code edits. Use /new-vertical to create a lane, this to sharpen one.
+description: Deep tuning pass on a vertical that already exists — run it after your first shortlist, against postings you have actually seen. Sharpens search terms, skill_weights, the title gate, classifier rules and collisions, drop phrases, rubric tier boundaries and the lane's resume shape (skill lines, baseline picks, budgets). Config only, no code edits. Use /new-vertical to create a lane, this to sharpen one.
 model: opus
 effort: high
 allowed-tools:
@@ -41,9 +41,9 @@ confirmed → run the round's verify → report → next round.**
   `tests/test_real_config_drift.py` is committed. Add structural assertions
   there if the lane needs them; nothing quoted from `profile/`.
 - **NO-FAB** — read `.claude/shared/no_fab.md`. `skill_weights`, rubric anchors
-  and `vertical_lean` tags come only from the user's answers plus existing
+  and the resume shape come only from the user's answers plus existing
   `profile/bullets.md` / `profile/skills_master.md` content. Never invent a
-  skill; never add a new `SKILL-*` entry, only tag existing ones. Gaps go to
+  skill; never add a new `SKILL-*` entry or bullet, only place existing ones. Gaps go to
   `/suggest-synonyms`.
 - Editing terms or rules does **not** reclassify existing rows. The effect shows
   up on the next `discover`; `/score --all --vertical <name>` re-judges what is
@@ -227,19 +227,21 @@ Then have the user look at what changed:
 `/score --all --vertical <name>`, then the shortlist. It re-judges every row in the
 lane's window, so it costs a full scoring pass — their call.
 
-## Round 4 — tagging, tests, audit
+## Round 4 — resume shape, tests, audit
 
-1. Propose `vertical_lean` additions **on existing `SKILL-*` entries only** in
-   `profile/skills_master.md` (values must be configured vertical names — the
-   file's header says so). Drive it from Round 3's weights and the shortlist's
-   `keywords_to_mirror`: a skill this lane leans on should carry the tag, since
-   `/tailor` Step 3e ranks the Skills section by it. Show the proposed entry
-   list; the user approves the set.
+1. Propose changes to this lane's resume shape, driven by Round 3's weights and
+   the shortlist's `keywords_to_mirror`:
+   - `show: {<name>: "<line label>"}` on existing `SKILL-*` entries in
+     `profile/skills_master.md` that the shortlist keeps asking for; drop the
+     lane from `show` on skills no posting names
+   - `default_for` on the bullets that land the most keywords, within each
+     context's `{min, max}` in `profile/resume.yaml`
+   Show the proposed changes; the user approves the set.
 
 2. `tests/test_real_config_drift.py` runs against `profile/verticals.yaml` when
    present and is what covers this lane. It fails if any
    `search_terms`/`linkedin_terms` entry misclassifies, if
-   `rubric.md`/`tailoring.md`/`resume_file` are missing, or if a
+   the source check fails or a baseline resume does not build, or if a
    `title_exclude_terms` entry kills one of its own search terms. Add structural assertions there if this
    round's changes need more — never a literal real term.
 
@@ -249,7 +251,7 @@ lane's window, so it costs a full scoring pass — their call.
    uv run verticals-check
    uv run pytest tests -q
    uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
-   grep -c "vertical_lean:.*<name>" profile/skills_master.md
+   grep -c "<name>:" profile/skills_master.md
    ```
 
    Full suite green is a hard gate. The drift test skipping means it never saw
@@ -257,7 +259,7 @@ lane's window, so it costs a full scoring pass — their call.
 
 4. Completion summary: every file touched, every locked decision (terms, title
    gate, rule positions and collision rulings, drop rules, weights, rubric
-   boundaries, tags), anything deliberately left alone, and the two follow-ups —
+   boundaries, resume shape), anything deliberately left alone, and the two follow-ups —
    `uv run discover` for the term and rule changes to take effect, and
    `/score --all --vertical <name>` for the weight and rubric changes to reach rows
    already scored.

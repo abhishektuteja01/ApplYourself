@@ -131,8 +131,8 @@ That is the whole rule. Reachability is not a judgment call to make here.
 - **≤ 100 words**
 - **LEAD with the shared affiliation** -- a school or employer the recipient
   and the user have in common, taken from the entry's `shared_affiliation` in
-  `profile/contacts.yaml`, the `--via` context, or a `source:` field in
-  `profile/bullets.md`
+  `profile/contacts.yaml`, the `--via` context, or an employer or school in
+  `profile/resume.yaml`
 - **Ask for a 15-minute call -- NOT a referral up front**
 - **OPT disclosure: light, honest, upfront mention**
 
@@ -200,8 +200,8 @@ If any violation:
 - Rewrite the offending line using a phrasing that is (a) in the user's
   voice per `voice_samples.md` and (b) not in any banned list, AND not
   in `outreach_only`.
-- Re-save and re-lint per `.claude/shared/lint_loop.md` (read it: it holds the
-  attempt cap and the hard-refuse rule).
+- Re-save and re-lint per the fix loop in `.claude/shared/no_fab.md` (read it:
+  it holds the attempt cap).
 - If still failing after 5: refuse with the specific line + the phrase
   that won't clean, and tell the user to either tweak the draft by hand
   or expand `voice_samples.md` with an alternate phrasing.

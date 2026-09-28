@@ -1,14 +1,22 @@
 ---
 paths:
   - "src/lint.py"
+  - "src/app_cli.py"
   - "profile/de_ai_rules.yaml"
 ---
 
 # Linting (`src/lint.py`)
 
-Two tiers: Tier 1 mechanical fixes (dashes, smart quotes, ellipsis, NBSP,
-zero-width) auto-applied to everything; Tier 2 banned-phrase violations
-(`profile/de_ai_rules.yaml`) are flagged only — the command session loops the LLM
-to rewrite until the linter returns empty. Verbatim canonical `bullets.md` text is
-exempt from Tier 2 only when `bullets_diction_pass_completed: true`; outreach is
-never exempt.
+Two tiers: Tier 1 mechanical fixes (dashes, smart quotes, ellipsis, odd spaces)
+auto-applied, with every replacement value read from `profile/de_ai_rules.yaml`;
+Tier 2 banned-phrase violations are flagged only, and the command session
+rewrites until the linter returns empty (the fix loop in
+`.claude/shared/no_fab.md`).
+
+- One dash rule for en and em dashes: a dash joining dates, numbers or day names
+  is a range; anything else is an aside.
+- Link targets, URLs, emails, month names used as dates and the caller's `keep`
+  terms (company, recipient, skill names) are never scanned.
+- Filler starters are checked at every sentence start.
+- Sources (`bullets.md`, `skills_master.md`, `resume.yaml`, lane summaries) are
+  linted once by `verticals-check`; builds lint only generated text.

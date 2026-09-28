@@ -18,8 +18,9 @@ that let `/tailor` mirror high-frequency JD terms.
 
 **Track 2 — memory unlock (bullets):** independently reasons about tools, interfaces, and
 processes the user *likely touched but hasn't documented*, given the specifics of
-each context in `profile/bullets.md` — every distinct `source:` value is one
-context (an employment, a teaching role, a personal project). These are surfaced as
+each context in `profile/resume.yaml` `contexts:` (an employment, a teaching
+role, a personal project); a bullet belongs to the context its id names (`DEL`
+in `B-DEL-01`). These are surfaced as
 **confirm-before-adding prompts** — the user says yes/no, then decides whether to
 add a new bullet or extend an existing one.
 
@@ -40,8 +41,8 @@ The key distinction across tracks:
   industry cousin, and integration-level exposure to a component is not
   configuring or owning it. Never propose a relabel that widens scope, even when
   the JD's vocabulary invites it. Each bullet's `canonical` text plus `evidence`
-  field is the outer bound of what it may be restated as; the vertical's
-  `tailoring.md` names any domain-specific relabels that are banned outright.
+  field is the outer bound of what it may be restated as, and NO-DRIFT rules out
+  relabeling a specialized process as its generic cousin.
 - Memory-unlock suggestions are hypotheses only — never assert the user did something;
   always frame as a question ("Did you use X? If yes, this would be addable.")
 - If a JD keyword has no honest anchor, write `UNMAPPABLE` — do not invent.
@@ -220,7 +221,8 @@ and generate a list of tools/interfaces/processes they **probably encountered** 
 haven't documented in any bullet's canonical text or `allowable_synonyms`.
 
 **Build the inference base from `profile/bullets.md`, not from memory.** Group
-the bullets by `source:` — each distinct value is one context. Per context, read
+the bullets by context (the id prefix; its header is in `profile/resume.yaml`
+`contexts:`). Per context, read
 across its bullets' `canonical`, `tags` and `evidence` for the domain, stack,
 scale, seniority and period.
 
@@ -273,9 +275,9 @@ but haven't documented. **For each: answer yes/no.
 If yes, decide whether to add it as a synonym to an existing bullet, or flag
 it for a new bullet entirely.**
 
-| tool / concept | source context | confidence | why you probably touched it | which bullet to extend (or "new bullet") | question to confirm |
+| tool / concept | context | confidence | why you probably touched it | which bullet to extend (or "new bullet") | question to confirm |
 |---|---|---|---|---|---|
-| <tool> | <the `source:` this context came from> | likely | <what in that context's bullets makes this near-certain> | <B-ID> (<why that bullet>) | <a yes/no question naming the tool and where it would have been used> |
+| <tool> | <the context, e.g. DEL> | likely | <what in that context's bullets makes this near-certain> | <B-ID> (<why that bullet>) | <a yes/no question naming the tool and where it would have been used> |
 | ... | ... | ... | ... | ... | ... |
 ```
 
@@ -295,8 +297,8 @@ b) Draft a new canonical bullet for a genuinely undocumented capability — whic
 
 ## Step 3c — Track 3: skills_master gap-fill + memory unlock
 
-`Read` `profile/skills_master.md` (every `SKILL-*` block: `name`, `category`,
-`evidence`, `allowable_synonyms`, `vertical_lean`).
+`Read` `profile/skills_master.md` (every `SKILL-*` block: `name`, `evidence`,
+`allowable_synonyms`, `show`).
 
 **Gap-fill half:** reuse `/tmp/shortlist_keywords.json` from Step 1. For each
 keyword that names a tool/technology/library (skip process-y keywords already
@@ -317,7 +319,7 @@ handled by Track 1 — those belong to bullets, not skills), check:
 
 **Memory-unlock half:** reason about specific tools/libraries the user likely
 used but hasn't entered as a `SKILL-*` block, anchored to evidence already
-established in `profile/bullets.md` (the same per-`source:` contexts you grouped
+established in `profile/bullets.md` (the same per-context groups you built
 in Step 3b above) — e.g. if a Track 2 memory-unlock item gets
 confirmed `yes` by the user in a prior run, or is independently inferable as
 `likely` from the bullet text already on record, propose it here too. Frame
@@ -348,9 +350,9 @@ Tools/libraries you likely used but haven't entered as a `SKILL-*` block.
 **For each: answer yes/no. If yes, add a new `SKILL-*` block yourself** (this
 command never writes a new skill entry directly — same discipline as bullets).
 
-| tool / library | category | anchor evidence | confidence | question to confirm |
+| tool / library | Skills line | anchor evidence | confidence | question to confirm |
 |---|---|---|---|---|
-| <library> | <a skills_master category> | <B-ID> (<the claim it backs>) | likely | Did you use <library> (or an equivalent) for <the specific job it would have done> in <context>? |
+| <library> | <the Skills line it would show on> | <B-ID> (<the claim it backs>) | likely | Did you use <library> (or an equivalent) for <the specific job it would have done> in <context>? |
 | ... | ... | ... | ... | ... |
 ```
 
@@ -365,7 +367,7 @@ Tell the user:
 - Track 1: N ready-to-add synonyms across M bullets, K unmappable keywords
 - Track 1: top 3 highest-frequency unmappable keywords (market wants this; profile can't claim it)
 - Track 2: X memory-unlock prompts (Y flagged as "also in shortlist — high value if confirmable"),
-  broken out by `source:` context
+  broken out by context
 - Track 3: P ready-to-add skill aliases across Q skills, R memory-unlock prompts
   for skills_master.md
 - Reminder: "Answer the yes/no questions in the Memory unlocks tables first — that's

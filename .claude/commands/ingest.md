@@ -15,8 +15,8 @@ argument-hint: <url> <vertical> [resume] [cover-letter]
 `$1` = posting URL. `$2` = configured vertical name. Every whitespace-separated
 token *after* `$2` must be exactly `resume` or `cover-letter` — either, both, or
 neither, in any order; anything else → stop. Match whole tokens only, never a
-substring of the URL. `cover-letter` implies `resume`: it reuses `/tailor`'s
-`jd_snapshot.md` + `keywords_to_mirror.md`. Neither → stop after step 3 and
+substring of the URL. `cover-letter` implies `resume`: it writes into the folder
+`/tailor` builds. Neither → stop after step 3 and
 print the two commands.
 
 Never judge a row yourself — step 3 spawns a judge. Never write a state
@@ -38,14 +38,13 @@ test ! -f jobs/scored.staging/run.json || { echo "ERROR: a /score run is open. F
 pgrep -f 'discovery[.]ru[n]|/discove[r]$' >/dev/null && { echo "ERROR: a discovery run is in flight. Re-run /ingest after it finishes."; exit 1; }
 ```
 
-If `resume` was requested (or implied), also — `tailor-prep`'s prereqs, which
-would otherwise fail only after a fetch, a judge and a `scored.parquet` write:
+If `resume` was requested (or implied), also check `/tailor`'s prerequisites,
+which would otherwise fail only after a fetch, a judge and a `scored.parquet`
+write (`verticals-check` above already checked the resume sources):
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" || exit 1
-for f in profile/bullets.md profile/de_ai_rules.yaml profile/skills_master.md profile/resume_template.docx; do
-  test -f "$f" || { echo "ERROR: $f missing -- /tailor needs it."; exit 1; }
-done
+test -f profile/resume_template.docx || { echo "ERROR: profile/resume_template.docx missing -- /tailor needs it."; exit 1; }
 ```
 
 If `cover-letter` was requested, also:
@@ -108,15 +107,15 @@ so a deliberately chosen role gets real subscores and `keywords_to_mirror`.
 
 Requested (or implied)? Spawn one Agent, prompt exactly: `/tailor <job_id>`
 
-`/tailor` registers `pipeline/<job_id>/state.yaml` at `saved` itself via
-`track_cli ensure`. If it reports a hard-refuse, stop — do not run step 5.
+`/tailor` registers `pipeline/<job_id>/state.yaml` at `saved` itself (`uv run
+app new`). If it reports a failure, stop — do not run step 5.
 
 ## Step 5 — cover letter
 
 Only after step 4 reports success. Spawn one Agent, prompt exactly:
 `/cover-letter <job_id>`
 
-Strictly sequential: its prereqs are written by `/tailor` steps 7 and 8.
+Strictly sequential: it writes into the folder `/tailor` built.
 
 ## Step 6 — report
 
@@ -131,7 +130,8 @@ print(f'reasoning: {r.reasoning}')
 
 Report, concisely: company and title (flag them as derived if step 2 needed
 `--dry-run`), vertical (flag it if it is not `$2`), the line above, and each
-artifact path. State is `saved`.
+artifact path, and the role's state as `uv run app dir <job_id>` reports it
+(`tailored` once a cover letter exists, else `saved`).
 
 Close by asking the user to say the word once they've applied, then run
 `uv run track <job_id> applied`. Do not transition before they say so.

@@ -7,12 +7,9 @@ import pytest
 import yaml
 
 from src.lint import (
-    bullets_diction_pass_completed,
-    compute_exempt_lines,
     find_phrase_violations,
     fix_mechanical,
     load_de_ai_rules,
-    parse_bullets_md,
 )
 
 
@@ -48,7 +45,6 @@ def _rules(**overrides) -> dict:
             "I wanted to reach out",
             "<greeting>!",
         ],
-        "bullets_diction_pass_completed": False,
     }
     base.update(overrides)
     return base
@@ -248,24 +244,6 @@ def test_find_phrase_violations_outreach_greeting_with_exclamation():
     assert "exclamation" in cats
 
 
-def test_find_phrase_violations_exempt_lines_skipped_in_resume():
-    text = "leveraged here\nrobust elsewhere"
-    v = find_phrase_violations(text, context="resume", exempt_lines={1}, rules=_rules())
-    # Line 1 exempt -> 'leveraged' should not appear; line 2 still flagged
-    assert not any(x["line"] == 1 for x in v)
-    assert any(x["line"] == 2 and x["phrase"] == "robust" for x in v)
-
-
-def test_find_phrase_violations_outreach_ignores_exempt_lines():
-    """Outreach NEVER honors exempt_lines — there is no bullets-style exemption
-    for fresh-generation text."""
-    text = "I leveraged the new role."
-    v = find_phrase_violations(
-        text, context="outreach", exempt_lines={1}, rules=_rules(),
-    )
-    assert any(x["phrase"] == "leveraged" for x in v)
-
-
 def test_find_phrase_violations_reports_line_and_column():
     text = "ok\nthis is robust stuff"
     v = find_phrase_violations(text, context="resume", rules=_rules())
@@ -276,97 +254,11 @@ def test_find_phrase_violations_reports_line_and_column():
 
 
 # ===========================================================
-# Conditional bullets.md exemption
-# ===========================================================
-
-def test_compute_exempt_lines_diction_pass_off_returns_empty():
-    bullets = {"B-DEL-01": {"canonical": "Owned the daily report."}}
-    text = "Owned the daily report."
-    out = compute_exempt_lines(text, bullets, diction_pass_done=False)
-    assert out == set()
-
-
-def test_compute_exempt_lines_verbatim_match_is_exempt():
-    bullets = {"B-DEL-01": {"canonical": "Owned the daily report."}}
-    text = "Some other line\nOwned the daily report.\nAnother"
-    out = compute_exempt_lines(text, bullets, diction_pass_done=True)
-    assert out == {2}
-
-
-def test_compute_exempt_lines_handles_bullet_marker_prefix():
-    bullets = {"B-DEL-01": {"canonical": "Owned the daily report."}}
-    text = "- Owned the daily report."
-    out = compute_exempt_lines(text, bullets, diction_pass_done=True)
-    assert out == {1}
-
-
-def test_compute_exempt_lines_single_char_edit_is_NOT_exempt():
-    """The 'any rephrase is fully linted' guard — even one-character edit
-    fails the verbatim check."""
-    bullets = {"B-DEL-01": {"canonical": "Owned the daily report."}}
-    text = "Owned the daily reports."   # trailing 's'
-    out = compute_exempt_lines(text, bullets, diction_pass_done=True)
-    assert out == set()
-
-
-def test_compute_exempt_lines_diction_pass_on_but_no_match_is_empty():
-    bullets = {"B-DEL-01": {"canonical": "Owned the daily report."}}
-    text = "completely unrelated text"
-    out = compute_exempt_lines(text, bullets, diction_pass_done=True)
-    assert out == set()
-
-
-# ===========================================================
-# Bullets.md parsing
-# ===========================================================
-
-def test_parse_bullets_md_basic():
-    txt = """# header comment
-## B-DEL-01
-source: Acme Corp
-canonical: Owned the daily report.
-tags: [a, b]
-allowable_synonyms: []
-
-## B-DEL-02
-source: Acme Corp
-canonical: Investigated breaks.
-allowable_synonyms: []
-"""
-    out = parse_bullets_md(txt)
-    assert set(out) == {"B-DEL-01", "B-DEL-02"}
-    assert out["B-DEL-01"]["canonical"] == "Owned the daily report."
-    assert out["B-DEL-01"]["allowable_synonyms"] == []
-    assert out["B-DEL-01"]["tags"] == ["a", "b"]
-
-
-def test_parse_bullets_md_ignores_blocks_without_canonical():
-    txt = """## B-X-01
-source: foo
-allowable_synonyms: []
-"""
-    out = parse_bullets_md(txt)
-    assert "B-X-01" not in out
-
-
-# ===========================================================
 # Rule loading
 # ===========================================================
 
-def test_load_de_ai_rules_and_flag(tmp_path):
-    p = tmp_path / "rules.yaml"
-    p.write_text("bullets_diction_pass_completed: true\n", encoding="utf-8")
-    rules = load_de_ai_rules(p)
-    assert bullets_diction_pass_completed(rules) is True
-
-
-def test_bullets_diction_pass_default_false_when_missing_key():
-    assert bullets_diction_pass_completed({}) is False
-
-
-# ===========================================================
-# Diction pass — must lint canonical only, never metadata
-# ===========================================================
+def test_load_de_ai_rules_missing_file_is_empty(tmp_path):
+    assert load_de_ai_rules(tmp_path / "absent.yaml") == {}
 
 
 # ===========================================================

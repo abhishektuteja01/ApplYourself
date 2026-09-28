@@ -114,60 +114,44 @@ Step 5 rather than erroring.
 
 Open gaps outrank fresh targets, always. Fill the rest of the session from the mode.
 
-**Role mode.** Read three files from the role's output dir:
+**Role mode.** Read two files from the role's output dir:
 
-- `trace.md` — the primary target list, and it is already sorted by risk for you. Each
-  resume line carries a `source=` and a `transformation=`. Read all four classes:
+- `trace.md` — written by code, one entry per resume line:
 
   - `source=B-<CTX>-NN transformation=unchanged` — a canonical claim that landed
     verbatim. A normal target. The user should be able to defend these.
   - `source=B-<CTX>-NN transformation=rephrase` — a `drift` target. The `before:` and
     `after:` lines show exactly which words the resume swapped in under
-    REPHRASE-LICENSE, and `synonyms:` names the license used. The user has to hold the
-    conversation in the *resume's* vocabulary, not the canonical's. Ask in the resume's
-    words and see whether the answer keeps up.
-  - **`source=UNATTRIBUTED`** — the highest-priority targets in the file. These are
-    lines on the resume this company received with **no bullet behind them at all**.
-    Many carry an explicit `DRIFT:` block naming the exact phrases that "appear in NO
-    bullet and NO synonym", or a `note:` explaining what was verified against something
-    other than `bullets.md`. Those named phrases are the question. An interviewer
-    reading this resume will ask about them, and there is no canonical claim to fall
-    back on. Each becomes an `X-` `no-anchor` row keyed to the phrase, not the line
-    number — line numbers move when the resume is re-rendered.
-  - `source=summary` and `source=SKILLS` — composite lines assembled from several
-    bullets. Target the underlying bullets, not the line.
+    REPHRASE-LICENSE. The user has to hold the conversation in the *resume's*
+    vocabulary, not the canonical's. Ask in the resume's words and see whether the
+    answer keeps up.
+  - `source=summary transformation=written` — a summary written for this JD. Its
+    `uses:` names the bullets its facts come from: target those claims in the
+    summary's words.
+  - `source=SKILL-A,SKILL-B transformation=skills` — a Skills line. Every skill on it
+    is a claim the interviewer can pick up. A skill the JD names is a target, and
+    its `evidence:` in `profile/skills_master.md` names the bullets that must hold it.
+  - `## Keywords` — every `keywords_to_mirror` entry, with the lines it landed on or
+    `not landed`. **A keyword the JD demands that did not land is the highest-value
+    target**: an interviewer reads the same JD, asks the obvious question, and the
+    resume has nothing under it. Each becomes an `X-` `no-anchor` row keyed to the
+    keyword, not a line number. A keyword that landed only on a Skills line is
+    `no-anchor` too unless a bullet behind that skill holds it.
 
-  A resume can carry many `UNATTRIBUTED` lines. Do not try to cover them all in one
-  6-8 question session; take the ones the JD actually cares about, and leave the rest
-  in the gap report for next time.
-- `keywords_to_mirror.md` — the JD's real demands, and the highest-value input for
-  this command. **Read it whole; do not pattern-match it.** Per keyword it records
-  what supports the claim, and where support is thin it says so in prose whose wording
-  varies from run to run — "NOT claimed in any bullet", "surfaces only in Skills",
-  "the retrieval internals have no source in `profile/`", "that line is unattributed".
-  There is no guaranteed field and no stable phrase to grep, so judge each entry:
+  Folders tailored before the builder carry a hand-written trace and a separate
+  `keywords_to_mirror.md` (`source=UNATTRIBUTED`, `DRIFT:` blocks). Read those the
+  same way: an unattributed line or a named drift phrase is a `no-anchor` target.
 
-  - A keyword whose only support is a **Skills line** with no `B-` id behind it is an
-    `X-` `no-anchor` target. The resume asserts it; no claim attests it.
-  - A keyword the file explicitly says is unattested, weakened, or has internals with
-    no source is an `X-` `no-anchor` target **named at the level of the gap** — the
-    unanchored thing is the retrieval internals, not the pipeline the bullet does
-    attest. Ask about the internals.
-  - A keyword with a real `B-` id behind it is a normal target, not `no-anchor`.
-
-  These are the most likely place a real loop goes wrong: an interviewer reads the same
-  JD, asks the obvious question, and the user has nothing under it. If the file records
-  no thin support at all, that is a valid outcome — take the session's targets from
-  `trace.md` instead and say so rather than manufacturing an `X-` row.
+  Do not try to cover every target in one 6-8 question session; take the ones the JD
+  actually cares about, and leave the rest in the gap report for next time.
 - `jd_snapshot.md` — the posting itself, for the seniority framing and the domain.
 
 **Vertical mode.** Read `profile/bullets.md`, `profile/skills_master.md` and
 `profile/stories.md` if it exists (optional file):
 
 - Bullets whose `tags` fit the lane.
-- Plus bullets named in the `evidence:` of any `SKILL-*` whose `vertical_lean` includes
-  the lane. Bullets carry no `vertical_lean` of their own — only `tags`; the lean field
-  lives on `skills_master.md`.
+- Plus bullets named in the `evidence:` of any `SKILL-*` whose `show` includes the
+  lane, and bullets whose `default_for` includes it.
 - Plus `S-` entries from `stories.md` whose `anchors:` name any bullet already in the
   pool. A story is drilled as a claim in its own right: press on the mechanism in its
   `action`, the number in its `outcome`, and whether the `retrospect` survives being

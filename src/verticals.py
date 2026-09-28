@@ -217,9 +217,9 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     resume_file = raw.get("resume_file", "")
     if not isinstance(resume_file, str):
         raise _fail(path, f"{where}.resume_file must be a string")
+    # Optional to the loader so a lane can scrape before its resume shape
+    # exists (/new-vertical pass-a); verticals-check requires it.
     resume = _parse_lane_resume(raw["resume"], path, f"{where}.resume") if "resume" in raw else None
-    if resume is None and not resume_file.strip():
-        raise _fail(path, f"{where} needs a `resume:` block")
 
     return Vertical(
         name=name,
@@ -338,6 +338,12 @@ def main() -> int:
         print("ERROR: missing per-vertical prose files:")
         for m in missing:
             print(f"  {m}")
+        return 1
+    no_shape = [n for n, v in cfg.verticals.items() if v.resume is None and not v.resume_file]
+    if no_shape:
+        print("ERROR: lane(s) with no `resume:` block in profile/verticals.yaml:")
+        for n in no_shape:
+            print(f"  {n}")
         return 1
     missing_resumes = sorted({
         v.resume_file

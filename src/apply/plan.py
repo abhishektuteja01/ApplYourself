@@ -406,7 +406,7 @@ def build_plan(
     `tier` one of `"C1"`/`"C2"`/`"JD"`/`"B0-LLM"`/`"AUDIT"` — supplied by
     `/apply` (`.claude/commands/apply.md`) after it classifies and, for C1,
     drafts an answer, or resolves a C2 question from that role's
-    `company_answers.md`, or reads a salary figure off the JD, or (Step 4c)
+    `company_answers.yaml`, or reads a salary figure off the JD, or (Step 4c)
     judges which of a work-authorization field's full-sentence options is
     true given `work_authorization`, or (Step 2c's audit) catches an already
     -resolved Tier B/B0 field whose label asks for more than its value

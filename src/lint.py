@@ -12,10 +12,8 @@ Tier 2 (phrase, flag-and-rewrite): banned phrases per profile/de_ai_rules.yaml.
 NEVER auto-rewritten. The caller loops the LLM to rewrite the offending line
 until the linter returns empty.
 
-The bullets.md exemption (CONDITIONAL):
-  - Applies ONLY when de_ai_rules.yaml: bullets_diction_pass_completed: true
-  - Applies ONLY to lines that are VERBATIM unchanged canonical bullet text
-  - Outreach is NEVER exempt (no bullets-style exemption for fresh-generation text)
+Sources (bullets.md, skills_master.md, resume.yaml) are linted once at the
+source by `verticals-check`; builds lint only the text a session generated.
 """
 from __future__ import annotations
 
@@ -66,10 +64,6 @@ def load_de_ai_rules(path: Path | None = None) -> dict:
     if not p.exists():
         return {}
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-
-
-def bullets_diction_pass_completed(rules: dict) -> bool:
-    return bool(rules.get("bullets_diction_pass_completed", False))
 
 
 def _mech_rules(rules: dict | None) -> dict:
@@ -260,7 +254,6 @@ def find_phrase_violations(
     text: str,
     *,
     context: Literal["resume", "outreach"],
-    exempt_lines: set[int] | None = None,
     rules: dict | None = None,
     keep: Iterable[str] = (),
 ) -> list[Violation]:
@@ -268,19 +261,11 @@ def find_phrase_violations(
 
     Link targets, URLs, emails, month names used as dates, and every `keep`
     term (company, recipient, skill names — proper nouns the writer can't
-    reword) are never scanned.
-
-    exempt_lines (1-indexed) skips phrase scanning on those lines — but
-    ONLY for context='resume'. Outreach NEVER honors exempt_lines: fresh-
-    generation text gets no bullets.md-style exemption."""
+    reword) are never scanned. `outreach_only` phrases apply only to
+    context='outreach'."""
     if rules is None:
         rules = load_de_ai_rules()
     keep = tuple(keep)
-
-    if context == "outreach":
-        exempt = set()
-    else:
-        exempt = set(exempt_lines) if exempt_lines else set()
 
     banned = rules.get("banned_phrases", {}) or {}
     no_emoji = bool(banned.get("no_emoji", False))
@@ -298,8 +283,6 @@ def find_phrase_violations(
 
     violations: list[Violation] = []
     for lineno, line in enumerate(text.split("\n"), start=1):
-        if lineno in exempt:
-            continue
         lower = _mask(line, keep)
         starts = sorted({m.end() for m in _SENTENCE_START.finditer(lower)})
 
@@ -360,76 +343,3 @@ def find_phrase_violations(
                     ))
 
     return violations
-
-
-# =====================================================================
-# Conditional bullets.md exemption
-# =====================================================================
-
-def parse_bullets_md(text: str) -> dict[str, dict]:
-    """Parse profile/bullets.md into {bullet_id: {canonical, ...}}.
-    Lenient on missing fields — only bullets with a
-    non-empty canonical: are returned."""
-    bullets: dict[str, dict] = {}
-    current_id: str | None = None
-    current: dict = {}
-
-    for raw in text.split("\n"):
-        line = raw.rstrip()
-        # File-level comment lines (#) at column 0 are skipped; bullet IDs are ## headings.
-        if line.startswith("## "):
-            if current_id and current.get("canonical"):
-                bullets[current_id] = current
-            current_id = line[3:].strip()
-            current = {}
-            continue
-        if not line or line.startswith("#"):
-            continue
-        if current_id is None:
-            continue
-        if ":" not in line:
-            continue
-        key, _, val = line.partition(":")
-        key = key.strip()
-        val = val.strip()
-        if val.startswith("[") and val.endswith("]"):
-            try:
-                val = yaml.safe_load(val)
-            except yaml.YAMLError:
-                pass
-        current[key] = val
-
-    if current_id and current.get("canonical"):
-        bullets[current_id] = current
-    return bullets
-
-
-def compute_exempt_lines(
-    rendered_text: str,
-    bullets: dict[str, dict],
-    diction_pass_done: bool,
-) -> set[int]:
-    """Return 1-indexed line numbers in rendered_text that are eligible for
-    phrase-violation exemption. Eligibility requires BOTH:
-      1. diction_pass_done is True
-      2. The line's text (after stripping leading whitespace and bullet markers)
-         exactly equals some bullet's canonical text.
-    Any single-character edit fails (2) — paraphrases are fully linted."""
-    if not diction_pass_done:
-        return set()
-    canonical_texts = {
-        str(b["canonical"]).strip()
-        for b in bullets.values()
-        if isinstance(b.get("canonical"), str) and b["canonical"].strip()
-    }
-    if not canonical_texts:
-        return set()
-    exempt: set[int] = set()
-    for lineno, line in enumerate(rendered_text.split("\n"), start=1):
-        stripped = line.strip()
-        # Strip a leading bullet marker if present
-        if stripped.startswith(("- ", "* ")):
-            stripped = stripped[2:].strip()
-        if stripped in canonical_texts:
-            exempt.add(lineno)
-    return exempt

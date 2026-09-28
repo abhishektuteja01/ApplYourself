@@ -1,6 +1,6 @@
 # TEMPLATE — copy to profile/preferences.md and edit.
 #
-# Read by /tailor and /apply. Plain guidance, not a strict filter. /score
+# Read by /apply. Plain guidance, not a strict filter. /score
 # does not read this file: its rules live in profile/scoring.yaml
 # (sponsorship_need, visa_free_countries, ineligible), profile/verticals.yaml
 # (drop_phrases, years) and profile/discovery.yaml (countries per lane). The

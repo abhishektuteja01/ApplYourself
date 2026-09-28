@@ -123,8 +123,9 @@ pass afterwards, once you've seen real postings in the lane.
 <summary><b>The vertical config schema</b></summary>
 
 Config lives in `profile/verticals.yaml` (gitignored user data), with a matching
-`profile/verticals/<name>/` directory holding `rubric.md` and `tailoring.md`,
-plus the resume that block's required `resume_file` points at.
+`profile/verticals/<name>/` directory holding `rubric.md` and `tailoring.md`.
+Each block's `resume:` key holds the lane's resume shape: section order, bullet
+budget, skill line labels and a baseline summary.
 `profile/verticals.example.yaml` documents every field, and
 `profile/verticals/example_*/` show the per-lane files.
 
@@ -145,25 +146,21 @@ plus the resume that block's required `resume_file` points at.
 `src/verticals.py` is the single loader and it is **strict**: a vertical block
 missing any required key raises `ValueError`. Because `tests/conftest.py` injects
 config through an autouse fixture, one malformed block errors the entire test
-suite. `uv run verticals-check` fails loud if a rubric, tailoring file or resume
-is missing.
+suite. `uv run verticals-check` fails loud if a rubric, tailoring file or
+`resume:` block is missing, or if any pointer between the resume sources
+(`resume.yaml`, `bullets.md`, `skills_master.md`) no longer resolves.
 
 </details>
 
 <details>
-<summary><b>Adding a lane by hand (the four renames it needs)</b></summary>
+<summary><b>Adding a lane by hand</b></summary>
 
 `/new-vertical` exists because copying `profile/verticals/example_primary/` is
-not enough on its own. The copied directory stays unreferenced until you also
-change, in `profile/verticals.yaml`:
-
-1. the block key
-2. its `display_name`
-3. its `resume_file`, which still points at the original
-4. the `vertical:` values in `classifier_rules`
-
-Miss any of those and `verticals-check` still passes while your lane does
-nothing.
+not enough on its own. You also need, in `profile/verticals.yaml`, the block key,
+its `display_name`, its `resume:` shape and the `vertical:` values in
+`classifier_rules`; and on the shared sources, the lane's `lanes:` budgets in
+`resume.yaml`, `default_for` on its baseline bullets and `show` on its skills.
+`verticals-check` names whatever is missing.
 
 </details>
 
@@ -324,9 +321,9 @@ in `.claude/commands/`, not in `src/`.
 | `/onboarding` | Five-step resumable setup: eight questions, ~21 minutes, real scored jobs at step 4. Also runs as an audit (`/onboarding audit`). | every `profile/` file, `profile/.onboarding.md` |
 | `/discover` | Run the nightly scrape, then read its own run report back: a ≤10-line health digest of tonight's run against that source's own 7-day median. Read-only on every report. | `jobs/` only |
 | `/score [--all] [--vertical V]` | Score new rows and regenerate today's shortlist. Fans out judge agents over staged slices. `--all` re-judges the whole window; `--vertical` limits it to one lane. | `jobs/scored.parquet`, `shortlist/<date>.md` |
-| `/tailor <job_id>` | One-page ATS-clean tailored resume, plus the audit trail behind it. | `applications/<vertical>/<dir>/`: `_Resume.docx`, `_Resume.pdf`, `resume.md`, `trace.md`, `keywords_to_mirror.md`, `jd_snapshot.md`, `lint_report.md` |
-| `/cover-letter <job_id>` | One-page letter into that role's latest `/tailor` dir. | `_Cover_Letter.docx`, `_Cover_Letter.pdf` |
-| `/company-answers <job_id>` | Research the company and draft its answer sheet. No letter. | `company_answers.md` in the `/tailor` dir |
+| `/tailor <job_id>` | One-page ATS-clean tailored resume. You choose bullets and wording; code assembles, checks, renders and traces it. | `applications/<vertical>/<dir>/`: `jd_snapshot.md`, `resume_plan.yaml`, `trace.md`, `_Resume.docx`, `_Resume.pdf` |
+| `/cover-letter <job_id>` | One-page letter into that role's folder, drawn from the bullets on its resume. | `cover_letter.yaml`, `_Cover_Letter.docx`, `_Cover_Letter.pdf` |
+| `/company-answers <job_id> [--refresh]` | Research the company and write its "why us" answers once. No letter. | `company_answers.yaml` in the role's folder |
 | `/apply <job_id> [--submit]` | Resolve the judgment-only form questions, then fill, or submit. | `answers_override.json`, `applications/apply_runs/<ts>.md` |
 | `/outreach <job_id> <channel> --to "Name"` | Draft a recruiter, referral or alumni message in your voice. Never sends. | `pipeline/<job_id>/outreach/<date>_<channel>_<who>.md` |
 | `/interview <job_id \| vertical>` | Mock interviewer. Drills you on the claims your own resume makes, depth-first, and keeps a cross-session worklist of the ones that didn't hold. Never writes to `profile/` or `state.yaml`. | `interview/` (gitignored) |
@@ -334,7 +331,7 @@ in `.claude/commands/`, not in `src/`.
 | `/standup` | Rebuild the whole-pipeline view. Read-only on state. | `pipeline.md` |
 | `/ingest <url> <vertical> [resume] [cover-letter]` | Single-URL fast path: ingest, score one row, tailor, letter. Stops before applying. | everything the chained commands write |
 | `/new-vertical <name>` | Quick-add a lane as pure config: the loader's minimum, one confirm-or-edit. | `profile/verticals.yaml` block + `profile/verticals/<name>/` |
-| `/tune-vertical <name>` | Deep tuning pass on a lane that already exists, against rows you've seen: search terms, `skill_weights`, the title gate, classifier collisions, drop rules, rubric tiers, `vertical_lean`. | the same two, edited in place |
+| `/tune-vertical <name>` | Deep tuning pass on a lane that already exists, against rows you've seen: search terms, `skill_weights`, the title gate, classifier collisions, drop rules, rubric tiers, the resume shape. | the same two, edited in place |
 | `/suggest-synonyms` | Three-track audit of your bullets and skills against real shortlist keywords. Proposes, never edits. | `profile/synonyms_draft_<date>.md` |
 | `/no_ai_slop` | Editor pass: sharpen a draft, or name its AI-slop patterns without rewriting. | nothing; returns the edit in conversation |
 
@@ -355,7 +352,7 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 | `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set `sponsorship_need` in `scoring.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
 | `uv run score start [--all] [--vertical V] [--job-id ID]` / `uv run score finish` | `/score`'s plumbing: `start` drops rows by the hard rules and stages judge slices; `finish` checks the answers, merges, prunes and writes the shortlist. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
 | `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
-| `uv run tailor-prep <job_id>` | `/tailor`'s front matter: prereqs, row load, output dir. Also `identity` and `snapshot`. | `/tmp/tailor_<job_id>_row.json`, the `applications/` output dir |
+| `uv run app new\|dir\|build <job_id>` | The plumbing of `/tailor`, `/cover-letter` and `/company-answers`: open the role's folder, resolve it, and build a resume, letter or answer sheet from the session's YAML. `build` prints problems and exits 2 instead of rendering anything wrong. | the role's `applications/` folder, `tailored_dirs[]` |
 | `uv run profile-extract <file>` | Dump a `.docx` or `.md` resume's text. Refuses `.pdf`. | nothing; prints to stdout |
 | `uv run apply <subcommand>` | `prepare`, `plan`, `fill`, `run`. Needs `--group apply`. | see below |
 
@@ -407,8 +404,9 @@ experience. Filling them in is the work.
 
 | file | what it is |
 |---|---|
-| `bullets.md` | Canonical resume bullets. **The source of truth for every generated document.** `/tailor` may reword within the synonyms you allow, never beyond them. |
-| `skills_master.md` | Your skills inventory. The Skills section is assembled from here, not written fresh. |
+| `resume.yaml` | Your name, contact line, education, and one header per job or project with its bullet budget per lane. The only place these lines live. |
+| `bullets.md` | Canonical resume bullets. **The source of truth for every generated document.** `/tailor` may reword within the synonyms you allow, never beyond them. `default_for` marks a lane's baseline picks. |
+| `skills_master.md` | Your skills inventory. The Skills section is assembled from here, not written fresh; `show` places each skill on a lane's lines. |
 | `preferences.md` | Work authorization, location, comp, deal-breakers. |
 | `scoring_rubric.md` | Shared judging guide (the four axes, the sponsorship label), layered under each lane's own `rubric.md`. Ships working defaults. |
 | `voice_samples.md` | Messages you actually sent, so outreach sounds like you. `/outreach` **refuses to run** without it, and there is no generic-voice fallback. |
@@ -422,11 +420,9 @@ experience. Filling them in is the work.
 Two files ship as real defaults rather than templates, because they're rules and
 not personal data:
 
-- `profile/de_ai_rules.yaml` holds the banned phrasing. It ships
-  `bullets_diction_pass_completed: false`, which holds your canonical bullet text
-  to the same linting as generated prose. Once you've read your bullets for
-  diction yourself, set it `true` to exempt them. `/onboarding` leaves it `false`
-  unless you ask.
+- `profile/de_ai_rules.yaml` holds the banned phrasing, the mechanical
+  replacements, and the stopwords a reworded bullet may add. Your sources are
+  linted against it once, by `verticals-check`.
 - `profile/scoring.yaml` holds the scoring policy: `sponsorship_need`
   (never / later / now), `visa_free_countries`, the `ineligible` drop list,
   the action thresholds and the shortlist size.
@@ -490,10 +486,10 @@ profile/                        your config and content
 data/universe/<ats>.csv         vendored company slug lists
 ```
 
-`applications/<vertical>/<dir>/` is allocated by `tailor-prep` as
-`<date>_<company>_<title>_<job_id>` with `_vN` appended on re-runs. Version
-numbers are never reused, and everything downstream reads the **last** entry in
-`tailored_dirs[]`.
+`applications/<vertical>/<dir>/` is allocated by `uv run app new` as
+`<date>_<company>_<title>_<job_id>` with `_vN` appended once a resume is built
+there. An unfinished folder is reused, version numbers are never reused, and
+everything downstream reads the **last** entry in `tailored_dirs[]`.
 
 </details>
 
@@ -539,13 +535,14 @@ out-transitions.
 
 Every transition goes through `/track`. No other command writes `state:` itself.
 Other commands append to side lists only: `/tailor` to `tailored_dirs[]`,
-`/cover-letter` to `cover_letters[]`, `/outreach` to `outreach[]`. `/standup` is
+`/outreach` to `outreach[]`. A role's letter and company answers are whatever
+files its latest folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`. Even `/apply` transitions
 to `applied` by calling `track_cli`, never by touching the file.
 
-Two commands fire the `saved -> tailored` self-promotion, and both re-read state
-from disk first so they can only fire from `saved`. Otherwise they'd drag an
-`applied` role backwards. `/cover-letter` fires it after writing a letter;
+Two commands fire the `saved -> tailored` self-promotion, both as
+`uv run track <id> tailored --if saved`, so they can only fire from `saved`.
+Otherwise they'd drag an `applied` role backwards. `/cover-letter` fires it after writing a letter;
 `/apply` fires it once its plan-check confirms the board genuinely needs no
 letter.
 
@@ -621,16 +618,13 @@ zero-width characters. Auto-fixed everywhere, silently.
 
 **Tier 2: banned phrases** from `profile/de_ai_rules.yaml`. Flagged only, never
 auto-fixed. The command session loops the model to rewrite until the linter comes
-back empty, with a hard cap of **5 attempts**, after which it refuses, writes no
-output files, deletes any partial output directory, and names the phrase and line
-it couldn't clear.
+back empty, with a hard cap of **5 attempts**. After that a resume falls back to
+its canonical bullets (`--final`) and prose drops the failing sentence. A failed
+build writes nothing, and no command deletes a file it did not write.
 
-Verbatim canonical `bullets.md` text is exempt from Tier 2, but only once you set
-`bullets_diction_pass_completed: true`. Outreach text is **never** exempt.
-
-`/tailor` also hard-refuses outright, before writing anything, if a banned
-phrase sits in a canonical bullet, a frozen section like education or contact, or
-a Skills line.
+Company names, the recipient's name, skill names, URLs and dates are never
+flagged. Your sources are linted once, at the source, by `verticals-check`, so a
+banned phrase in a bullet is fixed in `bullets.md`, not worked around per role.
 
 </details>
 

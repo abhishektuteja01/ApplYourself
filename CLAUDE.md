@@ -11,7 +11,7 @@ Outreach is always gated on the user. Application submission is automatable via
 `/apply`, which submits only when every required field resolves — from config, or
 from a per-run Tier C answers file the command session drafts under NO-FAB (generic
 answers from `bullets.md`, company-specific ones from that role's
-`company_answers.md`). Anything still unresolved parks the role for review.
+`company_answers.yaml`). Anything still unresolved parks the role for review.
 
 ## Instructions
 
@@ -51,7 +51,7 @@ fixture (`git config core.hooksPath .githooks`, once per clone).
 |---|-------|---------|------------------------|
 | 1 | Discovery | `/discover` | `src/discovery/` — `run.py` checks due boards and searches into the jobs store (`store.py`), rebuilds `clean.parquet`; `digest.py` reads the report back |
 | 2 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
-| 3 | Application material | `/tailor`, `/cover-letter`, `/outreach` | `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
+| 3 | Application material | `/tailor`, `/cover-letter`, `/company-answers`, `/outreach` | `app_cli.py`, `resume_model.py`, `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
 | 4 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
 | 5 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
 
@@ -62,8 +62,20 @@ view built from it: seen recently, through the title gate and location
 allowlist, one row per `job_id`, within retention. Boards are listed in
 `data/universe/boards.csv` + `boards.local.csv`; `jobs/boards.parquet` records
 when each was last checked.
-Application material lands in `applications/<vertical>/<dir>/`;
-tracking keeps one `pipeline/<job_id>/state.yaml` per role.
+Application material lands in `applications/<vertical>/<dir>/`, and that folder
+is the only state the material commands share: `uv run app dir <id>` resolves it
+from `state.yaml`'s `tailored_dirs[-1]`, and "has a letter / answers" means the
+file is there. Tracking keeps one `pipeline/<job_id>/state.yaml` per role.
+
+### One source per resume fact
+
+`profile/resume.yaml` (name, contact, education, each job/project header with
+its per-lane `{min, max, order}`), `profile/bullets.md` (claims, `default_for`),
+`profile/skills_master.md` (skills, `show`) and each lane's `resume:` block in
+`verticals.yaml` (section order, bullet budget, skill lines, baseline summary).
+Things say where they appear, so deleting one is one edit; `verticals-check`
+names any pointer that breaks. `src/resume_model.py` builds every resume from
+them — `/score`'s baseline and `/tailor`'s plan alike.
 
 ### `job_id` is a content hash — treat it as load-bearing
 
@@ -118,7 +130,13 @@ uv run score start [--all] [--vertical V] [--job-id ID]
                                       # drop by hard rules, stage judge slices
 uv run score finish                   # check answers, merge, prune, write shortlist
 uv run track <job_id> <state> [--note ...]   # state transition
-uv run tailor-prep <job_id>           # /tailor front-matter: prereqs, row load, out dir
+uv run app new <job_id>               # /tailor: checks, registers the role, opens its folder + jd_snapshot.md
+uv run app dir <job_id>               # JSON: the role's folder, name, has_resume/letter/answers
+uv run app build resume|letter|answers <job_id> [--final]
+                                      # check the session's YAML (resume_plan / cover_letter /
+                                      # company_answers), render docx+pdf, write trace.md.
+                                      # Exit 2 lists problems; --final (resume) falls back to
+                                      # canonical text. Never writes `state:`
 uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
 # /apply plumbing (needs `uv sync --group apply`).
 uv run apply prepare <job_id>         # validate prereqs, resolve out dir/vertical/answers
@@ -169,31 +187,27 @@ preflight, `uv run discover` with the user's overrides, then `discover-digest`
 (`src/discovery/digest.py`) reads `jobs/runs/*.json` and the session renders
 ≤10 lines from the numbers it computed. `/new-vertical <name>` writes the loader's minimum for a
 new lane in one confirm-or-edit, and splits into `pass-a` (the lane block and
-classifier rule, enough to start scraping) and `pass-b` (the three prose files)
+classifier rule, enough to start scraping) and `pass-b` (rubric, tailoring and resume shape)
 when `/onboarding` passes a mode token; `/tune-vertical <name>` is the deep pass over a
 lane that already exists, run against real scored rows. `/company-answers <job_id>` drafts that
-role's `company_answers.md` into its `/tailor` output dir; `/apply` calls it
-directly for roles that need no full cover letter. `/ingest <url> <vertical> [resume]
+role's `company_answers.yaml` into its built folder (once; `--refresh` redoes it);
+`/apply` and `/cover-letter` both call it. `/ingest <url> <vertical> [resume]
 [cover-letter]` is the single-URL fast path: it chains `ingest-url` → a
 one-row `score start --job-id` + one judge + `score finish` → `/tailor` →
 `/cover-letter`, spawning the existing commands rather than reimplementing
-them, and stops at `saved` because `/track` alone writes transitions.
+them; the only transition is the cover letter's `--if saved` promotion.
 `/interview <job_id | vertical>` is the prep half: it drills the user on the claims
 their own resume makes, depth-first, and persists `interview/gap_report.md` — a
 worklist of claims that did not hold, which every later session reads first. In role
-mode its targets come from that role's `trace.md` — what landed, which words were
-rephrased under license, and the `source=UNATTRIBUTED` lines that no bullet attests at
-all — cross-read against `keywords_to_mirror.md` for what the JD actually demands.
+mode its targets come from that role's code-written `trace.md` — what landed, which
+words were rephrased under license, and which JD keywords did not land.
 It writes only under `interview/` (gitignored): never `profile/`, never `state.yaml`.
-`.claude/shared/` holds the includes several commands read: `no_fab.md` (defines
-`NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`, `SKILLS-SOURCE`), `lint_loop.md` (the
-rewrite-loop attempt cap),
-`render_pdf.md` (the docx->pdf block), and `self_promote.md` (the guarded
-`saved -> tailored` transition `/apply` and `/cover-letter` both fire). There is no
-`extract` module in `src/`, and no LLM *judging* in `src/` — but the deterministic
-plumbing each command leans on does live there (e.g. `src/tailor_cli.py` for
-`/tailor`'s prereqs/row-load/output-dir and jd_snapshot; the tailoring itself
-stays in the command session).
+`.claude/shared/no_fab.md` is the one include the writing commands read: it defines
+`NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`, `SKILLS-SOURCE`, the problem codes
+`uv run app build` reports, and the fix loop. `saved -> tailored` is
+`uv run track <id> tailored --if saved`, fired by `/cover-letter` and `/apply`.
+No LLM *judging* in `src/`: the session writes a small YAML of choices, and
+`src/app_cli.py` does everything mechanical around it.
 
 ## Gotchas
 
