@@ -37,14 +37,14 @@
 ## B-WID-01
 canonical: Owned the daily widget assembly throughput report for a national manufacturing client, reconciling line output against the production plan across four plants and flagging variances to the operations lead each morning.
 tags: [widget_assembly, daily_ops, reconciliation, reporting]
-default_for: [example_primary, example_secondary]
+default_for: [example_primary, example_secondary, example_tertiary]
 evidence: production system, daily cadence, 2.5 year tenure, four-plant scope
 allowable_synonyms: ["throughput reporting", "daily production reporting", "output reconciliation", "plan-versus-actual reconciliation", "variance reporting", "multi-plant reporting", "line output analysis"]
 
 ## B-WID-02
 canonical: Configured widget line parameters for three plant rollouts, translating operator requirements into calibration settings and validating each change in a staging line before release.
 tags: [widget_config, rollout, requirements, validation]
-default_for: [example_primary]
+default_for: [example_primary, example_tertiary]
 evidence: three rollouts, staging-then-release discipline, direct operator handoff
 allowable_synonyms: ["parameter configuration", "line configuration", "calibration settings", "requirements translation", "staged validation", "pre-release validation", "rollout support"]
 
@@ -58,7 +58,7 @@ allowable_synonyms: ["ledger reconciliation", "month-end close", "close process 
 ## B-SPR-01
 canonical: Built a Python validation harness for sprocket tolerance data that scored 12,000 historical measurements against published compliance bands and produced a per-batch pass/fail report.
 tags: [sprocket_validation, python, validation, compliance]
-default_for: [example_primary, example_secondary]
+default_for: [example_primary, example_secondary, example_tertiary]
 evidence: own code, real published bands, 12k-record dataset, reproducible output
 allowable_synonyms: ["validation harness", "tolerance validation", "compliance validation", "batch scoring", "measurement validation", "automated pass/fail reporting"]
 
@@ -72,7 +72,7 @@ allowable_synonyms: ["risk modelling", "failure prediction", "logistic regressio
 ## B-COG-01
 canonical: Built a cog-maintenance question-answering assistant on a hosted LLM API, wiring prompt templates and an evaluation set of 80 graded questions to catch regressions between prompt revisions.
 tags: [cog_training, llm_apps, prompting, evaluation]
-default_for: [example_secondary]
+default_for: [example_secondary, example_tertiary]
 evidence: working project, hand-graded eval set, versioned prompt revisions
 allowable_synonyms: ["LLM application", "question-answering assistant", "prompt engineering", "prompt templates", "evaluation set", "regression evaluation", "LLM API integration"]
 

@@ -29,7 +29,6 @@ MINIMAL_LANE = """\
 verticals:
   {name}:
     display_name: My Lane
-    resume_file: profile/verticals/{name}/resume.md
     search_terms: [Some Title]
     linkedin_terms: [Some Title]
     years: {{3: 14, 4: 10}}

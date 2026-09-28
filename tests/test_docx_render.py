@@ -717,25 +717,6 @@ def test_guard_reports_every_offending_line(tmp_path):
     assert "**Ok**" not in msg
 
 
-def test_every_configured_vertical_resume_passes_the_tab_guard():
-    """The scoring resumes are /tailor's verbatim source for header lines, so
-    a missing tab there propagates into every tailored docx for that lane."""
-    from src import verticals
-    cfg = verticals.get_config()
-    checked = 0
-    for name, block in cfg.verticals.items():
-        path = verticals.REPO_ROOT / block.resume_file
-        if not path.exists():
-            continue
-        blocks = parse_resume_md(path.read_text(encoding="utf-8"))
-        from src.docx_render import _validate_job_headers
-        _validate_job_headers(blocks)   # raises ResumeContentError on regression
-        checked += 1
-    assert checked > 0
-
-
-# ---------- cover letter: every container, strict content, file properties ----------
-
 def test_cover_letter_placeholder_in_a_merged_cell_is_found_once(tmp_path):
     """python-docx returns a merged cell once per column it spans; counting it
     twice raised a false 'more than one paragraph' error."""

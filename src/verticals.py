@@ -12,8 +12,9 @@ captured into module constants — so test injection via `set_config()`
 always wins regardless of import order.
 
 CLI: `uv run python -m src.verticals` validates the config, checks each
-vertical's `profile/verticals/<name>/{rubric.md, tailoring.md}` exist, and
-prints `verticals=<names> default=<name>`. Slash commands use it as their
+vertical's `profile/verticals/<name>/{rubric.md, tailoring.md}` exist and its
+`resume:` block is set, runs the resume source check, and prints
+`verticals=<names> default=<name>`. Slash commands use it as their
 one-line prerequisite check.
 """
 
@@ -79,7 +80,6 @@ class Vertical:
     title_exclude_terms: tuple[str, ...]
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
-    resume_file: str = ""  # legacy per-lane resume; replaced by `resume`
     resume: LaneResume | None = None
     # Optional. The terms a jobspy lane's `abroad` block queries per country.
     abroad_terms: tuple[str, ...] = ()
@@ -214,9 +214,9 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     # score-judge.md (also the tailoring frozen-section/summary source).
     # Required: a shared default silently scored a lane against another
     # lane's resume. Existence is enforced in main().
-    resume_file = raw.get("resume_file", "")
-    if not isinstance(resume_file, str):
-        raise _fail(path, f"{where}.resume_file must be a string")
+    if "resume_file" in raw:
+        raise _fail(path, f"{where}.resume_file was replaced: the fixed lines live in "
+                          "profile/resume.yaml and the lane's shape in a `resume:` block")
     # Optional to the loader so a lane can scrape before its resume shape
     # exists (/new-vertical pass-a); verticals-check requires it.
     resume = _parse_lane_resume(raw["resume"], path, f"{where}.resume") if "resume" in raw else None
@@ -230,7 +230,6 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         title_exclude_terms=tuple(exclude_terms),
         title_include_terms=tuple(include_terms),
         title_strong_keep_terms=tuple(strong_keep_terms),
-        resume_file=resume_file.strip(),
         resume=resume,
         drop_phrases=drop_phrases,
         years=dict(sorted(years.items())),
@@ -339,33 +338,22 @@ def main() -> int:
         for m in missing:
             print(f"  {m}")
         return 1
-    no_shape = [n for n, v in cfg.verticals.items() if v.resume is None and not v.resume_file]
+    no_shape = [n for n, v in cfg.verticals.items() if v.resume is None]
     if no_shape:
         print("ERROR: lane(s) with no `resume:` block in profile/verticals.yaml:")
         for n in no_shape:
             print(f"  {n}")
         return 1
-    missing_resumes = sorted({
-        v.resume_file
-        for v in cfg.verticals.values()
-        if v.resume is None and not (REPO_ROOT / v.resume_file).is_file()
-    })
-    if missing_resumes:
-        print("ERROR: missing per-vertical scoring resume files (resume_file):")
-        for m in missing_resumes:
+    from src import resume_model
+    try:
+        problems = resume_model.check_sources(resume_model.load_sources(), cfg)
+    except (resume_model.SourceError, ValueError) as exc:
+        problems = [str(exc)]
+    if problems:
+        print(f"ERROR: {len(problems)} problem(s) in the resume sources:")
+        for m in problems:
             print(f"  {m}")
         return 1
-    if any(v.resume is not None for v in cfg.verticals.values()):
-        from src import resume_model
-        try:
-            problems = resume_model.check_sources(resume_model.load_sources(), cfg)
-        except (resume_model.SourceError, ValueError) as exc:
-            problems = [str(exc)]
-        if problems:
-            print(f"ERROR: {len(problems)} problem(s) in the resume sources:")
-            for m in problems:
-                print(f"  {m}")
-            return 1
     print(f"verticals={','.join(cfg.names)} default={cfg.default_vertical}")
     return 0
 

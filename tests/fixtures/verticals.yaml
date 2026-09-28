@@ -18,7 +18,6 @@ default_vertical: example_tertiary
 verticals:
   example_primary:
     display_name: Widget Engineering
-    resume_file: profile/verticals/example_primary/resume_example_primary.md
     # The lane's resume shape. Picks live on bullets (default_for) and
     # skills (show), so this block names no ids.
     resume:
@@ -79,7 +78,6 @@ verticals:
 
   example_secondary:
     display_name: Sprocket Compliance
-    resume_file: profile/verticals/example_secondary/resume_example_secondary.md
     # The lane's resume shape. Picks live on bullets (default_for) and
     # skills (show), so this block names no ids.
     resume:
@@ -141,7 +139,18 @@ verticals:
 
   example_tertiary:
     display_name: Cog Engineering
-    resume_file: profile/verticals/example_tertiary/resume_example_tertiary.md
+    # The lane's resume shape. Picks live on bullets (default_for) and
+    # skills (show), so this block names no ids.
+    resume:
+      sections: [summary, work, projects, education, skills]
+      bullets: [4, 6]
+      skill_lines:
+        - "Programming"
+        - "AI & Machine Learning"
+        - "Databases & Tools"
+        - "Domain & Enterprise"
+      summary: >-
+        Builds LLM applications for cog maintenance teams, with Python and SQL tooling and two years of widget plant operations.
     search_terms:
       - Cog Engineer
       - Applied Cog Engineer

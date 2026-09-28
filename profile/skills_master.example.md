@@ -65,28 +65,31 @@ show: {example_secondary: "Domain & Enterprise"}
 name: Cog Maintenance QA Assistant
 evidence: B-COG-01 (LLM assistant with an 80-question graded eval set)
 allowable_synonyms: ["question-answering assistant", "domain QA assistant"]
+show: {example_tertiary: "AI & Machine Learning"}
 
 ## SKILL-COG-PLATFORM
 name: Cog Platform Engineering
 evidence: B-COG-02 (TypeScript service in Docker with Postgres-backed retrieval)
 allowable_synonyms: ["platform engineering", "service deployment"]
+show: {example_tertiary: "Domain & Enterprise"}
 
 ## SKILL-PYTHON
 name: Python (pandas, scikit-learn)
 evidence: B-SPR-01 (validation harness), B-COG-01 (assistant + eval harness), B-EDU-01 (capstone forecasting)
 allowable_synonyms: ["Python", "pandas", "Python data analysis"]
-show: {example_primary: "Programming", example_secondary: "Programming"}
+show: {example_primary: "Programming", example_secondary: "Programming", example_tertiary: "Programming"}
 
 ## SKILL-SQL
 name: SQL
 evidence: B-WID-03 (ledger reconciliation queries), B-EDU-01 (database systems coursework, capstone)
 allowable_synonyms: ["relational queries", "relational modelling"]
-show: {example_primary: "Programming", example_secondary: "Programming"}
+show: {example_primary: "Programming", example_secondary: "Programming", example_tertiary: "Programming"}
 
 ## SKILL-TYPESCRIPT
 name: TypeScript
 evidence: B-COG-02 (deployed TypeScript service)
 allowable_synonyms: ["TypeScript", "Node service development"]
+show: {example_tertiary: "Programming"}
 
 ## SKILL-R
 name: R
@@ -98,28 +101,28 @@ show: {example_secondary: "Programming"}
 name: LLM Application Development
 evidence: B-COG-01 (hosted LLM API, prompt templates, graded eval set)
 allowable_synonyms: ["LLM applications", "prompt engineering", "LLM API integration"]
-show: {example_primary: "AI & Machine Learning", example_secondary: "AI & Machine Learning"}
+show: {example_primary: "AI & Machine Learning", example_secondary: "AI & Machine Learning", example_tertiary: "AI & Machine Learning"}
 
 ## SKILL-RAG
 name: Retrieval-Augmented Generation
 evidence: B-COG-02 (retrieval over a Postgres-backed document store)
 allowable_synonyms: ["RAG", "retrieval augmentation", "document retrieval"]
-show: {example_primary: "AI & Machine Learning", example_secondary: "AI & Machine Learning"}
+show: {example_primary: "AI & Machine Learning", example_secondary: "AI & Machine Learning", example_tertiary: "AI & Machine Learning"}
 
 ## SKILL-POSTGRES
 name: PostgreSQL
 evidence: B-WID-03 (queries against a Postgres replica), B-COG-02 (document store)
 allowable_synonyms: ["Postgres", "PostgreSQL"]
-show: {example_primary: "Databases & Tools", example_secondary: "Databases & Tools"}
+show: {example_primary: "Databases & Tools", example_secondary: "Databases & Tools", example_tertiary: "Databases & Tools"}
 
 ## SKILL-DOCKER
 name: Docker
 evidence: B-COG-02 (containerized deployment)
 allowable_synonyms: ["containers", "containerized deployment"]
-show: {example_primary: "Databases & Tools"}
+show: {example_primary: "Databases & Tools", example_tertiary: "Databases & Tools"}
 
 ## SKILL-GIT
 name: Git
 evidence: B-COG-02 (versioned releases with a pre-release test gate), B-SPR-01 (harness under version control)
 allowable_synonyms: ["version control", "Git"]
-show: {example_primary: "Databases & Tools", example_secondary: "Databases & Tools"}
+show: {example_primary: "Databases & Tools", example_secondary: "Databases & Tools", example_tertiary: "Databases & Tools"}

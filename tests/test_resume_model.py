@@ -24,7 +24,8 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(resume_model, "RESUME", tmp_path / "resume.yaml")
     monkeypatch.setattr(resume_model, "BULLETS", tmp_path / "bullets.md")
     monkeypatch.setattr(resume_model, "SKILLS", tmp_path / "skills_master.md")
-    cfg = verticals.load_verticals(PROFILE / "verticals.example.yaml")
+    from tests.conftest import FIXTURE_PATH
+    cfg = verticals.load_verticals(FIXTURE_PATH)
     verticals.set_config(cfg)
     yield tmp_path, cfg
     verticals.set_config(None)
@@ -213,10 +214,19 @@ def test_keyword_coverage_is_traced(world):
 
 def test_baseline_orders_contexts_by_the_lane_order(world):
     tmp, _ = world
-    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2, order: 1}}",
-          "example_secondary: {min: 1, max: 2, order: 5}}")
-    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2}}\n  EDU",
-          "example_secondary: {min: 1, max: 2, order: 1}}\n  EDU")
+    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2, order: 1},",
+          "example_secondary: {min: 1, max: 2, order: 5},")
+    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2}, example_tertiary: {min: 1, max: 2}}\n  EDU",
+          "example_secondary: {min: 1, max: 2, order: 1}, example_tertiary: {min: 1, max: 2}}\n  EDU")
     src = resume_model.load_sources()
     md = resume_model.build(src, "example_secondary", resume_model.baseline_plan(src, "example_secondary")).markdown
     assert md.index("**Cog Assistant**") < md.index("**Sprocket Validator**")
+
+
+def test_an_old_or_unknown_entry_key_is_named(world):
+    tmp, cfg = world
+    _edit(tmp / "bullets.md", "canonical: Owned", "source: Widget Corp\ncanonical: Owned")
+    _edit(tmp / "skills_master.md", "name: SQL", "name: SQL\nvertical_lean: [example_primary]")
+    problems = resume_model.check_sources(resume_model.load_sources(), cfg)
+    assert any("B-WID-01: unknown key 'source'" in p for p in problems)
+    assert any("SKILL-SQL: unknown key 'vertical_lean'" in p for p in problems)

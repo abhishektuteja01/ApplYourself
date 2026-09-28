@@ -93,8 +93,8 @@ def test_new_after_a_built_resume_opens_the_next_version_across_lanes(repo, caps
     assert out["work_dir"].endswith(f"{JOB}_v5")
 
 
-def test_new_refuses_a_lane_without_a_resume_block(repo, capsys):
-    _parquets(repo, vertical="example_tertiary")
+def test_new_refuses_a_row_with_no_configured_lane(repo, capsys):
+    _parquets(repo, vertical="")
     code, out = _run(capsys, "new", JOB)
     assert code == 1 and "no resume: block" in out["error"]
 

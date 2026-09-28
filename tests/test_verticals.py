@@ -64,13 +64,22 @@ class TestFixtureHappyPath:
             assert len(set(v.linkedin_terms)) == len(v.linkedin_terms)
             assert set(v.linkedin_terms) <= set(v.search_terms)
 
-    def test_fixture_prose_and_resumes_exist_on_disk(self, cfg):
+    def test_fixture_prose_exists_and_every_lane_has_a_resume_shape(self, cfg):
         """The fixture points at committed profile/verticals/example_*/ files;
         TestMainCli synthesizes its own, so nothing else catches a rename."""
         for name, v in cfg.verticals.items():
             for fname in ("rubric.md", "tailoring.md"):
                 assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
-            assert (REPO_ROOT / v.resume_file).is_file(), v.resume_file
+            assert v.resume is not None, name
+
+    def test_a_leftover_resume_file_key_is_rejected(self, tmp_path):
+        text = FIXTURE_PATH.read_text(encoding="utf-8").replace(
+            "    display_name: Widget Engineering\n",
+            "    display_name: Widget Engineering\n    resume_file: x.md\n", 1)
+        p = tmp_path / "v.yaml"
+        p.write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match="resume_file was replaced"):
+            verticals.load_verticals(p)
 
 
 class TestLaneRules:
@@ -178,14 +187,6 @@ class TestExampleTemplate:
     def test_example_dirs_have_prose_files(self, name, fname):
         assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
 
-    def test_example_resume_files_exist(self):
-        """resume_file is required and existence-checked, so a copied template
-        must pass verticals-check without the user creating anything."""
-        cfg = verticals.load_verticals(REPO_ROOT / "profile" / "verticals.example.yaml")
-        for v in cfg.verticals.values():
-            assert (REPO_ROOT / v.resume_file).is_file(), v.resume_file
-
-
 class TestSingleton:
     def test_set_config_wins(self, cfg):
         assert verticals.get_config() is cfg
@@ -225,9 +226,9 @@ class TestMainCli:
     check, and the only thing standing between a half-onboarded vertical and a
     /score run that judges against the wrong resume."""
 
-    def _setup(self, tmp_path, monkeypatch, *, drop_prose=(), drop_resume=()):
+    def _setup(self, tmp_path, monkeypatch, *, drop_prose=()):
         """Build a self-contained repo root from the fixture config, minus any
-        prose/resume files named in drop_*."""
+        prose files named in drop_prose."""
         monkeypatch.setattr(verticals, "REPO_ROOT", tmp_path)
         monkeypatch.setattr(verticals, "DEFAULT_CONFIG_PATH",
                             tmp_path / "profile" / "verticals.yaml")
@@ -246,10 +247,6 @@ class TestMainCli:
             for fname in ("rubric.md", "tailoring.md"):
                 if (name, fname) not in drop_prose:
                     (d / fname).write_text("# prose", encoding="utf-8")
-            if name not in drop_resume:
-                r = tmp_path / v.resume_file
-                r.parent.mkdir(parents=True, exist_ok=True)
-                r.write_text("# resume", encoding="utf-8")
         return cfg
 
     def test_success_prints_names_and_default(self, tmp_path, monkeypatch, capsys):
@@ -304,12 +301,15 @@ class TestMainCli:
         for expected in ("example_primary/rubric.md", "example_primary/tailoring.md", "example_secondary/rubric.md"):
             assert expected in out
 
-    def test_missing_resume_file_is_named(self, tmp_path, monkeypatch, capsys):
-        cfg = self._setup(tmp_path, monkeypatch, drop_resume={"example_tertiary"})
+    def test_a_lane_without_a_resume_block_is_named(self, tmp_path, monkeypatch, capsys):
+        self._setup(tmp_path, monkeypatch)
+        cfg_file = tmp_path / "profile" / "verticals.yaml"
+        data = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+        del data["verticals"]["example_tertiary"]["resume"]
+        cfg_file.write_text(yaml.safe_dump(data), encoding="utf-8")
         assert verticals.main() == 1
         out = capsys.readouterr().out
-        assert "missing per-vertical scoring resume files (resume_file)" in out
-        assert cfg.verticals["example_tertiary"].resume_file in out
+        assert "no `resume:` block" in out and "example_tertiary" in out
 
     def test_a_source_problem_is_reported(self, tmp_path, monkeypatch, capsys):
         from src import resume_model
@@ -327,7 +327,7 @@ class TestMainCli:
         """Both are broken; the prose error returns first. Pin the order so a
         reshuffle doesn't silently change what the user sees."""
         self._setup(tmp_path, monkeypatch,
-                    drop_prose={("example_primary", "rubric.md")}, drop_resume={"example_tertiary"})
+                    drop_prose={("example_primary", "rubric.md")})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "prose files" in out

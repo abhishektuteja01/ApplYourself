@@ -157,11 +157,11 @@ def _judge_model() -> str:
 
 def _lane_resume(lane: verticals.Vertical) -> str:
     """The lane's baseline resume, built from the profile sources by the same
-    assembler /tailor uses (legacy lanes still read their resume_file)."""
-    if lane.resume is not None:
-        from src import resume_model
-        return resume_model.baseline_markdown(lane.name)
-    return (paths.REPO_ROOT / lane.resume_file).read_text(encoding="utf-8")
+    assembler /tailor uses."""
+    from src import resume_model
+    if lane.resume is None:
+        raise ValueError(f"lane {lane.name} has no resume: block in profile/verticals.yaml")
+    return resume_model.baseline_markdown(lane.name)
 
 
 def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) -> None:

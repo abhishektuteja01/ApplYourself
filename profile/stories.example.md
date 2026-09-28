@@ -9,11 +9,9 @@
 # situation/action/outcome/retrospect text or an entry in its
 # allowable_synonyms. No new numbers, no invented tools.
 #
-# Entry format (all nine keys, one blank line between entries):
+# Entry format (all eight keys, one blank line between entries):
 #   ## S-<CTX>-<SLUG>    <CTX> matches the bullets.md context tag for the same
 #                        project; <SLUG> is a short name you invent.
-#   source:              where the work happened, with dates. Same string as
-#                        the bullets.md entries for that project.
 #   kind:                the routing key. /apply maps a question label to a
 #                        kind, never straight to a project. One of:
 #                        bug_caught | judgment_call | reversal |
@@ -42,7 +40,6 @@
 # the committed profile/verticals/example_* lanes.
 
 ## S-SPR-BANDS
-source: Sprocket compliance side project (Jul 2025 - Oct 2025)
 kind: bug_caught
 anchors: [B-SPR-01]
 situation: The validation harness scored every historical measurement against the published tolerance bands, and the pass rate came out higher than the vendor's own quality report.
@@ -53,7 +50,6 @@ tags: [data_integrity, validation, debugging]
 allowable_synonyms: ["duplicate record contamination", "row-count assertion", "data integrity check", "stale export", "silent data defect"]
 
 ## S-COG-SCOPE
-source: Cog training assistant (personal project, Nov 2025 - Feb 2026)
 kind: judgment_call
 anchors: [B-COG-01, B-COG-02]
 situation: The plan included a second retrieval mode that would have needed its own index alongside the one already built.
@@ -64,7 +60,6 @@ tags: [architecture_decisions, capacity_planning, scoping]
 allowable_synonyms: ["scoped out on measured grounds", "sized before building", "storage estimate", "documented the decision"]
 
 ## S-WID-HANDOFF
-source: Widget Corp, Widget Operations Analyst (Exampletown, Jan 2023 - Jun 2025)
 kind: conflict
 anchors: [B-WID-02]
 situation: Two teams disagreed on which of them owned a recurring reconciliation break, and the break stayed open through three reporting cycles while they argued.

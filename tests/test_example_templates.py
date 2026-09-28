@@ -265,11 +265,10 @@ class TestResumeTemplateContract:
         assert not doc.inline_shapes, "inline shapes are rejected by the renderer"
 
     def test_renders_a_real_resume(self, tmp_path):
-        """The example_primary lane resume is markdown a new clone actually has."""
-        md = (
-            REPO_ROOT
-            / "profile/verticals/example_primary/resume_example_primary.md"
-        ).read_text(encoding="utf-8")
+        """The example_primary baseline resume, built from the example sources
+        a new clone actually has."""
+        from src import resume_model
+        md = resume_model.baseline_markdown("example_primary")
         out = tmp_path / "resume.docx"
         render_resume(md, RESUME_TEMPLATE, out)
         doc = Document(str(out))

@@ -332,7 +332,8 @@ class TestExampleSourcesResolve:
         monkeypatch.setattr(resume_model, "RESUME", PROFILE / "resume.example.yaml")
         monkeypatch.setattr(resume_model, "BULLETS", PROFILE / "bullets.example.md")
         monkeypatch.setattr(resume_model, "SKILLS", PROFILE / "skills_master.example.md")
-        cfg = verticals.load_verticals(PROFILE / "verticals.example.yaml")
+        from tests.conftest import FIXTURE_PATH
+        cfg = verticals.load_verticals(FIXTURE_PATH)
         verticals.set_config(cfg)
         return resume_model, cfg
 
@@ -400,7 +401,6 @@ class TestStoriesTemplate:
     drafting a story out of a bullet, which is fabrication."""
 
     KEYS = (
-        "source:",
         "kind:",
         "anchors:",
         "situation:",

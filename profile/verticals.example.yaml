@@ -16,9 +16,6 @@ default_vertical: example_primary
 verticals:
   example_primary:
     display_name: Widget Engineering
-    # Required: repo-relative path to the attested resume LLM judges score
-    # against (read by score-judge.md). Must exist or the prereq check fails loud.
-    resume_file: profile/verticals/example_primary/resume_example_primary.md
     # The lane's resume shape. Picks live on bullets (default_for) and
     # skills (show), so this block names no ids.
     resume:
@@ -67,7 +64,6 @@ verticals:
 
   example_secondary:
     display_name: Sprocket Compliance
-    resume_file: profile/verticals/example_secondary/resume_example_secondary.md
     # The lane's resume shape. Picks live on bullets (default_for) and
     # skills (show), so this block names no ids.
     resume:

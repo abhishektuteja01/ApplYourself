@@ -32,6 +32,8 @@ BULLETS = paths.PROFILE / "bullets.md"
 SKILLS = paths.PROFILE / "skills_master.md"
 
 SECTIONS = ("summary", "work", "projects", "education", "skills")
+BULLET_KEYS = ("canonical", "tags", "default_for", "evidence", "allowable_synonyms")
+SKILL_KEYS = ("name", "evidence", "allowable_synonyms", "show")
 SECTION_TITLES = {
     "summary": "SUMMARY", "work": "WORK EXPERIENCE", "projects": "PROJECTS",
     "education": "EDUCATION", "skills": "TECHNICAL SKILLS",
@@ -179,6 +181,12 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
                       and type(b.get("order", 0)) is int):
                 problems.append(f"{where}.lanes.{lane}: must be {{min, max, order?}} "
                                 f"with 0 <= min <= max")
+
+    for label, entries, keys in (("bullets.md", src.bullets, BULLET_KEYS),
+                                 ("skills_master.md", src.skills, SKILL_KEYS)):
+        for eid, e in entries.items():
+            for k in sorted(set(e) - set(keys)):
+                problems.append(f"{label} {eid}: unknown key {k!r} (allowed: {', '.join(keys)})")
 
     ctx_bullets: dict[str, list[str]] = {}
     for bid, b in src.bullets.items():
