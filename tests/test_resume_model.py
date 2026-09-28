@@ -85,9 +85,11 @@ def test_a_skill_name_containing_another_shown_skill_is_flagged(world):
     """SKILL-PYTHON named 'Python (…, scikit-learn, …)' beside SKILL-SKLEARN
     printed scikit-learn twice on 206 resumes."""
     tmp, cfg = world
-    _edit(tmp / "skills_master.md", "name: SQL", "name: SQL (and R)")
+    _edit(tmp / "skills_master.md", "name: SQL", "name: SQL (Postgres, R)")
+    _edit(tmp / "skills_master.md", "name: Retrieval-Augmented Generation", "name: Agentic Retrieval-Augmented Generation")
     problems = resume_model.check_sources(resume_model.load_sources(), cfg)
-    assert any("already contains SKILL-R" in p for p in problems)
+    assert [p for p in problems if "show it twice" in p] == [
+        "lane example_secondary: SKILL-SQL name 'SQL (Postgres, R)' lists SKILL-R ('R'); the resume would show it twice"]
 
 
 def test_ids_in_tailoring_prose_are_flagged(world, monkeypatch, tmp_path):

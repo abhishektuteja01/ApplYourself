@@ -248,12 +248,14 @@ def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
     for label in v.resume.skill_lines:
         if not lines.get(label):
             problems.append(f"lane {lane}: skill line {label!r} has no skill with that `show`")
-    names = {sid: src.skills[sid]["name"] for ids in lines.values() for sid in ids}
+    names = {sid: str(src.skills[sid]["name"]) for ids in lines.values() for sid in ids}
+    by_name = {n.lower(): sid for sid, n in names.items()}
     for a, na in names.items():
-        for b, nb in names.items():
-            if a != b and re.search(rf"(?<!\w){re.escape(nb.lower())}(?!\w)", na.lower()):
-                problems.append(f"lane {lane}: {a} name {na!r} already contains {b} "
-                                f"({nb!r}); the resume would list it twice")
+        for group in re.findall(r"\(([^)]*)\)", na):
+            for item in (i.strip().lower() for i in group.split(",")):
+                if item in by_name and by_name[item] != a:
+                    problems.append(f"lane {lane}: {a} name {na!r} lists {by_name[item]} "
+                                    f"({names[by_name[item]]!r}); the resume would show it twice")
     prose = verticals.VERTICALS_DIR / lane / "tailoring.md"
     if prose.is_file():
         ids = sorted(set(_ANY_ID.findall(prose.read_text(encoding="utf-8"))))
