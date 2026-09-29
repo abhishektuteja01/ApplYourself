@@ -33,6 +33,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from src import paths
+from src.parquet_io import locked
 
 REQUIRED_STYLES = [
     "Resume Name",
@@ -357,29 +358,32 @@ class PdfResult(TypedDict):
     detail: str
 
 
-def export_pdf(docx_path: Path, token: str) -> PdfResult:
-    """Convert docx_path to a same-named .pdf beside it through Microsoft Word.
-
-    Any older pdf is deleted first, so a failed export can never leave a stale
-    one looking current. `token` makes the staging name unique per role: Word
-    resolves a document by name and would export an already-open namesake.
-    No Word (not macOS, or not installed) returns "skipped"."""
-    pdf_path = docx_path.with_suffix(".pdf")
-    pdf_path.unlink(missing_ok=True)
-    if sys.platform != "darwin" or not WORD_APP.exists():
-        return PdfResult(status="skipped", path="", pages=0,
-                         detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable")
-    PDF_STAGING.mkdir(exist_ok=True)
+def _convert(docx_path: Path, pdf_path: Path, token: str) -> PdfResult | None:
+    """One Word conversion; a failure result, or None when the pdf is in place."""
     name = f"{token}_{docx_path.stem}.docx"
     staged_docx = PDF_STAGING / name
     staged_pdf = staged_docx.with_suffix(".pdf")
     staged_pdf.unlink(missing_ok=True)
     shutil.copyfile(docx_path, staged_docx)
+    # A namesake left open by an earlier failed run makes `document "<name>"` fail
+    # with -1728, so close any first; and close ours whether or not the save worked.
     script = (
         'tell application "Microsoft Word"\n'
+        '    repeat with i from (count of documents) to 1 by -1\n'
+        '        try\n'
+        f'            if (name of document i) is "{name}" then close document i saving no\n'
+        '        end try\n'
+        '    end repeat\n'
         f'    open POSIX file "{staged_docx}"\n'
         f'    set theDoc to document "{name}"\n'
-        f'    save as theDoc file format format PDF file name "{staged_pdf}"\n'
+        '    try\n'
+        f'        save as theDoc file format format PDF file name "{staged_pdf}"\n'
+        '    on error errMsg number errNum\n'
+        '        try\n'
+        '            close theDoc saving no\n'
+        '        end try\n'
+        '        error errMsg number errNum\n'
+        '    end try\n'
         '    close theDoc saving no\n'
         'end tell\n'
     )
@@ -395,6 +399,28 @@ def export_pdf(docx_path: Path, token: str) -> PdfResult:
         return PdfResult(status="failed", path="", pages=0,
                          detail=(proc.stderr or "Word produced no pdf").strip())
     shutil.move(str(staged_pdf), pdf_path)
+    return None
+
+
+def export_pdf(docx_path: Path, token: str) -> PdfResult:
+    """Convert docx_path to a same-named .pdf beside it through Microsoft Word.
+
+    Any older pdf is deleted first, so a failed export can never leave a stale
+    one looking current. `token` makes the staging name unique per role: Word
+    resolves a document by name and would export an already-open namesake.
+    No Word (not macOS, or not installed) returns "skipped"."""
+    pdf_path = docx_path.with_suffix(".pdf")
+    pdf_path.unlink(missing_ok=True)
+    if sys.platform != "darwin" or not WORD_APP.exists():
+        return PdfResult(status="skipped", path="", pages=0,
+                         detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable")
+    PDF_STAGING.mkdir(exist_ok=True)
+    # Word is one app: two conversions at once (parallel /tailor runs) collide with
+    # -1728 "object does not exist", so they take turns.
+    with locked(PDF_STAGING.parent / f"{PDF_STAGING.name.lstrip('.')}_word"):
+        failed = _convert(docx_path, pdf_path, token)
+    if failed:
+        return failed
     return PdfResult(status="ok", path=str(pdf_path), pages=pdf_pages(pdf_path), detail="")
 
 

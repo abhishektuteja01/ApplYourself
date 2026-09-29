@@ -767,3 +767,51 @@ def test_export_pdf_skipped_without_word(monkeypatch, tmp_path):
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
     assert docx_render.export_pdf(docx, "r")["status"] == "skipped"
+
+
+def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
+    """Parallel /tailor runs share one Word; overlapping conversions failed with
+    -1728 "object does not exist"."""
+    import subprocess
+    import threading
+    import time
+    from src import docx_render
+    monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
+    monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)
+    monkeypatch.setattr(docx_render.sys, "platform", "darwin")
+    monkeypatch.setattr(docx_render, "pdf_pages", lambda p: 1)
+    inside, overlaps = [0], []
+
+    def run(cmd, input, **kw):
+        inside[0] += 1
+        overlaps.append(inside[0])
+        time.sleep(0.05)
+        staged = input.split('file name "')[1].split('"')[0]
+        Path(staged).write_bytes(b"%PDF-1.4 fake")
+        inside[0] -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(docx_render.subprocess, "run", run)
+    results = []
+
+    def go(n):
+        docx = tmp_path / f"R{n}" / "A_Resume.docx"
+        docx.parent.mkdir()
+        docx.write_bytes(b"docx")
+        results.append(docx_render.export_pdf(docx, f"role{n}")["status"])
+    threads = [threading.Thread(target=go, args=(n,)) for n in range(4)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert results == ["ok"] * 4 and max(overlaps) == 1
+
+
+def test_the_word_script_closes_an_open_namesake_first_and_always_closes_its_own(
+        monkeypatch, tmp_path):
+    from src.docx_render import export_pdf
+    calls = _fake_word(monkeypatch, tmp_path)
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    export_pdf(docx, "role1")
+    script = calls[0]
+    assert script.index("repeat with i from (count of documents)") < script.index("open POSIX file")
+    assert "on error errMsg number errNum" in script
+    assert script.count("close theDoc saving no") == 2
