@@ -75,6 +75,20 @@ def test_ashby_falls_back_to_graphql_on_404(monkeypatch, cfg, tmp_path):
     assert p["jd_text"] == "" and p["_id"] == "abc12345-0000" and p["remote_flag"]
 
 
+def test_ashby_short_rest_jd_fetches_detail_by_id(monkeypatch, cfg, tmp_path):
+    sent = {}
+
+    def fake(op, query, variables, deadline_ts=None):
+        sent.update(variables)
+        return {"jobPosting": {"descriptionHtml": HTML, "publishedDate": "2026-09-20"}}
+    monkeypatch.setattr(ashby, "graphql", fake)
+    p = ashby.posting_from({"id": "abc12345-0000", "title": "AI Engineer",
+                            "jobUrl": "https://jobs.ashbyhq.com/acme/abc12345-0000",
+                            "descriptionPlain": "Short."}, "Acme")
+    full = ashby.AshbyLane().detail(B.Board("ashby", "Acme", "acme"), p, crawl(cfg, tmp_path))
+    assert sent["jobPostingId"] == "abc12345-0000" and len(full["jd_text"]) >= 200
+
+
 def test_ashby_a_missing_board_stays_a_404(monkeypatch, cfg, tmp_path):
     def rest(slug, company, deadline_ts=None):
         raise CareersError("nope", status=404, permanent=True)

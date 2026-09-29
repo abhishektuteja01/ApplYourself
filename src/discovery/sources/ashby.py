@@ -47,6 +47,7 @@ def posting_from(item: dict, company: str) -> dict | None:
         remote_flag=item.get("isRemote") is True,
         salary_min=lo, salary_max=hi, salary_currency=currency,
         employment_type=item.get("employmentType") or "",
+        _id=item.get("id"),
     )
 
 
