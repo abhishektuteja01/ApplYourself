@@ -2111,6 +2111,27 @@ class TestFormManifest:
         assert rows[0]["actual"] == "Two weeks from offer."
         assert rows[0]["matches"] is True
 
+    def test_a_listed_alternate_spelling_is_a_match(self):
+        """A chooser with no option list at plan time gets the first spelling;
+        the board may settle on another one the user listed."""
+        f = replace(field(id="loc", value="Exampletown, Example State, United States",
+                          kind="react_select"),
+                    alternates=("Exampletown, Example State, United States",
+                                "Exampletown, ES, USA"))
+        driver = FakeDriver()
+        driver._selected["loc"] = "Exampletown, ES, USA"
+        rows = F.form_manifest(driver, plan(fields=[f]), F.FillResult(form_url=""))
+        assert rows[0]["matches"] is True
+
+    def test_a_spelling_nobody_listed_still_refuses(self):
+        f = replace(field(id="loc", value="Exampletown, Example State, United States",
+                          kind="react_select"),
+                    alternates=("Exampletown, ES, USA",))
+        driver = FakeDriver()
+        driver._selected["loc"] = "Otherville, ES, USA"
+        rows = F.form_manifest(driver, plan(fields=[f]), F.FillResult(form_url=""))
+        assert rows[0]["matches"] is False
+
     def test_a_field_the_page_disagrees_with_is_flagged(self):
         """The board (or its resume parser) wrote something else after the
         fill. `FieldOutcome` records `after` but never the planned value, so

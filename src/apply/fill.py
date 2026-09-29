@@ -1762,6 +1762,7 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
         # `or` short-circuit skip the pop, and `**extra` then put the plan's
         # empty list back over the options the browser had just read.
         planned_options = extra.pop("options", ())
+        alternates = extra.pop("alternates", ())
         return {
             "id": field_id,
             "label": label,
@@ -1769,7 +1770,8 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
             "group": group,
             "planned": planned,
             "actual": actual,
-            "matches": _matches(field_id, live, planned, actual),
+            "matches": any(_matches(field_id, live, want, actual)
+                           for want in (planned, *alternates)),
             "prefilled": bool(outcome.was_prefilled) if outcome else False,
             "before": outcome.before if outcome else "",
             "invalid": field_id in invalid,
@@ -1779,7 +1781,8 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
 
     for f in plan.fields:
         rows.append(row(f.id, f.label, f.kind, _planned_text(f.value), "filled",
-                        options=f.options, tier=f.tier, source=f.source))
+                        options=f.options, tier=f.tier, source=f.source,
+                        alternates=f.alternates))
     for u in plan.unmapped:
         rows.append(row(u.id, u.label, u.kind, "", "parked",
                         options=u.options, tier=u.tier, reason=u.reason))

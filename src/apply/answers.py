@@ -24,7 +24,7 @@ from __future__ import annotations
 import functools
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -746,6 +746,11 @@ class Resolution:
     `bank:<id>~<keyword>` for a keyword guess, `override:<source>` for an
     `--answers` entry. Empty where the tier is the whole story."""
 
+    alternates: tuple[str, ...] = ()
+    """Other spellings the read-back may accept for this value: a chooser with
+    no option list at plan time gets the first candidate, and the board may
+    settle on another one the user listed (an identity location's alternates)."""
+
     @property
     def parked(self) -> bool:
         return self.action == "park"
@@ -1262,8 +1267,9 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
                 f"{[o.label for o in field.options]}", "A")
         return _fill(picked, "A")
     if field.kind == "react_select":
-        return _resolve_choice(field, _identity_candidates(field.id, value, answers, key),
-                               "A", f"identity.{key}")
+        candidates = _identity_candidates(field.id, value, answers, key)
+        picked = _resolve_choice(field, candidates, "A", f"identity.{key}")
+        return replace(picked, alternates=candidates) if picked.action == "fill" else picked
     return _fill(value, "A")
 
 

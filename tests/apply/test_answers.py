@@ -1040,6 +1040,15 @@ class TestLocationAlternates:
         r = resolve(self._field("location", (self.ALTERNATE,)), a)
         assert (r.action, r.value) == ("fill", self.ALTERNATE)
 
+    def test_a_blind_chooser_carries_the_listed_spellings(self, tmp_path):
+        """With no option list the first spelling is picked; the others travel
+        with it so the read-back accepts whichever one the board settles on."""
+        from src.apply.answers import resolve
+        a = self._answers(tmp_path, [self.ALTERNATE])
+        r = resolve(self._field("location", ()), a)
+        assert r.value == self.LOCATION
+        assert r.alternates == (self.LOCATION, self.ALTERNATE)
+
     def test_the_primary_location_still_wins_where_it_is_offered(self, tmp_path):
         from src.apply.answers import resolve
         a = self._answers(tmp_path, [self.ALTERNATE])

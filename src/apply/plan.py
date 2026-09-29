@@ -108,6 +108,9 @@ class FieldPlan:
     """The source an override replaced — `bank:<id>~<keyword>` when the session
     corrected a keyword guess, which is how the bank learns not to guess it."""
 
+    alternates: tuple[str, ...] = ()
+    """`Resolution.alternates` — other values the read-back accepts as this answer."""
+
     @property
     def needs_selection_assert(self) -> bool:
         """react-select accepts a typed string that matches no option and ends
@@ -581,6 +584,7 @@ def build_plan(
             dom_path=field.dom_path,
             dom_control=field.dom_control,
             replaced=replaced,
+            alternates=resolution.alternates,
         ))
 
     on_form = {f.id for f in reconciled.fields}
