@@ -1,0 +1,7 @@
+# Keywords /suggest-synonyms declined to add: no bullet honestly backs them.
+# Each is shown once in summary.md. `uv run synonyms approve <keyword>` makes it a
+# permanent "do not add" (approved: true). Every keyword listed, approved or not,
+# is skipped by later runs. One entry looks like:
+#
+#   - {keyword: "Kubernetes", reason: "no bullet attests it", first_seen: "2026-09-28", approved: false}
+[]

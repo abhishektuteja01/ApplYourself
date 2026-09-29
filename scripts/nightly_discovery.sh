@@ -46,7 +46,8 @@ echo "=== discovery start $STAMP (repo=$REPO uv=$UV) ===" | tee -a "$LOG"
 # else needs to kill it. macOS-only — elsewhere it does not exist, and an
 # unguarded call would exit 127 without ever running discovery, so fall
 # through to a plain run.
-if command -v caffeinate >/dev/null 2>&1; then
+# NO_CAFFEINATE=1 (nightly_pipeline.sh holds the Mac awake itself) skips it.
+if command -v caffeinate >/dev/null 2>&1 && [[ "${NO_CAFFEINATE:-0}" != 1 ]]; then
   caffeinate -s -i -t "${CAFFEINATE_SECONDS:-32400}" &
 fi
 "$UV" run discover >>"$LOG" 2>&1
@@ -56,7 +57,8 @@ echo "=== discovery end code=$CODE $(date +%Y-%m-%d_%H%M%S) ===" | tee -a "$LOG"
 # Open Claude Desktop the moment discovery is actually done, rather than
 # guessing a clock time it should be done by — the score routine's own
 # completion check still gates /score regardless of when the app opens.
-if [[ "$CODE" -eq 0 ]] && command -v open >/dev/null 2>&1; then
+# NO_OPEN_CLAUDE=1 (set by nightly_pipeline.sh, which needs no app open) skips it.
+if [[ "$CODE" -eq 0 ]] && [[ "${NO_OPEN_CLAUDE:-0}" != 1 ]] && command -v open >/dev/null 2>&1; then
   open -a "Claude"
 fi
 

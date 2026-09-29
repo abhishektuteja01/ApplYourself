@@ -72,6 +72,8 @@ pipeline.md
 # spoken claims, employer names, and the specific ways an answer fell apart.
 interview/
 /top_scored_open.xlsx
+/summary.md
+/summary.html
 # Nightly discovery logs (scheduler job). The directory itself is committed via
 # .gitkeep: launchd will not create the intermediate directory for
 # StandardOutPath, so a fresh clone without logs/ means the agent fails to spawn
@@ -83,6 +85,7 @@ interview/
 # Word's sandbox grant doesn't reliably persist across new per-job output dirs;
 # converting through one unchanging folder keeps a single one-time grant valid.
 .pdf_staging/
+.pdf_staging_word.lock
 
 # =============================================================================
 # Private working notes — live breakage tracker and backlog. They carry measured

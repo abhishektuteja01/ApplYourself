@@ -272,14 +272,15 @@ browser session.
 <details>
 <summary><b>Running discovery nightly (macOS)</b></summary>
 
-`scripts/nightly_discovery.sh` plus `scripts/launchagent.example.plist` schedule
-the scrape at 20:00, wrapped in `caffeinate` so sleep doesn't kill it mid-run. A
+`scripts/nightly_pipeline.sh` plus `scripts/launchagent.example.plist` schedule
+the night at 20:00, wrapped in `caffeinate` so sleep doesn't kill it mid-run. A
 `launchd` job whose start time falls while the Mac is asleep is skipped rather
 than deferred, so it needs a `pmset` wake a few minutes earlier. `/onboarding`
-prints the install block for you at the end. The script deletes discovery logs
+prints the install block for you at the end. The script deletes discovery logs and run folders
 older than `log_keep_days` in `profile/discovery.yaml`.
 
-The 00:00 routine runs `/score`, gated on the discovery log's `code=0`.
+The same script then scores, adds synonyms, tailors, fills forms without submitting
+and writes `summary.md`; a failed discover or score stops it.
 
 </details>
 

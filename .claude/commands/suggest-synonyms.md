@@ -1,5 +1,6 @@
 ---
-description: Three-track synonym/skills audit. Track 1 — gap-fill allowable_synonyms from shortlist JD keywords (profile/bullets.md). Track 2 — memory unlock prompts for adjacent tools/concepts the user likely touched but hasn't documented, across every context in bullets.md (each employment and each project). Track 3 — same gap-fill + memory-unlock pattern applied to profile/skills_master.md. Never writes to bullets.md or skills_master.md directly.
+description: Three-track synonym/skills audit. Track 1 — gap-fill allowable_synonyms from shortlist JD keywords (profile/bullets.md). Track 2 — memory unlock prompts for adjacent tools/concepts the user likely touched but hasn't documented, across every context in bullets.md (each employment and each project). Track 3 — same gap-fill + memory-unlock pattern applied to profile/skills_master.md. Never writes to bullets.md or skills_master.md itself: `uv run synonyms apply` does. `--auto` is the unattended nightly form.
+argument-hint: "[--auto]"
 model: sonnet
 effort: medium
 allowed-tools:
@@ -49,8 +50,29 @@ The key distinction across tracks:
 - Track 3 skill suggestions must trace to evidence already in `bullets.md` or to a
   confirmed Track 2/3 memory-unlock answer — never invent a skill with no anchor.
 
-Output is a draft file for the user to review. You never write to `profile/bullets.md`
-or `profile/skills_master.md` directly.
+Output is a draft file for the user to review (`--auto`: a proposals file that
+`uv run synonyms apply` checks and writes). You never write to `profile/bullets.md`
+or `profile/skills_master.md` yourself.
+
+## `--auto` (nightly, nobody to ask)
+
+Runs Steps 1, 2, the Track 3 gap-fill and the memory-unlock reasoning, then writes
+only `jobs/synonyms_proposals.yaml` and runs `uv run synonyms apply`. Skip Step 3's
+draft file, the tables and Step 4. Print apply's output and stop.
+
+```yaml
+ready:                      # Track 1 rephrasings + Track 3 aliases
+  - {target: B-XXX-NN | SKILL-XXX, phrase: "2-6 words", keyword: "the JD keyword"}
+declined:                   # keywords no bullet or skill covers
+  - {keyword: "...", reason: "one short clause"}
+unlock:                     # at most 5, `likely` only
+  - {kind: bullet | skill, thing: "the tool or step", context: "the job or project", via: "where you probably used it"}
+```
+
+Lenient: propose a phrase whenever the bullet or skill plausibly covers the keyword
+in the same tool or claim; decline only when nothing does. A phrase never claims more
+than the bullet's `canonical` and `evidence` (NO-DRIFT). Code drops duplicates and
+unknown targets, so do not check them yourself.
 
 ---
 
@@ -58,73 +80,25 @@ or `profile/skills_master.md` directly.
 cites NO-FAB and REPHRASE-LICENSE by name; their definitions live there,
 not in this file.
 
-## Step 1 — load profile and today's scored shortlist
+## Step 1 — the roles with no resume, and their keywords
 
 ```bash
-# Every path below is repo-relative, and src/ resolves its own paths from the
-# repo root — so anchor the shell there too.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
-SHORTLIST=$(ls -t shortlist/*.md 2>/dev/null | head -1)
-echo "shortlist: $SHORTLIST"
-
-# Extract all keywords_to_mirror from scored.parquet for shortlist rows
-uv run python -c "
-import json, pandas as pd
-from pathlib import Path
-
-scored = pd.read_parquet('jobs/scored.parquet')
-# company lives only in clean.parquet; scored.parquet has no company column
-clean = pd.read_parquet('jobs/clean.parquet', columns=['job_id', 'company'])
-scored = scored.merge(clean, on='job_id', how='left')
-# Only shortlist-worthy rows (fit >= scoring.yaml action.review_min, not ineligible)
-from src.score_filter import load_scoring
-keepers = scored[
-    (scored.fit_score >= load_scoring().review_min) &
-    (scored.sponsorship_label != 'ineligible')
-].copy()
-
-# Collect all keywords
-all_kw = []
-for _, row in keepers.iterrows():
-    kws = row.get('keywords_to_mirror', None)
-    if kws is None:
-        continue
-    import numpy as np
-    if isinstance(kws, (list, np.ndarray)):
-        for kw in kws:
-            kw = str(kw).strip()
-            if kw:
-                all_kw.append({'keyword': kw, 'job_id': row['job_id'],
-                               'company': row.get('company') or '', 'fit': float(row.get('fit_score',0))})
-    elif isinstance(kws, str) and kws:
-        all_kw.append({'keyword': kws.strip(), 'job_id': row['job_id'],
-                       'company': row.get('company') or '', 'fit': float(row.get('fit_score',0))})
-
-# Deduplicate + count frequency
-from collections import Counter
-freq = Counter(item['keyword'] for item in all_kw)
-# Top 40 by frequency, then by fit of first-appearing row
-seen = set()
-top = []
-for item in sorted(all_kw, key=lambda x: -x['fit']):
-    if item['keyword'] not in seen:
-        seen.add(item['keyword'])
-        top.append({**item, 'frequency': freq[item['keyword']]})
-    if len(top) >= 40:
-        break
-top.sort(key=lambda x: -x['frequency'])
-print(json.dumps(top, indent=2, default=str))
-" > /tmp/shortlist_keywords.json
-echo "keywords dumped: $(uv run python -c "import json; d=json.load(open('/tmp/shortlist_keywords.json')); print(len(d))")"
+uv run apply sheet --add >/dev/null
+uv run synonyms keywords > jobs/synonyms_keywords.json
+uv run python -c "import json; d=json.load(open('jobs/synonyms_keywords.json', encoding='utf-8')); print(len(d['job_ids']), 'roles,', len(d['keywords']), 'keywords')"
 ```
 
+`keywords` are the top 40 `keywords_to_mirror` of the roles with no resume yet,
+already without the keywords declined before. No roles or no keywords: say so and stop.
+
 Then `Read` these files:
-- `/tmp/shortlist_keywords.json`
+- `jobs/synonyms_keywords.json`
 - `profile/bullets.md` — canonical bullets + existing `allowable_synonyms` per bullet
 
 ## Step 2 — build the gap map
 
-For each keyword in `/tmp/shortlist_keywords.json`, do the following analysis in
+For each entry of `keywords` in `jobs/synonyms_keywords.json`, do the following analysis in
 your head before writing any output:
 
 1. **Check coverage:** Is this keyword (or a close variant) already present in
@@ -156,7 +130,7 @@ Format:
 ```markdown
 # Synonym & Skills Suggestions — <today's date>
 
-Generated from top-N shortlist keywords in `scored.parquet` (fit ≥ `action.review_min` rows).
+Generated from the top keywords of the N roles with no resume yet.
 **Review each entry before adding to profile/bullets.md or profile/skills_master.md.**
 Only add entries you can stand behind on a call — these are attested claims.
 
@@ -300,7 +274,7 @@ b) Draft a new canonical bullet for a genuinely undocumented capability — whic
 `Read` `profile/skills_master.md` (every `SKILL-*` block: `name`, `evidence`,
 `allowable_synonyms`, `show`).
 
-**Gap-fill half:** reuse `/tmp/shortlist_keywords.json` from Step 1. For each
+**Gap-fill half:** reuse `jobs/synonyms_keywords.json` from Step 1. For each
 keyword that names a tool/technology/library (skip process-y keywords already
 handled by Track 1 — those belong to bullets, not skills), check:
 
@@ -374,3 +348,10 @@ Tell the user:
   the fastest path to new claimable vocabulary and new skill entries. Then review
   the Ready-to-add synonyms/aliases. Only add what you can stand behind on a
   recruiter call. New skills_master.md entries are written by you, not this command."
+
+## Summary session
+
+When the user answers in the morning session: an unlock question, `uv run synonyms
+answer <id> yes|no`; a declined keyword they agree with, `uv run synonyms approve
+<keyword>`. A `yes` still means the user writes the bullet or skill block, or asks you
+to draft it for them to paste.

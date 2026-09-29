@@ -160,8 +160,21 @@ uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers
                                       # --rate floors at 30s, one submit per company per run
 uv run apply learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                                       # review the answer bank, or take one thing back
-uv run apply sheet [--add]            # rebuild the overnight status sheet; --add first
+uv run apply sheet [--add | --list STATUS]  # rebuild the overnight status sheet; --add first
                                       # appends roles scored >= score_threshold
+uv run apply triage [--fill] [--job-id J ...] [--limit N]
+                                      # sort Resume ready roles into ready / open with no model (writes
+                                      # jobs/apply_triage.json); --fill fills the ready ones, never submits
+uv run apply teach --question-id Q --label L --value V [--offered O ...] [--keyword K] [--misfired Q2] [--job J]
+                                      # save one answer to the bank, for a question answered outside a run
+uv run synonyms keywords|apply [--file F]|undo TARGET PHRASE|approve K...|answer ID yes|no
+                                      # /suggest-synonyms' deterministic side: keywords of the roles with
+                                      # no resume yet; add the proposed synonyms (backup + log); take one
+                                      # back; approve a declined keyword; close an unlock question
+uv run summary [--run-dir D] [--since ISO] [--out F]
+                                      # write summary.md from the night's records (one file, rewritten)
+./scripts/nightly_pipeline.sh         # the whole night: discover, score, synonyms, tailor, apply_prep,
+                                      # summary. DRY_RUN=1 prints only; STAGE_LIMIT=N caps tailor/apply_prep
 uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] [--limit N] [--resume]
                                       # one-off liveness audit of the ATS slug
                                       # universe -> jobs/slug_audit_<date>.csv:
