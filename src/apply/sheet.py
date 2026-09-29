@@ -6,7 +6,9 @@ latest run report that names the role, and a role's waiting answers — so the
 sheet can never disagree with them. Nothing else writes those columns.
 
 `--add` appends roles newly scored at or above `score_threshold` that are not
-tracked as done and not in the ledger.
+tracked as done and not in the ledger. A row that is Applied or Closed is
+removed on the rebuild (state.yaml and the ledger keep the record, and `--add`
+never brings it back); an Expired row stays, so it can be marked skip.
 """
 from __future__ import annotations
 
@@ -109,7 +111,9 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
             return ("Submittable", "",
                     f"uv run apply run --job-id {job_id} --answers {answers} "
                     f"--manifest {folder / 'form_manifest.submit.json'} --submit")
-        if category in ("parked", "failed", "expired", "unsent"):
+        if category == "expired":
+            return "Expired", f"expired — {detail}" if detail else "expired", ""
+        if category in ("parked", "failed", "unsent"):
             return category.capitalize(), detail, ""
     return "Resume ready", "", ""
 
@@ -156,9 +160,44 @@ def _candidates(threshold: float, present: set[str], sent: set[str],
     return out
 
 
+def rows(automation: Path | None = None) -> list[dict[str, str]]:
+    """Every row of the sheet as it stands, as {column: text}. A pure read."""
+    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
+                            .read_text(encoding="utf-8")) or {}
+    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+    if not table.is_file():
+        return []
+    _, ws, col = _load(table)
+    out = []
+    for r in range(2, ws.max_row + 1):
+        row = {name: str(ws.cell(row=r, column=i).value or "") for name, i in col.items()}
+        if row["name"]:
+            out.append(row)
+    return out
+
+
+def job_ids(status: str, automation: Path | None = None) -> list[str]:
+    """The job_ids the sheet currently shows at `status`, in sheet order. A pure read."""
+    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
+                            .read_text(encoding="utf-8")) or {}
+    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+    if not table.is_file():
+        return []
+    _, ws, col = _load(table)
+    return [str(ws.cell(row=r, column=col["name"]).value)
+            for r in range(2, ws.max_row + 1)
+            if ws.cell(row=r, column=col["status"]).value == status
+            and ws.cell(row=r, column=col["name"]).value]
+
+
+def _finished(status: str) -> bool:
+    return status == "Applied" or status.startswith("Closed")
+
+
 def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:
-    """Rebuild every row's status; with `add`, append new roles first.
-    Returns a count per status."""
+    """Rebuild every row's status; with `add`, append new roles first. Rows that
+    are Applied or Closed are removed. Returns a count per status, the removed
+    ones under "<status> (removed)"."""
     config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
                             .read_text(encoding="utf-8")) or {}
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
@@ -178,6 +217,7 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
                        sorted(col, key=col.get)])
 
     counts: dict[str, int] = {}
+    finished: list[int] = []
     for r in range(2, ws.max_row + 1):
         job_id = str(ws.cell(row=r, column=col["name"]).value or "")
         if not job_id:
@@ -190,6 +230,39 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
         ws.cell(row=r, column=col["status"], value=status)
         ws.cell(row=r, column=col["note"], value=note)
         ws.cell(row=r, column=col["uv_run_command"], value=command)
+        if _finished(status):
+            finished.append(r)
+            status = f"{status} (removed)"
         counts[status] = counts.get(status, 0) + 1
+    for r in reversed(finished):
+        ws.delete_rows(r)
     wb.save(table)
     return counts
+
+
+def check(automation: Path | None = None) -> dict[str, list[str]]:
+    """Read-only look at the sheet as it stands: Applied or Closed rows still on
+    it, a job_id listed twice, and rows whose posting is no longer in the live
+    view (`clean.parquet`). Every list is empty on a clean sheet."""
+    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
+                            .read_text(encoding="utf-8")) or {}
+    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+    out: dict[str, list[str]] = {"finished": [], "duplicates": [], "not_live": []}
+    if not table.is_file():
+        return out
+    _, ws, col = _load(table)
+    live = (set(pd.read_parquet(paths.CLEAN, columns=["job_id"])["job_id"])
+            if paths.CLEAN.exists() else None)
+    seen: set[str] = set()
+    for r in range(2, ws.max_row + 1):
+        job_id = str(ws.cell(row=r, column=col["name"]).value or "")
+        if not job_id:
+            continue
+        if _finished(str(ws.cell(row=r, column=col["status"]).value or "")):
+            out["finished"].append(job_id)
+        if job_id in seen:
+            out["duplicates"].append(job_id)
+        seen.add(job_id)
+        if live is not None and job_id not in live:
+            out["not_live"].append(job_id)
+    return out

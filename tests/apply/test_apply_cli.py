@@ -1771,3 +1771,22 @@ class TestAConfirmedFactJudgmentIsLearned:
         p.write_text(json.dumps({"q": {"fact": {"fact": "us_person"}}}), encoding="utf-8")
         with pytest.raises(apply_cli.ApplyCliError, match="yes_when"):
             apply_cli.load_overrides(p, JOB_ID)
+
+
+def test_teach_saves_one_answer_and_a_keyword_finds_the_next_wording(tmp_path, capsys):
+    import shutil
+    from src.apply.answers import find_question, load_answers
+    path = tmp_path / "bank.yaml"
+    shutil.copy(FIXTURES / "application_answers.yaml", path)
+    argv = ["teach", "--question-id", "background_check", "--path", str(path),
+            "--label", "Do you consent to a background investigation and drug test?",
+            "--value", "Yes", "--offered", "Yes", "--offered", "No",
+            "--keyword", "background investigation", "--job", "aaaa1111"]
+    assert apply_cli.main(argv) == 0
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["background_check"]
+    assert saved["answer"] == "Yes"
+    found = find_question("Will you undergo a background investigation before you start?",
+                          load_answers(path))
+    assert found and found[0].id == "background_check" and "~" in found[1]
+    assert apply_cli.main(argv) == 0
+    assert "nothing to change" in capsys.readouterr().out

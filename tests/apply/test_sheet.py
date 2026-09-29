@@ -70,8 +70,10 @@ def test_status_follows_the_records(tmp_path, monkeypatch):
     assert row["status"] == "Submittable" and "--submit" in row["uv_run_command"]
 
     ledger.append(runs / ledger.LEDGER_NAME, "aaaa1111", "accepted", at="2026-09-28T11:00:00")
-    sheet.refresh()
-    assert _rows(tmp_path)["aaaa1111"]["status"] == "Applied"
+    counts = sheet.refresh()
+    assert "aaaa1111" not in _rows(tmp_path) and counts["Applied (removed)"] == 1
+    sheet.refresh(add=True)
+    assert "aaaa1111" not in _rows(tmp_path)
 
 
 def test_answers_waiting_for_the_user(tmp_path, monkeypatch):
@@ -97,3 +99,60 @@ def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
     _state(tmp_path, "aaaa1111", "tailored", folder)
     sheet.refresh(add=True)
     assert _rows(tmp_path)["aaaa1111"]["status"] == "Resume ready"
+
+
+def test_job_ids_lists_one_status_in_sheet_order(tmp_path, monkeypatch, capsys):
+    from src import apply_cli
+    _world(tmp_path, monkeypatch)
+    assert sheet.job_ids("New") == []
+    sheet.refresh(add=True)
+    folder = "lane/2026-09-28_acme_eng_aaaa1111"
+    (paths.APPLICATIONS / folder).mkdir(parents=True)
+    _state(tmp_path, "aaaa1111", "tailored", folder)
+    sheet.refresh()
+    assert sheet.job_ids("Resume ready") == ["aaaa1111"]
+    assert sheet.job_ids("New") == ["bbbb2222"]
+    assert apply_cli.main(["sheet", "--list", "New"]) == 0
+    assert capsys.readouterr().out.split() == ["bbbb2222"]
+
+
+def test_closed_roles_leave_the_sheet_and_stay_out(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    sheet.refresh(add=True)
+    _state(tmp_path, "aaaa1111", "skip")
+    counts = sheet.refresh()
+    assert set(_rows(tmp_path)) == {"bbbb2222"} and counts["Closed: skip (removed)"] == 1
+    sheet.refresh(add=True)
+    assert set(_rows(tmp_path)) == {"bbbb2222"}
+
+
+def test_an_expired_role_stays_with_an_expired_note(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    folder = "lane/2026-09-28_acme_eng_aaaa1111"
+    (paths.APPLICATIONS / folder).mkdir(parents=True)
+    _state(tmp_path, "aaaa1111", "tailored", folder)
+    runs = paths.APPLICATIONS / "apply_runs"
+    runs.mkdir(parents=True)
+    (runs / "2026-09-28T10-00-00.md").write_text(
+        "# apply run\n\n## Expired postings (1)\n\n- `aaaa1111` Acme — Eng\n"
+        "  - the posting is gone\n", encoding="utf-8")
+    sheet.refresh(add=True)
+    row = _rows(tmp_path)["aaaa1111"]
+    assert row["status"] == "Expired" and row["note"].startswith("expired")
+
+
+def test_check_reports_what_is_wrong_and_writes_nothing(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    assert sheet.check() == {"finished": [], "duplicates": [], "not_live": []}
+    sheet.refresh(add=True)
+    assert sheet.check() == {"finished": [], "duplicates": [], "not_live": []}
+    pd.DataFrame([{"job_id": "bbbb2222"}]).to_parquet(tmp_path / "clean.parquet")
+    wb = openpyxl.load_workbook(tmp_path / "sheet.xlsx")
+    ws = wb.active
+    header = [c.value for c in ws[1]]
+    ws.append([70, "aaaa1111"] + [""] * (len(header) - 2))
+    ws.cell(row=ws.max_row, column=header.index("status") + 1, value="Applied")
+    wb.save(tmp_path / "sheet.xlsx")
+    got = sheet.check()
+    assert got["finished"] == ["aaaa1111"] and got["duplicates"] == ["aaaa1111"]
+    assert got["not_live"] == ["aaaa1111", "aaaa1111"]

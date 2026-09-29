@@ -17,9 +17,16 @@
                         applications/apply_runs/<timestamp>.md.
   learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                         review what the bank holds, or take one thing back.
-  sheet [--add]         rebuild the status sheet's status/note/command from
+  triage [--fill] [--job-id J ...] [--limit N]
+                        sort Resume ready roles into ready / open with no model; --fill
+                        fills the ready ones (never submits) and writes a run report.
+  teach --question-id Q --label L --value V [--offered O ...] [--keyword K] [--misfired Q2] [--job J]
+                        save one answer to the bank, for a question answered outside a run.
+  sheet [--add | --list STATUS]
+                        rebuild the status sheet's status/note/command from
                         state.yaml, the ledger and the run reports; --add first
-                        appends newly scored roles.
+                        appends newly scored roles; --list prints the job_ids
+                        at one status and writes nothing.
 """
 from __future__ import annotations
 
@@ -784,6 +791,9 @@ def _cmd_sheet(args: argparse.Namespace) -> int:
     from src.apply import sheet
 
     try:
+        if args.list:
+            print("\n".join(sheet.job_ids(args.list)))
+            return 0
         counts = sheet.refresh(add=args.add)
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -809,6 +819,35 @@ def _cmd_learn(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def _cmd_triage(args: argparse.Namespace) -> int:
+    from src.apply import triage
+
+    try:
+        return triage.main(args.job_id or None, fill=args.fill, headless=args.headless,
+                           limit=args.limit)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+def _cmd_teach(args: argparse.Namespace) -> int:
+    """Save one answer to the bank: a question the user answered outside a run."""
+    values = tuple(args.value)
+    lesson = bank.Lesson(
+        label=args.label, question=args.question_id,
+        value=values[0] if len(values) == 1 else values,
+        offered=tuple(args.offered), misfired=args.misfired or "",
+        source=args.source, job_id=args.job or "", keyword=args.keyword or "")
+    try:
+        changes = bank.learn([lesson], Path(args.path) if args.path else None)
+    except (bank.BankError, AnswersError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    for line in changes or ["nothing to change: the bank already answers this"]:
+        print(line)
+    return 1 if any(c.startswith("not saved:") for c in changes) else 0
 
 
 def render_fill(result, plan: Plan) -> str:
@@ -1607,6 +1646,9 @@ def main(argv: list[str] | None = None) -> int:
     sh = sub.add_parser("sheet", help="rebuild the status sheet from state, ledger and run reports")
     sh.add_argument("--add", action="store_true",
                     help="first append roles newly scored at or above score_threshold")
+    sh.add_argument("--list", default=None, metavar="STATUS",
+                    help="print the job_ids at this status, one per line; "
+                         "reads the sheet as it is, writes nothing")
     sh.set_defaults(func=_cmd_sheet)
 
     lrn = sub.add_parser("learn", help="review or undo what the answer bank holds")
@@ -1621,6 +1663,30 @@ def main(argv: list[str] | None = None) -> int:
                      help="remove one judged work-authorization / export-control wording")
     lrn.add_argument("--path", default=None, type=Path, help="bank path (tests)")
     lrn.set_defaults(func=_cmd_learn)
+
+    tri = sub.add_parser("triage", help="sort the Resume ready roles into ready / open, "
+                                        "and with --fill fill the ready ones (no model, no submit)")
+    tri.add_argument("--fill", action="store_true",
+                     help="fill each ready role's form (never submits) and write a run report")
+    tri.add_argument("--headless", action="store_true")
+    tri.add_argument("--job-id", action="append", default=[], help="only these roles; repeat")
+    tri.add_argument("--limit", type=int, default=None)
+    tri.set_defaults(func=_cmd_triage)
+
+    tch = sub.add_parser("teach", help="save one answer to the answer bank")
+    tch.add_argument("--question-id", required=True, help="the bank question, existing or new")
+    tch.add_argument("--label", required=True, help="the board's question text, in full")
+    tch.add_argument("--value", required=True, action="append",
+                     help="the answer; repeat for a multi-select")
+    tch.add_argument("--offered", action="append", default=[],
+                     help="an option the board offers; repeat per option")
+    tch.add_argument("--keyword", default=None, help="words every wording of it shares")
+    tch.add_argument("--misfired", default=None,
+                     help="the question whose keyword wrongly answered this label")
+    tch.add_argument("--job", default=None)
+    tch.add_argument("--source", default="user")
+    tch.add_argument("--path", default=None, type=Path, help="bank path (tests)")
+    tch.set_defaults(func=_cmd_teach)
 
     args = parser.parse_args(argv)
     return args.func(args)
