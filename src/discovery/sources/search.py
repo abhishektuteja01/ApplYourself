@@ -181,10 +181,14 @@ class SearchLane:
                     continue
                 if df is None or df.empty:
                     continue
-                saturated += len(df) >= src.results_wanted
+                new_before = stats.new
                 for record in df.where(pd.notnull(df), None).to_dict("records"):
                     self._one(posting_from(record, self.name, vertical, term, is_remote),
                               crawl, stats, fetch, seen)
+                if len(df) >= src.results_wanted:
+                    saturated += 1
+                    where = f"{location} (remote)" if is_remote else location
+                    stats.capped.append(f"{term} @ {where}: {stats.new - new_before} new")
                 # Details right after the query that found them, so a deadline
                 # never leaves a night's new postings without a JD.
                 if client is not None and fetch:

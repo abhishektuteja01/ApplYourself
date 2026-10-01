@@ -233,6 +233,8 @@ def render_md(report: dict) -> str:
         if lane.get("crash") or lane.get("errors") or lane.get("notes"):
             lines += ["", f"### {name}", ""]
             lines += [f"- {n}" for n in lane.get("notes", [])]
+            if lane.get("capped"):
+                lines += ["- hit the cap:"] + [f"  - {c}" for c in lane["capped"]]
             lines += [f"- error: {e}" for e in lane.get("errors", [])[:50]]
             if len(lane.get("errors", [])) > 50:
                 lines.append(f"- ... {len(lane['errors']) - 50} more errors")

@@ -50,6 +50,25 @@ def test_search_gates_touches_known_and_fetches_new_details(monkeypatch, cfg):
     assert stats.detail_ok == 1
 
 
+def test_search_names_each_query_that_hit_the_cap(monkeypatch, cfg):
+    def rows(n, start):
+        return pd.DataFrame([{"job_url": f"https://www.linkedin.com/jobs/view/{start + i}",
+                              "title": "Widget Platform Analyst", "company": f"Co{start + i}",
+                              "location": "", "description": JD} for i in range(n)])
+    frames = iter([rows(2, 10), rows(1, 20)])
+    monkeypatch.setattr(Q, "scrape_jobs", lambda **kw: next(frames))
+    monkeypatch.setattr(Q.time, "sleep", lambda s: None)
+    monkeypatch.setattr(Q, "build_queries", lambda *a: [
+        ("v", "widget analyst", "United States", False),
+        ("v", "widget platform", "United States", True)])
+    monkeypatch.setattr(Q, "_detail_client", lambda tally: None)
+    crawl = Crawl(cfg, known={"linkedin|11": {}})
+    crawl.cfg.sources["linkedin"].results_wanted = 2
+    stats = Q.SearchLane("linkedin").run(crawl, tally=None)
+    assert stats.capped == ["widget analyst @ United States: 1 new"]
+    assert "1 hit the 2-result cap" in stats.notes[0]
+
+
 def test_build_queries_adds_abroad_after_home(cfg):
     src = DiscoveryConfig().sources["linkedin"]
     src.remote_queries = False

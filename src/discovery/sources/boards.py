@@ -223,6 +223,7 @@ class LaneStats:
     errors: list[str] = field(default_factory=list)
     truncated: bool = False
     notes: list[str] = field(default_factory=list)
+    capped: list[str] = field(default_factory=list)  # queries that hit results_wanted
 
 
 class Crawl:
