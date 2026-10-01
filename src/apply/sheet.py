@@ -87,19 +87,20 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
     current = state.get("state", "")
     if sent is not None and sent.get("status") == "rejected" or \
             (sent is not None and "rejected" in sent.get("detail", "")):
-        return "Rejected by board", sent.get("detail", ""), ""
+        return "Unsent", f"rejected by the board: {sent.get('detail', '')}", ""
     if sent is not None and sent.get("status") in ("unsent", "clicking"):
-        return ("Unsent — verify on board",
-                f"clicked {sent.get('at', '')[:10]}; the board fired no submit request", "")
+        return ("Unsent",
+                f"clicked {sent.get('at', '')[:10]}; the board fired no submit request, "
+                "verify on the board", "")
     if sent is not None or current in _DONE:
         when = (sent or {}).get("at", "") or state.get("applied_at", "")
         return "Applied", f"{current or 'sent'} {str(when)[:10]}".strip(), ""
     if current in _CLOSED:
         return f"Closed: {current}", "", ""
-    if not submittable:
-        return "Manual apply", "no submit path for this board", ""
     if not state.get("tailored_dirs"):
         return "New", "", ""
+    if not submittable:
+        return "Manual apply", "no submit path for this board", ""
     waiting = _waiting(state, outcome[2] if outcome else "")
     if waiting:
         return "Needs your OK", f"answers drafted in {Path(waiting).parent.name}", ""
@@ -113,8 +114,10 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
                     f"--manifest {folder / 'form_manifest.submit.json'} --submit")
         if category == "expired":
             return "Expired", f"expired — {detail}" if detail else "expired", ""
-        if category in ("parked", "failed", "unsent"):
-            return category.capitalize(), detail, ""
+        if category in ("parked", "failed"):
+            return "Parked", f"failed: {detail}" if category == "failed" else detail, ""
+        if category == "unsent":
+            return "Unsent", detail, ""
     return "Resume ready", "", ""
 
 
@@ -194,6 +197,13 @@ def _finished(status: str) -> bool:
     return status == "Applied" or status.startswith("Closed")
 
 
+def _row_status(job_id: str, url: str, states: dict, ledger_path: Path,
+                outcomes: dict) -> tuple[str, str, str]:
+    submittable = detect.is_auto_submittable(url) or _submittable(job_id)
+    return status_for(job_id, submittable, states.get(job_id),
+                      ledger.prior(ledger_path, job_id), outcomes.get(job_id))
+
+
 def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:
     """Rebuild every row's status; with `add`, append new roles first. Rows that
     are Applied or Closed are removed. Returns a count per status, the removed
@@ -223,10 +233,7 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
         if not job_id:
             continue
         url = str(ws.cell(row=r, column=col["url"]).value or "")
-        submittable = detect.is_auto_submittable(url) or _submittable(job_id)
-        status, note, command = status_for(
-            job_id, submittable, states.get(job_id), ledger.prior(ledger_path, job_id),
-            outcomes.get(job_id))
+        status, note, command = _row_status(job_id, url, states, ledger_path, outcomes)
         ws.cell(row=r, column=col["status"], value=status)
         ws.cell(row=r, column=col["note"], value=note)
         ws.cell(row=r, column=col["uv_run_command"], value=command)
@@ -243,13 +250,19 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
 def check(automation: Path | None = None) -> dict[str, list[str]]:
     """Read-only look at the sheet as it stands: Applied or Closed rows still on
     it, a job_id listed twice, and rows whose posting is no longer in the live
-    view (`clean.parquet`). Every list is empty on a clean sheet."""
+    view (`clean.parquet`), and rows whose status differs from what the records
+    give now. Every list is empty on a clean sheet."""
     config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
                             .read_text(encoding="utf-8")) or {}
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
-    out: dict[str, list[str]] = {"finished": [], "duplicates": [], "not_live": []}
+    out: dict[str, list[str]] = {"finished": [], "duplicates": [], "not_live": [],
+                                 "wrong_status": []}
     if not table.is_file():
         return out
+    runs = paths.APPLICATIONS / "apply_runs"
+    ledger_path = runs / ledger.LEDGER_NAME
+    states = state_io.load_state_index(paths.PIPELINE)
+    outcomes = latest_outcomes(runs)
     _, ws, col = _load(table)
     live = (set(pd.read_parquet(paths.CLEAN, columns=["job_id"])["job_id"])
             if paths.CLEAN.exists() else None)
@@ -265,4 +278,8 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
         seen.add(job_id)
         if live is not None and job_id not in live:
             out["not_live"].append(job_id)
+        url = str(ws.cell(row=r, column=col["url"]).value or "")
+        shown = str(ws.cell(row=r, column=col["status"]).value or "")
+        if _row_status(job_id, url, states, ledger_path, outcomes)[0] != shown:
+            out["wrong_status"].append(job_id)
     return out

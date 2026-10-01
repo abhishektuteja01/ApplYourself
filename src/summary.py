@@ -396,7 +396,9 @@ def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str]) -> 
         lines += ["", CUES["ready"]]
 
     errors = {r["name"]: (r["note"] or r["status"])
-              for r in of("Failed", "Unsent", "Unsent — verify on board", "Rejected by board")}
+              for r in of("Unsent")}
+    errors.update({r["name"]: r["note"] for r in of("Parked")
+                   if r["note"].startswith("failed:")})
     errors.update({r["name"]: "posting gone (expired), mark it skip or leave it"
                    for r in of("Expired")})
     errors.update(unreadable)
@@ -418,7 +420,8 @@ def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str]) -> 
 def sheet_line(check: dict[str, list[str]]) -> list[str]:
     said = {"finished": "Applied or Closed rows still on it (should not happen)",
             "duplicates": "listed twice",
-            "not_live": "no longer in the live listing, the posting may be gone"}
+            "not_live": "no longer in the live listing, the posting may be gone",
+            "wrong_status": "status differs from the records (run `uv run apply sheet`)"}
     problems = [f"{said[k]}: {', '.join(v)}" for k, v in check.items() if v]
     if not problems:
         return ["Sheet check: clean."]

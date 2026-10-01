@@ -143,10 +143,10 @@ def test_an_expired_role_stays_with_an_expired_note(tmp_path, monkeypatch):
 
 def test_check_reports_what_is_wrong_and_writes_nothing(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
-    assert sheet.check() == {"finished": [], "duplicates": [], "not_live": []}
+    assert sheet.check() == {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []}
     sheet.refresh(add=True)
-    assert sheet.check() == {"finished": [], "duplicates": [], "not_live": []}
-    pd.DataFrame([{"job_id": "bbbb2222"}]).to_parquet(tmp_path / "clean.parquet")
+    assert sheet.check() == {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []}
+    pd.DataFrame([{"job_id": "bbbb2222", "url": ""}]).to_parquet(tmp_path / "clean.parquet")
     wb = openpyxl.load_workbook(tmp_path / "sheet.xlsx")
     ws = wb.active
     header = [c.value for c in ws[1]]
@@ -156,3 +156,10 @@ def test_check_reports_what_is_wrong_and_writes_nothing(tmp_path, monkeypatch):
     got = sheet.check()
     assert got["finished"] == ["aaaa1111"] and got["duplicates"] == ["aaaa1111"]
     assert got["not_live"] == ["aaaa1111", "aaaa1111"]
+    assert got["wrong_status"] == ["aaaa1111"]
+
+
+def test_unsubmittable_role_is_new_until_it_has_a_resume():
+    assert sheet.status_for("aaaa1111", False, {}, None, None)[0] == "New"
+    built = {"tailored_dirs": ["lane/x"]}
+    assert sheet.status_for("aaaa1111", False, built, None, None)[0] == "Manual apply"

@@ -199,14 +199,14 @@ def _items(**kw):
 def test_apply_starts_with_the_ready_ids_then_plain_errors_then_who_needs_you():
     rows = [_row("a1", "Submittable"), _row("z9", "Submittable"),
             _row("b2", "Needs your OK", "answers drafted in f"),
-            _row("c3", "Failed", "form changed"), _row("d4", "Expired", "expired"),
+            _row("c3", "Parked", "failed: form changed"), _row("d4", "Expired", "expired"),
             _row("e5", "Resume ready"), _row("f6", "Parked", "1 question")]
     items = _items(by_role={"b2": {"guesses": 2, "asks": 0, "facts": 1}},
                    roles={"b2": {"company": "Beta", "title": "Eng", "url": "", "asks": [], "facts": []}})
     out = M.apply_section(rows, items, {"g7": "could not re-read the form (PostingExpired)"})
     assert out[0] == "Ready to submit: a1, z9" and out[1:3] == ["", M.CUES["ready"]]
     text = "\n".join(out)
-    assert "- c3: form changed" in out and "- d4: posting gone (expired), mark it skip or leave it" in out
+    assert "- c3: failed: form changed" in out and "- d4: posting gone (expired), mark it skip or leave it" in out
     assert "- g7: could not re-read the form (PostingExpired)" in out and M.CUES["apply_errors"] in out
     assert "**Needs your OK (1)**" in out and "- b2 Beta — Eng: 2 guesses to confirm, 1 value missing" in out
     assert "e5" not in text
@@ -262,7 +262,7 @@ def test_an_expired_posting_reads_as_gone_not_as_a_traceback(tmp_path, monkeypat
 
 
 def test_sheet_line_says_what_is_wrong_in_words_and_offers_the_fix():
-    ok = {"finished": [], "duplicates": [], "not_live": []}
+    ok = {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []}
     assert M.sheet_line(ok) == ["Sheet check: clean."]
     got = M.sheet_line({"finished": [], "duplicates": ["x"], "not_live": ["y", "z"]})
     assert got[0] == ("Sheet check: listed twice: x; no longer in the live listing, "
@@ -282,7 +282,7 @@ def _world(tmp_path, monkeypatch):
                              (synonyms_cli, "OPEN", tmp_path / "open.yaml")):
         monkeypatch.setattr(mod, name, value)
     monkeypatch.setattr(M.sheet, "rows", lambda: [_row("a1", "Submittable")])
-    monkeypatch.setattr(M.sheet, "check", lambda: {"finished": [], "duplicates": [], "not_live": []})
+    monkeypatch.setattr(M.sheet, "check", lambda: {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []})
     return apps
 
 
