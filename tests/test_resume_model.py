@@ -196,6 +196,19 @@ def test_skills_layout_and_alias_are_enforced(world):
     assert {"layout", "skill"} <= codes
 
 
+def test_a_skills_line_in_the_plan_reorders_and_keeps_the_rest(world):
+    src = resume_model.load_sources()
+    base = resume_model.shown_skills(src, "example_primary")
+    label = next(lab for lab, ids in base.items() if len(ids) >= 2)
+    ids = base[label]
+    built = resume_model.build(src, "example_primary",
+                               _plan(src, "example_primary", skills={label: [ids[-1]]}))
+    line = next(ln for ln in built.markdown.splitlines() if ln.lstrip("*- ").startswith(label))
+    names = [src.skills[i]["name"] for i in [ids[-1]] + ids[:-1]]
+    assert all(n in line for n in names)
+    assert line.index(names[0]) < line.index(names[1])
+
+
 def test_company_name_is_never_linted(world):
     src = resume_model.load_sources()
     plan = _plan(src, "example_primary",

@@ -360,7 +360,9 @@ class PdfResult(TypedDict):
 
 def _convert(docx_path: Path, pdf_path: Path, token: str) -> PdfResult | None:
     """One Word conversion; a failure result, or None when the pdf is in place."""
-    name = f"{token}_{docx_path.stem}.docx"
+    # Plain characters only: Word cannot find a document by a name like "göteborg"
+    # (-1728), as the file system and AppleScript spell such letters differently.
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"{token}_{docx_path.stem}") + ".docx"
     staged_docx = PDF_STAGING / name
     staged_pdf = staged_docx.with_suffix(".pdf")
     staged_pdf.unlink(missing_ok=True)

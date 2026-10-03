@@ -493,6 +493,10 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
                 problems.append(Problem(f"skills.{label}", "skill", f"{alias!r} is not an allowable synonym of {sid}"))
                 continue
             rendered.append((sid, alias or str(s["name"])))
+        if picks:  # a plan reorders a line; the skills it leaves out follow in default order
+            listed = {sid for sid, _ in rendered}
+            rendered += [(sid, str(src.skills[sid]["name"])) for sid in lines.get(label, [])
+                         if sid not in listed and sid in src.skills]
         if rendered:
             skill_lines.append((label, rendered))
 

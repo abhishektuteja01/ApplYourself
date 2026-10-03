@@ -761,6 +761,15 @@ def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
     assert not list((tmp_path / "staging").iterdir())
 
 
+def test_export_pdf_stages_under_a_plain_name(monkeypatch, tmp_path):
+    from src.docx_render import export_pdf
+    calls = _fake_word(monkeypatch, tmp_path)
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    assert export_pdf(docx, "2026_ai-engineer-göteborg_c52d7f9e")["status"] == "ok"
+    assert 'document "2026_ai-engineer-g_teborg_c52d7f9e_A_Resume.docx"' in calls[0]
+
+
 def test_export_pdf_skipped_without_word(monkeypatch, tmp_path):
     from src import docx_render
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path / "missing.app")
