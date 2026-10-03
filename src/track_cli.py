@@ -36,6 +36,7 @@ from src.state_io import (
 
 PIPELINE = paths.PIPELINE
 CLEAN = paths.CLEAN
+STORE = paths.STORE
 SCORED = paths.SCORED
 
 NEXT_ACTION = {
@@ -57,9 +58,16 @@ def _gather_initial_fields(job_id: str) -> dict:
     if not CLEAN.exists():
         raise SystemExit("ERROR: jobs/clean.parquet missing -- run discovery first")
     clean = pd.read_parquet(CLEAN).set_index("job_id")
-    if job_id not in clean.index:
-        raise SystemExit(f"ERROR: job_id {job_id} not in clean.parquet -- check the id")
-    row = clean.loc[job_id].to_dict()
+    if job_id in clean.index:
+        row = clean.loc[job_id].to_dict()
+    else:
+        # A role retention dropped from the view is still in the store.
+        store = pd.read_parquet(STORE) if STORE.exists() else pd.DataFrame(columns=["job_id"])
+        hits = store[store["job_id"] == job_id]
+        if hits.empty:
+            raise SystemExit(f"ERROR: job_id {job_id} not in clean.parquet or the jobs store -- check the id")
+        row = hits.sort_values("last_seen").iloc[-1].to_dict()
+        row["location"] = row.get("location_raw", "")
     initial = {
         "job_id": job_id,
         "company": str(row.get("company", "")),

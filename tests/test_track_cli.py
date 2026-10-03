@@ -18,6 +18,7 @@ def _paths(tmp_path, monkeypatch):
     monkeypatch.setattr(track_cli, "PIPELINE", tmp_path / "pipeline")
     monkeypatch.setattr(track_cli, "CLEAN", tmp_path / "clean.parquet")
     monkeypatch.setattr(track_cli, "SCORED", tmp_path / "scored.parquet")
+    monkeypatch.setattr(track_cli, "STORE", tmp_path / "jobs.parquet")
     return tmp_path
 
 
@@ -105,6 +106,28 @@ def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "already registered" in out and "applied" in out
     assert p.read_text(encoding="utf-8") == before
+
+
+def test_ensure_registers_a_role_only_in_the_store(tmp_path, capsys):
+    """A role retention dropped from clean.parquet can still be registered."""
+    _write_clean(tmp_path, [{"job_id": "bbbbbbbb", "company": "Other", "title": "T",
+                             "source": "ashby", "url": "", "location": "", "vertical": "v"}])
+    pd.DataFrame([
+        {"job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN", "source": "ashby",
+         "url": "https://old", "location_raw": "Remote", "vertical": "example_primary",
+         "last_seen": pd.Timestamp("2026-01-01")},
+        {"job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN", "source": "ashby",
+         "url": "https://new", "location_raw": "Boston, MA", "vertical": "example_primary",
+         "last_seen": pd.Timestamp("2026-02-01")},
+    ]).to_parquet(tmp_path / "jobs.parquet")
+
+    assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
+    state = yaml.safe_load((tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text(encoding="utf-8"))
+    assert state["state"] == "saved"
+    assert state["url"] == "https://new" and state["location"] == "Boston, MA"
+
+    with pytest.raises(SystemExit, match="not in clean.parquet or the jobs store"):
+        track_cli.main(["ensure", "cccccccc"])
 
 
 def _truncated_state(tmp_path) -> Path:
