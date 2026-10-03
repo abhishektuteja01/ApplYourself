@@ -54,6 +54,12 @@ verticals:
     # Required years -> seniority cap; a JD asking more than the largest
     # key is dropped before judging, or forced to skip when the judge reads more.
     years: {3: 14, 4: 10}
+    # Optional. The judge answers the question yes/no; yes lifts the domain
+    # axis to at least yes_min, no holds it at no_max or below.
+    # focus:
+    #   question: Does the company sell mainly to widget makers?
+    #   yes_min: 18
+    #   no_max: 17
     # Optional, and lane-specific: only /apply's Step 4b reads this (not
     # src/verticals.py's typed loader), and only for the vertical(s) that set
     # it. Leave it out entirely for a vertical where the JD-first/no-flat-

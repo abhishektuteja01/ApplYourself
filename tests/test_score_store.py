@@ -1,6 +1,7 @@
 """/score's start -> judge -> finish round trip (src/score_store.py, score_cli)."""
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import datetime
 
@@ -8,7 +9,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import score_cli, score_store
+from src import score_cli, score_store, verticals
 from src.score_filter import SCORING_PATH, CountryRule, load_scoring
 
 NOW = datetime(2026, 9, 27, 12, 0)
@@ -246,6 +247,56 @@ def test_extra_keywords_are_trimmed_not_rejected(env, scfg):
                    {"aaaaaaaa": _answer("aaaaaaaa", keywords_to_mirror=kws)})
     assert _finish(env, scfg)["merged"] == 1
     assert list(_scored(env).loc["aaaaaaaa", "keywords_to_mirror"]) == kws[:scfg.keywords_max]
+
+
+class TestFocus:
+    @pytest.fixture(autouse=True)
+    def _focus_lane(self, cfg):
+        lane = dataclasses.replace(cfg.verticals["example_primary"],
+                                   focus=verticals.Focus("Is it for widget makers?", 18, 15))
+        verticals.set_config(dataclasses.replace(
+            cfg, verticals={**cfg.verticals, "example_primary": lane}))
+
+    def _one(self, env, scfg, **answer):
+        _clean(env, [{"job_id": "aaaaaaaa"}])
+        _start(env, scfg)
+        _write_answers(env, score_store.load_run(env["staging"])["slices"],
+                       {"aaaaaaaa": _answer("aaaaaaaa", **answer)})
+        return _finish(env, scfg)
+
+    @pytest.mark.parametrize("focus, domain, want", [
+        (True, 10, 18), (True, 20, 20), (False, 19, 15), (False, 8, 8)])
+    def test_focus_bands_domain(self, env, scfg, focus, domain, want):
+        ev = "widget assembly tooling" if focus else ""
+        assert self._one(env, scfg, focus=focus, focus_evidence=ev, domain=domain)["merged"] == 1
+        assert json.loads(_scored(env).loc["aaaaaaaa", "fit_subscores"])["domain"] == want
+
+    @pytest.mark.parametrize("bad", [{}, {"focus": "yes"}])
+    def test_focus_lane_needs_a_yes_or_no(self, env, scfg, bad):
+        res = self._one(env, scfg, **bad)
+        assert res["merged"] == 0 and "focus must be true or false" in str(res["bad"])
+
+    @pytest.mark.parametrize("ev, err", [
+        ("", "must quote the JD"), ("we serve banks", "not a quote from the JD")])
+    def test_focus_true_needs_a_jd_quote(self, env, scfg, ev, err):
+        res = self._one(env, scfg, focus=True, focus_evidence=ev)
+        assert res["merged"] == 0 and err in str(res["bad"])
+
+    def test_packet_asks_the_question(self, env, scfg):
+        _clean(env, [{"job_id": "aaaaaaaa"}])
+        _start(env, scfg)
+        text = (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
+        assert "Is it for widget makers?" in text and "at least 18" in text
+
+
+def test_lane_without_focus_ignores_it(env, scfg):
+    _clean(env, [{"job_id": "aaaaaaaa"}])
+    _start(env, scfg)
+    assert "## Focus" not in (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
+    _write_answers(env, score_store.load_run(env["staging"])["slices"],
+                   {"aaaaaaaa": _answer("aaaaaaaa", domain=19)})
+    assert _finish(env, scfg)["merged"] == 1
+    assert json.loads(_scored(env).loc["aaaaaaaa", "fit_subscores"])["domain"] == 19
 
 
 def test_packet_states_the_keyword_limit(env, scfg):

@@ -147,6 +147,26 @@ class TestValidation:
         with pytest.raises(ValueError, match="years"):
             _write_and_load(tmp_path, data)
 
+    def test_focus_parsed(self, tmp_path):
+        data = _load_raw()
+        data["verticals"]["example_primary"]["focus"] = {
+            "question": "Is it  widgets?", "yes_min": 18, "no_max": 17}
+        lane = _write_and_load(tmp_path, data).verticals["example_primary"]
+        assert lane.focus == verticals.Focus("Is it widgets?", 18, 17)
+
+    @pytest.mark.parametrize("focus", [
+        {"question": "Q?", "yes_min": 17, "no_max": 17},
+        {"question": "Q?", "yes_min": 21, "no_max": 17},
+        {"question": "", "yes_min": 18, "no_max": 17},
+        {"question": "Q?", "yes_min": 18},
+        {"question": "Q?", "yes_min": 18, "no_max": 17, "bonus": 2},
+    ])
+    def test_bad_focus(self, tmp_path, focus):
+        data = _load_raw()
+        data["verticals"]["example_primary"]["focus"] = focus
+        with pytest.raises(ValueError, match="focus"):
+            _write_and_load(tmp_path, data)
+
 
 class TestExampleTemplate:
     """The committed template must never rot."""

@@ -72,6 +72,31 @@ def _parse_lane_resume(raw, path: Path, where: str) -> LaneResume:
 
 
 @dataclass(frozen=True)
+class Focus:
+    """A lane's focus (verticals.yaml `focus:`). The judge answers `question`
+    yes or no; a yes lifts `domain` to at least `yes_min`, a no holds it at
+    `no_max` or below."""
+    question: str
+    yes_min: int
+    no_max: int
+
+
+def _parse_focus(raw, path: Path, where: str) -> Focus:
+    if not isinstance(raw, dict):
+        raise _fail(path, f"{where} must be a mapping")
+    unknown = set(raw) - {"question", "yes_min", "no_max"}
+    if unknown:
+        raise _fail(path, f"{where}: unknown keys {sorted(unknown)}")
+    question = _require(raw, "question", path, where)
+    if not isinstance(question, str) or not question.strip():
+        raise _fail(path, f"{where}.question must be a nonempty string")
+    yes_min, no_max = _require(raw, "yes_min", path, where), _require(raw, "no_max", path, where)
+    if not (type(yes_min) is int and type(no_max) is int and 0 <= no_max < yes_min <= 20):
+        raise _fail(path, f"{where}: need whole numbers 0 <= no_max < yes_min <= 20")
+    return Focus(question=" ".join(question.split()), yes_min=yes_min, no_max=no_max)
+
+
+@dataclass(frozen=True)
 class Vertical:
     name: str
     display_name: str
@@ -91,6 +116,8 @@ class Vertical:
     years: dict[int, int] = field(default_factory=dict)
     # Judge-only: printed into the lane's scoring packet as-is.
     skill_weights: dict = field(default_factory=dict)
+    # Optional. Bands `domain` by the judge's yes/no to the focus question.
+    focus: Focus | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +211,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     skill_weights = raw.get("skill_weights") or {}
     if not isinstance(skill_weights, dict):
         raise _fail(path, f"{where}.skill_weights must be a mapping")
+    focus = _parse_focus(raw["focus"], path, f"{where}.focus") if "focus" in raw else None
 
     # Title include-gate: opt-in per vertical. When title_include_terms is
     # empty the gate is OFF and apply_title_exclusion falls back to
@@ -220,6 +248,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         drop_phrases=drop_phrases,
         years=dict(sorted(years.items())),
         skill_weights=skill_weights,
+        focus=focus,
     )
 
 

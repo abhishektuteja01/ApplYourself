@@ -171,6 +171,15 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
         + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip() + "\n```\n",
         "## Resume\n\n" + _lane_resume(lane),
     ]
+    if lane.focus:
+        f = lane.focus
+        parts.insert(4, "## Focus\n\n"
+                     f"Add `focus`: true or false, and `focus_evidence`. {f.question}\n\n"
+                     "Default false. Answer true only when the JD itself shows it, and put "
+                     "that JD phrase, verbatim, in `focus_evidence`; leave it \"\" when false. "
+                     "A strong fit is not a reason for true.\n\n"
+                     f"Then `domain` is set for you: true lifts it to at least {f.yes_min}, "
+                     f"false holds it at {f.no_max} or below.\n")
     (staging / f"packet_{lane.name}.md").write_text("\n".join(parts), encoding="utf-8")
 
 
@@ -320,8 +329,9 @@ def _quote_ok(evidence: str, jd: str) -> bool:
     return all(p in body for p in parts if len(p) >= 3)
 
 
-def check_answer(answer: Any, meta: dict) -> list[str]:
-    """Problems with one judge output file, [] if it can be merged."""
+def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
+    """Problems with one judge output file, [] if it can be merged. `focus`:
+    the lane has a focus question, so every answer must carry `focus`."""
     if not isinstance(answer, list):
         return ["not a JSON array"]
     errs = []
@@ -364,6 +374,14 @@ def check_answer(answer: Any, meta: dict) -> list[str]:
             errs.append(f"{where} reasoning must be a nonempty string")
         if a.get("action") not in (None, "skip", "manual-review"):
             errs.append(f"{where} action may only be skip or manual-review")
+        if focus and type(a.get("focus")) is not bool:
+            errs.append(f"{where} focus must be true or false")
+        elif focus and a["focus"]:
+            fev = a.get("focus_evidence")
+            if not isinstance(fev, str) or not fev.strip():
+                errs.append(f"{where} focus true must quote the JD in focus_evidence")
+            elif a.get("job_id") in meta["facts"] and not _quote_ok(fev, meta["facts"][a["job_id"]]["jd"]):
+                errs.append(f"{where} focus_evidence is not a quote from the JD: {fev[:100]!r}")
     return errs
 
 
@@ -386,6 +404,9 @@ def derive(a: dict, lane: verticals.Vertical, facts: dict, cfg: ScoringConfig,
     if not country_allowed(a["country"], lane.name, rule):
         reasoning += f" [out of scope: {a['country']}]"
         forced_skip = True
+    if lane.focus:
+        f = lane.focus
+        subs["domain"] = max(subs["domain"], f.yes_min) if a["focus"] else min(subs["domain"], f.no_max)
     if facts["words"] < cfg.min_words:
         subs["skills"] = min(subs["skills"], cfg.skills_cap)
         reasoning += " [vague JD]"
@@ -424,11 +445,11 @@ def finish(clean_path: Path, scored_path: Path, staging: Path, pipeline_dir: Pat
         except json.JSONDecodeError as e:
             bad[name] = [f"not valid JSON: {e}"]
             continue
-        errs = check_answer(answer, meta)
+        lane = lanes[meta["vertical"]]
+        errs = check_answer(answer, meta, focus=lane.focus is not None)
         if errs:
             bad[name] = errs
             continue
-        lane = lanes[meta["vertical"]]
         rows += [derive(a, lane, meta["facts"][a["job_id"]], cfg, rule, run["model"], now)
                  for a in answer]
         done.append(name)

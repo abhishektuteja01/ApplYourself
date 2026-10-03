@@ -39,6 +39,9 @@ for the candidate, the total and the action) is applied after you.
 - `keywords_to_mirror`: the JD's most important keywords or skills for the
   tailored resume to surface, most important first, at least 2, up to the
   limit at the top of the packet. `[]` only when the JD has no real signal.
+- `focus`, `focus_evidence`: only when the packet has a Focus section —
+  `true` or `false` answering its question, and the JD phrase that shows a
+  `true`, verbatim.
 - `reasoning`: a skim tag of at most 15 words naming the strongest fit signal
   and the strongest concern. Append `[staffing agency]` when the poster is a
   placement firm, body shop or IT vendor reselling contract labor. Name a
