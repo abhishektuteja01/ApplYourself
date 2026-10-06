@@ -12,6 +12,7 @@ never brings it back); an Expired row stays, so it can be marked skip.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -197,11 +198,25 @@ def _finished(status: str) -> bool:
     return status == "Applied" or status.startswith("Closed")
 
 
+def _form_url(state: dict | None) -> str:
+    """The form URL the role's last plan read, so a ledger line written under
+    another job_id for the same posting still counts as sent."""
+    folder = built_folder(state or {})
+    plan = folder / "plan.json" if folder else None
+    if plan is None or not plan.is_file():
+        return ""
+    try:
+        return str(json.loads(plan.read_text(encoding="utf-8")).get("form_url") or "")
+    except ValueError:
+        return ""
+
+
 def _row_status(job_id: str, url: str, states: dict, ledger_path: Path,
                 outcomes: dict) -> tuple[str, str, str]:
     submittable = detect.is_auto_submittable(url) or _submittable(job_id)
-    return status_for(job_id, submittable, states.get(job_id),
-                      ledger.prior(ledger_path, job_id), outcomes.get(job_id))
+    state = states.get(job_id)
+    return status_for(job_id, submittable, state,
+                      ledger.prior(ledger_path, job_id, _form_url(state)), outcomes.get(job_id))
 
 
 def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:

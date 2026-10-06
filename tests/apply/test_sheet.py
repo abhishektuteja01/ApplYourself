@@ -163,3 +163,21 @@ def test_unsubmittable_role_is_new_until_it_has_a_resume():
     assert sheet.status_for("aaaa1111", False, {}, None, None)[0] == "New"
     built = {"tailored_dirs": ["lane/x"]}
     assert sheet.status_for("aaaa1111", False, built, None, None)[0] == "Manual apply"
+
+
+def test_a_ledger_line_under_another_job_id_for_the_same_form_counts_as_sent(tmp_path, monkeypatch):
+    import json
+    _world(tmp_path, monkeypatch)
+    folder = "lane/2026-09-28_acme_eng_aaaa1111"
+    (paths.APPLICATIONS / folder).mkdir(parents=True)
+    (paths.APPLICATIONS / folder / "answers_override.json").write_text(
+        json.dumps({"job_id": "aaaa1111", "q": {"value": "x"}}), encoding="utf-8")
+    (paths.APPLICATIONS / folder / "plan.json").write_text(
+        json.dumps({"form_url": "https://jobs.lever.co/acme/1/apply"}), encoding="utf-8")
+    _state(tmp_path, "aaaa1111", "tailored", folder)
+    sheet.refresh(add=True)
+    assert _rows(tmp_path)["aaaa1111"]["status"] == "Needs your OK"
+    ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "zzzz9999", "backfill",
+                  form_url="https://jobs.lever.co/acme/1/apply")
+    counts = sheet.refresh()
+    assert "aaaa1111" not in _rows(tmp_path) and counts["Applied (removed)"] == 1

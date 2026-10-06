@@ -45,7 +45,9 @@ CUES = {
     "ready": ("→ Show the role and its resume (`uv run app dir <id>`), then run its `uv_run_command` (`uv run apply "
               "sheet --list Submittable`; the sheet's column holds it). Only with the user's typed OK; one submit "
               "per company per run."),
-    "apply_errors": "→ Expired: `uv run track <id> skip`.",
+    "apply_expired": "→ Expired: `uv run track <id> skip`.",
+    "apply_failed": "→ Failed: `uv run apply plan <id> --questions` shows what the form needs now.",
+    "apply_unsent": "→ Unsent: the click fired no submit request or the board refused it; check the board by hand.",
     "sheet": "→ If the posting is gone: `uv run track <id> skip`, and it leaves the sheet.",
     "answers": ("→ For each answer the user approves: `uv run apply teach --question-id <bank id> --label \"<label>\" "
                 "--value \"<value>\" --job <id>` (one per distinct label). Then `uv run apply triage --fill --job-id <id> "
@@ -313,6 +315,16 @@ def _why(tally: dict) -> str:
     return ", ".join(parts) or "drafted answers wait in its folder (answers_override.json), nothing else open"
 
 
+def _why_waiting(items: dict, job: str) -> str:
+    """A role re-read tonight says what is open; one that was not cannot say
+    "nothing else open", so it says how to check."""
+    tally = items["by_role"].get(job)
+    if tally is None:
+        return ("drafted answers wait in its folder (answers_override.json); not re-checked tonight: "
+                f"`uv run apply plan {job} --questions --answers <that file>`")
+    return _why(tally)
+
+
 _FACT_PATTERNS = (
     (r"salary: no figure for a role in (.+?) \(", "Salary for a role in {0}: no figure set. Add one under salary_expectation in verticals.yaml"),
     (r"start date: no start_in_days set for (.+?) \(", "Start date for {0}: no start_in_days set. Add it under work_authorization.countries in the answer bank"),
@@ -385,7 +397,17 @@ def _answers(items: dict) -> list[str]:
     return lines
 
 
-def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str]) -> list[str]:
+def _report_time(stem: str) -> datetime | None:
+    try:
+        return datetime.strptime(stem, "%Y-%m-%dT%H-%M-%S")
+    except ValueError:
+        return None
+
+
+def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str],
+                  outcomes: dict | None = None, since: datetime | None = None) -> list[str]:
+    """`outcomes` (job_id -> (category, detail, report stem)) dates each error by
+    the run report it came from; one older than `since` is listed apart."""
     def of(*statuses):
         return [r for r in rows if r["status"] in statuses]
 
@@ -395,22 +417,34 @@ def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str]) -> 
     if ready:
         lines += ["", CUES["ready"]]
 
-    errors = {r["name"]: (r["note"] or r["status"])
-              for r in of("Unsent")}
-    errors.update({r["name"]: r["note"] for r in of("Parked")
+    errors: dict[str, tuple[str, str]] = {}            # job -> (kind, why)
+    errors.update({r["name"]: ("unsent", r["note"] or r["status"]) for r in of("Unsent")})
+    errors.update({r["name"]: ("failed", r["note"]) for r in of("Parked")
                    if r["note"].startswith("failed:")})
-    errors.update({r["name"]: "posting gone (expired), mark it skip or leave it"
+    errors.update({r["name"]: ("expired", "posting gone (expired), mark it skip or leave it")
                    for r in of("Expired")})
-    errors.update(unreadable)
-    lines += ["", *_errors([f"{j}: {why}" for j, why in errors.items()], cap=False)]
-    if errors:
-        lines += ["", CUES["apply_errors"]]
+    errors.update({j: ("expired" if "expired" in why else "failed", why)
+                   for j, why in unreadable.items()})
+
+    def when(job: str) -> datetime | None:
+        stem = (outcomes or {}).get(job, ("", "", ""))[2]
+        at = _report_time(stem) if job not in unreadable else None
+        return at if at is not None and since is not None and at < since else None
+
+    fresh = {j: e for j, e in errors.items() if when(j) is None}
+    older = {j: e for j, e in errors.items() if j not in fresh}
+    lines += ["", *_errors([f"{j}: {why}" for j, (_, why) in fresh.items()], cap=False)]
+    if older:
+        lines += ["", f"**Still open from earlier nights ({len(older)})**",
+                  *[f"- {j} ({when(j):%Y-%m-%d}): {why}" for j, (_, why) in older.items()]]
+    for kind in ("expired", "failed", "unsent"):
+        if any(k == kind for k, _ in errors.values()):
+            lines += ["", CUES[f"apply_{kind}"]]
 
     if waiting:
         lines += ["", f"**Needs your OK ({len(waiting)})**"]
         for r in waiting:
-            tally = items["by_role"].get(r["name"], {"guesses": 0, "asks": 0, "facts": 0})
-            lines.append(f"- {_who(items, r['name'])}: {_why(tally)}")
+            lines.append(f"- {_who(items, r['name'])}: {_why_waiting(items, r['name'])}")
 
     if not (items["guesses"] or items["asks"] or items["facts"]):
         return [*lines, "", "**Answer bank:** nothing to add"]
@@ -502,7 +536,8 @@ def build(run_dir: Path | None, since: datetime) -> str:
            "## Synonyms", *synonyms,
            *cue("synonyms", synonyms, bool(declined or opened or _tonight(log, since, "date"))), "",
            "## Tailoring", *tailoring, *cue("tailoring", tailoring, has_errors(tailoring)), "",
-           "## Apply", *apply_section(sheet.rows(), items, unreadable), "",
+           "## Apply", *apply_section(sheet.rows(), items, unreadable,
+                                      sheet.latest_outcomes(APPLICATIONS / "apply_runs"), since), "",
            *sheet_line(sheet.check())]
     return "\n".join(out) + "\n"
 

@@ -207,7 +207,9 @@ def test_apply_starts_with_the_ready_ids_then_plain_errors_then_who_needs_you():
     assert out[0] == "Ready to submit: a1, z9" and out[1:3] == ["", M.CUES["ready"]]
     text = "\n".join(out)
     assert "- c3: failed: form changed" in out and "- d4: posting gone (expired), mark it skip or leave it" in out
-    assert "- g7: could not re-read the form (PostingExpired)" in out and M.CUES["apply_errors"] in out
+    assert "- g7: could not re-read the form (PostingExpired)" in out
+    assert M.CUES["apply_expired"] in out and M.CUES["apply_failed"] in out
+    assert M.CUES["apply_unsent"] not in out
     assert "**Needs your OK (1)**" in out and "- b2 Beta — Eng: 2 guesses to confirm, 1 value missing" in out
     assert "e5" not in text
     quiet = M.apply_section([_row("a1", "Resume ready")], _items(roles={}), {})
@@ -246,7 +248,26 @@ def test_every_waiting_role_is_listed():
     rows = [_row(f"w{i}", "Needs your OK", "n") for i in range(8)]
     out = M.apply_section(rows, _items(roles={}), {})
     assert "**Needs your OK (8)**" in out and sum(ln.startswith("- w") for ln in out) == 8
+    assert "- w0: drafted answers wait in its folder (answers_override.json); not re-checked tonight: " \
+        "`uv run apply plan w0 --questions --answers <that file>`" in out
+
+
+def test_a_waiting_role_re_read_tonight_with_nothing_open_says_so():
+    items = _items(by_role={"w0": {"guesses": 0, "asks": 0, "facts": 0}}, roles={})
+    out = M.apply_section([_row("w0", "Needs your OK", "n")], items, {})
     assert "- w0: drafted answers wait in its folder (answers_override.json), nothing else open" in out
+
+
+def test_an_error_from_an_earlier_night_is_listed_apart_with_its_date():
+    rows = [_row("old1", "Parked", "failed: no option matching"), _row("new1", "Expired", "expired")]
+    outcomes = {"old1": ("failed", "no option matching", "2026-08-24T18-15-48"),
+                "new1": ("expired", "", (SINCE + timedelta(hours=2)).strftime("%Y-%m-%dT%H-%M-%S"))}
+    out = M.apply_section(rows, _items(roles={}), {}, outcomes, SINCE)
+    errors = out[out.index("Errors:"):out.index("**Still open from earlier nights (1)**")]
+    assert "- new1: posting gone (expired), mark it skip or leave it" in errors
+    assert not any("old1" in ln for ln in errors)
+    assert "- old1 (2026-08-24): failed: no option matching" in out
+    assert M.CUES["apply_failed"] in out and M.CUES["apply_expired"] in out
 
 
 def test_an_expired_posting_reads_as_gone_not_as_a_traceback(tmp_path, monkeypatch):
