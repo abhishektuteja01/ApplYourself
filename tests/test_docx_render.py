@@ -719,6 +719,7 @@ def test_cover_letter_rejects_malformed_content(tmp_path, over):
 
 def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
     from src import docx_render
+    monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render.sys, "platform", "darwin")
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)          # exists
     monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
@@ -785,6 +786,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
     import threading
     import time
     from src import docx_render
+    monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)
     monkeypatch.setattr(docx_render.sys, "platform", "darwin")
@@ -824,3 +826,77 @@ def test_the_word_script_closes_an_open_namesake_first_and_always_closes_its_own
     assert script.index("repeat with i from (count of documents)") < script.index("open POSIX file")
     assert "on error errMsg number errNum" in script
     assert script.count("close theDoc saving no") == 2
+
+
+# ---------- the night's pdf helper ----------
+
+def _helper(monkeypatch, tmp_path):
+    """A helper serving tmp_path/q from a thread, Word faked; returns (queue, stop)."""
+    import os
+    import threading
+    from src import pdf_broker
+    _fake_word(monkeypatch, tmp_path)
+    monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
+    queue = tmp_path / "q"
+    stop = threading.Event()
+    monkeypatch.setattr(pdf_broker, "_alive", lambda pid: pid == os.getpid() and not stop.is_set())
+    t = threading.Thread(target=pdf_broker.serve, args=(queue, os.getpid()), daemon=True)
+    t.start()
+    while not (queue / pdf_broker.PID_FILE).is_file():
+        pass
+    monkeypatch.setenv("PDF_BROKER_DIR", str(queue))
+    return queue, stop, t
+
+
+def test_export_pdf_goes_through_the_helper_when_one_is_up(monkeypatch, tmp_path):
+    from src import docx_render
+    queue, stop, t = _helper(monkeypatch, tmp_path)
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    r = docx_render.export_pdf(docx, "role1")
+    stop.set(); t.join()
+    assert r["status"] == "ok" and r["pages"] == 1
+    assert (tmp_path / "A_Resume.pdf").is_file()
+    assert sorted(p.name for p in queue.iterdir()) == ["broker.pid"]
+
+
+def test_a_helper_that_is_gone_fails_fast_and_leaves_no_stale_pdf(monkeypatch, tmp_path):
+    from src import docx_render
+    queue = tmp_path / "q"
+    queue.mkdir()
+    (queue / "broker.pid").write_text("999999999", encoding="utf-8")
+    monkeypatch.setenv("PDF_BROKER_DIR", str(queue))
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    (tmp_path / "A_Resume.pdf").write_bytes(b"old")
+    r = docx_render.export_pdf(docx, "role1")
+    assert r["status"] == "failed" and "not running" in r["detail"]
+    assert not (tmp_path / "A_Resume.pdf").exists()
+    assert not list(queue.glob("*.req"))
+
+
+def test_a_helper_that_never_answers_times_out_and_withdraws(monkeypatch, tmp_path):
+    import os
+    from src import pdf_broker
+    monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
+    queue = tmp_path / "q"
+    queue.mkdir()
+    (queue / "broker.pid").write_text(str(os.getpid()), encoding="utf-8")     # alive, never serves
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    r = pdf_broker.request(queue, docx, "role1", wait=0.05)
+    assert r["status"] == "failed" and "no result" in r["detail"]
+    assert not list(queue.glob("*.req"))
+
+
+def test_a_bad_request_gets_a_failed_result_and_the_helper_goes_on(monkeypatch, tmp_path):
+    from src import docx_render
+    queue, stop, t = _helper(monkeypatch, tmp_path)
+    (queue / "bad.req").write_text("not json", encoding="utf-8")
+    docx = tmp_path / "A_Resume.docx"
+    docx.write_bytes(b"docx")
+    r = docx_render.export_pdf(docx, "role1")
+    stop.set(); t.join()
+    assert r["status"] == "ok"
+    import json
+    assert json.loads((queue / "bad.res").read_text(encoding="utf-8"))["status"] == "failed"

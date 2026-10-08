@@ -54,6 +54,24 @@ stage_start() {
   notify "Pipeline: $STAGE" "started"
 }
 
+# pdf_helper_up: start src/pdf_broker.py for this stage, so Word conversions run
+# under this bash, not under a headless claude (a new app to macOS on every
+# update). Stops when the stage exits. No helper: conversions run in-process.
+pdf_helper_up() {
+  [[ "$DRY_RUN" == 1 || -n "${PDF_BROKER_DIR:-}" ]] && return 0
+  local dir="$RUN_DIR/pdf_helper_$STAGE" i
+  mkdir -p "$dir"
+  "$UV" run python -m src.pdf_broker "$dir" --parent $$ >>"$RUN_DIR/pdf_helper.log" 2>&1 &
+  PDF_HELPER_PID=$!
+  trap 'kill "$PDF_HELPER_PID" 2>/dev/null' EXIT
+  for i in $(seq 1 150); do
+    [[ -s "$dir/broker.pid" ]] && { export PDF_BROKER_DIR="$dir"; echo "pdf helper up ($dir)"; return 0; }
+    sleep 0.2
+  done
+  kill "$PDF_HELPER_PID" 2>/dev/null
+  echo "pdf helper did not start: Word runs from each claude session"
+}
+
 # stage_end CODE [DETAIL]: the last line of the log, one line in summary.txt.
 stage_end() {
   local code="$1" detail="${2:-}" secs=$((SECONDS - STAGE_T0))

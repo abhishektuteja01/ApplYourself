@@ -8,6 +8,7 @@ set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 stage_start apply_prep
 STAGE=apply_prep   # log/json names
+pdf_helper_up
 
 TOOLS='Bash(uv run *),Bash(cd *),Bash(git rev-parse *),Read,Write,Edit,Skill,WebSearch,WebFetch'
 if [[ "$DRY_RUN" == 1 ]]; then echo "[dry-run] uv run apply sheet"; else

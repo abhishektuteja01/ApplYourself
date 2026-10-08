@@ -19,6 +19,7 @@ placeholders — and live in src/docx_cover_letter.py.
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -410,7 +411,17 @@ def export_pdf(docx_path: Path, token: str) -> PdfResult:
     Any older pdf is deleted first, so a failed export can never leave a stale
     one looking current. `token` makes the staging name unique per role: Word
     resolves a document by name and would export an already-open namesake.
-    No Word (not macOS, or not installed) returns "skipped"."""
+    No Word (not macOS, or not installed) returns "skipped". With PDF_BROKER_DIR
+    set, the night's helper (src/pdf_broker.py) does the conversion."""
+    queue = os.environ.get("PDF_BROKER_DIR")
+    if queue:
+        from src import pdf_broker
+        return pdf_broker.request(Path(queue), docx_path, token)
+    return convert_locally(docx_path, token)
+
+
+def convert_locally(docx_path: Path, token: str) -> PdfResult:
+    """export_pdf in this process."""
     pdf_path = docx_path.with_suffix(".pdf")
     pdf_path.unlink(missing_ok=True)
     if sys.platform != "darwin" or not WORD_APP.exists():
