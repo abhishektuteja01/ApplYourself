@@ -205,6 +205,19 @@ class TestOverrides:
         assert plan.fields[0].value == "Drafted."
         assert plan.fields[0].source == "override:bullets:B-1"
 
+    def test_a_yes_override_ticks_a_single_checkbox(self, answers, tailor_dir):
+        box = field(id="gdpr", label="I agree to the processing of my data.",
+                    kind="checkbox", required=True)
+        plan = build_plan(one([box]), answers, tailor_dir, overrides={"gdpr": ov("Yes")})
+        assert plan.unmapped == () and not plan.parked
+        assert plan.fields[0].value == "Yes"
+
+    def test_a_non_yes_override_on_a_single_checkbox_parks(self, answers, tailor_dir):
+        box = field(id="gdpr", label="I agree to the processing of my data.",
+                    kind="checkbox", required=True)
+        plan = build_plan(one([box]), answers, tailor_dir, overrides={"gdpr": ov("No")})
+        assert [u.id for u in plan.unmapped] == ["gdpr"]
+
     def test_an_override_resolves_an_optional_draftable(self, answers, tailor_dir):
         plan = build_plan(one([self.why_us(required=False)]), answers, tailor_dir,
                           overrides={"question_9": ov("From company_answers.")})

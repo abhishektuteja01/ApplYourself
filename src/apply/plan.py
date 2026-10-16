@@ -357,8 +357,11 @@ def _override_resolution(field: MergedField, value, source: str, tier: str,
         return Resolution("park", tier=tier, source=tag,
                           reason=f"{len(candidates)} values for a single-valued field")
     if field.kind == "checkbox":
+        # fill.py ticks on any truthy value, so only an explicit Yes may pass.
+        if candidates[0].strip().casefold() in ("yes", "yes."):
+            return Resolution("fill", value="Yes", tier=tier, source=tag)
         return Resolution("park", tier=tier, source=tag,
-                          reason="a single checkbox takes no text override")
+                          reason="a single checkbox takes only a Yes override")
     if not field.options:
         if field.kind in _PROSE_KINDS and not multi:
             text, problem = _linted(candidates[0], company)
