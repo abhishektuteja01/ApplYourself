@@ -244,6 +244,15 @@ def test_the_answer_bank_section_lists_every_label_and_every_role_uncut():
     assert M.CUES["answers"] in out and M.CUES["missing"] in out
 
 
+def test_a_missing_value_no_config_key_fills_gets_its_own_cue():
+    why = "work authorization: names ['China', 'Iran']; pick by hand"
+    items = _items(roles={"a": {"company": "Acme", "title": "Eng", "url": "", "asks": [],
+                                "facts": [{"label": "Talent programs", "reason": why}]}},
+                   facts=[{"reason": why, "roles": ["a"]}])
+    out = M.apply_section([], items, {})
+    assert M.CUES["missing_other"] in out and M.CUES["missing"] not in out
+
+
 def test_every_waiting_role_is_listed():
     rows = [_row(f"w{i}", "Needs your OK", "n") for i in range(8)]
     out = M.apply_section(rows, _items(roles={}), {})

@@ -54,6 +54,8 @@ CUES = {
                 "...` for the roles it unblocks (no model, never submits), then `uv run apply sheet`."),
     "missing": ("→ Set salary in `profile/verticals.yaml` (`salary_expectation`) or `start_in_days` in the answer bank "
                 "(`work_authorization.countries`), then `uv run apply plan <id> --questions`."),
+    "missing_other": ("→ Any other missing value: answer it in `/apply <id>`; the session writes the entry and the "
+                      "user confirms it."),
 }
 CUES = {name: "**FIX:** " + text.removeprefix("→ ") for name, text in CUES.items()}
 
@@ -332,6 +334,8 @@ _FACT_PATTERNS = (
     (r"export control: yours to answer", "Export-control question: always yours to answer, by design"),
     (r"(\w[\w ]*): none of \[.*?\] is offered", "The saved {0} answer is not one of the options offered"),
 )
+#: The missing values a config key fills: the "missing" cue names those keys.
+_CONFIG_FACT = re.compile(r"salary: no figure for |start date: no start_in_days ")
 
 
 def _fact_text(reason: str) -> str:
@@ -392,8 +396,11 @@ def _answers(items: dict) -> list[str]:
             for why, labels in missing.items():
                 lines.append(f"    - missing: {why} ({'; '.join(labels)})")
     lines += ["", CUES["answers"]]
-    if any(r["facts"] for r in per_role.values()):
+    reasons = [f["reason"] for r in per_role.values() for f in r["facts"]]
+    if any(_CONFIG_FACT.match(why) for why in reasons):
         lines += ["", CUES["missing"]]
+    if any(not _CONFIG_FACT.match(why) for why in reasons):
+        lines += ["", CUES["missing_other"]]
     return lines
 
 
