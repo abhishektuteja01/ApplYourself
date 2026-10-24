@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -69,6 +70,21 @@ def board_names(boards_dir=None) -> dict[str, str]:
     return {b.key: b.name for b in load_boards(boards_dir=boards_dir)}
 
 
+def company_names(companies: pd.DataFrame) -> dict[tuple[str, str], str]:
+    """{(ats, slug or site host): name} from the feed's own company list. A
+    row's `company` is often that slug ("whatfix101") or host
+    ("jobs.danaher.com"); the list has the name ("Whatfix", "Danaher")."""
+    out: dict[tuple[str, str], str] = {}
+    for ats, name, slug, url in zip(companies["ats"], companies["name"],
+                                    companies["slug"], companies["url"]):
+        if not isinstance(name, str) or not name.strip():
+            continue
+        for key in (slug, urlsplit(url).hostname if isinstance(url, str) else None):
+            if isinstance(key, str) and key.strip():
+                out.setdefault((ats, key.strip().lower()), name.strip())
+    return out
+
+
 def located(location, country_iso) -> str:
     """The feed's location, with its country code's name added when our own
     parser finds no country in it ("DE (DE91C)" -> "DE (DE91C), Germany")."""
@@ -83,9 +99,13 @@ def located(location, country_iso) -> str:
     return f"{text}, {country}" if text else country
 
 
-def posting_from(row: dict, vertical: str, names: dict[str, str]) -> dict:
+def posting_from(row: dict, vertical: str, names: dict[str, str],
+                 feed_names: dict[tuple[str, str], str]) -> dict:
+    """Our board's name first, then the feed list's, then the row's own."""
     url = row.get("url") or ""
-    company = names.get(board_key_of(url)) or (row.get("company") or "")
+    own = row.get("company") or ""
+    company = (names.get(board_key_of(url))
+               or feed_names.get((row.get("ats_type"), own.strip().lower())) or own)
     period = row.get("salary_period")
     return make_posting(
         source="stapply", company=company if N.normalize_company(company) else "",
@@ -129,16 +149,32 @@ class StapplyLane:
                 return
             whole = manifest["all"]
             with tempfile.TemporaryDirectory(prefix="stapply-") as tmp:
+                feed_names = self._company_names(manifest, Path(tmp), crawl)
                 path = Path(tmp) / "all.parquet"
                 ats_http.download(whole["parquet"], path, deadline_ts=crawl.deadline_ts or None)
                 if whole.get("parquet_sha256") and sha256_of(path) != whole["parquet_sha256"]:
                     raise CareersError(f"checksum mismatch: {whole['parquet']}")
-                self.read(path, crawl)
+                self.read(path, crawl, feed_names)
             self.stats.notes.append(f"snapshot {manifest.get('generated_at')} ({age:.0f}h old)")
         except Exception as e:  # noqa: BLE001 -- surfaced by run()
             self.failure = e
 
-    def read(self, path: Path, crawl) -> None:
+    def _company_names(self, manifest: dict, tmp: Path, crawl) -> dict:
+        """The feed's company list, or {} with a note: without it rows keep
+        the feed's own company text, which is no reason to lose the night."""
+        entry = manifest.get("companies") or {}
+        try:
+            path = tmp / "companies.parquet"
+            ats_http.download(entry["parquet"], path, deadline_ts=crawl.deadline_ts or None)
+            if entry.get("parquet_sha256") and sha256_of(path) != entry["parquet_sha256"]:
+                raise CareersError("checksum mismatch")
+            return company_names(pd.read_parquet(path, columns=["ats", "name", "slug", "url"]))
+        except Exception as e:  # noqa: BLE001 -- names only
+            self.stats.notes.append(f"company list not read ({type(e).__name__}: {e}); "
+                                    f"feed company text kept")
+            return {}
+
+    def read(self, path: Path, crawl, feed_names: dict | None = None) -> None:
         """Gate every title, map the rows that pass, collect covered boards."""
         names = board_names(crawl.boards_dir)
         pf = pq.ParquetFile(path)
@@ -170,7 +206,7 @@ class StapplyLane:
                 continue
             full = pf.read_row_group(i, columns=cols).filter(pa.array(keep)).to_pylist()
             for row, vertical in zip(full, verticals):
-                posting = posting_from(row, vertical, names)
+                posting = posting_from(row, vertical, names, feed_names or {})
                 crawl.record_listing(self.name, posting["title"], vertical, True,
                                      posting["posting_key"])
                 self.rows.append(posting)

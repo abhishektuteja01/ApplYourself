@@ -31,8 +31,8 @@ strip every param: `gh_jid`, `jk` and unknown careers pages carry the id there.
 A new posting gets its `job_id` by the first rule that matches: a known url or
 key, then a known `(company_normalized, title_normalized)` pair, then the same
 role from a *different* source (`same_job_elsewhere`), else the hash. A stored
-row's `job_id`, `first_seen`, `company` and `title` never change: a refresh
-cannot move the id pair. A posting's `board` is its url's own ATS + slug,
+row's `job_id`, `first_seen`, `company_normalized` and `title` never change: a
+refresh cannot move the id pair, though it may improve the shown `company`. A posting's `board` is its url's own ATS + slug,
 whichever lane found it. Two postings of one board never merge, and two titles
 that disagree on level tokens never merge.
 
@@ -84,7 +84,8 @@ skipped (an error in the report, every board crawled); otherwise the file is
 downloaded, checked against its sha256, title-gated a row group at a time, and
 deleted. A board whose postings the file carried is `crawl.covered`: the board
 lanes skip it without marking it checked, so it is first in line on a night
-the feed is missing. A known board keeps its `boards.csv` name; the feed's
+the feed is missing. A company is named by our `boards.csv` name, then the
+feed's own company list (by slug, or site host for Phenom), then the row; the feed's
 `country_iso` is added to a location only when the parser finds no country. A
 new row with a short JD gets one page fetch, read from the page's schema.org
 `JobPosting` block (`normalize.jobposting_text`, also `ingest-url`'s first try).

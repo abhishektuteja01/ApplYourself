@@ -81,6 +81,25 @@ def test_a_known_board_keeps_our_name_and_a_placeholder_is_no_company(cfg, tmp_p
     assert eures["company"] == "" and eures["company_normalized"] == ""
 
 
+FEED_NAMES = stapply.company_names(pd.DataFrame([
+    {"ats": "lever", "name": "Acme Robotics", "slug": "acme", "url": "https://jobs.lever.co/acme"},
+    {"ats": "phenom", "name": "Danaher", "slug": None, "url": "https://jobs.danaher.com"},
+    {"ats": "greenhouse", "name": "ddome-wrong", "slug": "ddome", "url": "x"},
+]))
+
+
+@pytest.mark.parametrize("ats,company,url,expected", [
+    ("lever", "acme", "https://jobs.lever.co/acme/1234abcd-0000", "Acme Robotics"),
+    ("phenom", "jobs.danaher.com", "https://jobs.danaher.com/global/en/job/R1/AI-Engineer", "Danaher"),
+    ("greenhouse", "ddome", GH.format(1), "DataDome"),
+    ("icims", "steampunk", "https://careers-steampunk.icims.com/jobs/1/job", "steampunk"),
+])
+def test_the_company_name_comes_from_our_list_then_the_feeds_then_the_row(ats, company, url, expected):
+    names = {"greenhouse|ddome": "DataDome"}
+    r = row(url=url, ats_type=ats, company=company)
+    assert stapply.posting_from(r, "example_tertiary", names, FEED_NAMES)["company"] == expected
+
+
 def test_fields_are_read_once_the_same_way(cfg, tmp_path, feed):
     lane, _ = read(cfg, tmp_path, feed)
     lv = next(r for r in lane.rows if "lever" in r["url"])
@@ -108,7 +127,8 @@ def _manifest(tmp_path, feed, hours_old=2, sha=None):
     when = datetime.now(timezone.utc) - timedelta(hours=hours_old)
     digest = sha or hashlib.sha256(feed.read_bytes()).hexdigest()
     return {"generated_at": when.isoformat(),
-            "all": {"parquet": "https://example.test/all.parquet", "parquet_sha256": digest}}
+            "all": {"parquet": "https://example.test/all.parquet", "parquet_sha256": digest},
+            "companies": {"parquet": "https://example.test/companies.parquet"}}
 
 
 def _wire(monkeypatch, manifest, feed):
@@ -117,7 +137,11 @@ def _wire(monkeypatch, manifest, feed):
 
     def fake_download(url, dest, deadline_ts=None):
         downloads.append(url)
-        shutil.copy(feed, dest)
+        if url.endswith("companies.parquet"):
+            pd.DataFrame([{"ats": "lever", "name": "Acme Robotics", "slug": "acme",
+                           "url": "https://jobs.lever.co/acme"}]).to_parquet(dest)
+        else:
+            shutil.copy(feed, dest)
         return dest.stat().st_size
 
     monkeypatch.setattr(stapply.ats_http, "download", fake_download)
@@ -201,3 +225,27 @@ def test_a_site_whose_pages_never_read_is_given_up_for_the_night(monkeypatch, cf
     assert sum("dead" in c for c in calls) == stapply.MAX_HOST_FAILURES
     assert sum("good" in c for c in calls) == 3 and stats.detail_ok == 3
     assert "dead.example" in stats.notes[-1]
+
+
+def test_the_lane_names_companies_from_the_feeds_list(monkeypatch, cfg, tmp_path, feed):
+    _wire(monkeypatch, _manifest(tmp_path, feed), feed)
+    lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
+    lane.prepare(crawl)
+    assert next(r for r in lane.rows if "lever" in r["url"])["company"] == "Acme Robotics"
+
+
+def test_a_missing_company_list_costs_names_not_the_night(monkeypatch, cfg, tmp_path, feed):
+    _wire(monkeypatch, _manifest(tmp_path, feed), feed)
+    real = stapply.ats_http.download
+
+    def no_list(url, dest, deadline_ts=None):
+        if url.endswith("companies.parquet"):
+            raise stapply.CareersError("HTTP 503")
+        return real(url, dest, deadline_ts)
+
+    monkeypatch.setattr(stapply.ats_http, "download", no_list)
+    lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
+    lane.prepare(crawl)
+    assert lane.failure is None and len(lane.rows) == 4
+    assert next(r for r in lane.rows if "lever" in r["url"])["company"] == "acme"
+    assert any("company list" in n for n in lane.stats.notes)

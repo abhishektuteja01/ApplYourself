@@ -49,11 +49,11 @@ _STRING_COLUMNS = [
 ]
 _DATE_COLUMNS = ["posted_date", "first_seen", "last_seen"]
 # Fields a fresh copy of a known posting may update. job_id, first_seen and
-# the id pair (company, title) never move: another source may name the
-# company by its board slug, and a moved pair makes the next copy of the
-# same role look like a hash collision.
+# the id pair (company_normalized, title) never move: a moved pair makes the
+# next copy of the same role look like a hash collision. The shown company
+# name may improve ("whatfix101" -> "Whatfix").
 _REFRESH_FIELDS = [
-    "vertical", "location_raw", "url", "jd_text", "posted_date", "remote_flag",
+    "company", "vertical", "location_raw", "url", "jd_text", "posted_date", "remote_flag",
     "salary_min", "salary_max", "salary_currency", "employment_type",
     "seniority_raw", "updated_at", "board",
 ]

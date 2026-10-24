@@ -121,12 +121,14 @@ def test_refresh_keeps_id_and_first_seen_and_takes_the_newer_jd():
     assert stats.refreshed == 1
 
 
-def test_a_refresh_never_renames_the_company():
-    """Another source's copy names the company by its board slug ("ddome");
-    the stored name, which the id pair was built from, stays."""
-    store, _ = fold(S.empty_store(), post(GH.format(1), company="DataDome"))
-    store, _ = fold(store, post(GH.format(1), company="ddome", source="stapply"))
-    assert (store.at[0, "company"], store.at[0, "company_normalized"]) == ("DataDome", "datadome")
+def test_a_refresh_updates_the_shown_name_but_never_the_id_pair():
+    """A later copy may name the company better ("whatfix101" -> "Whatfix");
+    the normalized name the id was built from stays."""
+    store, _ = fold(S.empty_store(), post(GH.format(1), company="whatfix101"))
+    jid = store.at[0, "job_id"]
+    store, _ = fold(store, post(GH.format(1), company="Whatfix", source="stapply"))
+    assert (store.at[0, "company"], store.at[0, "company_normalized"]) == ("Whatfix", "whatfix101")
+    assert store.at[0, "job_id"] == jid
 
 
 def test_a_refresh_from_another_source_does_not_clash_with_its_own_id():
