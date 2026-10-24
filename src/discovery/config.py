@@ -20,9 +20,10 @@ log = logging.getLogger(__name__)
 DEFAULT_CONFIG_PATH = paths.REPO_ROOT / "profile" / "discovery.yaml"
 SCHEMA_VERSION = 2
 
-# The search lanes (jobspy); every other source is an ATS board lane.
+# The search lanes (jobspy), the bulk-file feed lanes, and the ATS board lanes.
 JOBSPY_SOURCES = ("linkedin", "indeed")
-SOURCE_NAMES = JOBSPY_SOURCES + ATS_SOURCE_NAMES
+FEED_SOURCES = ("stapply",)
+SOURCE_NAMES = JOBSPY_SOURCES + FEED_SOURCES + ATS_SOURCE_NAMES
 
 _TOP_LEVEL_KEYS = frozenset({
     "schema_version", "deadline_hours", "location_allowlist", "search_locations", "sources",
@@ -34,6 +35,7 @@ _RETENTION_KEYS = frozenset({"score_threshold", "high_days", "low_days"})
 _SOURCE_KEYS = frozenset({
     "enabled", "pacing_seconds", "page_delay_seconds", "page_delay_band_seconds",
     "remote_queries", "abroad", "every_days", "max_pages", "hours_old", "results_wanted",
+    "max_snapshot_age_hours",
 })
 _ABROAD_KEYS = frozenset({"countries", "verticals"})
 # Keys a schema_version 1 file may still carry, and what replaced them.
@@ -77,6 +79,8 @@ class SourceConfig:
     # Board lanes: days between checks of one board. Workday: pages per term.
     every_days: int = 1
     max_pages: int = 6
+    # Feed lanes: a snapshot older than this is skipped, not applied.
+    max_snapshot_age_hours: int = 36
 
 
 @dataclass
@@ -96,7 +100,8 @@ class LocationAllowlist:
 def _default_sources() -> dict[str, SourceConfig]:
     return {"linkedin": SourceConfig(pacing_seconds=3.0), "indeed": SourceConfig(pacing_seconds=2.0),
             "greenhouse": SourceConfig(), "lever": SourceConfig(),
-            "ashby": SourceConfig(pacing_seconds=2.0), "workday": SourceConfig(pacing_seconds=2.0)}
+            "ashby": SourceConfig(pacing_seconds=2.0), "workday": SourceConfig(pacing_seconds=2.0),
+            "stapply": SourceConfig()}
 
 
 @dataclass
@@ -151,7 +156,7 @@ class DiscoveryConfig:
                     f"search_locations to the countries to query.")
         problems += self._abroad_problems()
         board_every = [s.every_days for n, s in self.sources.items()
-                       if n not in JOBSPY_SOURCES and s.enabled]
+                       if n in ATS_SOURCE_NAMES and s.enabled]
         if board_every and self.live_days <= max(board_every) + 1:
             problems.append(
                 f"live_days ({self.live_days}) must be above every_days + 1 "
@@ -210,6 +215,8 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         max_pages=_int(v.get("max_pages", 6), f"{where}.max_pages", 1),
         hours_old=_int(v.get("hours_old", 336), f"{where}.hours_old", 1),
         results_wanted=_int(v.get("results_wanted", 100), f"{where}.results_wanted", 1),
+        max_snapshot_age_hours=_int(v.get("max_snapshot_age_hours", base.max_snapshot_age_hours),
+                                    f"{where}.max_snapshot_age_hours", 1),
     )
     if out.page_delay_seconds < MIN_PAGE_DELAY_SECONDS:
         raise ValueError(f"{where}.page_delay_seconds must be >= {MIN_PAGE_DELAY_SECONDS}, "
@@ -303,6 +310,8 @@ def main() -> int:
                 bits.append("no remote queries")
             if s.abroad_countries:
                 bits.append(f"abroad {'/'.join(s.abroad_verticals)} in {len(s.abroad_countries)} countries")
+        elif name in FEED_SOURCES:
+            bits = [f"snapshot within {s.max_snapshot_age_hours}h"]
         else:
             bits.append(f"every {s.every_days}d")
         return f"{name} ({', '.join(bits)})"

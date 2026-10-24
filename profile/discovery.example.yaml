@@ -23,8 +23,8 @@ log_keep_days: 30
 dead_every_days: 14
 # Every source the loader accepts. every_days: days between checks of one
 # board. page_delay_* pace the pages of one jobspy query; pacing_seconds paces
-# queries and boards. hours_old / results_wanted: the jobspy search window and
-# result cap. remote_queries: false drops the remote copy of each query.
+# queries, boards and feed page fetches. hours_old / results_wanted: the jobspy
+# search window and result cap. remote_queries: false drops the remote copy of each query.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   indeed:        {enabled: true,  pacing_seconds: 2}
@@ -34,3 +34,6 @@ sources:
   # Workday is the slowest lane per kept row and manual-apply only, so a
   # third of it a night is a good start.
   workday:       {enabled: true,  pacing_seconds: 2, every_days: 3}
+  # The stapply.ai daily file of public ATS jobs (one download a night).
+  # A snapshot older than max_snapshot_age_hours is skipped.
+  stapply:       {enabled: true,  max_snapshot_age_hours: 36}

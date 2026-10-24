@@ -27,13 +27,15 @@ from pathlib import Path
 import pandas as pd
 
 from src import ats_http, paths, verticals
+from src.ats_registry import ATS_SOURCE_NAMES
 from src.discovery import store as S
-from src.discovery.config import JOBSPY_SOURCES, SOURCE_NAMES, load_config
+from src.discovery.config import FEED_SOURCES, JOBSPY_SOURCES, SOURCE_NAMES, load_config
 from src.discovery.sources import boards as B
 from src.discovery.sources.ashby import AshbyLane
 from src.discovery.sources.greenhouse import GreenhouseLane
 from src.discovery.sources.inbox import InboxLane
 from src.discovery.sources.lever import LeverLane
+from src.discovery.sources.stapply import StapplyLane
 from src.discovery.sources.workday import WorkdayLane
 from src.parquet_io import locked, write_parquet
 from src.state_io import load_state_index
@@ -87,8 +89,8 @@ def _lane(name: str):
     if name in JOBSPY_SOURCES:
         from src.discovery.sources.search import SearchLane  # jobspy is slow to import
         return SearchLane(name)
-    return {"greenhouse": GreenhouseLane, "lever": LeverLane,
-            "ashby": AshbyLane, "workday": WorkdayLane}[name]()
+    return {"greenhouse": GreenhouseLane, "lever": LeverLane, "ashby": AshbyLane,
+            "workday": WorkdayLane, "stapply": StapplyLane}[name]()
 
 
 def _cap_terms(vcfg, n: int):
@@ -207,7 +209,7 @@ def render_md(report: dict) -> str:
     lines += ["", "## Boards", "",
               "| lane | due | checked | ok | empty | 404 | error |", "|---|---|---|---|---|---|---|"]
     for name, lane in report["lanes"].items():
-        if "boards_due" in lane and name not in JOBSPY_SOURCES and name != "manual":
+        if "boards_due" in lane and name in ATS_SOURCE_NAMES:
             lines.append(f"| {name} | {lane['boards_due']} | {lane['boards_checked']} "
                          f"| {lane['boards_ok']} | {lane['boards_empty']} | {lane['boards_404']} "
                          f"| {lane['boards_error']} |")
@@ -317,6 +319,10 @@ def main(argv=None) -> int:
     if inbox is not None:
         lanes["manual"] = _run_lane(inbox, crawl)
     threaded = [_lane(n) for n in wanted if n != "manual"]
+    for lane in threaded:
+        if lane.name in FEED_SOURCES:
+            # Before the board lanes start: they skip the boards it covered.
+            lane.prepare(crawl)
     if threaded:
         with ThreadPoolExecutor(max_workers=len(threaded)) as pool:
             futures = {lane.name: pool.submit(_run_lane, lane, crawl) for lane in threaded}

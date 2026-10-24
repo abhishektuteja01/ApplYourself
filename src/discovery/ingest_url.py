@@ -87,7 +87,8 @@ def fetch_page_text(url: str) -> str:
     if status != 200:
         raise IngestError(f"ERROR: HTTP {status} fetching {url} — the posting may be gone "
                           f"or behind a login.")
-    return N.html_to_text(body)
+    # The page's JobPosting block when it has one: the JD without the nav.
+    return N.jobposting_text(body) or N.html_to_text(body)
 
 
 def ingest(url: str, *, vertical: str | None = None, company: str | None = None,

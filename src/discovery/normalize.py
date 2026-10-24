@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import html as html_mod
+import json
 import re
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
@@ -29,6 +30,10 @@ _VIA_SOURCES = ("linkedin", "indeed", "glassdoor", "google", "ziprecruiter", "zi
 _VIA_RE = re.compile(
     r"\s+via\s+(?:" + "|".join(re.escape(v) for v in _VIA_SOURCES) + r")\s*$"
 )
+# What job portals print when the employer is not named ("see description",
+# "not provided"). Kept as a company, these would merge different employers'
+# roles under one id pair.
+_PLACEHOLDER_COMPANIES = frozenset({"siehe beschreibung", "non renseigné", "non renseigne"})
 _SUFFIX_RE = re.compile(r"\s+(?:inc|llc|corp|corporation|ltd|limited|co|gmbh|plc|sa)\s*$")
 _LEADING_THE_RE = re.compile(r"^the\s+")
 _WS_RE = re.compile(r"\s+")
@@ -46,7 +51,8 @@ def normalize_company(s: str | None) -> str:
         prev = x
         x = _SUFFIX_RE.sub("", x)
     x = _LEADING_THE_RE.sub("", x)
-    return _WS_RE.sub(" ", x).strip()
+    x = _WS_RE.sub(" ", x).strip()
+    return "" if x in _PLACEHOLDER_COMPANIES else x
 
 
 def normalize_title(s: str | None) -> str:
@@ -236,6 +242,71 @@ def html_to_text(value) -> str:
     lines = [_SPACES_RE.sub(" ", ln.strip()) for ln in x.splitlines()]
     x = _BLANKS_RE.sub("\n\n", "\n".join(lines)).strip()
     return x[:MAX_DESCRIPTION_CHARS]
+
+
+# A schema.org JobPosting block, the structured copy job sites embed for
+# search engines: the JD of a page whose own markup is a JS shell.
+_LD_JSON_RE = re.compile(
+    r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", re.I | re.S)
+
+
+def _job_postings(node):
+    if isinstance(node, list):
+        for item in node:
+            yield from _job_postings(item)
+    elif isinstance(node, dict):
+        kind = node.get("@type")
+        if kind == "JobPosting" or (isinstance(kind, list) and "JobPosting" in kind):
+            yield node
+        yield from _job_postings(node.get("@graph"))
+
+
+def jobposting_text(page) -> str:
+    """The JD in a page's schema.org JobPosting block, as text, or ""."""
+    if not isinstance(page, str):
+        return ""
+    for m in _LD_JSON_RE.finditer(page):
+        try:
+            data = json.loads(m.group(1))
+        except ValueError:
+            continue
+        for posting in _job_postings(data):
+            text = html_to_text(posting.get("description"))
+            if text:
+                return text
+    return ""
+
+
+# ---------------------------------------------------------------------
+# field values -- one reading of each, whichever source sends it
+# ---------------------------------------------------------------------
+
+_TRUE_WORDS = frozenset({"true", "yes", "y", "1"})
+
+
+def as_bool(value) -> bool:
+    """A flag that may arrive as a bool, a number, NaN or text ("false")."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == value and value != 0
+    return isinstance(value, str) and value.strip().lower() in _TRUE_WORDS
+
+
+# Working periods per year, by the word a pay period is named with.
+_PERIODS_PER_YEAR = (("hour", 2080), ("day", 260), ("daily", 260), ("week", 52),
+                     ("month", 12))
+
+
+def yearly_salary(amount, period) -> float | None:
+    """`amount` per `period` ("HOUR", "hourly", "per-month-salary", "1 YEAR")
+    as a yearly figure. No period means yearly; no number means None."""
+    value = pd.to_numeric(amount, errors="coerce")
+    if pd.isna(value):
+        return None
+    word = str(period or "").lower()
+    factor = next((n for key, n in _PERIODS_PER_YEAR if key in word), 1)
+    return float(value) * factor
 
 
 # ---------------------------------------------------------------------

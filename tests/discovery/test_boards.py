@@ -187,3 +187,25 @@ def test_a_broken_parser_fails_the_lane(tmp_path, cfg):
     crawl.vcfg = cfg
     with pytest.raises(RuntimeError, match="API shape"):
         Broken({}).run(crawl)
+
+
+def test_a_board_the_feed_covered_is_not_crawled_and_stays_due(tmp_path, cfg):
+    lane = FakeLane({"acme": [post("acme", 1)], "beta": [post("beta", 1)]})
+    crawl = crawl_for(tmp_path, ["acme", "beta"])
+    crawl.vcfg, crawl.covered = cfg, frozenset({"greenhouse|acme"})
+    stats = lane.run(crawl)
+    assert [r.board.slug for r in crawl.take_board_results()] == ["beta"]
+    assert stats.boards_due == 1 and stats.notes == ["1 due boards left to the feed"]
+
+
+@pytest.mark.parametrize("url,key", [
+    ("https://job-boards.greenhouse.io/DataDome/jobs/1", "greenhouse|datadome"),
+    ("https://job-boards.anz.greenhouse.io/futuresecureai/jobs/4001528201", "greenhouse|futuresecureai"),
+    ("https://jobs.lever.co/acme/1234abcd-0000", "lever|acme"),
+    ("https://acme.wd5.myworkdayjobs.com/External/job/Berlin/AI_R1", "workday|acme|wd5|external"),
+    ("https://www.linkedin.com/jobs/view/1", ""),
+])
+def test_board_key_of_matches_the_board_list_key(url, key):
+    assert B.board_key_of(url) == key
+    if key.startswith("workday"):
+        assert B.Board("workday", "Acme", "acme|wd5|External").key == key

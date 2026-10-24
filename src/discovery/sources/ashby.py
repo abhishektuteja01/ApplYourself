@@ -29,7 +29,10 @@ def _salary(comp) -> tuple:
     for tier in comp.get("compensationTiers") or []:
         for part in (tier or {}).get("components") or [] if isinstance(tier, dict) else []:
             if isinstance(part, dict) and part.get("compensationType") == "Salary":
-                return part.get("minValue"), part.get("maxValue"), part.get("currencyCode") or ""
+                period = part.get("interval")
+                return (N.yearly_salary(part.get("minValue"), period),
+                        N.yearly_salary(part.get("maxValue"), period),
+                        part.get("currencyCode") or "")
     return None, None, ""
 
 

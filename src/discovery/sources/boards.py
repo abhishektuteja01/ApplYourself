@@ -24,7 +24,7 @@ import pandas as pd
 
 from src import paths
 from src.ats_http import CareersError
-from src.ats_registry import ATS_SOURCE_NAMES
+from src.ats_registry import ATS_SOURCE_NAMES, parse_posting_url
 from src.discovery import normalize as N
 from src.discovery.config import pacing_floor
 from src.parquet_io import locked, write_parquet
@@ -58,6 +58,17 @@ class Board:
     @property
     def key(self) -> str:
         return f"{self.ats}|{self.slug.lower()}"
+
+
+def board_key_of(url: str) -> str:
+    """The `Board.key` of the board a posting url belongs to, or "". A Workday
+    key carries the pod and site, as its slug does."""
+    hit = parse_posting_url(url)
+    if hit is None or not hit.slug:
+        return ""
+    if hit.source == "workday":
+        return f"workday|{hit.slug}|{hit.pod}|{hit.site_id}".lower() if hit.pod and hit.site_id else ""
+    return f"{hit.source}|{hit.slug}".lower()
 
 
 # ---------------------------------------------------------------------
@@ -243,6 +254,8 @@ class Crawl:
         self._lock = threading.Lock()
         self.board_results: list[BoardResult] = []
         self.listed: list[dict] = []
+        # Boards whose postings tonight's feed already carried: not crawled.
+        self.covered: frozenset[str] = frozenset()
 
     def deadline_reached(self) -> bool:
         return bool(self.deadline_ts) and time.time() > self.deadline_ts
@@ -298,7 +311,13 @@ class BoardLane:
         state = load_state(crawl.board_state)
         boards = due_boards(load_boards(self.name, boards_dir=crawl.boards_dir), state, crawl.today,
                             src.every_days, crawl.cfg.dead_every_days)
+        # A covered board is not marked checked, so it is first in line on a
+        # night the feed is missing.
+        due = len(boards)
+        boards = [b for b in boards if b.key not in crawl.covered]
         stats = LaneStats(boards_due=len(boards))
+        if due > len(boards):
+            stats.notes.append(f"{due - len(boards)} due boards left to the feed")
         shape_errors = 0
         first = [True]
 

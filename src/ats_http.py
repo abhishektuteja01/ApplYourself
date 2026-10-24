@@ -192,10 +192,49 @@ def _retry_after(value: str | None) -> float | None:
     return min(wait, MAX_RETRY_AFTER) if wait > 0 else None
 
 
+DOWNLOAD_CHUNK = 1 << 20
+
+
+def download(url: str, dest, timeout: int = REQUEST_TIMEOUT,
+             deadline_ts: float | None = None) -> int:
+    """Stream url to the file `dest`, retrying a failed or 429/5xx start like
+    `_fetch`. Returns the bytes written. A file this size never sits in memory."""
+    def read(resp) -> int:
+        size = 0
+        with open(dest, "wb") as out:
+            for chunk in resp.iter_content(DOWNLOAD_CHUNK):
+                out.write(chunk)
+                size += len(chunk)
+        return size
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        t0 = time.monotonic()
+        try:
+            with _get(url, timeout=timeout, headers=_HEADERS, stream=True) as resp:
+                _notify(url=url, secs=time.monotonic() - t0, status=resp.status_code)
+                if resp.status_code == 200:
+                    return read(resp)
+                if not (resp.status_code == 429 or 500 <= resp.status_code < 600) \
+                        or attempt == MAX_RETRIES:
+                    raise CareersError(f"HTTP {resp.status_code}: {url}", status=resp.status_code)
+        except requests.RequestException as exc:
+            _notify(url=url, secs=time.monotonic() - t0, status=None)
+            if attempt == MAX_RETRIES:
+                raise CareersError(f"download failed: {url}: {exc}") from exc
+        _sleep_or_raise(RETRY_BASE_DELAY * (2 ** attempt), deadline_ts, url)
+    raise CareersError(f"exhausted retries: {url}")  # pragma: no cover
+
+
 def fetch_page(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[int, str]:
     """(status, body) for one plain GET, no retries: for a careers page whose
     status the caller wants to explain itself."""
-    resp = _get(url, timeout=timeout, headers=_HEADERS)
+    t0 = time.monotonic()
+    try:
+        resp = _get(url, timeout=timeout, headers=_HEADERS)
+    except requests.RequestException:
+        _notify(url=url, secs=time.monotonic() - t0, status=None)
+        raise
+    _notify(url=url, secs=time.monotonic() - t0, status=resp.status_code)
     return resp.status_code, resp.text or ""
 
 

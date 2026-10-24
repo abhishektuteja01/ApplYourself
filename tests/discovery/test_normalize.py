@@ -109,3 +109,55 @@ def test_company_from_url():
         == "Edison Scientific"
     assert N.company_from_url("https://www.linkedin.com/jobs/view/1") == ""
     assert N.company_from_url("https://job-boards.greenhouse.io/nc/jobs/1") == ""
+
+
+# ---------- field parsers every source shares ----------
+
+@pytest.mark.parametrize("value,expected", [
+    (True, True), (False, False), ("true", True), ("false", False), ("True", True),
+    ("FALSE", False), ("yes", True), ("0", False), (1, True), (0, False),
+    (None, False), ("", False), (float("nan"), False),
+])
+def test_as_bool(value, expected):
+    assert N.as_bool(value) is expected
+
+
+@pytest.mark.parametrize("amount,period,expected", [
+    (80, "HOUR", 166_400), (80.0, "hourly", 166_400), (10_000, "MONTH", 120_000),
+    (500, "DAY", 130_000), (2_000, "per-week", 104_000), (120_000, "YEAR", 120_000),
+    (120_000, "", 120_000), (120_000, None, 120_000), ("84.0", "HOUR", 174_720),
+    (None, "HOUR", None), ("n/a", "YEAR", None),
+])
+def test_yearly_salary(amount, period, expected):
+    assert N.yearly_salary(amount, period) == expected
+
+
+@pytest.mark.parametrize("name", ["siehe Beschreibung", "Non renseigné", "  NON RENSEIGNE "])
+def test_a_placeholder_company_is_no_company(name):
+    assert N.normalize_company(name) == ""
+
+
+def _page(payload: str) -> str:
+    return (f"<html><head><script type='application/ld+json'>{payload}</script></head>"
+            "<body><nav>Jobs Companies Log in</nav></body></html>")
+
+
+def test_a_job_posting_block_gives_the_jd():
+    desc = "<p>Build retrieval pipelines.</p><ul><li>Ship weekly</li></ul>"
+    page = _page('{"@context": "https://schema.org", "@type": "JobPosting", '
+                 f'"title": "AI Engineer", "description": "{desc}"}}')
+    assert N.jobposting_text(page) == "Build retrieval pipelines.\n\n- Ship weekly"
+
+
+def test_a_job_posting_inside_a_list_or_graph_is_found():
+    inner = '{"@type": "JobPosting", "description": "Own the eval harness."}'
+    assert N.jobposting_text(_page(f'[{{"@type": "WebSite"}}, {inner}]')) == "Own the eval harness."
+    assert N.jobposting_text(_page(f'{{"@graph": [{inner}]}}')) == "Own the eval harness."
+
+
+@pytest.mark.parametrize("page", [
+    "", "<html><body>No data</body></html>", _page("{not json"),
+    _page('{"@type": "Organization", "description": "We make tools."}'),
+])
+def test_no_job_posting_block_gives_nothing(page):
+    assert N.jobposting_text(page) == ""

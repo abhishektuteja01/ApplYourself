@@ -35,7 +35,8 @@ def posting_from(item: dict, company: str) -> dict | None:
         location_raw=categories.get("location") or "",
         posted_date=N.ms_date(item.get("createdAt")),
         remote_flag=(item.get("workplaceType") or "").strip().lower() == "remote",
-        salary_min=salary.get("min"), salary_max=salary.get("max"),
+        salary_min=N.yearly_salary(salary.get("min"), salary.get("interval")),
+        salary_max=N.yearly_salary(salary.get("max"), salary.get("interval")),
         salary_currency=salary.get("currency") or "",
         employment_type=categories.get("commitment") or "",
     )

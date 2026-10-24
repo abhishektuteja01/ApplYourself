@@ -125,6 +125,22 @@ class Crashing(B.BoardLane):
         raise RuntimeError("boom")
 
 
+class FakeFeed:
+    name = "stapply"
+
+    def prepare(self, crawl):
+        crawl.covered = frozenset({"greenhouse|acme"})
+
+    def run(self, crawl):
+        return B.LaneStats(listed=9, passed=0, notes=["snapshot x"])
+
+
+class SeesCovered(FakeLane):
+    def run(self, crawl):
+        assert crawl.covered == {"greenhouse|acme"}, "the feed prepares before board lanes start"
+        return super().run(crawl)
+
+
 class AllowAll:
     def __init__(self, cfg):
         pass
@@ -158,6 +174,17 @@ def test_main_saves_postings_writes_clean_and_contains_a_crash(wired):
     assert report["view"]["clean"] == 1
     assert B.load_state(wired / "boards.parquet").at[0, "status"] == "ok"
     assert (wired / "runs" / f"{report['run_id']}.md").exists()
+
+
+def test_the_feed_prepares_before_the_board_lanes(wired, monkeypatch):
+    monkeypatch.setattr(R, "_lane", lambda name: {"greenhouse": SeesCovered(), "stapply": FakeFeed()}[name])
+    assert R.main(["--jobs-dir", str(wired), "--source", "stapply", "--source", "greenhouse",
+                   "--boards-dir", str(wired)]) == 0
+    [report] = [json.loads(f.read_text(encoding="utf-8")) for f in (wired / "runs").glob("*.json")]
+    assert report["lanes"]["greenhouse"]["status"] == "ok"
+    assert report["lanes"]["stapply"]["notes"] == ["snapshot x"]
+    md = (wired / "runs" / f"{report['run_id']}.md").read_text(encoding="utf-8")
+    assert "| stapply | 0 |" not in md, "the feed has no row in the boards table"
 
 
 def test_deadline_zero_only_rebuilds_the_view(wired):
@@ -234,3 +261,13 @@ def test_ingest_saves_and_returns_the_id(monkeypatch, tmp_path, cfg):
                               vertical="example_primary", company="Acme",
                               title="Widget Analyst", jobs_dir=tmp_path)
     assert again["job_id"] == info["job_id"] and again["attached"]
+
+
+def test_ingest_reads_a_pages_job_posting_block_first(monkeypatch):
+    from src.discovery import ingest_url
+    page = ("<nav>Jobs Companies Log in</nav><script type='application/ld+json'>"
+            '{"@type": "JobPosting", "description": "<p>Own the eval harness.</p>"}</script>')
+    monkeypatch.setattr(ingest_url.http, "fetch_page", lambda url: (200, page))
+    assert ingest_url.fetch_page_text("https://www.ycombinator.com/companies/x/jobs/y") == "Own the eval harness."
+    monkeypatch.setattr(ingest_url.http, "fetch_page", lambda url: (200, "<p>Plain page JD.</p>"))
+    assert ingest_url.fetch_page_text("https://example.com/job") == "Plain page JD."

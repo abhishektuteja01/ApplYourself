@@ -63,6 +63,21 @@ def test_lever_parses_sections_salary_and_remote():
         lever.postings_from({"error": 1}, "Acme")
 
 
+def test_an_hourly_salary_is_stored_yearly():
+    payload = [{"text": "ML Engineer", "hostedUrl": "https://jobs.lever.co/acme/1234abcd-0000",
+                "description": HTML, "salaryRange": {"min": 80, "max": 110, "currency": "USD",
+                                                     "interval": "per-hour-wage"}}]
+    [p] = lever.postings_from(payload, "Acme")
+    assert (p["salary_min"], p["salary_max"]) == (166_400, 228_800)
+
+
+def test_a_search_row_with_no_remote_value_is_not_remote():
+    from src.discovery.sources.search import posting_from
+    row = posting_from({"job_url": "https://www.indeed.com/viewjob?jk=abc", "title": "AI Engineer",
+                        "company": "Acme", "is_remote": float("nan")}, "indeed", "primary", "t", False)
+    assert row["remote_flag"] is False
+
+
 def test_ashby_falls_back_to_graphql_on_404(monkeypatch, cfg, tmp_path):
     def rest(slug, company, deadline_ts=None):
         raise CareersError("nope", status=404, permanent=True)
