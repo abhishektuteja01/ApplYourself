@@ -381,7 +381,7 @@ def job_country(state: dict | None, answers: Answers) -> str:
         if answers.home_country in parsed.candidate_countries:
             return answers.home_country
     raw = _clean_value(job_id, "location") or str(state.get("location") or "")
-    found = _pieces_country(raw, parse_location) or _code_country(raw)
+    found = _pieces_country(raw, parse_location)
     if found:
         return found
     named = residency_countries(str(state.get("title") or ""))
@@ -440,37 +440,6 @@ def _pieces_country(raw: str, parse_location) -> str:
             if country:
                 found.add(country)
     return found.pop() if len(found) == 1 else ""
-
-
-def _code_country(raw: str) -> str:
-    """A country code closing the location ("München, BY, DE", "SGP Work-at-Home",
-    "TUN - ARIANA"), or a US state's full name ("Northern Virginia"). A two-letter
-    code that is also a US state ("IN", "IL") counts only after a region code
-    that is not one ("MH, IN" is Maharashtra, India; "Chicago, IL" is Illinois)."""
-    import pycountry
-
-    us_codes = {sub.code.split("-")[1] for sub in pycountry.subdivisions.get(country_code="US")}
-    us_names = [sub.name.casefold() for sub in pycountry.subdivisions.get(country_code="US")]
-    text = raw.strip()
-    if any(re.search(rf"\b{re.escape(n)}\b", text.casefold()) for n in us_names):
-        return "United States"
-    parts = [p.strip() for p in re.split(r"[,;]", text) if p.strip()]
-    tokens = re.findall(r"\b[A-Z]{2,3}\b", text)
-    for code in ([parts[-1]] if parts else []) + tokens[:1]:
-        if len(code) == 3:
-            country = pycountry.countries.get(alpha_3=code)
-            if country:
-                return country.name
-        if len(code) == 2 and code not in ("US",):
-            country = pycountry.countries.get(alpha_2=code)
-            if country is None:
-                continue
-            if code not in us_codes:
-                return country.name
-            if len(parts) >= 2 and re.fullmatch(r"[A-Z]{2}", parts[-2]) \
-                    and parts[-2] not in us_codes:
-                return country.name
-    return ""
 
 
 def _clean_value(job_id: str, column: str) -> str:

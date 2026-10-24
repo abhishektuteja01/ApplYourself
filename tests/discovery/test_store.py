@@ -121,6 +121,29 @@ def test_refresh_keeps_id_and_first_seen_and_takes_the_newer_jd():
     assert stats.refreshed == 1
 
 
+def test_a_refresh_never_renames_the_company():
+    """Another source's copy names the company by its board slug ("ddome");
+    the stored name, which the id pair was built from, stays."""
+    store, _ = fold(S.empty_store(), post(GH.format(1), company="DataDome"))
+    store, _ = fold(store, post(GH.format(1), company="ddome", source="stapply"))
+    assert (store.at[0, "company"], store.at[0, "company_normalized"]) == ("DataDome", "datadome")
+
+
+def test_a_refresh_from_another_source_does_not_clash_with_its_own_id():
+    """The refreshed posting and a new copy of the same role elsewhere keep
+    agreeing on the pair, so the newcomer is not dropped as a collision."""
+    store, _ = fold(S.empty_store(), post(GH.format(1), company="Telnyx", title="Forward Deployed Engineer"))
+    other = post("https://www.welcometothejungle.com/en/companies/x/jobs/fde", company="Telnyx",
+                 title="Forward Deployed Engineer", source="stapply", jd=JD_OTHER)
+    store, stats = fold(store, post(GH.format(1), company="telnyx54", source="stapply"), other)
+    assert stats.collisions == [] and store["job_id"].nunique() == 1
+
+
+def test_the_board_is_the_urls_ats_whoever_finds_it():
+    assert post(GH.format(1), source="stapply")["board"] == "greenhouse|acme"
+    assert post("https://www.linkedin.com/jobs/view/9", source="linkedin")["board"] == ""
+
+
 def test_an_empty_jd_never_blanks_a_stored_one():
     store, _ = fold(S.empty_store(), post(GH.format(1)))
     store, _ = fold(store, post(GH.format(1), jd=""))

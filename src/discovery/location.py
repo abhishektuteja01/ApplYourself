@@ -4,7 +4,7 @@ import functools
 import gettext
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import geonamescache
 import pycountry
@@ -693,6 +693,136 @@ def _strip_workplace_words(raw: str) -> str:
     return _SPACES_RE.sub(" ", text).strip(" ,-")
 
 
+# ---------------------------------------------------------------------
+# Country codes. A code closing an address ("Amsterdam, NH, NL") names the
+# country, so it is spelled out before mining; otherwise "NH" reads as New
+# Hampshire. A code that is also a US state ("IN", "DE", "CA") counts only
+# when the address shows it is not one: a non-US region code before it
+# ("Pune, MH, IN"), or a city that is in that country and not in the US
+# ("Hamburg, DE").
+# ---------------------------------------------------------------------
+
+_ALPHA3_TO_COUNTRY: dict[str, str] = {_c.alpha_3: _c.name for _c in pycountry.countries}
+_CODE_ALIASES_ALPHA2 = {"UK": "GB"}
+US_STATE_CODES = frozenset(
+    s.code.split("-", 1)[1] for s in pycountry.subdivisions.get(country_code="US"))
+_POSTAL_PART_RE = re.compile(r"^\d{4,6}$")
+_LEADING_ALPHA3_RE = re.compile(r"^([A-Z]{3})\s")
+# "TUN - ARIANA", "IND-Pune-Smartworks", "USA-CA San Jose": a leading code.
+_LEADING_CODE_RE = re.compile(r"^([A-Z]{2,3})(?:\s+-\s+|-)(\S.*)$")
+
+
+def _comma_free(name: str) -> str:
+    """A spelling of a country COUNTRY_NAMES knows, without a comma
+    ("Taiwan" for "Taiwan, Province of China"), so a spelled-out code does
+    not split the address it closes."""
+    if "," not in name:
+        return name
+    c = pycountry.countries.get(name=name)
+    for alt in (getattr(c, "common_name", ""), getattr(c, "official_name", "")):
+        if alt and "," not in alt and COUNTRY_NAMES.get(_fold(alt)) == name:
+            return alt
+    return c.alpha_3 if c else name
+
+
+def _code_name(code: str) -> str:
+    """The country a 2- or 3-letter ISO code names, any case, or ""."""
+    up = code.strip().upper()
+    if len(up) == 2 and up.isalpha():
+        return CC_TO_COUNTRY.get(_CODE_ALIASES_ALPHA2.get(up, up), "")
+    if len(up) == 3 and up.isalpha():
+        return _ALPHA3_TO_COUNTRY.get(up, "")
+    return ""
+
+
+def _is_subdivision_of(text: str, country: str) -> bool:
+    """"MH" before "IN": a region code of that country."""
+    cc = COUNTRY_TO_CC.get(country, "")
+    return any(sub.country_code == cc for sub in SUBDIVISIONS_BY_CODE.get(text.strip().upper(), []))
+
+
+def _city_country(text: str) -> str:
+    hit = _city_lookup(text)
+    return CC_TO_COUNTRY.get(hit["countrycode"], "") if hit else ""
+
+
+def _spell_out_codes(seg: str) -> str:
+    """`seg` with a country code that closes it spelled out, or unchanged."""
+    parts = [p.strip() for p in seg.split(",") if p.strip()]
+    # A trailing postal code hides the code before it ("Ludwigsburg, DE,
+    # 71636"); it is dropped only then, since libpostal reads it otherwise.
+    trimmed = parts
+    while len(trimmed) > 1 and _POSTAL_PART_RE.match(trimmed[-1]):
+        trimmed = trimmed[:-1]
+    if len(trimmed) == 1 and (m := _LEADING_ALPHA3_RE.match(trimmed[0])):
+        # "SGP Work-at-Home", "CHE ZURI 2".
+        name = _ALPHA3_TO_COUNTRY.get(m.group(1), "")
+        return f"{trimmed[0][m.end():].strip()}, {_comma_free(name)}" if name else seg
+    if len(trimmed) == 1 and len(trimmed[0]) == 3 and trimmed[0].isupper():
+        name = _ALPHA3_TO_COUNTRY.get(trimmed[0], "")
+        return _comma_free(name) if name else seg
+    if len(trimmed) < 2:
+        return seg
+    head, code = trimmed[:-1], trimmed[-1]
+    name = _code_name(code)
+    if not name:
+        return seg
+    in_country = any(_city_lookup(p, name) for p in head)
+    if len(code) == 2 and code.upper() in US_STATE_CODES:
+        # "Pune, MH, IN" and "Hamburg, DE" are not Indiana or Delaware;
+        # "Indianapolis, IN" and "Wilmington, DE" are.
+        city_there = in_country and _city_lookup(head[0], "United States") is None
+        if not (_is_subdivision_of(head[-1], name) or city_there):
+            return seg
+    elif not in_country and (len(head) == 1 or any(
+            (c := _city_country(p)) and c != name for p in head)):
+        # "Mumbai, MH" and "Gurugram, HR": a city elsewhere, so the code is
+        # a region of that country, not Marshall Islands or Croatia.
+        return seg
+    return ", ".join([*head, _comma_free(name)])
+
+
+# A lone name that is a region in one country and a city this big in
+# another reads as the city.
+_MIN_DOMINANT_CITY_POPULATION = 500_000
+_COMPASS_RE = re.compile(r"^(?:north|south|east|west|central|greater)(?:ern)?\s+")
+
+
+def _whole_subdivision(seg: str) -> tuple[str, str] | None:
+    """(code, country) when the segment is exactly one region's name, with
+    an optional compass word in front, and names no country."""
+    folded = _fold(seg)
+    if _validate_country(seg) or not _COMPASS_RE.sub("", folded + " ").strip():
+        # "North", "Central": a compass word alone names no place.
+        return None
+    for name in (folded, _COMPASS_RE.sub("", folded)):
+        subs = SUBDIVISIONS_BY_NAME.get(name, [])
+        owners = {s.country_code for s in subs}
+        if len(owners) == 1:
+            owner = CC_TO_COUNTRY.get(subs[0].country_code, "")
+            city = _city_lookup(seg)
+            if city and (CC_TO_COUNTRY.get(city["countrycode"]) == owner
+                         or city.get("population", 0) >= _MIN_DOMINANT_CITY_POPULATION):
+                # "New York", "Iasi": a city of the same country reads as the
+                # city, as before; so does a major city ("Santiago").
+                return None
+            return subs[0].code.split("-", 1)[-1], owner
+        if subs:
+            return None
+    return None
+
+
+def _leading_code(raw: str) -> tuple[str, str]:
+    """(country, rest) for a location led by a country code, or ("", raw)."""
+    m = _LEADING_CODE_RE.match(raw)
+    if not m:
+        return "", raw
+    code = m.group(1)
+    if len(code) == 2 and code in US_STATE_CODES:
+        return "", raw
+    return _code_name(code), m.group(2)
+
+
 @functools.lru_cache(maxsize=50_000)
 def parse_location(raw: str) -> LocationParse:
     if not raw:
@@ -701,7 +831,19 @@ def parse_location(raw: str) -> LocationParse:
     remote = "remote" in raw.lower()
     raw = _strip_workplace_words(raw)
 
+    lead, rest = _leading_code(raw)
+    if lead:
+        # The leading code is the country unless the rest names another
+        # one outright ("PER - Karachi, PK" is Pakistan).
+        r = parse_location(rest)
+        tail = rest.rpartition(",")[2].strip()
+        named = _validate_country(tail) or (len(tail) <= 3 and _code_name(tail))
+        if r.country == lead or (r.country and named):
+            return replace(r, remote=remote or r.remote)
+        return LocationParse(lead, "", "", remote)
+
     segments = [s.strip(" ,-") for s in _SEPARATOR_RE.split(raw) if s.strip(" ,-")]
+    segments = [_spell_out_codes(s) for s in segments]
 
     found_countries: set[str] = set()
     found_states: set[tuple[str, str]] = set()
@@ -714,13 +856,27 @@ def parse_location(raw: str) -> LocationParse:
             # small place name ("Apac", Uganda).
             found_countries |= region
             continue
+        sub = _whole_subdivision(seg)
+        if sub:
+            # "Virginia", "Northern California": a region's own name, which
+            # libpostal does not tag, beats a small namesake city abroad.
+            found_states.add(sub)
+            found_countries.add(sub[1])
+            continue
         c, s, ci = _mine_segment_signals(seg)
         whole = _validate_country(seg)
         if whole and not (c or s or ci):
             # A segment that is exactly a country name ("Malta") and nothing
             # else libpostal recognised needs no tagging to be believed.
             c = {whole}
-        tail = _validate_country(seg.rpartition(",")[2])
+        tail_text = seg.rpartition(",")[2]
+        tail = _validate_country(tail_text)
+        if "," in seg and tail and c - {tail} and not SUBDIVISIONS_BY_NAME.get(_fold(tail_text)):
+            # "New York, United States": the closing country wins over a
+            # name libpostal misread inside the address ("York", England).
+            c = set()
+            s = {x for x in s if x[1] == tail}
+            ci = {x for x in ci if x[1] == tail}
         if not c and tail:
             # "Seoul, Korea": the last comma part names the country even when
             # libpostal does not tag it as one.

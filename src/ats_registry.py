@@ -56,7 +56,7 @@ ATS_SOURCES: tuple[AtsSource, ...] = (
         name="greenhouse",
         host_suffixes=("greenhouse.io",),
         posting_url_re=re.compile(
-            r"^https?://(?:job-boards|boards)\.(?:(?P<region>eu)\.)?greenhouse\.io/"
+            r"^https?://(?:job-boards|boards)\.(?:(?P<region>[a-z]{2,4})\.)?greenhouse\.io/"
             r"(?:embed/job_app/)?(?P<slug>[^/?#]+)/jobs/(?P<posting_id>\d+)(?:[/?#]|$)",
             re.IGNORECASE,
         ),

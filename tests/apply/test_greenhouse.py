@@ -142,6 +142,16 @@ class TestParsePosting:
             posting = parse_posting(url)
             assert (posting.token, posting.url_slug or "") == (hit.posting_id, hit.slug)
 
+    @pytest.mark.parametrize("region", ["eu", "anz"])
+    def test_a_regional_board_host_is_greenhouse(self, region):
+        from src import ats_registry
+
+        url = f"https://job-boards.{region}.greenhouse.io/futuresecureai/jobs/4001528201"
+        hit = ats_registry.parse_posting_url(url)
+        assert (hit.source, hit.slug, hit.posting_id, hit.region) == (
+            "greenhouse", "futuresecureai", "4001528201", region)
+        assert parse_posting(url).token == "4001528201"
+
     def test_greenhouse_url_with_no_token_says_so(self):
         with pytest.raises(ApplyUrlError, match="no job token"):
             parse_posting("https://job-boards.greenhouse.io/asteralabs")

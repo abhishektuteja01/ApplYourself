@@ -23,7 +23,7 @@ import pandas as pd
 from rapidfuzz import fuzz
 
 from src import paths
-from src.ats_registry import board_slug, is_applyable
+from src.ats_registry import board_slug, detect_source, is_applyable
 from src.discovery import normalize as N
 from src.discovery.config import JOBSPY_SOURCES
 from src.parquet_io import locked, write_parquet
@@ -48,11 +48,13 @@ _STRING_COLUMNS = [
     "salary_currency", "employment_type", "seniority_raw", "found_by_term", "updated_at",
 ]
 _DATE_COLUMNS = ["posted_date", "first_seen", "last_seen"]
-# Fields a fresh copy of a known posting may update. job_id and first_seen
-# never move.
+# Fields a fresh copy of a known posting may update. job_id, first_seen and
+# the id pair (company, title) never move: another source may name the
+# company by its board slug, and a moved pair makes the next copy of the
+# same role look like a hash collision.
 _REFRESH_FIELDS = [
-    "company", "title", "vertical", "location_raw", "url", "jd_text", "posted_date",
-    "remote_flag", "salary_min", "salary_max", "salary_currency", "employment_type",
+    "vertical", "location_raw", "url", "jd_text", "posted_date", "remote_flag",
+    "salary_min", "salary_max", "salary_currency", "employment_type",
     "seniority_raw", "updated_at", "board",
 ]
 
@@ -125,8 +127,9 @@ def make_posting(**fields) -> dict:
     row["company_normalized"] = N.normalize_company(row["company"])
     row["title_normalized"] = N.normalize_title(row["title"])
     if not row["board"]:
+        # The url's own ATS, so one board is one board whichever lane found it.
         hit = board_slug(key_url)
-        row["board"] = f"{row['source']}|{hit.lower()}" if hit else ""
+        row["board"] = f"{detect_source(key_url)}|{hit.lower()}" if hit else ""
     return row
 
 
@@ -342,8 +345,6 @@ def apply_batch(store: pd.DataFrame, batch: Batch, today: pd.Timestamp,
             if col == "posted_date":
                 value = pd.Timestamp(value).normalize()
             store.at[i, col] = value
-        store.at[i, "company_normalized"] = N.normalize_company(store.at[i, "company"])
-        store.at[i, "title_normalized"] = N.normalize_title(store.at[i, "title"])
         seen_again(i)
         stats.refreshed += 1
 

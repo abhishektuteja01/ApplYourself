@@ -869,3 +869,42 @@ def test_a_title_limited_to_disallowed_countries_is_dropped():
     assert not al.check("Remote", "", "AI Engineer Backend (Remote - ES/UK only)").keep
     assert al.check("Remote", "", "AI Engineer (US or UK only)").keep
     assert al.check("Remote", "", "AI Engineer (US Citizens only)").keep
+
+
+# A country code closing an address names its country, beating a state code
+# that shares the letters. Real strings from Indeed and the stapply feed.
+@pytest.mark.parametrize("raw,country", [
+    ("Amsterdam, NH, NL", "Netherlands"),
+    ("Tilburg, NB, NL", "Netherlands"),
+    ("Abu Dhabi, AZ, AE", "United Arab Emirates"),
+    ("Stockholm, Stockholm County, SE", "Sweden"),
+    ("Amsterdam, NH, nl", "Netherlands"),
+    ("Pune, MH, in", "India"),
+    ("Madrid, MD, ES", "Spain"),
+    ("Schiltigheim, Grand Est, fr", "France"),
+    ("München, BY, DE", "Germany"),
+    ("Wrocław, DO, PL", "Poland"),
+    ("Hamburg, DE, 20095", "Germany"),
+    ("Toronto, ON, CA", "Canada"),
+    ("Bengaluru, KA, IN", "India"),
+    ("New York, United States, USA", "United States"),
+    ("TUN - ARIANA", "Tunisia"),
+    ("SGP Work-at-Home", "Singapore"),
+])
+def test_a_closing_country_code_names_the_country(raw, country):
+    assert parse_location(raw).country == country
+
+
+# The same letters after a US city stay a US state.
+@pytest.mark.parametrize("raw,state", [
+    ("Chicago, IL", "IL"),
+    ("Indianapolis, IN", "IN"),
+    ("Wilmington, DE", "DE"),
+    ("San Francisco, CA", "CA"),
+    ("Columbia, MD", "MD"),
+    ("Portland, OR", "OR"),
+    ("Pittsburgh, PA, 15222", "PA"),
+])
+def test_a_us_city_keeps_its_state(raw, state):
+    r = parse_location(raw)
+    assert (r.country, r.state) == ("United States", state)
