@@ -86,9 +86,12 @@ deleted. A board whose postings the file carried is `crawl.covered`: the board
 lanes skip it without marking it checked, so it is first in line on a night
 the feed is missing. A company is named by our `boards.csv` name, then the
 feed's own company list (by slug, or site host for Phenom), then the row; the feed's
-`country_iso` is added to a location only when the parser finds no country. A
-new row with a short JD gets one page fetch, read from the page's schema.org
-`JobPosting` block (`normalize.jobposting_text`, also `ingest-url`'s first try).
+`country_iso` is added to a location only when the parser finds no country. One
+paced page read serves a new row with a short JD and any row whose company
+still `looks_like_slug`, read from the page's schema.org `JobPosting` block
+(`jobposting_text`, also `ingest-url`'s first try; `jobposting_employer`). A
+better stored name is never replaced by a slug; a site (across subdomains) whose
+first ten reads tonight give nothing is not read again tonight.
 Feed rows are board rows to the view: no search-age cut.
 
 Every source parses flags, salaries and placeholder company names through

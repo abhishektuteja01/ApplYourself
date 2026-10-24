@@ -306,7 +306,8 @@ def main(argv=None) -> int:
     state_index = load_state_index(p.pipeline)
     tracked = frozenset(state_index)
     store = S.load_store(p.store)
-    known = {k: {"updated_at": u} for k, u in zip(store["posting_key"], store["updated_at"])}
+    known = {k: {"updated_at": u, "company": c}
+             for k, u, c in zip(store["posting_key"], store["updated_at"], store["company"])}
     del store
     crawl = B.Crawl(cfg, vcfg, today, deadline_ts, known, S.Batch(),
                     board_state=p.board_state, boards_dir=p.boards_dir)

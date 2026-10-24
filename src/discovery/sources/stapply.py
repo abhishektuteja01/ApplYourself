@@ -221,58 +221,98 @@ class StapplyLane:
         if self.failure is not None:
             raise self.failure
         stats = self.stats
-        pacing = max(1.0, crawl.cfg.sources[self.name].pacing_seconds)
-        last_fetch = [0.0]
-        failures: dict[str, int] = {}
-        worked: set[str] = set()
+        pages = _PageReader(max(1.0, crawl.cfg.sources[self.name].pacing_seconds), crawl, stats)
+        named = 0
         for posting in self.rows:
             stats.passed += 1
             key = posting["posting_key"]
+            known = crawl.known.get(key)
+            stored = (known or {}).get("company", "")
+            if N.looks_like_slug(posting["company"]) and stored and not N.looks_like_slug(stored):
+                posting = {**posting, "company": stored}
+            stats.known += known is not None
+            stats.new += known is None
+            needs_jd = known is None and len(posting["jd_text"].strip()) < N.MIN_JD_CHARS
+            needs_name = N.looks_like_slug(posting["company"])
+            employer = ""
+            if needs_jd or needs_name:
+                page = pages.read(posting["url"])
+                jd = N.jobposting_text(page) if needs_jd else ""
+                employer = N.jobposting_employer(page) if needs_name else ""
+                if employer and N.looks_like_slug(employer):
+                    employer = ""
+                if jd:
+                    posting = {**posting, "jd_text": jd}
+                if employer:
+                    named += 1
+                    posting = {**posting, "company": employer}
+                    if known is None:
+                        posting["company_normalized"] = N.normalize_company(employer)
+                if page is not None:
+                    pages.result(posting["url"], bool(jd or employer))
             has_jd = len(posting["jd_text"].strip()) >= N.MIN_JD_CHARS
-            if key in crawl.known:
-                stats.known += 1
-                crawl.batch.upsert(posting) if has_jd else crawl.batch.touch(key)
+            if known is not None:
+                if has_jd or employer:
+                    crawl.batch.upsert(posting)
+                else:
+                    crawl.batch.touch(key)
                 continue
-            stats.new += 1
             if not has_jd:
-                host = urlsplit(posting["url"]).hostname or ""
-                given_up = host not in worked and failures.get(host, 0) >= MAX_HOST_FAILURES
-                if crawl.deadline_reached() or given_up:
-                    stats.short_jd += 1
-                    continue
-                wait = last_fetch[0] + pacing - time.time()
-                if wait > 0:
-                    time.sleep(wait)
-                last_fetch[0] = time.time()
-                posting = self._with_page_jd(posting, stats)
-                if len(posting["jd_text"].strip()) < N.MIN_JD_CHARS:
-                    failures[host] = failures.get(host, 0) + 1
-                    stats.short_jd += 1
-                    continue
-                worked.add(host)
-            crawl.known[key] = {"updated_at": ""}
+                stats.short_jd += 1
+                continue
+            crawl.known[key] = {"updated_at": "", "company": posting["company"]}
             crawl.batch.upsert(posting)
         self.rows = []
-        given_up = sorted(h for h, n in failures.items()
-                          if n >= MAX_HOST_FAILURES and h not in worked)
-        if given_up:
-            stats.notes.append(f"no JD on the first {MAX_HOST_FAILURES} pages, not read again "
-                               f"tonight: {', '.join(given_up)}")
+        if named:
+            stats.notes.append(f"{named} company names read from job pages")
+        if pages.given_up():
+            stats.notes.append(f"nothing read from the first {MAX_HOST_FAILURES} pages, not read "
+                               f"again tonight: {', '.join(pages.given_up())}")
         return stats
 
-    @staticmethod
-    def _with_page_jd(posting: dict, stats: LaneStats) -> dict:
-        """The posting with the JD from its page's JobPosting block, when the
-        page has one."""
+
+def site_of(url: str) -> str:
+    """The site a page belongs to, across its subdomains: "obyteshr.bamboohr.com"
+    and "prospect.bamboohr.com" are both bamboohr.com."""
+    return ".".join((urlsplit(url).hostname or "").split(".")[-2:])
+
+
+class _PageReader:
+    """One page read at a time, paced, with a site given up for the night
+    after MAX_HOST_FAILURES reads and no success."""
+
+    def __init__(self, pacing: float, crawl, stats: LaneStats):
+        self.pacing, self.crawl, self.stats = pacing, crawl, stats
+        self.last = 0.0
+        self.failures: dict[str, int] = {}
+        self.worked: set[str] = set()
+
+    def read(self, url: str) -> str | None:
+        """The page body, "" for a failed read, None when not read."""
+        site = site_of(url)
+        if self.crawl.deadline_reached() or (
+                site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES):
+            return None
+        wait = self.last + self.pacing - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        self.last = time.time()
         try:
-            status, body = ats_http.fetch_page(posting["url"])
+            status, body = ats_http.fetch_page(url)
         except Exception as e:  # noqa: BLE001 -- one page, not the lane
-            stats.detail_failed += 1
-            stats.errors.append(f"{posting['url']}: {type(e).__name__}: {e}")
-            return posting
-        text = N.jobposting_text(body) if status == 200 else ""
-        if not text:
-            stats.detail_failed += 1
-            return posting
-        stats.detail_ok += 1
-        return {**posting, "jd_text": text}
+            self.stats.errors.append(f"{url}: {type(e).__name__}: {e}")
+            return ""
+        return body if status == 200 else ""
+
+    def result(self, url: str, ok: bool) -> None:
+        site = site_of(url)
+        if ok:
+            self.stats.detail_ok += 1
+            self.worked.add(site)
+        else:
+            self.stats.detail_failed += 1
+            self.failures[site] = self.failures.get(site, 0) + 1
+
+    def given_up(self) -> list[str]:
+        return sorted(s for s, n in self.failures.items()
+                      if n >= MAX_HOST_FAILURES and s not in self.worked)

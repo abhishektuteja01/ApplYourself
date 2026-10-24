@@ -161,3 +161,27 @@ def test_a_job_posting_inside_a_list_or_graph_is_found():
 ])
 def test_no_job_posting_block_gives_nothing(page):
     assert N.jobposting_text(page) == ""
+
+
+@pytest.mark.parametrize("org,expected", [
+    ('{"@type": "Organization", "name": "Lennox International"}', "Lennox International"),
+    ('"Waters Corporation"', "Waters Corporation"),
+    ('{"@type": "Organization", "name": "UNAVAILABLE"}', ""),
+    ('{"@type": "Organization"}', ""),
+])
+def test_the_employer_comes_from_the_job_posting_block(org, expected):
+    page = _page(f'{{"@type": "JobPosting", "description": "x", "hiringOrganization": {org}}}')
+    assert N.jobposting_employer(page) == expected
+
+
+def test_no_block_no_employer():
+    assert N.jobposting_employer("<html></html>") == ""
+
+
+@pytest.mark.parametrize("name,slug", [
+    ("whatfix101", True), ("novella", True), ("careers.pnc.com", True),
+    ("appsilon-1739358905", True), ("Whatfix", False), ("DataDome", False),
+    ("NTT DATA, Inc.", False), ("1KOMMA5°", False), ("小米", False), ("", False),
+])
+def test_looks_like_slug(name, slug):
+    assert N.looks_like_slug(name) is slug

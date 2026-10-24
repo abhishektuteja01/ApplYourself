@@ -249,3 +249,78 @@ def test_a_missing_company_list_costs_names_not_the_night(monkeypatch, cfg, tmp_
     assert lane.failure is None and len(lane.rows) == 4
     assert next(r for r in lane.rows if "lever" in r["url"])["company"] == "acme"
     assert any("company list" in n for n in lane.stats.notes)
+
+
+def _employer_page(name, desc=""):
+    data = json.dumps({"@type": "JobPosting", "description": desc,
+                       "hiringOrganization": {"@type": "Organization", "name": name}})
+    return f"<script type='application/ld+json'>{data}</script>"
+
+
+def _one_row_feed(tmp_path, **kw):
+    path = tmp_path / "one.parquet"
+    pd.DataFrame([row(**kw)]).to_parquet(path)
+    return path
+
+
+def test_a_slug_company_is_named_from_its_page_once(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(tmp_path, url="https://careers-lennox.icims.com/jobs/1/job",
+                         ats_type="icims", company="lennox")
+    calls = []
+    monkeypatch.setattr(stapply.ats_http, "fetch_page",
+                        lambda url: calls.append(url) or (200, _employer_page("Lennox International")))
+    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    assert (saved["company"], saved["company_normalized"]) == ("Lennox International", "lennox international")
+    assert len(calls) == 1 and "1 company names read from job pages" in lane.stats.notes
+
+
+def test_one_page_read_gives_both_the_jd_and_the_name(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(tmp_path, url="https://careers-lennox.icims.com/jobs/1/job",
+                         ats_type="icims", company="lennox", description="Short.")
+    calls = []
+    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: calls.append(url) or (
+        200, _employer_page("Lennox International", "<p>" + JD + "</p>")))
+    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    assert len(calls) == 1 and saved["company"] == "Lennox International"
+    assert saved["jd_text"].startswith("Build and ship")
+
+
+def test_a_known_row_keeps_its_better_stored_name(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(tmp_path, url="https://careers-lennox.icims.com/jobs/1/job",
+                         ats_type="icims", company="lennox")
+    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: pytest.fail("no read needed"))
+    key = S.make_posting(url="https://careers-lennox.icims.com/jobs/1/job")["posting_key"]
+    lane, crawl = read(cfg, tmp_path, path, known={key: {"updated_at": "", "company": "Lennox International"}})
+    lane.run(crawl)
+    assert crawl.batch.rows[key]["company"] == "Lennox International"
+
+
+def test_a_page_with_no_employer_leaves_the_name(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(tmp_path, url="https://obyteshr.bamboohr.com/careers/37",
+                         ats_type="bamboohr", company="obyteshr")
+    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: (200, "<html></html>"))
+    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    assert saved["company"] == "obyteshr"
+
+
+def test_giving_up_counts_a_whole_site_not_one_subdomain(monkeypatch, cfg, tmp_path):
+    rows = [row(url=f"https://co{i}.bamboohr.com/careers/{i}", ats_type="bamboohr",
+                company=f"co{i}x") for i in range(stapply.MAX_HOST_FAILURES + 4)]
+    path = tmp_path / "many.parquet"
+    pd.DataFrame(rows).to_parquet(path)
+    calls = []
+    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: calls.append(url) or (200, ""))
+    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    stats = lane.run(crawl)
+    assert len(calls) == stapply.MAX_HOST_FAILURES and len(crawl.batch.rows) == len(rows)
+    assert "bamboohr.com" in stats.notes[-1]

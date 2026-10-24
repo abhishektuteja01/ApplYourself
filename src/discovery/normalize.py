@@ -33,7 +33,8 @@ _VIA_RE = re.compile(
 # What job portals print when the employer is not named ("see description",
 # "not provided"). Kept as a company, these would merge different employers'
 # roles under one id pair.
-_PLACEHOLDER_COMPANIES = frozenset({"siehe beschreibung", "non renseigné", "non renseigne"})
+_PLACEHOLDER_COMPANIES = frozenset({"siehe beschreibung", "non renseigné", "non renseigne",
+                                    "unavailable"})
 _SUFFIX_RE = re.compile(r"\s+(?:inc|llc|corp|corporation|ltd|limited|co|gmbh|plc|sa)\s*$")
 _LEADING_THE_RE = re.compile(r"^the\s+")
 _WS_RE = re.compile(r"\s+")
@@ -261,20 +262,48 @@ def _job_postings(node):
         yield from _job_postings(node.get("@graph"))
 
 
-def jobposting_text(page) -> str:
-    """The JD in a page's schema.org JobPosting block, as text, or ""."""
+def _page_postings(page):
     if not isinstance(page, str):
-        return ""
+        return
     for m in _LD_JSON_RE.finditer(page):
         try:
             data = json.loads(m.group(1))
         except ValueError:
             continue
-        for posting in _job_postings(data):
-            text = html_to_text(posting.get("description"))
-            if text:
-                return text
+        yield from _job_postings(data)
+
+
+def jobposting_text(page) -> str:
+    """The JD in a page's schema.org JobPosting block, as text, or ""."""
+    for posting in _page_postings(page):
+        text = html_to_text(posting.get("description"))
+        if text:
+            return text
     return ""
+
+
+def jobposting_employer(page) -> str:
+    """The employer a page's JobPosting block names (`hiringOrganization`),
+    or "" for none or a placeholder."""
+    for posting in _page_postings(page):
+        org = posting.get("hiringOrganization")
+        name = org.get("name") if isinstance(org, dict) else org
+        if isinstance(name, str) and normalize_company(name):
+            return name.strip()
+    return ""
+
+
+_LOWER_RE = re.compile(r"[a-z]")
+_UPPER_RE = re.compile(r"[A-Z]")
+_DIGIT_RUN_RE = re.compile(r"\d{4,}")
+
+
+def looks_like_slug(name) -> bool:
+    """A company written as an identifier, not a name: no capital letter
+    ("whatfix", "careers.pnc.com"), or a long digit run ("appsilon-1739358905")."""
+    if not isinstance(name, str):
+        return False
+    return bool(_LOWER_RE.search(name) and not _UPPER_RE.search(name)) or bool(_DIGIT_RUN_RE.search(name))
 
 
 # ---------------------------------------------------------------------
