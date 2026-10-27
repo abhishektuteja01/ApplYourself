@@ -27,6 +27,7 @@ from src.discovery import normalize as N
 from src.discovery import store as S
 from src.discovery.config import load_config
 from src.discovery.sources import ashby, greenhouse, lever
+from src.score_filter import load_trim
 from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
@@ -127,7 +128,8 @@ def ingest(url: str, *, vertical: str | None = None, company: str | None = None,
     state_index = load_state_index(p.pipeline)
     batch = S.Batch()
     batch.upsert(row)
-    stats = S.flush(batch, today, frozenset(state_index), cfg.live_days, path=p.store)
+    stats = S.flush(batch, today, frozenset(state_index), cfg.live_days, path=p.store,
+                    trim=load_trim())
     rebuild_view(cfg, p, today, state_index)
 
     store = S.load_store(p.store)

@@ -29,6 +29,7 @@ import pandas as pd
 from src import ats_http, paths, verticals
 from src.ats_registry import ATS_SOURCE_NAMES
 from src.discovery import store as S
+from src.score_filter import load_trim
 from src.discovery.config import FEED_SOURCES, JOBSPY_SOURCES, SOURCE_NAMES, load_config
 from src.discovery.sources import boards as B
 from src.discovery.sources.ashby import AshbyLane
@@ -106,9 +107,9 @@ class Writer:
     first, boards second, so a board is never marked checked while its
     postings are missing."""
 
-    def __init__(self, crawl, p: Paths, today, tracked, live_days: int):
+    def __init__(self, crawl, p: Paths, today, tracked, live_days: int, trim=S.NO_TRIM):
         self.crawl, self.p, self.today = crawl, p, today
-        self.tracked, self.live_days = tracked, live_days
+        self.tracked, self.live_days, self.trim = tracked, live_days, trim
         self.stats = S.ApplyStats()
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -129,7 +130,7 @@ class Writer:
             results = self.crawl.take_board_results()
             if len(self.crawl.batch):
                 self.stats.merge(S.flush(self.crawl.batch, self.today, self.tracked,
-                                         self.live_days, path=self.p.store))
+                                         self.live_days, path=self.p.store, trim=self.trim))
             B.update_state(results, self.today, path=self.p.board_state)
 
     def close(self) -> None:
@@ -229,6 +230,11 @@ def render_md(report: dict) -> str:
               f"- postings {st.get('postings', 0)}, job ids {st.get('job_ids', 0)}"]
     if st.get("collisions"):
         lines += ["- **job_id collisions dropped:**"] + [f"  - {c}" for c in st["collisions"]]
+    if st.get("maybe_duplicates"):
+        lines += ["- **maybe duplicates (not merged):**"] + [
+            f"  - {m['job_id']} {m['company']} / {m['other']} {m['other_company']} "
+            f"— {m['title']} (JD {m['jd_score']:g}, {m['reason']})"
+            for m in st["maybe_duplicates"]]
     lines += ["", "## Clean view", ""]
     lines += [f"- {k}: {v}" for k, v in report["view"].items()]
     for name, lane in report["lanes"].items():
@@ -311,7 +317,7 @@ def main(argv=None) -> int:
     del store
     crawl = B.Crawl(cfg, vcfg, today, deadline_ts, known, S.Batch(),
                     board_state=p.board_state, boards_dir=p.boards_dir)
-    writer = Writer(crawl, p, today, tracked, cfg.live_days)
+    writer = Writer(crawl, p, today, tracked, cfg.live_days, trim=load_trim())
 
     lanes: dict[str, dict] = {}
     t0 = time.time()

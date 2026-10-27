@@ -15,6 +15,7 @@ The role folder is the only state these commands share:
   build resume <job_id> [--final]
   build letter <job_id>
   build answers <job_id>
+  dupes <job_id>                other ids that may be this role, already in play
 
 Every command prints one JSON object. Exit 0 = ok, 2 = problems for the
 session to fix (listed in "problems"), 1 = cannot run.
@@ -36,6 +37,8 @@ import pandas as pd
 import yaml
 
 from src import lint, paths, resume_model, state_io, track_cli, verticals
+from src.apply import ledger
+from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
 from src.docx_render import ResumeContentError, TemplateError, export_pdf, render_resume
 
@@ -44,6 +47,8 @@ SCORED = paths.SCORED
 PIPELINE = paths.PIPELINE
 PROFILE = paths.PROFILE
 APPLICATIONS = paths.APPLICATIONS
+MAYBE_DUPES = paths.MAYBE_DUPES
+SUBMITTED = APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME
 
 RESUME_PLAN = "resume_plan.yaml"
 LETTER_PLAN = "cover_letter.yaml"
@@ -395,6 +400,42 @@ def cmd_build_letter(job_id: str, today: date | None = None) -> tuple[dict, int]
 
 
 # =====================================================================
+# dupes
+# =====================================================================
+
+# A partner in these states (or untracked) is no risk: nothing was sent for it.
+_IDLE_STATES = frozenset({"", "saved", "skip"})
+
+
+def cmd_dupes(job_id: str) -> dict:
+    """Other job_ids recorded in maybe_duplicates.jsonl with this one whose
+    role is tailored or further, or was submitted. Read-only; a warning for
+    the session to show, never a stop."""
+    sent = ledger.sent_job_ids(SUBMITTED) if SUBMITTED.exists() else set()
+    found: dict[str, dict] = {}
+    for rec in load_maybe_duplicates(MAYBE_DUPES):
+        ids = str(rec["pair"]).split("|")
+        if job_id not in ids or len(ids) != 2:
+            continue
+        other = ids[1] if ids[0] == job_id else ids[0]
+        state = _state(other)
+        status = str(state.get("state") or "")
+        if status in _IDLE_STATES and other not in sent:
+            continue
+        mine = rec.get("job_id") == other
+        hit = {
+            "job_id": other,
+            "company": state.get("company") or rec.get("company" if mine else "other_company", ""),
+            "title": state.get("title") or rec.get("title", ""),
+            "state": status, "submitted": other in sent,
+            "reason": rec.get("reason", ""), "jd_score": rec.get("jd_score"),
+        }
+        if other not in found or (hit["jd_score"] or 0) > (found[other]["jd_score"] or 0):
+            found[other] = hit
+    return {"job_id": job_id, "duplicates": sorted(found.values(), key=lambda h: h["job_id"])}
+
+
+# =====================================================================
 # CLI
 # =====================================================================
 
@@ -407,6 +448,8 @@ def main(argv: list[str] | None = None) -> int:
     p_new.add_argument("--today", default=None)
     p_dir = sub.add_parser("dir")
     p_dir.add_argument("job_id")
+    p_dupes = sub.add_parser("dupes")
+    p_dupes.add_argument("job_id")
     p_build = sub.add_parser("build")
     p_build.add_argument("what", choices=["resume", "letter", "answers"])
     p_build.add_argument("job_id")
@@ -418,6 +461,8 @@ def main(argv: list[str] | None = None) -> int:
             return _emit(cmd_new(args.job_id, args.today))
         if args.cmd == "dir":
             return _emit(role_info(args.job_id))
+        if args.cmd == "dupes":
+            return _emit(cmd_dupes(args.job_id))
         if args.what == "resume":
             out, code = cmd_build_resume(args.job_id, final=args.final)
         elif args.what == "letter":

@@ -80,6 +80,10 @@ class TestYearsRequired:
 
 
 class TestTrimJd:
+    def test_load_trim_reads_the_trim_block_alone(self, scfg, tmp_path):
+        assert sf.load_trim(REAL_SCORING) == (scfg.trim_headings, scfg.keep_words)
+        assert sf.load_trim(tmp_path / "missing.yaml") == ((), ())
+
     def test_boilerplate_section_cut_until_next_heading(self, scfg):
         jd = ("## About the role\n\nBuild LLM agents.\n\n## Benefits\n\nDental.\n\n"
               "Free lunch.\n\n## Requirements\n\n3+ years of Python.")

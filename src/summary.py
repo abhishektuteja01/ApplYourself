@@ -21,9 +21,10 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import paths, synonyms_cli
+from src import paths, state_io, synonyms_cli
 from src.apply import sheet
 from src.discovery import digest
+from src.discovery.store import load_maybe_duplicates
 
 LOGS = paths.REPO_ROOT / "logs"
 OUT = paths.REPO_ROOT / "summary.md"
@@ -31,11 +32,15 @@ SCORED = paths.SCORED
 CLEAN = paths.CLEAN
 STAGING = paths.STAGING
 APPLICATIONS = paths.APPLICATIONS
+PIPELINE = paths.PIPELINE
+MAYBE_DUPES = paths.MAYBE_DUPES
 
 # One short "what to do" line per section, written only into summary.md (the
 # session's copy) and only when the section has something to act on.
 CUES = {
     "discovery": "→ Lane errors are in `jobs/runs/<run_id>.json`. Re-run one lane with `uv run discover --source <name>`.",
+    "dupes": ("→ Open both postings; if they are one role, `uv run track <copy> skip` the one not in "
+              "play. Nothing was merged."),
     "scoring": "→ Run `/score` to resume the open run.",
     "synonyms": ("→ Per question id: `uv run synonyms answer <id> yes|no` (a yes means the user writes the bullet or "
                  "skill block). Approve a declined keyword: `uv run synonyms approve \"<keyword>\"`. Undo an added "
@@ -157,6 +162,27 @@ def discovery_section(reports: list[dict], since: datetime) -> list[str]:
                 if http.get(code):
                     errors.append(f"{lane}: {http[code]} x HTTP {code}")
     return [f"{len(new)} new postings, {live} live.", *_errors(errors)]
+
+
+DUPES_SHOWN = 10
+
+
+def duplicates_section(rows: list[dict], states: dict[str, dict]) -> list[str]:
+    """Tonight's maybe-duplicate pairs (never the backfill), tracked first."""
+    rows = [r for r in rows if not str(r.get("reason", "")).startswith("backfill_")]
+    if not rows:
+        return ["None tonight."]
+
+    def side(jid: str, company: str) -> str:
+        st = (states.get(jid) or {}).get("state")
+        return f"`{jid}` {company}" + (f" ({st})" if st else "")
+
+    rows = sorted(rows, key=lambda r: (-((r["job_id"] in states) + (r["other"] in states)),
+                                       -(r.get("jd_score") or 0), r["pair"]))
+    lines = [f"- {side(r['job_id'], r['company'])} / {side(r['other'], r['other_company'])} — "
+             f"{_cut(r['title'], 60)} (JD {r.get('jd_score', 0):g}, {r.get('reason', '')})"
+             for r in rows]
+    return [f"{_n(len(rows), 'pair')} not merged:", *_shown(lines, DUPES_SHOWN)]
 
 
 def _errors(errors: list[str], cap: bool = True) -> list[str]:
@@ -532,6 +558,8 @@ def build(run_dir: Path | None, since: datetime) -> str:
     items = open_items(snaps)
     items["names"] = names
     discovery = discovery_section(reports, since)
+    dupes = duplicates_section(_tonight(load_maybe_duplicates(MAYBE_DUPES), since, "date"),
+                               state_io.load_state_index(PIPELINE))
     scoring = scoring_section(scored, since, score.get("detail", ""), open_slices, score.get("code"))
     synonyms = synonyms_section(_tonight(log, since, "date"), declined, opened)
     tailoring = tailoring_section(len(tried), unresolved, names, tailor.get("detail", ""),
@@ -539,6 +567,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
     out = [f"# Night summary — {since:%Y-%m-%d} (started {since:%H:%M})", "",
            *run_section(stages), "",
            "## Discovery", *discovery, *cue("discovery", discovery, has_errors(discovery)), "",
+           "## Possible duplicates", *dupes, *cue("dupes", dupes, dupes != ["None tonight."]), "",
            "## Scoring", *scoring, *cue("scoring", scoring, bool(open_slices)), "",
            "## Synonyms", *synonyms,
            *cue("synonyms", synonyms, bool(declined or opened or _tonight(log, since, "date"))), "",

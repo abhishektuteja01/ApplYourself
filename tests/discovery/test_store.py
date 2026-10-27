@@ -18,13 +18,13 @@ def post(url, company="Acme", title="AI Engineer", source="greenhouse", jd=JD, *
                           jd_text=jd, vertical=kw.pop("vertical", "primary"), **kw)
 
 
-def fold(store, *rows, touched=(), tracked=frozenset(), today=TODAY, live_days=14):
+def fold(store, *rows, touched=(), tracked=frozenset(), today=TODAY, live_days=14, trim=S.NO_TRIM):
     batch = S.Batch()
     for r in rows:
         batch.upsert(r)
     for k in touched:
         batch.touch(k)
-    return S.apply_batch(store, batch, today, tracked, live_days)
+    return S.apply_batch(store, batch, today, tracked, live_days, trim)
 
 
 GH = "https://job-boards.greenhouse.io/acme/jobs/{}"
@@ -108,6 +108,189 @@ def test_two_new_postings_in_one_night_agree():
     b = post("https://www.linkedin.com/jobs/view/11", source="linkedin")
     store, stats = fold(S.empty_store(), a, b)
     assert store["job_id"].nunique() == 1 and len(stats.new_job_ids) == 1
+
+
+# ---------- the same role elsewhere: names, JD order, maybes ----------
+
+ROLE = ("## The Role\n\nYou will build retrieval pipelines, evaluation harnesses and agent tooling "
+        "for underwriting work, shipping weekly to real customers with a small expert team.\n\n")
+REQ = ("## Requirements\n\nThree years of Python, production LLM systems, strong SQL and a habit "
+       "of measuring everything you ship before and after release.\n\n")
+ABOUT = ("## About Vouch\n\nVouch is the insurance broker that powers ambition, purpose built for "
+         "growing technology companies and their leaders across the country.\n\n")
+LI = "https://www.linkedin.com/jobs/view/{}"
+
+
+def _pair(a, b, **kw):
+    store, _ = fold(S.empty_store(), a, **kw)
+    return fold(store, b, **kw)
+
+
+def test_the_same_jd_with_its_sections_reordered_merges():
+    store, stats = _pair(post(LI.format(1), company="Vouch Insurance", source="linkedin",
+                              jd=ROLE + REQ + ABOUT),
+                         post("https://ats.rippling.com/vouch-inc/jobs/a7099d11-3586-4b85-9d0c-904c9203c8d0",
+                              company="Vouch, Inc", source="stapply", jd=ABOUT + REQ + ROLE))
+    assert store["job_id"].nunique() == 1 and stats.by_rule == {"fuzzy": 1}
+
+
+@pytest.mark.parametrize("a,b", [("vouch", "vouch insurance"), ("ifs", "ifs1"), ("frost", "frostbank"),
+                                 ("red bull", "redbull"), ("hartford", "thehartford"),
+                                 ("hilbert", "hilbert s ai"), ("radiance technologies", "radiancetech")])
+def test_one_employer_under_two_spellings(a, b):
+    assert S.same_company(a, b) and S.same_company(b, a)
+
+
+@pytest.mark.parametrize("a,b", [("x", "xander"), ("apex", "apexa"), ("stripe", "stripes"),
+                                 ("vouch", "voucher"), ("vouch", "vouchr"), ("ai", "ai solutions"),
+                                 ("goal solutions", "shakti solutions"), ("", "acme")])
+def test_near_spellings_are_two_employers(a, b):
+    assert not S.same_company(a, b)
+
+
+def test_two_sites_of_one_source_merge_but_one_board_never_does():
+    store, _ = _pair(post(GH.format(1), company="Vouch", source="stapply"),
+                     post("https://jobs.lever.co/vouch-insurance/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e",
+                          company="Vouch Insurance", source="stapply"))
+    assert store["job_id"].nunique() == 1
+    store, _ = _pair(post(GH.format(1), company="Vouch"), post(GH.format(2), company="Vouch Insurance"))
+    assert store["job_id"].nunique() == 2
+
+
+def test_unrelated_names_with_one_jd_are_recorded_not_merged():
+    store, stats = _pair(post(GH.format(1), company="Capgemini"),
+                         post(LI.format(2), company="Sogeti", source="linkedin"))
+    assert store["job_id"].nunique() == 2
+    [m] = stats.maybe_duplicates
+    assert m["reason"] == "other_name" and m["jd_score"] == 100
+    assert m["pair"] == "|".join(sorted(store["job_id"])) and m["date"] == "2026-09-27"
+
+
+def test_related_names_with_a_weaker_jd_are_recorded_not_merged():
+    other = ROLE + ("## Requirements\n\nFive years of Java, distributed data platforms, Kafka "
+                    "streams, on call duty and a habit of measuring before release.\n\n") + ABOUT
+    store, stats = _pair(post(GH.format(1), company="Vouch", jd=ROLE + REQ + ABOUT),
+                         post(LI.format(3), company="Vouch Insurance", source="linkedin", jd=other))
+    assert store["job_id"].nunique() == 2
+    assert [m["reason"] for m in stats.maybe_duplicates] == ["weak_jd"]
+
+
+def test_titles_naming_another_team_are_recorded_not_merged():
+    store, stats = _pair(post(GH.format(1), company="OpenAI", title="Applied AI Engineer"),
+                         post(LI.format(4), company="OpenAI Inc", title="Applied AI Engineer, Codex",
+                              source="linkedin"))
+    assert store["job_id"].nunique() == 2
+    assert [m["reason"] for m in stats.maybe_duplicates] == ["other_title"]
+
+
+def test_a_title_that_only_adds_its_city_or_workplace_merges():
+    store, _ = _pair(post(GH.format(1), company="OpenAI", title="Applied AI Engineer",
+                          location_raw="Tokyo, Japan"),
+                     post(LI.format(5), company="OpenAI Inc", title="Applied AI Engineer, Tokyo (Hybrid)",
+                          source="linkedin", location_raw="Tokyo, Japan"))
+    assert store["job_id"].nunique() == 1
+
+
+BOILER = ("## Benefits\n\n" + "Medical, dental and vision cover, a learning budget, a home office "
+          "stipend, paid parental leave and flexible hours. " * 10
+          + "\n\n## Equal Opportunity\n\n" + "We are an equal opportunity employer. " * 10)
+
+
+def test_shared_boilerplate_never_makes_two_roles_one():
+    a = "## The Role\n\n" + "Own the warehouse shift schedule and the weekly cycle counts at both sites. " * 3
+    b = "## The Role\n\n" + "Build retrieval pipelines and evaluation harnesses for clinical trials. " * 3
+    trim = (("benefits", "equal opportunity"), ("visa",))
+    plain = S.jd_key(a + "\n\n" + BOILER), S.jd_key(b + "\n\n" + BOILER)
+    assert S.fuzz.ratio(*plain) >= S.JD_MERGE
+    store, stats = _pair(post(GH.format(1), company="Acme", jd=a + "\n\n" + BOILER),
+                         post(LI.format(6), company="Acme Labs", source="linkedin", jd=b + "\n\n" + BOILER),
+                         trim=trim)
+    assert store["job_id"].nunique() == 2 and stats.maybe_duplicates == []
+
+
+def test_a_maybe_pair_is_written_once_across_flushes(tmp_path):
+    path = tmp_path / "jobs.parquet"
+    for row in (post(GH.format(1), company="Capgemini"), post(LI.format(2), company="Sogeti", source="linkedin"),
+                post(LI.format(7), company="Sogeti", source="linkedin")):
+        batch = S.Batch()
+        batch.upsert(row)
+        S.flush(batch, TODAY, frozenset(), 14, path=path)
+    rows = S.load_maybe_duplicates(tmp_path / "maybe_duplicates.jsonl")
+    assert [r["reason"] for r in rows] == ["other_name"]
+
+
+def test_merged_stats_keep_each_pair_once():
+    a, b = S.ApplyStats(), S.ApplyStats()
+    a.maybe_duplicates = [{"pair": "a|b"}]
+    b.maybe_duplicates = [{"pair": "a|b"}, {"pair": "a|c"}]
+    a.merge(b)
+    assert [m["pair"] for m in a.maybe_duplicates] == ["a|b", "a|c"]
+
+
+def test_the_backfill_finds_two_stored_ids_of_one_role():
+    from src.discovery.dupes import find_pairs
+    rows = [{**post(LI.format(1), company="Vouch Insurance", source="linkedin", jd=ROLE + REQ + ABOUT),
+             "job_id": "aaaa1111"},
+            {**post("https://jobs.lever.co/vouch/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e", company="Vouch",
+                    source="lever", jd=ABOUT + REQ + ROLE), "job_id": "bbbb2222"},
+            {**post(GH.format(9), company="Zeta", title="Chef", jd=JD_OTHER), "job_id": "cccc3333"}]
+    store = S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY, last_seen=TODAY))
+    [pair] = find_pairs(store, date="2026-09-27")
+    assert pair["pair"] == "aaaa1111|bbbb2222" and pair["reason"] == "backfill_merge"
+
+
+# ---------- ids merged before the store ----------
+
+CODEX = N.compute_job_id("openai", "applied ai engineer codex")
+
+
+def _over_merged(*extra):
+    """CODEX holds its own role plus a row of another team, as an id merged
+    before the store can."""
+    rows = [{**post("https://jobs.ashbyhq.com/openai/1", company="OpenAI", title="Applied AI Engineer, Codex",
+                    source="ashby"), "job_id": CODEX},
+            {**post(LI.format(20), company="OpenAI", title="Applied AI Engineer, Cyber", source="linkedin"),
+             "job_id": CODEX}, *extra]
+    return S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY - pd.Timedelta(days=30),
+                                                    last_seen=TODAY))
+
+
+def test_a_pair_held_by_another_roles_id_gets_its_own_id():
+    cyber = post(GH.format(21), company="OpenAI", title="Applied AI Engineer, Cyber")
+    store, stats = fold(_over_merged(), cyber, tracked=frozenset({CODEX}))
+    jid = N.compute_job_id("openai", "applied ai engineer cyber")
+    assert stats.by_rule == {"hash": 1} and stats.new_job_ids == [jid]
+    [m] = stats.maybe_duplicates
+    assert m["pair"] == "|".join(sorted((jid, CODEX))) and m["reason"] == "other_title"
+    again = post("https://jobs.lever.co/openai/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e", company="OpenAI",
+                 title="Applied AI Engineer, Cyber", source="lever")
+    store, stats = fold(store, again, tracked=frozenset({CODEX}), today=TODAY + pd.Timedelta(days=1))
+    assert stats.by_rule == {"pair": 1} and store.iloc[-1]["job_id"] == jid
+
+
+def test_fuzzy_never_joins_another_roles_id():
+    near = post(GH.format(22), company="OpenAI Inc", title="Applied AI Engineer, Cyber (Remote)")
+    store, stats = fold(_over_merged(), near)
+    assert stats.by_rule == {"hash": 1} and CODEX not in set(store.iloc[-1:]["job_id"])
+    assert {m["other"] for m in stats.maybe_duplicates} == {CODEX}
+
+
+def test_an_ids_own_role_still_joins_it_from_another_city():
+    sf = {**post(LI.format(23), company="OpenAI", title="Applied AI Engineer, Codex, San Francisco",
+                 source="linkedin", location_raw="San Francisco, CA"), "job_id": CODEX}
+    again = post(GH.format(24), company="OpenAI", title="Applied AI Engineer, Codex, San Francisco",
+                 location_raw="San Francisco, CA")
+    store, stats = fold(_over_merged(sf), again)
+    assert stats.by_rule == {"pair": 1} and store.iloc[-1]["job_id"] == CODEX
+
+
+def test_a_name_variant_inside_an_id_still_joins_it():
+    own = N.compute_job_id("vouch insurance", "ai engineer")
+    rows = [{**post(LI.format(25), company="Vouch Insurance", source="linkedin"), "job_id": own},
+            {**post(GH.format(26), company="Vouch, Inc"), "job_id": own}]
+    store = S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY, last_seen=TODAY))
+    store, stats = fold(store, post("https://jobs.lever.co/vouch/1", company="Vouch, Inc", source="lever"))
+    assert stats.by_rule == {"pair": 1} and set(store["job_id"]) == {own}
 
 
 # ---------- refresh, touch, repost ----------

@@ -37,6 +37,9 @@ class AtsSource:
     #: and has no browser driver.
     submittable: bool = False
     driver_name: str | None = None
+    #: Whether discovery crawls it as a board lane. False: its urls are only
+    #: recognised (posting key, board, applyable).
+    board_lane: bool = True
     host_res: tuple[re.Pattern[str], ...] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -99,12 +102,22 @@ ATS_SOURCES: tuple[AtsSource, ...] = (
             re.IGNORECASE,
         ),
     ),
+    AtsSource(
+        name="rippling",
+        host_suffixes=("ats.rippling.com",),
+        posting_url_re=re.compile(
+            r"^https?://ats\.rippling\.com/(?:[a-z]{2}-[a-z]{2}/)?"
+            rf"(?P<slug>[^/?#]+)/jobs/(?P<posting_id>{_UUIDISH})",
+            re.IGNORECASE,
+        ),
+        board_lane=False,
+    ),
 )
 
 _BY_NAME = {s.name: s for s in ATS_SOURCES}
 
 # Tuple, not a set: iterated to build ordered output.
-ATS_SOURCE_NAMES: tuple[str, ...] = tuple(s.name for s in ATS_SOURCES)
+ATS_SOURCE_NAMES: tuple[str, ...] = tuple(s.name for s in ATS_SOURCES if s.board_lane)
 
 #: Boards `apply run --submit` can actually reach.
 SUBMITTABLE_SOURCES: frozenset[str] = frozenset(

@@ -309,7 +309,9 @@ def _world(tmp_path, monkeypatch):
                              (M, "STAGING", tmp_path / "staging"), (M, "APPLICATIONS", apps),
                              (synonyms_cli, "LOG", tmp_path / "log.jsonl"),
                              (synonyms_cli, "DECLINED", tmp_path / "declined.yaml"),
-                             (synonyms_cli, "OPEN", tmp_path / "open.yaml")):
+                             (synonyms_cli, "OPEN", tmp_path / "open.yaml"),
+                             (M, "MAYBE_DUPES", tmp_path / "maybe_duplicates.jsonl"),
+                             (M, "PIPELINE", tmp_path / "pipeline")):
         monkeypatch.setattr(mod, name, value)
     monkeypatch.setattr(M.sheet, "rows", lambda: [_row("a1", "Submittable")])
     monkeypatch.setattr(M.sheet, "check", lambda: {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []})
@@ -427,3 +429,31 @@ def test_an_empty_night_still_writes_a_summary(tmp_path, monkeypatch):
     text = M.OUT.read_text(encoding="utf-8")
     assert "Stages: discover not run" in text and "Nothing scored." in text
     assert "Nothing to tailor." in text
+
+
+def _dupe(a, b, reason="other_name", date="2026-09-29", score=99.0):
+    return {"pair": "|".join(sorted((a, b))), "job_id": a, "other": b, "company": "sogeti",
+            "other_company": "capgemini", "title": "ai engineer", "jd_score": score,
+            "reason": reason, "date": date}
+
+
+def test_duplicates_lists_tonights_pairs_tracked_first_never_the_backfill():
+    rows = [_dupe("aaaa0001", "bbbb0001"), _dupe("cccc0001", "dddd0001", score=91),
+            _dupe("eeee0001", "ffff0001", reason="backfill_merge")]
+    out = M.duplicates_section(rows, {"dddd0001": {"state": "applied"}})
+    assert out[0] == "2 pairs not merged:"
+    assert out[1].startswith("- `cccc0001` sogeti / `dddd0001` capgemini (applied) — ai engineer")
+    assert "eeee0001" not in "\n".join(out)
+    assert M.duplicates_section([], {}) == ["None tonight."]
+
+
+def test_the_summary_shows_the_duplicates_section_and_its_cue(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    monkeypatch.setattr(M.sheet, "rows", lambda: [])
+    M.MAYBE_DUPES.write_text(json.dumps(_dupe("aaaa0001", "bbbb0001")) + "\n"
+                             + json.dumps(_dupe("cccc0001", "dddd0001", date="2026-09-01")) + "\n",
+                             encoding="utf-8")
+    assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
+    text = M.OUT.read_text(encoding="utf-8")
+    assert "## Possible duplicates\n1 pair not merged:" in text and M.CUES["dupes"] in text
+    assert "cccc0001" not in text

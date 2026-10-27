@@ -24,10 +24,13 @@ writes `trace.md`, and records the folder in `state.yaml`.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" && uv run verticals-check && uv run app new $1
+cd "$(git rev-parse --show-toplevel)" && uv run app dupes $1
 ```
 
-Stop on a nonzero exit and show the error. The JSON gives `work_dir`,
-`vertical`, `company`, `title` and `keywords_to_mirror`.
+Stop on a nonzero exit of `app new` and show the error. The JSON gives
+`work_dir`, `vertical`, `company`, `title` and `keywords_to_mirror`. `app dupes`
+lists other job_ids that may be this same role and are already tailored,
+applied or submitted; carry them to the report and keep going.
 
 ## 2. Read
 
@@ -84,5 +87,6 @@ Tailored: <dir>
   trace.md — every line's source; rewordings show before -> after
   keywords not landed: <list from trace.md, or none>
   swapped by --final: <list, or none>
+  possible duplicate of: <job_id company (state) per `app dupes` entry, or none>
 Next: /cover-letter $1 or /apply $1
 ```

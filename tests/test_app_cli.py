@@ -233,3 +233,40 @@ def test_letter_before_a_resume_is_refused(repo, capsys):
     _run(capsys, "new", JOB)
     code, out = _run(capsys, "build", "letter", JOB)
     assert code == 1 and "no built resume" in out["error"]
+
+
+def _dupes(repo, monkeypatch, rows, states=(), sent=()):
+    monkeypatch.setattr(app_cli, "MAYBE_DUPES", repo / "maybe_duplicates.jsonl")
+    monkeypatch.setattr(app_cli, "SUBMITTED", repo / "submitted.jsonl")
+    (repo / "maybe_duplicates.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    for jid, state in states:
+        (repo / "pipeline" / jid).mkdir(parents=True)
+        _write(repo, f"pipeline/{jid}", "state.yaml",
+               {"job_id": jid, "company": "Vouch Insurance", "title": "AI Engineer", "state": state})
+    if sent:
+        (repo / "submitted.jsonl").write_text(
+            "".join(json.dumps({"job_id": j, "status": "submitted"}) + "\n" for j in sent), encoding="utf-8")
+
+
+def _maybe(a, b, score=99.4):
+    return {"pair": "|".join(sorted((a, b))), "job_id": a, "other": b, "company": "vouch",
+            "other_company": "vouch insurance", "title": "ai engineer", "jd_score": score,
+            "reason": "backfill_merge"}
+
+
+def test_dupes_names_a_partner_already_applied_or_submitted(repo, capsys, monkeypatch):
+    _dupes(repo, monkeypatch, [_maybe(JOB, "2add76fe"), _maybe("c0ffee00", JOB, 92)],
+           states=[("2add76fe", "applied")], sent=["c0ffee00"])
+    before = sorted(p.relative_to(repo) for p in repo.rglob("*"))
+    code, out = _run(capsys, "dupes", JOB)
+    assert code == 0 and sorted(p.relative_to(repo) for p in repo.rglob("*")) == before
+    assert [(d["job_id"], d["state"], d["submitted"]) for d in out["duplicates"]] == [
+        ("2add76fe", "applied", False), ("c0ffee00", "", True)]
+    assert out["duplicates"][1]["company"] == "vouch"
+
+
+def test_dupes_stays_quiet_for_idle_partners_and_other_roles(repo, capsys, monkeypatch):
+    _dupes(repo, monkeypatch, [_maybe(JOB, "2add76fe"), _maybe("11111111", "22222222")],
+           states=[("2add76fe", "saved")])
+    assert _run(capsys, "dupes", JOB) == (0, {"job_id": JOB, "duplicates": []})

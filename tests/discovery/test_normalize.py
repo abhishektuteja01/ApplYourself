@@ -9,6 +9,7 @@ from datetime import date
 
 import pytest
 
+from src.ats_registry import ATS_SOURCE_NAMES, board_slug, is_applyable
 from src.discovery import normalize as N
 
 
@@ -67,6 +68,18 @@ def test_workday_keys_on_tenant_and_req():
     b = "https://cigna.wd5.myworkdayjobs.com/External/job/Remote/AI-Engineer_R123?source=x"
     c = "https://cigna.wd5.myworkdayjobs.com/en-US/cignacareers/job/AI-Engineer_R123"
     assert N.posting_key(a) == N.posting_key(b) == N.posting_key(c) == "workday|cigna|ai-engineer_r123"
+
+
+def test_rippling_keys_on_its_posting_id_with_or_without_a_locale():
+    a = "https://ats.rippling.com/vouch-inc/jobs/a7099d11-3586-4b85-9d0c-904c9203c8d0"
+    b = "https://ats.rippling.com/en-US/vouch-inc/jobs/a7099d11-3586-4b85-9d0c-904c9203c8d0?jobSite=Indeed"
+    assert N.posting_key(a) == N.posting_key(b) == "rippling|a7099d11-3586-4b85-9d0c-904c9203c8d0"
+
+
+def test_rippling_is_recognised_but_never_a_board_lane():
+    assert "rippling" not in ATS_SOURCE_NAMES
+    url = "https://ats.rippling.com/vouch-inc/jobs/a7099d11-3586-4b85-9d0c-904c9203c8d0"
+    assert is_applyable(url) and board_slug(url) == "vouch-inc"
 
 
 def test_blank_url_has_no_key():

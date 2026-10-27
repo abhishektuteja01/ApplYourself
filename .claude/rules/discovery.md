@@ -17,7 +17,8 @@ paths:
 `run.py` checks tonight's due boards and searches, saves what they find into
 `jobs/jobs.parquet` as it arrives, then rebuilds `jobs/clean.parquet` and writes
 `jobs/runs/<run_id>.json` + `.md`. `clean.parquet` is the only discovery output
-anything downstream reads. `jobs/raw/` holds nightly debug shards (every
+anything downstream reads, apart from `jobs/maybe_duplicates.jsonl` (see the
+store), which only `summary` and `app dupes` read. `jobs/raw/` holds nightly debug shards (every
 classified listing plus its gate verdict), pruned after `raw_keep_days`; nothing
 in the pipeline reads them.
 
@@ -30,11 +31,23 @@ strip every param: `gh_jid`, `jk` and unknown careers pages carry the id there.
 
 A new posting gets its `job_id` by the first rule that matches: a known url or
 key, then a known `(company_normalized, title_normalized)` pair, then the same
-role from a *different* source (`same_job_elsewhere`), else the hash. A stored
+role on another board (`same_job_elsewhere`), else the hash. The pair and
+fuzzy rules join an id only when the title agrees with that id's own title
+(the pair it hashes from, when stored); otherwise it is an `other_title` maybe. A stored
 row's `job_id`, `first_seen`, `company_normalized` and `title` never change: a
 refresh cannot move the id pair, though it may improve the shown `company`. A posting's `board` is its url's own ATS + slug,
 whichever lane found it. Two postings of one board never merge, and two titles
 that disagree on level tokens never merge.
+
+`same_job_elsewhere` merges only when the titles agree (`TITLE_MIN`, and no
+role word apart beyond workplace and location words), the names are one employer
+(`same_company`: equal squashed, leading whole words, or a one-word slug that
+starts with the other; never a near-spelling), and the JDs, boilerplate trimmed
+by scoring.yaml's `trim_jd` and word order ignored, score `JD_MERGE`. A pair
+that misses on only one of these (`other_name`, `weak_jd` from `JD_MAYBE`,
+`other_title`) is never merged: `store.flush` appends it once to
+`jobs/maybe_duplicates.jsonl`. `discover-dupes` runs the same matcher over ids
+already stored and records them there too; no id is ever rewritten.
 
 `job_id = sha1(company_normalized + "|" + title_normalized)[:8]`, inputs frozen.
 Inherited ids (a pair whose id is not its own hash) are legitimate: they carry

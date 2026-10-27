@@ -40,6 +40,15 @@ It checks the role (`saved` or `tailored`, a resume on file), the bank and
 Playwright, and prints `OUT_DIR`, `VERTICAL`, `COMPANY_ANSWERS` and
 `OVERRIDES_FILE` (reset to `{"job_id": ...}`). Any error: stop and report it.
 
+```bash
+cd "$(git rev-parse --show-toplevel)" && uv run app dupes <job_id>
+```
+
+Each entry in `duplicates` is another job_id that may be this same role and is
+already tailored, applied or submitted. If there is any, show each (job_id,
+company, state, `submitted`) and ask the user whether to go on before step 2;
+on a no, stop and suggest `/track <job_id> skip`.
+
 ## 2. Plan
 
 ```bash
