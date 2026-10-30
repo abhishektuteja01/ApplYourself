@@ -30,6 +30,7 @@ from src.ats_http import CareersError, fetch_json
 from src.discovery.config import load_config, pacing_floor
 from src.discovery.normalize import iso_date, ms_date, relative_posted_date
 from src.discovery.sources import ashby, greenhouse, lever
+from src.discovery.sources import eightfold as ef
 from src.discovery.sources import workday as wd
 from src.discovery.sources.boards import job_items, load_boards
 
@@ -85,11 +86,32 @@ def workday_summary(payload) -> tuple[int, date | None]:
     return count, _newest(relative_posted_date(i.get("postedOn") or "", date.today()) for i in items)
 
 
+def eightfold_summary(payload) -> tuple[int, date | None]:
+    """Count from the search's own total, date from its first page."""
+    items = job_items(payload, "positions")
+    total = payload.get("count")
+    count = total if isinstance(total, int) and total >= len(items) else len(items)
+    return count, _newest(ef.epoch_date(i.get("postedTs") or i.get("t_create")) for i in items)
+
+
+def eightfold_page(slug: str) -> dict:
+    """Page 0 of an empty search, PCSX first, v2 when PCSX is refused."""
+    host, domain = ef.parse_slug(slug)
+    try:
+        items, total = ef.list_page(host, domain, "pcsx", "", 0)
+    except CareersError as e:
+        if e.status not in ef.PCSX_REFUSED:
+            raise
+        items, total = ef.list_page(host, domain, "v2", "", 0)
+    return {"positions": items, "count": total}
+
+
 SUMMARIZE = {
     "greenhouse": greenhouse_summary,
     "ashby": ashby_summary,
     "lever": lever_summary,
     "workday": workday_summary,
+    "eightfold": eightfold_summary,
 }
 
 
@@ -147,6 +169,8 @@ def probe(ats: str, slug: str) -> tuple[str, int, date | None, str, str]:
         if ats == "workday":
             company, pod, site_id = wd.parse_slug(slug)
             payload = wd.list_page(company, pod, site_id, offset=0)
+        elif ats == "eightfold":
+            payload = eightfold_page(slug)
         else:
             payload = fetch_json(board_url(ats, slug))
     except CareersError as e:

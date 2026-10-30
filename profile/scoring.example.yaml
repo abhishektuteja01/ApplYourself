@@ -40,6 +40,9 @@ no_sponsorship:
   - do not sponsor
   - does not sponsor
 
+# Languages you speak; a JD requiring another is skipped by the judge.
+languages: [English]
+
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
 

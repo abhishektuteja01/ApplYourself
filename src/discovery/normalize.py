@@ -187,6 +187,9 @@ def posting_key(url: str) -> str:
         path = urlsplit(text).path
         if "/job/" in path:
             return f"workday|{hit.slug.lower()}|{path.rstrip('/').rsplit('/', 1)[-1].lower()}"
+    if hit is not None and hit.source == "oracle" and hit.posting_id:
+        # Requisition ids are per tenant, not global.
+        return f"oracle|{hit.slug.lower()}|{hit.posting_id.lower()}"
     if hit is not None and hit.posting_id:
         return f"{hit.source}|{hit.posting_id.lower()}"
     try:

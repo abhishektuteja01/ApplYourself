@@ -8,7 +8,7 @@ passed the title gate, and last check's counts. A board is due when
 `every_days` have passed since its last check; due boards run oldest first.
 A killed run leaves the rest due, so there is nothing to resume.
 
-Deterministic and LLM-free (R7). Vendor code lives in the four modules next to
+Deterministic and LLM-free (R7). Vendor code lives in the modules next to
 this one; each only lists a board and fetches one posting.
 """
 from __future__ import annotations
@@ -74,6 +74,18 @@ def board_key_of(url: str) -> str:
 # ---------------------------------------------------------------------
 # the board list
 # ---------------------------------------------------------------------
+
+def search_terms(vcfg) -> tuple[str, ...]:
+    """Each lane's first search term, default lane first, duplicates once:
+    what a board that filters server-side is searched with."""
+    order = [vcfg.default_vertical] + [n for n in vcfg.verticals if n != vcfg.default_vertical]
+    terms: list[str] = []
+    for name in order:
+        lane = vcfg.verticals.get(name)
+        if lane is not None and lane.search_terms and lane.search_terms[0] not in terms:
+            terms.append(lane.search_terms[0])
+    return tuple(terms)
+
 
 def _read_csv(path: Path) -> list[dict]:
     if not path.exists():

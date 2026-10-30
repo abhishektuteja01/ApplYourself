@@ -13,7 +13,7 @@ import pytest
 from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
 from src.discovery.sources import boards as B
-from src.discovery.sources import stapply
+from src.discovery.sources import oracle_hcm, stapply
 
 TODAY = pd.Timestamp("2026-10-23")
 JD = "Build and ship retrieval systems for clinical trial data. " * 6
@@ -324,3 +324,55 @@ def test_giving_up_counts_a_whole_site_not_one_subdomain(monkeypatch, cfg, tmp_p
     stats = lane.run(crawl)
     assert len(calls) == stapply.MAX_HOST_FAILURES and len(crawl.batch.rows) == len(rows)
     assert "bamboohr.com" in stats.notes[-1]
+
+
+ORACLE = "https://jpmc.fa.oraclecloud.com/?keyword=&mode=jobs&lang=en&site_number=CX_1001#{}"
+
+
+def test_an_oracle_row_reads_its_jd_from_the_requisition_api(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(tmp_path, url=ORACLE.format(42), ats_type="oracle",
+                         company="JPMorgan Chase", description="Short.")
+    calls = []
+    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: pytest.fail("no page read"))
+    monkeypatch.setattr(stapply.ats_http, "fetch_json", lambda url, deadline_ts=None: calls.append(url) or {
+        "items": [{"ExternalDescriptionStr": "<p>" + JD + "</p>", "CorporateDescriptionStr": "<p>Blurb.</p>"}]})
+    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    assert "finder=ById;Id=%2242%22,siteNumber=CX_1001" in calls[0]
+    assert saved["jd_text"].startswith("Build and ship") and "Blurb" not in saved["jd_text"]
+    assert saved["posting_key"] == "oracle|jpmc|42"
+
+
+def _site_page(label):
+    return f'<head><meta property="og:site_name" content="{label}"/></head>'
+
+
+def test_a_tenant_coded_oracle_company_is_named_from_its_site_once(monkeypatch, cfg, tmp_path):
+    url = "https://egug.fa.us2.oraclecloud.com/?keyword=&mode=jobs&lang=en&site_number=CX_1#{}"
+    rows = [row(url=url.format(i), ats_type="oracle", company="Egug") for i in (1, 2)]
+    path = tmp_path / "oracle.parquet"
+    pd.DataFrame(rows).to_parquet(path)
+    calls = []
+    monkeypatch.setattr(stapply.ats_http, "fetch_page",
+                        lambda url: calls.append(url) or (200, _site_page("American Express")))
+    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    assert calls == ["https://egug.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1"]
+    assert {r["company"] for r in crawl.batch.rows.values()} == {"American Express"}
+
+
+@pytest.mark.parametrize("label, expected", [
+    ("American Express", "American Express"),
+    ("Bank of England Job Board -", "Bank of England"),
+    ("Chartwell Career Site English", "Chartwell"),
+    ("UNIPOL_External Career Site", "UNIPOL"),
+    ("Legrand Group Opportunities - Join us", "Legrand Group"),
+    ("Airtel Africa Careers", "Airtel Africa"),
+    ("Jobs onsemi", "onsemi"),
+    ("Candidate Experience site", ""),
+])
+def test_a_site_label_is_cut_to_the_employer(label, expected):
+    assert oracle_hcm.site_name(_site_page(label)) == expected

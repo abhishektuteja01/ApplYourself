@@ -165,6 +165,7 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
     parts = [
         f"# Scoring packet — lane {lane.name}\n",
         f"`keywords_to_mirror`: up to {cfg.keywords_max}.\n",
+        f"Languages the candidate speaks: {', '.join(cfg.languages)}.\n" if cfg.languages else "",
         SHARED_RUBRIC.read_text(encoding="utf-8"),
         (verticals.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
         "## Skill weights\n\n```yaml\n"
@@ -301,7 +302,7 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
                 "bytes": len(text.encode("utf-8")),
                 "job_ids": [r["job_id"] for r in part],
                 "facts": {r["job_id"]: {
-                    "years": years_required(r.get("jd_text")),
+                    "years": years_required(r.get("jd_text"), cfg.degree_rank),
                     "words": word_count(r.get("jd_text")),
                     "contract": "contract" in str(r.get("employment_type") or "").lower(),
                     # everything the judge is shown, so a quote from the title counts

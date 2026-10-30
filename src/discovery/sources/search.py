@@ -99,11 +99,13 @@ def _country_indeed(location: str) -> str:
 
 
 def build_queries(name: str, src, vcfg, locations) -> list[tuple]:
-    """(vertical, term, location, is_remote) for every query, in run order:
-    home queries first, then the `abroad` block, remote=False only."""
+    """(vertical, term, location, is_remote, company_ids) for every query, in
+    run order: home queries first, then the `abroad` block, then the
+    `companies` block; the last two remote=False only. A company query has no
+    lane of its own: its rows are classified by title."""
     remote_flags = (False, True) if src.remote_queries else (False,)
     queries = [
-        (v.name, term, location, is_remote)
+        (v.name, term, location, is_remote, None)
         for v in vcfg.verticals.values()
         for term in (v.linkedin_terms if name == "linkedin" else v.search_terms)
         for location in locations
@@ -113,7 +115,10 @@ def build_queries(name: str, src, vcfg, locations) -> list[tuple]:
         for lane in src.abroad_verticals:
             v = vcfg.verticals.get(lane)
             if v is not None:
-                queries.extend((lane, term, country, False) for term in v.abroad_terms)
+                queries.extend((lane, term, country, False, None) for term in v.abroad_terms)
+    for company_id in src.company_ids.values():
+        queries.extend(("", term, location, False, [company_id])
+                       for term in src.company_terms for location in locations)
     return queries
 
 
@@ -163,7 +168,8 @@ class SearchLane:
         if self.name == "linkedin":
             stack.enter_context(_paced_linkedin(page_delay, band, tally))
         with stack:
-            for vertical, term, location, is_remote in queries:
+            for vertical, term, location, is_remote, *company in queries:
+                company_ids = company[0] if company else None
                 if crawl.deadline_reached():
                     stats.truncated = True
                     break
@@ -176,6 +182,7 @@ class SearchLane:
                         is_remote=is_remote, results_wanted=src.results_wanted,
                         hours_old=src.hours_old, country_indeed=_country_indeed(location),
                         description_format=DESCRIPTION_FORMAT,
+                        linkedin_company_ids=company_ids,
                         linkedin_fetch_description=False, verbose=1)
                 except Exception as e:  # noqa: BLE001 -- one bad query must not cost the run
                     stats.errors.append(f"term={term!r} remote={is_remote}: {type(e).__name__}: {e}")
@@ -189,6 +196,7 @@ class SearchLane:
                 if len(df) >= src.results_wanted:
                     saturated += 1
                     where = f"{location} (remote)" if is_remote else location
+                    where += f" company {company_ids[0]}" if company_ids else ""
                     stats.capped.append(f"{term} @ {where}: {stats.new - new_before} new")
                 # Details right after the query that found them, so a deadline
                 # never leaves a night's new postings without a JD.
@@ -207,6 +215,10 @@ class SearchLane:
         key = posting["posting_key"]
         if not key or not posting["title"]:
             return
+        if not posting["vertical"]:
+            posting["vertical"] = N.classify_vertical_from_title(posting["title"])
+            if not posting["vertical"]:
+                return
         stats.classified += 1
         passes = N.title_passes(posting["title"], posting["vertical"], self.name, crawl.vcfg)
         crawl.record_listing(self.name, posting["title"], posting["vertical"], passes, key)

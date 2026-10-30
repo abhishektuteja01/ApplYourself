@@ -27,6 +27,8 @@ dead_every_days: 14
 # search window and result cap. remote_queries: false drops the remote copy of each query.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
+  # Optional, LinkedIn only: search within companies whose careers site no lane
+  # reads. Add under linkedin as companies: {terms: [widget], ids: {Acme Widgets: 123}}
   indeed:        {enabled: true,  pacing_seconds: 2}
   greenhouse:    {enabled: true,  pacing_seconds: 1, every_days: 1}
   lever:         {enabled: true,  pacing_seconds: 1, every_days: 1}
@@ -34,6 +36,8 @@ sources:
   # Workday is the slowest lane per kept row and manual-apply only, so a
   # third of it a night is a good start.
   workday:       {enabled: true,  pacing_seconds: 2, every_days: 3}
+  # Ten postings a page; each tenant searched with each lane's first term.
+  eightfold:     {enabled: true,  pacing_seconds: 1, every_days: 3, max_pages: 6}
   # The stapply.ai daily file of public ATS jobs (one download a night).
   # A snapshot older than max_snapshot_age_hours is skipped.
   stapply:       {enabled: true,  max_snapshot_age_hours: 36}

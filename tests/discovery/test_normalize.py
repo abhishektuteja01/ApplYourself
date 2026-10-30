@@ -198,3 +198,14 @@ def test_no_block_no_employer():
 ])
 def test_looks_like_slug(name, slug):
     assert N.looks_like_slug(name) is slug
+
+
+@pytest.mark.parametrize("url, key", [
+    ("https://jpmc.fa.oraclecloud.com/?keyword=&mode=jobs&lang=en&site_number=CX_1001#210632946",
+     "oracle|jpmc|210632946"),
+    ("https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/12345",
+     "oracle|eeho|12345"),
+])
+def test_oracle_postings_key_on_tenant_and_requisition(url, key):
+    assert N.posting_key(url) == key
+    assert N.posting_key(url.replace("210632946", "1").replace("12345", "1")) != key

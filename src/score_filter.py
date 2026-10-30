@@ -53,6 +53,10 @@ class ScoringConfig:
     pipeline_show: int
     sponsorship_order: tuple[str, ...]
     note: str
+    languages: tuple[str, ...] = ()
+    degree_rank: int | None = None
+    """Your highest degree as a `degree_rank`, from the answer bank; None
+    when it names none we know, so every years path counts."""
 
 
 def _phrases(data: dict, key: str, path: Path) -> tuple[str, ...]:
@@ -83,6 +87,13 @@ def sponsorship_needs(bank_path: Path) -> tuple[str, tuple[tuple[str, str], ...]
     bank = load_answers(bank_path)
     rows = tuple((c, _need(f)) for c, f in bank.countries.items() if c != "default")
     return _need(bank.facts_for(bank.home_country)), rows, _need(bank.countries["default"])
+
+
+def bank_degree_rank(bank_path: Path) -> int | None:
+    """Your highest degree's rank, from the answer bank's education block."""
+    from src.apply.answers import load_answers
+
+    return degree_rank(load_answers(bank_path).education.get("degree"))
 
 
 def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> ScoringConfig:
@@ -123,6 +134,8 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         pipeline_show=_int(s, "pipeline_show", "shortlist", path),
         sponsorship_order=_phrases(s, "sponsorship_order", path),
         note=str(s.get("note") or ""),
+        languages=_phrases(data, "languages", path),
+        degree_rank=bank_degree_rank(Path(bank_path)),
     )
     if cfg.review_min > cfg.tailor_min:
         raise ValueError(f"{path}: action.review_min must not exceed action.tailor_min")
@@ -178,19 +191,51 @@ _PREFERRED_RE = re.compile(
     r"^\W*(?:preferred|nice[- ]to[- ]have|bonus|desired|pluses|good to have)\b[^\n]{0,40}$",
     re.MULTILINE,
 )
+# The same heading run into its content: "Preferred Qualifications: 9+ years".
+_PREFERRED_INLINE_RE = re.compile(
+    r"\b(?:preferred|desired|nice[- ]to[- ]have|bonus)\s+"
+    r"(?:qualifications|skills|experience|requirements)\s*[:\-–—]"
+)
 _MAX_PLAUSIBLE_YEARS = 20
+# Degree words, highest rank first; a years path names the degree it goes with.
+_DEGREES = (
+    (4, r"ph\.?\s?d|doctor(?:ate|al)"),
+    (3, r"master'?s?|m\.s\.|\bms\b|mba|graduate degree"),
+    (2, r"bachelor'?s?|b\.s\.|\bbs\b|\bba\b|b\.\s?tech|undergraduate"),
+    (1, r"associate'?s?"),
+    (0, r"high school|ged\b"),
+)
+_DEGREE_RE = re.compile("|".join(f"(?P<d{r}>{p})" for r, p in _DEGREES))
+# Where one years path's own words start: after an "or", a ";" or a new line.
+_PATH_START_RE = re.compile(r"\bor\b|;|\n")
 
 
-def years_required(jd_text: Any) -> int:
+def degree_rank(text: Any) -> int | None:
+    """The rank of the first degree named in `text`, or None."""
+    m = _DEGREE_RE.search(str(text or "").lower())
+    return int(m.lastgroup[1:]) if m else None
+
+
+def _path_degree(text: str, start: int, floor: int) -> int | None:
+    """The degree named in the path that ends at `start`, if any."""
+    cuts = [c.end() for c in _PATH_START_RE.finditer(text, floor, start)]
+    hits = list(_DEGREE_RE.finditer(text, cuts[-1] if cuts else floor, start))
+    return int(hits[-1].lastgroup[1:]) if hits else None
+
+
+def years_required(jd_text: Any, degree: int | None = None) -> int:
     """Highest minimum-years requirement stated before any Preferred section,
-    0 if none."""
+    0 if none. Degree paths joined by "or" ("bachelor's and 7 years, or
+    master's and 4") count as one requirement: the lowest path open to
+    `degree`, or the lowest of all when none is."""
     if not isinstance(jd_text, str):
         return 0
     text = jd_text.lower().replace("\\", "").replace("**", "")
-    cut = _PREFERRED_RE.search(text)
-    if cut:
-        text = text[:cut.start()]
-    found = []
+    cuts = [m.start() for m in (_PREFERRED_RE.search(text), _PREFERRED_INLINE_RE.search(text)) if m]
+    if cuts:
+        text = text[:min(cuts)]
+    groups: list[list[tuple[int, int | None]]] = []
+    end = 0
     for m in _YEARS_RE.finditer(text):
         n = int(m.group(1))
         if n >= _MAX_PLAUSIBLE_YEARS or not m.group(3):
@@ -198,7 +243,21 @@ def years_required(jd_text: Any) -> int:
         before = text[max(0, m.start() - 25):m.start()]
         if _COMPANY_AGE_RE.search(before) or "education" in before:
             continue
-        found.append(n)
+        path = (n, _path_degree(text, m.start(), end))
+        alt = (degree is not None and groups and path[1] is not None
+               and groups[-1][-1][1] is not None and re.search(r"\bor\b", text[end:m.start()]))
+        if alt:
+            groups[-1].append(path)
+        else:
+            groups.append([path])
+        end = m.end()
+    found = []
+    for g in groups:
+        if len(g) == 1:
+            found.append(g[0][0])
+            continue
+        open_ = [n for n, d in g if d <= degree]
+        found.append(min(open_ or [n for n, _ in g]))
     return max(found, default=0)
 
 
@@ -251,7 +310,7 @@ def drop_reason(row: dict, cfg: ScoringConfig) -> tuple[str, str] | None:
     hit = find_phrase(lane.drop_phrases, jd)
     if hit is not None:
         return "phrase", hit
-    years = years_required(jd)
+    years = years_required(jd, cfg.degree_rank)
     if lane.years and years > max(lane.years):
         return "years", f"{years}+ years required, lane allows {max(lane.years)}"
     return None

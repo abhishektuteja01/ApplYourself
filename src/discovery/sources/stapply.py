@@ -29,6 +29,7 @@ from src.ats_registry import ATS_SOURCE_NAMES
 from src.ats_http import CareersError
 from src.discovery import normalize as N
 from src.discovery.location import CC_TO_COUNTRY, parse_location
+from src.discovery.sources import oracle_hcm
 from src.discovery.sources.boards import LaneStats, board_key_of, load_boards
 from src.discovery.store import make_posting
 
@@ -223,33 +224,57 @@ class StapplyLane:
         stats = self.stats
         pages = _PageReader(max(1.0, crawl.cfg.sources[self.name].pacing_seconds), crawl, stats)
         named = 0
+        site_names: dict[str, str] = {}
         for posting in self.rows:
             stats.passed += 1
             key = posting["posting_key"]
             known = crawl.known.get(key)
             stored = (known or {}).get("company", "")
-            if N.looks_like_slug(posting["company"]) and stored and not N.looks_like_slug(stored):
+            if stored and not N.looks_like_slug(stored) and (
+                    N.looks_like_slug(posting["company"])
+                    or oracle_hcm.site_url(posting["url"], posting["company"])):
                 posting = {**posting, "company": stored}
             stats.known += known is not None
             stats.new += known is None
             needs_jd = known is None and len(posting["jd_text"].strip()) < N.MIN_JD_CHARS
             needs_name = N.looks_like_slug(posting["company"])
             employer = ""
+            site = oracle_hcm.site_url(posting["url"], posting["company"])
+            if site:
+                # Named by its Oracle tenant code: the site's page names the employer.
+                if site not in site_names:
+                    page = pages.read(site)
+                    site_names[site] = oracle_hcm.site_name(page)
+                    if page is not None:
+                        pages.result(site, bool(site_names[site]))
+                employer = site_names[site]
+                needs_name = False
+            api = oracle_hcm.detail_url(posting["url"]) if needs_jd else ""
+            if api:
+                # Its job page is built in the browser: read the JD from the API.
+                payload = pages.read(api, as_json=True)
+                jd = oracle_hcm.jd_text(payload) if payload is not None else ""
+                if jd:
+                    posting = {**posting, "jd_text": jd}
+                if payload is not None:
+                    pages.result(posting["url"], bool(jd))
+                needs_jd = False
             if needs_jd or needs_name:
                 page = pages.read(posting["url"])
                 jd = N.jobposting_text(page) if needs_jd else ""
-                employer = N.jobposting_employer(page) if needs_name else ""
-                if employer and N.looks_like_slug(employer):
-                    employer = ""
+                if needs_name:
+                    employer = N.jobposting_employer(page)
+                    if N.looks_like_slug(employer):
+                        employer = ""
                 if jd:
                     posting = {**posting, "jd_text": jd}
-                if employer:
-                    named += 1
-                    posting = {**posting, "company": employer}
-                    if known is None:
-                        posting["company_normalized"] = N.normalize_company(employer)
                 if page is not None:
                     pages.result(posting["url"], bool(jd or employer))
+            if employer:
+                named += 1
+                posting = {**posting, "company": employer}
+                if known is None:
+                    posting["company_normalized"] = N.normalize_company(employer)
             has_jd = len(posting["jd_text"].strip()) >= N.MIN_JD_CHARS
             if known is not None:
                 if has_jd or employer:
@@ -287,8 +312,9 @@ class _PageReader:
         self.failures: dict[str, int] = {}
         self.worked: set[str] = set()
 
-    def read(self, url: str) -> str | None:
-        """The page body, "" for a failed read, None when not read."""
+    def read(self, url: str, as_json: bool = False):
+        """The page body (decoded JSON when `as_json`), "" for a failed read,
+        None when not read."""
         site = site_of(url)
         if self.crawl.deadline_reached() or (
                 site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES):
@@ -298,6 +324,8 @@ class _PageReader:
             time.sleep(wait)
         self.last = time.time()
         try:
+            if as_json:
+                return ats_http.fetch_json(url, deadline_ts=self.crawl.deadline_ts or None)
             status, body = ats_http.fetch_page(url)
         except Exception as e:  # noqa: BLE001 -- one page, not the lane
             self.stats.errors.append(f"{url}: {type(e).__name__}: {e}")

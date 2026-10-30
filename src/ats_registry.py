@@ -103,6 +103,29 @@ ATS_SOURCES: tuple[AtsSource, ...] = (
         ),
     ),
     AtsSource(
+        name="eightfold",
+        # Custom careers hosts (a company's own domain) are not recognised;
+        # their postings key on host + path like any careers page.
+        host_suffixes=("eightfold.ai",),
+        posting_url_re=re.compile(
+            r"^https?://(?P<slug>[^./]+)\.eightfold\.ai/careers/job/(?P<posting_id>\d+)",
+            re.IGNORECASE,
+        ),
+    ),
+    AtsSource(
+        name="oracle",
+        host_suffixes=("oraclecloud.com",),
+        # Oracle Recruiting Cloud: the requisition id rides in the fragment of
+        # the search-page form, or in the path of the job-page form.
+        posting_url_re=re.compile(
+            r"^https?://(?P<slug>[^./]+)\.fa\.(?:[\w-]+\.)*oraclecloud\.com/"
+            r"(?:hcmUI/CandidateExperience/[^/]+/sites/(?P<site_id>[^/?#]+)/job/|\?[^#]*#)"
+            r"(?P<posting_id>[\w-]+)",
+            re.IGNORECASE,
+        ),
+        board_lane=False,
+    ),
+    AtsSource(
         name="rippling",
         host_suffixes=("ats.rippling.com",),
         posting_url_re=re.compile(

@@ -47,8 +47,10 @@ for the candidate, the total and the action) is applied after you.
   placement firm, body shop or IT vendor reselling contract labor. Name a
   language requirement here.
 - `action` (optional): `skip` when the title is clearly out of lane despite
-  in-lane words in the JD, or the posting is not genuinely applicable (a test
-  posting). `manual-review` when a strong role carries a real tension (great
+  in-lane words in the JD, the posting is not genuinely applicable (a test
+  posting), the JD requires working fluency in a language the candidate does
+  not speak, or it is a campus or graduate program whose required degree or
+  graduation window the resume does not meet. `manual-review` when a strong role carries a real tension (great
   domain, hard seniority stretch). Otherwise leave it out.
 
 Short JDs get their `skills` cap automatically. Long ones are yours to judge:

@@ -42,6 +42,7 @@ def test_unknown_source_is_an_error(tmp_path):
     ({"location_allowlist": {"countries": ["United States"], "states": ["TX"]}}, "location_allowlist.states"),
     ({"retention": {"highdays": 60}}, "retention.highdays"),
     ({"sources": {"linkedin": {"abroad": {"countrys": ["India"]}}}}, "sources.linkedin.abroad.countrys"),
+    ({"sources": {"linkedin": {"companies": {"term": ["AI"]}}}}, "sources.linkedin.companies.term"),
     ({"typo": 1}, "unknown config key: typo"),
 ])
 def test_unknown_and_retired_keys_are_named(tmp_path, data, needle):
@@ -74,6 +75,9 @@ def test_every_value_is_read(tmp_path):
     {"sources": {"linkedin": {"abroad": {"countries": "India"}}}},
     {"search_locations": "United States"},
     {"sources": {"stapply": {"max_snapshot_age_hours": 0}}},
+    {"sources": {"linkedin": {"companies": {"terms": ["AI"], "ids": {"Acme": "123"}}}}},
+    {"sources": {"linkedin": {"companies": {"ids": {"Acme": 123}}}}},
+    {"sources": {"indeed": {"companies": {"terms": ["AI"], "ids": {"Acme": 123}}}}},
 ])
 def test_bad_values_fail_at_load(tmp_path, data):
     with pytest.raises(ValueError):
@@ -148,3 +152,9 @@ def test_the_cli_reports_a_bad_config(monkeypatch, tmp_path, capsys):
     p.write_text("schema_version: 9\n", encoding="utf-8")
     monkeypatch.setattr(C, "DEFAULT_CONFIG_PATH", p)
     assert C.main() == 1 and "schema_version" in capsys.readouterr().out
+
+
+def test_linkedin_companies_are_read(tmp_path):
+    li = load(tmp_path, {"sources": {"linkedin": {"companies": {
+        "terms": ["widget"], "ids": {"Acme": 123}}}}}).sources["linkedin"]
+    assert (li.company_terms, li.company_ids) == (["widget"], {"Acme": 123})

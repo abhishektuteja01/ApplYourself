@@ -86,8 +86,10 @@ have passed since `last_checked`; due boards run oldest first. An error leaves
 `dead_every_days`. There is no cursor and no resume: a killed run leaves the
 rest due.
 
-Vendor modules only list a board and fetch one posting. The loop, the gate,
-known-vs-new, detail fetching and board results live in `BoardLane` once.
+Workday (`company|wd#|site`) and Eightfold (`host|domain`) filter server-side,
+so each tenant is searched with each lane's first search term. Vendor modules
+only list a board and fetch one posting. The loop, the gate, known-vs-new,
+detail fetching and board results live in `BoardLane` once.
 
 ## The feed (`sources/stapply.py`)
 
@@ -105,7 +107,11 @@ still `looks_like_slug`, read from the page's schema.org `JobPosting` block
 (`jobposting_text`, also `ingest-url`'s first try; `jobposting_employer`). A
 better stored name is never replaced by a slug; a site (across subdomains) whose
 first ten reads tonight give nothing is not read again tonight.
-Feed rows are board rows to the view: no search-age cut.
+An Oracle Recruiting Cloud row's JD comes from its requisition-detail API
+(`oracle_hcm`), since its job page is built in the browser; its key is tenant +
+requisition id. One named only by its tenant code ("Egug") is named from its
+candidate site page's `og:site_name`, read once per site a night. Feed rows are
+board rows to the view: no search-age cut.
 
 Every source parses flags, salaries and placeholder company names through
 `normalize.as_bool`, `yearly_salary` and `normalize_company`.
@@ -127,7 +133,9 @@ what the jobspy lanes query (absent: the allowlist, capped at
 `MAX_SEARCH_LOCATIONS`). An `abroad` block (`countries`, `verticals`) adds one
 query per country x `abroad_terms`, remote=False; its countries must be in the
 allowlist, and the view drops a row in an abroad country whose lane is not
-listed. A location that is exactly a region acronym expands to its countries:
+listed. A LinkedIn `companies` block (`terms`, `ids`) adds one home query per
+term x company id; those rows have no lane of their own and are classified by
+title. A location that is exactly a region acronym expands to its countries:
 overlap keeps it unresolved, no overlap drops it.
 
 ## Config

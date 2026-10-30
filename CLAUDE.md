@@ -88,131 +88,27 @@ Changing the hash inputs would silently orphan `pipeline/<job_id>/state.yaml` an
 
 ## Commands
 
-```bash
-# Tests — must be fully green. Run this after any src/ or fixture change.
-uv run pytest tests -q
-uv run pytest tests/test_verticals.py -q          # single test file
-uv run pytest tests/test_verticals.py::<name>     # single test
+Every CLI is a `pyproject` `[project.scripts]` entry run with `uv run`; each has `--help`.
 
-# Deterministic CLIs (entry points in pyproject [project.scripts]).
-uv run discover [--deadline-hours H] [--source NAME] [--max-terms N] [--jobs-dir D] [--boards-dir D]
-                                      # overnight scrape -> jobs store -> jobs/clean.parquet
-                                      # the overrides narrow one run without touching
-                                      # config; --source is exhaustive and repeatable
-                                      # (naming one excludes the inbox); --jobs-dir and
-                                      # --boards-dir point a shadow run at a copy.
-                                      # A killed run just leaves boards due.
-                                      # needs `uv sync --group discovery` (libpostal)
-uv run verticals-check                # validate config + rubric/tailoring dirs
-uv run discovery-check                # resolve + validate the discovery config:
-                                      # prints the effective location allowlist,
-                                      # the jobspy search locations and the
-                                      # enabled sources, exits 1 on any problem.
-                                      # `discover` runs it as preflight
-uv run discover-digest [--json] [--run-id ID] [--window N] [--runs-dir D]
-                                      # read the recent jobs/runs/*.json reports and
-                                      # print the trend facts /discover renders:
-                                      # per-lane rows vs that lane's own 7-day
-                                      # median, error delta, zero streaks, 403/429s,
-                                      # crashed / truncated lanes, dead boards.
-                                      # Reader only, writes nothing
-uv run onboard-scaffold --vertical V --work-auth citizen|needs_now|time_limited
-                                      # [--with-apply] [--with-optional] [--force] [--dry-run]
-                                      # /onboarding's setup chores: copy every
-                                      # profile/*.example.* to its real name, strip the
-                                      # example lanes + set default_vertical, set the home
-                                      # country's work-auth row, probe libpostal.
-                                      # Skips existing files unless --force
-uv run ingest-url <url> [--vertical V] [--company C] [--title T] [--dry-run]
-                                      # one JD -> jobs store + clean rebuild
-                                      # --vertical: lane (/ingest always passes it)
-                                      # --company/--title: override a bad parse
-                                      # --dry-run: print text only
-uv run score start [--all] [--vertical V] [--job-id ID]
-                                      # drop by hard rules, stage judge slices
-uv run score finish                   # check answers, merge, prune, write shortlist
-uv run track <job_id> <state> [--note ...]   # state transition
-uv run app new <job_id>               # /tailor: checks, registers the role, opens its folder + jd_snapshot.md
-uv run app dir <job_id>               # JSON: the role's folder, name, has_resume/letter/answers
-uv run app build resume|letter|answers <job_id> [--final]
-                                      # check the session's YAML (resume_plan / cover_letter /
-                                      # company_answers), render docx+pdf, write trace.md.
-                                      # Exit 2 lists problems; --final (resume) falls back to
-                                      # canonical text. Never writes `state:`
-uv run profile-extract <file>         # dump a .docx/.md resume's text (/onboarding ingest)
-# /apply plumbing (needs `uv sync --group apply`).
-uv run apply prepare <job_id>         # validate prereqs, resolve out dir/vertical/answers
-uv run apply plan <job_id> [--json] [--questions] [--url U] [--out-dir D] [--answers F]
-                                      # print the fill plan, no browser
-                                      # (Ashby opens a headless one for DOM-only field text)
-                                      # --questions: KNOWN / GUESSED BY KEYWORD /
-                                      # NEW / BLOCKING. Exit 1 if an --answers
-                                      # entry cannot apply
-uv run apply run [--limit N] [--rate 4m] [--jitter 60s] [--job-id ID] [--answers F] [--manifest F] [--headless] [--submit] [--yes]
-                                      # fill, and click only with --submit
-                                      # --answers: the session's confirmed answers;
-                                      #   what they teach is saved to the bank first
-                                      # --manifest: planned vs what the page holds
-                                      # --submit needs --limit (unless --job-id),
-                                      # a typed confirmation unless --yes; never
-                                      # clicks a role in apply_runs/submitted.jsonl
-                                      # unless its latest line is `refused`
-                                      # --rate floors at 30s, one submit per company per run
-uv run apply learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
-                                      # review the answer bank, or take one thing back
-uv run apply sheet [--add | --list STATUS]  # rebuild the overnight status sheet; --add first
-                                      # appends roles scored >= score_threshold
-uv run apply triage [--fill] [--job-id J ...] [--limit N]
-                                      # sort Resume ready roles into ready / open with no model (writes
-                                      # jobs/apply_triage.json); --fill fills the ready ones, never submits
-uv run apply teach --question-id Q --label L --value V [--offered O ...] [--keyword K] [--misfired Q2] [--job J]
-                                      # save one answer to the bank, for a question answered outside a run
-uv run synonyms keywords|apply [--file F]|undo TARGET PHRASE|approve K...|answer ID yes|no
-                                      # /suggest-synonyms' deterministic side: keywords of the roles with
-                                      # no resume yet; add the proposed synonyms (backup + log); take one
-                                      # back; approve a declined keyword; close an unlock question
-uv run summary [--run-dir D] [--since ISO] [--out F]
-                                      # write summary.md from the night's records (one file, rewritten)
+```bash
+uv run pytest tests -q                # must be fully green after any src/ or fixture change
 ./scripts/nightly_pipeline.sh         # the whole night: discover, score, synonyms, tailor, apply_prep,
                                       # summary. DRY_RUN=1 prints only; STAGE_LIMIT=N caps tailor/apply_prep
-uv run python scripts/audit_slugs.py [--ats NAME] [--stale-days N] [--pacing S] [--limit N] [--resume]
-                                      # one-off liveness audit of the ATS slug
-                                      # universe -> jobs/slug_audit_<date>.csv:
-                                      # active / stale / empty / dead / error
-                                      # per slug. Report only; writes nothing
-                                      # else. `--ats` is repeatable, default
-                                      # ashby/greenhouse/lever (workday opt-in)
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
-uv run python scripts/scrub_example_templates.py  # strip Word metadata from the two .example.docx
 ```
 
-The user-facing workflow is the slash commands (`/onboarding`, `/discover`, `/score`,
-`/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
-`/track`, `/standup`,
-`/new-vertical`, `/tune-vertical`, `/suggest-synonyms`, `/no_ai_slop`,
-`/ingest`, `/interview`), defined in
-`.claude/commands/*.md`. The judge is a subagent, not a command:
-`.claude/agents/score-judge.md`, spawned by `/score` and `/ingest`,
-never invoked directly. `/discover` is the scrape plus a digest: `discovery-check`
-preflight, `uv run discover` with the user's overrides, then `discover-digest`
-(`src/discovery/digest.py`) reads `jobs/runs/*.json` and the session renders
-≤10 lines from the numbers it computed. `/new-vertical <name>` writes the loader's minimum for a
-new lane in one confirm-or-edit, and splits into `pass-a` (the lane block and
-classifier rule, enough to start scraping) and `pass-b` (rubric, tailoring and resume shape)
-when `/onboarding` passes a mode token; `/tune-vertical <name>` is the deep pass over a
-lane that already exists, run against real scored rows. `/company-answers <job_id>` drafts that
-role's `company_answers.yaml` into its built folder (once; `--refresh` redoes it);
-`/apply` and `/cover-letter` both call it. `/ingest <url> <vertical> [resume]
-[cover-letter]` is the single-URL fast path: it chains `ingest-url` → a
-one-row `score start --job-id` + one judge + `score finish` → `/tailor` →
-`/cover-letter`, spawning the existing commands rather than reimplementing
-them; the only transition is the cover letter's `--if saved` promotion.
-`/interview <job_id | vertical>` is the prep half: it drills the user on the claims
-their own resume makes, depth-first, and persists `interview/gap_report.md` — a
-worklist of claims that did not hold, which every later session reads first. In role
-mode its targets come from that role's code-written `trace.md` — what landed, which
-words were rephrased under license, and which JD keywords did not land.
-It writes only under `interview/` (gitignored): never `profile/`, never `state.yaml`.
+- `discover` needs `uv sync --group discovery` (libpostal); `apply` needs `uv sync --group apply`.
+- `uv run app build` never writes `state:`.
+- `apply run` fills, and clicks only with `--submit`. `--submit` needs `--limit` (unless
+  `--job-id`) and a typed confirmation unless `--yes`; it never clicks a role in
+  `apply_runs/submitted.jsonl` unless its latest line is `refused`. `--rate` floors at 30s,
+  one submit per company per run.
+
+The user-facing workflow is the slash commands in `.claude/commands/*.md`. The judge is a
+subagent, not a command: `.claude/agents/score-judge.md`, spawned by `/score` and `/ingest`,
+never invoked directly. `/ingest`'s only transition is the cover letter's `--if saved`
+promotion. `/interview` writes only under `interview/` (gitignored): never `profile/`,
+never `state.yaml`.
 `.claude/shared/no_fab.md` is the one include the writing commands read: it defines
 `NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`, `SKILLS-SOURCE`, the problem codes
 `uv run app build` reports, and the fix loop. `saved -> tailored` is

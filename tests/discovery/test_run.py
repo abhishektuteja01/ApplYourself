@@ -76,6 +76,35 @@ def test_build_queries_adds_abroad_after_home(cfg):
     assert all(q[2] == "United States" and q[3] is False for q in queries)
 
 
+def test_build_queries_adds_company_queries_last(cfg):
+    src = DiscoveryConfig().sources["linkedin"]
+    src.remote_queries = False
+    src.company_terms, src.company_ids = ["widget", "gizmo"], {"Acme": 123}
+    queries = Q.build_queries("linkedin", src, cfg, ["United States"])
+    assert queries[-2:] == [("", "widget", "United States", False, [123]),
+                            ("", "gizmo", "United States", False, [123])]
+    assert all(q[4] is None for q in queries[:-2])
+
+
+def test_company_query_filters_by_id_and_classifies_by_title(monkeypatch, cfg):
+    frame = pd.DataFrame([
+        {"job_url": "https://www.linkedin.com/jobs/view/5", "title": "Widget Functional Consultant",
+         "company": "Acme", "location": "Austin, TX", "description": JD},
+        {"job_url": "https://www.linkedin.com/jobs/view/6", "title": "Office Chef",
+         "company": "Acme", "location": "Austin, TX", "description": JD},
+    ])
+    sent = []
+    monkeypatch.setattr(Q, "scrape_jobs", lambda **kw: sent.append(kw) or frame)
+    monkeypatch.setattr(Q.time, "sleep", lambda s: None)
+    monkeypatch.setattr(Q, "build_queries", lambda *a: [("", "widget", "United States", False, [123])])
+    monkeypatch.setattr(Q, "_detail_client", lambda tally: None)
+    crawl = Crawl(cfg)
+    Q.SearchLane("linkedin").run(crawl, tally=None)
+    assert sent[0]["linkedin_company_ids"] == [123]
+    assert list(crawl.batch.rows) == ["linkedin|5"]
+    assert crawl.batch.rows["linkedin|5"]["vertical"]
+
+
 # ---------- inbox ----------
 
 def test_inbox_moves_clips_only_after_done(tmp_path, cfg):

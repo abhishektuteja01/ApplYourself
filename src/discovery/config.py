@@ -35,9 +35,10 @@ _RETENTION_KEYS = frozenset({"score_threshold", "high_days", "low_days"})
 _SOURCE_KEYS = frozenset({
     "enabled", "pacing_seconds", "page_delay_seconds", "page_delay_band_seconds",
     "remote_queries", "abroad", "every_days", "max_pages", "hours_old", "results_wanted",
-    "max_snapshot_age_hours",
+    "max_snapshot_age_hours", "companies",
 })
 _ABROAD_KEYS = frozenset({"countries", "verticals"})
+_COMPANIES_KEYS = frozenset({"terms", "ids"})
 # Keys a schema_version 1 file may still carry, and what replaced them.
 _RETIRED_KEYS = {
     "raw_retention_days": "raw_keep_days", "board_max_age_days": "(nothing; boards are live while listed)",
@@ -76,6 +77,9 @@ class SourceConfig:
     results_wanted: int = 100
     abroad_countries: list[str] = field(default_factory=list)
     abroad_verticals: list[str] = field(default_factory=list)
+    # LinkedIn: each term searched within each company's LinkedIn id.
+    company_terms: list[str] = field(default_factory=list)
+    company_ids: dict[str, int] = field(default_factory=dict)
     # Board lanes: days between checks of one board. Workday: pages per term.
     every_days: int = 1
     max_pages: int = 6
@@ -101,7 +105,7 @@ def _default_sources() -> dict[str, SourceConfig]:
     return {"linkedin": SourceConfig(pacing_seconds=3.0), "indeed": SourceConfig(pacing_seconds=2.0),
             "greenhouse": SourceConfig(), "lever": SourceConfig(),
             "ashby": SourceConfig(pacing_seconds=2.0), "workday": SourceConfig(pacing_seconds=2.0),
-            "stapply": SourceConfig()}
+            "eightfold": SourceConfig(), "stapply": SourceConfig()}
 
 
 @dataclass
@@ -234,6 +238,23 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         if not isinstance(values, list) or not all(isinstance(x, str) and x.strip() for x in values):
             raise ValueError(f"{where}.abroad.{key} must be a list of names")
         setattr(out, f"abroad_{key}", [x.strip() for x in values])
+    companies = v.get("companies") or {}
+    if not isinstance(companies, dict):
+        raise ValueError(f"{where}.companies must be a mapping")
+    cfg.unknown_keys += [f"sources.{name}.companies.{k}" for k in companies if k not in _COMPANIES_KEYS]
+    terms, ids = companies.get("terms") or [], companies.get("ids") or {}
+    if not isinstance(terms, list) or not all(isinstance(x, str) and x.strip() for x in terms):
+        raise ValueError(f"{where}.companies.terms must be a list of search terms")
+    if not isinstance(ids, dict) or not all(
+            isinstance(k, str) and k.strip() and isinstance(i, int) and not isinstance(i, bool)
+            for k, i in ids.items()):
+        raise ValueError(f"{where}.companies.ids must map a company name to its LinkedIn id")
+    if ids and name != "linkedin":
+        raise ValueError(f"{where}.companies is LinkedIn only")
+    if ids and not terms:
+        raise ValueError(f"{where}.companies.ids needs companies.terms")
+    out.company_terms = [x.strip() for x in terms]
+    out.company_ids = {k.strip(): i for k, i in ids.items()}
     return out
 
 
@@ -310,6 +331,8 @@ def main() -> int:
                 bits.append("no remote queries")
             if s.abroad_countries:
                 bits.append(f"abroad {'/'.join(s.abroad_verticals)} in {len(s.abroad_countries)} countries")
+            if s.company_ids:
+                bits.append(f"{len(s.company_ids)} companies x {len(s.company_terms)} terms")
         elif name in FEED_SOURCES:
             bits = [f"snapshot within {s.max_snapshot_age_hours}h"]
         else:

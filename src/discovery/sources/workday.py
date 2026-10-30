@@ -14,7 +14,7 @@ import re
 
 from src.ats_http import fetch_json, fetch_json_post
 from src.discovery import normalize as N
-from src.discovery.sources.boards import Board, BoardLane
+from src.discovery.sources.boards import Board, BoardLane, search_terms
 from src.discovery.store import make_posting
 
 # Workday's server-side page-size ceiling: 21 fails, 20 succeeds.
@@ -54,17 +54,6 @@ def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str
     if not isinstance(payload.get("jobPostings"), list):
         raise TypeError("expected a list under 'jobPostings'")
     return payload
-
-
-def search_terms(vcfg) -> tuple[str, ...]:
-    """Each lane's first search term, default lane first, duplicates once."""
-    order = [vcfg.default_vertical] + [n for n in vcfg.verticals if n != vcfg.default_vertical]
-    terms: list[str] = []
-    for name in order:
-        lane = vcfg.verticals.get(name)
-        if lane is not None and lane.search_terms and lane.search_terms[0] not in terms:
-            terms.append(lane.search_terms[0])
-    return tuple(terms)
 
 
 class WorkdayLane(BoardLane):

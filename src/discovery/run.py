@@ -33,6 +33,7 @@ from src.score_filter import load_trim
 from src.discovery.config import FEED_SOURCES, JOBSPY_SOURCES, SOURCE_NAMES, load_config
 from src.discovery.sources import boards as B
 from src.discovery.sources.ashby import AshbyLane
+from src.discovery.sources.eightfold import EightfoldLane
 from src.discovery.sources.greenhouse import GreenhouseLane
 from src.discovery.sources.inbox import InboxLane
 from src.discovery.sources.lever import LeverLane
@@ -91,7 +92,8 @@ def _lane(name: str):
         from src.discovery.sources.search import SearchLane  # jobspy is slow to import
         return SearchLane(name)
     return {"greenhouse": GreenhouseLane, "lever": LeverLane, "ashby": AshbyLane,
-            "workday": WorkdayLane, "stapply": StapplyLane}[name]()
+            "workday": WorkdayLane, "eightfold": EightfoldLane,
+            "stapply": StapplyLane}[name]()
 
 
 def _cap_terms(vcfg, n: int):

@@ -306,6 +306,13 @@ def test_packet_states_the_keyword_limit(env, scfg):
     assert f"up to {scfg.keywords_max}" in text
 
 
+def test_packet_states_the_languages(env, scfg):
+    _clean(env, [{"job_id": "aaaaaaaa"}])
+    _start(env, dataclasses.replace(scfg, languages=("English", "Hindi")))
+    text = (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
+    assert "Languages the candidate speaks: English, Hindi." in text
+
+
 @pytest.mark.parametrize("jd_tail, quote", [
     ("an employment visa****at this time****for this role.",
      "an employment visa at this time for this role"),

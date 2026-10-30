@@ -8,7 +8,7 @@ import pytest
 from src.ats_http import CareersError
 from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
-from src.discovery.sources import ashby, boards as B, greenhouse, lever, workday
+from src.discovery.sources import ashby, boards as B, eightfold, greenhouse, lever, workday
 
 TODAY = pd.Timestamp("2026-09-27")
 HTML = "<p>" + "Build and ship retrieval systems for clinical trial data. " * 6 + "</p>"
@@ -139,3 +139,69 @@ def test_workday_pages_until_nothing_passes(monkeypatch, cfg, tmp_path):
 def test_workday_rejects_a_bad_slug():
     with pytest.raises(workday.WorkdaySlugError):
         workday.parse_slug("acme|x5|site")
+
+
+def _ef_page(n, title="Widget Functional Consultant", start=0):
+    return [{"id": start + i, "name": title, "locations": ["Austin, TX, US"],
+             "postedTs": 1790208000, "positionUrl": f"/careers/job/{start + i}"} for i in range(n)]
+
+
+def test_eightfold_pages_until_a_short_page(monkeypatch, cfg, tmp_path):
+    pages = []
+
+    def fake(host, domain, api, term, start, deadline_ts=None):
+        pages.append((term, start))
+        return _ef_page(10 if start == 0 else 3, start=start), 13
+    monkeypatch.setattr(eightfold, "list_page", fake)
+    out = eightfold.EightfoldLane().list_board(
+        B.Board("eightfold", "Acme", "acme.eightfold.ai|acme.com"), crawl(cfg, tmp_path), lambda: None)
+    terms = B.search_terms(cfg)
+    assert [s for t, s in pages if t == terms[0]] == [0, 10]
+    assert out[0]["url"] == "https://acme.eightfold.ai/careers/job/0"
+    assert out[0]["_api"] == "pcsx" and out[0]["posted_date"] is not None
+    assert out[0]["location_raw"] == "Austin, TX, US"
+
+
+def test_eightfold_falls_back_to_v2_when_pcsx_is_refused(monkeypatch, cfg, tmp_path):
+    def fake(host, domain, api, term, start, deadline_ts=None):
+        if api == "pcsx":
+            raise CareersError("PCSX is not enabled", status=403)
+        return [{"id": 9, "name": "Widget AI Engineer", "location": "Austin, TX",
+                 "canonicalPositionUrl": "https://careers.acme.net/careers/job/9",
+                 "t_create": 1790208000, "job_description": ""}], 1
+    monkeypatch.setattr(eightfold, "list_page", fake)
+    [p] = eightfold.EightfoldLane().list_board(
+        B.Board("eightfold", "Acme", "careers.acme.net|acme.com"), crawl(cfg, tmp_path), lambda: None)
+    assert p["_api"] == "v2" and p["url"] == "https://careers.acme.net/careers/job/9"
+    assert p["location_raw"] == "Austin, TX"
+
+
+def test_eightfold_other_errors_are_not_a_fallback(monkeypatch, cfg, tmp_path):
+    def fake(host, domain, api, term, start, deadline_ts=None):
+        raise CareersError("down", status=503)
+    monkeypatch.setattr(eightfold, "list_page", fake)
+    with pytest.raises(CareersError):
+        eightfold.EightfoldLane().list_board(
+            B.Board("eightfold", "Acme", "acme.eightfold.ai|acme.com"), crawl(cfg, tmp_path), lambda: None)
+
+
+@pytest.mark.parametrize("api, payload, url_part", [
+    ("pcsx", {"data": {"jobDescription": HTML}}, "/api/pcsx/position_details?position_id=7&domain=acme.com"),
+    ("v2", {"job_description": HTML}, "/api/apply/v2/jobs/7?domain=acme.com"),
+])
+def test_eightfold_detail_reads_the_jd(monkeypatch, cfg, tmp_path, api, payload, url_part):
+    sent = []
+
+    def fake(url, deadline_ts=None):
+        sent.append(url)
+        return payload
+    monkeypatch.setattr(eightfold, "fetch_json", fake)
+    p = eightfold.posting_from({"id": 7, "name": "AI Engineer"}, "acme.eightfold.ai", api, "Acme", "AI")
+    full = eightfold.EightfoldLane().detail(
+        B.Board("eightfold", "Acme", "acme.eightfold.ai|acme.com"), p, crawl(cfg, tmp_path))
+    assert url_part in sent[0] and len(full["jd_text"]) >= 200
+
+
+def test_eightfold_rejects_a_bad_slug():
+    with pytest.raises(eightfold.EightfoldSlugError):
+        eightfold.parse_slug("acme.eightfold.ai")

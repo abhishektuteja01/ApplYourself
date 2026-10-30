@@ -78,6 +78,41 @@ class TestYearsRequired:
     def test_highest_required_wins(self):
         assert sf.years_required("2+ years of Python experience and 4+ years of SQL experience") == 4
 
+    def test_inline_preferred_heading_ignored(self):
+        jd = ("Basic Qualifications: At least 4 years of experience in software engineering. "
+              "Preferred Qualifications: Master's degree, 9+ years of experience coding")
+        assert sf.years_required(jd) == 4
+
+    DEGREE_PATHS = ("Bachelor's degree and 7+ years of related experience, "
+                    "or a Master's degree and 4+ years of related experience")
+
+    @pytest.mark.parametrize("degree, years", [(3, 4), (4, 4), (2, 7), (None, 7)])
+    def test_degree_paths_take_the_open_one(self, degree, years):
+        assert sf.years_required(self.DEGREE_PATHS, degree) == years
+
+    def test_no_open_path_takes_the_lowest(self):
+        jd = "Master's degree and 5 years of experience, or PhD and 2 years of experience"
+        assert sf.years_required(jd, 2) == 2
+
+    def test_lower_degree_path_open_to_a_higher_degree(self):
+        jd = ("Bachelor's degree and 5-7 years of job-related experience or "
+              "high school diploma/GED and 10 years of the same job-related experience")
+        assert sf.years_required(jd, 3) == 5
+
+    def test_or_without_degrees_is_not_a_path(self):
+        jd = "3+ years of Python experience or 6+ years of Java experience"
+        assert sf.years_required(jd, 3) == 6
+
+    @pytest.mark.parametrize("text, rank", [
+        ("Master's Degree", 3), ("Bachelor of Technology", 2), ("PhD", 4),
+        ("Associate's", 1), ("High School Diploma", 0), ("", None), (None, None),
+    ])
+    def test_degree_rank(self, text, rank):
+        assert sf.degree_rank(text) == rank
+
+    def test_bank_degree_reaches_the_config(self, scfg):
+        assert scfg.degree_rank == 3
+
 
 class TestTrimJd:
     def test_load_trim_reads_the_trim_block_alone(self, scfg, tmp_path):
