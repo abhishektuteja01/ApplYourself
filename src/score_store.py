@@ -305,8 +305,8 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
                     "years": years_required(r.get("jd_text"), cfg.degree_rank),
                     "words": word_count(r.get("jd_text")),
                     "contract": "contract" in str(r.get("employment_type") or "").lower(),
-                    # everything the judge is shown, so a quote from the title counts
-                    "jd": normalize(f"{r.get('title') or ''}\n{r['_jd']}"),
+                    # everything the judge is shown, so a quote from the title or company counts
+                    "jd": normalize(f"{r.get('title') or ''}\n{r.get('company') or ''}\n{r['_jd']}"),
                 } for r in part},
             }
     _save_run(staging, run)

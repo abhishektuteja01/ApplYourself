@@ -282,6 +282,9 @@ class TestFocus:
         res = self._one(env, scfg, focus=True, focus_evidence=ev)
         assert res["merged"] == 0 and err in str(res["bad"])
 
+    def test_focus_quote_may_come_from_the_company(self, env, scfg):
+        assert self._one(env, scfg, focus=True, focus_evidence="Acme")["merged"] == 1
+
     def test_packet_asks_the_question(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         _start(env, scfg)
