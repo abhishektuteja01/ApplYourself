@@ -22,7 +22,7 @@ from src.discovery import parse
 
 from src.shared import title_gate
 from src.discovery.config import MIN_PAGE_DELAY_SECONDS, pacing_floor
-from src.discovery.sources.boards.base import LaneStats
+from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 
 DESCRIPTION_FORMAT = "markdown"
@@ -149,11 +149,11 @@ def posting_from(record: dict, name: str, vertical: str, term: str, is_remote: b
     )
 
 
-class SearchLane:
+class SearchLane(Lane):
     def __init__(self, name: str):
         self.name = name
 
-    def run(self, crawl, tally) -> LaneStats:
+    def run(self, crawl, tally=None) -> LaneStats:
         src = crawl.cfg.sources[self.name]
         pacing = max(pacing_floor(self.name), src.pacing_seconds)
         page_delay = max(MIN_PAGE_DELAY_SECONDS, src.page_delay_seconds)

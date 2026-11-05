@@ -17,7 +17,7 @@ import csv
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -28,6 +28,7 @@ from src.shared.job_boards import ATS_SOURCE_NAMES, parse_posting_url
 from src.discovery import parse
 from src.shared import title_gate
 from src.discovery.config import pacing_floor
+from src.discovery.sources.lane import Lane, LaneStats
 from src.shared.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)
@@ -225,31 +226,6 @@ def update_state(results: list[BoardResult], today: pd.Timestamp,
 # the one loop
 # ---------------------------------------------------------------------
 
-@dataclass
-class LaneStats:
-    """What one lane saw, for the run report. Every count after `listed` is
-    a subset of the one before it."""
-
-    boards_due: int = 0
-    boards_checked: int = 0
-    boards_ok: int = 0
-    boards_empty: int = 0
-    boards_404: int = 0
-    boards_error: int = 0
-    listed: int = 0
-    classified: int = 0
-    passed: int = 0
-    known: int = 0
-    new: int = 0
-    detail_ok: int = 0
-    detail_failed: int = 0
-    short_jd: int = 0
-    errors: list[str] = field(default_factory=list)
-    truncated: bool = False
-    notes: list[str] = field(default_factory=list)
-    capped: list[str] = field(default_factory=list)  # queries that hit results_wanted
-
-
 class Crawl:
     """What a lane needs from the run: the clock, the store's known keys, and
     the places results go. Shared by every lane thread."""
@@ -295,7 +271,7 @@ class Crawl:
             return out
 
 
-class BoardLane:
+class BoardLane(Lane):
     """One ATS. A subclass lists a board and, when the list lacks a JD,
     fetches one posting. Everything else is here, once."""
 
@@ -318,7 +294,34 @@ class BoardLane:
         """Whether a known posting's stored copy is out of date."""
         return False
 
-    def run(self, crawl: Crawl) -> LaneStats:
+    def paged_search(self, crawl: Crawl, pause, page_size: int, fetch_page, to_posting) -> list[dict]:
+        """A board that filters server-side: each search term, up to `max_pages`
+        pages. A term stops on a short page or a page with nothing past the
+        title gate; everything stops at the deadline. `fetch_page(term, offset)`
+        returns the page's items, `to_posting(item, term)` a posting or None."""
+        max_pages = crawl.cfg.sources[self.name].max_pages
+        out: dict[str, dict] = {}
+        first = True
+        for term in search_terms(crawl.vcfg):
+            for page in range(max_pages):
+                if crawl.deadline_reached():
+                    return list(out.values())
+                if not first:
+                    pause()
+                first = False
+                items = fetch_page(term, page * page_size)
+                passing = 0
+                for item in items:
+                    p = to_posting(item, term)
+                    if p is None or p["posting_key"] in out:
+                        continue
+                    out[p["posting_key"]] = p
+                    passing += title_gate.gate_reason(p["title"], self.name, crawl.vcfg)[1]
+                if len(items) < page_size or not passing:
+                    break
+        return list(out.values())
+
+    def run(self, crawl: Crawl, tally=None) -> LaneStats:
         src = crawl.cfg.sources[self.name]
         pacing = max(pacing_floor(self.name), src.pacing_seconds)
         state = load_state(crawl.board_state)

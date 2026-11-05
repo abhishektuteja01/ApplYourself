@@ -31,7 +31,7 @@ from src.shared.job_boards import ATS_SOURCE_NAMES
 from src.discovery import dedupe, live_view
 from src.discovery import store as S
 from src.score_filter import load_trim
-from src.discovery.config import FEED_SOURCES, JOBSPY_SOURCES, SOURCE_NAMES, load_config
+from src.discovery.config import LANE_KINDS, SOURCE_NAMES, load_config
 from src.discovery.sources.boards import base as B
 from src.discovery.sources.boards.ashby import AshbyLane
 from src.discovery.sources.boards.eightfold import EightfoldLane
@@ -88,13 +88,18 @@ class Paths:
         return self.jobs / paths.JOBS_RUNS.name
 
 
+_BOARD_LANES = {"greenhouse": GreenhouseLane, "lever": LeverLane, "ashby": AshbyLane,
+                "workday": WorkdayLane, "eightfold": EightfoldLane}
+
+
 def _lane(name: str):
-    if name in JOBSPY_SOURCES:
+    kind = LANE_KINDS[name]
+    if kind == "search":
         from src.discovery.sources.search import SearchLane  # jobspy is slow to import
         return SearchLane(name)
-    return {"greenhouse": GreenhouseLane, "lever": LeverLane, "ashby": AshbyLane,
-            "workday": WorkdayLane, "eightfold": EightfoldLane,
-            "stapply": StapplyLane}[name]()
+    if kind == "feed":
+        return StapplyLane()
+    return _BOARD_LANES[name]()
 
 
 def _cap_terms(vcfg, n: int):
@@ -147,7 +152,7 @@ def _run_lane(lane, crawl) -> dict:
     tally = http_client.HttpTally()
     try:
         with http_client.observe(tally.on_http):
-            stats = lane.run(crawl, tally) if lane.name in JOBSPY_SOURCES else lane.run(crawl)
+            stats = lane.run(crawl, tally)
     except Exception:  # noqa: BLE001 -- one lane's crash costs the others nothing
         log.exception("lane %s crashed; continuing", lane.name)
         return {"status": "crashed", "duration_s": round(time.time() - t0, 1),
@@ -312,17 +317,16 @@ def main(argv=None) -> int:
         lanes["manual"] = _run_lane(inbox, crawl)
     threaded = [_lane(n) for n in wanted if n != "manual"]
     for lane in threaded:
-        if lane.name in FEED_SOURCES:
-            # Before the board lanes start: they skip the boards it covered.
-            lane.prepare(crawl)
+        # Before any lane starts: the board lanes skip the boards the feed covered.
+        lane.prepare(crawl)
     if threaded:
         with ThreadPoolExecutor(max_workers=len(threaded)) as pool:
             futures = {lane.name: pool.submit(_run_lane, lane, crawl) for lane in threaded}
             for name, future in futures.items():
                 lanes[name] = future.result()
     writer.close()
-    if inbox is not None:
-        inbox.done()
+    for lane in ([inbox] if inbox is not None else []) + threaded:
+        lane.done()
 
     store_stats, funnel = live_view.rebuild_view(cfg, p, today, state_index)
     pruned = _write_raw(crawl.take_listed(), p, run_id, today, cfg.raw_keep_days)

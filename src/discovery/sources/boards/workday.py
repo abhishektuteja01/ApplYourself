@@ -14,8 +14,7 @@ import re
 
 from src.shared.http_client import fetch_json, fetch_json_post
 from src.discovery import parse
-from src.shared import identity, title_gate
-from src.discovery.sources.boards.base import Board, BoardLane, search_terms
+from src.discovery.sources.boards.base import Board, BoardLane
 from src.discovery.store import make_posting
 
 # Workday's server-side page-size ceiling: 21 fails, 20 succeeds.
@@ -63,38 +62,27 @@ class WorkdayLane(BoardLane):
 
     def list_board(self, board: Board, crawl, pause) -> list[dict]:
         company, wd, site_id = parse_slug(board.slug)
-        max_pages = crawl.cfg.sources[self.name].max_pages
-        out: dict[str, dict] = {}
-        first = True
-        for term in search_terms(crawl.vcfg):
-            for page in range(max_pages):
-                if crawl.deadline_reached():
-                    return list(out.values())
-                if not first:
-                    pause()
-                    _jitter()
-                first = False
-                payload = list_page(company, wd, site_id, page * LIST_LIMIT, term,
-                                    deadline_ts=crawl.deadline_ts)
-                items = [i for i in payload["jobPostings"] if isinstance(i, dict)]
-                passing = 0
-                for item in items:
-                    title, path = item.get("title") or "", item.get("externalPath") or ""
-                    if not title or not path:
-                        continue
-                    url = public_url(company, wd, site_id, path)
-                    key = identity.posting_key(url)
-                    if key in out:
-                        continue
-                    out[key] = make_posting(
-                        source="workday", company=board.name, title=title, url=url,
-                        location_raw=item.get("locationsText") or "",
-                        posted_date=parse.relative_posted_date(item.get("postedOn"), crawl.today.date()),
-                        found_by_term=term, _path=path)
-                    passing += title_gate.gate_reason(title, self.name, crawl.vcfg)[1]
-                if len(items) < LIST_LIMIT or not passing:
-                    break
-        return list(out.values())
+
+        def fetch_page(term, offset):
+            payload = list_page(company, wd, site_id, offset, term, deadline_ts=crawl.deadline_ts)
+            return [i for i in payload["jobPostings"] if isinstance(i, dict)]
+
+        def to_posting(item, term):
+            title, path = item.get("title") or "", item.get("externalPath") or ""
+            if not title or not path:
+                return None
+            return make_posting(
+                source="workday", company=board.name, title=title,
+                url=public_url(company, wd, site_id, path),
+                location_raw=item.get("locationsText") or "",
+                posted_date=parse.relative_posted_date(item.get("postedOn"), crawl.today.date()),
+                found_by_term=term, _path=path)
+
+        def jittered_pause():
+            pause()
+            _jitter()
+
+        return self.paged_search(crawl, jittered_pause, LIST_LIMIT, fetch_page, to_posting)
 
     def detail(self, board: Board, posting: dict, crawl) -> dict | None:
         company, wd, site_id = parse_slug(board.slug)

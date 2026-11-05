@@ -10,7 +10,7 @@ import yaml
 
 from src.shared import paths
 from src.shared import title_gate
-from src.discovery.sources.boards.base import LaneStats
+from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 
 log = logging.getLogger(__name__)
@@ -61,14 +61,14 @@ def parse_clip(path: Path) -> dict | None:
     )
 
 
-class InboxLane:
+class InboxLane(Lane):
     name = "manual"
 
     def __init__(self, inbox_dir: Path | None = None):
         self.inbox_dir = Path(inbox_dir or INBOX)
         self.read: list[Path] = []
 
-    def run(self, crawl) -> LaneStats:
+    def run(self, crawl, tally=None) -> LaneStats:
         stats = LaneStats()
         if not self.inbox_dir.exists():
             return stats

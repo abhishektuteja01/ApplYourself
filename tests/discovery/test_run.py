@@ -14,6 +14,7 @@ from src.discovery.config import DiscoveryConfig
 from src.shared.location.allowlist import Allowed
 from src.discovery.sources.boards import base as B
 from src.discovery.sources import inbox as I, search as Q
+from src.discovery.sources.lane import Lane
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build and ship widget reconciliation systems for finance teams every day. " * 5
@@ -140,7 +141,7 @@ def test_inbox_never_overwrites_a_processed_clip(tmp_path, cfg):
 class FakeLane(B.BoardLane):
     name = "greenhouse"
 
-    def run(self, crawl):
+    def run(self, crawl, tally=None):
         crawl.batch.upsert(S.make_posting(
             source="greenhouse", company="Acme", title="Widget Functional Consultant",
             url="https://job-boards.greenhouse.io/acme/jobs/1", jd_text=JD,
@@ -153,22 +154,22 @@ class FakeLane(B.BoardLane):
 class Crashing(B.BoardLane):
     name = "lever"
 
-    def run(self, crawl):
+    def run(self, crawl, tally=None):
         raise RuntimeError("boom")
 
 
-class FakeFeed:
+class FakeFeed(Lane):
     name = "stapply"
 
     def prepare(self, crawl):
         crawl.covered = frozenset({"greenhouse|acme"})
 
-    def run(self, crawl):
+    def run(self, crawl, tally=None):
         return B.LaneStats(listed=9, passed=0, notes=["snapshot x"])
 
 
 class SeesCovered(FakeLane):
-    def run(self, crawl):
+    def run(self, crawl, tally=None):
         assert crawl.covered == {"greenhouse|acme"}, "the feed prepares before board lanes start"
         return super().run(crawl)
 

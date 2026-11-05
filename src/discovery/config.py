@@ -20,10 +20,17 @@ log = logging.getLogger(__name__)
 DEFAULT_CONFIG_PATH = paths.REPO_ROOT / "profile" / "discovery.yaml"
 SCHEMA_VERSION = 2
 
-# The search lanes (jobspy), the bulk-file feed lanes, and the ATS board lanes.
-JOBSPY_SOURCES = ("linkedin", "indeed")
-FEED_SOURCES = ("stapply",)
-SOURCE_NAMES = JOBSPY_SOURCES + FEED_SOURCES + ATS_SOURCE_NAMES
+# Every lane and its kind: the search lanes (jobspy), the bulk-file feed, and
+# the ATS board lanes (from job_boards, which /apply shares).
+LANE_KINDS: dict[str, str] = {
+    "linkedin": "search", "indeed": "search", "stapply": "feed",
+    **{name: "board" for name in ATS_SOURCE_NAMES},
+}
+JOBSPY_SOURCES = tuple(n for n, k in LANE_KINDS.items() if k == "search")
+FEED_SOURCES = tuple(n for n, k in LANE_KINDS.items() if k == "feed")
+SOURCE_NAMES = tuple(LANE_KINDS)
+# Default pacing where a lane differs from SourceConfig's.
+_DEFAULT_PACING = {"linkedin": 3.0, "indeed": 2.0, "ashby": 2.0, "workday": 2.0}
 
 _TOP_LEVEL_KEYS = frozenset({
     "schema_version", "deadline_hours", "location_allowlist", "search_locations", "sources",
@@ -102,10 +109,8 @@ class LocationAllowlist:
 
 
 def _default_sources() -> dict[str, SourceConfig]:
-    return {"linkedin": SourceConfig(pacing_seconds=3.0), "indeed": SourceConfig(pacing_seconds=2.0),
-            "greenhouse": SourceConfig(), "lever": SourceConfig(),
-            "ashby": SourceConfig(pacing_seconds=2.0), "workday": SourceConfig(pacing_seconds=2.0),
-            "eightfold": SourceConfig(), "stapply": SourceConfig()}
+    return {n: SourceConfig(pacing_seconds=_DEFAULT_PACING[n]) if n in _DEFAULT_PACING else SourceConfig()
+            for n in SOURCE_NAMES}
 
 
 @dataclass

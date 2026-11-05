@@ -15,8 +15,7 @@ from urllib.parse import quote
 
 from src.shared.http_client import CareersError, fetch_json
 from src.discovery import parse
-from src.shared import title_gate
-from src.discovery.sources.boards.base import Board, BoardLane, search_terms
+from src.discovery.sources.boards.base import Board, BoardLane
 from src.discovery.store import make_posting
 
 PAGE_SIZE = 10  # the APIs ignore a larger `num`
@@ -87,36 +86,23 @@ class EightfoldLane(BoardLane):
 
     def list_board(self, board: Board, crawl, pause) -> list[dict]:
         host, domain = parse_slug(board.slug)
-        max_pages = crawl.cfg.sources[self.name].max_pages
-        out: dict[str, dict] = {}
         api = "pcsx"
-        first = True
-        for term in search_terms(crawl.vcfg):
-            for page in range(max_pages):
-                if crawl.deadline_reached():
-                    return list(out.values())
-                if not first:
-                    pause()
-                first = False
-                try:
-                    items, _ = list_page(host, domain, api, term, page * PAGE_SIZE,
-                                         deadline_ts=crawl.deadline_ts)
-                except CareersError as e:
-                    if api != "pcsx" or e.status not in PCSX_REFUSED:
-                        raise
-                    api = "v2"
-                    items, _ = list_page(host, domain, api, term, page * PAGE_SIZE,
-                                         deadline_ts=crawl.deadline_ts)
-                passing = 0
-                for item in items:
-                    p = posting_from(item, host, api, board.name, term)
-                    if p is None or p["posting_key"] in out:
-                        continue
-                    out[p["posting_key"]] = p
-                    passing += title_gate.gate_reason(p["title"], self.name, crawl.vcfg)[1]
-                if len(items) < PAGE_SIZE or not passing:
-                    break
-        return list(out.values())
+
+        def fetch_page(term, offset):
+            nonlocal api
+            try:
+                items, _ = list_page(host, domain, api, term, offset, deadline_ts=crawl.deadline_ts)
+            except CareersError as e:
+                if api != "pcsx" or e.status not in PCSX_REFUSED:
+                    raise
+                api = "v2"
+                items, _ = list_page(host, domain, api, term, offset, deadline_ts=crawl.deadline_ts)
+            return items
+
+        def to_posting(item, term):
+            return posting_from(item, host, api, board.name, term)
+
+        return self.paged_search(crawl, pause, PAGE_SIZE, fetch_page, to_posting)
 
     def detail(self, board: Board, posting: dict, crawl) -> dict | None:
         host, domain = parse_slug(board.slug)

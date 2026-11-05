@@ -131,7 +131,7 @@ def test_workday_pages_until_nothing_passes(monkeypatch, cfg, tmp_path):
     c = crawl(cfg, tmp_path)
     out = workday.WorkdayLane().list_board(B.Board("workday", "Acme", "acme|wd5|External"), c,
                                            lambda: None)
-    terms = workday.search_terms(cfg)
+    terms = B.search_terms(cfg)
     assert [o for t, o in pages if t == terms[0]] == [0, 20]
     assert out[0]["posting_key"] == "workday|acme|widget-consultant_r0"
 

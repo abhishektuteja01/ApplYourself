@@ -32,7 +32,8 @@ from src.shared import identity, title_gate
 from src.shared.location.parser import parse_location
 from src.shared.location.places import CC_TO_COUNTRY
 from src.discovery.sources.feed import oracle
-from src.discovery.sources.boards.base import LaneStats, board_key_of, load_boards
+from src.discovery.sources.boards.base import board_key_of, load_boards
+from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 
 log = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ def posting_from(row: dict, vertical: str, names: dict[str, str],
     )
 
 
-class StapplyLane:
+class StapplyLane(Lane):
     name = "stapply"
 
     def __init__(self) -> None:
@@ -220,7 +221,7 @@ class StapplyLane:
     # with the other lanes: the store
     # -----------------------------------------------------------------
 
-    def run(self, crawl) -> LaneStats:
+    def run(self, crawl, tally=None) -> LaneStats:
         if self.failure is not None:
             raise self.failure
         stats = self.stats
