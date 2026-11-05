@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from src.shared.location.parser import _SEPARATOR_RE, parse_location
 from src.shared.location.places import (
@@ -12,6 +13,9 @@ from src.shared.location.places import (
     _fold,
     canonical_country,
 )
+
+if TYPE_CHECKING:
+    from src.discovery.config import DiscoveryConfig
 
 # ---------------------------------------------------------------------
 # The allowlist decision, one row at a time
@@ -32,11 +36,11 @@ class Allowed:
 class Allowlist:
     """`location_allowlist` plus the `abroad` lane rules, normalized once."""
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: DiscoveryConfig) -> None:
         self.countries = {c.lower() for c in cfg.location_allowlist.effective_countries()}
         self.abroad = cfg.abroad_lanes()
 
-    def check(self, raw, vertical: str = "", title: str = "") -> Allowed:
+    def check(self, raw: Any, vertical: str = "", title: str = "") -> Allowed:
         got = self._check_location(raw, vertical)
         limit = residency_countries(title)
         if (
@@ -50,7 +54,7 @@ class Allowlist:
             return Allowed(False, got.location, True)
         return got
 
-    def _check_location(self, raw, vertical: str) -> Allowed:
+    def _check_location(self, raw: Any, vertical: str) -> Allowed:
         text = str(raw).strip() if isinstance(raw, str) else ""
         parsed = parse_location(text)
 

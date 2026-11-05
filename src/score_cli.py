@@ -17,7 +17,7 @@ import sys
 
 from src import score_store, shortlist
 from src.discovery.config import load_config
-from src.score_filter import CountryRule, load_scoring
+from src.score_filter import CountryRule, ScoringConfig, load_scoring
 from src.shared import clock, paths, verticals
 
 CLEAN = paths.CLEAN
@@ -26,7 +26,7 @@ STAGING = paths.STAGING
 SHORTLIST = paths.SHORTLIST
 
 
-def _shortlist(cfg) -> str:
+def _shortlist(cfg: ScoringConfig) -> str:
     path, keepers = shortlist.write(
         SCORED, CLEAN, paths.PIPELINE, SHORTLIST, cfg, clock.today().isoformat()
     )
@@ -101,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        return args.func(args)
+        return int(args.func(args))
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}")
         return 1

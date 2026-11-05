@@ -33,18 +33,22 @@ def _term_pattern(term: str) -> str:
     return pat
 
 
-def _compile(terms) -> re.Pattern | None:
+def _compile(terms: tuple[str, ...]) -> re.Pattern[str] | None:
     if not terms:
         return None
     return re.compile("|".join(_term_pattern(t) for t in terms), re.IGNORECASE)
 
 
 @lru_cache(maxsize=64)
-def _gate_patterns(exclude: tuple, include: tuple, strong: tuple):
+def _gate_patterns(
+    exclude: tuple[str, ...], include: tuple[str, ...], strong: tuple[str, ...]
+) -> tuple[re.Pattern[str] | None, re.Pattern[str] | None, re.Pattern[str] | None]:
     return _compile(exclude), _compile(include), _compile(strong)
 
 
-def title_passes(title: str, vertical: str, source: str = "", vcfg=None) -> bool:
+def title_passes(
+    title: str, vertical: str, source: str = "", vcfg: verticals.VerticalsConfig | None = None
+) -> bool:
     """The per-lane title gate: strong_keep OR (include_ok AND NOT exclude).
     include_ok is True when the lane sets no include terms. A manual add and
     a title in no lane are not gated here."""
@@ -68,7 +72,9 @@ def title_passes(title: str, vertical: str, source: str = "", vcfg=None) -> bool
     return not (exclude and exclude.search(text))
 
 
-def gate_reason(title: str, source: str = "", vcfg=None) -> tuple[str, bool]:
+def gate_reason(
+    title: str, source: str = "", vcfg: verticals.VerticalsConfig | None = None
+) -> tuple[str, bool]:
     """(vertical, passes) for a board posting: classify, then gate. A title
     that classifies into no lane never passes."""
     vertical = classify_vertical_from_title(title)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+from typing import Any
 
 _BULLET = ("-", "•", "·", "+", "* ")
 
@@ -53,7 +55,7 @@ def _blocks(text: str) -> list[tuple[bool, str]]:
     return out
 
 
-def trim_boilerplate(text, headings, keep_words) -> str:
+def trim_boilerplate(text: Any, headings: Iterable[str], keep_words: Iterable[str]) -> str:
     """`text` without its boilerplate sections (EEO, benefits, about-us...).
     A section starts at a heading starting with one of `headings` and runs to
     the next heading. A block holding one of `keep_words` always stays."""

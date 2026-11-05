@@ -5,6 +5,8 @@ from __future__ import annotations
 import gettext
 import re
 import unicodedata
+from collections.abc import Iterable
+from typing import Any
 
 import geonamescache
 import pycountry
@@ -126,8 +128,8 @@ COUNTRY_TO_CC: dict[str, str] = {name: cc for cc, name in CC_TO_COUNTRY.items()}
 # same segment.
 # ---------------------------------------------------------------------
 
-SUBDIVISIONS_BY_NAME: dict[str, list] = {}
-SUBDIVISIONS_BY_CODE: dict[str, list] = {}
+SUBDIVISIONS_BY_NAME: dict[str, list[Any]] = {}
+SUBDIVISIONS_BY_CODE: dict[str, list[Any]] = {}
 for _s in pycountry.subdivisions:
     SUBDIVISIONS_BY_NAME.setdefault(_fold(_s.name), []).append(_s)
     _bare = _s.code.split("-", 1)[-1].upper()
@@ -231,11 +233,11 @@ _LATAM_EXTRA_CC = frozenset(
 )
 
 
-def _countries_from_cc(codes) -> set[str]:
+def _countries_from_cc(codes: Iterable[str]) -> set[str]:
     return {name for cc in codes if (name := CC_TO_COUNTRY.get(cc))}
 
 
-def _continents(*names) -> set[str]:
+def _continents(*names: str) -> set[str]:
     out: set[str] = set()
     for name in names:
         out |= set(CONTINENT_TO_COUNTRIES.get(name, []))
@@ -279,7 +281,7 @@ def _normalize_saint(folded: str) -> str:
     return _ST_RE.sub("saint ", folded)
 
 
-CITIES_BY_NAME: dict[str, list[dict]] = {}
+CITIES_BY_NAME: dict[str, list[dict[str, Any]]] = {}
 for _city in _ALL_CITIES.values():
     CITIES_BY_NAME.setdefault(_normalize_saint(_fold(_city["name"])), []).append(_city)
 for _lst in CITIES_BY_NAME.values():

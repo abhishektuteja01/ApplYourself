@@ -33,6 +33,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -72,7 +73,7 @@ NEXT_ACTION = {
 }
 
 
-def _gather_initial_fields(job_id: str) -> dict:
+def _gather_initial_fields(job_id: str) -> dict[str, Any]:
     if not CLEAN.exists():
         raise SystemExit("ERROR: jobs/clean.parquet missing -- run discovery first")
     clean = pd.read_parquet(CLEAN).set_index("job_id")
@@ -88,7 +89,7 @@ def _gather_initial_fields(job_id: str) -> dict:
             )
         row = hits.sort_values("last_seen").iloc[-1].to_dict()
         row["location"] = row.get("location_raw", "")
-    initial = {
+    initial: dict[str, Any] = {
         "job_id": job_id,
         "company": str(row.get("company", "")),
         "title": str(row.get("title", "")),
@@ -141,7 +142,7 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     return 0
 
 
-def _sent_before(job_id: str) -> dict | None:
+def _sent_before(job_id: str) -> dict[str, Any] | None:
     """The submit ledger's latest line for this role, unless the board turned
     the application down."""
     v, rec = ledger.verdict(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, job_id)
@@ -234,7 +235,7 @@ def _cmd_outreach_draft(args: argparse.Namespace) -> int:
 
 
 def _cmd_states() -> int:
-    def jsonable(d: dict) -> dict:
+    def jsonable(d: dict[str, Any]) -> dict[str, Any]:
         return {
             k: (v if isinstance(v, (str, int, float, bool, list, dict, type(None))) else str(v))
             for k, v in d.items()

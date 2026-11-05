@@ -83,7 +83,7 @@ class Cutoffs(_Strict):
     sheet: Score
 
     @model_validator(mode="after")
-    def _rising(self):
+    def _rising(self) -> Cutoffs:
         if not self.review <= self.tailor <= self.keep_long <= self.sheet:
             raise ValueError("must rise: review <= tailor <= keep_long <= sheet")
         return self
@@ -164,7 +164,7 @@ class ContactsFile(_Strict):
 # ---- validation ----
 
 
-def _model_at(model: type[BaseModel], loc: tuple) -> type[BaseModel] | None:
+def _model_at(model: type[BaseModel], loc: tuple[Any, ...]) -> type[BaseModel] | None:
     """The model whose fields hold loc's last key, following pydantic's loc
     (dict keys, list indexes and union member names)."""
     t: Any = model
@@ -201,7 +201,7 @@ def _model_at(model: type[BaseModel], loc: tuple) -> type[BaseModel] | None:
     return t if isinstance(t, type) and issubclass(t, BaseModel) else None
 
 
-def _where(model: type[BaseModel], loc: tuple) -> str:
+def _where(model: type[BaseModel], loc: tuple[Any, ...]) -> str:
     # Drop union member names pydantic adds to loc.
     names = {a.__name__ for a in _models(model)} | {"str"}
     return ".".join(
@@ -209,13 +209,13 @@ def _where(model: type[BaseModel], loc: tuple) -> str:
     ).replace(".[", "[")
 
 
-def _models(model: type[BaseModel], seen: set | None = None) -> set:
+def _models(model: type[BaseModel], seen: set[Any] | None = None) -> set[Any]:
     seen = seen if seen is not None else set()
     if model in seen:
         return seen
     seen.add(model)
 
-    def walk(t):
+    def walk(t: Any) -> None:
         for a in get_args(t) or ():
             walk(a)
         if isinstance(t, type) and issubclass(t, BaseModel):
@@ -242,8 +242,9 @@ def validate[M: BaseModel](model: type[M], data: Any, path: Path | str) -> M:
             key = str(loc[-1])
             valid = sorted(owner.model_fields) if owner else []
             where = _where(model, loc[:-1]) or "top level"
-            if owner and key in owner.retired:
-                hint = f" (moved to {owner.retired[key]})"
+            retired = getattr(owner, "retired", {})
+            if key in retired:
+                hint = f" (moved to {retired[key]})"
             else:
                 close = difflib.get_close_matches(key, valid, n=1)
                 hint = f" (did you mean {close[0]!r}?)" if close else ""
@@ -256,7 +257,7 @@ def validate[M: BaseModel](model: type[M], data: Any, path: Path | str) -> M:
     raise ValueError("\n".join(dict.fromkeys(lines)))
 
 
-def load_automation(path: Path) -> dict:
+def load_automation(path: Path) -> dict[str, Any]:
     """profile/automation.yaml as a dict, every key checked."""
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     validate(Automation, data, path)

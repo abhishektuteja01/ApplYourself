@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import functools
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 import pycountry
 
@@ -43,10 +45,10 @@ _POSTAL_MISSING = (
     "rest of the pipeline run without it."
 )
 
-_parse_address = None
+_parse_address: Callable[[str], list[tuple[str, str]]] | None = None
 
 
-def _get_parse_address():
+def _get_parse_address() -> Callable[[str], list[tuple[str, str]]]:
     """Resolve `postal.parser.parse_address` on first use, converting the
     ModuleNotFoundError a clone without libpostal would otherwise hit into an
     actionable message. No fallback parser: a degraded parse would silently
@@ -162,11 +164,11 @@ def _validate_state(
 
 
 def _disambiguate_subdivisions(
-    candidates: list,
+    candidates: list[Any],
     hint_countries: set[str],
     sibling_texts: tuple[str, ...],
     use_conventional_tiebreak: bool,
-):
+) -> tuple[Any, frozenset[str]]:
     """Shared narrowing logic for a collision pool of pycountry subdivisions
     that share the same name or the same bare code: known-country hint,
     then (codes only) the "conventionally abbreviated this way" tie-break,
@@ -199,7 +201,7 @@ def _disambiguate_subdivisions(
     return None, ambiguous_pool
 
 
-def _city_lookup(text: str, country_hint: str = "") -> dict | None:
+def _city_lookup(text: str, country_hint: str = "") -> dict[str, Any] | None:
     folded = _normalize_saint(_fold(text))
     candidates = list(CITIES_BY_NAME.get(folded, []))
     alias_target = _CITY_NAME_ALIASES.get(folded, "")
@@ -299,7 +301,7 @@ _MAX_SEGMENT_COMMAS = 4
 # matched case-sensitively (real postings write them in caps; matching
 # lowercase would risk hitting unrelated text) using a curated, closed
 # list -- not a general acronym-expansion mechanism.
-_PRE_PARSE_EXPANSIONS: tuple[tuple[re.Pattern, str], ...] = (
+_PRE_PARSE_EXPANSIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bUAE\b"), "United Arab Emirates"),
     (re.compile(r"\bKSA\b"), "Saudi Arabia"),
     (re.compile(r"\bDRC\b"), "Democratic Republic of the Congo"),
@@ -307,7 +309,9 @@ _PRE_PARSE_EXPANSIONS: tuple[tuple[re.Pattern, str], ...] = (
 )
 
 
-def _mine_segment_signals(segment: str):
+def _mine_segment_signals(
+    segment: str,
+) -> tuple[set[str], set[tuple[str, str]], set[tuple[str, str, str]]]:
     """Collect every (country, state, city) signal libpostal's own
     role-tagging surfaces in one segment. Only whole libpostal-emitted
     components are ever tested against the canonical tables — never raw
@@ -432,7 +436,7 @@ def _mine_segment_signals(segment: str):
             # in CPython (PYTHONHASHSEED), which would otherwise let the
             # same input resolve to a different country on different runs.
             city = next(
-                (c for cc in sorted(restrict_city_countries) if (c := _city_lookup(text, cc))),
+                (hit for cc in sorted(restrict_city_countries) if (hit := _city_lookup(text, cc))),
                 None,
             )
         else:
@@ -476,7 +480,8 @@ def _strip_workplace_words(raw: str) -> str:
 _ALPHA3_TO_COUNTRY: dict[str, str] = {_c.alpha_3: _c.name for _c in pycountry.countries}
 _CODE_ALIASES_ALPHA2 = {"UK": "GB"}
 US_STATE_CODES = frozenset(
-    s.code.split("-", 1)[1] for s in pycountry.subdivisions.get(country_code="US")
+    s.code.split("-", 1)[1]
+    for s in pycountry.subdivisions.get(country_code="US")  # type: ignore[no-untyped-call]
 )
 _POSTAL_PART_RE = re.compile(r"^\d{4,6}$")
 _LEADING_ALPHA3_RE = re.compile(r"^([A-Z]{3})\s")

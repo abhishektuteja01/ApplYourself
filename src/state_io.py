@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -79,7 +80,7 @@ def state_path_for(pipeline_dir: Path, job_id: str) -> Path:
     return pipeline_dir / job_id / "state.yaml"
 
 
-def load_state(state_path: Path) -> dict | None:
+def load_state(state_path: Path) -> dict[str, Any] | None:
     """Return the parsed state.yaml dict, or None if the file doesn't exist
     or is empty. An empty file carries no state, so callers must treat it the
     same as an absent one -- otherwise transition() takes its existing-role
@@ -105,7 +106,7 @@ def load_state(state_path: Path) -> dict | None:
     return data
 
 
-def _write_state(state_path: Path, data: dict) -> None:
+def _write_state(state_path: Path, data: dict[str, Any]) -> None:
     """Atomic write: a temp file unique to this writer, fsynced, then renamed
     over state.yaml, so a partial write can't corrupt it."""
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +122,10 @@ def _write_state(state_path: Path, data: dict) -> None:
         raise
 
 
-def update(state_path: Path, fn: Callable[[dict | None], dict | None]) -> dict | None:
+State = dict[str, Any]
+
+
+def update(state_path: Path, fn: Callable[[State | None], State | None]) -> State | None:
     """The one read-modify-write of a state.yaml: under the file's lock, pass
     the current dict (None when absent or empty) to fn and write what it
     returns. fn returning None writes nothing and returns the current dict."""
@@ -135,7 +139,13 @@ def update(state_path: Path, fn: Callable[[dict | None], dict | None]) -> dict |
         return data
 
 
-def _stamped(data: dict) -> dict:
+def _written(state_path: Path, data: State | None) -> State:
+    if data is None:
+        raise ValueError(f"state.yaml at {state_path} does not exist")
+    return data
+
+
+def _stamped(data: dict[str, Any]) -> dict[str, Any]:
     """data with schema_version set: first for a file that lacks it, in
     place otherwise."""
     if "schema_version" in data:
@@ -143,7 +153,7 @@ def _stamped(data: dict) -> dict:
     return {"schema_version": STATE_SCHEMA_VERSION, **data}
 
 
-def needs_stamp(data: dict | None) -> bool:
+def needs_stamp(data: dict[str, Any] | None) -> bool:
     return data is not None and ("schema_version" not in data or "cover_letters" in data)
 
 
@@ -152,8 +162,8 @@ def stamp_schema(state_path: Path) -> bool:
     cover_letters key. Never a transition. Returns True when it wrote."""
     wrote: list[bool] = []
 
-    def stamp(data: dict | None) -> dict | None:
-        if not needs_stamp(data):
+    def stamp(data: dict[str, Any] | None) -> dict[str, Any] | None:
+        if data is None or not needs_stamp(data):
             return None
         wrote.append(True)
         return {k: v for k, v in data.items() if k != "cover_letters"}
@@ -177,8 +187,8 @@ def transition(
     *,
     note: str | None = None,
     now: datetime | None = None,
-    initial_fields: dict | None = None,
-) -> dict:
+    initial_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Transition the role at state_path to new_state.
 
     If state.yaml does NOT exist (or is empty): creates it. Requires initial_fields to
@@ -199,22 +209,25 @@ def transition(
     if new_state not in VALID_STATES:
         raise ValueError(f"unknown state {new_state!r}; valid: {sorted(VALID_STATES)}")
     now_iso = _now_iso(now)
-    return update(
+    return _written(
         state_path,
-        lambda existing: _transitioned(
-            state_path, existing, new_state, note, now_iso, initial_fields
+        update(
+            state_path,
+            lambda existing: _transitioned(
+                state_path, existing, new_state, note, now_iso, initial_fields
+            ),
         ),
     )
 
 
 def _transitioned(
     state_path: Path,
-    existing: dict | None,
+    existing: dict[str, Any] | None,
     new_state: str,
     note: str | None,
     now_iso: str,
-    initial_fields: dict | None,
-) -> dict:
+    initial_fields: dict[str, Any] | None,
+) -> dict[str, Any]:
     if existing is None:
         if not initial_fields:
             raise ValueError(
@@ -268,9 +281,9 @@ def _transitioned(
 
 def ensure_state(
     state_path: Path,
-    initial_fields: dict,
+    initial_fields: dict[str, Any],
     now: datetime | None = None,
-) -> tuple[dict, bool]:
+) -> tuple[dict[str, Any], bool]:
     """Bootstrap-only counterpart to transition(): create state.yaml at
     `saved` if absent, do nothing if present. Never a transition, so /tailor
     can register a role without writing state (R10) and a re-tailor of any
@@ -279,7 +292,7 @@ def ensure_state(
     Returns (state_dict, created)."""
     created: list[bool] = []
 
-    def create(existing: dict | None) -> dict | None:
+    def create(existing: dict[str, Any] | None) -> dict[str, Any] | None:
         if existing is not None:
             return None
         created.append(True)
@@ -287,7 +300,7 @@ def ensure_state(
             state_path, None, "saved", "auto-registered by /tailor", _now_iso(now), initial_fields
         )
 
-    return update(state_path, create), bool(created)
+    return _written(state_path, update(state_path, create)), bool(created)
 
 
 # ---------------------------------------------------------------
@@ -295,11 +308,13 @@ def ensure_state(
 # ---------------------------------------------------------------
 
 
-def append_tailored_dir(state_path: Path, dir_name: str, *, now: datetime | None = None) -> dict:
+def append_tailored_dir(
+    state_path: Path, dir_name: str, *, now: datetime | None = None
+) -> dict[str, Any]:
     """Append dir_name to tailored_dirs[] (/tailor's mutation).
     A dir already listed moves to the end, so [-1] is always the latest build."""
 
-    def add(data: dict | None) -> dict:
+    def add(data: dict[str, Any] | None) -> dict[str, Any]:
         if data is None:
             raise ValueError(
                 f"state.yaml at {state_path} does not exist; run /track "
@@ -310,7 +325,7 @@ def append_tailored_dir(state_path: Path, dir_name: str, *, now: datetime | None
         data["last_touch"] = _now_iso(now)
         return data
 
-    return update(state_path, add)
+    return _written(state_path, update(state_path, add))
 
 
 def append_outreach_draft(
@@ -322,7 +337,7 @@ def append_outreach_draft(
     contact_id: str | None = None,
     medium: str | None = None,
     now: datetime | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Append a new outreach[] entry with status=draft (/outreach
     mutation)."""
     entry = {
@@ -337,7 +352,7 @@ def append_outreach_draft(
     if medium is not None:
         entry["medium"] = medium
 
-    def add(data: dict | None) -> dict:
+    def add(data: dict[str, Any] | None) -> dict[str, Any]:
         if data is None:
             raise ValueError(
                 f"state.yaml at {state_path} does not exist; run /track "
@@ -347,7 +362,7 @@ def append_outreach_draft(
         data["last_touch"] = _now_iso(now)
         return data
 
-    return update(state_path, add)
+    return _written(state_path, update(state_path, add))
 
 
 def mark_outreach_sent(
@@ -356,11 +371,11 @@ def mark_outreach_sent(
     channel: str,
     to_name: str,
     now: datetime | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Flip the LATEST matching outreach[] entry from draft -> sent.
     Raises ValueError if no draft entry matches (channel, to_name)."""
 
-    def flip(data: dict | None) -> dict:
+    def flip(data: dict[str, Any] | None) -> dict[str, Any]:
         if data is None:
             raise ValueError(f"state.yaml at {state_path} does not exist")
         entries = list(data.get("outreach") or [])
@@ -380,7 +395,7 @@ def mark_outreach_sent(
             f"no draft outreach found for channel={channel!r} to={to_name!r} in {state_path}"
         )
 
-    return update(state_path, flip)
+    return _written(state_path, update(state_path, flip))
 
 
 # ---------------------------------------------------------------
@@ -388,7 +403,7 @@ def mark_outreach_sent(
 # ---------------------------------------------------------------
 
 
-def iter_states(pipeline_dir: Path):
+def iter_states(pipeline_dir: Path) -> Iterator[dict[str, Any]]:
     """Yield every readable pipeline/*/state.yaml dict, in alphabetical order.
 
     The one place the glob-and-skip-unreadable shape lives. Malformed files are
@@ -407,12 +422,12 @@ def iter_states(pipeline_dir: Path):
             yield data
 
 
-def load_all_states(pipeline_dir: Path) -> list[dict]:
+def load_all_states(pipeline_dir: Path) -> list[dict[str, Any]]:
     """Every state.yaml as a list, alphabetical. Sole reader for /standup."""
     return list(iter_states(pipeline_dir))
 
 
-def load_state_index(pipeline_dir: Path) -> dict[str, dict]:
+def load_state_index(pipeline_dir: Path) -> dict[str, dict[str, Any]]:
     """{job_id: state dict} for the consumers that key on job_id --
     the discovery view's application_status and the shortlist's skip suppression.
     Records without a str job_id are skipped: they cannot be joined to a row."""

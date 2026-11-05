@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import yaml
 
@@ -53,7 +53,7 @@ class LaneResume:
 _RESUME_SECTIONS = {"summary", "work", "projects", "education", "skills"}
 
 
-def _parse_lane_resume(raw, path: Path, where: str) -> LaneResume:
+def _parse_lane_resume(raw: Any, path: Path, where: str) -> LaneResume:
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
     sections = _str_list(_require(raw, "sections", path, where), path, f"{where}.sections")
@@ -90,7 +90,7 @@ class Focus:
     no_max: int
 
 
-def _parse_focus(raw, path: Path, where: str) -> Focus:
+def _parse_focus(raw: Any, path: Path, where: str) -> Focus:
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
     question = _require(raw, "question", path, where)
@@ -121,7 +121,7 @@ class Vertical:
     drop_phrases: tuple[str, ...] = ()
     years: dict[int, int] = field(default_factory=dict)
     # Judge-only: printed into the lane's scoring packet as-is.
-    skill_weights: dict = field(default_factory=dict)
+    skill_weights: dict[str, Any] = field(default_factory=dict)
     # Optional. Bands `domain` by the judge's yes/no to the focus question.
     focus: Focus | None = None
 
@@ -148,7 +148,7 @@ class ClassifierRule(Protocol):
 class RegexRule:
     """A plain `pattern:` string, compiled case-insensitively."""
 
-    def __init__(self, pattern: re.Pattern):
+    def __init__(self, pattern: re.Pattern[str]):
         self.pattern = pattern
 
     def matches(self, title: str) -> bool:
@@ -185,19 +185,19 @@ def _fail(path: Path, message: str) -> ValueError:
     return ValueError(f"{path}: {message}")
 
 
-def _require(raw: dict, key: str, path: Path, where: str):
+def _require(raw: dict[str, Any], key: str, path: Path, where: str) -> Any:
     if key not in raw:
         raise _fail(path, f"{where} is missing required key {key!r}")
     return raw[key]
 
 
-def _str_list(value, path: Path, where: str) -> tuple[str, ...]:
+def _str_list(value: Any, path: Path, where: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(t, str) and t for t in value):
         raise _fail(path, f"{where} must be a list of nonempty strings")
     return tuple(value)
 
 
-def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
+def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
     where = f"verticals.{name}"
     if not _NAME_RE.match(name):
         raise _fail(path, f"vertical name {name!r} must match ^[a-z][a-z0-9_]*$")
@@ -293,7 +293,7 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
     raw_rules = _require(data, "classifier_rules", p, "top level")
     if not isinstance(raw_rules, list) or not raw_rules:
         raise _fail(p, "classifier_rules must be a nonempty ordered list")
-    rules = []
+    rules: list[tuple[str, ClassifierRule]] = []
     for i, rule in enumerate(raw_rules):
         where = f"classifier_rules[{i}]"
         if not isinstance(rule, dict):

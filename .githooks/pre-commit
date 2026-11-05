@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Blocks a commit that stages a .py file failing `ruff check` or
-# `ruff format --check`, or a change under
+# `ruff format --check` or mypy, or a change under
 # src/, tests/, scripts/ or a profile example while the R7 scan or the test
 # suite is red. Any other commit skips both.
 #
@@ -30,6 +30,14 @@ if [ -n "$(git diff --cached --name-only -- '*.py' 2>/dev/null || true)" ]; then
       echo "pre-commit: FAIL — ruff format --check. Run: uv run ruff format src tests scripts"
       echo
       printf '%s\n' "$FMT" | tail -30
+    } >&2
+    exit 1
+  fi
+  if ! TYPES="$(uv run mypy 2>&1)"; then
+    {
+      echo "pre-commit: FAIL — mypy."
+      echo
+      printf '%s\n' "$TYPES" | tail -30
     } >&2
     exit 1
   fi

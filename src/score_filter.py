@@ -13,12 +13,16 @@ import textwrap
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from src.shared import jd_trim, paths, verticals
 from src.shared.config_schema import Cutoffs, ScoringFile, validate
+
+if TYPE_CHECKING:
+    from src.apply.answers import CountryFacts
+    from src.discovery.config import DiscoveryConfig
 
 SCORING_PATH = paths.PROFILE / "scoring.yaml"
 _SCHEMA_VERSION = 1
@@ -66,21 +70,21 @@ class ScoringConfig:
     when it names none we know, so every years path counts."""
 
 
-def _phrases(data: dict, key: str, path: Path) -> tuple[str, ...]:
+def _phrases(data: dict[str, Any], key: str, path: Path) -> tuple[str, ...]:
     value = data.get(key) or []
     if not isinstance(value, list) or not all(isinstance(p, str) and p.strip() for p in value):
         raise ValueError(f"{path}: {key} must be a list of nonempty strings")
     return tuple(value)
 
 
-def _int(block: dict, key: str, where: str, path: Path) -> int:
+def _int(block: dict[str, Any], key: str, where: str, path: Path) -> int:
     value = block.get(key)
     if type(value) is not int or value < 0:
         raise ValueError(f"{path}: {where}.{key} must be a non-negative integer")
     return value
 
 
-def _need(facts) -> str:
+def _need(facts: CountryFacts) -> str:
     if facts.authorized and not facts.requires_sponsorship:
         return "never"
     return "later" if facts.authorized else "now"
@@ -179,7 +183,7 @@ def normalize(text: Any) -> str:
 
 
 @cache
-def _phrase_re(phrases: tuple[str, ...]) -> re.Pattern | None:
+def _phrase_re(phrases: tuple[str, ...]) -> re.Pattern[str] | None:
     if not phrases:
         return None
     alts = sorted({normalize(p) for p in phrases}, key=len, reverse=True)
@@ -232,14 +236,14 @@ _PATH_START_RE = re.compile(r"\bor\b|;|\n")
 def degree_rank(text: Any) -> int | None:
     """The rank of the first degree named in `text`, or None."""
     m = _DEGREE_RE.search(str(text or "").lower())
-    return int(m.lastgroup[1:]) if m else None
+    return int(m.lastgroup[1:]) if m and m.lastgroup else None
 
 
 def _path_degree(text: str, start: int, floor: int) -> int | None:
     """The degree named in the path that ends at `start`, if any."""
     cuts = [c.end() for c in _PATH_START_RE.finditer(text, floor, start)]
     hits = list(_DEGREE_RE.finditer(text, cuts[-1] if cuts else floor, start))
-    return int(hits[-1].lastgroup[1:]) if hits else None
+    return int(hits[-1].lastgroup[1:]) if hits and hits[-1].lastgroup else None
 
 
 def years_required(jd_text: Any, degree: int | None = None) -> int:
@@ -280,7 +284,7 @@ def years_required(jd_text: Any, degree: int | None = None) -> int:
         if len(g) == 1:
             found.append(g[0][0])
             continue
-        open_ = [n for n, d in g if d <= degree]
+        open_ = [n for n, d in g if d is not None and degree is not None and d <= degree]
         found.append(min(open_ or [n for n, _ in g]))
     return max(found, default=0)
 
@@ -320,7 +324,7 @@ def wrap(text: str, width: int = 100) -> str:
 # ---------------------------------------------------------------------
 
 
-def drop_reason(row: dict, cfg: ScoringConfig) -> tuple[str, str] | None:
+def drop_reason(row: dict[str, Any], cfg: ScoringConfig) -> tuple[str, str] | None:
     """(code, detail) if the row is dropped before judging, else None.
     Codes, in order: no-lane, ineligible, phrase, years."""
     lane = verticals.get_config().verticals.get(row.get("vertical") or "")
@@ -364,7 +368,7 @@ class CountryRule:
     abroad: dict[str, frozenset[str]]
 
     @classmethod
-    def from_discovery(cls, dcfg) -> CountryRule:
+    def from_discovery(cls, dcfg: DiscoveryConfig) -> CountryRule:
         abroad = {normalize(c): frozenset(v) for c, v in dcfg.abroad_lanes().items()}
         allowed = {normalize(c) for c in dcfg.location_allowlist.effective_countries()}
         return cls(home=frozenset(allowed - set(abroad)), abroad=abroad)

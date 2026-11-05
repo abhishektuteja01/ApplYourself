@@ -61,10 +61,14 @@ config-check = "src.config_check:main"
 
 [dependency-groups]
 dev = [
+    "mypy>=2.4,<2.5",
+    "pandas-stubs>=2.3,<2.4",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "pytest-xdist>=3.6",
     "ruff>=0.16,<0.17",
+    "types-pyyaml>=6.0.12.20261103",
+    "types-requests>=2.33.0.20261030",
 ]
 # Opt-in: `uv sync --group apply`. Discovery, scoring and tailoring must keep
 # working on a clone that never installs it.
@@ -118,3 +122,58 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003", "B905", "UP042", "RUF005", "SIM1
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["RUF012", "DTZ"]  # fake classes hold fixture lists; fixtures pin naive local times
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "src.shared.*",
+    "src.state_io",
+    "src.track_cli",
+    "src.score_filter",
+    "src.score_store",
+    "src.score_cli",
+]
+# The `strict` flags one by one: `strict = true` here leaks to every module.
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+
+# Not typed yet: drop a module from this list once it checks clean.
+[[tool.mypy.overrides]]
+module = [
+    "src.app_cli",
+    "src.apply.answers",
+    "src.apply.ashby",
+    "src.apply.browser",
+    "src.apply.fill",
+    "src.apply.greenhouse",
+    "src.apply.lever",
+    "src.apply.plan",
+    "src.apply.reconcile",
+    "src.apply.sheet",
+    "src.apply_cli",
+    "src.discovery.dedupe",
+    "src.discovery.sources.boards.base",
+    "src.discovery.sources.boards.workday",
+    "src.discovery.sources.feed.stapply",
+    "src.discovery.sources.search",
+    "src.discovery.store",
+    "src.lint",
+    "src.resume_model",
+    "src.summary",
+    "src.synonyms_cli",
+]
+ignore_errors = true

@@ -6,10 +6,13 @@ timeout constants below govern both — a change here reaches live forms.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http.cookiejar import DefaultCookiePolicy
+from typing import Any
 from urllib.parse import urlsplit
 
 import requests
@@ -39,11 +42,11 @@ def _session() -> requests.Session:
     return session
 
 
-def _get(url, **kwargs):
+def _get(url: str, **kwargs: Any) -> requests.Response:
     return _session().get(url, **kwargs)
 
 
-def _post(url, **kwargs):
+def _post(url: str, **kwargs: Any) -> requests.Response:
     return _session().post(url, **kwargs)
 
 
@@ -53,7 +56,7 @@ class HttpTally:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self.hosts: dict[str, dict] = {}
+        self.hosts: dict[str, dict[str, Any]] = {}
 
     def record(self, url: str, secs: float, status: int | None) -> None:
         host = (urlsplit(url).hostname or "").lower()
@@ -68,10 +71,10 @@ class HttpTally:
             elif status in (403, 429):
                 h[str(status)] += 1
 
-    def on_http(self, event: dict) -> None:
+    def on_http(self, event: dict[str, Any]) -> None:
         self.record(event.get("url", ""), event.get("secs", 0.0), event.get("status"))
 
-    def totals(self) -> dict:
+    def totals(self) -> dict[str, Any]:
         with self._lock:
             out = {"requests": 0, "seconds": 0.0, "403": 0, "429": 0, "errors": 0}
             for h in self.hosts.values():
@@ -82,7 +85,7 @@ class HttpTally:
 
 
 @contextmanager
-def observe(fn):
+def observe(fn: Callable[[dict[str, Any]], None]) -> Iterator[None]:
     """Call `fn(event)` after every request attempt made on this thread."""
     prev = getattr(_local, "observer", None)
     _local.observer = fn
@@ -92,7 +95,7 @@ def observe(fn):
         _local.observer = prev
 
 
-def _notify(**event) -> None:
+def _notify(**event: Any) -> None:
     fn = getattr(_local, "observer", None)
     if fn is None:
         return
@@ -122,13 +125,13 @@ def _sleep_or_raise(delay: float, deadline_ts: float | None, url: str) -> None:
     time.sleep(delay)
 
 
-def _fetch(
+def _fetch[T](
     url: str,
-    read,
+    read: Callable[[requests.Response], T],
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
-    json_body: dict | None = None,
-):
+    json_body: dict[str, Any] | None = None,
+) -> T:
     """GET (or, with `json_body`, POST) url, retrying 429/5xx, and hand the 200
     response to `read`.
 
@@ -201,12 +204,15 @@ DOWNLOAD_CHUNK = 1 << 20
 
 
 def download(
-    url: str, dest, timeout: int = REQUEST_TIMEOUT, deadline_ts: float | None = None
+    url: str,
+    dest: str | os.PathLike[str],
+    timeout: int = REQUEST_TIMEOUT,
+    deadline_ts: float | None = None,
 ) -> int:
     """Stream url to the file `dest`, retrying a failed or 429/5xx start like
     `_fetch`. Returns the bytes written. A file this size never sits in memory."""
 
-    def read(resp) -> int:
+    def read(resp: requests.Response) -> int:
         size = 0
         with open(dest, "wb") as out:
             for chunk in resp.iter_content(DOWNLOAD_CHUNK):
@@ -247,11 +253,11 @@ def fetch_page(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[int, str]:
     return resp.status_code, resp.text or ""
 
 
-def _json_reader(url: str):
+def _json_reader(url: str) -> Callable[[requests.Response], Any]:
     """A `read` for `_fetch` that decodes JSON. A 200 that is not JSON is a wall
     or a wrong slug, not a blip, so it is permanent."""
 
-    def read(resp):
+    def read(resp: requests.Response) -> Any:
         try:
             return resp.json()
         except ValueError as exc:
@@ -266,17 +272,17 @@ def fetch_json(
     url: str,
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
-):
+) -> Any:
     """GET url -> parsed JSON. Retries 429/5xx (Retry-After capped at MAX_RETRY_AFTER)."""
     return _fetch(url, _json_reader(url), timeout=timeout, deadline_ts=deadline_ts)
 
 
 def fetch_json_post(
     url: str,
-    json_body: dict,
+    json_body: dict[str, Any],
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
-):
+) -> Any:
     """POST json_body to url -> parsed JSON, same retry policy as fetch_json.
 
     Workday's list/search endpoint takes its query as a POST body rather than
@@ -300,8 +306,8 @@ def fetch_text(
     not going to answer with something on a retry.
     """
 
-    def read(resp) -> str:
-        text = resp.text or ""
+    def read(resp: requests.Response) -> str:
+        text: str = resp.text or ""
         if not text.strip():
             raise CareersError(f"empty body: {url}", status=200, permanent=True)
         return text

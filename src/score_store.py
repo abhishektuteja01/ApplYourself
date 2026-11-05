@@ -19,7 +19,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import pandas as pd
 import yaml
@@ -87,7 +87,7 @@ def read_scored(scored_path: Path) -> pd.DataFrame:
     return df[SCORED_COLUMNS]
 
 
-def merge_rows(scored_path: Path, rows: list[dict]) -> int:
+def merge_rows(scored_path: Path, rows: list[dict[str, Any]]) -> int:
     """Write rows into scored.parquet, replacing any row with the same job_id."""
     if not rows:
         return 0
@@ -121,15 +121,15 @@ def prune(scored_path: Path, clean_path: Path, pipeline_dir: Path) -> int:
 def _row(
     job_id: str,
     vertical: str,
-    subs: dict,
+    subs: dict[str, Any],
     label: str,
     evidence: str,
     reasoning: str,
-    keywords: list,
+    keywords: list[Any],
     action: str,
     model: str,
     now: datetime,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "job_id": job_id,
         "fit_score": float(sum(subs.values())),
@@ -145,11 +145,11 @@ def _row(
     }
 
 
-def _zero() -> dict:
+def _zero() -> dict[str, Any]:
     return dict.fromkeys(AXIS_MAXIMA, 0)
 
 
-def drop_row(row: dict, code: str, detail: str, now: datetime) -> dict:
+def drop_row(row: dict[str, Any], code: str, detail: str, now: datetime) -> dict[str, Any]:
     ineligible = code == "ineligible"
     return _row(
         row["job_id"],
@@ -216,7 +216,7 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
     (staging / f"packet_{lane.name}.md").write_text("\n".join(parts), encoding="utf-8")
 
 
-def _slice_text(name: str, rows: list[dict], staging: Path) -> str:
+def _slice_text(name: str, rows: list[dict[str, Any]], staging: Path) -> str:
     lane = rows[0]["vertical"]
     out = [
         f"# {name} — {len(rows)} role(s)\n",
@@ -244,8 +244,10 @@ def _slice_text(name: str, rows: list[dict], staging: Path) -> str:
     return "\n".join(out)
 
 
-def _slices(rows: list[dict]) -> list[list[dict]]:
-    out, cur, size = [], [], 0
+def _slices(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    out: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    size = 0
     for r in rows:
         n = len(r["_jd"].encode("utf-8")) + 500
         if cur and (len(cur) >= SLICE_ROWS or size + n > SLICE_BYTES):
@@ -256,9 +258,11 @@ def _slices(rows: list[dict]) -> list[list[dict]]:
     return out + [cur] if cur else out
 
 
-def judge_lines(run: dict, staging: Path) -> list[str]:
+def judge_lines(run: dict[str, Any], staging: Path) -> list[str]:
     """One `judge <slice file>...` line per judge, over the slices still unanswered."""
-    lines, cur, size, lane = [], [], 0, None
+    lines: list[str] = []
+    cur: list[str] = []
+    size, lane = 0, None
     for name, meta in run["slices"].items():
         if (staging / f"out_{name}.json").exists():
             continue
@@ -275,12 +279,12 @@ def judge_lines(run: dict, staging: Path) -> list[str]:
     return lines + ["judge " + " ".join(cur)] if cur else lines
 
 
-def load_run(staging: Path) -> dict | None:
+def load_run(staging: Path) -> dict[str, Any] | None:
     p = staging / "run.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
-def _save_run(staging: Path, run: dict) -> None:
+def _save_run(staging: Path, run: dict[str, Any]) -> None:
     (staging / "run.json").write_text(json.dumps(run, indent=1), encoding="utf-8")
 
 
@@ -295,7 +299,7 @@ def start(
     job_ids: list[str] | None = None,
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Stage a run. Returns {"dropped": {code: n}, "judge": n, "lines": [...],
     "resumed": bool}.
     An open run is resumed when no selector is given, refused otherwise."""
@@ -329,7 +333,7 @@ def start(
 
     dropped, keep = [], []
     counts: dict[str, int] = {}
-    for row in clean.to_dict("records"):
+    for row in cast(list[dict[str, Any]], clean.to_dict("records")):
         reason = drop_reason(row, cfg)
         if job_ids and reason and reason[0] != "no-lane":
             reason = None  # a deliberate ingest always reaches a judge
@@ -416,7 +420,7 @@ class JudgeAnswer(BaseModel):
     domain: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["domain"])]
     years: Annotated[int, Field(ge=0, le=50)]
     country: str
-    sponsorship: Annotated[list[Literal[SPONSORSHIP_FACTS]], Field(min_length=1)]
+    sponsorship: Annotated[list[Literal[SPONSORSHIP_FACTS]], Field(min_length=1)]  # type: ignore[valid-type]  # pydantic expands the tuple
     evidence: str
     keywords_to_mirror: list[str]
     reasoning: Annotated[str, Field(pattern=r"\S")]
@@ -425,7 +429,7 @@ class JudgeAnswer(BaseModel):
     focus_evidence: str | None = None
 
     @model_validator(mode="after")
-    def _evidence(self):
+    def _evidence(self) -> JudgeAnswer:
         if "silent" in self.sponsorship and len(self.sponsorship) > 1:
             raise ValueError("sponsorship cannot mix silent with other statements")
         if self.sponsorship != ["silent"] and not self.evidence.strip():
@@ -433,7 +437,7 @@ class JudgeAnswer(BaseModel):
         return self
 
 
-def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
+def check_answer(answer: Any, meta: dict[str, Any], focus: bool = False) -> list[str]:
     """Problems with one judge output file, [] if it can be merged. `focus`:
     the lane has a focus question, so every answer must carry `focus`."""
     if not isinstance(answer, list):
@@ -474,14 +478,14 @@ def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
 
 
 def derive(
-    a: dict,
+    a: dict[str, Any],
     lane: verticals.Vertical,
-    facts: dict,
+    facts: dict[str, Any],
     cfg: ScoringConfig,
     rule: CountryRule,
     model: str,
     now: datetime,
-) -> dict:
+) -> dict[str, Any]:
     """The stored row for one judge answer. The judge reads the facts (years,
     country, what the JD says about sponsorship); every rule is applied here."""
     subs = {axis: a[axis] for axis in AXIS_MAXIMA}
@@ -545,7 +549,7 @@ def finish(
     cfg: ScoringConfig,
     rule: CountryRule,
     now: datetime | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Merge every answered, valid slice. Returns {"merged", "pruned",
     "bad": {slice: [errors]}, "lines": judge lines still owed}."""
     run = load_run(staging)
