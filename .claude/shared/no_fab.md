@@ -25,7 +25,8 @@ Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 ## What code checks
 
 `uv run app build ...` checks all of this and reports each break as a problem
-with a `code`:
+with a `code`. `uv run app schema resume|letter|answers` prints the keys each
+file may hold.
 
 | code | means |
 |---|---|

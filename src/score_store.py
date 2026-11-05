@@ -19,10 +19,11 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import pandas as pd
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from src.score_filter import (
     SPONSORSHIP_FACTS,
@@ -196,6 +197,9 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
         + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip()
         + "\n```\n",
         "## Resume\n\n" + _lane_resume(lane),
+        "## Answer schema\n\nEach object in your JSON array matches this JSON Schema.\n\n```json\n"
+        + json.dumps(JudgeAnswer.model_json_schema(), indent=1)
+        + "\n```\n",
     ]
     if lane.focus:
         f = lane.focus
@@ -400,6 +404,35 @@ def _quote_ok(evidence: str, jd: str) -> bool:
     return all(p in body for p in parts if len(p) >= 3)
 
 
+class JudgeAnswer(BaseModel):
+    """One role in a judge's answer file. The scoring rubric says what each field means."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    job_id: str
+    title: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["title"])]
+    skills: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["skills"])]
+    seniority: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["seniority"])]
+    domain: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["domain"])]
+    years: Annotated[int, Field(ge=0, le=50)]
+    country: str
+    sponsorship: Annotated[list[Literal[SPONSORSHIP_FACTS]], Field(min_length=1)]
+    evidence: str
+    keywords_to_mirror: list[str]
+    reasoning: Annotated[str, Field(pattern=r"\S")]
+    action: Literal["skip", "manual-review"] | None = None
+    focus: bool | None = None
+    focus_evidence: str | None = None
+
+    @model_validator(mode="after")
+    def _evidence(self):
+        if "silent" in self.sponsorship and len(self.sponsorship) > 1:
+            raise ValueError("sponsorship cannot mix silent with other statements")
+        if self.sponsorship != ["silent"] and not self.evidence.strip():
+            raise ValueError(f"evidence must quote the JD for {', '.join(self.sponsorship)}")
+        return self
+
+
 def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
     """Problems with one judge output file, [] if it can be merged. `focus`:
     the lane has a focus question, so every answer must carry `focus`."""
@@ -417,52 +450,25 @@ def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
         if not isinstance(a, dict):
             continue
         where = f"{a.get('job_id')}:"
-        for axis, top in AXIS_MAXIMA.items():
-            v = a.get(axis)
-            if type(v) is not int or not 0 <= v <= top:
-                errs.append(f"{where} {axis} must be an int 0-{top}")
-        if type(a.get("years")) is not int or not 0 <= a["years"] <= 50:
-            errs.append(f"{where} years must be an int 0-50")
-        if not isinstance(a.get("country"), str):
-            errs.append(f"{where} country must be a string")
-        facts, ev = a.get("sponsorship"), a.get("evidence")
-        if (
-            not isinstance(facts, list)
-            or not facts
-            or not all(f in SPONSORSHIP_FACTS for f in facts)
-        ):
-            errs.append(
-                f"{where} sponsorship must be a nonempty list of: {', '.join(SPONSORSHIP_FACTS)}"
-            )
-            facts = []
-        elif "silent" in facts and len(facts) > 1:
-            errs.append(f"{where} sponsorship cannot mix silent with other statements")
-        if not isinstance(ev, str):
-            errs.append(f"{where} evidence must be a string")
-        elif facts and facts != ["silent"] and not ev.strip():
-            errs.append(f"{where} evidence must quote the JD for {', '.join(facts)}")
-        elif (
-            ev.strip()
-            and a.get("job_id") in meta["facts"]
-            and not _quote_ok(ev, meta["facts"][a["job_id"]]["jd"])
-        ):
+        try:
+            JudgeAnswer.model_validate(a)
+        except ValidationError as e:
+            errs += [
+                f"{where} {'.'.join(map(str, x['loc'])) or 'answer'}: {x['msg']}"
+                for x in e.errors()
+            ]
+            continue
+        jd = meta["facts"].get(a["job_id"], {}).get("jd")
+        ev = a["evidence"]
+        if ev.strip() and jd is not None and not _quote_ok(ev, jd):
             errs.append(f"{where} evidence is not a quote from the JD: {ev[:100]!r}")
-        kws = a.get("keywords_to_mirror")
-        if not isinstance(kws, list) or not all(isinstance(k, str) for k in kws):
-            errs.append(f"{where} keywords_to_mirror must be a list of strings")
-        if not isinstance(a.get("reasoning"), str) or not a["reasoning"].strip():
-            errs.append(f"{where} reasoning must be a nonempty string")
-        if a.get("action") not in (None, "skip", "manual-review"):
-            errs.append(f"{where} action may only be skip or manual-review")
-        if focus and type(a.get("focus")) is not bool:
+        if focus and a.get("focus") is None:
             errs.append(f"{where} focus must be true or false")
         elif focus and a["focus"]:
-            fev = a.get("focus_evidence")
-            if not isinstance(fev, str) or not fev.strip():
+            fev = a.get("focus_evidence") or ""
+            if not fev.strip():
                 errs.append(f"{where} focus true must quote the JD in focus_evidence")
-            elif a.get("job_id") in meta["facts"] and not _quote_ok(
-                fev, meta["facts"][a["job_id"]]["jd"]
-            ):
+            elif jd is not None and not _quote_ok(fev, jd):
                 errs.append(f"{where} focus_evidence is not a quote from the JD: {fev[:100]!r}")
     return errs
 

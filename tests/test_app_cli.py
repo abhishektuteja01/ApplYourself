@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 
 import pandas as pd
@@ -12,6 +13,7 @@ import pytest
 import yaml
 
 from src import app_cli, track_cli
+from src.session_schema import ProblemCode
 from src.shared import paths
 from tests.factories import scored_rows, write_clean
 
@@ -189,6 +191,25 @@ def test_build_resume_reports_problems_and_writes_nothing(repo, capsys):
 
     code, res = _run(capsys, "build", "resume", JOB, "--final")
     assert code == 0 and res["swapped"] == ["B-WID-01 -> canonical"]
+
+
+def test_build_resume_names_a_mistyped_key_instead_of_shipping_the_baseline(repo, capsys):
+    _, out = _run(capsys, "new", JOB)
+    plan = {**_baseline_plan(), "summry": {"text": "x"}}
+    plan["entries"][1]["txt"] = "reworded"
+    _write(repo, out["work_dir"], "resume_plan.yaml", plan)
+    code, res = _run(capsys, "build", "resume", JOB)
+    assert code == 2
+    assert {(p["where"], p["detail"]) for p in res["problems"]} == {
+        ("resume_plan.yaml: summry", "unknown key; closest valid key: 'summary'"),
+        ("resume_plan.yaml: entries[1].txt", "unknown key; closest valid key: 'text'"),
+    }
+
+
+def test_no_fab_lists_exactly_the_problem_codes():
+    text = (paths.REPO_ROOT / ".claude" / "shared" / "no_fab.md").read_text(encoding="utf-8")
+    rows = [ln.split("|")[1] for ln in text.splitlines() if ln.startswith("| `")]
+    assert set(re.findall(r"`(\w+)`", " ".join(rows))) == set(ProblemCode)
 
 
 def test_build_resume_over_one_page_is_a_problem(repo, capsys, monkeypatch):

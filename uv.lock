@@ -59,7 +59,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=15.0" },
     { name = "pycountry", specifier = ">=24.0" },
-    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydantic", specifier = ">=2.11" },
     { name = "pypdf", specifier = ">=6.19.0" },
     { name = "python-docx", specifier = ">=1.1" },
     { name = "python-jobspy", specifier = ">=1.1.80,<1.2" },
