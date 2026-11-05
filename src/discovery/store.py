@@ -154,7 +154,6 @@ class ApplyStats:
     reposted: int = 0
     by_rule: dict[str, int] = field(default_factory=dict)
     new_job_ids: list[str] = field(default_factory=list)
-    collisions: list[str] = field(default_factory=list)
     dropped_blank: int = 0
     maybe_duplicates: list[dict] = field(default_factory=list)
 
@@ -166,7 +165,6 @@ class ApplyStats:
         for k, v in other.by_rule.items():
             self.by_rule[k] = self.by_rule.get(k, 0) + v
         self.new_job_ids = sorted(set(self.new_job_ids) | set(other.new_job_ids))
-        self.collisions += other.collisions
         self.dropped_blank += other.dropped_blank
         seen = {m["pair"] for m in self.maybe_duplicates}
         self.maybe_duplicates += [m for m in other.maybe_duplicates if m["pair"] not in seen]
@@ -222,10 +220,6 @@ def apply_batch(store: pd.DataFrame, batch: Batch, today: pd.Timestamp,
             stats.dropped_blank += 1
             continue
         jid, rule, maybes = index.assign(row)
-        if rule == "collision":
-            stats.collisions.append(
-                f"{row['company_normalized']} | {row['title_normalized']} ({row['posting_key']})")
-            continue
         rec = {**row, "job_id": jid, "first_seen": today, "last_seen": today}
         index.add(rec)
         added.append(rec)

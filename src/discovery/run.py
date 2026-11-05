@@ -218,8 +218,6 @@ def render_md(report: dict) -> str:
               f"forgotten {st.get('forgotten', 0)}",
               f"- new postings by id rule: {st.get('by_rule', {})}",
               f"- postings {st.get('postings', 0)}, job ids {st.get('job_ids', 0)}"]
-    if st.get("collisions"):
-        lines += ["- **job_id collisions dropped:**"] + [f"  - {c}" for c in st["collisions"]]
     if st.get("maybe_duplicates"):
         lines += ["- **maybe duplicates (not merged):**"] + [
             f"  - {m['job_id']} {m['company']} / {m['other']} {m['other_company']} "
