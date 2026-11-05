@@ -63,12 +63,12 @@ stage_start() {
 # update). Stops when the stage exits. No helper: conversions run in-process.
 pdf_helper_up() {
   [[ "$DRY_RUN" == 1 || -n "${PDF_BROKER_DIR:-}" ]] && return 0
-  local dir="$RUN_DIR/pdf_helper_$STAGE" i
+  local dir="$RUN_DIR/pdf_helper_$STAGE"
   mkdir -p "$dir"
   "$UV" run python -m src.pdf_broker "$dir" --parent $$ >>"$RUN_DIR/pdf_helper.log" 2>&1 &
   PDF_HELPER_PID=$!
   trap 'kill "$PDF_HELPER_PID" 2>/dev/null' EXIT
-  for i in $(seq 1 150); do
+  for _ in $(seq 1 150); do
     [[ -s "$dir/broker.pid" ]] && { export PDF_BROKER_DIR="$dir"; echo "pdf helper up ($dir)"; return 0; }
     sleep 0.2
   done

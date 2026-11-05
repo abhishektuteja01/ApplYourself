@@ -7,6 +7,7 @@
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 stage_start apply_prep
+# shellcheck disable=SC2034  # read by lib_pipeline.sh
 STAGE=apply_prep   # log/json names
 pdf_helper_up
 

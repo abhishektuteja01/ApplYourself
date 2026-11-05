@@ -11,8 +11,9 @@ paths:
 offer, rejected, withdrawn, ghosted`. Terminal (`offer, rejected, withdrawn,
 ghosted`) reject all out-transitions.
 
-`/track` is the **sole writer of state transitions** (R10): every transition goes
-through it, and no other command writes `state:` itself. `/tailor` (through
+R10: `src/track_cli.py` is the only module that calls `state_io.transition` or
+`ensure_state`; `/track`, `app_cli`, `apply_cli` and `apply/triage` call
+`track_cli.main`, and `tests/test_state_io.py` fails on any other caller. `/tailor` (through
 `uv run app build resume`) and `/outreach` only append to side lists
 (`tailored_dirs[]`, `outreach[]`). Whether a role has a cover letter or company
 answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
@@ -21,14 +22,15 @@ read-only and is the sole regenerator of `pipeline.md`.
 `.claude/hooks/state_yaml_guard.sh` blocks the Edit/Write tools from targeting a
 `state.yaml` at all, since every legitimate write goes through Bash.
 
-## The two `saved -> tailored` firers
+## The three `saved -> tailored` firers
 
-Both route through `/track` and both are guarded to fire only from `saved`:
+All route through `track_cli` and are guarded to fire only from `saved`:
 
 - `/cover-letter` fires it after `uv run app build letter` succeeds, with
   `uv run track <id> tailored --if saved`.
 - `/apply` fires it itself, on a `saved` role, once its plan shows no
   cover-letter park (the board has no letter upload, or the letter now exists).
+- `apply triage --fill` fires it before filling a ready role.
 
 A cover letter is a per-board prerequisite, decided by that plan-check.
 

@@ -1,6 +1,7 @@
 """Tests for src/state_io.py — deterministic state.yaml plumbing."""
 from __future__ import annotations
 
+import ast
 from datetime import datetime
 from pathlib import Path
 
@@ -442,5 +443,56 @@ def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
     data = load_state(p)
     assert data["tailored_dirs"] == ["d1"]
     assert len(data["outreach"]) == 1
+
+
+# --- R10: only track_cli changes state -------------------------------------
+
+_STATE_WRITERS = {"transition", "ensure_state", "update", "_write_state", "_transitioned"}
+
+
+def _r10_offenders(source: str) -> list[int]:
+    """Lines that call a state_io writer, or assign `["state"]`, in a module
+    that imports state_io."""
+    tree = ast.parse(source)
+    modules: set[str] = set()
+    funcs: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "src":
+            modules.update(a.asname or a.name for a in node.names if a.name == "state_io")
+        elif isinstance(node, ast.ImportFrom) and node.module == "src.state_io":
+            funcs.update(a.asname or a.name for a in node.names if a.name in _STATE_WRITERS)
+        elif isinstance(node, ast.Import):
+            modules.update(a.asname or a.name for a in node.names if a.name == "src.state_io")
+    if not (modules or funcs):
+        return []
+    hits = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if (isinstance(f, ast.Name) and f.id in funcs) or (
+                isinstance(f, ast.Attribute) and f.attr in _STATE_WRITERS
+                and ast.unparse(f.value) in modules
+            ):
+                hits.append(node.lineno)
+        elif isinstance(node, ast.Assign):
+            hits.extend(
+                node.lineno for t in node.targets
+                if isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant)
+                and t.slice.value == "state"
+            )
+    return hits
+
+
+def test_only_track_cli_changes_state():
+    root = Path(__file__).resolve().parents[1] / "src"
+    allowed = {root / "state_io.py", root / "track_cli.py"}
+    assert _r10_offenders("from src import state_io\nstate_io.transition(p, 'applied')\n")
+    assert _r10_offenders("from src.state_io import ensure_state as e\ne(p)\n")
+    offenders = [
+        f"{path.relative_to(root.parent)}:{line}"
+        for path in sorted(root.rglob("*.py")) if path not in allowed
+        for line in _r10_offenders(path.read_text(encoding="utf-8"))
+    ]
+    assert offenders == [], "R10: call track_cli.main instead"
 
 

@@ -9,15 +9,33 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   LIBPOSTAL_REF: v1.1.4
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --frozen
+      - run: uv run ruff check src tests scripts
+      - run: ./scripts/r7_scan.sh
+      - run: uvx --from shellcheck-py==0.11.0.1 shellcheck --severity=warning scripts/*.sh scripts/stages/*.sh
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # `postal` is optional (the `discovery` group) and the core sync no
       # longer needs it — but the suite does: tests/shared/test_location.py
@@ -27,7 +45,7 @@ jobs:
       # prefix (the ~2GB model data lives in it too).
       - name: Cache libpostal
         id: libpostal
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/libpostal
           key: libpostal-${{ runner.os }}-${{ env.LIBPOSTAL_REF }}
@@ -52,9 +70,8 @@ jobs:
           echo "PKG_CONFIG_PATH=$HOME/libpostal/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$HOME/libpostal/lib" >> "$GITHUB_ENV"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: uv sync --frozen --group discovery
-      - run: uv run ruff check --select F401,F841 src tests scripts
       # Also proves the suite runs in a non-UTF-8 locale, which is how a bare
       # container and a cron job both run it.
       - run: uv run pytest tests -q
@@ -66,7 +83,7 @@ jobs:
   pii-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # The real denylist is gitignored and never reaches CI, so run the gate
       # the way a fresh clone does: with the shipped example. That keeps the
       # documented onboarding path honest, and still catches a tracked binary.
