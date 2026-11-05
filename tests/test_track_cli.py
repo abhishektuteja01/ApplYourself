@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from src import track_cli
+from tests.factories import write_clean, write_state
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +23,7 @@ def _paths(tmp_path, monkeypatch):
 
 
 def _write_clean(tmp_path, rows):
-    pd.DataFrame(rows).to_parquet(tmp_path / "clean.parquet")
+    write_clean(tmp_path / "clean.parquet", *rows)
 
 
 def test_first_transition_creates_state_from_clean_parquet(tmp_path, capsys):
@@ -64,14 +65,9 @@ def test_unknown_state_rejected_by_argparse(tmp_path):
 
 
 def test_outreach_sent_flips_latest_draft(tmp_path, capsys):
-    state_dir = tmp_path / "pipeline" / "aaaaaaaa"
-    state_dir.mkdir(parents=True)
-    (state_dir / "state.yaml").write_text(yaml.safe_dump({
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "state": "saved", "state_history": [], "outreach": [
-            {"channel": "recruiter", "to": "Jane", "status": "draft"},
-        ],
-    }), encoding="utf-8")
+    state_dir = write_state(tmp_path / "pipeline", "aaaaaaaa", title="Widget FN", outreach=[
+        {"channel": "recruiter", "to": "Jane", "status": "draft"},
+    ]).parent
     rc = track_cli.main(["outreach-sent", "aaaaaaaa", "--channel", "recruiter", "--to", "Jane"])
     assert rc == 0
     state = yaml.safe_load((state_dir / "state.yaml").read_text(encoding="utf-8"))

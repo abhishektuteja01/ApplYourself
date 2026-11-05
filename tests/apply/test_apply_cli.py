@@ -15,7 +15,6 @@ import json
 import shlex
 from pathlib import Path
 
-import pandas as pd
 import pytest
 import yaml
 
@@ -25,6 +24,7 @@ from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
 from src.apply.plan import PlanError
 from src.apply.schema import parse_schema
+from tests import factories
 
 from .conftest import FIXTURES, load_fixture, load_html
 
@@ -55,19 +55,13 @@ def repo(tmp_path, monkeypatch, tailor_dir):
             self.out_dir = tailor_dir
 
         def write_clean(self, **rows):
-            pd.DataFrame(
-                [{"job_id": j, "url": u} for j, u in rows.items()]
-            ).to_parquet(clean)
+            factories.write_clean(clean, *({"job_id": j, "url": u} for j, u in rows.items()))
 
         def write_state(self, job_id=JOB_ID, url=GH_URL, tailored_dirs=None,
                         state="tailored"):
-            d = pipeline / job_id
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "state.yaml").write_text(yaml.safe_dump({
-                "job_id": job_id, "company": "Bushing Group", "title": "Widget Engineer",
-                "state": state, "url": url,
-                "tailored_dirs": [tailored] if tailored_dirs is None else tailored_dirs,
-            }), encoding="utf-8")
+            factories.write_state(
+                pipeline, job_id, state, company="Bushing Group", title="Widget Engineer", url=url,
+                tailored_dirs=[tailored] if tailored_dirs is None else tailored_dirs)
 
     return Repo()
 
@@ -261,10 +255,10 @@ class TestSalaryFor:
     posting's parsed compensation and the lane's `salary_expectation`."""
 
     def _write_clean(self, path, job_id, salary_min, salary_currency):
-        pd.DataFrame([{
+        factories.write_clean(path, {
             "job_id": job_id, "url": GH_URL,
             "salary_min": salary_min, "salary_currency": salary_currency,
-        }]).to_parquet(path)
+        })
 
     def _verticals(self, tmp_path, monkeypatch, expectation):
         path = tmp_path / "verticals.yaml"
@@ -1655,8 +1649,8 @@ class TestEachLessonMustHold:
 
 def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
     clean = tmp_path / "clean.parquet"
-    pd.DataFrame([{"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0,
-                   "salary_currency": "USD"}]).to_parquet(clean)
+    factories.write_clean(clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0,
+                                  "salary_currency": "USD"})
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
     (tmp_path / "verticals.yaml").write_text(yaml.safe_dump({"verticals": {"example_primary": {
         "salary_expectation": {"markup_pct": 10, "fallback": 110000}}}}), encoding="utf-8")
@@ -1677,10 +1671,10 @@ def test_an_optional_export_control_question_takes_no_override(answers, tailor_d
 
 def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
     clean = tmp_path / "clean.parquet"
-    pd.DataFrame([{"job_id": "a", "url": "", "jd_text": "Our team in India builds tools. "
-                   "This role is remote and you must be based in the United States."},
-                  {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."}]
-                 ).to_parquet(clean)
+    factories.write_clean(clean,
+                          {"job_id": "a", "url": "", "jd_text": "Our team in India builds tools. "
+                           "This role is remote and you must be based in the United States."},
+                          {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."})
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
     assert apply_cli._jd_country("a") == "United States"
     assert apply_cli._jd_country("b") == ""

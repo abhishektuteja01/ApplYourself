@@ -5,11 +5,10 @@ import json
 import os
 from datetime import datetime, timedelta
 
-import pandas as pd
-
 from src import summary as M
 from src import synonyms_cli
 from src.discovery import digest
+from tests.factories import scored_rows, write_clean
 
 SINCE = datetime(2026, 9, 28, 15, 45)
 
@@ -78,8 +77,8 @@ def test_errors_are_capped_with_a_count():
 
 
 def _scored(rows):
-    return pd.DataFrame([{"scored_at": at, "scored_by_model": model, "suggested_action": act}
-                         for at, model, act in rows])
+    return scored_rows(*({"scored_at": at, "scored_by_model": model, "suggested_action": act}
+                         for at, model, act in rows))
 
 
 def test_scoring_counts_tonights_rows_and_flags_an_open_run():
@@ -344,7 +343,7 @@ def test_the_whole_summary_from_a_night_of_records(tmp_path, monkeypatch):
         "discover code=0 seconds=600 \nscore code=0 seconds=300 merged=2 keepers=9\n"
         "tailor code=0 seconds=60 1/2 tailored\n", encoding="utf-8")
     (run / "tailor_results.txt").write_text("a1 ok\nb2 fail\n", encoding="utf-8")
-    pd.DataFrame([{"job_id": "b2", "company": "Beta", "title": "Eng"}]).to_parquet(M.CLEAN)
+    write_clean(M.CLEAN, {"job_id": "b2", "company": "Beta", "title": "Eng"})
     _scored([("2026-09-29T01:00:00", "score-judge:x", "tailor")]).to_parquet(M.SCORED)
     reports = digest.JOBS_RUNS
     reports.mkdir(parents=True)
