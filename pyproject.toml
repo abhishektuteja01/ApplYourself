@@ -111,11 +111,10 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM", "BLE", "RUF"]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "BLE", "RUF", "DTZ"]
 # RUF001-003: dashes and smart quotes are on purpose. The rest would force
 # behavior-changing (B905, UP042) or noisy (E501, RUF005, SIM105, SIM108, SIM905) rewrites.
 ignore = ["E501", "RUF001", "RUF002", "RUF003", "B905", "UP042", "RUF005", "SIM105", "SIM108", "SIM905"]
-external = ["DTZ"]  # keep the deliberate local-date noqa marks until DTZ is selected
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["RUF012"]  # fake classes hold fixture lists
+"tests/**" = ["RUF012", "DTZ"]  # fake classes hold fixture lists; fixtures pin naive local times

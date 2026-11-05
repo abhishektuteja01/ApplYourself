@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date
 
 from src import score_store, shortlist
 from src.discovery.config import load_config
 from src.score_filter import CountryRule, load_scoring
-from src.shared import paths, verticals
+from src.shared import clock, paths, verticals
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED
@@ -29,7 +28,7 @@ SHORTLIST = paths.SHORTLIST
 
 def _shortlist(cfg) -> str:
     path, keepers = shortlist.write(
-        SCORED, CLEAN, paths.PIPELINE, SHORTLIST, cfg, date.today().isoformat()
+        SCORED, CLEAN, paths.PIPELINE, SHORTLIST, cfg, clock.today().isoformat()
     )
     shown = path.relative_to(paths.REPO_ROOT) if path.is_relative_to(paths.REPO_ROOT) else path
     return f"shortlist={shown} keepers={keepers}"

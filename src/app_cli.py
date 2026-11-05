@@ -47,7 +47,7 @@ from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
 from src.docx_render import ResumeContentError, TemplateError, export_pdf, render_resume
 from src.session_schema import ProblemCode
-from src.shared import paths, verticals
+from src.shared import clock, paths, verticals
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED
@@ -229,7 +229,7 @@ def _load_row(job_id: str) -> dict:
 
 
 def cmd_new(job_id: str, today: str | None = None) -> dict:
-    today = today or date.today().isoformat()  # noqa: DTZ011 - the user's local date
+    today = today or clock.today().isoformat()
     if not (PROFILE / "resume_template.docx").is_file():
         raise AppError("profile/resume_template.docx missing.")
     resume_model.load_sources()
@@ -515,7 +515,7 @@ def cmd_build_letter(
     if problems:
         return {"ok": False, "problems": problems}, 2
 
-    today = today or date.today()  # noqa: DTZ011 - the user's local date
+    today = today or clock.today()
     content = {
         "salutation": salutation,
         "body": body,

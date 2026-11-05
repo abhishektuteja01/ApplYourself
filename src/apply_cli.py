@@ -79,7 +79,7 @@ from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
 from src.apply.plan import Override, Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError
-from src.shared import paths
+from src.shared import clock, paths
 from src.shared.http_client import CareersError
 from src.shared.identity import normalize_company
 
@@ -1838,7 +1838,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    started = datetime.now()
+    started = clock.now()
     # The caller owns the list and the report is rewritten after every role, so
     # a crash — or a Ctrl-C — mid-walk still leaves a complete record of every
     # application that already went out.

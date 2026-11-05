@@ -25,12 +25,12 @@ from __future__ import annotations
 import copy
 import os
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import yaml
 
 from src.apply import answers as A
+from src.shared import clock
 
 DEFAULT_PATH = A.DEFAULT_PATH
 
@@ -90,7 +90,7 @@ def write(data: dict, path: Path | None = None) -> Path:
     if p.exists():
         history = p.parent / ".bank_history"
         history.mkdir(exist_ok=True)
-        stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
+        stamp = clock.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
         (history / f"{p.stem}.{stamp}.yaml").write_text(
             p.read_text(encoding="utf-8"), encoding="utf-8"
         )

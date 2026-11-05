@@ -19,12 +19,11 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 
 from src import apply_cli, track_cli
 from src.apply import sheet
-from src.shared import paths
+from src.shared import clock, paths
 
 TRIAGE = paths.JOBS / "apply_triage.json"
 
@@ -103,7 +102,7 @@ def _fill(job_id: str, headless: bool) -> dict:
 
 
 def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
-    started = datetime.now()
+    started = clock.now()
     result: dict = {
         "at": started.isoformat(timespec="seconds"),
         "ready": [],

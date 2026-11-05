@@ -26,8 +26,8 @@ from src.discovery import store as S
 from src.discovery.config import load_config
 from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.score_filter import load_trim
+from src.shared import clock, paths, title_gate, verticals
 from src.shared import http_client as http
-from src.shared import paths, title_gate, verticals
 from src.shared.job_boards import parse_posting_url
 from src.state_io import load_state_index
 
@@ -147,7 +147,7 @@ def ingest(
         )
     # A deliberate add: exempt from the title gate like an inbox clip.
     row.update(vertical=lane, source="manual")
-    today = pd.Timestamp.today().normalize()
+    today = pd.Timestamp(clock.today())
     state_index = load_state_index(p.pipeline)
     batch = S.Batch()
     batch.upsert(row)

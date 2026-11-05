@@ -29,7 +29,6 @@ import re
 import time
 from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
-from datetime import datetime
 from pathlib import Path
 
 from src.apply import bank
@@ -38,7 +37,7 @@ from src.apply.browser import launch as _launch
 from src.apply.browser import require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.apply.reconcile import MergedField, MergedOption
-from src.shared import paths
+from src.shared import clock, paths
 from src.shared.job_boards import DRIVER_NAMES
 
 log = logging.getLogger(__name__)
@@ -2184,7 +2183,7 @@ def capture_submit_evidence(driver, plan, result: FillResult | None = None) -> P
     turn a submitted application into a reported error.
     """
     try:
-        stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        stamp = clock.now().strftime("%Y-%m-%dT%H-%M-%S")
         out_dir = paths.APPLICATIONS / "apply_runs" / "evidence"
         out_dir.mkdir(parents=True, exist_ok=True)
         stem = out_dir / f"{stamp}_{plan.job_id or 'unknown'}"

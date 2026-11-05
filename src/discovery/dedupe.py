@@ -21,7 +21,7 @@ from rapidfuzz.utils import default_process
 
 from src.discovery import parse
 from src.score_filter import load_trim
-from src.shared import identity, jd_trim, paths
+from src.shared import clock, identity, jd_trim, paths
 from src.state_io import load_state_index
 
 TITLE_MIN = 90
@@ -434,7 +434,7 @@ def main(argv=None) -> int:
 
     store = load_store(args.jobs_dir / paths.STORE.name)
     states = load_state_index(paths.PIPELINE)
-    rows = find_pairs(store, load_trim(), str(pd.Timestamp.today().date()))
+    rows = find_pairs(store, load_trim(), clock.today().isoformat())
     print("pairs by reason:", dict(Counter(r["reason"] for r in rows)))
     both = [r for r in rows if r["job_id"] in states and r["other"] in states]
     one = [r for r in rows if (r["job_id"] in states) != (r["other"] in states)]

@@ -39,7 +39,7 @@ from src.discovery.sources.boards.workday import WorkdayLane
 from src.discovery.sources.feed.stapply import StapplyLane
 from src.discovery.sources.inbox import InboxLane
 from src.score_filter import load_trim
-from src.shared import http_client, paths, verticals
+from src.shared import clock, http_client, paths, verticals
 from src.shared.job_boards import ATS_SOURCE_NAMES
 from src.shared.parquet_io import write_parquet
 from src.state_io import load_state_index
@@ -52,7 +52,7 @@ FLUSH_SECONDS = 300
 
 
 def current_run_id(now: datetime | None = None) -> str:
-    return (now or datetime.now()).strftime(RUN_ID_FMT)
+    return (now or clock.now()).strftime(RUN_ID_FMT)
 
 
 @dataclass
@@ -343,7 +343,7 @@ def main(argv=None) -> int:
             + "\n".join(f"  {p}" for p in problems)
         )
 
-    started = datetime.now()
+    started = clock.now()
     run_id = current_run_id(started)
     today = pd.Timestamp(started.date())
     p = Paths(jobs=args.jobs_dir, boards_dir=args.boards_dir)

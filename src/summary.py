@@ -26,7 +26,7 @@ from src import app_cli, state_io, synonyms_cli
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
-from src.shared import paths
+from src.shared import clock, paths
 
 LOGS = paths.REPO_ROOT / "logs"
 OUT = paths.REPO_ROOT / "summary.md"
@@ -99,8 +99,8 @@ def _ts(text: str) -> datetime | None:
 def since_of(run_dir: Path | None) -> datetime:
     m = _STAMP.search(run_dir.name) if run_dir else None
     if m:
-        return datetime.strptime(m.group(0), "%Y-%m-%d_%H%M%S")
-    return datetime.combine(datetime.now().date(), datetime.min.time())
+        return datetime.strptime(m.group(0), "%Y-%m-%d_%H%M%S")  # noqa: DTZ007 - run-dir stamps are local time
+    return datetime.combine(clock.today(), datetime.min.time())
 
 
 def latest_run_dir() -> Path | None:
@@ -529,7 +529,7 @@ def _answers(items: dict) -> list[str]:
 
 def _report_time(stem: str) -> datetime | None:
     try:
-        return datetime.strptime(stem, "%Y-%m-%dT%H-%M-%S")
+        return datetime.strptime(stem, "%Y-%m-%dT%H-%M-%S")  # noqa: DTZ007 - report stamps are local time
     except ValueError:
         return None
 
@@ -617,7 +617,7 @@ def sheet_line(check: dict[str, list[str]]) -> list[str]:
 def _snapshots(since: datetime) -> tuple[list[tuple[str, dict]], dict[str, str]]:
     plans, bad = [], {}
     for path in sorted(APPLICATIONS.glob("*/*/plan_after.json")):
-        if datetime.fromtimestamp(path.stat().st_mtime) < since:
+        if datetime.fromtimestamp(path.stat().st_mtime) < since:  # noqa: DTZ006 - local, like `since`
             continue
         job = re.search(r"_([0-9a-f]{8})(?:_v\d+)?$", path.parent.name)
         job = job[1] if job else path.parent.name

@@ -32,7 +32,7 @@ from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.discovery.sources.boards import eightfold as ef
 from src.discovery.sources.boards import workday as wd
 from src.discovery.sources.boards.base import job_items, load_boards
-from src.shared import paths
+from src.shared import clock, paths
 from src.shared.http_client import CareersError, fetch_json
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
@@ -86,7 +86,7 @@ def workday_summary(payload) -> tuple[int, date | None]:
     total = payload.get("total")
     count = total if isinstance(total, int) and total >= len(items) else len(items)
     return count, _newest(
-        relative_posted_date(i.get("postedOn") or "", date.today()) for i in items
+        relative_posted_date(i.get("postedOn") or "", clock.today()) for i in items
     )
 
 
@@ -289,7 +289,7 @@ def parse_args(argv):
 def main(argv=None) -> int:
     args = parse_args(argv or sys.argv[1:])
     lanes = tuple(dict.fromkeys(args.ats)) if args.ats else DEFAULT_ATS
-    today = date.today()
+    today = clock.today()
     out = paths.REPO_ROOT / args.out if args.out else OUT_DIR / f"slug_audit_{today}.csv"
 
     cfg = load_config()

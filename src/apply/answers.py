@@ -33,7 +33,7 @@ from pathlib import Path
 import yaml
 
 from src.apply.reconcile import MergedField
-from src.shared import paths
+from src.shared import clock, paths
 
 PROFILE = paths.PROFILE
 DEFAULT_PATH = PROFILE / "application_answers.yaml"
@@ -1554,7 +1554,7 @@ def _resolve_repeating(
 
 def _today() -> date:
     """Indirected so a test can pin the date without freezing the clock."""
-    return date.today()
+    return clock.today()
 
 
 def demographic_topic(field: MergedField) -> str:

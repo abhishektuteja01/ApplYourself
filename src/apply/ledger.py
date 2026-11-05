@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
+
+from src.shared import clock
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def append(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     rec = {
-        "at": at or datetime.now().isoformat(timespec="seconds"),
+        "at": at or clock.now().isoformat(timespec="seconds"),
         "job_id": job_id,
         "status": status,
         "company": company,

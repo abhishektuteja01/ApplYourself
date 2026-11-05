@@ -39,7 +39,7 @@ from src.score_filter import (
     wrap,
     years_required,
 )
-from src.shared import paths, verticals
+from src.shared import clock, paths, verticals
 from src.shared.parquet_io import locked, write_parquet
 from src.state_io import ACTIVE_STATES, load_state_index
 
@@ -309,7 +309,7 @@ def start(
             "lines": judge_lines(run, staging),
             "resumed": True,
         }
-    now = now or datetime.now()
+    now = now or clock.now()
     vcfg = verticals.get_config()
     clean = pd.read_parquet(clean_path)
     if not rescore and not job_ids:
@@ -556,7 +556,7 @@ def finish(
             "bad": {},
             "lines": [],
         }
-    now = now or datetime.now()
+    now = now or clock.now()
     lanes = verticals.get_config().verticals
     rows, bad, done = [], {}, []
     for name, meta in run["slices"].items():

@@ -25,14 +25,13 @@ import os
 import shutil
 import sys
 from collections import Counter
-from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 import yaml
 
 from src.resume_model import parse_entries
-from src.shared import paths
+from src.shared import clock, paths
 from src.shared.config_schema import load_automation
 
 BULLETS = paths.PROFILE / "bullets.md"
@@ -71,11 +70,11 @@ def _norm(text: str) -> str:
 
 
 def _today() -> str:
-    return date.today().isoformat()
+    return clock.today().isoformat()
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return clock.now().isoformat(timespec="seconds")
 
 
 def _new_job_ids() -> list[str]:
@@ -178,7 +177,7 @@ def _remove_phrase(text: str, entry: str, phrase: str) -> tuple[str, bool]:
 
 def _backup(path: Path) -> None:
     HISTORY.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    stamp = clock.now().strftime("%Y%m%dT%H%M%S%f")
     shutil.copy2(path, HISTORY / f"{path.name}.{stamp}")
     old = sorted(HISTORY.glob(f"{path.name}.*"))
     for f in old[:-HISTORY_KEEP]:
@@ -401,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
                 if LOG.exists()
                 else []
             )
-            print(sum(r["date"] == date.today().isoformat() for r in rows))
+            print(sum(r["date"] == clock.today().isoformat() for r in rows))
         else:
             print(answer(args.id, args.reply))
     except (SynonymsError, OSError, yaml.YAMLError) as exc:

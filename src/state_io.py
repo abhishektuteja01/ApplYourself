@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from src.shared import clock
 from src.shared.parquet_io import locked
 from src.shared.schemas import STATE_SCHEMA_VERSION
 
@@ -162,7 +163,7 @@ def stamp_schema(state_path: Path) -> bool:
 
 
 def _now_iso(now: datetime | None = None) -> str:
-    return (now or datetime.now()).replace(microsecond=0).isoformat()
+    return (now or clock.now()).replace(microsecond=0).isoformat()
 
 
 # ---------------------------------------------------------------
