@@ -1,0 +1,6 @@
+salutation: "Dear Hiring Team,"
+uses: [B-WID-01, B-WID-03, B-SPR-01]
+body:
+  - "Acme Widgets wants an analyst who owns the morning report across four plants, and that is the work I did for a national manufacturing client."
+  - "Each morning I reconciled line output against the production plan and flagged variances to the operations lead. I also rebuilt the gizmo ledger reconciliation in SQL against a Postgres replica, which cut the monthly close from three days to one."
+  - "On the side of data quality, I built a Python validation harness that scored 12,000 historical sprocket measurements against published compliance bands. I would bring the same habits to your plant performance team."

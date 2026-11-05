@@ -1,0 +1,7 @@
+researched_at: 2026-09-28
+sources:
+  - https://acme-widgets.example/about
+uses: [B-WID-01, B-WID-03]
+why_company: "Acme Widgets runs its plants on two shifts and keeps a written record of why each report looks the way it does. I like a team that treats its morning numbers as something operators should trust."
+why_role: "The role owns daily production reporting across four plants. I did that work for a national manufacturing client, and I rebuilt a ledger reconciliation in SQL to cut the monthly close from three days to one."
+what_interests_you_about_product: null
