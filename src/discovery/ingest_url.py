@@ -20,13 +20,14 @@ import sys
 
 import pandas as pd
 
-from src import ats_http as http
-from src import paths, verticals
-from src.ats_registry import parse_posting_url
-from src.discovery import normalize as N
+from src.shared import http_client as http
+from src.shared import paths, verticals
+from src.shared.job_boards import parse_posting_url
+from src.discovery import parse
+from src.shared import title_gate
 from src.discovery import store as S
 from src.discovery.config import load_config
-from src.discovery.sources import ashby, greenhouse, lever
+from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.score_filter import load_trim
 from src.state_io import load_state_index
 
@@ -89,14 +90,15 @@ def fetch_page_text(url: str) -> str:
         raise IngestError(f"ERROR: HTTP {status} fetching {url} — the posting may be gone "
                           f"or behind a login.")
     # The page's JobPosting block when it has one: the JD without the nav.
-    return N.jobposting_text(body) or N.html_to_text(body)
+    return parse.jobposting_text(body) or parse.html_to_text(body)
 
 
 def ingest(url: str, *, vertical: str | None = None, company: str | None = None,
            title: str | None = None, jobs_dir=None) -> dict:
     """Fetch, save into the store, rebuild clean.parquet, return the row."""
-    from src.discovery.location import Allowlist
-    from src.discovery.run import Paths, rebuild_view
+    from src.shared.location.allowlist import Allowlist
+    from src.discovery.live_view import rebuild_view
+    from src.discovery.run import Paths
 
     p = Paths(jobs=jobs_dir or paths.JOBS)
     if not p.store.exists():
@@ -104,13 +106,13 @@ def ingest(url: str, *, vertical: str | None = None, company: str | None = None,
                           f"`uv run discover --deadline-hours 0` first.")
     row = fetch_row(url, company=company, title=title)
     jd = row["jd_text"].strip()
-    if len(jd) < N.MIN_JD_CHARS:
+    if len(jd) < parse.MIN_JD_CHARS:
         raise IngestError(
             f"ERROR: JD text extracted from {url} is {len(jd)} chars — below the "
-            f"{N.MIN_JD_CHARS}-char floor. The page may be JS-rendered or the posting closed. "
+            f"{parse.MIN_JD_CHARS}-char floor. The page may be JS-rendered or the posting closed. "
             f"Paste the JD into inbox/ as a manual clip instead.")
     vcfg = verticals.get_config()
-    lane = vertical or N.classify_vertical_from_title(row["title"])
+    lane = vertical or title_gate.classify_vertical_from_title(row["title"])
     if lane not in vcfg.verticals:
         names = sorted(vcfg.verticals)
         raise IngestError(f"ERROR: vertical {vertical!r} is not configured. Configured verticals: {names}"

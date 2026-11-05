@@ -25,14 +25,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from src import paths
-from src.ats_http import CareersError, fetch_json
+from src.shared import paths
+from src.shared.http_client import CareersError, fetch_json
 from src.discovery.config import load_config, pacing_floor
-from src.discovery.normalize import iso_date, ms_date, relative_posted_date
-from src.discovery.sources import ashby, greenhouse, lever
-from src.discovery.sources import eightfold as ef
-from src.discovery.sources import workday as wd
-from src.discovery.sources.boards import job_items, load_boards
+from src.discovery.parse import iso_date, ms_date, relative_posted_date
+from src.discovery.sources.boards import ashby, greenhouse, lever
+from src.discovery.sources.boards import eightfold as ef
+from src.discovery.sources.boards import workday as wd
+from src.discovery.sources.boards.base import job_items, load_boards
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
 DEFAULT_ATS = ("ashby", "greenhouse", "lever")

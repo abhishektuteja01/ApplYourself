@@ -12,8 +12,8 @@ import pytest
 
 from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
-from src.discovery.sources import boards as B
-from src.discovery.sources import oracle_hcm, stapply
+from src.discovery.sources.boards import base as B
+from src.discovery.sources.feed import oracle, stapply
 
 TODAY = pd.Timestamp("2026-10-23")
 JD = "Build and ship retrieval systems for clinical trial data. " * 6
@@ -133,7 +133,7 @@ def _manifest(tmp_path, feed, hours_old=2, sha=None):
 
 def _wire(monkeypatch, manifest, feed):
     downloads = []
-    monkeypatch.setattr(stapply.ats_http, "fetch_json", lambda url, deadline_ts=None: manifest)
+    monkeypatch.setattr(stapply.http_client, "fetch_json", lambda url, deadline_ts=None: manifest)
 
     def fake_download(url, dest, deadline_ts=None):
         downloads.append(url)
@@ -144,7 +144,7 @@ def _wire(monkeypatch, manifest, feed):
             shutil.copy(feed, dest)
         return dest.stat().st_size
 
-    monkeypatch.setattr(stapply.ats_http, "download", fake_download)
+    monkeypatch.setattr(stapply.http_client, "download", fake_download)
     return downloads
 
 
@@ -173,7 +173,7 @@ def _page(desc):
 
 def test_run_saves_known_new_and_page_read_rows(monkeypatch, cfg, tmp_path, feed):
     _wire(monkeypatch, _manifest(tmp_path, feed), feed)
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: (200, _page("<p>" + JD + "</p>")))
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, _page("<p>" + JD + "</p>")))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     known = {"greenhouse|1": {"updated_at": ""}}
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path, known)
@@ -187,7 +187,7 @@ def test_run_saves_known_new_and_page_read_rows(monkeypatch, cfg, tmp_path, feed
 
 def test_a_page_with_no_job_posting_block_leaves_the_row_out(monkeypatch, cfg, tmp_path, feed):
     _wire(monkeypatch, _manifest(tmp_path, feed), feed)
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: (200, "<html>app shell</html>"))
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, "<html>app shell</html>"))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
     lane.prepare(crawl)
@@ -218,7 +218,7 @@ def test_a_site_whose_pages_never_read_is_given_up_for_the_night(monkeypatch, cf
         calls.append(url)
         return 200, _page("<p>" + JD + "</p>") if "good" in url else "<html></html>"
 
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", fetch)
+    monkeypatch.setattr(stapply.http_client, "fetch_page", fetch)
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     stats = lane.run(crawl)
@@ -236,14 +236,14 @@ def test_the_lane_names_companies_from_the_feeds_list(monkeypatch, cfg, tmp_path
 
 def test_a_missing_company_list_costs_names_not_the_night(monkeypatch, cfg, tmp_path, feed):
     _wire(monkeypatch, _manifest(tmp_path, feed), feed)
-    real = stapply.ats_http.download
+    real = stapply.http_client.download
 
     def no_list(url, dest, deadline_ts=None):
         if url.endswith("companies.parquet"):
             raise stapply.CareersError("HTTP 503")
         return real(url, dest, deadline_ts)
 
-    monkeypatch.setattr(stapply.ats_http, "download", no_list)
+    monkeypatch.setattr(stapply.http_client, "download", no_list)
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
     lane.prepare(crawl)
     assert lane.failure is None and len(lane.rows) == 4
@@ -267,7 +267,7 @@ def test_a_slug_company_is_named_from_its_page_once(monkeypatch, cfg, tmp_path):
     path = _one_row_feed(tmp_path, url="https://careers-lennox.icims.com/jobs/1/job",
                          ats_type="icims", company="lennox")
     calls = []
-    monkeypatch.setattr(stapply.ats_http, "fetch_page",
+    monkeypatch.setattr(stapply.http_client, "fetch_page",
                         lambda url: calls.append(url) or (200, _employer_page("Lennox International")))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
@@ -281,7 +281,7 @@ def test_one_page_read_gives_both_the_jd_and_the_name(monkeypatch, cfg, tmp_path
     path = _one_row_feed(tmp_path, url="https://careers-lennox.icims.com/jobs/1/job",
                          ats_type="icims", company="lennox", description="Short.")
     calls = []
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: calls.append(url) or (
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: calls.append(url) or (
         200, _employer_page("Lennox International", "<p>" + JD + "</p>")))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
@@ -294,7 +294,7 @@ def test_one_page_read_gives_both_the_jd_and_the_name(monkeypatch, cfg, tmp_path
 def test_a_known_row_keeps_its_better_stored_name(monkeypatch, cfg, tmp_path):
     path = _one_row_feed(tmp_path, url="https://careers-lennox.icims.com/jobs/1/job",
                          ats_type="icims", company="lennox")
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: pytest.fail("no read needed"))
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no read needed"))
     key = S.make_posting(url="https://careers-lennox.icims.com/jobs/1/job")["posting_key"]
     lane, crawl = read(cfg, tmp_path, path, known={key: {"updated_at": "", "company": "Lennox International"}})
     lane.run(crawl)
@@ -304,7 +304,7 @@ def test_a_known_row_keeps_its_better_stored_name(monkeypatch, cfg, tmp_path):
 def test_a_page_with_no_employer_leaves_the_name(monkeypatch, cfg, tmp_path):
     path = _one_row_feed(tmp_path, url="https://obyteshr.bamboohr.com/careers/37",
                          ats_type="bamboohr", company="obyteshr")
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: (200, "<html></html>"))
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, "<html></html>"))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     lane.run(crawl)
@@ -318,7 +318,7 @@ def test_giving_up_counts_a_whole_site_not_one_subdomain(monkeypatch, cfg, tmp_p
     path = tmp_path / "many.parquet"
     pd.DataFrame(rows).to_parquet(path)
     calls = []
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: calls.append(url) or (200, ""))
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: calls.append(url) or (200, ""))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     stats = lane.run(crawl)
@@ -333,8 +333,8 @@ def test_an_oracle_row_reads_its_jd_from_the_requisition_api(monkeypatch, cfg, t
     path = _one_row_feed(tmp_path, url=ORACLE.format(42), ats_type="oracle",
                          company="JPMorgan Chase", description="Short.")
     calls = []
-    monkeypatch.setattr(stapply.ats_http, "fetch_page", lambda url: pytest.fail("no page read"))
-    monkeypatch.setattr(stapply.ats_http, "fetch_json", lambda url, deadline_ts=None: calls.append(url) or {
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page read"))
+    monkeypatch.setattr(stapply.http_client, "fetch_json", lambda url, deadline_ts=None: calls.append(url) or {
         "items": [{"ExternalDescriptionStr": "<p>" + JD + "</p>", "CorporateDescriptionStr": "<p>Blurb.</p>"}]})
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
@@ -355,7 +355,7 @@ def test_a_tenant_coded_oracle_company_is_named_from_its_site_once(monkeypatch, 
     path = tmp_path / "oracle.parquet"
     pd.DataFrame(rows).to_parquet(path)
     calls = []
-    monkeypatch.setattr(stapply.ats_http, "fetch_page",
+    monkeypatch.setattr(stapply.http_client, "fetch_page",
                         lambda url: calls.append(url) or (200, _site_page("American Express")))
     monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
@@ -375,4 +375,4 @@ def test_a_tenant_coded_oracle_company_is_named_from_its_site_once(monkeypatch, 
     ("Candidate Experience site", ""),
 ])
 def test_a_site_label_is_cut_to_the_employer(label, expected):
-    assert oracle_hcm.site_name(_site_page(label)) == expected
+    assert oracle.site_name(_site_page(label)) == expected

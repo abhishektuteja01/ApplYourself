@@ -15,7 +15,8 @@ import argparse
 import sys
 from datetime import date
 
-from src import paths, score_store, shortlist, verticals
+from src.shared import paths, verticals
+from src import score_store, shortlist
 from src.discovery.config import load_config
 from src.score_filter import CountryRule, load_scoring
 

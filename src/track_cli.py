@@ -23,7 +23,7 @@ import argparse
 import sys
 
 import pandas as pd
-from src import paths
+from src.shared import paths
 
 from src.state_io import (
     VALID_STATES,

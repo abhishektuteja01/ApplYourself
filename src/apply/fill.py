@@ -30,12 +30,12 @@ from dataclasses import dataclass, field as dc_field, replace
 from datetime import datetime
 from pathlib import Path
 
-from src import paths
+from src.shared import paths
 from src.apply.answers import Answers, resolve
 from src.apply.browser import launch as _launch, require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.apply.reconcile import MergedField, MergedOption
-from src.ats_registry import DRIVER_NAMES
+from src.shared.job_boards import DRIVER_NAMES
 
 log = logging.getLogger(__name__)
 

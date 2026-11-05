@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from src import paths
+from src.shared import paths
 from src.apply import browser
 from src.apply import fill as F
 from src.apply.fill import FillError, FillResult, fill_plan
@@ -972,7 +972,7 @@ class TestTheDriverSetAndTheShortlistAgree:
         `fill._DRIVER_NAMES`. If those drift, the shortlist promises a
         submission the queue will not make — or hides one it would."""
         from src.apply.detect import SUBMITTABLE_ATS
-        from src.ats_registry import SUBMITTABLE_SOURCES
+        from src.shared.job_boards import SUBMITTABLE_SOURCES
         assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_ATS)
         # both derive from the one board table; pin that too
         assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_SOURCES)

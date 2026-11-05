@@ -8,9 +8,9 @@ from pathlib import Path
 
 import yaml
 
-from src import paths
-from src.discovery import normalize as N
-from src.discovery.sources.boards import LaneStats
+from src.shared import paths
+from src.shared import title_gate
+from src.discovery.sources.boards.base import LaneStats
 from src.discovery.store import make_posting
 
 log = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def parse_clip(path: Path) -> dict | None:
         salary_currency=meta.get("salary_currency") or "",
         employment_type=meta.get("employment_type") or "",
         seniority_raw=meta.get("seniority") or "",
-        vertical=meta.get("vertical") or N.classify_vertical_from_title(title),
+        vertical=meta.get("vertical") or title_gate.classify_vertical_from_title(title),
     )
 
 

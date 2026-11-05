@@ -1,10 +1,15 @@
 ---
 paths:
   - "src/discovery/**"
-  - "src/ats_http.py"
-  - "src/ats_registry.py"
+  - "src/shared/http_client.py"
+  - "src/shared/job_boards.py"
+  - "src/shared/identity.py"
+  - "src/shared/title_gate.py"
+  - "src/shared/location/**"
   - "scripts/audit_slugs.py"
   - "tests/discovery/**"
+  - "tests/shared/test_identity.py"
+  - "tests/shared/test_location.py"
   - "profile/discovery.yaml"
   - "profile/discovery.example.yaml"
   - "data/universe/**"
@@ -22,9 +27,9 @@ store), which only `summary` and `app dupes` read. `jobs/raw/` holds nightly deb
 classified listing plus its gate verdict), pruned after `raw_keep_days`; nothing
 in the pipeline reads them.
 
-## The store (`store.py`)
+## The store (`store.py`, job_id matching in `dedupe.py`)
 
-One row per posting, keyed by `posting_key` (`normalize.posting_key`): a board
+One row per posting, keyed by `posting_key` (`identity.posting_key`): a board
 url keys on the board's own posting id, LinkedIn on its numeric id, Indeed on
 `jk`, anything else on host + path + query minus known tracking params. Never
 strip every param: `gh_jid`, `jk` and unknown careers pages carry the id there.
@@ -54,14 +59,14 @@ Inherited ids (a pair whose id is not its own hash) are legitimate: they carry
 merges from before the store. A hash that collides with a different pair drops
 the newcomer and names it in the report.
 
-Writes go through `store.flush` / `write_view`, under `parquet_io.locked`. The
+Writes go through `store.flush` / `live_view.write_view`, under `parquet_io.locked`. The
 store is saved before board state, so a board is never marked checked while
 its postings are missing.
 
 `last_score` remembers a job's fit_score after `/score` prunes it; without it an
 expired low scorer comes back unscored and is judged again.
 
-## The live view (`build_view`)
+## The live view (`live_view.py`)
 
 A posting is in the view when seen within `live_days`, and (search lanes only)
 posted within `search_max_age_days` or undated. Then the title gate and the
@@ -72,7 +77,7 @@ newest sighting, then the longest JD. Retention runs from the job's earliest
 Tracked roles skip the search-age cut and retention; `ACTIVE_STATES` roles are
 always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
 
-## Boards (`sources/boards.py`)
+## Boards (`sources/boards/base.py`)
 
 `data/universe/boards.csv` (tracked, license-clean) and `boards.local.csv`
 (gitignored, yours) are `ats,name,slug,active`. One board per (ats, slug)
@@ -91,7 +96,7 @@ so each tenant is searched with each lane's first search term. Vendor modules
 only list a board and fetch one posting. The loop, the gate, known-vs-new,
 detail fetching and board results live in `BoardLane` once.
 
-## The feed (`sources/stapply.py`)
+## The feed (`sources/feed/stapply.py`)
 
 One nightly parquet of public postings from many ATSs and job sites. `prepare`
 runs before the other lanes: a snapshot older than `max_snapshot_age_hours` is
@@ -108,13 +113,13 @@ still `looks_like_slug`, read from the page's schema.org `JobPosting` block
 better stored name is never replaced by a slug; a site (across subdomains) whose
 first ten reads tonight give nothing is not read again tonight.
 An Oracle Recruiting Cloud row's JD comes from its requisition-detail API
-(`oracle_hcm`), since its job page is built in the browser; its key is tenant +
+(`feed/oracle.py`), since its job page is built in the browser; its key is tenant +
 requisition id. One named only by its tenant code ("Egug") is named from its
 candidate site page's `og:site_name`, read once per site a night. Feed rows are
 board rows to the view: no search-age cut.
 
 Every source parses flags, salaries and placeholder company names through
-`normalize.as_bool`, `yearly_salary` and `normalize_company`.
+`parse.as_bool`, `parse.yearly_salary` and `identity.normalize_company`.
 
 ## Locations
 

@@ -1,9 +1,9 @@
 """Lever: one call per board, JDs included."""
 from __future__ import annotations
 
-from src.ats_http import fetch_json
-from src.discovery import normalize as N
-from src.discovery.sources.boards import Board, BoardLane
+from src.shared.http_client import fetch_json
+from src.discovery import parse
+from src.discovery.sources.boards.base import Board, BoardLane
 from src.discovery.store import make_posting
 
 
@@ -29,14 +29,14 @@ def posting_from(item: dict, company: str) -> dict | None:
         content = (section.get("content") or "").strip()
         if content:
             parts.append(f"<h3>{heading}</h3>\n{content}" if heading else content)
-    jd = N.html_to_text("\n\n".join(parts)) if parts else N.html_to_text(item.get("descriptionPlain"))
+    jd = parse.html_to_text("\n\n".join(parts)) if parts else parse.html_to_text(item.get("descriptionPlain"))
     return make_posting(
         source="lever", company=company, title=title, url=url, jd_text=jd,
         location_raw=categories.get("location") or "",
-        posted_date=N.ms_date(item.get("createdAt")),
+        posted_date=parse.ms_date(item.get("createdAt")),
         remote_flag=(item.get("workplaceType") or "").strip().lower() == "remote",
-        salary_min=N.yearly_salary(salary.get("min"), salary.get("interval")),
-        salary_max=N.yearly_salary(salary.get("max"), salary.get("interval")),
+        salary_min=parse.yearly_salary(salary.get("min"), salary.get("interval")),
+        salary_max=parse.yearly_salary(salary.get("max"), salary.get("interval")),
         salary_currency=salary.get("currency") or "",
         employment_type=categories.get("commitment") or "",
     )

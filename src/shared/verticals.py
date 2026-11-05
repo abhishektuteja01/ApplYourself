@@ -11,7 +11,7 @@ Consumers (discovery, cleaning, score_filter, score_store) must call
 captured into module constants — so test injection via `set_config()`
 always wins regardless of import order.
 
-CLI: `uv run python -m src.verticals` validates the config, checks each
+CLI: `uv run python -m src.shared.verticals` validates the config, checks each
 vertical's `profile/verticals/<name>/{rubric.md, tailoring.md}` exist and its
 `resume:` block is set, runs the resume source check, and prints
 `verticals=<names> default=<name>`. Slash commands use it as their
@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-from src import paths
+from src.shared import paths
 
 REPO_ROOT = paths.REPO_ROOT  # tests repoint this name; keep it a module attr
 DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "verticals.yaml"
@@ -215,7 +215,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
 
     # Title include-gate: opt-in per vertical. When title_include_terms is
     # empty the gate is OFF and title_passes falls back to
-    # exclusion-only. See normalize.title_passes.
+    # exclusion-only. See title_gate.title_passes.
     # Blank terms are rejected, not skipped: a blank compiles to a pattern
     # that matches every title, which silently empties a whole vertical.
     title_terms = {}

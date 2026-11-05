@@ -7,10 +7,10 @@ import time
 import pandas as pd
 import pytest
 
-from src.ats_http import CareersError
+from src.shared.http_client import CareersError
 from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
-from src.discovery.sources import boards as B
+from src.discovery.sources.boards import base as B
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build retrieval systems for clinical data and ship them to production daily. " * 5

@@ -12,7 +12,7 @@ import re
 import statistics
 from pathlib import Path
 
-from src import paths
+from src.shared import paths
 
 JOBS_RUNS = paths.JOBS_RUNS
 BOARD_STATE = paths.BOARD_STATE

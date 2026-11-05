@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from src import verticals
+from src.shared import verticals
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REAL_CONFIG = REPO_ROOT / "profile" / "verticals.yaml"
@@ -39,7 +39,7 @@ def test_every_search_term_classifies_into_its_own_lane(real_cfg):
     """discovery tags a row by the search term that found it; normalize.py
     falls back to the title classifier. When they disagree, a manual clip and
     a scraped row for the same title land in different rubrics."""
-    from src.discovery.normalize import classify_vertical_from_title
+    from src.shared.title_gate import classify_vertical_from_title
 
     for vertical in real_cfg.verticals.values():
         for term in vertical.search_terms + vertical.linkedin_terms:

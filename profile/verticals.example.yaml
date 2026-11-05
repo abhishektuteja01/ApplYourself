@@ -61,7 +61,7 @@ verticals:
     #   yes_min: 18
     #   no_max: 17
     # Optional, and lane-specific: only /apply's Step 4b reads this (not
-    # src/verticals.py's typed loader), and only for the vertical(s) that set
+    # src/shared/verticals.py's typed loader), and only for the vertical(s) that set
     # it. Leave it out entirely for a vertical where the JD-first/no-flat-
     # fallback default behavior is fine.
     #   markup_pct  applied to the JD-stated low end of a salary range

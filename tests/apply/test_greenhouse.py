@@ -23,7 +23,7 @@ from src.apply.greenhouse import (
     slug_from_form,
 )
 from src.apply.schema import parse_schema
-from src.ats_http import CareersError
+from src.shared.http_client import CareersError
 
 from .conftest import FORM_FIXTURES, load_fixture, load_html
 
@@ -100,9 +100,9 @@ class TestParsePosting:
         """Adding a key to the registry without teaching the parser -- or the
         reverse -- is the drift the registry exists to prevent."""
         from src.apply import greenhouse
-        from src import ats_registry
+        from src.shared import job_boards
 
-        gh = ats_registry.get_source("greenhouse")
+        gh = job_boards.get_source("greenhouse")
         assert greenhouse._GH is gh
         assert set(gh.id_query_keys) == {"token", "gh_jid"}
         assert set(gh.slug_query_keys) == {"for", "board"}
@@ -119,11 +119,11 @@ class TestParsePosting:
     def test_a_path_token_must_end_at_a_boundary(self):
         """The path pattern had no end anchor, so `/jobs/12abc` parsed as 12:
         a guessed token for some other posting."""
-        from src import ats_registry
+        from src.shared import job_boards
 
         with pytest.raises(ApplyUrlError, match="no job token"):
             parse_posting("https://job-boards.greenhouse.io/someco/jobs/12abc")
-        assert ats_registry.parse_posting_url(
+        assert job_boards.parse_posting_url(
             "https://job-boards.greenhouse.io/someco/jobs/12abc") is None
         for tail in ("", "/", "?gh_src=x", "#apply"):
             url = f"https://job-boards.greenhouse.io/someco/jobs/12{tail}"
@@ -131,23 +131,23 @@ class TestParsePosting:
 
     def test_parsing_is_the_registrys(self):
         """One parser for detection and apply: they agree on every shape."""
-        from src import ats_registry
+        from src.shared import job_boards
 
         for url in (
             "https://job-boards.greenhouse.io/asteralabs/jobs/4719162005",
             "https://www.hubspot.com/careers/jobs/8084478?gh_jid=8084478",
             "https://coreweave.com/careers/job?4703200006&board=coreweave&gh_jid=4703200006",
         ):
-            hit = ats_registry.parse_posting_url(url)
+            hit = job_boards.parse_posting_url(url)
             posting = parse_posting(url)
             assert (posting.token, posting.url_slug or "") == (hit.posting_id, hit.slug)
 
     @pytest.mark.parametrize("region", ["eu", "anz"])
     def test_a_regional_board_host_is_greenhouse(self, region):
-        from src import ats_registry
+        from src.shared import job_boards
 
         url = f"https://job-boards.{region}.greenhouse.io/futuresecureai/jobs/4001528201"
-        hit = ats_registry.parse_posting_url(url)
+        hit = job_boards.parse_posting_url(url)
         assert (hit.source, hit.slug, hit.posting_id, hit.region) == (
             "greenhouse", "futuresecureai", "4001528201", region)
         assert parse_posting(url).token == "4001528201"

@@ -51,11 +51,14 @@ a `.py` file (`git config core.hooksPath .githooks`, once per clone).
 
 | # | Stage | Command | Deterministic plumbing |
 |---|-------|---------|------------------------|
-| 1 | Discovery | `/discover` | `src/discovery/` — `run.py` checks due boards and searches into the jobs store (`store.py`), rebuilds `clean.parquet`; `digest.py` reads the report back |
+| 1 | Discovery | `/discover` | `src/discovery/` — `run.py` checks due boards and searches (`sources/`) into the jobs store (`store.py`, ids in `dedupe.py`), rebuilds `clean.parquet` (`live_view.py`); `digest.py` reads the report back |
 | 2 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
 | 3 | Application material | `/tailor`, `/cover-letter`, `/company-answers`, `/outreach` | `app_cli.py`, `resume_model.py`, `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
 | 4 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
 | 5 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
+
+`src/shared/` holds what several stages use: paths, verticals, job identity, the
+title gate, locations, the job-board registry and the HTTP client.
 
 `jobs/clean.parquet` is the **only** discovery output anything downstream reads.
 `jobs/jobs.parquet` holds one row per posting with its `job_id` and the dates it
@@ -120,9 +123,10 @@ No LLM *judging* in `src/`: the session writes a small YAML of choices, and
 
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).
 - The core `uv sync` needs no C toolchain. `postal` (libpostal) is the opt-in
-  `discovery` group, imported lazily in `src/discovery/location.py`: importing
+  `discovery` group, imported lazily in `src/shared/location/parser.py`: importing
   discovery works without it, address parsing raises a message telling you to
-  install it. `tests/discovery` needs it; the rest of the suite does not.
+  install it. `tests/discovery` and `tests/shared/test_location.py` need it; the
+  rest of the suite does not.
 - Read the relevant command `.md` before running its slash command — the real
   orchestration logic lives there, not in `src/`.
 - `HANDOFF.md` (live breakage/fixes) and `publish.md` (live backlog) are

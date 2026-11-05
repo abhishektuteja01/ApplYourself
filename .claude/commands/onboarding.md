@@ -319,7 +319,7 @@ print(len(d), 'rows'); print(d.title.value_counts().head(20).to_string())"
 Draft a candidate `title_include_terms` for the lane from those real titles, then
 **test it before writing it**. A nonempty `title_include_terms` flips the lane
 from blocklist to allowlist and the gate runs on every listing
-(`src/discovery/normalize.py:title_passes`), so a list drafted blind
+(`src/shared/title_gate.py:title_passes`), so a list drafted blind
 empties the lane silently.
 
 ```bash

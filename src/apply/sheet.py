@@ -20,7 +20,8 @@ import openpyxl
 import pandas as pd
 import yaml
 
-from src import paths, state_io
+from src.shared import paths
+from src import state_io
 from src.app_cli import built_folder
 from src.apply import detect, ledger
 

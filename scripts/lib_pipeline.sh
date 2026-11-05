@@ -24,7 +24,7 @@ export RUN_DIR DRY_RUN
 cfg() {
   "$UV" run python - "$1" <<'PY'
 import sys, yaml
-from src import paths
+from src.shared import paths
 data = yaml.safe_load((paths.PROFILE / "automation.yaml").read_text(encoding="utf-8")) or {}
 key = sys.argv[1]
 if key not in data:

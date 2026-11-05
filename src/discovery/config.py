@@ -12,8 +12,8 @@ from pathlib import Path
 
 import yaml
 
-from src import paths, verticals
-from src.ats_registry import ATS_SOURCE_NAMES
+from src.shared import paths, verticals
+from src.shared.job_boards import ATS_SOURCE_NAMES
 
 log = logging.getLogger(__name__)
 
@@ -92,11 +92,11 @@ class LocationAllowlist:
     countries: list[str] = field(default_factory=list)
 
     def effective_countries(self) -> set[str]:
-        from src.discovery.location import canonical_country
+        from src.shared.location.places import canonical_country
         return {canonical_country(c) or c for c in self.countries}
 
     def unresolved(self) -> list[str]:
-        from src.discovery.location import canonical_country
+        from src.shared.location.places import canonical_country
         return [f"location_allowlist.countries: {c!r} is not a country name"
                 for c in self.countries if canonical_country(c) is None]
 
@@ -168,7 +168,7 @@ class DiscoveryConfig:
         return problems
 
     def _abroad_problems(self) -> list[str]:
-        from src.discovery.location import canonical_country
+        from src.shared.location.places import canonical_country
 
         problems = []
         allowed = {c.lower() for c in self.location_allowlist.effective_countries()}

@@ -12,9 +12,10 @@ from __future__ import annotations
 import random
 import re
 
-from src.ats_http import fetch_json, fetch_json_post
-from src.discovery import normalize as N
-from src.discovery.sources.boards import Board, BoardLane, search_terms
+from src.shared.http_client import fetch_json, fetch_json_post
+from src.discovery import parse
+from src.shared import identity, title_gate
+from src.discovery.sources.boards.base import Board, BoardLane, search_terms
 from src.discovery.store import make_posting
 
 # Workday's server-side page-size ceiling: 21 fails, 20 succeeds.
@@ -82,15 +83,15 @@ class WorkdayLane(BoardLane):
                     if not title or not path:
                         continue
                     url = public_url(company, wd, site_id, path)
-                    key = N.posting_key(url)
+                    key = identity.posting_key(url)
                     if key in out:
                         continue
                     out[key] = make_posting(
                         source="workday", company=board.name, title=title, url=url,
                         location_raw=item.get("locationsText") or "",
-                        posted_date=N.relative_posted_date(item.get("postedOn"), crawl.today.date()),
+                        posted_date=parse.relative_posted_date(item.get("postedOn"), crawl.today.date()),
                         found_by_term=term, _path=path)
-                    passing += N.gate_reason(title, self.name, crawl.vcfg)[1]
+                    passing += title_gate.gate_reason(title, self.name, crawl.vcfg)[1]
                 if len(items) < LIST_LIMIT or not passing:
                     break
         return list(out.values())
@@ -104,9 +105,9 @@ class WorkdayLane(BoardLane):
             raise TypeError("expected a 'jobPostingInfo' object in the detail response")
         return {**posting,
                 "title": info.get("title") or posting["title"],
-                "jd_text": N.html_to_text(info.get("jobDescription") or ""),
+                "jd_text": parse.html_to_text(info.get("jobDescription") or ""),
                 "location_raw": info.get("location") or posting["location_raw"],
-                "posted_date": (N.relative_posted_date(info.get("postedOn"), crawl.today.date())
+                "posted_date": (parse.relative_posted_date(info.get("postedOn"), crawl.today.date())
                                 or posting["posted_date"])}
 
 

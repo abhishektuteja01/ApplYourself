@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from src import paths
+from src.shared import paths
 from src.apply import fill as F
 from src.apply.fill import FillResult, SubmitGuardError, run_one, submit
 from src.apply.plan import Plan, Unmapped

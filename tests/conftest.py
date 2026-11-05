@@ -1,6 +1,6 @@
 """Shared fixtures. Tests never read the gitignored profile/verticals.yaml —
 the committed tests/fixtures/verticals.yaml (three synthetic verticals:
-example_primary/secondary/tertiary) is injected into the src.verticals
+example_primary/secondary/tertiary) is injected into the src.shared.verticals
 singleton for every test. Coverage of the real config lives in
 tests/test_real_config_drift.py, which skips when that file is absent."""
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src import verticals
+from src.shared import verticals
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
@@ -58,7 +58,8 @@ def _no_git_hook_env(monkeypatch):
 def _isolate_applications(tmp_path, monkeypatch):
     """Keep run reports, post-submit evidence and the submit ledger out of the
     real `applications/`. Tests that need a specific folder still set their own."""
-    from src import app_cli, apply_cli, paths
+    from src import app_cli, apply_cli
+    from src.shared import paths
 
     apps = tmp_path / "applications"
     monkeypatch.setattr(paths, "APPLICATIONS", apps)
@@ -81,13 +82,25 @@ def _isolate_answer_bank(tmp_path, monkeypatch):
 def _isolate_discovery_state(tmp_path, monkeypatch):
     """Keep the jobs store, board state, board lists and inbox out of the real
     repo. Every discovery writer resolves these names at call time."""
-    from src.discovery import digest, store
-    from src.discovery.sources import boards, inbox
+    from src.discovery import digest, live_view, store
+    from src.discovery.sources.boards import base as boards
+    from src.discovery.sources import inbox
 
     monkeypatch.setattr(store, "STORE", tmp_path / "jobs" / "jobs.parquet")
-    monkeypatch.setattr(store, "CLEAN", tmp_path / "jobs" / "clean.parquet")
+    monkeypatch.setattr(live_view, "CLEAN", tmp_path / "jobs" / "clean.parquet")
     monkeypatch.setattr(boards, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
     monkeypatch.setattr(digest, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
     monkeypatch.setattr(digest, "JOBS_RUNS", tmp_path / "jobs" / "runs")
     monkeypatch.setattr(boards, "BOARDS_DIR", tmp_path / "universe")
     monkeypatch.setattr(inbox, "INBOX", tmp_path / "inbox")
+
+
+@pytest.fixture(autouse=True)
+def clear_location_cache():
+    """parse_location is lru_cached, so a test that patches COUNTRY_NAMES /
+    CITIES_BY_NAME would otherwise see (or leak) another test's entries."""
+    from src.shared.location.parser import parse_location
+
+    parse_location.cache_clear()
+    yield
+    parse_location.cache_clear()

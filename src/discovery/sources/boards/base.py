@@ -22,12 +22,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import paths
-from src.ats_http import CareersError
-from src.ats_registry import ATS_SOURCE_NAMES, parse_posting_url
-from src.discovery import normalize as N
+from src.shared import paths
+from src.shared.http_client import CareersError
+from src.shared.job_boards import ATS_SOURCE_NAMES, parse_posting_url
+from src.discovery import parse
+from src.shared import title_gate
 from src.discovery.config import pacing_floor
-from src.parquet_io import locked, write_parquet
+from src.shared.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -377,7 +378,7 @@ class BoardLane:
 
     def _one(self, board, posting, crawl, stats, result, pause) -> None:
         stats.listed += 1
-        vertical, passes = N.gate_reason(posting["title"], self.name, crawl.vcfg)
+        vertical, passes = title_gate.gate_reason(posting["title"], self.name, crawl.vcfg)
         key = posting["posting_key"]
         if vertical:
             stats.classified += 1
@@ -387,7 +388,7 @@ class BoardLane:
         posting["vertical"] = vertical
         stats.passed += 1
         result.passed += 1
-        has_jd = len(posting["jd_text"].strip()) >= N.MIN_JD_CHARS
+        has_jd = len(posting["jd_text"].strip()) >= parse.MIN_JD_CHARS
         known = crawl.known.get(key)
         if known is not None:
             stats.known += 1
@@ -413,7 +414,7 @@ class BoardLane:
             full = self._fetch(board, posting, crawl, stats, pause)
             if full is None:
                 return
-        if len(full["jd_text"].strip()) < N.MIN_JD_CHARS:
+        if len(full["jd_text"].strip()) < parse.MIN_JD_CHARS:
             # Not stored: the next check tries again.
             stats.short_jd += 1
             return

@@ -1,9 +1,9 @@
 """Greenhouse: list without JDs, fetch the JD only for a new or updated posting."""
 from __future__ import annotations
 
-from src.ats_http import fetch_json
-from src.discovery import normalize as N
-from src.discovery.sources.boards import Board, BoardLane, job_items
+from src.shared.http_client import fetch_json
+from src.discovery import parse
+from src.discovery.sources.boards.base import Board, BoardLane, job_items
 from src.discovery.store import make_posting
 
 API = "https://boards-api.greenhouse.io/v1/boards"
@@ -17,9 +17,9 @@ def posting_from(item: dict, company: str, jd: str = "") -> dict | None:
     return make_posting(
         source="greenhouse", company=company, title=title, url=url,
         location_raw=(item.get("location") or {}).get("name") or "",
-        posted_date=N.iso_date(item.get("first_published") or item.get("updated_at")),
+        posted_date=parse.iso_date(item.get("first_published") or item.get("updated_at")),
         updated_at=str(item.get("updated_at") or ""),
-        jd_text=jd or N.html_to_text(item.get("content")),
+        jd_text=jd or parse.html_to_text(item.get("content")),
         _id=item.get("id"),
     )
 

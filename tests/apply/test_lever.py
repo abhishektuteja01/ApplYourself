@@ -226,7 +226,7 @@ class TestPageIdentity:
 
 class TestFetchForm:
     def test_a_404_is_an_ordinary_expiry(self):
-        from src.ats_http import CareersError
+        from src.shared.http_client import CareersError
 
         posting = parse_posting("https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001")
         with patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)):

@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/verticals.py"
+  - "src/shared/verticals.py"
   - "src/resume_model.py"
   - "profile/verticals.yaml"
   - "profile/resume.yaml"
@@ -10,7 +10,7 @@ paths:
 
 # Verticals: the config spine
 
-A "vertical" is a job lane. `src/verticals.py` is the single source of truth loader.
+A "vertical" is a job lane. `src/shared/verticals.py` is the single source of truth loader.
 
 - Config lives in `profile/verticals.yaml` (gitignored user data) with a matching
   `profile/verticals/<name>/{rubric.md, tailoring.md}` dir per vertical.

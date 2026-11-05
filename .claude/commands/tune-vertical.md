@@ -57,7 +57,7 @@ confirmed → run the round's verify → report → next round.**
 ```bash
 uv run verticals-check
 uv run python -c "
-from src.verticals import load_verticals
+from src.shared.verticals import load_verticals
 c = load_verticals(); v = c.verticals['<name>']
 print('lanes:', c.names, 'default:', c.default_vertical)
 print('search:', len(v.search_terms), 'linkedin:', len(v.linkedin_terms))
@@ -109,7 +109,7 @@ only those.
   on sight. `linkedin_terms` stays the reduced set (429 mitigation).
 - **The title gate** — `title_include_terms`, `title_exclude_terms`,
   `title_strong_keep_terms`. Optional to the loader, load-bearing in
-  `normalize.title_passes`: a scraped row is kept iff
+  `title_gate.title_passes`: a scraped row is kept iff
   `strong_keep OR (include_ok AND NOT exclude)`. **An empty
   `title_include_terms` leaves the include-gate OFF** — everything the
   classifier matches is kept unless it trips an exclude. Turn the gate on only
@@ -130,7 +130,7 @@ their rulings.
 Verify:
 
 ```bash
-uv run python -c "from src.verticals import load_verticals; v = load_verticals().verticals['<name>']; print(len(v.search_terms), len(v.linkedin_terms), len(v.title_include_terms), len(v.title_exclude_terms), len(v.title_strong_keep_terms))"
+uv run python -c "from src.shared.verticals import load_verticals; v = load_verticals().verticals['<name>']; print(len(v.search_terms), len(v.linkedin_terms), len(v.title_include_terms), len(v.title_exclude_terms), len(v.title_strong_keep_terms))"
 uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
@@ -168,11 +168,11 @@ rule-position bug — name the row, propose the move, have the user confirm the
 Verify:
 
 ```bash
-uv run python -c "from src.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.drop_phrases), len(v.title_include_terms), len(v.title_exclude_terms))"
-uv run python -c "from src.discovery.normalize import classify_vertical_from_title as c; print([c(t) for t in ['<title1>', '<title2>', '...']])"
+uv run python -c "from src.shared.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.drop_phrases), len(v.title_include_terms), len(v.title_exclude_terms))"
+uv run python -c "from src.shared.title_gate import classify_vertical_from_title as c; print([c(t) for t in ['<title1>', '<title2>', '...']])"
 uv run python -c "
-from src.verticals import load_verticals
-from src.discovery.normalize import classify_vertical_from_title as c
+from src.shared.verticals import load_verticals
+from src.shared.title_gate import classify_vertical_from_title as c
 v = load_verticals().verticals['<name>']
 bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
 print('MISCLASSIFIED:', bad or 'none')"
@@ -189,7 +189,7 @@ would move before the next scrape:
 ```bash
 uv run python -c "
 import pandas as pd
-from src.discovery.normalize import classify_vertical_from_title as c
+from src.shared.title_gate import classify_vertical_from_title as c
 d = pd.read_parquet('jobs/clean.parquet')
 now = d.title.map(c)
 moved = d[now != d.vertical.fillna('')]

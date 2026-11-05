@@ -25,7 +25,7 @@ from pathlib import Path
 
 import yaml
 
-from src import paths
+from src.shared import paths
 
 USER_DATA_DIR = paths.REPO_ROOT / ".apply_profile"
 CONFIG_PATH = paths.PROFILE / "application_answers.yaml"

@@ -23,8 +23,8 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from src import paths, verticals
-from src.parquet_io import locked, write_parquet
+from src.shared import paths, verticals
+from src.shared.parquet_io import locked, write_parquet
 from src.score_filter import (
     SPONSORSHIP_FACTS,
     CountryRule,

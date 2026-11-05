@@ -13,9 +13,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-from src.ats_http import CareersError, fetch_json
-from src.discovery import normalize as N
-from src.discovery.sources.boards import Board, BoardLane, search_terms
+from src.shared.http_client import CareersError, fetch_json
+from src.discovery import parse
+from src.shared import title_gate
+from src.discovery.sources.boards.base import Board, BoardLane, search_terms
 from src.discovery.store import make_posting
 
 PAGE_SIZE = 10  # the APIs ignore a larger `num`
@@ -72,7 +73,7 @@ def posting_from(item: dict, host: str, api: str, company: str, term: str) -> di
     else:
         url = item.get("canonicalPositionUrl") or f"https://{host}/careers/job/{pid}"
         posted = item.get("t_create")
-        jd = N.html_to_text(item.get("job_description") or "")
+        jd = parse.html_to_text(item.get("job_description") or "")
     locations = [x for x in item.get("locations") or [] if isinstance(x, str) and x.strip()]
     return make_posting(
         source="eightfold", company=company, title=title, url=url,
@@ -112,7 +113,7 @@ class EightfoldLane(BoardLane):
                     if p is None or p["posting_key"] in out:
                         continue
                     out[p["posting_key"]] = p
-                    passing += N.gate_reason(p["title"], self.name, crawl.vcfg)[1]
+                    passing += title_gate.gate_reason(p["title"], self.name, crawl.vcfg)[1]
                 if len(items) < PAGE_SIZE or not passing:
                     break
         return list(out.values())
@@ -131,4 +132,4 @@ class EightfoldLane(BoardLane):
             jd = info.get("job_description") if isinstance(info, dict) else None
         if not isinstance(info, dict):
             raise TypeError("expected a JSON object in the detail response")
-        return {**posting, "jd_text": N.html_to_text(jd or "")}
+        return {**posting, "jd_text": parse.html_to_text(jd or "")}

@@ -29,7 +29,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import paths
+from src.shared import paths
 from src.resume_model import parse_entries
 
 BULLETS = paths.PROFILE / "bullets.md"

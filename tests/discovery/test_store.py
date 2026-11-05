@@ -1,12 +1,13 @@
-"""store.py: job_id rules, refresh/touch, and the live view."""
+"""store.py with dedupe.py and live_view.py: job_id rules, refresh/touch, and the live view."""
 from __future__ import annotations
 
 import pandas as pd
 import pytest
 
-from src.discovery import normalize as N
+from src.shared import identity
 from src.discovery import store as S
-from src.discovery.location import Allowed
+from src.discovery import dedupe, live_view
+from src.shared.location.allowlist import Allowed
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build retrieval pipelines for a clinical trials platform and ship them. " * 10
@@ -18,7 +19,7 @@ def post(url, company="Acme", title="AI Engineer", source="greenhouse", jd=JD, *
                           jd_text=jd, vertical=kw.pop("vertical", "primary"), **kw)
 
 
-def fold(store, *rows, touched=(), tracked=frozenset(), today=TODAY, live_days=14, trim=S.NO_TRIM):
+def fold(store, *rows, touched=(), tracked=frozenset(), today=TODAY, live_days=14, trim=dedupe.NO_TRIM):
     batch = S.Batch()
     for r in rows:
         batch.upsert(r)
@@ -34,7 +35,7 @@ GH = "https://job-boards.greenhouse.io/acme/jobs/{}"
 
 def test_new_posting_gets_the_hash():
     store, stats = fold(S.empty_store(), post(GH.format(1)))
-    assert store.at[0, "job_id"] == N.compute_job_id("acme", "ai engineer")
+    assert store.at[0, "job_id"] == identity.compute_job_id("acme", "ai engineer")
     assert stats.by_rule == {"hash": 1} and stats.new_job_ids == [store.at[0, "job_id"]]
 
 
@@ -87,7 +88,7 @@ def test_fuzzy_needs_jd_evidence():
 
 def test_a_hash_collision_drops_the_newcomer(monkeypatch):
     store, _ = fold(S.empty_store(), post(GH.format(1)))
-    monkeypatch.setattr(N, "compute_job_id", lambda c, t: store.at[0, "job_id"])
+    monkeypatch.setattr(identity, "compute_job_id", lambda c, t: store.at[0, "job_id"])
     store2, stats = fold(store, post(GH.format(2), company="Zeta", title="Chef",
                                      jd=JD_OTHER, source="lever"))
     assert len(store2) == 1 and len(stats.collisions) == 1
@@ -138,14 +139,14 @@ def test_the_same_jd_with_its_sections_reordered_merges():
                                  ("red bull", "redbull"), ("hartford", "thehartford"),
                                  ("hilbert", "hilbert s ai"), ("radiance technologies", "radiancetech")])
 def test_one_employer_under_two_spellings(a, b):
-    assert S.same_company(a, b) and S.same_company(b, a)
+    assert dedupe.same_company(a, b) and dedupe.same_company(b, a)
 
 
 @pytest.mark.parametrize("a,b", [("x", "xander"), ("apex", "apexa"), ("stripe", "stripes"),
                                  ("vouch", "voucher"), ("vouch", "vouchr"), ("ai", "ai solutions"),
                                  ("goal solutions", "shakti solutions"), ("", "acme")])
 def test_near_spellings_are_two_employers(a, b):
-    assert not S.same_company(a, b)
+    assert not dedupe.same_company(a, b)
 
 
 def test_two_sites_of_one_source_merge_but_one_board_never_does():
@@ -200,8 +201,8 @@ def test_shared_boilerplate_never_makes_two_roles_one():
     a = "## The Role\n\n" + "Own the warehouse shift schedule and the weekly cycle counts at both sites. " * 3
     b = "## The Role\n\n" + "Build retrieval pipelines and evaluation harnesses for clinical trials. " * 3
     trim = (("benefits", "equal opportunity"), ("visa",))
-    plain = S.jd_key(a + "\n\n" + BOILER), S.jd_key(b + "\n\n" + BOILER)
-    assert S.fuzz.ratio(*plain) >= S.JD_MERGE
+    plain = dedupe.jd_key(a + "\n\n" + BOILER), dedupe.jd_key(b + "\n\n" + BOILER)
+    assert dedupe.fuzz.ratio(*plain) >= dedupe.JD_MERGE
     store, stats = _pair(post(GH.format(1), company="Acme", jd=a + "\n\n" + BOILER),
                          post(LI.format(6), company="Acme Labs", source="linkedin", jd=b + "\n\n" + BOILER),
                          trim=trim)
@@ -228,7 +229,7 @@ def test_merged_stats_keep_each_pair_once():
 
 
 def test_the_backfill_finds_two_stored_ids_of_one_role():
-    from src.discovery.dupes import find_pairs
+    from src.discovery.dedupe import find_pairs
     rows = [{**post(LI.format(1), company="Vouch Insurance", source="linkedin", jd=ROLE + REQ + ABOUT),
              "job_id": "aaaa1111"},
             {**post("https://jobs.lever.co/vouch/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e", company="Vouch",
@@ -241,7 +242,7 @@ def test_the_backfill_finds_two_stored_ids_of_one_role():
 
 # ---------- ids merged before the store ----------
 
-CODEX = N.compute_job_id("openai", "applied ai engineer codex")
+CODEX = identity.compute_job_id("openai", "applied ai engineer codex")
 
 
 def _over_merged(*extra):
@@ -258,7 +259,7 @@ def _over_merged(*extra):
 def test_a_pair_held_by_another_roles_id_gets_its_own_id():
     cyber = post(GH.format(21), company="OpenAI", title="Applied AI Engineer, Cyber")
     store, stats = fold(_over_merged(), cyber, tracked=frozenset({CODEX}))
-    jid = N.compute_job_id("openai", "applied ai engineer cyber")
+    jid = identity.compute_job_id("openai", "applied ai engineer cyber")
     assert stats.by_rule == {"hash": 1} and stats.new_job_ids == [jid]
     [m] = stats.maybe_duplicates
     assert m["pair"] == "|".join(sorted((jid, CODEX))) and m["reason"] == "other_title"
@@ -285,7 +286,7 @@ def test_an_ids_own_role_still_joins_it_from_another_city():
 
 
 def test_a_name_variant_inside_an_id_still_joins_it():
-    own = N.compute_job_id("vouch insurance", "ai engineer")
+    own = identity.compute_job_id("vouch insurance", "ai engineer")
     rows = [{**post(LI.format(25), company="Vouch Insurance", source="linkedin"), "job_id": own},
             {**post(GH.format(26), company="Vouch, Inc"), "job_id": own}]
     store = S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY, last_seen=TODAY))
@@ -376,10 +377,10 @@ class AllowAll:
 
 
 def view(store, state_index=None, scores=None, today=TODAY):
-    inp = S.ViewInputs(today=today, state_index=state_index or {}, scores=scores or {},
+    inp = live_view.ViewInputs(today=today, state_index=state_index or {}, scores=scores or {},
                        live_days=14, search_max_age_days=14, score_threshold=80,
                        high_days=60, low_days=15)
-    return S.build_view(store, AllowAll(), inp)
+    return live_view.build_view(store, AllowAll(), inp)
 
 
 def at(days_ago):
@@ -390,7 +391,7 @@ def test_view_has_the_clean_columns_one_row_per_job():
     store, _ = fold(S.empty_store(), post(GH.format(1), location_raw="Austin, TX"),
                     post("https://www.linkedin.com/jobs/view/1", source="linkedin"))
     out, funnel = view(store)
-    assert list(out.columns) == S.CLEAN_COLUMNS
+    assert list(out.columns) == live_view.CLEAN_COLUMNS
     assert len(out) == 1 and funnel["jobs"] == 1
 
 

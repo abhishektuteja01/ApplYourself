@@ -44,7 +44,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import app_cli, paths, state_io, track_cli
+from src import app_cli, state_io, track_cli
+from src.shared import paths
 from src.apply import ashby, bank, ledger, lever
 from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, FACT_WORDING_FACTS,
                                UNKNOWN_COUNTRY, Answers,
@@ -56,11 +57,11 @@ from src.apply.plan import Override, Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
 from src.apply.schema import SchemaError
 from src.apply.domscan import DomScanError
-from src.discovery.normalize import normalize_company
-from src.ats_http import CareersError
+from src.shared.identity import normalize_company
+from src.shared.http_client import CareersError
 
 # Board identity comes from the shared table in
-# `src/ats_registry.py`, wrapped by `src.apply.detect` so
+# `src/shared/job_boards.py`, wrapped by `src.apply.detect` so
 # `shortlist.py` can ask "can /apply submit to this?" without importing this
 # CLI. Re-exported here because callers and tests already reach for
 # `apply_cli.detect_ats`. `detect_ats` recognizes Workday too, so every
@@ -368,7 +369,8 @@ def job_country(state: dict | None, answers: Answers) -> str:
     state = state or {}
     job_id = str(state.get("job_id") or "")
     try:
-        from src.discovery.location import parse_location, residency_countries
+        from src.shared.location.parser import parse_location
+        from src.shared.location.allowlist import residency_countries
     except Exception:  # noqa: BLE001 - the parser is optional plumbing
         return ""
     for raw in (_clean_value(job_id, "location"), str(state.get("location") or "")):

@@ -276,10 +276,10 @@ rm -f profile/verticals/<name>/.pass_a_only
 ## Step 5a — verify (`pass-a`)
 
 ```bash
-uv run python -c "from src.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, c.default_vertical, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.title_exclude_terms))"
+uv run python -c "from src.shared.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, c.default_vertical, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.title_exclude_terms))"
 uv run python -c "
-from src.discovery.normalize import classify_vertical_from_title as c
-from src.verticals import load_verticals
+from src.shared.title_gate import classify_vertical_from_title as c
+from src.shared.verticals import load_verticals
 v = load_verticals().verticals['<name>']
 bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
 print('MISCLASSIFIED:', bad or 'none')"

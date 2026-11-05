@@ -36,7 +36,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import lint, paths, resume_model, state_io, track_cli, verticals
+from src import lint, resume_model, state_io, track_cli
+from src.shared import paths, verticals
 from src.apply import ledger
 from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter

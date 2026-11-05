@@ -8,9 +8,9 @@ import html
 import re
 from urllib.parse import parse_qsl, quote, urlsplit
 
-from src.ats_registry import parse_posting_url
-from src.discovery import normalize as N
-
+from src.shared.job_boards import parse_posting_url
+from src.discovery import parse
+from src.shared import identity
 # The parts of a requisition that are the role; the corporate blurb is not.
 JD_FIELDS = ("ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr")
 
@@ -45,7 +45,7 @@ def jd_text(payload) -> str:
     items = payload.get("items") if isinstance(payload, dict) else None
     if not isinstance(items, list) or not items or not isinstance(items[0], dict):
         return ""
-    return "\n\n".join(t for t in (N.html_to_text(items[0].get(f) or "") for f in JD_FIELDS) if t)
+    return "\n\n".join(t for t in (parse.html_to_text(items[0].get(f) or "") for f in JD_FIELDS) if t)
 
 
 def site_url(url: str, company: str) -> str:
@@ -68,4 +68,4 @@ def site_name(page) -> str:
         return ""
     name = label.split(" - ")[0].split("_")[0]
     name = _LABEL_HEAD_RE.sub("", _LABEL_TAIL_RE.sub("", name)).strip(" -")
-    return name if N.normalize_company(name) else ""
+    return name if identity.normalize_company(name) else ""

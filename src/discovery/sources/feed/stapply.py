@@ -24,13 +24,15 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src import ats_http
-from src.ats_registry import ATS_SOURCE_NAMES
-from src.ats_http import CareersError
-from src.discovery import normalize as N
-from src.discovery.location import CC_TO_COUNTRY, parse_location
-from src.discovery.sources import oracle_hcm
-from src.discovery.sources.boards import LaneStats, board_key_of, load_boards
+from src.shared import http_client
+from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.shared.http_client import CareersError
+from src.discovery import parse
+from src.shared import identity, title_gate
+from src.shared.location.parser import parse_location
+from src.shared.location.places import CC_TO_COUNTRY
+from src.discovery.sources.feed import oracle
+from src.discovery.sources.boards.base import LaneStats, board_key_of, load_boards
 from src.discovery.store import make_posting
 
 log = logging.getLogger(__name__)
@@ -60,7 +62,7 @@ def snapshot_age_hours(generated_at: str, now: datetime | None = None) -> float 
 def sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(ats_http.DOWNLOAD_CHUNK), b""):
+        for chunk in iter(lambda: f.read(http_client.DOWNLOAD_CHUNK), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -109,14 +111,14 @@ def posting_from(row: dict, vertical: str, names: dict[str, str],
                or feed_names.get((row.get("ats_type"), own.strip().lower())) or own)
     period = row.get("salary_period")
     return make_posting(
-        source="stapply", company=company if N.normalize_company(company) else "",
+        source="stapply", company=company if identity.normalize_company(company) else "",
         title=row.get("title") or "", vertical=vertical, url=url,
         location_raw=located(row.get("location"), row.get("country_iso")),
-        jd_text=N.html_to_text(row.get("description")),
-        posted_date=N.iso_date(row.get("posted_at")),
-        remote_flag=N.as_bool(row.get("is_remote")),
-        salary_min=N.yearly_salary(row.get("salary_min"), period),
-        salary_max=N.yearly_salary(row.get("salary_max"), period),
+        jd_text=parse.html_to_text(row.get("description")),
+        posted_date=parse.iso_date(row.get("posted_at")),
+        remote_flag=parse.as_bool(row.get("is_remote")),
+        salary_min=parse.yearly_salary(row.get("salary_min"), period),
+        salary_max=parse.yearly_salary(row.get("salary_max"), period),
         salary_currency=row.get("salary_currency") or "",
         employment_type=row.get("employment_type") or "",
     )
@@ -139,7 +141,7 @@ class StapplyLane:
         failure is kept and re-raised by `run`, so the report shows it as
         this lane's crash and the board lanes crawl everything."""
         try:
-            manifest = ats_http.fetch_json(MANIFEST_URL, deadline_ts=crawl.deadline_ts or None)
+            manifest = http_client.fetch_json(MANIFEST_URL, deadline_ts=crawl.deadline_ts or None)
             src = crawl.cfg.sources[self.name]
             age = snapshot_age_hours(manifest.get("generated_at"))
             if age is None or age > src.max_snapshot_age_hours:
@@ -152,7 +154,7 @@ class StapplyLane:
             with tempfile.TemporaryDirectory(prefix="stapply-") as tmp:
                 feed_names = self._company_names(manifest, Path(tmp), crawl)
                 path = Path(tmp) / "all.parquet"
-                ats_http.download(whole["parquet"], path, deadline_ts=crawl.deadline_ts or None)
+                http_client.download(whole["parquet"], path, deadline_ts=crawl.deadline_ts or None)
                 if whole.get("parquet_sha256") and sha256_of(path) != whole["parquet_sha256"]:
                     raise CareersError(f"checksum mismatch: {whole['parquet']}")
                 self.read(path, crawl, feed_names)
@@ -166,7 +168,7 @@ class StapplyLane:
         entry = manifest.get("companies") or {}
         try:
             path = tmp / "companies.parquet"
-            ats_http.download(entry["parquet"], path, deadline_ts=crawl.deadline_ts or None)
+            http_client.download(entry["parquet"], path, deadline_ts=crawl.deadline_ts or None)
             if entry.get("parquet_sha256") and sha256_of(path) != entry["parquet_sha256"]:
                 raise CareersError("checksum mismatch")
             return company_names(pd.read_parquet(path, columns=["ats", "name", "slug", "url"]))
@@ -197,7 +199,7 @@ class StapplyLane:
             for t in titles:
                 v = gate.get(t)
                 if v is None:
-                    v = gate[t] = N.gate_reason(t or "", self.name, crawl.vcfg)
+                    v = gate[t] = title_gate.gate_reason(t or "", self.name, crawl.vcfg)
                 keep.append(v[1])
                 if v[1]:
                     verticals.append(v[0])
@@ -230,30 +232,30 @@ class StapplyLane:
             key = posting["posting_key"]
             known = crawl.known.get(key)
             stored = (known or {}).get("company", "")
-            if stored and not N.looks_like_slug(stored) and (
-                    N.looks_like_slug(posting["company"])
-                    or oracle_hcm.site_url(posting["url"], posting["company"])):
+            if stored and not parse.looks_like_slug(stored) and (
+                    parse.looks_like_slug(posting["company"])
+                    or oracle.site_url(posting["url"], posting["company"])):
                 posting = {**posting, "company": stored}
             stats.known += known is not None
             stats.new += known is None
-            needs_jd = known is None and len(posting["jd_text"].strip()) < N.MIN_JD_CHARS
-            needs_name = N.looks_like_slug(posting["company"])
+            needs_jd = known is None and len(posting["jd_text"].strip()) < parse.MIN_JD_CHARS
+            needs_name = parse.looks_like_slug(posting["company"])
             employer = ""
-            site = oracle_hcm.site_url(posting["url"], posting["company"])
+            site = oracle.site_url(posting["url"], posting["company"])
             if site:
                 # Named by its Oracle tenant code: the site's page names the employer.
                 if site not in site_names:
                     page = pages.read(site)
-                    site_names[site] = oracle_hcm.site_name(page)
+                    site_names[site] = oracle.site_name(page)
                     if page is not None:
                         pages.result(site, bool(site_names[site]))
                 employer = site_names[site]
                 needs_name = False
-            api = oracle_hcm.detail_url(posting["url"]) if needs_jd else ""
+            api = oracle.detail_url(posting["url"]) if needs_jd else ""
             if api:
                 # Its job page is built in the browser: read the JD from the API.
                 payload = pages.read(api, as_json=True)
-                jd = oracle_hcm.jd_text(payload) if payload is not None else ""
+                jd = oracle.jd_text(payload) if payload is not None else ""
                 if jd:
                     posting = {**posting, "jd_text": jd}
                 if payload is not None:
@@ -261,10 +263,10 @@ class StapplyLane:
                 needs_jd = False
             if needs_jd or needs_name:
                 page = pages.read(posting["url"])
-                jd = N.jobposting_text(page) if needs_jd else ""
+                jd = parse.jobposting_text(page) if needs_jd else ""
                 if needs_name:
-                    employer = N.jobposting_employer(page)
-                    if N.looks_like_slug(employer):
+                    employer = parse.jobposting_employer(page)
+                    if parse.looks_like_slug(employer):
                         employer = ""
                 if jd:
                     posting = {**posting, "jd_text": jd}
@@ -274,8 +276,8 @@ class StapplyLane:
                 named += 1
                 posting = {**posting, "company": employer}
                 if known is None:
-                    posting["company_normalized"] = N.normalize_company(employer)
-            has_jd = len(posting["jd_text"].strip()) >= N.MIN_JD_CHARS
+                    posting["company_normalized"] = identity.normalize_company(employer)
+            has_jd = len(posting["jd_text"].strip()) >= parse.MIN_JD_CHARS
             if known is not None:
                 if has_jd or employer:
                     crawl.batch.upsert(posting)
@@ -325,8 +327,8 @@ class _PageReader:
         self.last = time.time()
         try:
             if as_json:
-                return ats_http.fetch_json(url, deadline_ts=self.crawl.deadline_ts or None)
-            status, body = ats_http.fetch_page(url)
+                return http_client.fetch_json(url, deadline_ts=self.crawl.deadline_ts or None)
+            status, body = http_client.fetch_page(url)
         except Exception as e:  # noqa: BLE001 -- one page, not the lane
             self.stats.errors.append(f"{url}: {type(e).__name__}: {e}")
             return ""

@@ -9,7 +9,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import score_cli, score_store, verticals
+from src import score_cli, score_store
+from src.shared import verticals
 from src.score_filter import SCORING_PATH, CountryRule, load_scoring
 
 NOW = datetime(2026, 9, 27, 12, 0)

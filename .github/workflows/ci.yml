@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # `postal` is optional (the `discovery` group) and the core sync no
-      # longer needs it — but the suite does: tests/discovery/test_location.py
+      # longer needs it — but the suite does: tests/shared/test_location.py
       # and the store's location-filter tests exercise the real parser, with
       # no stub. It compiles against the libpostal C library, which no
       # Debian/Ubuntu package ships, so build it once and cache the install

@@ -8,7 +8,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from src.parquet_io import write_parquet
+from src.shared.parquet_io import write_parquet
 
 
 def test_writes_the_frame_and_creates_the_parent(tmp_path):

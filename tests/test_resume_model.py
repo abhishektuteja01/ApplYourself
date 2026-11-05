@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from src import paths, resume_model, verticals
+from src.shared import paths, verticals
+from src import resume_model
 
 PROFILE = paths.PROFILE
 

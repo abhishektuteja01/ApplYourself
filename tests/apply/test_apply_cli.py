@@ -1514,7 +1514,7 @@ class TestTheSubmitLedger:
 
 
 def test_tests_never_touch_the_real_applications_folder():
-    from src import paths
+    from src.shared import paths
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
     assert paths.REPO_ROOT / "applications" != apply_cli.APPLY_RUNS.parent
 

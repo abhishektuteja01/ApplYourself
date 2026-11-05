@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.verticals import load_verticals
+from src.shared.verticals import load_verticals
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROFILE = REPO_ROOT / "profile"
@@ -303,7 +303,7 @@ class TestExampleSourcesResolve:
 
     @pytest.fixture
     def example_cfg(self):
-        from src import verticals
+        from src.shared import verticals
         cfg = load_verticals(PROFILE / "verticals.example.yaml")
         verticals.set_config(cfg)
         return cfg

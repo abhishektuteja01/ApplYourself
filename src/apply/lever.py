@@ -39,13 +39,13 @@ from lxml.etree import ParserError
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
-from src.ats_http import CareersError, fetch_text
-from src import ats_registry
+from src.shared.http_client import CareersError, fetch_text
+from src.shared import job_boards
 
 FORM_ID = "application-form"
 
 # Shared board table: host variants and posting shape live in one place.
-_URL = ats_registry.get_source("lever").posting_url_re
+_URL = job_boards.get_source("lever").posting_url_re
 
 _INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
 _WS = re.compile(r"\s+")

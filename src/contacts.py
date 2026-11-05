@@ -9,8 +9,8 @@ from pathlib import Path
 
 import yaml
 
-from src import paths
-from src.discovery.normalize import normalize_company
+from src.shared import paths
+from src.shared.identity import normalize_company
 
 CONTACTS_PATH = paths.PROFILE / "contacts.yaml"
 

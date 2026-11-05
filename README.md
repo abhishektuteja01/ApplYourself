@@ -140,7 +140,7 @@ budget, skill line labels and a baseline summary.
 - `skill_weights` are 0-10 integers, consumed by the judges, opaque to `src/`.
 - `salary_expectation` is read only by `/apply`, only for lanes that set it.
 
-`src/verticals.py` is the single loader and it is **strict**: a vertical block
+`src/shared/verticals.py` is the single loader and it is **strict**: a vertical block
 missing any required key raises `ValueError`. Because `tests/conftest.py` injects
 config through an autouse fixture, one malformed block errors the entire test
 suite. `uv run verticals-check` fails loud if a rubric, tailoring file or
@@ -468,7 +468,7 @@ by which point the blob is public and reachable by SHA forever.
 <details>
 <summary><b>Where files land: the data layout</b></summary>
 
-`src/paths.py` is the single source of truth, resolved from the file rather than
+`src/shared/paths.py` is the single source of truth, resolved from the file rather than
 the CWD, so a path means the same thing whichever entry point you came in
 through.
 

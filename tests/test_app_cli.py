@@ -10,7 +10,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import app_cli, paths, track_cli
+from src import app_cli, track_cli
+from src.shared import paths
 
 JOB = "a1b2c3d4"
 JD = "Build widget assembly tooling in Python and SQL across 4 plants. Salary 120000."

@@ -26,20 +26,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import ats_http, paths, verticals
-from src.ats_registry import ATS_SOURCE_NAMES
+from src.shared import http_client, paths, verticals
+from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.discovery import dedupe, live_view
 from src.discovery import store as S
 from src.score_filter import load_trim
 from src.discovery.config import FEED_SOURCES, JOBSPY_SOURCES, SOURCE_NAMES, load_config
-from src.discovery.sources import boards as B
-from src.discovery.sources.ashby import AshbyLane
-from src.discovery.sources.eightfold import EightfoldLane
-from src.discovery.sources.greenhouse import GreenhouseLane
+from src.discovery.sources.boards import base as B
+from src.discovery.sources.boards.ashby import AshbyLane
+from src.discovery.sources.boards.eightfold import EightfoldLane
+from src.discovery.sources.boards.greenhouse import GreenhouseLane
 from src.discovery.sources.inbox import InboxLane
-from src.discovery.sources.lever import LeverLane
-from src.discovery.sources.stapply import StapplyLane
-from src.discovery.sources.workday import WorkdayLane
-from src.parquet_io import locked, write_parquet
+from src.discovery.sources.boards.lever import LeverLane
+from src.discovery.sources.feed.stapply import StapplyLane
+from src.discovery.sources.boards.workday import WorkdayLane
+from src.shared.parquet_io import write_parquet
 from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class Writer:
     first, boards second, so a board is never marked checked while its
     postings are missing."""
 
-    def __init__(self, crawl, p: Paths, today, tracked, live_days: int, trim=S.NO_TRIM):
+    def __init__(self, crawl, p: Paths, today, tracked, live_days: int, trim=dedupe.NO_TRIM):
         self.crawl, self.p, self.today = crawl, p, today
         self.tracked, self.live_days, self.trim = tracked, live_days, trim
         self.stats = S.ApplyStats()
@@ -143,9 +144,9 @@ class Writer:
 
 def _run_lane(lane, crawl) -> dict:
     t0 = time.time()
-    tally = ats_http.HttpTally()
+    tally = http_client.HttpTally()
     try:
-        with ats_http.observe(tally.on_http):
+        with http_client.observe(tally.on_http):
             stats = lane.run(crawl, tally) if lane.name in JOBSPY_SOURCES else lane.run(crawl)
     except Exception:  # noqa: BLE001 -- one lane's crash costs the others nothing
         log.exception("lane %s crashed; continuing", lane.name)
@@ -174,24 +175,6 @@ def _write_raw(listed: list[dict], p: Paths, run_id: str, today, keep_days: int)
             f.unlink(missing_ok=True)
             pruned += 1
     return pruned
-
-
-def rebuild_view(cfg, p: Paths, today, state_index: dict) -> tuple[dict, dict]:
-    """Refresh remembered scores, forget long-gone postings, then write
-    clean.parquet. Returns (store stats, view funnel)."""
-    from src.discovery.location import Allowlist
-
-    tracked = frozenset(state_index)
-    scores = S.read_scores(p.scored)
-    with locked(p.store):
-        store = S.remember_scores(S.load_store(p.store), scores)
-        store, forgotten = S.forget(store, today, cfg.forget_after_days, tracked)
-        S.save_store(store, p.store)
-    inp = S.inputs_from(cfg, today, state_index, p.scored)
-    view, funnel = S.build_view(store, Allowlist(cfg), inp)
-    S.write_view(view, p.clean)
-    return {"postings": len(store), "job_ids": int(store["job_id"].nunique()),
-            "forgotten": forgotten}, funnel
 
 
 def render_md(report: dict) -> str:
@@ -277,7 +260,7 @@ def main(argv=None) -> int:
         sys.exit("ERROR: --max-terms must be >= 1.")
     try:
         cfg = load_config()
-        from src.discovery.location import require_libpostal
+        from src.shared.location.parser import require_libpostal
         require_libpostal()
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         sys.exit(f"ERROR: {e}")
@@ -341,7 +324,7 @@ def main(argv=None) -> int:
     if inbox is not None:
         inbox.done()
 
-    store_stats, funnel = rebuild_view(cfg, p, today, state_index)
+    store_stats, funnel = live_view.rebuild_view(cfg, p, today, state_index)
     pruned = _write_raw(crawl.take_listed(), p, run_id, today, cfg.raw_keep_days)
     applied = asdict(writer.stats)
     report = {

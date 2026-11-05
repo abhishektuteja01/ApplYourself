@@ -97,7 +97,7 @@ def _notify(**event) -> None:
     try:
         fn(event)
     except Exception:  # noqa: BLE001 -- a broken trace must never fail a fetch
-        log.warning("ats_http observer failed", exc_info=True)
+        log.warning("http_client observer failed", exc_info=True)
 
 
 class CareersError(Exception):

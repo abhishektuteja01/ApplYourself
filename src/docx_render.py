@@ -33,8 +33,8 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from src import paths
-from src.parquet_io import locked
+from src.shared import paths
+from src.shared.parquet_io import locked
 
 REQUIRED_STYLES = [
     "Resume Name",

@@ -117,14 +117,14 @@ class TestWorkday:
 class TestBoardUrls:
     def test_the_audit_uses_the_scrapers_list_urls(self, audit):
         """Same list endpoints as the lanes; Ashby skips the pay bands."""
-        from src.discovery.sources import ashby, greenhouse
+        from src.discovery.sources.boards import ashby, greenhouse
 
         assert audit.board_url("greenhouse", "acme") == f"{greenhouse.API}/acme/jobs"
         assert audit.board_url("ashby", "acme") == f"{ashby.API}/acme"
         assert audit.board_url("lever", "acme") == "https://api.lever.co/v0/postings/acme?mode=json"
 
     def test_every_summarizer_has_a_lane_and_vice_versa(self, audit):
-        from src.ats_registry import ATS_SOURCE_NAMES
+        from src.shared.job_boards import ATS_SOURCE_NAMES
 
         assert set(audit.SUMMARIZE) == set(ATS_SOURCE_NAMES)
         assert set(audit.DEFAULT_ATS) <= set(audit.SUMMARIZE)

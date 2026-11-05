@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 
 import yaml
 
-from src import lint, paths, verticals
+from src import lint
+from src.shared import paths, verticals
 
 RESUME = paths.PROFILE / "resume.yaml"
 BULLETS = paths.PROFILE / "bullets.md"

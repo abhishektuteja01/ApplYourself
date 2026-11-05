@@ -1,6 +1,6 @@
 import pytest
 
-from src.discovery.location import parse_location
+from src.shared.location.parser import parse_location
 
 
 # A place is "positively non-US" (and thus dropped by the United-States
@@ -708,9 +708,9 @@ def test_a_primed_cache_entry_does_not_survive_into_the_next_test():
 
 
 def test_monkeypatched_country_table_is_honoured(monkeypatch):
-    from src.discovery import location
+    from src.shared.location import places
 
-    monkeypatch.setitem(location.COUNTRY_NAMES, "germany", "Zzyzxland")
+    monkeypatch.setitem(places.COUNTRY_NAMES, "germany", "Zzyzxland")
     assert parse_location("Germany").country == "Zzyzxland"
 
 
@@ -831,13 +831,13 @@ class _Cfg:
     ("Remote", True, "Remote"),
 ])
 def test_allowlist_check(raw, keep, shown):
-    from src.discovery.location import Allowlist
+    from src.shared.location.allowlist import Allowlist
     got = Allowlist(_Cfg(["United States", "India"])).check(raw)
     assert (got.keep, got.location) == (keep, shown)
 
 
 def test_an_abroad_country_keeps_only_its_lanes():
-    from src.discovery.location import Allowlist
+    from src.shared.location.allowlist import Allowlist
     al = Allowlist(_Cfg(["United States", "India"], abroad={"india": {"lane_a"}}))
     assert al.check("Bengaluru", "lane_a").keep
     assert not al.check("Bengaluru", "lane_b").keep
@@ -857,14 +857,15 @@ def test_an_abroad_country_keeps_only_its_lanes():
     ("AI Engineer (in only one team)", set()),
 ])
 def test_residency_countries(title, expected):
-    from src.discovery.location import REGION_TOKEN_COUNTRIES, residency_countries
+    from src.shared.location.allowlist import residency_countries
+    from src.shared.location.places import REGION_TOKEN_COUNTRIES
     if expected == "europe":
         expected = set(REGION_TOKEN_COUNTRIES["europe"])
     assert residency_countries(title) == expected
 
 
 def test_a_title_limited_to_disallowed_countries_is_dropped():
-    from src.discovery.location import Allowlist
+    from src.shared.location.allowlist import Allowlist
     al = Allowlist(_Cfg(["United States", "India"]))
     assert not al.check("Remote", "", "AI Engineer Backend (Remote - ES/UK only)").keep
     assert al.check("Remote", "", "AI Engineer (US or UK only)").keep

@@ -1,4 +1,4 @@
-"""src/verticals.py loader tests: fixture happy path, verbatim carry-through
+"""src/shared/verticals.py loader tests: fixture happy path, verbatim carry-through
 of the stamps and reasoning texts that land in scored.parquet, validation
 failures, and the committed example template. Runs against the synthetic
 tests/fixtures/verticals.yaml; the real config is covered by
@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src import verticals
+from src.shared import verticals
 from tests.conftest import FIXTURE_PATH
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_raw() -> dict:
@@ -44,7 +44,7 @@ class TestFixtureHappyPath:
         """A vertical with no classifier rule can never be reached by the title
         fallback, so an inbox clip for it silently lands out-of-lane. What each
         rule matches is pinned by the parametrized table in
-        tests/discovery/test_normalize.py, not duplicated here."""
+        tests/shared/test_identity.py, not duplicated here."""
         owners = {vertical for vertical, _rule in cfg.classifier_rules}
         assert owners == set(cfg.names)
 

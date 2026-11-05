@@ -48,10 +48,10 @@ app = "src.app_cli:main"
 profile-extract = "src.profile_extract:main"
 onboard-scaffold = "src.onboard_scaffold:main"
 discover = "src.discovery.run:main"
-verticals-check = "src.verticals:main"
+verticals-check = "src.shared.verticals:main"
 discovery-check = "src.discovery.config:main"
 discover-digest = "src.discovery.digest:main"
-discover-dupes = "src.discovery.dupes:main"
+discover-dupes = "src.discovery.dedupe:main"
 apply = "src.apply_cli:main"
 synonyms = "src.synonyms_cli:main"
 summary = "src.summary:main"
@@ -83,7 +83,7 @@ apply = [
 #     packages it. Needs autoconf/automake/libtool/pkgconf plus a compiler, and
 #     `make` downloads ~2GB of model data into --datadir. Export
 #     LIBPOSTAL_PREFIX (and LD_LIBRARY_PATH) if you used a non-default --prefix.
-# src/discovery/location.py imports it lazily, at the one call site, so a clone
+# src/shared/location/parser.py imports it lazily, at the one call site, so a clone
 # without it can still import discovery — the failure is a clear message when
 # address parsing is actually reached.
 discovery = [

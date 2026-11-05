@@ -18,9 +18,11 @@ from jobspy.model import Country, DescriptionFormat, ScraperInput, Site
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.discovery import normalize as N
+from src.discovery import parse
+
+from src.shared import title_gate
 from src.discovery.config import MIN_PAGE_DELAY_SECONDS, pacing_floor
-from src.discovery.sources.boards import LaneStats
+from src.discovery.sources.boards.base import LaneStats
 from src.discovery.store import make_posting
 
 DESCRIPTION_FORMAT = "markdown"
@@ -138,9 +140,9 @@ def posting_from(record: dict, name: str, vertical: str, term: str, is_remote: b
         location_raw=_value(record, "location"),
         jd_text=_value(record, "description"),
         posted_date=record.get("date_posted"),
-        remote_flag=N.as_bool(record.get("is_remote")),
-        salary_min=N.yearly_salary(record.get("min_amount"), record.get("interval")),
-        salary_max=N.yearly_salary(record.get("max_amount"), record.get("interval")),
+        remote_flag=parse.as_bool(record.get("is_remote")),
+        salary_min=parse.yearly_salary(record.get("min_amount"), record.get("interval")),
+        salary_max=parse.yearly_salary(record.get("max_amount"), record.get("interval")),
         salary_currency=_value(record, "currency"),
         employment_type=str(job_type or ""), seniority_raw=_value(record, "job_level"),
         vertical=vertical, found_by_term=term, found_by_remote=is_remote,
@@ -216,11 +218,11 @@ class SearchLane:
         if not key or not posting["title"]:
             return
         if not posting["vertical"]:
-            posting["vertical"] = N.classify_vertical_from_title(posting["title"])
+            posting["vertical"] = title_gate.classify_vertical_from_title(posting["title"])
             if not posting["vertical"]:
                 return
         stats.classified += 1
-        passes = N.title_passes(posting["title"], posting["vertical"], self.name, crawl.vcfg)
+        passes = title_gate.title_passes(posting["title"], posting["vertical"], self.name, crawl.vcfg)
         crawl.record_listing(self.name, posting["title"], posting["vertical"], passes, key)
         if not passes:
             return
@@ -233,7 +235,7 @@ class SearchLane:
             return
         seen.add(key)
         stats.new += 1
-        if len(posting["jd_text"].strip()) >= N.MIN_JD_CHARS:
+        if len(posting["jd_text"].strip()) >= parse.MIN_JD_CHARS:
             crawl.known[key] = {}
             crawl.batch.upsert(posting)
         elif self.name == "linkedin":
@@ -257,7 +259,7 @@ class SearchLane:
                 stats.errors.append(f"detail {job_id}: {type(e).__name__}: {e}")
                 details = {}
             jd = (details or {}).get("description") or ""
-            if len(jd.strip()) < N.MIN_JD_CHARS:
+            if len(jd.strip()) < parse.MIN_JD_CHARS:
                 stats.detail_failed += 1
                 continue
             stats.detail_ok += 1

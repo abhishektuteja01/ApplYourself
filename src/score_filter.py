@@ -16,10 +16,9 @@ from typing import Any
 
 import yaml
 
-from src import paths
-from src import verticals
-from src.discovery import normalize as N
-
+from src.shared import paths
+from src.shared import verticals
+from src.shared import jd_trim
 SCORING_PATH = paths.PROFILE / "scoring.yaml"
 _SCHEMA_VERSION = 1
 
@@ -268,7 +267,7 @@ def word_count(jd_text: Any) -> int:
 def trim_jd(jd_text: Any, cfg: ScoringConfig) -> str:
     """The JD without its boilerplate sections (EEO, benefits, about-us...),
     per trim_jd.headings and trim_jd.keep_words."""
-    return N.trim_boilerplate(jd_text, cfg.trim_headings, cfg.keep_words)
+    return jd_trim.trim_boilerplate(jd_text, cfg.trim_headings, cfg.keep_words)
 
 
 def load_trim(path: Path | None = None) -> tuple[tuple[str, ...], tuple[str, ...]]:

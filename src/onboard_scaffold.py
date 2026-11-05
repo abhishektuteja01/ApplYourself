@@ -44,7 +44,7 @@ from pathlib import Path
 
 import yaml
 
-from src import paths
+from src.shared import paths
 
 PROFILE = paths.PROFILE  # tests repoint these names; keep them module attrs
 REPO_ROOT = paths.REPO_ROOT

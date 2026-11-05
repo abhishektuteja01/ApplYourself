@@ -18,14 +18,20 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Every module that transitively pulled in postal before the import was made
 # lazy: location itself and every discovery module around it.
 DISCOVERY_MODULES = [
-    "src.discovery.location",
-    "src.discovery.normalize",
+    "src.shared.location.places",
+    "src.shared.location.parser",
+    "src.shared.location.allowlist",
+    "src.shared.identity",
+    "src.shared.title_gate",
+    "src.discovery.parse",
     "src.discovery.store",
+    "src.discovery.dedupe",
+    "src.discovery.live_view",
     "src.discovery.run",
     "src.discovery.ingest_url",
-    "src.discovery.sources.boards",
+    "src.discovery.sources.boards.base",
     "src.discovery.sources.inbox",
-    "src.discovery.sources.workday",
+    "src.discovery.sources.boards.workday",
 ]
 
 
@@ -54,7 +60,7 @@ def test_discovery_modules_import_without_postal(tmp_path):
 
 def test_parse_location_without_postal_raises_an_actionable_error(tmp_path):
     proc = _run_without_postal(tmp_path, (
-        "from src.discovery.location import parse_location\n"
+        "from src.shared.location.parser import parse_location\n"
         "try:\n"
         "    parse_location('Austin, TX')\n"
         "except RuntimeError as exc:\n"

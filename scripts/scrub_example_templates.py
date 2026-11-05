@@ -37,7 +37,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from src import paths
+from src.shared import paths
 
 RESUME = paths.REPO_ROOT / "profile" / "resume_template.example.docx"
 COVER = paths.REPO_ROOT / "profile" / "cover_letter_template.example.docx"

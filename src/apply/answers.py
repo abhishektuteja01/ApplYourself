@@ -30,7 +30,7 @@ from pathlib import Path
 
 import yaml
 
-from src import paths
+from src.shared import paths
 from src.apply.reconcile import MergedField
 
 PROFILE = paths.PROFILE

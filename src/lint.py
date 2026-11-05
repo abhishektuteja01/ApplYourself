@@ -23,7 +23,7 @@ from typing import Literal, TypedDict
 
 import yaml
 
-from src import paths
+from src.shared import paths
 
 
 class Substitution(TypedDict):

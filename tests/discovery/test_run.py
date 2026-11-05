@@ -8,9 +8,12 @@ import pandas as pd
 import pytest
 
 from src.discovery import digest, ingest_url, run as R, store as S
+
+from src.discovery import live_view
 from src.discovery.config import DiscoveryConfig
-from src.discovery.location import Allowed
-from src.discovery.sources import boards as B, inbox as I, search as Q
+from src.shared.location.allowlist import Allowed
+from src.discovery.sources.boards import base as B
+from src.discovery.sources import inbox as I, search as Q
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build and ship widget reconciliation systems for finance teams every day. " * 5
@@ -180,9 +183,9 @@ class AllowAll:
 
 @pytest.fixture
 def wired(monkeypatch, tmp_path):
-    import src.discovery.location as L
-    monkeypatch.setattr(L, "require_libpostal", lambda: None)
-    monkeypatch.setattr(L, "Allowlist", AllowAll)
+    from src.shared.location import allowlist, parser
+    monkeypatch.setattr(parser, "require_libpostal", lambda: None)
+    monkeypatch.setattr(allowlist, "Allowlist", AllowAll)
     cfg = DiscoveryConfig()
     monkeypatch.setattr(R, "load_config", lambda: cfg)
     monkeypatch.setattr(R, "_lane", lambda name: {"greenhouse": FakeLane(), "lever": Crashing()}[name])
@@ -195,7 +198,7 @@ def test_main_saves_postings_writes_clean_and_contains_a_crash(wired):
                    "--boards-dir", str(wired)])
     assert code == 0
     clean = pd.read_parquet(wired / "clean.parquet")
-    assert list(clean.columns) == S.CLEAN_COLUMNS and len(clean) == 1
+    assert list(clean.columns) == live_view.CLEAN_COLUMNS and len(clean) == 1
     [report] = [json.loads(f.read_text(encoding="utf-8")) for f in (wired / "runs").glob("*.json")]
     assert report["lanes"]["lever"]["status"] == "crashed"
     assert report["lanes"]["greenhouse"]["status"] == "ok"
@@ -276,8 +279,8 @@ def test_ingest_a_generic_url_needs_company_and_title():
 
 
 def test_ingest_saves_and_returns_the_id(monkeypatch, tmp_path, cfg):
-    import src.discovery.location as L
-    monkeypatch.setattr(L, "Allowlist", AllowAll)
+    from src.shared.location import allowlist
+    monkeypatch.setattr(allowlist, "Allowlist", AllowAll)
     monkeypatch.setattr(ingest_url, "load_config", lambda: DiscoveryConfig())
     monkeypatch.setattr(R, "load_state_index", lambda p: {})
     monkeypatch.setattr(ingest_url, "load_state_index", lambda p: {})

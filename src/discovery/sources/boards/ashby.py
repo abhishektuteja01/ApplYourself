@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from src.ats_http import CareersError, fetch_json, fetch_json_post
-from src.discovery import normalize as N
-from src.discovery.sources.boards import Board, BoardLane, job_items
+from src.shared.http_client import CareersError, fetch_json, fetch_json_post
+from src.discovery import parse
+from src.discovery.sources.boards.base import Board, BoardLane, job_items
 from src.discovery.store import make_posting
 
 API = "https://api.ashbyhq.com/posting-api/job-board"
@@ -30,8 +30,8 @@ def _salary(comp) -> tuple:
         for part in (tier or {}).get("components") or [] if isinstance(tier, dict) else []:
             if isinstance(part, dict) and part.get("compensationType") == "Salary":
                 period = part.get("interval")
-                return (N.yearly_salary(part.get("minValue"), period),
-                        N.yearly_salary(part.get("maxValue"), period),
+                return (parse.yearly_salary(part.get("minValue"), period),
+                        parse.yearly_salary(part.get("maxValue"), period),
                         part.get("currencyCode") or "")
     return None, None, ""
 
@@ -44,9 +44,9 @@ def posting_from(item: dict, company: str) -> dict | None:
     lo, hi, currency = _salary(item.get("compensation"))
     return make_posting(
         source="ashby", company=company, title=title, url=url,
-        jd_text=N.html_to_text(item.get("descriptionHtml") or item.get("descriptionPlain")),
+        jd_text=parse.html_to_text(item.get("descriptionHtml") or item.get("descriptionPlain")),
         location_raw=item.get("location") or "",
-        posted_date=N.iso_date(item.get("publishedAt")),
+        posted_date=parse.iso_date(item.get("publishedAt")),
         remote_flag=item.get("isRemote") is True,
         salary_min=lo, salary_max=hi, salary_currency=currency,
         employment_type=item.get("employmentType") or "",
@@ -115,5 +115,5 @@ class AshbyLane(BoardLane):
                          "jobPostingId": posting["_id"]}, crawl.deadline_ts).get("jobPosting")
         if not isinstance(found, dict):
             return None
-        return {**posting, "jd_text": N.html_to_text(found.get("descriptionHtml")),
-                "posted_date": N.iso_date(found.get("publishedDate"))}
+        return {**posting, "jd_text": parse.html_to_text(found.get("descriptionHtml")),
+                "posted_date": parse.iso_date(found.get("publishedDate"))}

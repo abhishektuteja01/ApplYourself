@@ -5,10 +5,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.ats_http import CareersError
+from src.shared.http_client import CareersError
 from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
-from src.discovery.sources import ashby, boards as B, eightfold, greenhouse, lever, workday
+from src.discovery.sources.boards import ashby, base as B, eightfold, greenhouse, lever, workday
 
 TODAY = pd.Timestamp("2026-09-27")
 HTML = "<p>" + "Build and ship retrieval systems for clinical trial data. " * 6 + "</p>"

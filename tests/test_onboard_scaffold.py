@@ -14,7 +14,7 @@ import pytest
 import yaml
 
 from src import onboard_scaffold as scaffold
-from src.verticals import load_verticals
+from src.shared.verticals import load_verticals
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REAL_PROFILE = REPO_ROOT / "profile"
@@ -288,7 +288,7 @@ class TestVerticalName:
         assert run("--vertical", name, "--work-auth", "citizen") == 0
 
     def test_the_pattern_is_the_loader_pattern(self):
-        from src import verticals as v
+        from src.shared import verticals as v
         assert scaffold.VERTICAL_NAME_RE.pattern == v._NAME_RE.pattern
 
 

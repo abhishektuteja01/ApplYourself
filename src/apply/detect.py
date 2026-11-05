@@ -5,7 +5,7 @@ importing the whole submission CLI. Both callers must agree: a role the
 shortlist calls auto-submittable and the queue calls manual-apply is exactly
 a silent gap.
 
-Board identity itself lives in one table, `src/ats_registry.py`,
+Board identity itself lives in one table, `src/shared/job_boards.py`,
 shared with discovery — so dedupe, ingest and submission cannot drift on what
 a URL is.
 
@@ -14,7 +14,7 @@ keys off URL shape only.
 """
 from __future__ import annotations
 
-from src.ats_registry import (
+from src.shared.job_boards import (
     SUBMITTABLE_SOURCES,
     detect_source,
 )

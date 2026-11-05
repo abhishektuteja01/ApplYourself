@@ -21,7 +21,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import paths, state_io, synonyms_cli
+from src.shared import paths
+from src import state_io, synonyms_cli
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates

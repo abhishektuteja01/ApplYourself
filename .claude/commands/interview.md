@@ -62,7 +62,7 @@ Read the valid lane names from config — never hardcode them:
 
 ```bash
 uv run python -c "
-from src.verticals import get_config
+from src.shared.verticals import get_config
 c = get_config()
 print('lanes:', ' '.join(sorted(c.verticals)))
 print('default:', c.default_vertical)

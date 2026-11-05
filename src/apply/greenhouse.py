@@ -23,14 +23,14 @@ from urllib.parse import urlparse
 from src.apply.domscan import FormScan, scan_form
 from src.apply.reconcile import Reconciled, reconcile
 from src.apply.schema import BoardSchema, fetch_questions
-from src.ats_http import CareersError, fetch_text
-from src import ats_registry
+from src.shared.http_client import CareersError, fetch_text
+from src.shared import job_boards
 
 EMBED_URL = "https://boards.greenhouse.io/embed/job_app?token={token}"
 
 # Shared board table: host variants (.eu included), posting shape and query
 # keys live in one place. The slug is captured for cross-checking only.
-_GH = ats_registry.get_source("greenhouse")
+_GH = job_boards.get_source("greenhouse")
 # The slug as it appears in the rendered form's action. `&` arrives escaped.
 _FORM_ACTION = re.compile(
     r'<form[^>]*\baction="/embed/job_app\?for=(?P<slug>[^&"]+)&(?:amp;)?token=(?P<token>\d+)"',
@@ -80,11 +80,11 @@ def parse_posting(url: str) -> Posting:
     if not text:
         raise ApplyUrlError("no URL")
 
-    hit = ats_registry.parse_posting_url(text)
+    hit = job_boards.parse_posting_url(text)
     if hit is not None and hit.source == _GH.name:
         return Posting(token=hit.posting_id, url_slug=hit.slug or None)
 
-    tokens, _ = ats_registry.query_values(_GH, text)
+    tokens, _ = job_boards.query_values(_GH, text)
     if len(tokens) > 1:
         raise ApplyUrlError(f"URL carries {len(tokens)} different job tokens: {text}")
     token = next(iter(tokens), "")

@@ -26,9 +26,9 @@ are structurally required and do not count.
 
 Call `verticals.get_config()` **inside function bodies**, never at module level, so
 test injection via `set_config()` always wins. The one instance-capture to watch is
-`discovery/run.py`'s `main`, which hands one config to `sources.boards.Crawl`
+`discovery/run.py`'s `main`, which hands one config to `sources.boards.base.Crawl`
 for the run's lifetime.
 
-`src/paths.py` is re-exported, not imported through: modules bind their own
+`src/shared/paths.py` is re-exported, not imported through: modules bind their own
 module-level names (`CLEAN = paths.CLEAN`) because tests patch those local names.
 A global path change touches one file; a test override needs the right alias.

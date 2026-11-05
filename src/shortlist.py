@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import contacts, verticals
+from src import contacts
+from src.shared import verticals
 from src.apply.detect import is_auto_submittable
 from src.score_filter import ScoringConfig
 from src.score_store import read_scored
