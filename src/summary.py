@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import state_io, synonyms_cli
+from src import app_cli, state_io, synonyms_cli
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
@@ -265,9 +265,9 @@ def tailoring_section(total: int, unresolved: dict[str, str], names: dict[str, s
 
 def tailor_reason(job: str, run_dir: Path | None, live: set[str]) -> str:
     """Why a role has no finished resume now; "" when it has one."""
-    folders = sorted(APPLICATIONS.glob(f"*/*_{job}*"))
-    if folders:
-        has = lambda pat: any(folders[-1].glob(pat))  # noqa: E731
+    folder = app_cli.role_folder(job)
+    if folder:
+        has = lambda pat: any(folder.glob(pat))  # noqa: E731
         if has("*_Resume.docx") and has("*_Resume.pdf"):
             return ""
         if has("*_Resume.docx"):

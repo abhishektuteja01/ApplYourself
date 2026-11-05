@@ -111,6 +111,12 @@ def _role_dirs(job_id: str) -> list[Path]:
     return sorted(set(found), key=_version)
 
 
+def role_folder(job_id: str) -> Path | None:
+    """The role's newest folder on disk (numeric `_vN` order), or None."""
+    dirs = _role_dirs(job_id)
+    return dirs[-1] if dirs else None
+
+
 def _version(p: Path) -> int:
     m = re.search(r"_v(\d+)$", p.name)
     return int(m.group(1)) if m else 1
@@ -159,7 +165,7 @@ def role_info(job_id: str) -> dict:
     built in (tailored_dirs[-1]) — what letters, answers and /apply use.
     `work_dir` is the newest folder on disk — where the next resume builds."""
     state = _state(job_id)
-    dirs = _role_dirs(job_id)
+    newest = role_folder(job_id)
     built_dir = built_folder(state)
     name, slug = _identity()
 
@@ -170,9 +176,9 @@ def role_info(job_id: str) -> dict:
         "job_id": job_id,
         "state": state.get("state", ""),
         "vertical": (built_dir.relative_to(APPLICATIONS).parts[0] if built_dir
-                     else dirs[-1].parent.name if dirs else ""),
+                     else newest.parent.name if newest else ""),
         "dir": str(built_dir.relative_to(APPLICATIONS.parent)) if built_dir else "",
-        "work_dir": str(dirs[-1].relative_to(APPLICATIONS.parent)) if dirs else "",
+        "work_dir": str(newest.relative_to(APPLICATIONS.parent)) if newest else "",
         "name": name,
         "file_slug": slug,
         "has_resume": has(built_dir, f"{slug}_Resume.docx"),
@@ -227,11 +233,13 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
     if registered != 0:
         raise AppError(f"could not register {job_id} in pipeline/.")
 
-    dirs = _role_dirs(job_id)
-    newest = dirs[-1] if dirs else None
+    newest = role_folder(job_id)
     _, slug = _identity()
-    if newest and newest.parent.name == lane and not (newest / f"{slug}_Resume.docx").exists():
-        folder = newest                                     # an unfinished run: resume it
+    recorded = _state(job_id).get("tailored_dirs") or []
+    if newest and newest.parent.name == lane and (
+            not (newest / f"{slug}_Resume.docx").exists()
+            or str(newest.relative_to(APPLICATIONS)) not in recorded):
+        folder = newest                                     # an unfinished or unrecorded run: resume it
     else:
         base = f"{today}_{_slug(row.get('company', '')) or job_id}_{_slug(row.get('title', ''))}_{job_id}"
         folder = APPLICATIONS / lane / (f"{base}_v{_version(newest) + 1}" if newest else base)
