@@ -25,14 +25,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from src.shared import paths
-from src.shared.http_client import CareersError, fetch_json
 from src.discovery.config import load_config, pacing_floor
 from src.discovery.parse import iso_date, ms_date, relative_posted_date
 from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.discovery.sources.boards import eightfold as ef
 from src.discovery.sources.boards import workday as wd
 from src.discovery.sources.boards.base import job_items, load_boards
+from src.shared import paths
+from src.shared.http_client import CareersError, fetch_json
 
 OUT_DIR = paths.REPO_ROOT / "jobs"
 DEFAULT_ATS = ("ashby", "greenhouse", "lever")
@@ -294,7 +294,7 @@ def main(argv=None) -> int:
             futures = {ats: pool.submit(audit_lane, ats, work[ats], pacings[ats],
                                         args.stale_days, today, writer, counts[ats])
                        for ats in lanes}
-            for ats, fut in futures.items():
+            for fut in futures.values():
                 fut.result()
     finally:
         writer.close()
