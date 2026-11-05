@@ -264,6 +264,7 @@ class TestFinish:
             {"keywords_to_mirror": [1]},
             {"reasoning": ""},
             {"action": "tailor"},
+            {"acton": "skip"},  # a mistyped optional key would silently drop the skip
             {"job_id": "zzzzzzzz"},
         ],
     )
@@ -367,10 +368,16 @@ class TestFocus:
         assert self._one(env, scfg, focus=focus, focus_evidence=ev, domain=domain)["merged"] == 1
         assert json.loads(_scored(env).loc["aaaaaaaa", "fit_subscores"])["domain"] == want
 
-    @pytest.mark.parametrize("bad", [{}, {"focus": "yes"}])
-    def test_focus_lane_needs_a_yes_or_no(self, env, scfg, bad):
+    @pytest.mark.parametrize(
+        "bad, err",
+        [
+            ({}, "focus must be true or false"),
+            ({"focus": "yes"}, "focus: Input should be a valid boolean"),
+        ],
+    )
+    def test_focus_lane_needs_a_yes_or_no(self, env, scfg, bad, err):
         res = self._one(env, scfg, **bad)
-        assert res["merged"] == 0 and "focus must be true or false" in str(res["bad"])
+        assert res["merged"] == 0 and err in str(res["bad"])
 
     @pytest.mark.parametrize(
         "ev, err", [("", "must quote the JD"), ("we serve banks", "not a quote from the JD")]
