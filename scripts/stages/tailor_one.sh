@@ -8,7 +8,7 @@ set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 STAGE=tailor; LOG="$RUN_DIR/tailor.log"
 ID="$1"
-TOOLS='Bash(uv run *),Bash(cd *),Bash(git rev-parse *),Read,Write,Edit'
+TOOLS='Bash(uv run verticals-check *),Bash(uv run app *),Bash(cd *),Bash(git rev-parse *),Read,Write,Edit'
 
 has() {  # built: the newest folder's build is recorded, with its pdf; pdf_missing: docx, no pdf
   "$UV" run python - "$ID" "$1" <<'PY'

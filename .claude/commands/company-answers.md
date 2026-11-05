@@ -3,7 +3,9 @@ description: Research a company and write company_answers.yaml (why_company / wh
 model: opus
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run app *)
   - Read
   - Write
   - WebSearch

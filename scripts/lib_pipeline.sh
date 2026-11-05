@@ -108,7 +108,7 @@ run_claude() {
   [[ -n "$CLAUDE" ]] || { echo "FATAL: claude not found on PATH" >&2; return 127; }
   "$CLAUDE" -p "$prompt" \
     --permission-mode dontAsk --permission-prompts none \
-    --allowedTools "$tools" \
+    --allowedTools "$tools" --disallowedTools 'Bash(uv run python *)' \
     --output-format json --no-session-persistence \
     --max-budget-usd "$budget" "$@" > "$out" 2>>"$LOG"
   local code=$?

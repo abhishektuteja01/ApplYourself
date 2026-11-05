@@ -7,7 +7,7 @@ set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 stage_start synonyms
 
-TOOLS='Bash(uv run *),Bash(cd *),Bash(git rev-parse *),Read,Write'
+TOOLS='Bash(uv run apply sheet *),Bash(uv run synonyms *),Bash(cd *),Bash(git rev-parse *),Read,Write'
 if [[ "$DRY_RUN" == 1 ]]; then
   echo "[dry-run] uv run apply sheet --add"
   run_claude auto "$TOOLS" "/suggest-synonyms --auto"

@@ -4,7 +4,10 @@ argument-hint: "[--auto]"
 model: sonnet
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run apply sheet *)
+  - Bash(uv run synonyms *)
   - Read
   - Write
 ---
@@ -86,7 +89,6 @@ not in this file.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 uv run apply sheet --add >/dev/null
 uv run synonyms keywords > jobs/synonyms_keywords.json
-uv run python -c "import json; d=json.load(open('jobs/synonyms_keywords.json', encoding='utf-8')); print(len(d['job_ids']), 'roles,', len(d['keywords']), 'keywords')"
 ```
 
 `keywords` are the top 40 `keywords_to_mirror` of the roles with no resume yet,

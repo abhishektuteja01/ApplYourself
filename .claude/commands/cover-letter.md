@@ -3,7 +3,10 @@ description: Write a one-page cover letter for a job_id into its built folder. T
 model: opus
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run app *)
+  - Bash(uv run track *)
   - Read
   - Write
   - Skill

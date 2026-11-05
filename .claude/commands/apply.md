@@ -3,7 +3,11 @@ description: Finish one role's application — answer what the answer bank does 
 model: opus
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run apply *)
+  - Bash(uv run app *)
+  - Bash(uv run track *)
   - Read
   - Write
   - Edit

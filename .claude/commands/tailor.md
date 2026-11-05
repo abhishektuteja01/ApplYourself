@@ -3,7 +3,10 @@ description: Tailor a one-page resume for a job_id. The session chooses bullets,
 model: opus
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run verticals-check *)
+  - Bash(uv run app *)
   - Read
   - Write
 argument-hint: <job_id>
