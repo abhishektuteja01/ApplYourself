@@ -52,3 +52,8 @@ def test_the_log_directory_is_committed():
 def test_every_script_is_valid_bash(script):
     result = subprocess.run(["bash", "-n", str(script)], capture_output=True, encoding="utf-8")
     assert result.returncode == 0, result.stderr
+
+
+def test_the_example_automation_config_passes_the_key_check():
+    from src.shared.config_keys import load_automation
+    load_automation(REPO_ROOT / "profile" / "automation.example.yaml")

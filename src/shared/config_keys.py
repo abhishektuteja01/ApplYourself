@@ -11,6 +11,7 @@ AUTOMATION_KEYS = frozenset({
     "schema_version", "score_threshold", "table_path", "tailor_parallel",
     "tailor_stagger_seconds", "retries", "max_budget_usd_per_call",
     "auto_add_synonyms", "unlock_max_open", "summary_email",
+    "tailor_max_per_night", "apply_prep_max_per_night",
 })
 
 
