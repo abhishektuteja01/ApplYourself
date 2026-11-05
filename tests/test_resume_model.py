@@ -5,6 +5,7 @@ copied into tmp_path when a test needs to break it."""
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -320,3 +321,16 @@ def test_an_old_or_unknown_entry_key_is_named(world):
     problems = resume_model.check_sources(resume_model.load_sources(), cfg)
     assert any("B-WID-01: unknown key 'source'" in p for p in problems)
     assert any("SKILL-SQL: unknown key 'vertical_lean'" in p for p in problems)
+
+
+@pytest.mark.parametrize(
+    "text, error",
+    [
+        ("## B-X-01\ncanonical: a\n\n## B-X-01\ncanonical: b\n", "f.md:4: duplicate id 'B-X-01'"),
+        ("## B-X-01\ncanonical: a long claim\n  that wraps\n", "f.md:3: stray line"),
+        ("## B-X-01\ntags: [a, b\n", "f.md:2: bad inline YAML in 'tags'"),
+    ],
+)
+def test_parse_entries_names_the_line_of_a_hidden_mistake(text, error):
+    with pytest.raises(resume_model.SourceError, match=re.escape(error)):
+        resume_model.parse_entries(text, "f.md")

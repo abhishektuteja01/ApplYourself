@@ -57,6 +57,13 @@ def _resume_sources() -> None:
         raise ValueError("; ".join(problems))
 
 
+def _stories() -> None:
+    from src.resume_model import parse_entries
+
+    path = paths.PROFILE / "stories.md"
+    parse_entries(path.read_text(encoding="utf-8"), path.name)
+
+
 # (file, required, check). An optional file that is missing is skipped.
 CHECKS: tuple[tuple[str, bool, Callable[[], None]], ...] = (
     ("verticals.yaml", True, _verticals),
@@ -66,6 +73,7 @@ CHECKS: tuple[tuple[str, bool, Callable[[], None]], ...] = (
     ("contacts.yaml", False, _contacts),
     ("application_answers.yaml", True, _answers),
     ("resume.yaml + bullets.md + skills_master.md", True, _resume_sources),
+    ("stories.md", False, _stories),
 )
 
 
