@@ -28,8 +28,9 @@ is deterministic plumbing; all judgment happens inside a slash-command session,
 which calls the `src/` helpers via Bash. A corollary: `src/` is vertical-agnostic
 and company-agnostic.
 
-**R10 — one writer for state.** `/track` is the sole writer of state transitions.
-Every other command appends to side lists only.
+**R10 — one writer for state.** `src/track_cli.py` is the only module that changes
+`state:`; `/track`, `app_cli`, `apply_cli` and `apply/triage` all go through
+`track_cli.main`. Everything else appends to side lists only.
 
 R7 and R10 are the only rule codes in this repo. Every other rule is stated inline
 where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
@@ -118,7 +119,8 @@ never `state.yaml`.
 `.claude/shared/no_fab.md` is the one include the writing commands read: it defines
 `NO-FAB`, `NO-DRIFT`, `REPHRASE-LICENSE`, `SKILLS-SOURCE`, the problem codes
 `uv run app build` reports, and the fix loop. `saved -> tailored` is
-`uv run track <id> tailored --if saved`, fired by `/cover-letter` and `/apply`.
+`uv run track <id> tailored --if saved`, fired by `/cover-letter`, `/apply` and
+`apply triage --fill`.
 No LLM *judging* in `src/`: the session writes a small YAML of choices, and
 `src/app_cli.py` does everything mechanical around it.
 
