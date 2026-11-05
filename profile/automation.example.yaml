@@ -9,6 +9,8 @@ tailor_parallel: 2           # most /tailor calls running at once
 tailor_stagger_seconds: 60   # one /tailor started this often, so Word and the API are not hit at once
 retries: 1                   # a failed tailor or owed judge is retried this many times
 max_budget_usd_per_call: 10  # spend cap for one claude -p call
+tailor_max_per_night: 0      # most roles /tailor takes a night; the rest wait (0 = no cap)
+apply_prep_max_per_night: 0  # most roles /apply takes a night (0 = no cap)
 
 # Synonyms stage (/suggest-synonyms --auto).
 auto_add_synonyms: true      # add the ready-to-add rephrasings without asking

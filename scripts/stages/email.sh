@@ -13,7 +13,10 @@ HTML="${MD%.md}.html"
 
 DATE="$(head -1 "$MD" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)"
 FAILED="$(grep -cE '^\*\*[a-z_]+ failed\*\*' "$MD")"
-if [[ "$FAILED" -eq 0 ]]; then SUBJECT="Night summary $DATE: ok"; else SUBJECT="Night summary $DATE: $FAILED stage(s) failed"; fi
+PARTIAL="$(grep -cE '^\*\*[a-z_]+ partial\*\*' "$MD")"
+if [[ "$FAILED" -gt 0 ]]; then SUBJECT="Night summary $DATE: $FAILED stage(s) failed"
+elif [[ "$PARTIAL" -gt 0 ]]; then SUBJECT="Night summary $DATE: partial ($PARTIAL stage(s))"
+else SUBJECT="Night summary $DATE: ok"; fi
 
 if [[ "$DRY_RUN" == 1 ]]; then
   echo "[dry-run] mail to $ADDR | $SUBJECT | $HTML"

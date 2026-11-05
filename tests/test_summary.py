@@ -38,6 +38,18 @@ def test_a_failed_stage_leads_and_a_missing_one_says_so():
                        "tailor not run · apply_prep not run")
 
 
+def test_a_partial_stage_and_its_deferred_roles_are_shown(tmp_path):
+    (tmp_path / "summary.txt").write_text(
+        "discover code=0 seconds=60 \n"                       # a line from before status=
+        "tailor code=0 seconds=60 status=partial deferred=56 30/86 tailored, 56 deferred\n",
+        encoding="utf-8")
+    stages = M.stage_lines(tmp_path)
+    assert stages["discover"]["status"] == "ok" and stages["tailor"]["detail"] == "30/86 tailored, 56 deferred"
+    out = M.run_section(stages)
+    assert out[0] == "**tailor partial** 30/86 tailored, 56 deferred"
+    assert "tailor partial 1m" in out[1] and out[2].endswith(": tailor 56")
+
+
 def _report(run_id, new, lanes=None, clean=3000):
     return {"run_id": run_id, "new_job_ids": new, "view": {"clean": clean},
             "lanes": lanes or {"lever": {"status": "ok", "errors": [], "http": {}}}}
