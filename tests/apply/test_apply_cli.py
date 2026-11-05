@@ -1118,6 +1118,24 @@ class TestSubmitRequiresAnExplicitBound:
         assert planned == [], "nothing may even be fetched"
         assert not runs.exists(), "no run was started, so no report belongs to one"
 
+    def test_unattended_refuses_submit_and_bank_writes(
+        self, repo, monkeypatch, tmp_path, capsys
+    ):
+        import shutil
+        repo.write_state()
+        monkeypatch.setenv("APPLY_UNATTENDED", "1")
+        monkeypatch.setattr(apply_cli, "run_one",
+                             _raise(AssertionError("must not open a browser")))
+        assert apply_cli.main(["run", "--job-id", JOB_ID, "--submit", "--yes"]) == 1
+        assert "APPLY_UNATTENDED=1" in capsys.readouterr().err
+
+        bank_path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", bank_path)
+        before = bank_path.read_text(encoding="utf-8")
+        assert apply_cli.main(["learn", "--path", str(bank_path), "--undo", "pronouns"]) == 1
+        assert "APPLY_UNATTENDED=1" in capsys.readouterr().err
+        assert bank_path.read_text(encoding="utf-8") == before
+
     def test_without_submit_no_limit_is_needed(self, repo, monkeypatch, tmp_path):
         # The bound is on *submitting*, not on walking. A fill-and-stop run
         # sends nothing, so it stays unbounded.

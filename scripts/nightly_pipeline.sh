@@ -16,6 +16,7 @@ STAMP="$(date +%Y-%m-%d_%H%M%S)"
 export RUN_DIR="$HERE/../logs/pipeline_$STAMP"   # before the lib, which would invent one
 source "$HERE/lib_pipeline.sh"
 RUN_DIR="$REPO/logs/pipeline_$STAMP"; export RUN_DIR
+export APPLY_UNATTENDED=1   # apply run refuses --submit and bank writes (src/apply/bank.py)
 
 STAGES_DIR="${STAGES_DIR:-$REPO/scripts/stages}"
 echo "=== pipeline start $STAMP (run dir $RUN_DIR dry_run=$DRY_RUN) ===" | tee -a "$RUN_DIR/pipeline.log"

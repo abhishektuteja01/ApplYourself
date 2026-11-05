@@ -1489,6 +1489,12 @@ def confirm_submission(job_ids: list[str]) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if bank.unattended() and (args.submit or answers_confirmed(args.answers)):
+        what = "--submit" if args.submit else "a confirmed --answers file (it writes the bank)"
+        print(f"ERROR: {bank.UNATTENDED_ENV}=1: apply run refuses {what} in an "
+              "unattended run. Run it yourself, in a session.", file=sys.stderr)
+        return 1
+
     # Checked before anything opens a browser. --job-id is exempt: one named
     # role is already a bound of one.
     if args.submit and args.limit is None and not args.job_id:
