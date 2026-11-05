@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 import yaml
 
 from src import lint
+from src.session_schema import ProblemCode
 from src.shared import paths, verticals
 
 RESUME = paths.PROFILE / "resume.yaml"
@@ -387,7 +388,7 @@ def keep_terms(src: Sources, *extra: str) -> list[str]:
 @dataclass
 class Problem:
     where: str
-    code: str  # unknown_id | context | budget | license | number | skill | layout | lint
+    code: ProblemCode
     detail: str
 
     def as_dict(self) -> dict:
@@ -451,7 +452,7 @@ def build(
 
     def lint_problems(text: str, where: str) -> list[Problem]:
         return [
-            Problem(where, "lint", f"banned phrase {x['phrase']!r} ({x['category']})")
+            Problem(where, ProblemCode.LINT, f"banned phrase {x['phrase']!r} ({x['category']})")
             for x in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
         ]
 
@@ -463,7 +464,7 @@ def build(
     if s_text != shape.summary:
         s_source = "written"
         sp = [
-            Problem("summary", "unknown_id", f"{u} is not in bullets.md")
+            Problem("summary", ProblemCode.UNKNOWN_ID, f"{u} is not in bullets.md")
             for u in s_uses
             if u not in src.bullets
         ]
@@ -471,7 +472,7 @@ def build(
             [shape.summary, context_text(src)] + [bullet_text(src, u) for u in s_uses]
         )
         sp += [
-            Problem("summary", "number", f"{n} is in none of the cited bullets")
+            Problem("summary", ProblemCode.NUMBER, f"{n} is in none of the cited bullets")
             for n in ungrounded_numbers(s_text, grounds)
         ]
         backed = {s for s in claimed_skills(src, grounds)} | {
@@ -479,7 +480,9 @@ def build(
         }
         sp += [
             Problem(
-                "summary", "skill", f"{src.skills[s]['name']!r} ({s}) is backed by no cited bullet"
+                "summary",
+                ProblemCode.SKILL,
+                f"{src.skills[s]['name']!r} ({s}) is backed by no cited bullet",
             )
             for s in claimed_skills(src, s_text)
             if s not in backed
@@ -499,25 +502,29 @@ def build(
         bid = str((e or {}).get("id") or "")
         if bid not in src.bullets:
             problems.append(
-                Problem(bid or "entries", "unknown_id", f"{bid!r} is not in bullets.md")
+                Problem(bid or "entries", ProblemCode.UNKNOWN_ID, f"{bid!r} is not in bullets.md")
             )
             continue
         if bid in chosen:
-            problems.append(Problem(bid, "unknown_id", "listed twice"))
+            problems.append(Problem(bid, ProblemCode.UNKNOWN_ID, "listed twice"))
             continue
         ctx = src.context_of(bid)
         if lane_budget(src, ctx, lane) is None:
-            problems.append(Problem(bid, "context", f"context {ctx} is not shown on lane {lane}"))
+            problems.append(
+                Problem(bid, ProblemCode.CONTEXT, f"context {ctx} is not shown on lane {lane}")
+            )
             continue
         canonical = fix(str(src.bullets[bid]["canonical"]).strip())
         text = fix(str(e.get("text") or "").strip())
         if text and text != canonical:
             bp = [
-                Problem(bid, "license", f"{w!r} is in neither the bullet nor its synonyms")
+                Problem(
+                    bid, ProblemCode.LICENSE, f"{w!r} is in neither the bullet nor its synonyms"
+                )
                 for w in dict.fromkeys(unlicensed_words(src, bid, text))
             ]
             bp += [
-                Problem(bid, "number", f"{n} is not in the bullet")
+                Problem(bid, ProblemCode.NUMBER, f"{n} is not in the bullet")
                 for n in ungrounded_numbers(text, bullet_text(src, bid))
             ]
             bp += lint_problems(text, bid)
@@ -536,12 +543,18 @@ def build(
         budget = lane_budget(src, c, lane)
         if budget and not budget[0] <= counts[c] <= budget[1]:
             problems.append(
-                Problem(c, "budget", f"{counts[c]} bullets, lane {lane} allows {list(budget)}")
+                Problem(
+                    c, ProblemCode.BUDGET, f"{counts[c]} bullets, lane {lane} allows {list(budget)}"
+                )
             )
     lo, hi = shape.bullets
     if not lo <= len(chosen) <= hi:
         problems.append(
-            Problem("entries", "budget", f"{len(chosen)} bullets, lane {lane} allows [{lo}, {hi}]")
+            Problem(
+                "entries",
+                ProblemCode.BUDGET,
+                f"{len(chosen)} bullets, lane {lane} allows [{lo}, {hi}]",
+            )
         )
     for c in src.contexts:
         budget = lane_budget(src, c, lane)
@@ -555,7 +568,9 @@ def build(
     for label in plan_skills:
         if label not in shape.skill_lines:
             problems.append(
-                Problem(f"skills.{label}", "layout", f"not one of lane {lane}'s skill_lines")
+                Problem(
+                    f"skills.{label}", ProblemCode.LAYOUT, f"not one of lane {lane}'s skill_lines"
+                )
             )
     for label in shape.skill_lines:
         picks = plan_skills.get(label)
@@ -569,14 +584,18 @@ def build(
             s = src.skills.get(sid)
             if s is None:
                 problems.append(
-                    Problem(f"skills.{label}", "unknown_id", f"{sid} is not in skills_master.md")
+                    Problem(
+                        f"skills.{label}",
+                        ProblemCode.UNKNOWN_ID,
+                        f"{sid} is not in skills_master.md",
+                    )
                 )
                 continue
             if sid not in lines.get(label, []):
                 problems.append(
                     Problem(
                         f"skills.{label}",
-                        "layout",
+                        ProblemCode.LAYOUT,
                         f"{sid} does not show on this line for lane {lane}",
                     )
                 )
@@ -585,7 +604,7 @@ def build(
                 problems.append(
                     Problem(
                         f"skills.{label}",
-                        "skill",
+                        ProblemCode.SKILL,
                         f"{alias!r} is not an allowable synonym of {sid}",
                     )
                 )

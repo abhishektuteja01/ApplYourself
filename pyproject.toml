@@ -33,6 +33,7 @@ dependencies = [
     "geonamescache>=3.0.1",
     "pycountry>=24.0",
     "pypdf>=6.19.0",
+    "pydantic>=2.11",  # session file shapes (src/session_schema.py)
 ]
 
 [project.urls]

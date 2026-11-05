@@ -16,6 +16,7 @@ The role folder is the only state these commands share:
   build letter <job_id>
   build answers <job_id>
   dupes <job_id>                other ids that may be this role, already in play
+  schema resume|letter|answers  the keys that session file may hold (JSON Schema)
   lint outreach <draft> --company C [--recipient R]
                                 fix the draft's mechanical slips in place, list
                                 the phrase violations left
@@ -40,11 +41,12 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import lint, resume_model, state_io, track_cli
+from src import lint, resume_model, session_schema, state_io, track_cli
 from src.apply import ledger
 from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
 from src.docx_render import ResumeContentError, TemplateError, export_pdf, render_resume
+from src.session_schema import ProblemCode
 from src.shared import paths, verticals
 
 CLEAN = paths.CLEAN
@@ -296,7 +298,7 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
 def _pdf_unknown(where: str, pdf: dict) -> dict:
     return {
         "where": where,
-        "code": "pages",
+        "code": ProblemCode.PAGES,
         "detail": f"page count unknown: pdf {pdf['status']} "
         f"({pdf['detail']}); not a plan problem: rebuild once the pdf works, or pass --no-pdf",
     }
@@ -310,6 +312,8 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
     lane = folder.parent.name
     facts, _ = _read_snapshot(folder)
     plan = _load_yaml(folder / RESUME_PLAN)
+    if bad := session_schema.problems("resume", plan):
+        return {"ok": False, "problems": bad}, 2
     src = resume_model.load_sources()
     built = resume_model.build(
         src,
@@ -334,7 +338,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
             "problems": [
                 {
                     "where": "resume",
-                    "code": "pages",
+                    "code": ProblemCode.PAGES,
                     "detail": f"renders to {pdf['pages']} pages; drop or shorten bullets",
                 }
             ],
@@ -370,7 +374,7 @@ def _prose_problems(
 ) -> list[dict]:
     """Numbers must come from a cited bullet or the JD; lint with keep-terms."""
     out = [
-        {"where": where, "code": "unknown_id", "detail": f"{u} is not in bullets.md"}
+        {"where": where, "code": ProblemCode.UNKNOWN_ID, "detail": f"{u} is not in bullets.md"}
         for u in uses
         if u not in src.bullets
     ]
@@ -378,13 +382,17 @@ def _prose_problems(
         [grounds, resume_model.context_text(src)] + [resume_model.bullet_text(src, u) for u in uses]
     )
     out += [
-        {"where": where, "code": "number", "detail": f"{n} is in no cited bullet and not in the JD"}
+        {
+            "where": where,
+            "code": ProblemCode.NUMBER,
+            "detail": f"{n} is in no cited bullet and not in the JD",
+        }
         for n in resume_model.ungrounded_numbers(text, allowed)
     ]
     out += [
         {
             "where": where,
-            "code": "lint",
+            "code": ProblemCode.LINT,
             "detail": f"banned phrase {v['phrase']!r} ({v['category']})",
         }
         for v in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
@@ -400,13 +408,10 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
     folder = _built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / ANSWERS)
+    if bad := session_schema.problems("answers", data):
+        return {"ok": False, "problems": bad}, 2
     src = resume_model.load_sources()
     problems: list[dict] = []
-    expected = {"researched_at", "sources", "uses", *ANSWER_KEYS}
-    for k in sorted(set(data) ^ expected):
-        problems.append(
-            {"where": k, "code": "layout", "detail": "unknown key" if k in data else "missing key"}
-        )
     uses = [str(u) for u in data.get("uses") or []]
     keep = resume_model.keep_terms(src, str(facts.get("company", "")))
     for k in ANSWER_KEYS:
@@ -414,13 +419,19 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
         if v is None:
             continue
         if not isinstance(v, str) or not v.strip():
-            problems.append({"where": k, "code": "layout", "detail": "must be text or null"})
+            problems.append(
+                {"where": k, "code": ProblemCode.LAYOUT, "detail": "must be text or null"}
+            )
             continue
         v = lint.fix_mechanical(v.strip(), src.rules)[0]
         data[k] = v
         if not 2 <= _sentences(v) <= 4:
             problems.append(
-                {"where": k, "code": "layout", "detail": f"{_sentences(v)} sentences; write 2-4"}
+                {
+                    "where": k,
+                    "code": ProblemCode.LAYOUT,
+                    "detail": f"{_sentences(v)} sentences; write 2-4",
+                }
             )
         problems += _prose_problems(src, k, v, uses, jd, keep)
     if problems:
@@ -451,6 +462,8 @@ def cmd_build_letter(
     folder = _built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / LETTER_PLAN)
+    if bad := session_schema.problems("letter", data):
+        return {"ok": False, "problems": bad}, 2
     src = resume_model.load_sources()
     _, slug = _identity()
     company = str(facts.get("company", ""))
@@ -465,18 +478,26 @@ def cmd_build_letter(
         return {
             "ok": False,
             "problems": [
-                {"where": "body", "code": "layout", "detail": "must be a list of paragraph strings"}
+                {
+                    "where": "body",
+                    "code": ProblemCode.LAYOUT,
+                    "detail": "must be a list of paragraph strings",
+                }
             ],
         }, 2
     salutation = str(data.get("salutation") or "").strip()
     if not salutation:
-        problems.append({"where": "salutation", "code": "layout", "detail": "missing"})
+        problems.append({"where": "salutation", "code": ProblemCode.LAYOUT, "detail": "missing"})
     recipient = re.sub(r"^(dear|hi|hello)\s+|,$", "", salutation, flags=re.IGNORECASE).strip()
     keep = resume_model.keep_terms(src, company, recipient)
     uses = [str(u) for u in data.get("uses") or []]
     if not uses:
         problems.append(
-            {"where": "uses", "code": "layout", "detail": "cite the bullets the letter draws on"}
+            {
+                "where": "uses",
+                "code": ProblemCode.LAYOUT,
+                "detail": "cite the bullets the letter draws on",
+            }
         )
 
     def fix(t):
@@ -488,7 +509,9 @@ def cmd_build_letter(
     for i, p in enumerate(body):
         problems += _prose_problems(src, f"body[{i}]", p, uses, jd, keep)
     if company and not _names_company(company, " ".join(body)):
-        problems.append({"where": "body", "code": "layout", "detail": f"never names {company!r}"})
+        problems.append(
+            {"where": "body", "code": ProblemCode.LAYOUT, "detail": f"never names {company!r}"}
+        )
     if problems:
         return {"ok": False, "problems": problems}, 2
 
@@ -512,7 +535,7 @@ def cmd_build_letter(
             "problems": [
                 {
                     "where": "body",
-                    "code": "pages",
+                    "code": ProblemCode.PAGES,
                     "detail": f"renders to {pdf['pages']} pages ({words} words); cut the body",
                 }
             ],
@@ -608,6 +631,8 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument(
         "--no-pdf", action="store_true", help="resume/letter: pass without a pdf page count"
     )
+    p_schema = sub.add_parser("schema")
+    p_schema.add_argument("kind", choices=list(session_schema.KINDS))
     p_lint = sub.add_parser("lint")
     p_lint.add_argument("what", choices=["outreach"])
     p_lint.add_argument("draft")
@@ -621,6 +646,9 @@ def main(argv: list[str] | None = None) -> int:
             return _emit(role_info(args.job_id))
         if args.cmd == "dupes":
             return _emit(cmd_dupes(args.job_id))
+        if args.cmd == "schema":
+            fname, model = session_schema.KINDS[args.kind]
+            return _emit({"file": fname, "schema": model.model_json_schema()})
         if args.cmd == "lint":
             return _emit(cmd_lint_outreach(args.draft, args.company, args.recipient))
         if args.what == "resume":
