@@ -33,6 +33,13 @@ from src.apply import answers as A
 
 DEFAULT_PATH = A.DEFAULT_PATH
 
+# Set to 1 by the night run: no bank write and no submit without a person there.
+UNATTENDED_ENV = "APPLY_UNATTENDED"
+
+
+def unattended() -> bool:
+    return os.environ.get(UNATTENDED_ENV) == "1"
+
 
 class BankError(Exception):
     """A change this module refuses to write."""
@@ -72,6 +79,9 @@ HISTORY_KEEP = 20
 
 def write(data: dict, path: Path | None = None) -> Path:
     """Validate, keep the old file in `.bank_history/`, then replace atomically."""
+    if unattended():
+        raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an "
+                        "unattended run")
     p = Path(path) if path is not None else DEFAULT_PATH
     A.answers_from(data, where=str(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
