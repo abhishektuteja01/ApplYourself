@@ -832,6 +832,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     run_dir = args.run_dir or latest_run_dir()
     since = _ts(args.since) if args.since else since_of(run_dir)
+    if since is None:
+        ap.error(f"--since: not an ISO time: {args.since!r}")
     try:
         text = build(run_dir, since)
     except (OSError, ValueError, yaml.YAMLError) as exc:
