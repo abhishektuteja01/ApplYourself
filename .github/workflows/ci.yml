@@ -28,6 +28,7 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: uv sync --frozen
       - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
       - run: ./scripts/r7_scan.sh
       - run: uvx --from shellcheck-py==0.11.0.1 shellcheck --severity=warning scripts/*.sh scripts/stages/*.sh
 
