@@ -58,6 +58,7 @@ LINE="$STAMP"
 while read -r name code secs rest; do
   [[ -n "${name:-}" ]] || continue
   ok=ok; [[ "$code" == "code=0" ]] || ok="FAIL($code)"
+  [[ "$ok" == ok && "$rest" == status=partial* ]] && ok=partial
   LINE="$LINE | $name $ok ${secs#seconds=}s"
 done < "$RUN_DIR/summary.txt"
 [[ -z "$STOPPED" ]] || LINE="$LINE | stopped at $STOPPED"

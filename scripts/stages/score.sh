@@ -43,6 +43,11 @@ while :; do
   echo "$FIN"
   if [[ $FCODE -eq 0 ]]; then stage_end 0 "$(head -1 <<< "$FIN")"; exit 0; fi
   attempt=$((attempt + 1))
+  # A judge hit the usage limit: a retry now would hit it too.
+  if quota_hit; then
+    stage_end 1 "usage limit hit: owed slices deferred to the next run" fail
+    exit 1
+  fi
   if [[ $attempt -gt $RETRIES ]]; then
     stage_end 1 "still owed after $RETRIES retry: $(grep '^bad ' <<< "$FIN" | head -3 | tr '\n' ' ')"
     exit 1

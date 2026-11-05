@@ -2,7 +2,8 @@
 # Tailor one role: /tailor, then check the resume and its PDF; retry, then
 # re-render from the saved plan. A docx with no PDF re-renders only (no model).
 # Called by tailor.sh, one process per role.
-# Appends "<job_id> ok|fail" to $RUN_DIR/tailor_results.txt.
+# Appends "<job_id> ok|fail|deferred" to $RUN_DIR/tailor_results.txt (deferred:
+# the usage limit was hit, so no retry; the role stays New for the next night).
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 STAGE=tailor; LOG="$RUN_DIR/tailor.log"
@@ -32,15 +33,19 @@ if [[ "$DRY_RUN" == 1 ]]; then
   echo "[dry-run] check build + PDF; docx without PDF: uv run app build resume $ID, else /tailor; retry up to $RETRIES"
   exit 0
 fi
+RESULT=fail
 for attempt in $(seq 0 "$RETRIES"); do
+  RC=0
   if has pdf_missing; then
     "$UV" run app build resume "$ID" >>"$LOG" 2>&1 || echo "rebuild $ID attempt $attempt failed"
   else
-    run_claude "$ID" "$TOOLS" "/tailor $ID" || echo "tailor $ID attempt $attempt failed"
+    run_claude "$ID" "$TOOLS" "/tailor $ID"; RC=$?
+    [[ $RC -eq 0 ]] || echo "tailor $ID attempt $attempt failed"
   fi
   has built && { echo "$ID ok" >> "$RUN_DIR/tailor_results.txt"; exit 0; }
+  [[ $RC -eq 5 ]] && { RESULT=deferred; break; }
 done
 "$UV" run app build resume "$ID" >>"$LOG" 2>&1 && has built \
   && { echo "$ID ok" >> "$RUN_DIR/tailor_results.txt"; exit 0; }
-echo "$ID fail" >> "$RUN_DIR/tailor_results.txt"
-exit 1
+echo "$ID $RESULT" >> "$RUN_DIR/tailor_results.txt"
+[[ $RESULT == deferred ]]

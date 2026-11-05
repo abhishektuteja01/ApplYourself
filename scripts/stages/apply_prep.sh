@@ -23,8 +23,9 @@ else
   "$UV" run apply sheet >/dev/null
 fi
 IDS="$("$UV" run apply sheet --list 'Resume ready' | head -n "${STAGE_LIMIT:-100000}")"
-N=$(grep -c . <<< "$IDS"); FAILED=0
-echo "Resume ready: $N"
+N=$(grep -c . <<< "$IDS"); FAILED=0; DEF=0; STARTED=0
+CAP="$(night_cap apply_prep_max_per_night)"
+echo "Resume ready: $N (cap ${CAP/#0/none})"
 
 # What is still unresolved after the session, for summary.md: the plan as JSON,
 # with the drafted answers applied when there are any. No browser.
@@ -37,10 +38,17 @@ snapshot() {
 }
 
 for id in $IDS; do
-  run_claude "$id" "$TOOLS" "/apply $id" || { FAILED=$((FAILED + 1)); echo "apply $id failed"; }
+  # Over the cap or past the usage limit: stays Resume ready for the next night.
+  if quota_hit || [[ $CAP -gt 0 && $STARTED -ge $CAP ]]; then DEF=$((DEF + 1)); continue; fi
+  STARTED=$((STARTED + 1))
+  run_claude "$id" "$TOOLS" "/apply $id"; RC=$?
+  if [[ $RC -eq 5 ]]; then DEF=$((DEF + 1)); echo "apply $id deferred"
+  elif [[ $RC -ne 0 ]]; then FAILED=$((FAILED + 1)); echo "apply $id failed"; fi
   snapshot "$id"
 done
 [[ "$DRY_RUN" == 1 ]] || "$UV" run apply sheet
-DETAIL="$((N - FAILED))/$N prepared"
-if [[ "$DRY_RUN" != 1 && $N -gt 0 && $FAILED -eq $N ]]; then stage_end 1 "$DETAIL"; exit 1; fi
-stage_end 0 "$DETAIL"
+DONE=$((N - FAILED - DEF))
+DETAIL="$DONE/$N prepared"; [[ $DEF -gt 0 ]] && DETAIL="$DETAIL, $DEF deferred"
+if [[ "$DRY_RUN" != 1 && $N -gt 0 && $DONE -eq 0 ]]; then stage_end 1 "$DETAIL" fail "$DEF"; exit 1; fi
+STATUS=ok; [[ "$DRY_RUN" != 1 && $DONE -lt $N ]] && STATUS=partial
+stage_end 0 "$DETAIL" "$STATUS" "$DEF"

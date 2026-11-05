@@ -1,12 +1,7 @@
 #!/bin/bash
-# Nightly discovery runner. Portable: the macOS-only bits are guarded.
-#
-# macOS: install with scripts/launchagent.example.plist; see /onboarding's
-#        "Nightly discovery (macOS only)" section.
-# Linux: schedule it with cron or a systemd timer, pointing at this same script.
-#
-# Runs ONLY the deterministic, LLM-free discovery step (R7). Scoring is a slash
-# command: the 00:00 routine runs /score, gated on this log's code=0.
+# Discovery runner: the discover stage of scripts/nightly_pipeline.sh
+# (scripts/stages/discover.sh), and runnable by hand. Writes its own
+# logs/discovery_*.log. Runs ONLY the deterministic, LLM-free discovery step (R7).
 set -uo pipefail
 
 # Derive the repo from this script's own location, so nothing here needs editing.
@@ -37,29 +32,8 @@ if [[ "$KEEP" =~ ^[0-9]+$ ]]; then
 fi
 
 echo "=== discovery start $STAMP (repo=$REPO uv=$UV) ===" | tee -a "$LOG"
-# caffeinate -s: hold off system sleep on AC power. -i: hold off idle sleep.
-# -t $CAFFEINATE_SECONDS (default 9h, set it from the LaunchAgent to match your
-# start time): covers discovery plus the score/tailor/apply-prep Desktop
-# routines chained after it, not just the discover call —
-# those routines run hours after this script exits, and idle sleep would
-# otherwise resume the moment discovery finishes. Expires on its own; nothing
-# else needs to kill it. macOS-only — elsewhere it does not exist, and an
-# unguarded call would exit 127 without ever running discovery, so fall
-# through to a plain run.
-# NO_CAFFEINATE=1 (nightly_pipeline.sh holds the Mac awake itself) skips it.
-if command -v caffeinate >/dev/null 2>&1 && [[ "${NO_CAFFEINATE:-0}" != 1 ]]; then
-  caffeinate -s -i -t "${CAFFEINATE_SECONDS:-32400}" &
-fi
 "$UV" run discover >>"$LOG" 2>&1
 CODE=$?
 echo "=== discovery end code=$CODE $(date +%Y-%m-%d_%H%M%S) ===" | tee -a "$LOG"
-
-# Open Claude Desktop the moment discovery is actually done, rather than
-# guessing a clock time it should be done by — the score routine's own
-# completion check still gates /score regardless of when the app opens.
-# NO_OPEN_CLAUDE=1 (set by nightly_pipeline.sh, which needs no app open) skips it.
-if [[ "$CODE" -eq 0 ]] && [[ "${NO_OPEN_CLAUDE:-0}" != 1 ]] && command -v open >/dev/null 2>&1; then
-  open -a "Claude"
-fi
 
 exit "$CODE"

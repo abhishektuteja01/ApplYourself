@@ -116,29 +116,43 @@ def _shown(items: list[str], limit: int = ERRORS_SHOWN) -> list[str]:
 
 
 def stage_lines(run_dir: Path | None) -> dict[str, dict]:
-    """{stage: {code, seconds, detail}} from the run folder's summary.txt."""
+    """{stage: {code, seconds, status, deferred, detail}} from the run folder's
+    summary.txt. A line with no status= takes it from its code."""
     out: dict[str, dict] = {}
     for line in _read_lines(run_dir / "summary.txt") if run_dir else []:
-        m = re.match(r"(\w+) code=(\d+) seconds=(\d+)\s*(.*)", line)
+        m = re.match(r"(\w+) code=(\d+) seconds=(\d+)(?: status=(\w+))?(?: deferred=(\d+))?\s*(.*)",
+                     line)
         if m:
-            out[m[1]] = {"code": int(m[2]), "seconds": int(m[3]), "detail": m[4]}
+            code = int(m[2])
+            out[m[1]] = {"code": code, "seconds": int(m[3]),
+                         "status": m[4] or ("ok" if code == 0 else "fail"),
+                         "deferred": int(m[5] or 0), "detail": m[6]}
     return out
 
 
 # ------------------------------------------------------------------ sections
 
 def run_section(stages: dict[str, dict]) -> list[str]:
-    parts, failed = [], []
+    parts, failed, partial, deferred = [], [], [], []
     for name in STAGES:
         st = stages.get(name)
         if st is None:
             parts.append(f"{name} not run")
-        elif st["code"] == 0:
-            parts.append(f"{name} ok {_took(st['seconds'])}")
-        else:
+        elif st["code"] != 0:
             parts.append(f"{name} FAILED")
             failed.append(f"**{name} failed** (code {st['code']}) {st['detail']}".strip())
-    return [*failed, "Stages: " + " · ".join(parts)]
+        elif st.get("status") == "partial":
+            parts.append(f"{name} partial {_took(st['seconds'])}")
+            partial.append(f"**{name} partial** {st['detail']}".strip())
+        else:
+            parts.append(f"{name} ok {_took(st['seconds'])}")
+        if st and st.get("deferred"):
+            deferred.append(f"{name} {st['deferred']}")
+    lines = [*failed, *partial, "Stages: " + " · ".join(parts)]
+    if deferred:
+        lines.append("Deferred (usage limit or nightly cap; next night takes them): "
+                     + ", ".join(deferred))
+    return lines
 
 
 def discovery_section(reports: list[dict], since: datetime) -> list[str]:
@@ -545,7 +559,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
 
     snaps, unreadable = _snapshots(since)
     tail = _read_lines(run_dir / "tailor_results.txt") if run_dir else []
-    tried = [r.split()[0] for r in tail if r.strip()]
+    tried = [r.split()[0] for r in tail if r.strip() and not r.strip().endswith(" deferred")]
     live = set(clean["job_id"])
     failed = [r.split()[0] for r in tail if r.strip().endswith(" fail")]
     unresolved = {j: why for j in failed if (why := tailor_reason(j, run_dir, live))}

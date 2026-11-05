@@ -267,8 +267,9 @@ class TestPassAPassBContract:
 
     def test_onboarding_invokes_both_passes(self, doc):
         for token in ("pass-a", "pass-b"):
-            assert re.search(rf"/new-vertical [^`\n]*{token}", doc), (
-                f"onboarding.md no longer invokes `/new-vertical ... {token}`")
+            # new-vertical.md reads the mode from the second token only.
+            assert re.search(rf"/new-vertical <\w+> {token}\b", doc), (
+                f"onboarding.md does not invoke `/new-vertical <lane> {token}`")
 
     def test_new_vertical_documents_both_tokens(self, new_vertical_doc):
         for token in ("pass-a", "pass-b"):
