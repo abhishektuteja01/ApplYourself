@@ -18,6 +18,10 @@
                               present. Bootstrap only, never a transition --
                               `app new` calls it so a re-tailor cannot rewind
                               live state.
+  stamp-schema --dry-run|--apply [--pipeline DIR]
+                              add schema_version to every state.yaml that
+                              lacks it and drop the dead cover_letters key;
+                              --dry-run only counts. Never a transition.
 
 Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
 `uv run track ensure <job_id>`.
@@ -28,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -42,6 +47,8 @@ from src.state_io import (
     load_all_states,
     load_state,
     mark_outreach_sent,
+    needs_stamp,
+    stamp_schema,
     state_path_for,
     transition,
 )
@@ -242,6 +249,28 @@ def _cmd_states() -> int:
     return 0
 
 
+def _cmd_stamp_schema(args: argparse.Namespace) -> int:
+    pipeline = args.pipeline or paths.PIPELINE
+    files = sorted(pipeline.glob("*/state.yaml"))
+    todo = errors = 0
+    for p in files:
+        try:
+            data = load_state(p)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            errors += 1
+            continue
+        if not needs_stamp(data):
+            continue
+        if args.apply:
+            todo += stamp_schema(p)
+        else:
+            todo += 1
+    verb = "stamped" if args.apply else "would stamp"
+    print(f"OK: {verb} {todo} of {len(files)} state.yaml files  ({errors} unreadable)")
+    return 1 if errors else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
@@ -253,6 +282,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("job_id")
         args = parser.parse_args(argv[1:])
         return _cmd_ensure(args)
+
+    if argv and argv[0] == "stamp-schema":
+        parser = argparse.ArgumentParser(prog="track stamp-schema")
+        mode = parser.add_mutually_exclusive_group(required=True)
+        mode.add_argument("--dry-run", action="store_true")
+        mode.add_argument("--apply", action="store_true")
+        parser.add_argument("--pipeline", type=Path, default=None)
+        args = parser.parse_args(argv[1:])
+        return _cmd_stamp_schema(args)
 
     if argv and argv[0] == "outreach-sent":
         parser = argparse.ArgumentParser(prog="track outreach-sent")

@@ -22,6 +22,7 @@ from pathlib import Path
 import yaml
 
 from src.shared.parquet_io import locked
+from src.shared.schemas import STATE_SCHEMA_VERSION
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +94,13 @@ def load_state(state_path: Path) -> dict | None:
         return None
     if not isinstance(data, dict):
         raise ValueError(f"{state_path} is not a YAML mapping")
+    # A missing version is 1: files written before versioning.
+    version = data.get("schema_version", 1)
+    if not isinstance(version, int) or version > STATE_SCHEMA_VERSION:
+        raise ValueError(
+            f"{state_path} has schema_version {version!r}; this code knows "
+            f"up to {STATE_SCHEMA_VERSION}"
+        )
     return data
 
 
@@ -121,8 +129,36 @@ def update(state_path: Path, fn: Callable[[dict | None], dict | None]) -> dict |
         data = fn(current)
         if data is None:
             return current
+        data = _stamped(data)
         _write_state(state_path, data)
         return data
+
+
+def _stamped(data: dict) -> dict:
+    """data with schema_version set: first for a file that lacks it, in
+    place otherwise."""
+    if "schema_version" in data:
+        return {**data, "schema_version": STATE_SCHEMA_VERSION}
+    return {"schema_version": STATE_SCHEMA_VERSION, **data}
+
+
+def needs_stamp(data: dict | None) -> bool:
+    return data is not None and ("schema_version" not in data or "cover_letters" in data)
+
+
+def stamp_schema(state_path: Path) -> bool:
+    """Add schema_version to a state.yaml that lacks it and drop the dead
+    cover_letters key. Never a transition. Returns True when it wrote."""
+    wrote: list[bool] = []
+
+    def stamp(data: dict | None) -> dict | None:
+        if not needs_stamp(data):
+            return None
+        wrote.append(True)
+        return {k: v for k, v in data.items() if k != "cover_letters"}
+
+    update(state_path, stamp)
+    return bool(wrote)
 
 
 def _now_iso(now: datetime | None = None) -> str:
