@@ -60,7 +60,7 @@ summary = "src.summary:main"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "ruff>=0.6",
+    "ruff>=0.16,<0.17",
 ]
 # Opt-in: `uv sync --group apply`. Discovery, scoring and tailoring must keep
 # working on a clone that never installs it.
@@ -101,3 +101,17 @@ packages = ["src"]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider -ra --strict-markers"
 filterwarnings = ["error"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "BLE", "RUF"]
+# RUF001-003: dashes and smart quotes are on purpose. The rest would force
+# behavior-changing (B905, UP042) or noisy (E501, RUF005, SIM105, SIM108, SIM905) rewrites.
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "B905", "UP042", "RUF005", "SIM105", "SIM108", "SIM905"]
+external = ["DTZ"]  # keep the deliberate local-date noqa marks until DTZ is selected
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["RUF012"]  # fake classes hold fixture lists
