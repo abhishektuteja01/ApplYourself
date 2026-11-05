@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   macOS only: launchd is the macOS scheduler. On Linux there is no launchd —
-  run scripts/nightly_discovery.sh from cron or a systemd timer instead, at the
+  run scripts/nightly_pipeline.sh from cron or a systemd timer instead, at the
   same time this plist schedules below.
 
   The Label and paths below are filled in by the sed command in /onboarding's
-  "Nightly discovery (macOS only)" section, which writes an installable copy
+  "Nightly pipeline (macOS only)" section, which writes an installable copy
   into ~/Library/LaunchAgents/ and leaves this file untouched:
 
     LABEL=com.$USER.applyourself.discovery
@@ -17,7 +17,7 @@
 
   A LaunchAgent whose start time falls while the Mac is asleep does not run at
   wake by default — it is skipped until the next interval. Schedule a wake a few
-  minutes before it (see /onboarding's "Nightly discovery (macOS only)"
+  minutes before it (see /onboarding's "Nightly pipeline (macOS only)"
   section):
 
     sudo pmset repeat wakeorpoweron MTWRFSU 19:55:00
@@ -34,7 +34,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>__REPO__/scripts/nightly_discovery.sh</string>
+    <string>__REPO__/scripts/nightly_pipeline.sh</string>
   </array>
 
   <!-- 20:00 daily, five minutes after the pmset wake above. -->
@@ -46,8 +46,8 @@
     <integer>0</integer>
   </dict>
 
-  <!-- launchd's own capture of the wrapper's stdout/stderr. The wrapper writes
-       its own per-run log to __REPO__/logs/discovery_<timestamp>.log. -->
+  <!-- launchd's own capture of the script's stdout/stderr. Each night writes
+       its own logs to __REPO__/logs/pipeline_<timestamp>/. -->
   <key>StandardOutPath</key>
   <string>__REPO__/logs/launchd.out.log</string>
   <key>StandardErrorPath</key>

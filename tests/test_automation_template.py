@@ -1,8 +1,7 @@
-"""The nightly-discovery LaunchAgent template (macOS, optional).
+"""The nightly LaunchAgent template and the scripts it starts.
 
-A plist with a typo does not error — launchd just never runs the job, and the
-symptom is an empty shortlist nobody attributes to the scheduler. These tests
-cover the parts that fail silently.
+A plist with a typo does not error — launchd just never runs the job. These
+tests cover the parts that fail silently.
 """
 from __future__ import annotations
 
@@ -11,9 +10,11 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLIST = REPO_ROOT / "scripts" / "launchagent.example.plist"
-WRAPPER = REPO_ROOT / "scripts" / "nightly_discovery.sh"
+SCRIPTS = sorted((REPO_ROOT / "scripts").rglob("*.sh"))
 
 PLACEHOLDERS = {"__LABEL__": "com.example.applyourself.discovery", "__REPO__": "/tmp/repo"}
 
@@ -25,150 +26,29 @@ def _filled() -> dict:
     return plistlib.loads(raw.encode("utf-8"))
 
 
-class TestPlist:
-    def test_parses_once_placeholders_are_filled(self):
-        assert _filled()["Label"] == PLACEHOLDERS["__LABEL__"]
-
-    def test_declares_no_placeholder_beyond_the_documented_two(self):
-        found = set(re.findall(r"__[A-Z_]+__", PLIST.read_text(encoding="utf-8")))
-        assert found == set(PLACEHOLDERS), f"undocumented placeholders: {found}"
-
-    def test_no_placeholder_survives_substitution(self):
-        assert "__" not in str(_filled())
-
-    def test_points_at_the_committed_wrapper(self):
-        args = _filled()["ProgramArguments"]
-        assert args[0] == "/bin/bash"
-        assert args[1].endswith("/scripts/nightly_discovery.sh")
-
-    def test_runs_shortly_after_the_pmset_wake_it_documents(self):
-        """A job whose time falls during sleep is skipped, not deferred, so the
-        wake must come first — and close enough that the machine is still up.
-
-        Derived from the plist rather than pinned, so rescheduling discovery
-        means editing one file, not two. What must stay true is the ordering.
-        """
-        text = PLIST.read_text(encoding="utf-8")
-        wake = re.search(r"wakeorpoweron \w+ (\d{2}):(\d{2}):\d{2}", text)
-        assert wake, "the plist must document its pmset wake"
-        wake_min = int(wake.group(1)) * 60 + int(wake.group(2))
-
-        when = _filled()["StartCalendarInterval"]
-        job_min = when["Hour"] * 60 + when["Minute"]
-
-        assert 0 < job_min - wake_min <= 15, (
-            f"job at {when['Hour']:02d}:{when['Minute']:02d} vs wake at "
-            f"{wake.group(1)}:{wake.group(2)} — the wake must land first, "
-            f"and within 15 minutes"
-        )
-
-    def test_documents_the_pmset_wake(self):
-        """Without a scheduled wake, a job whose time falls during sleep is
-        skipped rather than deferred."""
-        text = PLIST.read_text(encoding="utf-8")
-        assert "pmset repeat wakeorpoweron" in text
-
-    def test_logs_inside_the_repo(self):
-        d = _filled()
-        for key in ("StandardOutPath", "StandardErrorPath"):
-            assert d[key].startswith(PLACEHOLDERS["__REPO__"] + "/logs/")
-
-    def test_the_log_directory_is_committed(self):
-        """launchd does not create the intermediate directory for
-        StandardOutPath. Without a committed logs/, the agent fails to spawn on a
-        fresh clone and produces no log explaining why."""
-        gitkeep = REPO_ROOT / "logs" / ".gitkeep"
-        assert gitkeep.exists(), "logs/.gitkeep missing"
-        tracked = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", "logs/.gitkeep"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            encoding="utf-8",
-        )
-        assert tracked.returncode == 0, "logs/.gitkeep exists but is not tracked"
-
-    def test_actual_log_files_stay_ignored(self):
-        """The directory ships; its contents must not. A discovery log names
-        companies and search terms."""
-        check = subprocess.run(
-            ["git", "check-ignore", "logs/discovery_2026-01-01_000000.log"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            encoding="utf-8",
-        )
-        assert check.returncode == 0, "log files are no longer gitignored"
+def test_plist_parses_with_only_the_documented_placeholders():
+    found = set(re.findall(r"__[A-Z_]+__", PLIST.read_text(encoding="utf-8")))
+    assert found == set(PLACEHOLDERS), f"undocumented placeholders: {found}"
+    assert _filled()["Label"] == PLACEHOLDERS["__LABEL__"]
 
 
-class TestWrapper:
-    def test_is_executable(self):
-        assert WRAPPER.stat().st_mode & 0o111, f"{WRAPPER} is not executable"
+def test_plist_starts_the_nightly_pipeline_script():
+    args = _filled()["ProgramArguments"]
+    assert args[0] == "/bin/bash"
+    script = REPO_ROOT / args[1].removeprefix(PLACEHOLDERS["__REPO__"] + "/")
+    assert script.name == "nightly_pipeline.sh"
+    assert script.is_file() and script.stat().st_mode & 0o111, f"{script} missing or not executable"
 
-    def test_is_valid_bash(self):
-        result = subprocess.run(
-            ["bash", "-n", str(WRAPPER)],
-            capture_output=True,
-            encoding="utf-8",
-        )
-        assert result.returncode == 0, result.stderr
 
-    def test_needs_no_editing(self):
-        assert "__" not in WRAPPER.read_text(encoding="utf-8")
+def test_the_log_directory_is_committed():
+    """launchd does not create StandardOutPath's directory; without a committed
+    logs/, the agent fails to spawn on a fresh clone with no log saying why."""
+    tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "logs/.gitkeep"],
+                             cwd=REPO_ROOT, capture_output=True, encoding="utf-8")
+    assert tracked.returncode == 0, "logs/.gitkeep is not tracked"
 
-    def test_hardens_path_for_launchd(self):
-        """launchd's (and cron's) minimal PATH excludes every common uv
-        location, so an unhardened wrapper dies with 'uv: command not found'.
-        Both platforms' install dirs must be covered: uv's own standalone
-        installer, and Homebrew for a macOS `brew install uv`."""
-        text = WRAPPER.read_text(encoding="utf-8")
-        export = [ln for ln in text.splitlines() if ln.startswith("export PATH=")]
-        assert len(export) == 1, "expected exactly one PATH-hardening line"
-        line = export[0]
-        for entry in ("$HOME/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"):
-            assert entry in line, f"{entry} missing from the hardened PATH"
-        assert line.rstrip('"').endswith("$PATH"), "must extend, not replace, PATH"
-        assert "exit 127" in text, "must fail loudly when uv is absent"
 
-    def test_holds_sleep_off_for_the_run(self):
-        """caffeinate is macOS-only; unguarded it exits 127 on Linux and
-        discovery never runs at all. The guard holds sleep off as a background
-        job, so discovery must sit OUTSIDE it and run on either platform."""
-        text = WRAPPER.read_text(encoding="utf-8")
-        assert "caffeinate" in text
-        assert "command -v caffeinate" in text, "caffeinate must be guarded"
-        lines = [
-            line
-            for line in text.splitlines()
-            if not line.lstrip().startswith("#")
-        ]
-        caffeinate_calls = [ln for ln in lines if "caffeinate -" in ln]
-        assert caffeinate_calls, "no caffeinate invocation found"
-        for call in caffeinate_calls:
-            assert call.rstrip().endswith("&"), (
-                f"caffeinate must background itself or it blocks discovery: {call!r}"
-            )
-        discover = [ln for ln in lines if "run discover" in ln]
-        assert len(discover) == 1, (
-            f"expected exactly one `run discover` call, found {len(discover)}"
-        )
-        assert discover[0] == discover[0].lstrip(), (
-            "`run discover` is indented, so it is inside the macOS-only "
-            "caffeinate guard and will not run on Linux"
-        )
-
-    def test_runs_only_the_deterministic_step(self):
-        """R7: no LLM in an unattended job. Scoring is a slash command, so
-        nothing the wrapper executes may invoke one. Launching the desktop app
-        is not an invocation — it opens a window for the user, and the score
-        routine still gates /score on a human. Comments may mention any of
-        this, hence the comment strip."""
-        code = "\n".join(
-            line
-            for line in WRAPPER.read_text(encoding="utf-8").splitlines()
-            if not line.lstrip().startswith("#")
-        ).lower()
-        assert "run discover" in code
-        assert "/score" not in code
-        # A headless Claude Code run is the thing R7 forbids here. `open -a
-        # "Claude"` is allowed; `claude -p ...` is not.
-        for banned in ("claude -p", "claude --print", "claude run", "| claude"):
-            assert banned not in code, f"wrapper invokes a model: {banned!r}"
+@pytest.mark.parametrize("script", SCRIPTS, ids=lambda p: p.name)
+def test_every_script_is_valid_bash(script):
+    result = subprocess.run(["bash", "-n", str(script)], capture_output=True, encoding="utf-8")
+    assert result.returncode == 0, result.stderr

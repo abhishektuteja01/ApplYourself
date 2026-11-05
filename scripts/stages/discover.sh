@@ -8,7 +8,7 @@ if [[ "$DRY_RUN" == 1 ]]; then
   echo "[dry-run] scripts/nightly_discovery.sh"
   stage_end 0 "dry-run"; exit 0
 fi
-NO_OPEN_CLAUDE=1 NO_CAFFEINATE=1 "$REPO/scripts/nightly_discovery.sh"
+"$REPO/scripts/nightly_discovery.sh"
 CODE=$?
 stage_end "$CODE" ""
 exit "$CODE"
