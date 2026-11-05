@@ -256,7 +256,12 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
 # build resume
 # =====================================================================
 
-def cmd_build_resume(job_id: str, final: bool = False) -> tuple[dict, int]:
+def _pdf_unknown(where: str, pdf: dict) -> dict:
+    return {"where": where, "code": "pages", "detail": f"page count unknown: pdf {pdf['status']} "
+            f"({pdf['detail']}); not a plan problem: rebuild once the pdf works, or pass --no-pdf"}
+
+
+def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> tuple[dict, int]:
     info = role_info(job_id)
     if not info["work_dir"]:
         raise AppError(f"{job_id} has no folder — run `uv run app new {job_id}` first.")
@@ -279,6 +284,8 @@ def cmd_build_resume(job_id: str, final: bool = False) -> tuple[dict, int]:
     if pdf["status"] == "ok" and pdf["pages"] > 1:
         return {"ok": False, "problems": [{"where": "resume", "code": "pages",
                 "detail": f"renders to {pdf['pages']} pages; drop or shorten bullets"}]}, 2
+    if pdf["status"] != "ok" and not no_pdf:
+        return {"ok": False, "problems": [_pdf_unknown("resume", pdf)]}, 2
 
     header = [f"# trace — {folder.name}", "",
               f"job_id `{job_id}`, lane `{lane}`. Written by `uv run app build resume`.", ""]
@@ -351,7 +358,7 @@ def _names_company(company: str, text: str) -> bool:
         rf"(?<!\w){re.escape(first.lower())}(?!\w)", low) is not None)
 
 
-def cmd_build_letter(job_id: str, today: date | None = None) -> tuple[dict, int]:
+def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = False) -> tuple[dict, int]:
     folder = _built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / LETTER_PLAN)
@@ -396,6 +403,8 @@ def cmd_build_letter(job_id: str, today: date | None = None) -> tuple[dict, int]
     if pdf["status"] == "ok" and pdf["pages"] > 1:
         return {"ok": False, "words": words, "problems": [{"where": "body", "code": "pages",
                 "detail": f"renders to {pdf['pages']} pages ({words} words); cut the body"}]}, 2
+    if pdf["status"] != "ok" and not no_pdf:
+        return {"ok": False, "words": words, "problems": [_pdf_unknown("body", pdf)]}, 2
     return {"ok": True, "dir": str(folder.relative_to(APPLICATIONS.parent)), "docx": docx.name,
             "pdf": pdf, "words": words}, 0
 
@@ -456,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("job_id")
     p_build.add_argument("--final", action="store_true",
                          help="resume only: fall back to canonical text where a rewording fails")
+    p_build.add_argument("--no-pdf", action="store_true",
+                         help="resume/letter: pass without a pdf page count")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     try:
         if args.cmd == "new":
@@ -465,9 +476,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "dupes":
             return _emit(cmd_dupes(args.job_id))
         if args.what == "resume":
-            out, code = cmd_build_resume(args.job_id, final=args.final)
+            out, code = cmd_build_resume(args.job_id, final=args.final, no_pdf=args.no_pdf)
         elif args.what == "letter":
-            out, code = cmd_build_letter(args.job_id)
+            out, code = cmd_build_letter(args.job_id, no_pdf=args.no_pdf)
         else:
             out, code = cmd_build_answers(args.job_id)
         return _emit(out, code)
