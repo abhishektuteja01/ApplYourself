@@ -141,6 +141,14 @@ class TestFillFailureBlocks:
         assert len(d.clicked) == 1
 
 
+    def test_an_unattended_run_never_clicks(self, monkeypatch):
+        monkeypatch.setenv("APPLY_UNATTENDED", "1")
+        d = FakeSubmitDriver()
+        with pytest.raises(SubmitGuardError, match="APPLY_UNATTENDED"):
+            submit(plan(), FillResult(form_url="x"), d)
+        assert d.clicked == []
+
+
 class TestFormShape:
     def test_no_submit_selector_refuses(self):
         d = FakeSubmitDriver()

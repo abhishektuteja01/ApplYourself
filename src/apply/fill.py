@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.shared import paths
+from src.apply import bank
 from src.apply.answers import Answers, resolve
 from src.apply.browser import launch as _launch, require_playwright as _require_playwright
 from src.apply.plan import FieldPlan, FilePlan, Plan
@@ -1955,6 +1956,8 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
     record the attempt before anything irreversible happens. Sets
     `result.outcome`.
     """
+    if bank.unattended():
+        raise SubmitGuardError(f"{bank.UNATTENDED_ENV}=1: no submit in an unattended run")
     blocking = blocking_questions(plan, result)
     if blocking:
         raise SubmitGuardError(f"required question(s) unresolved: {', '.join(blocking)}")
