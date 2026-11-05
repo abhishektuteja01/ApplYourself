@@ -86,6 +86,16 @@ def test_new_reuses_an_unfinished_folder_instead_of_piling_up_versions(repo, cap
     assert again["work_dir"] == first["work_dir"]
 
 
+def test_new_reuses_a_built_but_unrecorded_folder(repo, capsys, monkeypatch):
+    monkeypatch.setattr(app_cli, "export_pdf",
+                        lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""})
+    _, first = _run(capsys, "new", JOB, "--today", "2026-09-28")
+    _write(repo, first["work_dir"], "resume_plan.yaml", _baseline_plan())
+    assert _run(capsys, "build", "resume", JOB)[0] == 2     # 2 pages: docx left, not recorded
+    _, again = _run(capsys, "new", JOB, "--today", "2026-09-29")
+    assert again["work_dir"] == first["work_dir"]
+
+
 def test_new_after_a_built_resume_opens_the_next_version_across_lanes(repo, capsys):
     _built(repo, capsys)
     (repo / "applications" / "example_secondary" / f"2026-01-01_x_y_{JOB}_v4").mkdir(parents=True)

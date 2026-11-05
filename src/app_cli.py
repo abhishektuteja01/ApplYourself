@@ -232,8 +232,11 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
 
     newest = role_folder(job_id)
     _, slug = _identity()
-    if newest and newest.parent.name == lane and not (newest / f"{slug}_Resume.docx").exists():
-        folder = newest                                     # an unfinished run: resume it
+    recorded = _state(job_id).get("tailored_dirs") or []
+    if newest and newest.parent.name == lane and (
+            not (newest / f"{slug}_Resume.docx").exists()
+            or str(newest.relative_to(APPLICATIONS)) not in recorded):
+        folder = newest                                     # an unfinished or unrecorded run: resume it
     else:
         base = f"{today}_{_slug(row.get('company', '')) or job_id}_{_slug(row.get('title', ''))}_{job_id}"
         folder = APPLICATIONS / lane / (f"{base}_v{_version(newest) + 1}" if newest else base)
