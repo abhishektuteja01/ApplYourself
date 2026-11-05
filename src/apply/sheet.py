@@ -22,7 +22,7 @@ import yaml
 
 from src import state_io
 from src.app_cli import built_folder
-from src.apply import detect, ledger
+from src.apply import confirmation, detect, ledger
 from src.shared import paths
 from src.shared.config_keys import load_automation
 
@@ -70,7 +70,7 @@ def _waiting(state: dict, since: str) -> str:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError:
         return ""
-    if data.get("confirmed") is True:
+    if confirmation.is_confirmed(path):
         return ""
     drafted = len({k for k in data if k not in ("job_id", "confirmed")}) > 0
     stamp = path.stat().st_mtime

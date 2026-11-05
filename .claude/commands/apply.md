@@ -5,7 +5,10 @@ effort: medium
 allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
-  - Bash(uv run apply *)
+  - Bash(uv run apply prepare *)
+  - Bash(uv run apply plan *)
+  - Bash(uv run apply run *)
+  - Bash(uv run apply learn *)
   - Bash(uv run app *)
   - Bash(uv run track *)
   - Read
@@ -183,9 +186,11 @@ bank. **Stop and wait for the reply.**
 For a `fact` entry, show the answer the plan computed and the rule: `Yes when
 <fact> is <yes_when>`.
 
-- Confirmed → add `"confirmed": true` to `OVERRIDES_FILE` (beside `job_id`), then
-  step 7. Only a confirmed file teaches the bank or lets a keyword guess through
-  a submit.
+- Confirmed → tell the user to run `! uv run apply confirm <OVERRIDES_FILE>`
+  and type yes. Never run it yourself and never write `"confirmed"` into the
+  file. Once it prints `Confirmed:`, step 7. Only a file `apply confirm` approved, unchanged since,
+  teaches the bank or lets a keyword guess through a submit.
+- A file confirmed the old way (`"confirmed": true`) needs one `apply confirm`.
 - A change → edit the file, re-run this step, ask again.
 - A fact the user states for a parked question → add it as an entry (source
   `user`), re-run this step, ask again.
@@ -208,7 +213,7 @@ only if every filled field holds what was planned. A mismatch refuses the click
 (`failed`, "form check refused the click") and nothing is sent. **Filling
 uploads the resume and cover letter to the board**, submit or not.
 
-`--yes` stands in for the CLI's typed prompt; step 6 was the confirmation. The
+`--yes` stands in for the CLI's typed prompt; step 6's `apply confirm` was the confirmation. The
 CLI refuses a role already in `applications/apply_runs/submitted.jsonl`, writes
 that ledger line before the click, and moves the role to `applied` through
 `/track` only when the board accepted it.

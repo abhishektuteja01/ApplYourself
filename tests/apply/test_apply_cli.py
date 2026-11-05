@@ -20,7 +20,7 @@ import pytest
 import yaml
 
 from src import app_cli, apply_cli
-from src.apply import ashby
+from src.apply import ashby, confirmation
 from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
 from src.apply.plan import PlanError
@@ -1356,6 +1356,34 @@ class TestLearnCommand:
         assert "no question" in capsys.readouterr().err
 
 
+class TestApplyConfirm:
+    """Only `apply confirm`'s stored hash confirms a file, and only while it matches."""
+
+    def _file(self, tmp_path, data):
+        path = tmp_path / "answers_override.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def test_a_typed_yes_confirms_and_a_later_edit_does_not(self, tmp_path, monkeypatch):
+        data = {"job_id": JOB_ID, "q": {"value": "x", "question": "q1"}}
+        path = self._file(tmp_path, data)
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda prompt="": "yes")
+        assert apply_cli.main(["confirm", str(path)]) == 0
+        assert apply_cli.answers_confirmed(path)
+        self._file(tmp_path, {**data, "q": {"value": "y", "question": "q1"}})
+        assert not apply_cli.answers_confirmed(path)
+
+    def test_a_session_flag_or_a_non_tty_never_confirms(self, tmp_path, monkeypatch):
+        path = self._file(tmp_path, {"job_id": JOB_ID, "confirmed": True,
+                                     "q": {"value": "x"}})
+        assert not apply_cli.answers_confirmed(path)
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        monkeypatch.setattr("builtins.input", _raise(AssertionError("must not prompt")))
+        assert apply_cli.main(["confirm", str(path)]) == 1
+        assert not confirmation.sidecar(path).exists()
+
+
 class TestARunLearnsWhatWasConfirmed:
     """`run --answers` saves every mapping the session made and every keyword
     guess that went unchallenged, before the browser opens."""
@@ -1381,8 +1409,9 @@ class TestARunLearnsWhatWasConfirmed:
 
     def _run(self, tmp_path, monkeypatch, plan, overrides):
         answers_path = tmp_path / "answers.json"
-        answers_path.write_text(json.dumps({"job_id": JOB_ID, "confirmed": True, **overrides}),
-                                encoding="utf-8")
+        data = {"job_id": JOB_ID, **overrides}
+        answers_path.write_text(json.dumps(data), encoding="utf-8")
+        confirmation.record(answers_path, data)
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
         monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         return apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None,
