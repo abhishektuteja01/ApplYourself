@@ -21,6 +21,7 @@ import pandas as pd
 import yaml
 
 from src.shared import paths
+from src.shared.config_keys import load_automation
 from src import state_io
 from src.app_cli import built_folder
 from src.apply import detect, ledger
@@ -167,8 +168,7 @@ def _candidates(threshold: float, present: set[str], sent: set[str],
 
 def rows(automation: Path | None = None) -> list[dict[str, str]]:
     """Every row of the sheet as it stands, as {column: text}. A pure read."""
-    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
-                            .read_text(encoding="utf-8")) or {}
+    config = load_automation(automation or paths.PROFILE / "automation.yaml")
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
     if not table.is_file():
         return []
@@ -183,8 +183,7 @@ def rows(automation: Path | None = None) -> list[dict[str, str]]:
 
 def job_ids(status: str, automation: Path | None = None) -> list[str]:
     """The job_ids the sheet currently shows at `status`, in sheet order. A pure read."""
-    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
-                            .read_text(encoding="utf-8")) or {}
+    config = load_automation(automation or paths.PROFILE / "automation.yaml")
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
     if not table.is_file():
         return []
@@ -224,8 +223,7 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
     """Rebuild every row's status; with `add`, append new roles first. Rows that
     are Applied or Closed are removed. Returns a count per status, the removed
     ones under "<status> (removed)"."""
-    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
-                            .read_text(encoding="utf-8")) or {}
+    config = load_automation(automation or paths.PROFILE / "automation.yaml")
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
     runs = paths.APPLICATIONS / "apply_runs"
     ledger_path = runs / ledger.LEDGER_NAME
@@ -268,8 +266,7 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     it, a job_id listed twice, and rows whose posting is no longer in the live
     view (`clean.parquet`), and rows whose status differs from what the records
     give now. Every list is empty on a clean sheet."""
-    config = yaml.safe_load((automation or paths.PROFILE / "automation.yaml")
-                            .read_text(encoding="utf-8")) or {}
+    config = load_automation(automation or paths.PROFILE / "automation.yaml")
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
     out: dict[str, list[str]] = {"finished": [], "duplicates": [], "not_live": [],
                                  "wrong_status": []}

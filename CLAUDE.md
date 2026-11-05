@@ -88,6 +88,8 @@ them — `/score`'s baseline and `/tailor`'s plan alike.
 `jd_text` are deliberately **excluded** so the id is stable across re-scrapes.
 Changing the hash inputs would silently orphan `pipeline/<job_id>/state.yaml` and
 `applications/<dir>` keys. Do not add url/jd_text to the hash.
+Ids are stored, never recomputed; a hash already held by another pair gets a salt
+(title + `#2`, `#3`, ...).
 
 ## Commands
 

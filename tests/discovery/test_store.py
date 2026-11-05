@@ -86,12 +86,17 @@ def test_fuzzy_needs_jd_evidence():
     assert store["job_id"].nunique() == 2
 
 
-def test_a_hash_collision_drops_the_newcomer(monkeypatch):
+def test_a_hash_clash_gets_a_salted_id_that_the_pair_keeps(monkeypatch):
     store, _ = fold(S.empty_store(), post(GH.format(1)))
-    monkeypatch.setattr(identity, "compute_job_id", lambda c, t: store.at[0, "job_id"])
-    store2, stats = fold(store, post(GH.format(2), company="Zeta", title="Chef",
-                                     jd=JD_OTHER, source="lever"))
-    assert len(store2) == 1 and len(stats.collisions) == 1
+    held, real = store.at[0, "job_id"], identity.compute_job_id
+    monkeypatch.setattr(identity, "compute_job_id",
+                        lambda c, t: held if (c, t) == ("zeta", "chef") else real(c, t))
+    store, _ = fold(store, post(GH.format(2), company="Zeta", title="Chef", jd=JD_OTHER, source="lever"))
+    salted = real("zeta", "chef#2")
+    assert list(store["job_id"]) == [held, salted]
+    store, stats = fold(store, post("https://jobs.lever.co/zeta/9", company="Zeta", title="Chef",
+                                    jd=JD_OTHER, source="lever"))
+    assert stats.by_rule == {"pair": 1} and store["job_id"].iloc[-1] == salted
 
 
 def test_blank_company_is_dropped_not_hashed():
@@ -322,7 +327,7 @@ def test_a_refresh_from_another_source_does_not_clash_with_its_own_id():
     other = post("https://www.welcometothejungle.com/en/companies/x/jobs/fde", company="Telnyx",
                  title="Forward Deployed Engineer", source="stapply", jd=JD_OTHER)
     store, stats = fold(store, post(GH.format(1), company="telnyx54", source="stapply"), other)
-    assert stats.collisions == [] and store["job_id"].nunique() == 1
+    assert len(store) == 2 and store["job_id"].nunique() == 1
 
 
 def test_the_board_is_the_urls_ats_whoever_finds_it():

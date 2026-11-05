@@ -30,6 +30,7 @@ import pandas as pd
 import yaml
 
 from src.shared import paths
+from src.shared.config_keys import load_automation
 from src.resume_model import parse_entries
 
 BULLETS = paths.PROFILE / "bullets.md"
@@ -53,7 +54,10 @@ class SynonymsError(ValueError):
 
 
 def _config() -> dict:
-    data = yaml.safe_load(AUTOMATION.read_text(encoding="utf-8")) or {}
+    try:
+        data = load_automation(AUTOMATION)
+    except ValueError as exc:
+        raise SynonymsError(str(exc)) from exc
     for key in ("auto_add_synonyms", "unlock_max_open"):
         if key not in data:
             raise SynonymsError(f"profile/automation.yaml has no `{key}`")

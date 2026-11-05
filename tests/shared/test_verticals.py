@@ -122,6 +122,13 @@ class TestValidation:
         with pytest.raises(ValueError, match="must match"):
             _write_and_load(tmp_path, data)
 
+    def test_a_typo_key_names_the_closest_valid_key(self, tmp_path):
+        data = _load_raw()
+        lane = data["verticals"]["example_primary"]
+        lane["title_exclude_term"] = lane.pop("title_exclude_terms", ["x"])
+        with pytest.raises(ValueError, match="'title_exclude_term' \\(did you mean 'title_exclude_terms'"):
+            _write_and_load(tmp_path, data)
+
     def test_missing_linkedin_terms(self, tmp_path):
         data = _load_raw()
         del data["verticals"]["example_primary"]["linkedin_terms"]

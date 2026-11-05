@@ -1,5 +1,7 @@
 import pytest
 
+pytest.importorskip("postal.parser")
+
 from src.shared.location.parser import parse_location
 
 

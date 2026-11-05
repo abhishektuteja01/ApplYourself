@@ -56,8 +56,8 @@ already stored and records them there too; no id is ever rewritten.
 
 `job_id = sha1(company_normalized + "|" + title_normalized)[:8]`, inputs frozen.
 Inherited ids (a pair whose id is not its own hash) are legitimate: they carry
-merges from before the store. A hash that collides with a different pair drops
-the newcomer and names it in the report.
+merges from before the store. Ids are stored, never recomputed: a hash already
+held by a different pair is salted (title + `#2`, `#3`, ...) until free.
 
 Writes go through `store.flush` / `live_view.write_view`, under `parquet_io.locked`. The
 store is saved before board state, so a board is never marked checked while

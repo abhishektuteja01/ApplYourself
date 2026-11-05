@@ -167,6 +167,12 @@ def same_job_elsewhere(new: dict, old: dict, trim: Trim = NO_TRIM) -> tuple[str,
     return ("other_title" if titles_differ(new, old) else "merge"), score
 
 
+def _hash_ids(company: str, title: str, salts: int = 3) -> set[str]:
+    """A pair's own hash and its first salted forms."""
+    return {identity.compute_job_id(company, title)} | {
+        identity.compute_job_id(company, f"{title}#{n}") for n in range(2, salts + 2)}
+
+
 class _Index:
     """Lookups over the store for id assignment, kept current as rows are
     added so two new postings in one night agree with each other."""
@@ -198,8 +204,8 @@ class _Index:
         if jid not in ids:
             ids.append(jid)
         self.pair_of_id.setdefault(jid, set()).add(pair)
-        if jid not in self.own and identity.compute_job_id(
-                rec["company_normalized"], rec["title_normalized"]) == jid:
+        if jid not in self.own and jid in _hash_ids(
+                rec["company_normalized"], rec["title_normalized"]):
             self.own[jid] = {"title_normalized": rec["title_normalized"],
                              "location_raw": rec.get("location_raw", "")}
         cand = {k: rec.get(k, "") for k in (
@@ -263,9 +269,11 @@ class _Index:
             tracked = sorted(m for m in matches if m in self.tracked)
             jid = (tracked or sorted(matches))[0]
             return jid, "fuzzy", {k: v for k, v in maybes.items() if k not in matches}
-        jid = identity.compute_job_id(row["company_normalized"], row["title_normalized"])
-        if jid in self.pair_of_id and pair not in self.pair_of_id[jid]:
-            return "", "collision", {}
+        # An id held by another pair is salted (title + "#2", "#3", ...), never dropped.
+        jid, n = identity.compute_job_id(row["company_normalized"], row["title_normalized"]), 1
+        while jid in self.pair_of_id and pair not in self.pair_of_id[jid]:
+            n += 1
+            jid = identity.compute_job_id(row["company_normalized"], f"{row['title_normalized']}#{n}")
         return jid, "hash", {k: v for k, v in maybes.items() if k != jid}
 
 
