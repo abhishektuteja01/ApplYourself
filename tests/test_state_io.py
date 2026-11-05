@@ -86,6 +86,14 @@ def test_load_state_raises_on_malformed_yaml(tmp_path):
         load_state(_empty_state_file(tmp_path, "this is: not\n  - valid: yaml: :\n"))
 
 
+def test_schema_version_missing_reads_as_1_and_newer_raises(tmp_path):
+    p = _empty_state_file(tmp_path, "job_id: a\nstate: saved\n")
+    assert load_state(p)["state"] == "saved"
+    p.write_text("schema_version: 2\njob_id: a\nstate: saved\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="schema_version 2"):
+        load_state(p)
+
+
 # ---------- transition: creation path ----------
 
 
