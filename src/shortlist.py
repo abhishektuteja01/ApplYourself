@@ -5,7 +5,7 @@ reads. A pure read of scored.parquet, clean.parquet and pipeline/*/state.yaml
 Two parts:
   In pipeline   roles whose state is in shortlist.pipeline_states: the count,
                 and the shortlist.pipeline_show highest-fit of them
-  One per lane  the top shortlist.top_n untracked roles at fit >= review_min,
+  One per lane  the top shortlist.top_n untracked roles at fit >= cutoffs.review,
                 excluding ineligible and suggested skip
 """
 

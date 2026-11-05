@@ -11,8 +11,9 @@ location_allowlist:
 # LinkedIn/Indeed row also needs a posted date within search_max_age_days.
 live_days: 14
 search_max_age_days: 14
-# How long a job stays in the view from first seen, by its fit score.
-retention: {score_threshold: 80, high_days: 60, low_days: 15}
+# How long a job stays in the view from first seen: high_days at fit >=
+# scoring.yaml cutoffs.keep_long (or unscored), else low_days.
+retention: {high_days: 60, low_days: 15}
 # Untracked postings not seen for this long leave the store.
 forget_after_days: 120
 # Nightly debug shards under jobs/raw/.

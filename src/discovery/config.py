@@ -52,7 +52,7 @@ _TOP_LEVEL_KEYS = frozenset(
     }
 )
 _ALLOWLIST_KEYS = frozenset({"countries"})
-_RETENTION_KEYS = frozenset({"score_threshold", "high_days", "low_days"})
+_RETENTION_KEYS = frozenset({"high_days", "low_days"})
 _SOURCE_KEYS = frozenset(
     {
         "enabled",
@@ -82,6 +82,7 @@ _RETIRED_KEYS = {
     "states": "(nothing)",
     "cities": "(nothing)",
     "continents": "countries",
+    "score_threshold": "scoring.yaml cutoffs.keep_long",
 }
 
 # With no `search_locations`, the jobspy lanes query the allowlist's
@@ -330,7 +331,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     p = Path(path or DEFAULT_CONFIG_PATH)
     if not p.exists():
         log.info("profile/discovery.yaml not found, using defaults")
-        return DiscoveryConfig()
+        return _keep_long(DiscoveryConfig())
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
@@ -375,15 +376,22 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     if not isinstance(retention, dict):
         raise ValueError(f"{p}: retention must be a mapping")
     cfg.unknown_keys += [f"retention.{k}" for k in retention if k not in _RETENTION_KEYS]
-    cfg.retention_score_threshold = float(
-        retention.get("score_threshold", cfg.retention_score_threshold)
-    )
     for key in ("high_days", "low_days"):
         setattr(
             cfg,
             f"retention_{key}",
             _int(retention.get(key, getattr(cfg, f"retention_{key}")), f"{p}: retention.{key}", 1),
         )
+    return _keep_long(cfg)
+
+
+def _keep_long(cfg: DiscoveryConfig) -> DiscoveryConfig:
+    """Retention's score cutoff is scoring.yaml `cutoffs.keep_long`. With no
+    scoring.yaml nothing is scored yet, so the default stands."""
+    from src import score_filter
+
+    if score_filter.SCORING_PATH.exists():
+        cfg.retention_score_threshold = float(score_filter.load_cutoffs().keep_long)
     return cfg
 
 

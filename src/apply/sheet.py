@@ -5,7 +5,7 @@ that own the facts — `pipeline/<job_id>/state.yaml`, the submit ledger, the
 latest run report that names the role, and a role's waiting answers — so the
 sheet can never disagree with them. Nothing else writes those columns.
 
-`--add` appends roles newly scored at or above `score_threshold` that are not
+`--add` appends roles newly scored at or above scoring.yaml `cutoffs.sheet` that are not
 tracked as done and not in the ledger. A row that is Applied or Closed is
 removed on the rebuild (state.yaml and the ledger keep the record, and `--add`
 never brings it back); an Expired row stays, so it can be marked skip.
@@ -24,6 +24,7 @@ import yaml
 from src import state_io
 from src.app_cli import built_folder
 from src.apply import confirmation, detect, ledger
+from src.score_filter import load_cutoffs
 from src.shared import paths
 from src.shared.config_schema import load_automation
 
@@ -268,7 +269,8 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
     wb, ws, col = _load(table)
     present = {str(ws.cell(row=r, column=col["name"]).value) for r in range(2, ws.max_row + 1)}
     if add:
-        for row in _candidates(float(config.get("score_threshold", 0)), present, sent_ids, states):
+        sheet_min = load_cutoffs(paths.PROFILE / "scoring.yaml").sheet
+        for row in _candidates(float(sheet_min), present, sent_ids, states):
             ws.append([row.get(name, "") for name in sorted(col, key=col.get)])
 
     counts: dict[str, int] = {}

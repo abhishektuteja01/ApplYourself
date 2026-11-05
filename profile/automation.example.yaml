@@ -1,7 +1,7 @@
 # Overnight chain run by scripts/nightly_pipeline.sh. `uv run apply sheet` reads
-# table_path and score_threshold; the stage scripts read the keys further down.
+# table_path (its cutoff is scoring.yaml cutoffs.sheet); the stage scripts read
+# the keys further down.
 
-score_threshold: 85
 table_path: top_scored_open.xlsx
 
 # Headless stage runner (scripts/nightly_pipeline.sh).

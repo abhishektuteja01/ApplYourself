@@ -7,10 +7,10 @@ from __future__ import annotations
 import difflib
 import types
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, ClassVar, Literal, Union, get_args, get_origin
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
 class _Strict(BaseModel):
@@ -70,15 +70,28 @@ class VerticalsFile(_Strict):
 
 # ---- scoring.yaml ----
 
+Score = Annotated[int, Field(strict=True, ge=0)]
+
+
+class Cutoffs(_Strict):
+    """Fit-score cutoffs: review and tailor (suggested_action), keep_long
+    (discovery keeps a role high_days), sheet (the night's status sheet)."""
+
+    review: Score
+    tailor: Score
+    keep_long: Score
+    sheet: Score
+
+    @model_validator(mode="after")
+    def _rising(self):
+        if not self.review <= self.tailor <= self.keep_long <= self.sheet:
+            raise ValueError("must rise: review <= tailor <= keep_long <= sheet")
+        return self
+
 
 class JdQuality(_Strict):
     min_words: Any = None
     skills_cap: Any = None
-
-
-class Action(_Strict):
-    review_min: Any = None
-    tailor_min: Any = None
 
 
 class TrimJd(_Strict):
@@ -95,6 +108,7 @@ class Shortlist(_Strict):
 
 
 class ScoringFile(_Strict):
+    retired: ClassVar[dict[str, str]] = {"action": "cutoffs.review and cutoffs.tailor"}
     schema_version: Any = None
     ineligible: Any = None
     no_sponsorship: Any = None
@@ -103,15 +117,15 @@ class ScoringFile(_Strict):
     jd_quality: JdQuality | None = None
     trim_jd: TrimJd | None = None
     shortlist: Shortlist | None = None
-    action: Action | None = None
+    cutoffs: Cutoffs
 
 
 # ---- automation.yaml ----
 
 
 class Automation(_Strict):
+    retired: ClassVar[dict[str, str]] = {"score_threshold": "scoring.yaml cutoffs.sheet"}
     schema_version: int | None = None
-    score_threshold: float | None = None
     table_path: str | None = None
     tailor_parallel: int | None = None
     tailor_stagger_seconds: int | None = None
