@@ -26,7 +26,8 @@
       "Bash(sed -n:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(uv run config:*)"
     ],
     "ask": [
       "Bash(uv run apply run *--submit*)"
