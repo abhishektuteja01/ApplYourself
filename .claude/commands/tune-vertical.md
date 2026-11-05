@@ -56,14 +56,7 @@ confirmed → run the round's verify → report → next round.**
 
 ```bash
 uv run verticals-check
-uv run python -c "
-from src.shared.verticals import load_verticals
-c = load_verticals(); v = c.verticals['<name>']
-print('lanes:', c.names, 'default:', c.default_vertical)
-print('search:', len(v.search_terms), 'linkedin:', len(v.linkedin_terms))
-print('title gate: include', len(v.title_include_terms), 'exclude', len(v.title_exclude_terms), 'strong_keep', len(v.title_strong_keep_terms))
-print('drops: years', v.years, 'drop_phrases', len(v.drop_phrases))
-print('rules for this lane:', [i for i, (vt, _) in enumerate(c.classifier_rules) if vt == '<name>'], 'of', len(c.classifier_rules))"
+uv run config verticals <name>
 ```
 
 Read the lane's current block in `profile/verticals.yaml` and its
@@ -130,7 +123,7 @@ their rulings.
 Verify:
 
 ```bash
-uv run python -c "from src.shared.verticals import load_verticals; v = load_verticals().verticals['<name>']; print(len(v.search_terms), len(v.linkedin_terms), len(v.title_include_terms), len(v.title_exclude_terms), len(v.title_strong_keep_terms))"
+uv run config verticals <name>
 uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
@@ -168,14 +161,9 @@ rule-position bug — name the row, propose the move, have the user confirm the
 Verify:
 
 ```bash
-uv run python -c "from src.shared.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.drop_phrases), len(v.title_include_terms), len(v.title_exclude_terms))"
-uv run python -c "from src.shared.title_gate import classify_vertical_from_title as c; print([c(t) for t in ['<title1>', '<title2>', '...']])"
-uv run python -c "
-from src.shared.verticals import load_verticals
-from src.shared.title_gate import classify_vertical_from_title as c
-v = load_verticals().verticals['<name>']
-bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
-print('MISCLASSIFIED:', bad or 'none')"
+uv run config verticals <name>
+uv run config classify '<title1>' '<title2>' '...'
+uv run config misclassified <name>
 uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
@@ -187,14 +175,7 @@ Then replay the change over the rows already on disk, so the user sees what
 would move before the next scrape:
 
 ```bash
-uv run python -c "
-import pandas as pd
-from src.shared.title_gate import classify_vertical_from_title as c
-d = pd.read_parquet('jobs/clean.parquet')
-now = d.title.map(c)
-moved = d[now != d.vertical.fillna('')]
-print(len(moved), 'rows would reclassify')
-print(moved.assign(new=now[moved.index])[['title','vertical','new']].head(30).to_string())"
+uv run config reclassify
 ```
 
 Rows only actually move on the next `discover`; `/score --all --vertical <name>`

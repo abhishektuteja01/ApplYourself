@@ -104,13 +104,8 @@ Read:
 - the work-authorization row for the job's country, which sets the disclosure:
 
   ```bash
-  cd "$(git rev-parse --show-toplevel)" && uv run python -c "
-  from src.apply.answers import load_answers
-  a = load_answers()
-  country = '<the country in state.yaml location, or empty for a remote or unnamed one>' or a.home_country
-  f = a.facts_for(country)
-  print(country, f.authorized, f.requires_sponsorship, repr(f.status_label), repr(f.followup))
-  "
+  cd "$(git rev-parse --show-toplevel)" && uv run config work-auth '<the country in state.yaml location>'
+  # Leave the country out for a remote or unnamed one: the home country applies.
   ```
 
 ### Disclosure
@@ -200,24 +195,12 @@ collapse non-alphanumerics to `-`, strip leading/trailing `-`. If no
 ## Step 4 — LINT the draft (outreach context)
 
 ```bash
-uv run python <<'PYEOF'
-import json
-from pathlib import Path
-from src import resume_model
-from src.lint import fix_mechanical, find_phrase_violations
-
 # Substitute the literal path of the draft written in Step 3 — bash
-# variables do not persist between Bash calls.
-draft_path = Path("pipeline/<job_id>/outreach/<date>_<channel>_<recipient-slug>.md")
-draft = draft_path.read_text()
-src = resume_model.load_sources()
-fixed, subs = fix_mechanical(draft, src.rules)
-draft_path.write_text(fixed)
-# outreach context: enforces banned_phrases + outreach_only + no_emoji + no_exclamation
-keep = resume_model.keep_terms(src, "<company>", "<recipient name, or omit>")
-violations = find_phrase_violations(fixed, context="outreach", rules=src.rules, keep=keep)
-print(json.dumps({"mech_subs": len(subs), "violations": violations}, indent=2))
-PYEOF
+# variables do not persist between Bash calls. Drop --recipient if none.
+# Fixes mechanical slips in the draft in place, then enforces banned_phrases +
+# outreach_only + no_emoji + no_exclamation.
+uv run app lint outreach "pipeline/<job_id>/outreach/<date>_<channel>_<recipient-slug>.md" \
+    --company "<company>" --recipient "<recipient name>"
 ```
 
 If any violation:

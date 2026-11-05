@@ -276,16 +276,11 @@ rm -f profile/verticals/<name>/.pass_a_only
 ## Step 5a — verify (`pass-a`)
 
 ```bash
-uv run python -c "from src.shared.verticals import load_verticals; c = load_verticals(); v = c.verticals['<name>']; print(c.names, c.default_vertical, len(v.search_terms), len(v.linkedin_terms), v.years, len(v.title_exclude_terms))"
-uv run python -c "
-from src.shared.title_gate import classify_vertical_from_title as c
-from src.shared.verticals import load_verticals
-v = load_verticals().verticals['<name>']
-bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != '<name>']
-print('MISCLASSIFIED:', bad or 'none')"
+uv run config verticals <name>
+uv run config misclassified <name>
 ```
 
-The `load_verticals()` call is what catches a malformed `years` table or title
+`config verticals` loads the config, which is what catches a malformed `years` table or title
 term before the scrape.
 
 Do not run `verticals-check` or `tests/test_real_config_drift.py` here — both

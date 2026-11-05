@@ -61,12 +61,7 @@ read the configured lanes and ask which one with `AskUserQuestion`.
 Read the valid lane names from config — never hardcode them:
 
 ```bash
-uv run python -c "
-from src.shared.verticals import get_config
-c = get_config()
-print('lanes:', ' '.join(sorted(c.verticals)))
-print('default:', c.default_vertical)
-"
+uv run config verticals
 ```
 
 **Vertical mode:** if the name is not a configured lane, print the lane list and stop.

@@ -26,7 +26,7 @@ cd "$REPO" || { echo "FATAL: cannot cd to $REPO" >&2; exit 1; }
 
 # Keep log_keep_days (profile/discovery.yaml) of logs. A config that fails to
 # load skips the prune; preflight reports why.
-KEEP="$("$UV" run python -c 'from src.discovery.config import load_config; print(load_config().log_keep_days)' 2>/dev/null)"
+KEEP="$("$UV" run config get discovery log_keep_days 2>/dev/null)"
 if [[ "$KEEP" =~ ^[0-9]+$ ]]; then
   find "$LOGDIR" -maxdepth 1 -name 'discovery_*.log' -mtime +"$KEEP" -delete
 fi

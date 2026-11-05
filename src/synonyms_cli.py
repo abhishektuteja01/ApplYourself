@@ -8,6 +8,7 @@ The session proposes; this code checks and writes. Nothing here calls an LLM.
   synonyms undo T PHRASE    take one added synonym back out
   synonyms approve K ...    a declined keyword becomes a permanent "do not add"
   synonyms answer ID yes|no close an unlock question
+  synonyms added            how many synonyms the log records as added today
 
 A proposals file (`jobs/synonyms_proposals.yaml`):
 
@@ -347,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("answer")
     an.add_argument("id")
     an.add_argument("reply", choices=("yes", "no"))
+    sub.add_parser("added")
     args = ap.parse_args(argv)
     try:
         if args.cmd == "keywords":
@@ -357,6 +359,9 @@ def main(argv: list[str] | None = None) -> int:
             print(undo(args.target, args.phrase))
         elif args.cmd == "approve":
             print("\n".join(approve(args.keywords)))
+        elif args.cmd == "added":
+            rows = [json.loads(x) for x in LOG.read_text(encoding="utf-8").splitlines()] if LOG.exists() else []
+            print(sum(r["date"] == date.today().isoformat() for r in rows))
         else:
             print(answer(args.id, args.reply))
     except (SynonymsError, OSError, yaml.YAMLError) as exc:
