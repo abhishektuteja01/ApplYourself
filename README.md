@@ -165,7 +165,7 @@ its `display_name`, its `resume:` shape and the `vertical:` values in
 You need [uv](https://docs.astral.sh/uv/), Python 3.12 (pinned `>=3.12,<3.13`),
 and Claude Code. PDF output additionally needs Microsoft Word on macOS, which
 it drives via `osascript`. Everything else runs anywhere Python does; without Word
-you get the `.docx` and convert it yourself.
+a build fails unless you pass `uv run app build ... --no-pdf`, which writes only the `.docx`.
 
 **1. Install and prove the clone works.** The core install needs no C toolchain.
 

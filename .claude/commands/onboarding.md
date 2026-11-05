@@ -175,6 +175,7 @@ the resume.
    `/cover-letter`: the letter's letterhead is literal placeholder text — `NAME`
    at the top, `City, ST | Num| Email` under it, `NAME` again after `Sincerely,`
    — and mails as written.
+   No Microsoft Word on this Mac: tell them every `uv run app build` needs `--no-pdf`.
 
 4. Run **`/new-vertical <lane> pass-a "<their stated roles>"`** and let it drive.
    Pass A writes only the `verticals.yaml` lane block and one classifier rule,
