@@ -18,21 +18,10 @@ from typing import Any
 import yaml
 
 from src.shared import jd_trim, paths, verticals
-from src.shared.config_keys import check_keys
+from src.shared.config_schema import Cutoffs, ScoringFile, validate
 
 SCORING_PATH = paths.PROFILE / "scoring.yaml"
 _SCHEMA_VERSION = 1
-_SCORING_KEYS = {
-    "schema_version": None,
-    "ineligible": None,
-    "no_sponsorship": None,
-    "languages": None,
-    "keywords_max": None,
-    "jd_quality": {"min_words", "skills_cap"},
-    "action": {"review_min", "tailor_min"},
-    "trim_jd": {"headings", "keep_words"},
-    "shortlist": {"top_n", "pipeline_states", "pipeline_show", "sponsorship_order", "note"},
-}
 
 
 SPONSORSHIP_NEEDS = ("never", "later", "now")
@@ -127,6 +116,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
             "to profile/scoring.yaml (/onboarding does this)"
         )
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    cutoffs = validate(ScoringFile, data, path).cutoffs
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise ValueError(f"{path}: schema_version must be {_SCHEMA_VERSION}")
     if bank_path is None:
@@ -138,12 +128,8 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
             else bank_module.DEFAULT_PATH
         )
     home_need, country_needs, default_need = sponsorship_needs(Path(bank_path))
-    q, a = data.get("jd_quality") or {}, data.get("action") or {}
+    q = data.get("jd_quality") or {}
     t, s = data.get("trim_jd") or {}, data.get("shortlist") or {}
-    check_keys(data, _SCORING_KEYS, "top level", path)
-    for block, raw in (("jd_quality", q), ("action", a), ("trim_jd", t), ("shortlist", s)):
-        if isinstance(raw, dict):
-            check_keys(raw, _SCORING_KEYS[block], block, path)
     cfg = ScoringConfig(
         sponsorship_need=home_need,
         country_needs=country_needs,
@@ -153,8 +139,8 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         min_words=_int(q, "min_words", "jd_quality", path),
         skills_cap=_int(q, "skills_cap", "jd_quality", path),
         keywords_max=_int(data, "keywords_max", "top level", path),
-        tailor_min=_int(a, "tailor_min", "action", path),
-        review_min=_int(a, "review_min", "action", path),
+        tailor_min=cutoffs.tailor,
+        review_min=cutoffs.review,
         trim_headings=_phrases(t, "headings", path),
         keep_words=_phrases(t, "keep_words", path),
         top_n=_int(s, "top_n", "shortlist", path),
@@ -165,9 +151,14 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         languages=_phrases(data, "languages", path),
         degree_rank=bank_degree_rank(Path(bank_path)),
     )
-    if cfg.review_min > cfg.tailor_min:
-        raise ValueError(f"{path}: action.review_min must not exceed action.tailor_min")
     return cfg
+
+
+def load_cutoffs(path: Path | None = None) -> Cutoffs:
+    """scoring.yaml's `cutoffs` block, for a caller that needs no other rule."""
+    path = path or SCORING_PATH
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return validate(ScoringFile, data, path).cutoffs
 
 
 # ---------------------------------------------------------------------
@@ -310,7 +301,9 @@ def load_trim(path: Path | None = None) -> tuple[tuple[str, ...], tuple[str, ...
     path = path or SCORING_PATH
     if not path.exists():
         return (), ()
-    t = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("trim_jd") or {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    validate(ScoringFile, data, path)
+    t = data.get("trim_jd") or {}
     return _phrases(t, "headings", path), _phrases(t, "keep_words", path)
 
 

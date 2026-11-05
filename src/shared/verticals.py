@@ -28,7 +28,7 @@ from typing import Protocol
 import yaml
 
 from src.shared import paths
-from src.shared.config_keys import check_keys
+from src.shared.config_schema import VerticalsFile, validate
 
 REPO_ROOT = paths.REPO_ROOT  # tests repoint this name; keep it a module attr
 DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "verticals.yaml"
@@ -37,23 +37,6 @@ VERTICALS_DIR = REPO_ROOT / "profile" / "verticals"
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SCHEMA_VERSION = 1
-_TOP_KEYS = {"schema_version", "default_vertical", "verticals", "classifier_rules"}
-# salary_expectation is read raw by apply_cli, not modelled here.
-_LANE_KEYS = {
-    "display_name",
-    "search_terms",
-    "linkedin_terms",
-    "abroad_terms",
-    "drop_phrases",
-    "years",
-    "skill_weights",
-    "focus",
-    "title_exclude_terms",
-    "title_include_terms",
-    "title_strong_keep_terms",
-    "resume",
-    "salary_expectation",
-}
 
 
 @dataclass(frozen=True)
@@ -73,9 +56,6 @@ _RESUME_SECTIONS = {"summary", "work", "projects", "education", "skills"}
 def _parse_lane_resume(raw, path: Path, where: str) -> LaneResume:
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
-    unknown = set(raw) - {"sections", "bullets", "skill_lines", "summary"}
-    if unknown:
-        raise _fail(path, f"{where}: unknown keys {sorted(unknown)}")
     sections = _str_list(_require(raw, "sections", path, where), path, f"{where}.sections")
     if sorted(sections) != sorted(_RESUME_SECTIONS):
         raise _fail(path, f"{where}.sections must list each of {sorted(_RESUME_SECTIONS)} once")
@@ -113,9 +93,6 @@ class Focus:
 def _parse_focus(raw, path: Path, where: str) -> Focus:
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
-    unknown = set(raw) - {"question", "yes_min", "no_max"}
-    if unknown:
-        raise _fail(path, f"{where}: unknown keys {sorted(unknown)}")
     question = _require(raw, "question", path, where)
     if not isinstance(question, str) or not question.strip():
         raise _fail(path, f"{where}.question must be a nonempty string")
@@ -226,7 +203,6 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
         raise _fail(path, f"vertical name {name!r} must match ^[a-z][a-z0-9_]*$")
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
-    check_keys(raw, _LANE_KEYS, where, path)
     search_terms = _str_list(
         _require(raw, "search_terms", path, where), path, f"{where}.search_terms"
     )
@@ -303,7 +279,7 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
         raise _fail(p, "top level must be a mapping")
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise _fail(p, f"schema_version must be {_SCHEMA_VERSION}")
-    check_keys(data, _TOP_KEYS, "top level", p)
+    validate(VerticalsFile, data, p)
 
     raw_verticals = _require(data, "verticals", p, "top level")
     if not isinstance(raw_verticals, dict) or not raw_verticals:
@@ -322,13 +298,11 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
         where = f"classifier_rules[{i}]"
         if not isinstance(rule, dict):
             raise _fail(p, f"{where} must be a mapping")
-        check_keys(rule, {"vertical", "pattern"}, where, p)
         vertical = _require(rule, "vertical", p, where)
         if vertical not in verticals:
             raise _fail(p, f"{where}.vertical {vertical!r} is not a configured vertical")
         pattern = _require(rule, "pattern", p, where)
         if isinstance(pattern, dict):
-            check_keys(pattern, {"match", "require_any"}, f"{where}.pattern", p)
             match_str = _require(pattern, "match", p, f"{where}.pattern")
             if not isinstance(match_str, str):
                 raise _fail(p, f"{where}.pattern.match must be a string")

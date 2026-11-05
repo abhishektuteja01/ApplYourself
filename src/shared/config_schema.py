@@ -1,0 +1,263 @@
+"""One pydantic model per profile/*.yaml file. Each names every valid key
+(extra="forbid"), so a typo'd key fails loud with the closest valid key. The
+loaders still check most values themselves (R7: no LLM)."""
+
+from __future__ import annotations
+
+import difflib
+import types
+from pathlib import Path
+from typing import Annotated, Any, ClassVar, Literal, Union, get_args, get_origin
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    retired: ClassVar[dict[str, str]] = {}
+    """Removed key -> where it moved, named in the error."""
+
+
+# ---- verticals.yaml ----
+
+
+class LaneResume(_Strict):
+    sections: Any = None
+    bullets: Any = None
+    skill_lines: Any = None
+    summary: Any = None
+
+
+class Focus(_Strict):
+    question: Any = None
+    yes_min: Any = None
+    no_max: Any = None
+
+
+class Lane(_Strict):
+    display_name: Any = None
+    search_terms: Any = None
+    linkedin_terms: Any = None
+    abroad_terms: Any = None
+    drop_phrases: Any = None
+    years: Any = None
+    skill_weights: Any = None
+    focus: Focus | None = None
+    title_exclude_terms: Any = None
+    title_include_terms: Any = None
+    title_strong_keep_terms: Any = None
+    resume: LaneResume | None = None
+    salary_expectation: Any = None  # read raw by apply_cli
+
+
+class RulePattern(_Strict):
+    match: Any = None
+    require_any: Any = None
+
+
+class ClassifierRule(_Strict):
+    vertical: Any = None
+    pattern: str | RulePattern | None = None
+
+
+class VerticalsFile(_Strict):
+    schema_version: Any = None
+    default_vertical: Any = None
+    verticals: dict[str, Lane] | None = None
+    classifier_rules: list[ClassifierRule] | None = None
+
+
+# ---- scoring.yaml ----
+
+Score = Annotated[int, Field(strict=True, ge=0)]
+
+
+class Cutoffs(_Strict):
+    """Fit-score cutoffs: review and tailor (suggested_action), keep_long
+    (discovery keeps a role high_days), sheet (the night's status sheet)."""
+
+    review: Score
+    tailor: Score
+    keep_long: Score
+    sheet: Score
+
+    @model_validator(mode="after")
+    def _rising(self):
+        if not self.review <= self.tailor <= self.keep_long <= self.sheet:
+            raise ValueError("must rise: review <= tailor <= keep_long <= sheet")
+        return self
+
+
+class JdQuality(_Strict):
+    min_words: Any = None
+    skills_cap: Any = None
+
+
+class TrimJd(_Strict):
+    headings: Any = None
+    keep_words: Any = None
+
+
+class Shortlist(_Strict):
+    top_n: Any = None
+    pipeline_states: Any = None
+    pipeline_show: Any = None
+    sponsorship_order: Any = None
+    note: Any = None
+
+
+class ScoringFile(_Strict):
+    retired: ClassVar[dict[str, str]] = {"action": "cutoffs.review and cutoffs.tailor"}
+    schema_version: Any = None
+    ineligible: Any = None
+    no_sponsorship: Any = None
+    languages: Any = None
+    keywords_max: Any = None
+    jd_quality: JdQuality | None = None
+    trim_jd: TrimJd | None = None
+    shortlist: Shortlist | None = None
+    cutoffs: Cutoffs
+
+
+# ---- automation.yaml ----
+
+
+class Automation(_Strict):
+    retired: ClassVar[dict[str, str]] = {"score_threshold": "scoring.yaml cutoffs.sheet"}
+    schema_version: int | None = None
+    table_path: str | None = None
+    tailor_parallel: int | None = None
+    tailor_stagger_seconds: int | None = None
+    retries: int | None = None
+    max_budget_usd_per_call: float | None = None
+    auto_add_synonyms: bool | None = None
+    unlock_max_open: int | None = None
+    summary_email: str | None = None
+    tailor_max_per_night: int | None = None
+    apply_prep_max_per_night: int | None = None
+
+
+# ---- contacts.yaml ----
+
+
+class Contact(_Strict):
+    id: Any = None
+    name: Any = None
+    company: Any = None
+    role: Any = None
+    relationship: Literal["recruiter", "referral", "alumni", "other"] | None = None
+    channel: Any = None
+    email: Any = None
+    phone: Any = None
+    linkedin: Any = None
+    shared_affiliation: Any = None
+    tags: Any = None
+    notes: Any = None
+
+
+class ContactsFile(_Strict):
+    schema_version: Any = None
+    contacts: list[Contact] | None = None
+
+
+# ---- validation ----
+
+
+def _model_at(model: type[BaseModel], loc: tuple) -> type[BaseModel] | None:
+    """The model whose fields hold loc's last key, following pydantic's loc
+    (dict keys, list indexes and union member names)."""
+    t: Any = model
+    for seg in loc[:-1]:
+        while True:
+            origin = get_origin(t)
+            if origin in (Union, types.UnionType):
+                members = [a for a in get_args(t) if a is not type(None)]
+                if len(members) == 1:
+                    t = members[0]
+                    continue
+                named = [a for a in members if getattr(a, "__name__", None) == seg]
+                if named:
+                    t = named[0]
+                    break
+                return None
+            if isinstance(t, type) and issubclass(t, BaseModel):
+                field = t.model_fields.get(seg)
+                if field is None:
+                    return None
+                t = field.annotation
+            elif origin is dict:
+                t = get_args(t)[1]
+            elif origin is list:
+                t = get_args(t)[0]
+            else:
+                return None
+            break
+    while get_origin(t) in (Union, types.UnionType):
+        members = [a for a in get_args(t) if a is not type(None)]
+        if len(members) != 1:
+            break
+        t = members[0]
+    return t if isinstance(t, type) and issubclass(t, BaseModel) else None
+
+
+def _where(model: type[BaseModel], loc: tuple) -> str:
+    # Drop union member names pydantic adds to loc.
+    names = {a.__name__ for a in _models(model)} | {"str"}
+    return ".".join(
+        f"[{s}]" if isinstance(s, int) else str(s) for s in loc if s not in names
+    ).replace(".[", "[")
+
+
+def _models(model: type[BaseModel], seen: set | None = None) -> set:
+    seen = seen if seen is not None else set()
+    if model in seen:
+        return seen
+    seen.add(model)
+
+    def walk(t):
+        for a in get_args(t) or ():
+            walk(a)
+        if isinstance(t, type) and issubclass(t, BaseModel):
+            _models(t, seen)
+
+    for f in model.model_fields.values():
+        walk(f.annotation)
+    return seen
+
+
+def validate[M: BaseModel](model: type[M], data: Any, path: Path | str) -> M:
+    """data as `model`, or ValueError naming every problem as `path: key: message`.
+    An unknown key names the closest valid key, or where a retired key moved."""
+    try:
+        return model.model_validate(data)
+    except ValidationError as exc:
+        errors = exc.errors()
+    extra = [e for e in errors if e["type"] == "extra_forbidden"]
+    lines = []
+    for e in extra or errors:
+        loc = tuple(e["loc"])
+        if e["type"] == "extra_forbidden":
+            owner = _model_at(model, loc)
+            key = str(loc[-1])
+            valid = sorted(owner.model_fields) if owner else []
+            where = _where(model, loc[:-1]) or "top level"
+            if owner and key in owner.retired:
+                hint = f" (moved to {owner.retired[key]})"
+            else:
+                close = difflib.get_close_matches(key, valid, n=1)
+                hint = f" (did you mean {close[0]!r}?)" if close else ""
+            lines.append(
+                f"{path}: {where}: unknown key {key!r}{hint}; valid keys: {', '.join(valid)}"
+            )
+        else:
+            where = _where(model, loc) or "top level"
+            lines.append(f"{path}: {where}: {e['msg']}")
+    raise ValueError("\n".join(dict.fromkeys(lines)))
+
+
+def load_automation(path: Path) -> dict:
+    """profile/automation.yaml as a dict, every key checked."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    validate(Automation, data, path)
+    return data

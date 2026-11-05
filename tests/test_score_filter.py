@@ -23,10 +23,17 @@ class TestLoadScoring:
     def test_the_needs_come_from_the_bank(self, scfg):
         assert scfg.sponsorship_need == "later" and scfg.default_need == "now"
 
-    def test_review_above_tailor_fails(self, tmp_path):
-        text = REAL_SCORING.read_text(encoding="utf-8").replace("review_min: 50", "review_min: 70")
+    @pytest.mark.parametrize(
+        "old, new, error",
+        [
+            ("review: 50", "review: 70", "cutoffs: .*must rise"),
+            ("cutoffs:", "action:", "'action' \\(moved to cutoffs.review and cutoffs.tailor\\)"),
+        ],
+    )
+    def test_cutoffs_out_of_order_or_under_the_old_key_fail(self, tmp_path, old, new, error):
+        text = REAL_SCORING.read_text(encoding="utf-8").replace(old, new)
         (tmp_path / "s.yaml").write_text(text, encoding="utf-8")
-        with pytest.raises(ValueError, match="review_min"):
+        with pytest.raises(ValueError, match=error):
             sf.load_scoring(tmp_path / "s.yaml", EXAMPLE_BANK)
 
 

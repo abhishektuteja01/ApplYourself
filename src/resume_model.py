@@ -56,26 +56,32 @@ class SourceError(ValueError):
 # =====================================================================
 
 
-def parse_entries(text: str) -> dict[str, dict]:
-    """Parse the `## ID` / `key: value` format of bullets.md and
-    skills_master.md. A value starting with `[` or `{` is YAML. Comment lines
-    (`#` at column 0) are skipped."""
+def parse_entries(text: str, name: str = "<text>") -> dict[str, dict]:
+    """Parse the `## ID` / `key: value` format of bullets.md, skills_master.md
+    and stories.md. A value starting with `[` or `{` is YAML. Comment lines
+    (`#` at column 0) and blank lines are skipped. A repeated id, a line that
+    is not `key: value` and bad inline YAML raise SourceError with the line."""
     entries: dict[str, dict] = {}
     current: dict | None = None
-    for raw in text.split("\n"):
+    for n, raw in enumerate(text.split("\n"), 1):
         line = raw.rstrip()
         if line.startswith("## "):
-            current = entries.setdefault(line[3:].strip(), {})
+            eid = line[3:].strip()
+            if eid in entries:
+                raise SourceError(f"{name}:{n}: duplicate id {eid!r}")
+            current = entries[eid] = {}
             continue
-        if current is None or not line or line.startswith("#") or ":" not in line:
+        if not line or line.startswith("#"):
             continue
+        if current is None or ":" not in line:
+            raise SourceError(f"{name}:{n}: stray line (not `key: value` under a `## ID`)")
         key, _, val = line.partition(":")
         val = val.strip()
         if val[:1] in "[{":
             try:
                 val = yaml.safe_load(val)
-            except yaml.YAMLError:
-                pass
+            except yaml.YAMLError as exc:
+                raise SourceError(f"{name}:{n}: bad inline YAML in {key.strip()!r}") from exc
         current[key.strip()] = val
     return entries
 
@@ -107,8 +113,8 @@ def load_sources() -> Sources:
         raise SourceError("profile/resume.yaml: top level must be a mapping")
     return Sources(
         resume=resume,
-        bullets=parse_entries(BULLETS.read_text(encoding="utf-8")),
-        skills=parse_entries(SKILLS.read_text(encoding="utf-8")),
+        bullets=parse_entries(BULLETS.read_text(encoding="utf-8"), BULLETS.name),
+        skills=parse_entries(SKILLS.read_text(encoding="utf-8"), SKILLS.name),
         rules=lint.load_de_ai_rules(),
     )
 

@@ -26,7 +26,11 @@ def _world(tmp_path, monkeypatch):
     monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
     (tmp_path / "profile").mkdir()
     (tmp_path / "profile" / "automation.yaml").write_text(
-        yaml.safe_dump({"score_threshold": 80, "table_path": "sheet.xlsx"}), encoding="utf-8"
+        yaml.safe_dump({"table_path": "sheet.xlsx"}), encoding="utf-8"
+    )
+    cutoffs = {"review": 50, "tailor": 60, "keep_long": 70, "sheet": 80}
+    (tmp_path / "profile" / "scoring.yaml").write_text(
+        yaml.safe_dump({"cutoffs": cutoffs}), encoding="utf-8"
     )
     scored_rows(
         *(

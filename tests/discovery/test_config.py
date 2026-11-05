@@ -65,7 +65,13 @@ def test_unknown_and_retired_keys_are_named(tmp_path, data, needle):
     assert any(needle in p for p in load(tmp_path, data).validate())
 
 
-def test_every_value_is_read(tmp_path):
+def test_every_value_is_read(tmp_path, monkeypatch):
+    from src import score_filter
+
+    scoring = tmp_path / "scoring.yaml"
+    cutoffs = {"review": 50, "tailor": 60, "keep_long": 75, "sheet": 85}
+    scoring.write_text(yaml.safe_dump({"cutoffs": cutoffs}), encoding="utf-8")
+    monkeypatch.setattr(score_filter, "SCORING_PATH", scoring)
     cfg = load(
         tmp_path,
         {
@@ -76,7 +82,7 @@ def test_every_value_is_read(tmp_path):
             "raw_keep_days": 2,
             "log_keep_days": 9,
             "dead_every_days": 7,
-            "retention": {"score_threshold": 75, "high_days": 45, "low_days": 10},
+            "retention": {"high_days": 45, "low_days": 10},
             "sources": {
                 "workday": {"every_days": 3, "max_pages": 4, "pacing_seconds": 0.5},
                 "linkedin": {"hours_old": 72, "results_wanted": 50, "remote_queries": False},

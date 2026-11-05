@@ -33,7 +33,7 @@ import yaml
 
 from src.resume_model import parse_entries
 from src.shared import paths
-from src.shared.config_keys import load_automation
+from src.shared.config_schema import load_automation
 
 BULLETS = paths.PROFILE / "bullets.md"
 SKILLS = paths.PROFILE / "skills_master.md"
@@ -228,8 +228,8 @@ def apply(proposals_path: Path | None = None) -> list[str]:
     today = _today()
 
     sources = {
-        "bullets": parse_entries(BULLETS.read_text(encoding="utf-8")),
-        "skills": parse_entries(SKILLS.read_text(encoding="utf-8")),
+        "bullets": parse_entries(BULLETS.read_text(encoding="utf-8"), BULLETS.name),
+        "skills": parse_entries(SKILLS.read_text(encoding="utf-8"), SKILLS.name),
     }
     added: list[dict] = []
     if cfg["auto_add_synonyms"]:

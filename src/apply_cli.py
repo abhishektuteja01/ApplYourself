@@ -1947,7 +1947,7 @@ def main(argv: list[str] | None = None) -> int:
     sh.add_argument(
         "--add",
         action="store_true",
-        help="first append roles newly scored at or above score_threshold",
+        help="first append roles newly scored at or above scoring.yaml cutoffs.sheet",
     )
     sh.add_argument(
         "--list",
