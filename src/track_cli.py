@@ -26,6 +26,7 @@ import argparse
 import sys
 
 import pandas as pd
+from src.apply import ledger
 from src.shared import paths
 
 from src.state_io import (
@@ -125,12 +126,8 @@ def _cmd_transition(args: argparse.Namespace) -> int:
 def _sent_before(job_id: str) -> dict | None:
     """The submit ledger's latest line for this role, unless the board turned
     the application down."""
-    from src.apply import ledger
-
-    rec = ledger.prior(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, job_id)
-    if rec is None or rec.get("status") == "rejected" or "rejected" in rec.get("detail", ""):
-        return None
-    return rec
+    v, rec = ledger.verdict(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, job_id)
+    return None if v in (ledger.Verdict.NOT_SENT, ledger.Verdict.REJECTED) else rec
 
 
 def _cmd_ensure(args: argparse.Namespace) -> int:
@@ -146,7 +143,7 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
         if sent is not None:
             # The role's history is gone but the board may have it. Registering
             # it fresh at `saved` is how 68 roles were applied to twice.
-            if sent.get("status") in ("unsent", "clicking"):
+            if ledger.verdict_of(sent) is ledger.Verdict.UNKNOWN:
                 advice = ("The click may not have reached the board: check it, then run "
                           f"`uv run track {job_id} applied` if it did, or delete its "
                           "lines from the ledger if it did not")

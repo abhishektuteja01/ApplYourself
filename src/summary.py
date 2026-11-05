@@ -452,7 +452,7 @@ def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str],
         lines += ["", CUES["ready"]]
 
     errors: dict[str, tuple[str, str]] = {}            # job -> (kind, why)
-    errors.update({r["name"]: ("unsent", r["note"] or r["status"]) for r in of("Unsent")})
+    errors.update({r["name"]: ("unsent", r["note"] or r["status"]) for r in of("Unsent", "Rejected by board")})
     errors.update({r["name"]: ("failed", r["note"]) for r in of("Parked")
                    if r["note"].startswith("failed:")})
     errors.update({r["name"]: ("expired", "posting gone (expired), mark it skip or leave it")

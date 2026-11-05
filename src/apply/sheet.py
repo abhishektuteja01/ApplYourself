@@ -87,14 +87,14 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
     """(status, note, uv_run_command) for one row."""
     state = state or {}
     current = state.get("state", "")
-    if sent is not None and sent.get("status") == "rejected" or \
-            (sent is not None and "rejected" in sent.get("detail", "")):
-        return "Unsent", f"rejected by the board: {sent.get('detail', '')}", ""
-    if sent is not None and sent.get("status") in ("unsent", "clicking"):
-        return ("Unsent",
-                f"clicked {sent.get('at', '')[:10]}; the board fired no submit request, "
-                "verify on the board", "")
-    if sent is not None or current in _DONE:
+    verdict = ledger.verdict_of(sent)
+    if verdict is ledger.Verdict.REJECTED:
+        return "Rejected by board", f"rejected by the board: {sent.get('detail', '')}", ""
+    if verdict is ledger.Verdict.UNKNOWN:
+        why = ("the board fired no submit request" if sent.get("status") == "unsent"
+               else "no outcome was recorded after the click")
+        return "Unsent", f"clicked {sent.get('at', '')[:10]}; {why}, verify on the board", ""
+    if verdict is ledger.Verdict.SENT or current in _DONE:
         when = (sent or {}).get("at", "") or state.get("applied_at", "")
         return "Applied", f"{current or 'sent'} {str(when)[:10]}".strip(), ""
     if current in _CLOSED:
