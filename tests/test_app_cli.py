@@ -30,7 +30,7 @@ def repo(tmp_path, monkeypatch):
     shutil.copy(paths.PROFILE / "cover_letter_template.example.docx",
                 tmp_path / "profile" / "cover_letter_template.docx")
     monkeypatch.setattr(app_cli, "export_pdf",
-                        lambda docx, token: {"status": "skipped", "path": "", "pages": 0, "detail": "no Word"})
+                        lambda docx, token: {"status": "ok", "path": "x", "pages": 1, "detail": ""})
     _parquets(tmp_path)
     return tmp_path
 
@@ -149,6 +149,19 @@ def test_build_resume_over_one_page_is_a_problem(repo, capsys, monkeypatch):
     assert code == 2 and res["problems"][0]["code"] == "pages"
     assert "tailored_dirs" not in yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8")) \
         or not yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["tailored_dirs"]
+
+
+def test_build_resume_without_a_pdf_fails_closed_unless_no_pdf(repo, capsys, monkeypatch):
+    monkeypatch.setattr(app_cli, "export_pdf",
+                        lambda docx, token: {"status": "failed", "path": "", "pages": 0, "detail": "-1728"})
+    _, out = _run(capsys, "new", JOB)
+    _write(repo, out["work_dir"], "resume_plan.yaml", _baseline_plan())
+    code, res = _run(capsys, "build", "resume", JOB)
+    assert code == 2 and res["problems"][0]["code"] == "pages"
+    assert not (yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8")) or {}) \
+        .get("tailored_dirs")
+    code, res = _run(capsys, "build", "resume", JOB, "--no-pdf")
+    assert code == 0, res
 
 
 # ---------- dir ----------
