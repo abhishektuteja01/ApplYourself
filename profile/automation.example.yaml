@@ -17,4 +17,4 @@ auto_add_synonyms: true      # add the ready-to-add rephrasings without asking
 unlock_max_open: 5           # memory-unlock questions waiting for your yes/no at once
 
 # Mail summary.html here after each night (through the Mail app). Leave it out to skip.
-summary_email: you@example.com
+# summary_email: you@example.com
