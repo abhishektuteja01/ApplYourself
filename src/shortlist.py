@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import verticals
+from src import contacts, verticals
 from src.apply.detect import is_auto_submittable
 from src.score_filter import ScoringConfig
 from src.score_store import read_scored
@@ -73,8 +73,13 @@ def _date(value) -> str:
 
 
 def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
-           n_clean: int, seen: set[str]) -> str:
+           n_clean: int, seen: set[str], referrals: dict[str, list[str]] | None = None) -> str:
     vcfg = verticals.get_config()
+    referrals = referrals or {}
+
+    def ref(company: str, sep: str) -> str:
+        note = contacts.referral_note(company, referrals)
+        return f"{sep}{note}" if note else ""
     out = [f"# Shortlist — {date_str}", "",
            f"{n_scored} of {n_clean} scored. Top {cfg.top_n} per lane with fit >= "
            f"{cfg.review_min}. ★ = new since the last shortlist."]
@@ -83,6 +88,7 @@ def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
     pipe = result["pipeline"]
     out += ["", f"## In pipeline ({len(pipe)})", ""]
     out += [f"- `{r['job_id']}` {r['fit_score']:.0f} — {r['company']} — {r['title']} ({r['state']})"
+            f"{ref(r['company'], ' · ')}"
             for r in pipe[:cfg.pipeline_show]] or ["Nothing saved or tailored."]
     if len(pipe) > cfg.pipeline_show:
         out.append(f"- …and {len(pipe) - cfg.pipeline_show} more (`/standup` lists them all)")
@@ -94,7 +100,7 @@ def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
         for i, r in enumerate(rows, 1):
             subs = json.loads(r["fit_subscores"])
             star = "" if r["job_id"] in seen else " ★"
-            extras = []
+            extras = [n for n in [contacts.referral_note(r["company"], referrals)] if n]
             if r["sponsorship_label"] != "unknown":
                 extras.append(f"sponsorship {r['sponsorship_label']}: \"{r['sponsorship_evidence']}\"")
             if r["suggested_action"] != "tailor":
@@ -116,12 +122,14 @@ def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
 
 
 def write(scored_path: Path, clean_path: Path, pipeline_dir: Path, shortlist_dir: Path,
-          cfg: ScoringConfig, date_str: str) -> tuple[Path, int]:
+          cfg: ScoringConfig, date_str: str,
+          contacts_path: Path = contacts.CONTACTS_PATH) -> tuple[Path, int]:
     """Render and write shortlist/<date_str>.md. Returns (path, lane rows)."""
     result = compute(scored_path, clean_path, pipeline_dir, cfg)
     n_scored = len(read_scored(scored_path))
     n_clean = len(pd.read_parquet(clean_path, columns=["job_id"]))
-    md = render(result, cfg, date_str, n_scored, n_clean, previous_ids(shortlist_dir, date_str))
+    md = render(result, cfg, date_str, n_scored, n_clean, previous_ids(shortlist_dir, date_str),
+                contacts.referrals_by_company(contacts_path))
     shortlist_dir.mkdir(parents=True, exist_ok=True)
     path = shortlist_dir / f"{date_str}.md"
     path.write_text(md, encoding="utf-8")

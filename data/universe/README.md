@@ -25,7 +25,7 @@ hand-verified against the live CXS API before being committed.
 ## The two files
 
 `boards.csv` (tracked) and `boards.local.csv` (gitignored, optional) are both
-`ats,name,slug,active`, with `ats` one of greenhouse, lever, ashby, workday.
+`ats,name,slug,active`, with `ats` one of greenhouse, lever, ashby, workday, eightfold.
 `sources/boards.py:load_boards` reads both:
 
 - One board per (ats, slug) whatever the slug's case. When one spelling is

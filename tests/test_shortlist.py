@@ -131,3 +131,21 @@ def test_empty_scored(env, scfg):
     pd.DataFrame({"job_id": []}).to_parquet(env["clean"], index=False)
     res = _compute(env, scfg)
     assert res["pipeline"] == [] and all(v == [] for v in res["lanes"].values())
+
+
+def test_referral_mark_on_lane_and_pipeline_rows(env, scfg, tmp_path):
+    _seed(env, [("aaaaaaaa", "example_primary", 80, "unknown", "tailor", D),
+                ("bbbbbbbb", "example_primary", 75, "unknown", "tailor", D),
+                ("cccccccc", "example_primary", 70, "unknown", "tailor", D)],
+          states={"cccccccc": "saved"})
+    book = tmp_path / "contacts.yaml"
+    book.write_text(yaml.safe_dump({"contacts": [
+        {"id": "x", "name": "Sam Okafor", "company": "Co aaaaaaaa", "relationship": "referral"},
+        {"id": "y", "name": "Priya Raman", "company": "Co cccccccc", "relationship": "referral"},
+    ]}), encoding="utf-8")
+    path, _ = shortlist.write(env["scored"], env["clean"], env["pipeline"],
+                              env["shortlist"], scfg, "2026-09-27", contacts_path=book)
+    md = path.read_text(encoding="utf-8")
+    assert "- referral: Sam Okafor" in md
+    assert md.count("referral:") == 2
+    assert "(saved) · referral: Priya Raman" in md

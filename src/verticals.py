@@ -214,7 +214,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     focus = _parse_focus(raw["focus"], path, f"{where}.focus") if "focus" in raw else None
 
     # Title include-gate: opt-in per vertical. When title_include_terms is
-    # empty the gate is OFF and apply_title_exclusion falls back to
+    # empty the gate is OFF and title_passes falls back to
     # exclusion-only. See normalize.title_passes.
     # Blank terms are rejected, not skipped: a blank compiles to a pattern
     # that matches every title, which silently empties a whole vertical.

@@ -1,6 +1,9 @@
 # TEMPLATE — copy to profile/contacts.yaml and edit. Optional: /outreach treats
 # a missing file as empty and proceeds.
 #
+# The shortlist marks a role "referral: <name>" when a `referral` entry's
+# company matches it.
+#
 # Read by /outreach, which selects entries whose `company` matches the role's
 # company OR whose `tags` overlap the role, and uses `shared_affiliation` to
 # open an alumni message. Real names and addresses — gitignored, and every name
@@ -19,6 +22,7 @@
 #   channel            linkedin | email. /outreach defaults to a LinkedIn DM
 #                      unless this says email or --via says otherwise.
 #   email              omit unless channel is email.
+#   phone              optional. Kept out of drafts.
 #   linkedin           profile URL or handle.
 #   shared_affiliation what you actually have in common — a school, a former
 #                      employer, a project. Alumni messages LEAD with this, so
