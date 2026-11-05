@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import openpyxl
-import pandas as pd
 import yaml
 
 from src.apply import ledger, sheet
 from src.shared import paths
+from tests.factories import scored_rows, write_clean, write_state
 
 GH = "https://job-boards.greenhouse.io/acme/jobs/1"
 
@@ -22,20 +22,17 @@ def _world(tmp_path, monkeypatch):
     (tmp_path / "profile").mkdir()
     (tmp_path / "profile" / "automation.yaml").write_text(yaml.safe_dump(
         {"score_threshold": 80, "table_path": "sheet.xlsx"}), encoding="utf-8")
-    pd.DataFrame([{"job_id": j, "fit_score": s} for j, s in
-                  (("aaaa1111", 90), ("bbbb2222", 85), ("cccc3333", 70))]
-                 ).to_parquet(tmp_path / "scored.parquet")
-    pd.DataFrame([{"job_id": j, "company": "Acme", "title": "Eng", "source": "greenhouse",
-                   "url": GH} for j in ("aaaa1111", "bbbb2222", "cccc3333")]
-                 ).to_parquet(tmp_path / "clean.parquet")
+    scored_rows(*({"job_id": j, "fit_score": s} for j, s in
+                  (("aaaa1111", 90), ("bbbb2222", 85), ("cccc3333", 70)))
+                ).to_parquet(tmp_path / "scored.parquet")
+    write_clean(tmp_path / "clean.parquet", *({"job_id": j, "company": "Acme", "title": "Eng",
+                                               "source": "greenhouse", "url": GH}
+                                              for j in ("aaaa1111", "bbbb2222", "cccc3333")))
 
 
 def _state(tmp_path, job_id, state, folder=None):
-    d = tmp_path / "pipeline" / job_id
-    d.mkdir(parents=True)
-    (d / "state.yaml").write_text(yaml.safe_dump({
-        "job_id": job_id, "state": state, "url": GH,
-        "tailored_dirs": [folder] if folder else []}), encoding="utf-8")
+    write_state(tmp_path / "pipeline", job_id, state, url=GH,
+                tailored_dirs=[folder] if folder else [])
 
 
 def _rows(tmp_path):
@@ -145,7 +142,7 @@ def test_check_reports_what_is_wrong_and_writes_nothing(tmp_path, monkeypatch):
     assert sheet.check() == {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []}
     sheet.refresh(add=True)
     assert sheet.check() == {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []}
-    pd.DataFrame([{"job_id": "bbbb2222", "url": ""}]).to_parquet(tmp_path / "clean.parquet")
+    write_clean(tmp_path / "clean.parquet", {"job_id": "bbbb2222", "url": ""})
     wb = openpyxl.load_workbook(tmp_path / "sheet.xlsx")
     ws = wb.active
     header = [c.value for c in ws[1]]

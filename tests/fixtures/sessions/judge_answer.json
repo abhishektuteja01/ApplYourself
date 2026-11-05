@@ -1,0 +1,15 @@
+[
+  {
+    "job_id": "b1ccd805",
+    "title": 27,
+    "skills": 26,
+    "seniority": 16,
+    "domain": 17,
+    "years": 0,
+    "country": "United States",
+    "sponsorship": ["offers"],
+    "evidence": "Visa sponsorship is available for this role.",
+    "keywords_to_mirror": ["throughput reporting", "SQL", "Postgres", "Python", "plan-versus-actual reconciliation"],
+    "reasoning": "Daily multi-plant reporting, SQL on Postgres and a Python validation step all match the baseline resume."
+  }
+]

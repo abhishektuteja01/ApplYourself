@@ -7,11 +7,11 @@ from datetime import datetime
 
 import pandas as pd
 import pytest
-import yaml
 
 from src import score_cli, score_store
 from src.score_filter import SCORING_PATH, CountryRule, load_scoring
 from src.shared import verticals
+from tests.factories import write_clean, write_state
 
 NOW = datetime(2026, 9, 27, 12, 0)
 RULE = CountryRule(home=frozenset({"us"}), abroad={"germany": frozenset({"example_secondary"})})
@@ -39,7 +39,7 @@ def _clean(env, rows):
             "url": "https://example.com/j", "jd_text": JD, "vertical": "example_primary",
             "employment_type": "fulltime", "seniority_raw": "", "salary_min": float("nan"),
             "salary_max": float("nan"), "salary_currency": ""}
-    pd.DataFrame([{**base, **r} for r in rows]).to_parquet(env["clean"], index=False)
+    write_clean(env["clean"], *({**base, **r} for r in rows))
 
 
 def _answer(jid, **kw):
@@ -232,9 +232,7 @@ class TestFinish:
 def test_all_skips_applied_and_closed_roles(env, scfg):
     _clean(env, [{"job_id": j} for j in ("aaaaaaaa", "bbbbbbbb", "cccccccc")])
     for jid, state in (("aaaaaaaa", "saved"), ("bbbbbbbb", "applied")):
-        (env["pipeline"] / jid).mkdir(parents=True)
-        (env["pipeline"] / jid / "state.yaml").write_text(
-            yaml.safe_dump({"job_id": jid, "state": state}), encoding="utf-8")
+        write_state(env["pipeline"], jid, state)
     res = _start(env, scfg, rescore=True, pipeline_dir=env["pipeline"])
     ids = {j for m in score_store.load_run(env["staging"])["slices"].values() for j in m["job_ids"]}
     assert res["judge"] == 2 and ids == {"aaaaaaaa", "cccccccc"}
@@ -386,9 +384,7 @@ class TestPrune:
                 for j in ("aaaaaaaa", "bbbbbbbb", "cccccccc")]
         score_store.merge_rows(env["scored"], rows)
         for jid, state in (("bbbbbbbb", "saved"), ("cccccccc", "skip")):
-            (env["pipeline"] / jid).mkdir(parents=True)
-            (env["pipeline"] / jid / "state.yaml").write_text(
-                yaml.safe_dump({"job_id": jid, "state": state}), encoding="utf-8")
+            write_state(env["pipeline"], jid, state)
         assert score_store.prune(env["scored"], env["clean"], env["pipeline"]) == 1
         assert set(_scored(env).index) == {"aaaaaaaa", "bbbbbbbb"}
 

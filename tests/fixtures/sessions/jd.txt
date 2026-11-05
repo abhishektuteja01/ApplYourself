@@ -1,0 +1,21 @@
+Acme Widgets is hiring a Widget Operations Analyst to join the plant performance team. You will own daily production reporting for our assembly lines and help operators trust the numbers they run the floor on.
+
+What you will do:
+- Reconcile line output against the production plan every morning across four plants, and flag variances to the operations lead before the first shift meeting.
+- Configure widget line parameters for new plant rollouts, translate operator requirements into calibration settings and validate each change on a staging line before release.
+- Write SQL against our Postgres reporting replica, and replace manual spreadsheet steps with repeatable queries.
+- Build small Python tools that check sprocket tolerance data against published compliance bands and report a per-batch pass or fail.
+- Keep the month-end close for the gizmo ledger on schedule with the finance team.
+- Document every report so the next analyst can run it without you.
+
+What we look for:
+- Hands-on experience with throughput reporting or plan-versus-actual reconciliation in a manufacturing setting.
+- Working SQL, ideally on Postgres, and enough Python to automate a validation step.
+- Comfort talking with operators, planners and finance in plain words.
+- Care for data quality, and the habit of checking a number before you send it.
+- Git for versioning your queries and scripts is a plus. Docker is a plus.
+
+How we work:
+Our plants run on two shifts, and the reporting team supports both. You will sit with operations, visit the plants often, and own the morning report end to end. We ship small changes, review them with the people who use them, and keep a written record of why each report looks the way it does. The team is small, so you will see your work used the same day.
+
+Visa sponsorship is available for this role. The position is full time and based in Exampletown, with travel to the four plants a few days each month. We review every application and reply to each candidate within two weeks.

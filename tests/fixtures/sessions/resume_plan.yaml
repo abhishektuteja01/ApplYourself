@@ -1,0 +1,12 @@
+summary:
+  text: "Widget operations analyst who owns daily production reporting across four plants and builds SQL and Python tooling for ledger reconciliation and sprocket compliance data."
+  uses: [B-WID-01, B-WID-03, B-SPR-01]
+entries:
+  - id: B-WID-01
+    text: "Owned daily production reporting for a national manufacturing client, reconciling line output against the production plan across four plants and flagging variances to the operations lead each morning."
+  - id: B-WID-02
+  - id: B-WID-03
+  - id: B-SPR-01
+skills:
+  "Programming": [SKILL-SQL, SKILL-PYTHON]
+  "Databases & Tools": [SKILL-POSTGRES, SKILL-GIT, SKILL-DOCKER]

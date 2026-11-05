@@ -10,6 +10,7 @@ import yaml
 
 from src import score_store, shortlist
 from src.score_filter import SCORING_PATH, load_scoring
+from tests.factories import write_clean, write_state
 
 NOW = datetime(2026, 9, 27)
 
@@ -36,12 +37,10 @@ def _seed(env, rows, states=None):
                 "seniority": min(max(fit - 60, 0), 20), "domain": max(fit - 80, 0)}
         scored.append(score_store._row(jid, lane, subs, label, "", "why", ["kw1", "kw2"],
                                        action, "m", NOW))
-    pd.DataFrame(clean).to_parquet(env["clean"], index=False)
+    write_clean(env["clean"], *clean)
     score_store.merge_rows(env["scored"], scored)
     for jid, state in (states or {}).items():
-        (env["pipeline"] / jid).mkdir(parents=True)
-        (env["pipeline"] / jid / "state.yaml").write_text(
-            yaml.safe_dump({"job_id": jid, "state": state}), encoding="utf-8")
+        write_state(env["pipeline"], jid, state)
 
 
 def _compute(env, scfg):
@@ -128,7 +127,7 @@ def test_pipeline_section_lists_only_the_top_few(env, scfg):
 
 
 def test_empty_scored(env, scfg):
-    pd.DataFrame({"job_id": []}).to_parquet(env["clean"], index=False)
+    write_clean(env["clean"])
     res = _compute(env, scfg)
     assert res["pipeline"] == [] and all(v == [] for v in res["lanes"].values())
 

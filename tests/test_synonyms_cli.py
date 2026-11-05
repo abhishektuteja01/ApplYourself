@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 
-import pandas as pd
 import pytest
 import yaml
 
 from src import synonyms_cli as S
 from src.resume_model import parse_entries
+from tests.factories import scored_rows, write_clean
 
 BULLETS = """# header comment
 ## B-AAA-01
@@ -162,13 +162,13 @@ def test_undo_removes_one_phrase_only(world):
 
 def test_keywords_count_only_roles_without_a_resume_and_skip_declined(world, monkeypatch):
     monkeypatch.setattr(S, "_new_job_ids", lambda: ["a1", "b2"])
-    pd.DataFrame([
+    scored_rows(
         {"job_id": "a1", "fit_score": 90, "keywords_to_mirror": ["RAG", "Airflow"]},
         {"job_id": "b2", "fit_score": 80, "keywords_to_mirror": ["rag", "Kubernetes"]},
         {"job_id": "c3", "fit_score": 99, "keywords_to_mirror": ["RAG", "Spark"]},
-    ]).to_parquet(S.SCORED)
-    pd.DataFrame([{"job_id": j, "company": c} for j, c in
-                  (("a1", "Acme"), ("b2", "Beta"), ("c3", "Gamma"))]).to_parquet(S.CLEAN)
+    ).to_parquet(S.SCORED)
+    write_clean(S.CLEAN, *({"job_id": j, "company": c} for j, c in
+                           (("a1", "Acme"), ("b2", "Beta"), ("c3", "Gamma"))))
     S.DECLINED.write_text(yaml.safe_dump([{"keyword": "kubernetes", "reason": "",
                                            "first_seen": "2026-09-01", "approved": False}]),
                            encoding="utf-8")

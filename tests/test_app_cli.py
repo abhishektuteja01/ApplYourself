@@ -12,6 +12,7 @@ import yaml
 
 from src import app_cli, track_cli
 from src.shared import paths
+from tests.factories import scored_rows, write_clean
 
 JOB = "a1b2c3d4"
 JD = "Build widget assembly tooling in Python and SQL across 4 plants. Salary 120000."
@@ -38,10 +39,10 @@ def _parquets(tmp_path, **over):
     row = {"job_id": JOB, "company": "Acme Widgets", "title": "Widget Engineer",
            "url": "https://example.com/j", "posted_date": pd.NaT, "jd_text": JD,
            "vertical": "example_primary", "source": "greenhouse", "location": "Remote", **over}
-    pd.DataFrame([row]).to_parquet(tmp_path / "clean.parquet")
-    pd.DataFrame([{"job_id": JOB, "vertical": row["vertical"], "fit_score": 80,
-                   "sponsorship_label": "unknown", "keywords_to_mirror": ["SQL", "Kubernetes"]}]
-                 ).to_parquet(tmp_path / "scored.parquet")
+    write_clean(tmp_path / "clean.parquet", row)
+    scored_rows({"job_id": JOB, "vertical": row["vertical"], "fit_score": 80,
+                 "sponsorship_label": "unknown", "keywords_to_mirror": ["SQL", "Kubernetes"]}
+                ).to_parquet(tmp_path / "scored.parquet")
 
 
 def _run(capsys, *argv):
