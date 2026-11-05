@@ -131,6 +131,5 @@ No LLM *judging* in `src/`: the session writes a small YAML of choices, and
   rest of the suite does not.
 - Read the relevant command `.md` before running its slash command — the real
   orchestration logic lives there, not in `src/`.
-- `HANDOFF.md` (live breakage/fixes) and `publish.md` (live backlog) are
-  gitignored working notes. Read them if they exist locally; on a fresh clone
-  they won't.
+- `AUDIT.md` (gitignored) is the live backlog. Read it if it exists locally; a
+  fresh clone won't have it.
