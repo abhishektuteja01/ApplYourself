@@ -12,10 +12,15 @@ State.yaml schema. State set + terminal-state rules.
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import yaml
+
+from src.shared.parquet_io import locked
 
 log = logging.getLogger(__name__)
 
@@ -67,15 +72,33 @@ def load_state(state_path: Path) -> dict | None:
 
 
 def _write_state(state_path: Path, data: dict) -> None:
-    """Atomic write: tmp file + rename, so a partial write can't corrupt
-    the canonical state.yaml."""
+    """Atomic write: a temp file unique to this writer, fsynced, then renamed
+    over state.yaml, so a partial write can't corrupt it."""
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = state_path.with_suffix(state_path.suffix + ".tmp")
-    tmp.write_text(
-        yaml.safe_dump(data, sort_keys=False, default_flow_style=False),
-        encoding="utf-8",
-    )
-    tmp.replace(state_path)
+    fd, tmp = tempfile.mkstemp(dir=state_path.parent, prefix=f".{state_path.name}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, state_path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def update(state_path: Path, fn: Callable[[dict | None], dict | None]) -> dict | None:
+    """The one read-modify-write of a state.yaml: under the file's lock, pass
+    the current dict (None when absent or empty) to fn and write what it
+    returns. fn returning None writes nothing and returns the current dict."""
+    with locked(state_path):
+        current = load_state(state_path)
+        data = fn(current)
+        if data is None:
+            return current
+        _write_state(state_path, data)
+        return data
 
 
 def _now_iso(now: datetime | None = None) -> str:
@@ -116,8 +139,12 @@ def transition(
             f"unknown state {new_state!r}; valid: {sorted(VALID_STATES)}"
         )
     now_iso = _now_iso(now)
-    existing = load_state(state_path)
+    return update(state_path, lambda existing: _transitioned(
+        state_path, existing, new_state, note, now_iso, initial_fields))
 
+
+def _transitioned(state_path: Path, existing: dict | None, new_state: str,
+                  note: str | None, now_iso: str, initial_fields: dict | None) -> dict:
     if existing is None:
         if not initial_fields:
             raise ValueError(
@@ -169,8 +196,6 @@ def transition(
         data["last_touch"] = now_iso
         if new_state == "applied" and not data.get("applied_at"):
             data["applied_at"] = now_iso
-
-    _write_state(state_path, data)
     return data
 
 
@@ -185,14 +210,16 @@ def ensure_state(
     role -- terminal included -- leaves `state` untouched.
 
     Returns (state_dict, created)."""
-    existing = load_state(state_path)
-    if existing is not None:
-        return existing, False
-    data = transition(
-        state_path, "saved", note="auto-registered by /tailor",
-        initial_fields=initial_fields, now=now,
-    )
-    return data, True
+    created: list[bool] = []
+
+    def create(existing: dict | None) -> dict | None:
+        if existing is not None:
+            return None
+        created.append(True)
+        return _transitioned(state_path, None, "saved", "auto-registered by /tailor",
+                             _now_iso(now), initial_fields)
+
+    return update(state_path, create), bool(created)
 
 
 # ---------------------------------------------------------------
@@ -203,19 +230,20 @@ def append_tailored_dir(state_path: Path, dir_name: str,
                          *, now: datetime | None = None) -> dict:
     """Append dir_name to tailored_dirs[] (/tailor's mutation).
     Idempotent: appending the same dir twice keeps a single entry."""
-    data = load_state(state_path)
-    if data is None:
-        raise ValueError(
-            f"state.yaml at {state_path} does not exist; run /track "
-            "<job_id> saved first to register the role."
-        )
-    dirs = list(data.get("tailored_dirs") or [])
-    if dir_name not in dirs:
-        dirs.append(dir_name)
-    data["tailored_dirs"] = dirs
-    data["last_touch"] = _now_iso(now)
-    _write_state(state_path, data)
-    return data
+    def add(data: dict | None) -> dict:
+        if data is None:
+            raise ValueError(
+                f"state.yaml at {state_path} does not exist; run /track "
+                "<job_id> saved first to register the role."
+            )
+        dirs = list(data.get("tailored_dirs") or [])
+        if dir_name not in dirs:
+            dirs.append(dir_name)
+        data["tailored_dirs"] = dirs
+        data["last_touch"] = _now_iso(now)
+        return data
+
+    return update(state_path, add)
 
 
 def append_outreach_draft(
@@ -230,12 +258,6 @@ def append_outreach_draft(
 ) -> dict:
     """Append a new outreach[] entry with status=draft (/outreach
     mutation)."""
-    data = load_state(state_path)
-    if data is None:
-        raise ValueError(
-            f"state.yaml at {state_path} does not exist; run /track "
-            "<job_id> saved first to register the role."
-        )
     entry = {
         "channel": channel,
         "to": to_name,
@@ -247,12 +269,18 @@ def append_outreach_draft(
         entry["contact_id"] = contact_id
     if medium is not None:
         entry["medium"] = medium
-    entries = list(data.get("outreach") or [])
-    entries.append(entry)
-    data["outreach"] = entries
-    data["last_touch"] = _now_iso(now)
-    _write_state(state_path, data)
-    return data
+
+    def add(data: dict | None) -> dict:
+        if data is None:
+            raise ValueError(
+                f"state.yaml at {state_path} does not exist; run /track "
+                "<job_id> saved first to register the role."
+            )
+        data["outreach"] = [*(data.get("outreach") or []), entry]
+        data["last_touch"] = _now_iso(now)
+        return data
+
+    return update(state_path, add)
 
 
 def mark_outreach_sent(
@@ -264,25 +292,26 @@ def mark_outreach_sent(
 ) -> dict:
     """Flip the LATEST matching outreach[] entry from draft -> sent.
     Raises ValueError if no draft entry matches (channel, to_name)."""
-    data = load_state(state_path)
-    if data is None:
-        raise ValueError(f"state.yaml at {state_path} does not exist")
-    entries = list(data.get("outreach") or [])
-    for i in range(len(entries) - 1, -1, -1):
-        e = entries[i]
-        if (isinstance(e, dict)
-                and e.get("channel") == channel
-                and e.get("to") == to_name
-                and e.get("status") == "draft"):
-            entries[i] = {**e, "status": "sent"}
-            data["outreach"] = entries
-            data["last_touch"] = _now_iso(now)
-            _write_state(state_path, data)
-            return data
-    raise ValueError(
-        f"no draft outreach found for channel={channel!r} to={to_name!r} "
-        f"in {state_path}"
-    )
+    def flip(data: dict | None) -> dict:
+        if data is None:
+            raise ValueError(f"state.yaml at {state_path} does not exist")
+        entries = list(data.get("outreach") or [])
+        for i in range(len(entries) - 1, -1, -1):
+            e = entries[i]
+            if (isinstance(e, dict)
+                    and e.get("channel") == channel
+                    and e.get("to") == to_name
+                    and e.get("status") == "draft"):
+                entries[i] = {**e, "status": "sent"}
+                data["outreach"] = entries
+                data["last_touch"] = _now_iso(now)
+                return data
+        raise ValueError(
+            f"no draft outreach found for channel={channel!r} to={to_name!r} "
+            f"in {state_path}"
+        )
+
+    return update(state_path, flip)
 
 
 # ---------------------------------------------------------------

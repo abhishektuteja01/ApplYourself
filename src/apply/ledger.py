@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -58,22 +59,48 @@ def records(path: Path) -> list[dict]:
     return out
 
 
-def prior(path: Path, job_id: str, form_url: str = "") -> dict | None:
-    """The latest line for this role, matched on job_id or on the form URL."""
+class Verdict(str, Enum):
+    """What a role's latest line says about whether the board has it."""
+    NOT_SENT = "not_sent"     # no line, or the latest is `refused`
+    SENT = "sent"
+    UNKNOWN = "unknown"       # `clicking` (no outcome recorded) or `unsent`
+    REJECTED = "rejected"     # the board received it and said no
+
+
+def verdict_of(rec: dict | None) -> Verdict:
+    """The one rule that reads a ledger line."""
+    status = (rec or {}).get("status")
+    if rec is None or status in NOT_SENT:
+        return Verdict.NOT_SENT
+    if status == "rejected" or "rejected" in rec.get("detail", ""):
+        return Verdict.REJECTED
+    if status in ("clicking", "unsent"):
+        return Verdict.UNKNOWN
+    return Verdict.SENT
+
+
+def verdict(path: Path, job_id: str, form_url: str = "") -> tuple[Verdict, dict | None]:
+    """(verdict, latest line) for this role, matched on job_id or on the form URL."""
     key = url_key(form_url)
     hit = None
     for rec in records(path):
         if rec.get("job_id") == job_id or (key and url_key(rec.get("form_url", "")) == key):
             hit = rec
-    return None if hit is not None and hit.get("status") in NOT_SENT else hit
+    return verdict_of(hit), hit
+
+
+def prior(path: Path, job_id: str, form_url: str = "") -> dict | None:
+    """The latest line for this role, unless the verdict is NOT_SENT."""
+    v, rec = verdict(path, job_id, form_url)
+    return None if v is Verdict.NOT_SENT else rec
 
 
 def sent_job_ids(path: Path) -> set[str]:
-    latest: dict[str, str] = {}
+    latest: dict[str, dict] = {}
     for rec in records(path):
         if rec.get("job_id"):
-            latest[str(rec["job_id"])] = rec.get("status", "")
-    return {j for j, status in latest.items() if status not in NOT_SENT}
+            latest[str(rec["job_id"])] = rec
+    return {j for j, rec in latest.items() if verdict_of(rec) is not Verdict.NOT_SENT}
 
 
 def append(path: Path, job_id: str, status: str, *, form_url: str = "",

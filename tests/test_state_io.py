@@ -359,22 +359,18 @@ def test_write_is_atomic_no_partial_corruption(tmp_path, monkeypatch):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
     original = _yaml_load(p)
-    # Simulate a write failure by replacing Path.replace with a raiser
-    import pathlib
-    real_replace = pathlib.Path.replace
-    calls = {"n": 0}
+    # Simulate a write failure by replacing os.replace with a raiser
+    import os
 
-    def fail_once(self, target):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise OSError("simulated rename failure")
-        return real_replace(self, target)
+    def fail(src, dst):
+        raise OSError("simulated rename failure")
 
-    monkeypatch.setattr(pathlib.Path, "replace", fail_once)
+    monkeypatch.setattr(os, "replace", fail)
     with pytest.raises(OSError):
         transition(p, "tailored")
     # File should still hold the original content; no half-written YAML
     assert _yaml_load(p) == original
+    assert not list(p.parent.glob("*.tmp"))
 
 
 # ---------- ensure_state: bootstrap only, never a transition (R10) ----------
@@ -415,5 +411,35 @@ def test_ensure_state_preserves_applied_at_and_history(tmp_path):
     assert after["state"] == "applied"
     assert after["applied_at"] == applied_at
     assert len(after["state_history"]) == 2
+
+
+def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
+    """A second writer waits for the first instead of writing over it."""
+    import threading
+    from src.state_io import update
+
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    transition(p, "saved", initial_fields=_initial())
+    inside, release = threading.Event(), threading.Event()
+
+    def slow(data):
+        inside.set()
+        release.wait(5)
+        data["tailored_dirs"] = [*data["tailored_dirs"], "d1"]
+        return data
+
+    a = threading.Thread(target=update, args=(p, slow))
+    a.start()
+    inside.wait(5)
+    b = threading.Thread(target=append_outreach_draft, args=(p,),
+                         kwargs={"channel": "recruiter", "to_name": "S", "draft_file": "d.md"})
+    b.start()
+    b.join(0.3)
+    release.set()
+    a.join()
+    b.join()
+    data = load_state(p)
+    assert data["tailored_dirs"] == ["d1"]
+    assert len(data["outreach"]) == 1
 
 

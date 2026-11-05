@@ -6,6 +6,9 @@
                               clean/scored parquet on first transition.
                               --if S: only when the role is currently in
                               state S; otherwise a no-op, exit 0
+  outreach-draft <job_id> --channel C --to "N" --draft-file F
+                 [--contact-id ID] [--medium M]
+                              append a draft entry to outreach[]
   outreach-sent <job_id> --channel C --to "N"
                               flip the latest matching draft outreach[]
                               entry to sent
@@ -23,10 +26,12 @@ import argparse
 import sys
 
 import pandas as pd
+from src.apply import ledger
 from src.shared import paths
 
 from src.state_io import (
     VALID_STATES,
+    append_outreach_draft,
     ensure_state,
     load_state,
     mark_outreach_sent,
@@ -121,12 +126,8 @@ def _cmd_transition(args: argparse.Namespace) -> int:
 def _sent_before(job_id: str) -> dict | None:
     """The submit ledger's latest line for this role, unless the board turned
     the application down."""
-    from src.apply import ledger
-
-    rec = ledger.prior(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, job_id)
-    if rec is None or rec.get("status") == "rejected" or "rejected" in rec.get("detail", ""):
-        return None
-    return rec
+    v, rec = ledger.verdict(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, job_id)
+    return None if v in (ledger.Verdict.NOT_SENT, ledger.Verdict.REJECTED) else rec
 
 
 def _cmd_ensure(args: argparse.Namespace) -> int:
@@ -142,7 +143,7 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
         if sent is not None:
             # The role's history is gone but the board may have it. Registering
             # it fresh at `saved` is how 68 roles were applied to twice.
-            if sent.get("status") in ("unsent", "clicking"):
+            if ledger.verdict_of(sent) is ledger.Verdict.UNKNOWN:
                 advice = ("The click may not have reached the board: check it, then run "
                           f"`uv run track {job_id} applied` if it did, or delete its "
                           "lines from the ledger if it did not")
@@ -182,6 +183,23 @@ def _cmd_outreach_sent(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_outreach_draft(args: argparse.Namespace) -> int:
+    p = state_path_for(PIPELINE, args.job_id)
+    if not p.exists():
+        print(f"ERROR: pipeline/{args.job_id}/state.yaml missing -- run /track "
+              f"{args.job_id} saved first", file=sys.stderr)
+        return 1
+    try:
+        data = append_outreach_draft(p, channel=args.channel, to_name=args.to,
+                                     draft_file=args.draft_file,
+                                     contact_id=args.contact_id, medium=args.medium)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print(f"OK: outreach[] now has {len(data['outreach'])} entry/entries  (job_id={args.job_id})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
@@ -198,6 +216,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--to", required=True)
         args = parser.parse_args(argv[1:])
         return _cmd_outreach_sent(args)
+
+    if argv and argv[0] == "outreach-draft":
+        parser = argparse.ArgumentParser(prog="track outreach-draft")
+        parser.add_argument("job_id")
+        parser.add_argument("--channel", required=True, choices=["recruiter", "referral", "alumni"])
+        parser.add_argument("--to", required=True)
+        parser.add_argument("--draft-file", required=True)
+        parser.add_argument("--contact-id", default=None)
+        parser.add_argument("--medium", default=None)
+        args = parser.parse_args(argv[1:])
+        return _cmd_outreach_draft(args)
 
     parser = argparse.ArgumentParser(prog="track", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
