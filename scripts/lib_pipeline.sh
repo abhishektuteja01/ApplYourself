@@ -23,9 +23,13 @@ export RUN_DIR DRY_RUN
 # so the numbers live in the config, not here.
 cfg() {
   "$UV" run python - "$1" <<'PY'
-import sys, yaml
+import sys
 from src.shared import paths
-data = yaml.safe_load((paths.PROFILE / "automation.yaml").read_text(encoding="utf-8")) or {}
+from src.shared.config_keys import load_automation
+try:
+    data = load_automation(paths.PROFILE / "automation.yaml")
+except ValueError as exc:
+    sys.exit(str(exc))
 key = sys.argv[1]
 if key not in data:
     sys.exit(f"automation.yaml has no `{key}`")
