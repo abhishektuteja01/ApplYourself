@@ -18,7 +18,6 @@ def _world(tmp_path, monkeypatch):
                         ("CLEAN", tmp_path / "clean.parquet")):
         monkeypatch.setattr(paths, name, value)
     from src import apply_cli
-    monkeypatch.setattr(apply_cli, "PIPELINE", tmp_path / "pipeline")
     monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
     (tmp_path / "profile").mkdir()
     (tmp_path / "profile" / "automation.yaml").write_text(yaml.safe_dump(

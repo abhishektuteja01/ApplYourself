@@ -33,7 +33,6 @@ SCORED = paths.SCORED
 CLEAN = paths.CLEAN
 STAGING = paths.STAGING
 APPLICATIONS = paths.APPLICATIONS
-PIPELINE = paths.PIPELINE
 MAYBE_DUPES = paths.MAYBE_DUPES
 
 # One short "what to do" line per section, written only into summary.md (the
@@ -574,7 +573,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
     items["names"] = names
     discovery = discovery_section(reports, since)
     dupes = duplicates_section(_tonight(load_maybe_duplicates(MAYBE_DUPES), since, "date"),
-                               state_io.load_state_index(PIPELINE))
+                               state_io.load_state_index(paths.PIPELINE))
     scoring = scoring_section(scored, since, score.get("detail", ""), open_slices, score.get("code"))
     synonyms = synonyms_section(_tonight(log, since, "date"), declined, opened)
     tailoring = tailoring_section(len(tried), unresolved, names, tailor.get("detail", ""),

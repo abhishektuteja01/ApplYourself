@@ -39,7 +39,6 @@ from src.state_io import (
     transition,
 )
 
-PIPELINE = paths.PIPELINE
 CLEAN = paths.CLEAN
 STORE = paths.STORE
 SCORED = paths.SCORED
@@ -94,7 +93,7 @@ def _gather_initial_fields(job_id: str) -> dict:
 
 def _cmd_transition(args: argparse.Namespace) -> int:
     job_id, new_state, note = args.job_id, args.state, args.note
-    p = state_path_for(PIPELINE, job_id)
+    p = state_path_for(paths.PIPELINE, job_id)
     # Gate on content, not existence: an empty state.yaml carries no state and
     # is rebuilt from the parquets rather than transitioned in place.
     try:
@@ -132,7 +131,7 @@ def _sent_before(job_id: str) -> dict | None:
 
 def _cmd_ensure(args: argparse.Namespace) -> int:
     job_id = args.job_id
-    p = state_path_for(PIPELINE, job_id)
+    p = state_path_for(paths.PIPELINE, job_id)
     try:
         existing = load_state(p)
     except ValueError as e:
@@ -170,7 +169,7 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
 
 def _cmd_outreach_sent(args: argparse.Namespace) -> int:
     job_id, channel, to_name = args.job_id, args.channel, args.to
-    p = state_path_for(PIPELINE, job_id)
+    p = state_path_for(paths.PIPELINE, job_id)
     if not p.exists():
         print(f"ERROR: pipeline/{job_id}/state.yaml missing", file=sys.stderr)
         return 1
@@ -184,7 +183,7 @@ def _cmd_outreach_sent(args: argparse.Namespace) -> int:
 
 
 def _cmd_outreach_draft(args: argparse.Namespace) -> int:
-    p = state_path_for(PIPELINE, args.job_id)
+    p = state_path_for(paths.PIPELINE, args.job_id)
     if not p.exists():
         print(f"ERROR: pipeline/{args.job_id}/state.yaml missing -- run /track "
               f"{args.job_id} saved first", file=sys.stderr)

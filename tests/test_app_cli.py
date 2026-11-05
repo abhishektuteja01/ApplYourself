@@ -22,7 +22,6 @@ def repo(tmp_path, monkeypatch):
     for mod in (app_cli, track_cli):
         monkeypatch.setattr(mod, "CLEAN", tmp_path / "clean.parquet")
         monkeypatch.setattr(mod, "SCORED", tmp_path / "scored.parquet")
-        monkeypatch.setattr(mod, "PIPELINE", tmp_path / "pipeline")
     monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
     monkeypatch.setattr(app_cli, "APPLICATIONS", tmp_path / "applications")
     (tmp_path / "profile").mkdir()

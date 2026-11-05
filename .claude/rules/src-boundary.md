@@ -32,3 +32,5 @@ for the run's lifetime.
 `src/shared/paths.py` is re-exported, not imported through: modules bind their own
 module-level names (`CLEAN = paths.CLEAN`) because tests patch those local names.
 A global path change touches one file; a test override needs the right alias.
+`PIPELINE` is the exception: read `paths.PIPELINE` at call time, and `tests/conftest.py`
+points it at `tmp_path` for every test.

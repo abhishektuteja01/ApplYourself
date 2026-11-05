@@ -23,12 +23,11 @@ from src.score_filter import CountryRule, load_scoring
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED
 STAGING = paths.STAGING
-PIPELINE = paths.PIPELINE
 SHORTLIST = paths.SHORTLIST
 
 
 def _shortlist(cfg) -> str:
-    path, keepers = shortlist.write(SCORED, CLEAN, PIPELINE, SHORTLIST, cfg,
+    path, keepers = shortlist.write(SCORED, CLEAN, paths.PIPELINE, SHORTLIST, cfg,
                                     date.today().isoformat())
     shown = path.relative_to(paths.REPO_ROOT) if path.is_relative_to(paths.REPO_ROOT) else path
     return f"shortlist={shown} keepers={keepers}"
@@ -45,7 +44,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
     try:
         res = score_store.start(CLEAN, SCORED, STAGING, cfg, rescore=args.all,
                                 vertical=args.vertical, job_ids=args.job_id,
-                                pipeline_dir=PIPELINE)
+                                pipeline_dir=paths.PIPELINE)
     except score_store.RunOpen as e:
         print(f"ERROR: {e}")
         return 1
@@ -61,7 +60,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
 def _cmd_finish(args: argparse.Namespace) -> int:
     cfg = load_scoring()
     rule = CountryRule.from_discovery(load_config())
-    res = score_store.finish(CLEAN, SCORED, STAGING, PIPELINE, cfg, rule)
+    res = score_store.finish(CLEAN, SCORED, STAGING, paths.PIPELINE, cfg, rule)
     print(f"merged={res['merged']} pruned={res['pruned']} {_shortlist(cfg)}")
     for name, errs in res["bad"].items():
         print(f"bad {name}: {'; '.join(errs[:3])}")

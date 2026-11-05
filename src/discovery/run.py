@@ -20,7 +20,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -61,7 +61,7 @@ class Paths:
 
     jobs: Path
     boards_dir: Path | None = None
-    pipeline: Path = paths.PIPELINE
+    pipeline: Path = field(default_factory=lambda: paths.PIPELINE)
 
     @property
     def store(self) -> Path:

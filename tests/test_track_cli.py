@@ -15,7 +15,6 @@ from src import track_cli
 
 @pytest.fixture(autouse=True)
 def _paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(track_cli, "PIPELINE", tmp_path / "pipeline")
     monkeypatch.setattr(track_cli, "CLEAN", tmp_path / "clean.parquet")
     monkeypatch.setattr(track_cli, "SCORED", tmp_path / "scored.parquet")
     monkeypatch.setattr(track_cli, "STORE", tmp_path / "jobs.parquet")

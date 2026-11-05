@@ -322,8 +322,7 @@ def _world(tmp_path, monkeypatch):
                              (synonyms_cli, "LOG", tmp_path / "log.jsonl"),
                              (synonyms_cli, "DECLINED", tmp_path / "declined.yaml"),
                              (synonyms_cli, "OPEN", tmp_path / "open.yaml"),
-                             (M, "MAYBE_DUPES", tmp_path / "maybe_duplicates.jsonl"),
-                             (M, "PIPELINE", tmp_path / "pipeline")):
+                             (M, "MAYBE_DUPES", tmp_path / "maybe_duplicates.jsonl")):
         monkeypatch.setattr(mod, name, value)
     monkeypatch.setattr(M.sheet, "rows", lambda: [_row("a1", "Submittable")])
     monkeypatch.setattr(M.sheet, "check", lambda: {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []})

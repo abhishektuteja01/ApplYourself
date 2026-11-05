@@ -71,7 +71,6 @@ from src.apply.detect import (  # noqa: E402
 )
 
 CLEAN = paths.CLEAN
-PIPELINE = paths.PIPELINE
 APPLICATIONS = paths.APPLICATIONS
 APPLY_RUNS = APPLICATIONS / "apply_runs"
 
@@ -169,7 +168,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     Prints `key=value` lines, shell-quoted, for the command session to read.
     """
     job_id = args.job_id
-    state_path = state_io.state_path_for(PIPELINE, job_id)
+    state_path = state_io.state_path_for(paths.PIPELINE, job_id)
     if not state_path.exists():
         print(f"ERROR: {state_path} missing.", file=sys.stderr)
         return 1
@@ -493,7 +492,7 @@ def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
     Returns the answer bank alongside the plan: the fill re-resolves a parked
     select once the browser can read its real options.
     """
-    state = state_io.load_state(state_io.state_path_for(PIPELINE, job_id))
+    state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, job_id))
     posting_url = url or resolve_url(job_id, state)
     target = Path(out_dir) if out_dir else resolve_out_dir(job_id)
     answers = load_answers()
@@ -875,11 +874,9 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     the only ordering signal every eligible role is guaranteed to carry, so
     the queue is reproducible run to run.
 
-    Defaults to the module-level `PIPELINE`, looked up at call time — a
-    default *parameter value* would freeze the original `paths.PIPELINE`
-    object and miss a test's `monkeypatch.setattr(apply_cli, "PIPELINE", ...)`.
+    Defaults to `paths.PIPELINE`, looked up at call time.
     """
-    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else paths.PIPELINE)
     sent = ledger.sent_job_ids(ledger_path())
     return sorted(
         job_id for job_id, st in idx.items()
@@ -903,7 +900,7 @@ MAX_SUBMISSIONS_PER_COMPANY = 1
 
 def _auto_submittable(job_id: str) -> bool:
     """Whether `resolve_url` would find a posting to fill for this role."""
-    state = state_io.load_state(state_io.state_path_for(PIPELINE, job_id))
+    state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, job_id))
     try:
         resolve_url(job_id, state)
     except ApplyCliError:
@@ -1203,7 +1200,7 @@ def queue_companies(job_ids: list[str], pipeline_dir: Path | None = None) -> dic
     """`job_id -> company`, read from state.yaml. Empty for anything the index
     does not carry; the per-company cap treats that as "unknown", never as a
     match."""
-    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else paths.PIPELINE)
     return {job_id: str(idx.get(job_id, {}).get("company") or "") for job_id in job_ids}
 
 
@@ -1436,7 +1433,7 @@ def submission_preview(job_ids: list[str],
     applies it, so what the confirmation prompt shows is what the walk does.
     Reads state.yaml and clean.parquet only — no network, no browser.
     """
-    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else PIPELINE)
+    idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else paths.PIPELINE)
     rows: list[tuple[str, str, str, str]] = []
     counted: dict[str, int] = {}
     for job_id in job_ids:

@@ -40,10 +40,8 @@ def repo(tmp_path, monkeypatch, tailor_dir):
     pipeline = tmp_path / "pipeline"
     pipeline.mkdir()
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
-    monkeypatch.setattr(apply_cli, "PIPELINE", pipeline)
     monkeypatch.setattr(apply_cli, "APPLICATIONS", tailor_dir.parent.parent)
     # The role's folder comes from app_cli's resolver.
-    monkeypatch.setattr(app_cli, "PIPELINE", pipeline)
     monkeypatch.setattr(app_cli, "APPLICATIONS", tailor_dir.parent.parent)
     monkeypatch.setattr(app_cli, "_identity", lambda: ("Alex Example", "Alex_Example"))
 

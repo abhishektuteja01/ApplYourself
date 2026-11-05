@@ -69,6 +69,15 @@ def _isolate_applications(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_pipeline(tmp_path, monkeypatch):
+    """Keep the real `pipeline/` out of every test. Every module reads
+    `paths.PIPELINE` at call time, so this one patch covers them all."""
+    from src.shared import paths
+
+    monkeypatch.setattr(paths, "PIPELINE", tmp_path / "pipeline")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_answer_bank(tmp_path, monkeypatch):
     """Keep the user's real answer bank out of every test: a lesson written by
     a test must never reach profile/application_answers.yaml."""

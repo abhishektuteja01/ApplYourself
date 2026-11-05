@@ -396,7 +396,7 @@ class TestPrune:
 class TestCli:
     @pytest.fixture
     def wired(self, env, monkeypatch):
-        for name in ("clean", "scored", "staging", "pipeline", "shortlist"):
+        for name in ("clean", "scored", "staging", "shortlist"):
             monkeypatch.setattr(score_cli, name.upper(), env[name])
         # profile/scoring.yaml is personal and gitignored; tests use the template.
         monkeypatch.setattr("src.score_filter.SCORING_PATH",

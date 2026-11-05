@@ -45,7 +45,6 @@ from src.docx_render import ResumeContentError, TemplateError, export_pdf, rende
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED
-PIPELINE = paths.PIPELINE
 PROFILE = paths.PROFILE
 APPLICATIONS = paths.APPLICATIONS
 MAYBE_DUPES = paths.MAYBE_DUPES
@@ -115,7 +114,7 @@ def _version(p: Path) -> int:
 
 
 def _state(job_id: str) -> dict:
-    return state_io.load_state(state_io.state_path_for(PIPELINE, job_id)) or {}
+    return state_io.load_state(state_io.state_path_for(paths.PIPELINE, job_id)) or {}
 
 
 def _read_snapshot(folder: Path) -> tuple[dict, str]:
@@ -291,7 +290,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
               f"job_id `{job_id}`, lane `{lane}`. Written by `uv run app build resume`.", ""]
     _atomic_write(folder / "trace.md", "\n".join(header + built.trace) + "\n")
     rel = str(folder.relative_to(APPLICATIONS))
-    state_io.append_tailored_dir(state_io.state_path_for(PIPELINE, job_id), rel)
+    state_io.append_tailored_dir(state_io.state_path_for(paths.PIPELINE, job_id), rel)
     return {"ok": True, "dir": str(folder.relative_to(APPLICATIONS.parent)), "docx": docx.name,
             "pdf": pdf, "swapped": built.swapped}, 0
 
