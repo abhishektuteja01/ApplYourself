@@ -15,6 +15,10 @@
                         a typed confirmation unless --yes, and never clicks a
                         role already in the submit ledger. Writes
                         applications/apply_runs/<timestamp>.md.
+  confirm <answers-file>
+                        show the answers, take a typed yes on a terminal, and
+                        store their hash beside the file; run and the bank honour
+                        the file only while it still matches.
   learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                         review what the bank holds, or take one thing back.
   triage [--fill] [--job-id J ...] [--limit N]
@@ -46,7 +50,7 @@ import pandas as pd
 import yaml
 
 from src import app_cli, state_io, track_cli
-from src.apply import ashby, bank, ledger, lever
+from src.apply import ashby, bank, confirmation, ledger, lever
 from src.apply.answers import (
     DEFAULT_PATH,
     EXAMPLE_PATH,
@@ -312,15 +316,10 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
 
 
 def answers_confirmed(path: Path | None) -> bool:
-    """Whether the user confirmed this answers file (/apply's step 6 writes
-    `"confirmed": true`). Only a confirmed file teaches the bank or lets a
+    """Whether the user confirmed this answers file with `apply confirm` and it
+    has not changed since. Only a confirmed file teaches the bank or lets a
     keyword guess through a submit."""
-    if path is None:
-        return False
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8")).get("confirmed") is True
-    except (OSError, json.JSONDecodeError, AttributeError):
-        return False
+    return confirmation.is_confirmed(path)
 
 
 def _salary_expectation(vertical: str) -> dict:
@@ -1493,6 +1492,33 @@ def confirm_submission(job_ids: list[str]) -> int:
     return 0
 
 
+def _cmd_confirm(args: argparse.Namespace) -> int:
+    if bank.unattended():
+        print(f"ERROR: {bank.UNATTENDED_ENV}=1: apply confirm needs you at a "
+              "terminal.", file=sys.stderr)
+        return 1
+    try:
+        data = confirmation.load(args.answers_file)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {args.answers_file}: not readable JSON ({exc})", file=sys.stderr)
+        return 1
+    print(confirmation.render(data))
+    print("\nConfirming saves these to the answer bank and lets them through a submit.")
+    if not sys.stdin.isatty():
+        print("ERROR: apply confirm needs a typed yes and stdin is not a terminal.",
+              file=sys.stderr)
+        return 1
+    try:
+        reply = input("Type 'yes' to confirm these answers: ")
+    except EOFError:
+        reply = ""
+    if reply.strip().lower() not in _CONFIRM_YES:
+        print("ABORTED: not confirmed.", file=sys.stderr)
+        return 1
+    print(f"Confirmed: {confirmation.record(args.answers_file, data)}")
+    return 0
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     if bank.unattended() and (args.submit or answers_confirmed(args.answers)):
         what = "--submit" if args.submit else "a confirmed --answers file (it writes the bank)"
@@ -1624,6 +1650,10 @@ def main(argv: list[str] | None = None) -> int:
 
     r.add_argument("--headless", action="store_true")
     r.set_defaults(func=_cmd_run)
+
+    c = sub.add_parser("confirm", help="confirm an /apply answers file (typed yes on a terminal)")
+    c.add_argument("answers_file", type=Path)
+    c.set_defaults(func=_cmd_confirm)
 
     sh = sub.add_parser("sheet", help="rebuild the status sheet from state, ledger and run reports")
     sh.add_argument("--add", action="store_true",

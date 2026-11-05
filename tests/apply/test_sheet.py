@@ -89,9 +89,11 @@ def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
-    (paths.APPLICATIONS / folder / "answers_override.json").write_text(
-        json.dumps({"job_id": "aaaa1111", "confirmed": True, "q": {"value": "x"}}),
-        encoding="utf-8")
+    from src.apply import confirmation
+    data = {"job_id": "aaaa1111", "q": {"value": "x"}}
+    answers = paths.APPLICATIONS / folder / "answers_override.json"
+    answers.write_text(json.dumps(data), encoding="utf-8")
+    confirmation.record(answers, data)
     _state(tmp_path, "aaaa1111", "tailored", folder)
     sheet.refresh(add=True)
     assert _rows(tmp_path)["aaaa1111"]["status"] == "Resume ready"

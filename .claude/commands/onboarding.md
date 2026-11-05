@@ -44,7 +44,7 @@ under `profile/`; nothing tracked changes.
   delegate to. If a step seems to need it, stop and report — the config
   contract is wrong, not the setup.
 - You run only what a numbered step lists: the bootstrap in 0b, the scaffold in
-  1.3, `discover` in 1.5, the scoring agent in 3.4, `verticals-check` in 4.
+  1.3, `discover` in 1.5, scoring in 3.4 and 3.6, `verticals-check` in 4.
   Everything downstream is handed off.
 - Print the position line first in every numbered step, verbatim:
   - `Step 1 of 5 · ~18 min left · you'll see real scored jobs at step 4.`
@@ -284,7 +284,7 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
 
 ## Step 3 — scoring starts (~3 min, 2 questions)
 
-In this order. The scoring agent must be spawned before the questions, so the
+In this order. The score judges must be spawned before the questions, so the
 user answers them while it runs.
 
 ### 3.1 Read the scrape log
@@ -365,13 +365,17 @@ Tightening the band takes effect on the next `clean.parquet` rebuild. Loosening
 it brings rows back as their boards and searches are next checked: the store
 keeps only rows that passed the gate.
 
-### 3.4 Spawn the scoring agent, in the background
+### 3.4 Start scoring, judges in the background
 
-Spawn **one** background agent whose whole job is to run `/score` for this repo
-and report the line it prints. Do not reimplement scoring here and do not spawn
-judge agents from this command. If that agent cannot spawn its own judge
-subagents, it reads the packet and writes each slice's named answer file itself
-— slower, but it is in the background and the user does not feel it.
+Follow `/score`'s steps from this session (a subagent cannot spawn judges):
+
+1. `uv run score start`. Exit 1: report the error and skip to 3.5. A `done`
+   line: nothing to judge.
+2. For each `judge ...` line, spawn one background `score-judge` agent whose
+   prompt is the rest of that line. All in one message.
+
+Never judge a slice yourself, and never read, edit or delete files in
+`jobs/scored.staging/`.
 
 ### 3.5 The two review questions, one `AskUserQuestion`
 
@@ -384,7 +388,7 @@ subagents, it reads the packet and writes each slice's named answer file itself
   Options: `Looks right` · `Narrow the locations` · `Turn a source off` ·
   `Change the level or years cap`.
 
-### 3.6 Apply the answers, then collect the scoring agent
+### 3.6 Apply the answers, then finish scoring
 
 - A source they turn off is `enabled: false` under that source in
   `discovery.yaml`'s `sources` block, and nowhere else.
@@ -395,7 +399,9 @@ subagents, it reads the packet and writes each slice's named answer file itself
   words in `title_exclude_terms`.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
 
-Then wait on the scoring agent and read the shortlist it wrote.
+Then wait on the judges and run `/score`'s step 3: `uv run score finish`; on
+exit 1 spawn its `judge ...` lines once the same way and run `finish` again;
+still exit 1, report its `bad` lines. Then read the shortlist it wrote.
 
 ## Step 4 — react to real postings (~3 min, 1 question)
 

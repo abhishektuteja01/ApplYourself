@@ -90,6 +90,8 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
   `refused` is never clicked again, whatever its `state.yaml` says. `track
   ensure` (the `/tailor` registration) refuses to re-create a lost `state.yaml`
   for such a role. Delete its lines to retry.
+- A file is confirmed only by `apply confirm` (typed yes on a terminal), whose
+  stored hash must match the file's current content.
 - Without a confirmed answers file, `apply run --submit` parks a role whose plan
   holds a keyword guess. With `--submit`, one browser fills, reads the form back,
   and clicks only when every filled field holds what was planned (`form_check`).
