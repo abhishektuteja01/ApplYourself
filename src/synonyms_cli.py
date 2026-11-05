@@ -33,7 +33,7 @@ import yaml
 
 from src.resume_model import parse_entries
 from src.shared import paths
-from src.shared.config_keys import load_automation
+from src.shared.config_schema import load_automation
 
 BULLETS = paths.PROFILE / "bullets.md"
 SKILLS = paths.PROFILE / "skills_master.md"

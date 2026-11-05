@@ -11,25 +11,10 @@ from pathlib import Path
 import yaml
 
 from src.shared import paths
-from src.shared.config_keys import check_keys
+from src.shared.config_schema import ContactsFile, validate
 from src.shared.identity import normalize_company
 
 CONTACTS_PATH = paths.PROFILE / "contacts.yaml"
-_ENTRY_KEYS = {
-    "id",
-    "name",
-    "company",
-    "role",
-    "relationship",
-    "channel",
-    "email",
-    "phone",
-    "linkedin",
-    "shared_affiliation",
-    "tags",
-    "notes",
-}
-_RELATIONSHIPS = {"recruiter", "referral", "alumni", "other", None}
 
 
 def referrals_by_company(path: Path = CONTACTS_PATH) -> dict[str, list[str]]:
@@ -37,15 +22,9 @@ def referrals_by_company(path: Path = CONTACTS_PATH) -> dict[str, list[str]]:
     if not path.exists():
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    check_keys(data, {"schema_version", "contacts"}, "top level", path)
+    validate(ContactsFile, data, path)
     out: dict[str, list[str]] = {}
-    for i, c in enumerate(data.get("contacts") or []):
-        check_keys(c, _ENTRY_KEYS, f"contacts[{i}]", path)
-        if c.get("relationship") not in _RELATIONSHIPS:
-            raise ValueError(
-                f"{path}: contacts[{i}].relationship must be one of "
-                f"{', '.join(sorted(r for r in _RELATIONSHIPS if r))}"
-            )
+    for c in data.get("contacts") or []:
         key = normalize_company(c.get("company"))
         if key and c.get("name") and c.get("relationship") == "referral":
             out.setdefault(key, []).append(c["name"])

@@ -25,7 +25,7 @@ from src import state_io
 from src.app_cli import built_folder
 from src.apply import confirmation, detect, ledger
 from src.shared import paths
-from src.shared.config_keys import load_automation
+from src.shared.config_schema import load_automation
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "recruiter_contact", "screen", "interview", "offer"})

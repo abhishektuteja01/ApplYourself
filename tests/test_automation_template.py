@@ -60,6 +60,6 @@ def test_every_script_is_valid_bash(script):
 
 
 def test_the_example_automation_config_passes_the_key_check():
-    from src.shared.config_keys import load_automation
+    from src.shared.config_schema import load_automation
 
     load_automation(REPO_ROOT / "profile" / "automation.example.yaml")

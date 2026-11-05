@@ -21,7 +21,7 @@ from src.shared import paths
 
 def _get(section: str, key: str) -> object:
     if section == "automation":
-        from src.shared.config_keys import load_automation
+        from src.shared.config_schema import load_automation
 
         data = load_automation(paths.PROFILE / "automation.yaml")
         if key not in data:

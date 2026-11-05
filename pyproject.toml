@@ -33,6 +33,7 @@ dependencies = [
     "geonamescache>=3.0.1",
     "pycountry>=24.0",
     "pypdf>=6.19.0",
+    "pydantic>=2.7",  # src/shared/config_schema.py
 ]
 
 [project.urls]
@@ -56,6 +57,7 @@ apply = "src.apply_cli:main"
 synonyms = "src.synonyms_cli:main"
 summary = "src.summary:main"
 config = "src.config_cli:main"
+config-check = "src.config_check:main"
 
 [dependency-groups]
 dev = [
