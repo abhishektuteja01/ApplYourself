@@ -22,27 +22,22 @@ def write(path, rows):
 
 # ---------- the board list ----------
 
-def test_case_duplicates_fold_and_local_wins_the_name(tmp_path):
+def test_case_duplicates_fold_and_the_last_row_wins_the_name(tmp_path):
     write(tmp_path / "boards.csv", [("greenhouse", "Acme", "acme", ""),
-                                    ("greenhouse", "Acme Two", "Acme", "")])
-    write(tmp_path / "boards.local.csv", [("greenhouse", "Acme Inc", "ACME", "")])
+                                    ("greenhouse", "Acme Inc", "ACME", "")])
     boards = B.load_boards(boards_dir=tmp_path)
     assert [(b.name, b.slug) for b in boards] == [("Acme Inc", "acme")]
 
 
 def test_a_retired_spelling_does_not_retire_its_live_twin(tmp_path):
-    write(tmp_path / "boards.local.csv", [("lever", "2a", "2A", "1"), ("lever", "2a", "2a", "0")])
+    write(tmp_path / "boards.csv", [("lever", "2a", "2A", ""), ("lever", "2a", "2a", "0")])
     assert [b.slug for b in B.load_boards(boards_dir=tmp_path)] == ["2A"]
 
 
-def test_a_tombstone_outlives_a_readd_but_not_a_deliberate_one(tmp_path):
-    write(tmp_path / "boards.csv", [("greenhouse", "Dead", "dead", "0"),
-                                    ("greenhouse", "DeepMind", "deepmind", "0")])
-    write(tmp_path / "boards.local.csv", [("greenhouse", "Dead", "dead", ""),
-                                          ("greenhouse", "Google DeepMind", "deepmind", "1")])
-    boards = B.load_boards(boards_dir=tmp_path)
-    assert [b.slug for b in boards] == ["deepmind"] and boards[0].name == "Google DeepMind"
-    assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 2
+def test_a_tombstone_outlives_a_readd(tmp_path):
+    write(tmp_path / "boards.csv", [("greenhouse", "Dead", "dead", "0"), ("greenhouse", "Dead", "dead", "")])
+    assert B.load_boards(boards_dir=tmp_path) == []
+    assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 1
 
 
 def test_unknown_ats_and_blank_rows_are_skipped(tmp_path):

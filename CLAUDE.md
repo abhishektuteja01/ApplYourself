@@ -65,7 +65,7 @@ title gate, locations, the job-board registry and the HTTP client.
 was first and last seen; a night only adds to it. `clean.parquet` is the live
 view built from it: seen recently, through the title gate and location
 allowlist, one row per `job_id`, within retention. Boards are listed in
-`data/universe/boards.csv` + `boards.local.csv`; `jobs/boards.parquet` records
+`data/universe/boards.csv`; `jobs/boards.parquet` records
 when each was last checked.
 Application material lands in `applications/<vertical>/<dir>/`, and that folder
 is the only state the material commands share: `uv run app dir <id>` resolves it

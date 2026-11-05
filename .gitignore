@@ -49,12 +49,6 @@ inbox/*
 jobs/*
 !jobs/.gitkeep
 
-# =============================================================================
-# data/universe/*.local.csv — your own board additions, and bulk ATS slug lists
-# from a CC BY-NC source. The repo is MIT, so they stay local; only self-verified
-# slugs go in the tracked boards.csv beside them. See data/universe/README.md.
-# =============================================================================
-data/universe/*.local.csv
 
 # =============================================================================
 # .apply_profile/ — the persistent Chrome profile /apply drives the browser

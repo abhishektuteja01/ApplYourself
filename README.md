@@ -76,8 +76,7 @@ flowchart TD
 `jobs/clean.parquet` is the **only** discovery output anything downstream reads.
 A run works like this:
 
-1. **Pick due boards.** Each board in `data/universe/boards.csv` +
-   `boards.local.csv` is checked when `every_days` have passed since its last
+1. **Pick due boards.** Each board in `data/universe/boards.csv` is checked when `every_days` have passed since its last
    check (`jobs/boards.parquet`); due boards run oldest first.
 2. **List and gate.** Each lane lists its boards or runs its searches, and every
    title goes through the lane's title gate right away.
@@ -480,7 +479,7 @@ jobs/scored.parquet             scores, one row per judged posting
 jobs/scored.staging/            per-lane packets, judge slices and answer files
 jobs/raw/<run_id>.parquet       debug: every classified listing and its gate verdict
 jobs/runs/<run_id>.json + .md   the run report
-data/universe/boards.csv        the board list; boards.local.csv is yours
+data/universe/boards.csv        the board list
 shortlist/<date>.md             today's keepers, sectioned by lane
 applications/<vertical>/<dir>/  one directory per tailoring run
 applications/apply_runs/        submission run reports and evidence

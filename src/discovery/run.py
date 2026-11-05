@@ -253,7 +253,7 @@ def main(argv=None) -> int:
     parser.add_argument("--jobs-dir", type=Path, default=paths.JOBS,
                         help="read and write the store, view and reports here")
     parser.add_argument("--boards-dir", type=Path, default=B.BOARDS_DIR,
-                        help="where boards.csv and boards.local.csv live")
+                        help="where boards.csv lives")
     args = parser.parse_args(argv)
 
     unknown = sorted(set(args.source or []) - set(LANE_NAMES))

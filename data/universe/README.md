@@ -22,25 +22,18 @@ The Workday rows have no ats-scrapers seed at all: Workday's tri-part slug
 (`company|wd#|site_id`) is not a shape that source publishes, so every one was
 hand-verified against the live CXS API before being committed.
 
-## The two files
+## The board list
 
-`boards.csv` (tracked) and `boards.local.csv` (gitignored, optional) are both
-`ats,name,slug,active`, with `ats` one of greenhouse, lever, ashby, workday, eightfold.
-`sources/boards.py:load_boards` reads both:
+`boards.csv` is the one board list, `ats,name,slug,active`, with `ats` one of
+greenhouse, lever, ashby, workday, eightfold. It also carries bulk slug lists
+added after the seed clone. `sources/boards/base.py:load_boards` reads it:
 
 - One board per (ats, slug) whatever the slug's case. When one spelling is
   retired and another is live, the live one is used: Lever's API is
   case-sensitive (`fliff` 404s where `Fliff` serves).
-- `active=0` retires that exact spelling, in either file, and outlives a re-add
-  of it in the other file.
-- `active=1` in `boards.local.csv` is a deliberate choice and overrides a
-  retirement. Use it for a board you specifically want.
-- The local file wins the name. `name` must be spelled the way the board spells
-  it: it feeds `job_id`.
-
-`boards.local.csv` is the place for your own boards and for bulk slug dumps whose
-license does not permit redistribution under this repo's MIT license. Only
-self-verified slugs go in `boards.csv`.
+- `active=0` retires that exact spelling, and outlives a re-add of it.
+- The last row of a board wins the name. `name` must be spelled the way the
+  board spells it: it feeds `job_id`.
 
 `jobs/boards.parquet` records, per board, when it was last checked, when it last
 had a job that passed the title gate, and last check's counts. Three 404s in a

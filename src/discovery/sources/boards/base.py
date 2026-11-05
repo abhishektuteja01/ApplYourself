@@ -1,8 +1,7 @@
 """The board lanes: which boards to check tonight, and the one loop that
 checks them.
 
-`data/universe/boards.csv` (tracked) and `boards.local.csv` (gitignored,
-yours) list the boards as `ats,name,slug,active`. `jobs/boards.parquet` holds
+`data/universe/boards.csv` lists the boards as `ats,name,slug,active`. `jobs/boards.parquet` holds
 one row per board: when it was last checked, when it last had a job that
 passed the title gate, and last check's counts. A board is due when
 `every_days` have passed since its last check; due boards run oldest first.
@@ -100,34 +99,26 @@ def load_boards(ats: str | None = None, include_retired: bool = False,
                 boards_dir: Path | None = None) -> list[Board]:
     """Every live board, one per (ats, slug) whatever the slug's case.
 
-    `active=0` retires that exact spelling, in either file, and outlives a
-    re-add of it. `active=1` in your local file is a deliberate choice and
-    overrides a retirement. A board listed in two cases stays live while any
-    spelling is; the live spelling is the one used. Your local file wins the
-    name."""
+    `active=0` retires that exact spelling. A board listed in two cases stays
+    live while any spelling is; the first live spelling is the one used."""
     boards_dir = Path(boards_dir or BOARDS_DIR)
-    spellings: dict[str, dict[str, dict]] = {}
+    spellings: dict[str, dict[str, bool]] = {}
     names: dict[str, str] = {}
-    for local, path in ((False, boards_dir / "boards.csv"), (True, boards_dir / "boards.local.csv")):
-        for row in _read_csv(path):
-            a = (row.get("ats") or "").strip().lower()
-            name = (row.get("name") or "").strip()
-            slug = (row.get("slug") or "").strip()
-            if a not in ATS_SOURCE_NAMES or not name or not slug:
-                continue
-            key = f"{a}|{slug.lower()}"
-            active = (row.get("active") or "").strip()
-            spot = spellings.setdefault(key, {}).setdefault(slug, {"retired": False, "forced": False})
-            spot["retired"] |= active == "0"
-            spot["forced"] |= local and active == "1"
-            names[key] = name
+    for row in _read_csv(boards_dir / "boards.csv"):
+        a = (row.get("ats") or "").strip().lower()
+        name = (row.get("name") or "").strip()
+        slug = (row.get("slug") or "").strip()
+        if a not in ATS_SOURCE_NAMES or not name or not slug:
+            continue
+        key = f"{a}|{slug.lower()}"
+        retired = spellings.setdefault(key, {}).get(slug, False)
+        spellings[key][slug] = retired or (row.get("active") or "").strip() == "0"
+        names[key] = name
     boards = []
     for key, spots in spellings.items():
-        a = key.split("|", 1)[0]
-        live = [s for s, f in spots.items() if f["forced"]] or \
-               [s for s, f in spots.items() if not f["retired"]]
+        live = [s for s, retired in spots.items() if not retired]
         if live or include_retired:
-            boards.append(Board(a, names[key], (live or list(spots))[0]))
+            boards.append(Board(key.split("|", 1)[0], names[key], (live or list(spots))[0]))
     if ats:
         boards = [b for b in boards if b.ats == ats]
     return sorted(boards, key=lambda b: b.key)

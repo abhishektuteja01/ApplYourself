@@ -212,8 +212,8 @@ the resume.
 
    Say what the scrape is before starting it: LinkedIn search only, two terms.
    No Indeed unless the fallback fires, no Greenhouse, Lever, Ashby or Workday
-   board crawls (those reach only boards listed in `data/universe/boards.csv` or
-   `boards.local.csv`, and take far longer than this has). Expect a
+   board crawls (those reach only boards listed in `data/universe/boards.csv`,
+   and take far longer than this has). Expect a
    fraction of an overnight run. `location_allowlist` stays at the shipped
    `countries: ["United States"]`; nothing here needs undoing, because tomorrow's
    plain `uv run discover` runs the full config.
@@ -483,8 +483,8 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   real messages they actually sent; polished samples sound like nobody.
   `contacts.yaml` is optional alongside it. `--with-optional` copies both, plus
   the denylist. A board they care about that `data/universe/boards.csv` lacks
-  goes in `data/universe/boards.local.csv` as `ats,name,slug,active` (`name`
-  must match how boards spell it, because it feeds `job_id`).
+  goes in that file as `ats,name,slug,active` (`name` must match how boards
+  spell it, because it feeds `job_id`).
 - **Restyling the two Word templates.** The resume body is rebuilt, but headers,
   footers and text boxes survive onto every resume — keep name and contact out of
   the Word header. Restyle the five named paragraph styles without renaming them,

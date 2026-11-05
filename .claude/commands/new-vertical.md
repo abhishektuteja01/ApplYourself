@@ -319,8 +319,7 @@ and its `title_exclude_terms` words, the resume shape),
 and:
 
 - `uv run discover` then `/score` — their call, it hits the network.
-- Board sources only reach boards listed in `data/universe/boards.csv` /
-  `boards.local.csv`; if this lane's employers aren't there, LinkedIn and
+- Board sources only reach boards listed in `data/universe/boards.csv`; if this lane's employers aren't there, LinkedIn and
   Indeed search terms are its only route.
 - One line: once a real shortlist exists, `/tune-vertical <name>` sharpens the
   lane — skill weights, the title gate, rubric tiers — against postings you have

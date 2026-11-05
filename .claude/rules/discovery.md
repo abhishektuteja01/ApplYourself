@@ -79,11 +79,9 @@ always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
 
 ## Boards (`sources/boards/base.py`)
 
-`data/universe/boards.csv` (tracked, license-clean) and `boards.local.csv`
-(gitignored, yours) are `ats,name,slug,active`. One board per (ats, slug)
-whatever the case. `active=0` retires that exact spelling and outlives a re-add;
-`active=1` in the local file overrides a retirement; local wins the name. The
-name feeds `job_id`.
+`data/universe/boards.csv` is `ats,name,slug,active`, the one board list. One
+board per (ats, slug) whatever the case. `active=0` retires that exact spelling
+and outlives a re-add; the last row wins the name. The name feeds `job_id`.
 
 `jobs/boards.parquet` is one row per board. A board is due when `every_days`
 have passed since `last_checked`; due boards run oldest first. An error leaves
