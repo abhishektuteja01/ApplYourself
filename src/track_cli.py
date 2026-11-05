@@ -6,6 +6,9 @@
                               clean/scored parquet on first transition.
                               --if S: only when the role is currently in
                               state S; otherwise a no-op, exit 0
+  outreach-draft <job_id> --channel C --to "N" --draft-file F
+                 [--contact-id ID] [--medium M]
+                              append a draft entry to outreach[]
   outreach-sent <job_id> --channel C --to "N"
                               flip the latest matching draft outreach[]
                               entry to sent
@@ -27,6 +30,7 @@ from src.shared import paths
 
 from src.state_io import (
     VALID_STATES,
+    append_outreach_draft,
     ensure_state,
     load_state,
     mark_outreach_sent,
@@ -182,6 +186,23 @@ def _cmd_outreach_sent(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_outreach_draft(args: argparse.Namespace) -> int:
+    p = state_path_for(PIPELINE, args.job_id)
+    if not p.exists():
+        print(f"ERROR: pipeline/{args.job_id}/state.yaml missing -- run /track "
+              f"{args.job_id} saved first", file=sys.stderr)
+        return 1
+    try:
+        data = append_outreach_draft(p, channel=args.channel, to_name=args.to,
+                                     draft_file=args.draft_file,
+                                     contact_id=args.contact_id, medium=args.medium)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print(f"OK: outreach[] now has {len(data['outreach'])} entry/entries  (job_id={args.job_id})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
@@ -198,6 +219,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--to", required=True)
         args = parser.parse_args(argv[1:])
         return _cmd_outreach_sent(args)
+
+    if argv and argv[0] == "outreach-draft":
+        parser = argparse.ArgumentParser(prog="track outreach-draft")
+        parser.add_argument("job_id")
+        parser.add_argument("--channel", required=True, choices=["recruiter", "referral", "alumni"])
+        parser.add_argument("--to", required=True)
+        parser.add_argument("--draft-file", required=True)
+        parser.add_argument("--contact-id", default=None)
+        parser.add_argument("--medium", default=None)
+        args = parser.parse_args(argv[1:])
+        return _cmd_outreach_draft(args)
 
     parser = argparse.ArgumentParser(prog="track", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)

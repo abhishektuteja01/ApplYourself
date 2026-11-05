@@ -233,21 +233,14 @@ If any violation:
 ```bash
 # Substitute the literal job_id/channel/recipient/filename/medium values —
 # bash variables do not persist between Bash calls.
-uv run python -c "
-from pathlib import Path
-from src.state_io import state_path_for, append_outreach_draft
-p = state_path_for(Path('pipeline'), '<job_id>')
-data = append_outreach_draft(
-    p,
-    channel='<channel>',
-    to_name='<recipient name>',
-    draft_file='<date>_<channel>_<recipient-slug>.md',
-    contact_id='<id from contacts.yaml>',   # omit the kwarg if the recipient has no entry
-    medium='<linkedin | email>',            # omit the kwarg if no medium applies
-)
-print(f'OK: outreach[] now has {len(data[\"outreach\"])} entry/entries')
-"
+uv run track outreach-draft <job_id> --channel <channel> --to "<recipient name>" \
+    --draft-file "<date>_<channel>_<recipient-slug>.md" \
+    --contact-id "<id from contacts.yaml>" \
+    --medium <linkedin | email>
 ```
+
+Drop `--contact-id` if the recipient has no `contacts.yaml` entry, and `--medium`
+if no medium applies.
 
 ## Step 6 — runtime assertions
 
