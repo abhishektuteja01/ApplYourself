@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from src.shared import title_gate
 
-
 # ---------- title gate ----------
 
 def test_gate_exempts_manual_and_unknown_lanes(cfg):

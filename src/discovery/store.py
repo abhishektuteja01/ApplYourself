@@ -136,7 +136,7 @@ class Batch:
             with self._lock:
                 self.touched.add(key)
 
-    def take(self) -> "Batch":
+    def take(self) -> Batch:
         with self._lock:
             out = Batch(rows=self.rows, touched=self.touched)
             self.rows, self.touched = {}, set()
@@ -157,7 +157,7 @@ class ApplyStats:
     dropped_blank: int = 0
     maybe_duplicates: list[dict] = field(default_factory=list)
 
-    def merge(self, other: "ApplyStats") -> None:
+    def merge(self, other: ApplyStats) -> None:
         self.inserted += other.inserted
         self.refreshed += other.refreshed
         self.touched += other.touched

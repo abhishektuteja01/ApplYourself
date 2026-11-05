@@ -270,7 +270,7 @@ def scan_form(page_html: str) -> FormScan:
         raise DomScanError("empty document")
     try:
         doc = lxml_html.fromstring(page_html)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # lxml raises bare ValueError on an XML declaration and its own
         # ParserError on a bodyless doctype. Neither is a DomScanError, so
         # neither was in `apply_cli.BUILD_ERRORS` — instead of one role

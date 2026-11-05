@@ -37,7 +37,8 @@ import re
 import shlex
 import sys
 import time
-from dataclasses import dataclass, field as dc_field, replace
+from dataclasses import dataclass, replace
+from dataclasses import field as dc_field
 from datetime import datetime
 from pathlib import Path
 
@@ -45,20 +46,16 @@ import pandas as pd
 import yaml
 
 from src import app_cli, state_io, track_cli
-from src.shared import paths
 from src.apply import ashby, bank, ledger, lever
-from src.apply.answers import (DEFAULT_PATH, EXAMPLE_PATH, FACT_WORDING_FACTS,
-                               UNKNOWN_COUNTRY, Answers,
-                               AnswersError, load_answers)
-from src.apply.fill import (_require_playwright, blocking_details, has_driver,
-                             run_one)
-from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
-from src.apply.plan import Override, Plan, PlanError, plan_for_board
-from src.apply.reconcile import ReconcileError
-from src.apply.schema import SchemaError
-from src.apply.domscan import DomScanError
-from src.shared.identity import normalize_company
-from src.shared.http_client import CareersError
+from src.apply.answers import (
+    DEFAULT_PATH,
+    EXAMPLE_PATH,
+    FACT_WORDING_FACTS,
+    UNKNOWN_COUNTRY,
+    Answers,
+    AnswersError,
+    load_answers,
+)
 
 # Board identity comes from the shared table in
 # `src/shared/job_boards.py`, wrapped by `src.apply.detect` so
@@ -66,9 +63,20 @@ from src.shared.http_client import CareersError
 # CLI. Re-exported here because callers and tests already reach for
 # `apply_cli.detect_ats`. `detect_ats` recognizes Workday too, so every
 # submission path gates on SUBMITTABLE_ATS, not on "not None".
-from src.apply.detect import (  # noqa: E402
-    SUBMITTABLE_ATS, detect_ats, is_auto_submittable,
+from src.apply.detect import (
+    SUBMITTABLE_ATS,
+    detect_ats,
+    is_auto_submittable,
 )
+from src.apply.domscan import DomScanError
+from src.apply.fill import _require_playwright, blocking_details, has_driver, run_one
+from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
+from src.apply.plan import Override, Plan, PlanError, plan_for_board
+from src.apply.reconcile import ReconcileError
+from src.apply.schema import SchemaError
+from src.shared import paths
+from src.shared.http_client import CareersError
+from src.shared.identity import normalize_company
 
 CLEAN = paths.CLEAN
 APPLICATIONS = paths.APPLICATIONS
@@ -368,8 +376,8 @@ def job_country(state: dict | None, answers: Answers) -> str:
     state = state or {}
     job_id = str(state.get("job_id") or "")
     try:
-        from src.shared.location.parser import parse_location
         from src.shared.location.allowlist import residency_countries
+        from src.shared.location.parser import parse_location
     except Exception:  # noqa: BLE001 - the parser is optional plumbing
         return ""
     for raw in (_clean_value(job_id, "location"), str(state.get("location") or "")):
@@ -486,7 +494,7 @@ def company_answers_for(out_dir: Path) -> dict[str, str]:
 
 
 def build(job_id: str, url: str | None = None, out_dir: Path | None = None,
-          answers_path: Path | None = None) -> tuple[Plan, "Answers"]:
+          answers_path: Path | None = None) -> tuple[Plan, Answers]:
     """Everything `plan` does, minus the printing.
 
     Returns the answer bank alongside the plan: the fill re-resolves a parked
@@ -1107,7 +1115,7 @@ def _attempt(job_id: str, plan: Plan, answers, *, submit: bool, headless: bool,
         result = run_one(plan, answers, headless=headless, submit_after=submit,
                           sink=sink, after=None if submit else review,
                           before_click=before_click)
-    except BaseException as exc:  # noqa: BLE001 - Ctrl-C must not lose a submit
+    except BaseException as exc:  # Ctrl-C must not lose a submit
         landed = sink[0] if sink else None
         # The manifest is read before the click, so a crash after it still has
         # one worth keeping — it is the only record of what the form held.

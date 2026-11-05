@@ -11,7 +11,6 @@ from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
 from src.shared.job_boards import parse_posting_url
 
-
 # ---------------------------------------------------------------------
 # company / title / job_id
 # ---------------------------------------------------------------------
@@ -57,7 +56,7 @@ def normalize_title(s: str | None) -> str:
 def compute_job_id(company_normalized: str, title_normalized: str) -> str:
     """The inputs are frozen: url and jd_text stay out so the id survives a
     re-scrape. Changing them orphans every pipeline/<job_id>/state.yaml."""
-    key = f"{company_normalized}|{title_normalized}".encode("utf-8")
+    key = f"{company_normalized}|{title_normalized}".encode()
     return hashlib.sha1(key).hexdigest()[:8]
 
 

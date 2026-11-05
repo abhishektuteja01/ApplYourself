@@ -8,10 +8,9 @@ from pathlib import Path
 
 import yaml
 
-from src.shared import paths
-from src.shared import title_gate
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
+from src.shared import paths, title_gate
 
 log = logging.getLogger(__name__)
 

@@ -15,10 +15,10 @@ import argparse
 import sys
 from datetime import date
 
-from src.shared import paths, verticals
 from src import score_store, shortlist
 from src.discovery.config import load_config
 from src.score_filter import CountryRule, load_scoring
+from src.shared import paths, verticals
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED

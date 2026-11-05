@@ -4,9 +4,9 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.shared import identity
-from src.discovery import store as S
 from src.discovery import dedupe, live_view
+from src.discovery import store as S
+from src.shared import identity
 from src.shared.location.allowlist import Allowed
 
 TODAY = pd.Timestamp("2026-09-27")
@@ -326,7 +326,7 @@ def test_a_refresh_from_another_source_does_not_clash_with_its_own_id():
     store, _ = fold(S.empty_store(), post(GH.format(1), company="Telnyx", title="Forward Deployed Engineer"))
     other = post("https://www.welcometothejungle.com/en/companies/x/jobs/fde", company="Telnyx",
                  title="Forward Deployed Engineer", source="stapply", jd=JD_OTHER)
-    store, stats = fold(store, post(GH.format(1), company="telnyx54", source="stapply"), other)
+    store, _stats = fold(store, post(GH.format(1), company="telnyx54", source="stapply"), other)
     assert len(store) == 2 and store["job_id"].nunique() == 1
 
 

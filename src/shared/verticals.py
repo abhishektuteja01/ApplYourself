@@ -21,11 +21,12 @@ one-line prerequisite check.
 from __future__ import annotations
 
 import re
-from typing import Protocol
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 import yaml
+
 from src.shared import paths
 from src.shared.config_keys import check_keys
 
@@ -132,7 +133,7 @@ class Vertical:
 class VerticalsConfig:
     default_vertical: str
     verticals: dict[str, Vertical]  # insertion order == config order
-    classifier_rules: tuple[tuple[str, "ClassifierRule"], ...]
+    classifier_rules: tuple[tuple[str, ClassifierRule], ...]
 
     @property
     def names(self) -> tuple[str, ...]:

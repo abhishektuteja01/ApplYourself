@@ -5,8 +5,8 @@ import openpyxl
 import pandas as pd
 import yaml
 
-from src.shared import paths
 from src.apply import ledger, sheet
+from src.shared import paths
 
 GH = "https://job-boards.greenhouse.io/acme/jobs/1"
 

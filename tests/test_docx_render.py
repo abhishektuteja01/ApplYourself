@@ -23,7 +23,6 @@ from src.docx_render import (
     render_resume,
 )
 
-
 # ---------- fixture templates ----------
 
 def _make_template(path: Path, *, styles: list[str] | None = None,
@@ -327,7 +326,7 @@ def test_render_emits_hyperlink_element_with_correct_target(tmp_path):
     targets = [r.target_ref for r in doc.part.rels.values()
                if "hyperlink" in r.reltype]
     assert any("janedoe.example.com" in t for t in targets)
-    assert any("mailto:x@y.com" == t for t in targets)
+    assert any(t == "mailto:x@y.com" for t in targets)
 
 
 def test_render_emits_hyperlink_with_hyperlink_char_style(tmp_path):
@@ -785,6 +784,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
     import subprocess
     import threading
     import time
+
     from src import docx_render
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
@@ -834,6 +834,7 @@ def _helper(monkeypatch, tmp_path):
     """A helper serving tmp_path/q from a thread, Word faked; returns (queue, stop)."""
     import os
     import threading
+
     from src import pdf_broker
     _fake_word(monkeypatch, tmp_path)
     monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
@@ -854,7 +855,8 @@ def test_export_pdf_goes_through_the_helper_when_one_is_up(monkeypatch, tmp_path
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
     r = docx_render.export_pdf(docx, "role1")
-    stop.set(); t.join()
+    stop.set()
+    t.join()
     assert r["status"] == "ok" and r["pages"] == 1
     assert (tmp_path / "A_Resume.pdf").is_file()
     assert sorted(p.name for p in queue.iterdir()) == ["broker.pid"]
@@ -877,6 +879,7 @@ def test_a_helper_that_is_gone_fails_fast_and_leaves_no_stale_pdf(monkeypatch, t
 
 def test_a_helper_that_never_answers_times_out_and_withdraws(monkeypatch, tmp_path):
     import os
+
     from src import pdf_broker
     monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
     queue = tmp_path / "q"
@@ -896,7 +899,8 @@ def test_a_bad_request_gets_a_failed_result_and_the_helper_goes_on(monkeypatch, 
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
     r = docx_render.export_pdf(docx, "role1")
-    stop.set(); t.join()
+    stop.set()
+    t.join()
     assert r["status"] == "ok"
     import json
     assert json.loads((queue / "bad.res").read_text(encoding="utf-8"))["status"] == "failed"

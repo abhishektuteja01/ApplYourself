@@ -92,8 +92,8 @@ def _isolate_discovery_state(tmp_path, monkeypatch):
     """Keep the jobs store, board state, board lists and inbox out of the real
     repo. Every discovery writer resolves these names at call time."""
     from src.discovery import digest, live_view, store
-    from src.discovery.sources.boards import base as boards
     from src.discovery.sources import inbox
+    from src.discovery.sources.boards import base as boards
 
     monkeypatch.setattr(store, "STORE", tmp_path / "jobs" / "jobs.parquet")
     monkeypatch.setattr(live_view, "CLEAN", tmp_path / "jobs" / "clean.parquet")

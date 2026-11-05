@@ -26,9 +26,9 @@ import argparse
 import sys
 
 import pandas as pd
+
 from src.apply import ledger
 from src.shared import paths
-
 from src.state_io import (
     VALID_STATES,
     append_outreach_draft,

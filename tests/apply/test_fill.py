@@ -8,17 +8,16 @@ filled field. The selector work is what the live run at step 6 checks.
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from src.shared import paths
 from src.apply import browser
 from src.apply import fill as F
 from src.apply.fill import FillError, FillResult, fill_plan
-from dataclasses import replace
-
 from src.apply.plan import FieldPlan, FilePlan, Plan
+from src.shared import paths
 
 REPO_ROOT = paths.REPO_ROOT
 
@@ -955,7 +954,7 @@ class TestAnUploadIsReadBack:
             d._files[field_id] = ("SomeoneElses_Resume.pdf",)
 
         d.set_files = wrong
-        with pytest.raises(FillError, match="SomeoneElses_Resume.pdf"):
+        with pytest.raises(FillError, match=r"SomeoneElses_Resume.pdf"):
             F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
 
     def test_a_normal_upload_still_reports_attached(self, resume):

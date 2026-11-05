@@ -439,6 +439,7 @@ class TestPlaceNames:
 
     def test_a_bank_row_must_name_a_real_place(self, tmp_path):
         import yaml
+
         from src.apply.answers import AnswersError, load_answers
         data = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(encoding="utf-8"))
         data["work_authorization"]["countries"]["Narnia"] = {

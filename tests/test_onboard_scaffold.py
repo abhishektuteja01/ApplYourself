@@ -124,7 +124,7 @@ class TestSafetyContract:
         assert "would set United States's work authorization: needs_now" in out
 
     def test_dry_run_with_apply_only_prints_the_subprocesses(self, prof, capsys, monkeypatch):
-        def _boom(*a, **k):  # noqa: ANN002
+        def _boom(*a, **k):
             raise AssertionError("--dry-run must not spawn anything")
 
         monkeypatch.setattr(subprocess, "run", _boom)

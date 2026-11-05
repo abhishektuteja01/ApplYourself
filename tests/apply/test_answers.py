@@ -128,7 +128,7 @@ class TestLoad:
         assert answers.questions
 
     def test_missing_file_points_at_the_template(self, tmp_path):
-        with pytest.raises(AnswersError, match="application_answers.example.yaml"):
+        with pytest.raises(AnswersError, match=r"application_answers.example.yaml"):
             load_answers(tmp_path / "nope.yaml")
 
     def test_schema_version_must_match(self, tmp_path):
@@ -144,7 +144,7 @@ class TestLoad:
 
     def test_an_empty_identity_value_is_not_a_value(self, tmp_path, answers):
         identity = dict(answers.identity, phone="   ")
-        with pytest.raises(AnswersError, match="identity.phone"):
+        with pytest.raises(AnswersError, match=r"identity.phone"):
             load_answers(write_config(tmp_path, identity=identity))
 
     def test_a_typo_in_a_block_key_is_not_silently_ignored(self, tmp_path, answers):
@@ -1111,8 +1111,9 @@ class TestSelfIdSignature:
         assert (r.action, r.value) == ("fill", expected)
 
     def test_the_date_is_today_in_the_boards_format(self, tmp_path, monkeypatch):
-        import src.apply.answers as A
         from datetime import date as _date
+
+        import src.apply.answers as A
         monkeypatch.setattr(A, "_today", lambda: _date(2026, 8, 19))
         a = load_answers(write_config(tmp_path))
         r = resolve(self._field("eeo[disabilitySignatureDate]", required=True), a)

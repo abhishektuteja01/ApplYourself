@@ -8,12 +8,22 @@ from dataclasses import dataclass, field, replace
 import pycountry
 
 from src.shared.location.places import (
-    _CITY_NAME_ALIASES, _COMMONLY_ABBREVIATED_CC, _DISTRICT_PREFIXES, _GENERIC_AREA_SUFFIXES,
-    _MIN_LONE_CITY_POPULATION, _SHORT_CODE_MAX_LEN, CC_TO_COUNTRY, CITIES_BY_NAME, COUNTRY_NAMES,
-    COUNTRY_TO_CC, REGION_TOKEN_COUNTRIES, SUBDIVISIONS_BY_CODE, SUBDIVISIONS_BY_NAME, _fold,
+    _CITY_NAME_ALIASES,
+    _COMMONLY_ABBREVIATED_CC,
+    _DISTRICT_PREFIXES,
+    _GENERIC_AREA_SUFFIXES,
+    _MIN_LONE_CITY_POPULATION,
+    _SHORT_CODE_MAX_LEN,
+    CC_TO_COUNTRY,
+    CITIES_BY_NAME,
+    COUNTRY_NAMES,
+    COUNTRY_TO_CC,
+    REGION_TOKEN_COUNTRIES,
+    SUBDIVISIONS_BY_CODE,
+    SUBDIVISIONS_BY_NAME,
+    _fold,
     _normalize_saint,
 )
-
 
 # libpostal is an optional install (`uv sync --group discovery`) because the
 # `postal` binding is sdist-only and compiles against a C library no distro

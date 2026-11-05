@@ -16,10 +16,10 @@ from src.apply.answers import Resolution
 from src.apply.greenhouse import BoardForm, Posting
 from src.apply.plan import (
     FieldPlan,
+    Override,
     Plan,
     PlanError,
     Skipped,
-    Override,
     build_plan,
     find_artifact,
     plan_for_board,
@@ -305,7 +305,9 @@ class TestEmploymentSwitch:
 
     def _answers(self, tmp_path, **employment):
         import yaml
+
         from src.apply.answers import load_answers
+
         from .conftest import FIXTURES
         data = yaml.safe_load(
             (FIXTURES / "application_answers.yaml").read_text(encoding="utf-8")

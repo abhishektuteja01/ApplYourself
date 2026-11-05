@@ -231,7 +231,7 @@ class TestResolveUrl:
 
     def test_unknown_job_id_anywhere(self, repo):
         repo.write_clean(other=GH_URL)
-        with pytest.raises(apply_cli.ApplyCliError, match="neither clean.parquet nor"):
+        with pytest.raises(apply_cli.ApplyCliError, match=r"neither clean.parquet nor"):
             apply_cli.resolve_url(JOB_ID, None)
 
 
@@ -1362,6 +1362,7 @@ class TestARunLearnsWhatWasConfirmed:
 
     def _bank(self, tmp_path, monkeypatch):
         import shutil
+
         from src.apply import bank
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -1532,12 +1533,13 @@ class TestTheSubmitLedger:
 def test_tests_never_touch_the_real_applications_folder():
     from src.shared import paths
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
-    assert paths.REPO_ROOT / "applications" != apply_cli.APPLY_RUNS.parent
+    assert apply_cli.APPLY_RUNS.parent != paths.REPO_ROOT / "applications"
 
 
 class TestKeywordsGeneralize:
     def _bank(self, tmp_path, monkeypatch):
         import shutil
+
         from src.apply import bank
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -1567,6 +1569,7 @@ class TestKeywordsGeneralize:
 
 def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
     import shutil
+
     from src.apply import bank
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -1588,6 +1591,7 @@ class TestEachLessonMustHold:
 
     def _bank(self, tmp_path, monkeypatch):
         import shutil
+
         from src.apply import bank
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -1719,6 +1723,7 @@ class TestTheJobsCountry:
 def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path, monkeypatch):
     import shutil
     from dataclasses import replace
+
     from src.apply import bank
     from src.apply.plan import FieldPlan
     path = tmp_path / "bank.yaml"
@@ -1740,6 +1745,7 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
 
 def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monkeypatch):
     import shutil
+
     from src.apply import bank
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -1754,6 +1760,7 @@ class TestAConfirmedFactJudgmentIsLearned:
 
     def test_it_is_saved_answered_next_time_and_undone(self, tmp_path, monkeypatch):
         import shutil
+
         from src.apply import bank
         from src.apply.answers import load_answers, resolve
         from src.apply.reconcile import MergedField, MergedOption
@@ -1791,6 +1798,7 @@ class TestAConfirmedFactJudgmentIsLearned:
 
 def test_teach_saves_one_answer_and_a_keyword_finds_the_next_wording(tmp_path, capsys):
     import shutil
+
     from src.apply.answers import find_question, load_answers
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)

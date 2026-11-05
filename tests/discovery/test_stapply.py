@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -124,7 +124,7 @@ def test_boards_with_postings_in_the_file_are_covered(cfg, tmp_path, feed):
 
 
 def _manifest(tmp_path, feed, hours_old=2, sha=None):
-    when = datetime.now(timezone.utc) - timedelta(hours=hours_old)
+    when = datetime.now(UTC) - timedelta(hours=hours_old)
     digest = sha or hashlib.sha256(feed.read_bytes()).hexdigest()
     return {"generated_at": when.isoformat(),
             "all": {"parquet": "https://example.test/all.parquet", "parquet_sha256": digest},

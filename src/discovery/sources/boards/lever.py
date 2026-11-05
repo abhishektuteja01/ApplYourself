@@ -1,10 +1,10 @@
 """Lever: one call per board, JDs included."""
 from __future__ import annotations
 
-from src.shared.http_client import fetch_json
 from src.discovery import parse
 from src.discovery.sources.boards.base import Board, BoardLane
 from src.discovery.store import make_posting
+from src.shared.http_client import fetch_json
 
 
 def api_host(region: str = "") -> str:

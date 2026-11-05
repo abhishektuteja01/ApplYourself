@@ -125,7 +125,7 @@ def test_ensure_registers_a_role_only_in_the_store(tmp_path, capsys):
     assert state["state"] == "saved"
     assert state["url"] == "https://new" and state["location"] == "Boston, MA"
 
-    with pytest.raises(SystemExit, match="not in clean.parquet or the jobs store"):
+    with pytest.raises(SystemExit, match=r"not in clean.parquet or the jobs store"):
         track_cli.main(["ensure", "cccccccc"])
 
 

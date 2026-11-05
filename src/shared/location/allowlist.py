@@ -5,8 +5,12 @@ import re
 from dataclasses import dataclass
 
 from src.shared.location.parser import _SEPARATOR_RE, parse_location
-from src.shared.location.places import _fold, canonical_country, CC_TO_COUNTRY, REGION_TOKEN_COUNTRIES
-
+from src.shared.location.places import (
+    CC_TO_COUNTRY,
+    REGION_TOKEN_COUNTRIES,
+    _fold,
+    canonical_country,
+)
 
 # ---------------------------------------------------------------------
 # The allowlist decision, one row at a time

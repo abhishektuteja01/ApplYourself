@@ -362,7 +362,7 @@ class TestPageLoad:
 
 class TestValueOf:
     def test_a_text_field_reads_its_own_value(self):
-        d, page = driver()
+        d, _page = driver()
         d.fill_text("_systemfield_name", "Dana Rivera")
         assert d.value_of("_systemfield_name") == "Dana Rivera"
 
@@ -467,7 +467,7 @@ class TestANumericFieldRefusesProse:
 
     def test_the_role_survives_the_bad_field(self):
         """One failure, and the fields after it still get written."""
-        d, page = driver()
+        d, _page = driver()
         p = Plan(
             job_id="a1b2c3d4", board="gasketworks", token="1",
             form_url="https://jobs.ashbyhq.com/gasketworks/0000/application",
@@ -498,5 +498,5 @@ class TestAshbyIsRegistered:
         manual-apply is the silent gap the shared flag exists to close."""
         from src.apply import detect
         from src.shared.job_boards import SUBMITTABLE_SOURCES
-        assert detect.SUBMITTABLE_ATS == frozenset(F._DRIVER_NAMES)
+        assert frozenset(F._DRIVER_NAMES) == detect.SUBMITTABLE_ATS
         assert detect.SUBMITTABLE_ATS == SUBMITTABLE_SOURCES

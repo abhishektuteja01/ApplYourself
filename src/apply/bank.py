@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import copy
 import os
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -249,7 +249,7 @@ def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
             changes.append(f"not saved: {refusal}")
             continue
         questions = trial.get("questions") or {}
-        if (lesson.misfired and lesson.misfired != lesson.question
+        if (lesson.misfired and lesson.misfired != lesson.question  # noqa: SIM102
                 and lesson.misfired in questions and wording
                 and lesson.question in questions):
             # Only once the right answer is saved: a "not" with nowhere else

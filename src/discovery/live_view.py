@@ -14,8 +14,8 @@ from pathlib import Path
 import pandas as pd
 
 from src.discovery import parse
-from src.discovery.config import JOBSPY_SOURCES
 from src.discovery import store as store_mod
+from src.discovery.config import JOBSPY_SOURCES
 from src.discovery.store import coerce_store
 from src.shared import paths, title_gate
 from src.shared.job_boards import is_applyable

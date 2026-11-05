@@ -20,11 +20,11 @@ import openpyxl
 import pandas as pd
 import yaml
 
-from src.shared import paths
-from src.shared.config_keys import load_automation
 from src import state_io
 from src.app_cli import built_folder
 from src.apply import detect, ledger
+from src.shared import paths
+from src.shared.config_keys import load_automation
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note",
            "uv_run_command")

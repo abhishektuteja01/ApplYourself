@@ -21,13 +21,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.shared import paths
-from src.shared.http_client import CareersError
-from src.shared.job_boards import ATS_SOURCE_NAMES, parse_posting_url
 from src.discovery import parse
-from src.shared import title_gate
 from src.discovery.config import pacing_floor
 from src.discovery.sources.lane import Lane, LaneStats
+from src.shared import paths, title_gate
+from src.shared.http_client import CareersError
+from src.shared.job_boards import ATS_SOURCE_NAMES, parse_posting_url
 from src.shared.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)

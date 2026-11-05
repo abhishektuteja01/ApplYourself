@@ -10,8 +10,8 @@ import pytest
 import yaml
 
 from src import score_cli, score_store
-from src.shared import verticals
 from src.score_filter import SCORING_PATH, CountryRule, load_scoring
+from src.shared import verticals
 
 NOW = datetime(2026, 9, 27, 12, 0)
 RULE = CountryRule(home=frozenset({"us"}), abroad={"germany": frozenset({"example_secondary"})})
@@ -212,7 +212,7 @@ class TestFinish:
         _start(env, scfg)
         run = score_store.load_run(env["staging"])
         answers = {j: _answer(j) for m in run["slices"].values() for j in m["job_ids"]}
-        first, second = list(run["slices"])
+        _first, second = list(run["slices"])
         answers[run["slices"][second]["job_ids"][0]]["title"] = 99
         _write_answers(env, run["slices"], answers)
         res = _finish(env, scfg)

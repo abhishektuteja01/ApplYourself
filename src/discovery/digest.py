@@ -108,7 +108,7 @@ def board_summary(path: Path | None = None) -> dict:
         return {}
     out = {}
     for ats, g in state.groupby("ats"):
-        out[ats] = {"boards": int(len(g)), "dead": int((g["status"] == "dead").sum()),
+        out[ats] = {"boards": len(g), "dead": int((g["status"] == "dead").sum()),
                     "never_found": int(g["last_found"].isna().sum())}
     return out
 

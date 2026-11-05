@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from src.shared import paths, verticals
 from src import resume_model
+from src.shared import paths, verticals
 
 PROFILE = paths.PROFILE
 
@@ -126,9 +126,9 @@ def test_bullets_render_in_canonical_order_whatever_the_plan_order(world):
     plan = _plan(src, "example_primary", entries=[{"id": "B-WID-03"}, {"id": "B-WID-01"},
                                                   {"id": "B-WID-02"}, {"id": "B-SPR-01"}])
     md = resume_model.build(src, "example_primary", plan).markdown
-    lines = [l for l in md.split("\n") if l.startswith("* ")]
+    lines = [ln for ln in md.split("\n") if ln.startswith("* ")]
     wid = [src.bullets[b]["canonical"][:20] for b in ("B-WID-01", "B-WID-02", "B-WID-03")]
-    assert [l[2:22] for l in lines[:3]] == wid
+    assert [ln[2:22] for ln in lines[:3]] == wid
 
 
 @pytest.mark.parametrize("entries,code", [

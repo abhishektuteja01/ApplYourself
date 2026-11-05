@@ -397,7 +397,8 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     problems: list[Problem] = []
     swapped: list[str] = []
     keep = keep_terms(src, company)
-    fix = lambda t: lint.fix_mechanical(t, src.rules)[0]
+    def fix(t):
+        return lint.fix_mechanical(t, src.rules)[0]
 
     def lint_problems(text: str, where: str) -> list[Problem]:
         return [Problem(where, "lint", f"banned phrase {x['phrase']!r} ({x['category']})")

@@ -7,14 +7,15 @@ import json
 import pandas as pd
 import pytest
 
-from src.discovery import digest, ingest_url, run as R, store as S
-
-from src.discovery import live_view
+from src.discovery import digest, ingest_url, live_view
+from src.discovery import run as R
+from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
-from src.shared.location.allowlist import Allowed
+from src.discovery.sources import inbox as I
+from src.discovery.sources import search as Q
 from src.discovery.sources.boards import base as B
-from src.discovery.sources import inbox as I, search as Q
 from src.discovery.sources.lane import Lane
+from src.shared.location.allowlist import Allowed
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build and ship widget reconciliation systems for finance teams every day. " * 5

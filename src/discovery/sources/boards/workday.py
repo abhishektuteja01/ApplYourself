@@ -12,10 +12,10 @@ from __future__ import annotations
 import random
 import re
 
-from src.shared.http_client import fetch_json, fetch_json_post
 from src.discovery import parse
 from src.discovery.sources.boards.base import Board, BoardLane
 from src.discovery.store import make_posting
+from src.shared.http_client import fetch_json, fetch_json_post
 
 # Workday's server-side page-size ceiling: 21 fails, 20 succeeds.
 LIST_LIMIT = 20

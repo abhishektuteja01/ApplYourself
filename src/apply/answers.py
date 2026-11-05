@@ -26,12 +26,13 @@ import re
 import unicodedata
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from itertools import pairwise
 from pathlib import Path
 
 import yaml
 
-from src.shared import paths
 from src.apply.reconcile import MergedField
+from src.shared import paths
 
 PROFILE = paths.PROFILE
 DEFAULT_PATH = PROFILE / "application_answers.yaml"
@@ -450,7 +451,7 @@ def _either_place(label: str) -> bool:
     or in the future")."""
     hits = _place_hits(label)
     folded = _fold_accents(label)
-    return any(_OR_BETWEEN.search(folded[a[1]:b[0]]) for a, b in zip(hits, hits[1:])
+    return any(_OR_BETWEEN.search(folded[a[1]:b[0]]) for a, b in pairwise(hits)
                if a[2] != b[2])
 
 

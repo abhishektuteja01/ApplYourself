@@ -10,13 +10,13 @@ page, a page with nothing that passes the gate, or `max_pages`.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote
 
-from src.shared.http_client import CareersError, fetch_json
 from src.discovery import parse
 from src.discovery.sources.boards.base import Board, BoardLane
 from src.discovery.store import make_posting
+from src.shared.http_client import CareersError, fetch_json
 
 PAGE_SIZE = 10  # the APIs ignore a larger `num`
 # What a tenant without PCSX answers on it.
@@ -39,7 +39,7 @@ def epoch_date(value):
     if not isinstance(value, (int, float, str)) or isinstance(value, bool):
         return None
     try:
-        return datetime.fromtimestamp(float(value), tz=timezone.utc).date()
+        return datetime.fromtimestamp(float(value), tz=UTC).date()
     except (ValueError, OSError, OverflowError):
         return None
 

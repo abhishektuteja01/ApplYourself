@@ -16,8 +16,8 @@ import pytest
 
 from src.apply import ashby
 from src.apply.ashby import (
-    AshbyScanError,
     ApplyUrlError,
+    AshbyScanError,
     PostingExpired,
     fields_from_application_form,
     load_board,

@@ -1,7 +1,6 @@
 """Tests for src/lint.py — deterministic two-tier linter."""
 from __future__ import annotations
 
-
 import pytest
 
 from src.lint import (
@@ -10,7 +9,6 @@ from src.lint import (
     fix_mechanical,
     load_de_ai_rules,
 )
-
 
 # ---------- helpers ----------
 

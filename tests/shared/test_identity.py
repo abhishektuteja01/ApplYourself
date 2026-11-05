@@ -10,7 +10,6 @@ import pytest
 from src.shared import identity
 from src.shared.job_boards import ATS_SOURCE_NAMES, board_slug, is_applyable
 
-
 GOLDEN = [
     ("Anthropic", "Applied AI Engineer", "anthropic", "applied ai engineer", "1163cbe5"),
     ("OpenAI, Inc.", "Software Engineer, Codex", "openai", "software engineer codex", "291f16d1"),

@@ -96,7 +96,7 @@ def _notify(**event) -> None:
         return
     try:
         fn(event)
-    except Exception:  # noqa: BLE001 -- a broken trace must never fail a fetch
+    except Exception:  # a broken trace must never fail a fetch
         log.warning("http_client observer failed", exc_info=True)
 
 

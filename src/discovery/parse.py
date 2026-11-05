@@ -6,12 +6,11 @@ from __future__ import annotations
 import html as html_mod
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
 from src.shared.identity import normalize_company
-
 
 # Shorter than this is a JS shell or a truncated fetch, not a JD.
 MIN_JD_CHARS = 200
@@ -161,7 +160,7 @@ def iso_date(value) -> date | None:
     except ValueError:
         return None
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc)
+        parsed = parsed.astimezone(UTC)
     return parsed.date()
 
 
@@ -170,7 +169,7 @@ def ms_date(value) -> date | None:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return None
     try:
-        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).date()
+        return datetime.fromtimestamp(value / 1000, tz=UTC).date()
     except (ValueError, OSError, OverflowError):
         return None
 

@@ -37,11 +37,11 @@ import pandas as pd
 import yaml
 
 from src import lint, resume_model, state_io, track_cli
-from src.shared import paths, verticals
 from src.apply import ledger
 from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
 from src.docx_render import ResumeContentError, TemplateError, export_pdf, render_resume
+from src.shared import paths, verticals
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED
@@ -378,7 +378,8 @@ def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = Fals
     uses = [str(u) for u in data.get("uses") or []]
     if not uses:
         problems.append({"where": "uses", "code": "layout", "detail": "cite the bullets the letter draws on"})
-    fix = lambda t: lint.fix_mechanical(t.strip(), src.rules)[0]
+    def fix(t):
+        return lint.fix_mechanical(t.strip(), src.rules)[0]
     salutation = fix(salutation)
     body = [fix(p) for p in body]
     problems += _prose_problems(src, "salutation", salutation, [], "", keep)

@@ -112,9 +112,9 @@ def same_company(a: str, b: str) -> bool:
     short, long = sorted((wa, wb), key=len)
     if len(short) < len(long) and long[:len(short)] == short and len("".join(short)) >= WORD_PREFIX_MIN:
         return True
-    (s, ws), (l, wl) = sorted(((sa, wa), (sb, wb)), key=lambda x: len(x[0]))
+    (s, ws), (lg, wl) = sorted(((sa, wa), (sb, wb)), key=lambda x: len(x[0]))
     return ((len(ws) == 1 or len(wl) == 1) and len(s) >= GLUED_MIN
-            and l.startswith(s) and len(l) - len(s) >= GLUED_REST)
+            and lg.startswith(s) and len(lg) - len(s) >= GLUED_REST)
 
 
 Trim = tuple[tuple[str, ...], tuple[str, ...]]

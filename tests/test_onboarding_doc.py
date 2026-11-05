@@ -10,6 +10,7 @@ itself. Nothing here imports `src/` or runs a command.
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -85,7 +86,7 @@ def steps(doc) -> dict:
     matches = list(STEP_HEADING_RE.finditer(doc))
     assert matches, "no `## Step N — title (~N min, N questions)` headings found"
     out = {}
-    for i, m in enumerate(matches):
+    for m in matches:
         num = int(m.group("num"))
         meta = m.group("meta")
         mins = re.search(r"~(\d+) min\b", meta)
@@ -195,7 +196,7 @@ class TestPositionLines:
         for m in POSITION_LINE_RE.finditer(doc):
             mins = re.search(r"~(\d+) min left", m.group("left"))
             left.append((int(m.group("num")), int(mins.group(1)) if mins else 0))
-        for (a_num, a), (b_num, b) in zip(left, left[1:]):
+        for (a_num, a), (b_num, b) in pairwise(left):
             assert b <= a, (
                 f"position line for step {b_num} claims {b} min left, more than step "
                 f"{a_num}'s {a} — a renumber left a stale figure")

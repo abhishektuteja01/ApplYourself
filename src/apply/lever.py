@@ -39,8 +39,8 @@ from lxml.etree import ParserError
 from src.apply.domscan import DomScanError
 from src.apply.greenhouse import ApplyUrlError, PostingExpired
 from src.apply.reconcile import MergedField, MergedOption, Reconciled
-from src.shared.http_client import CareersError, fetch_text
 from src.shared import job_boards
+from src.shared.http_client import CareersError, fetch_text
 
 FORM_ID = "application-form"
 

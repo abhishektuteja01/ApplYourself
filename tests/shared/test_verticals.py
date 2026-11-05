@@ -228,7 +228,7 @@ class TestMainCli:
                            ("SKILLS", "skills_master.example.md")):
             monkeypatch.setattr(resume_model, attr, REPO_ROOT / "profile" / name)
         cfg = verticals.load_verticals(FIXTURE_PATH)
-        for name, v in cfg.verticals.items():
+        for name in cfg.verticals:
             d = tmp_path / "profile" / "verticals" / name
             d.mkdir(parents=True)
             for fname in ("rubric.md", "tailoring.md"):

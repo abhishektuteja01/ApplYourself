@@ -8,9 +8,10 @@ import html
 import re
 from urllib.parse import parse_qsl, quote, urlsplit
 
-from src.shared.job_boards import parse_posting_url
 from src.discovery import parse
 from src.shared import identity
+from src.shared.job_boards import parse_posting_url
+
 # The parts of a requisition that are the role; the corporate blurb is not.
 JD_FIELDS = ("ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr")
 

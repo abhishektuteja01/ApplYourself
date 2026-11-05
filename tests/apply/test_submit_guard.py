@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from src.shared import paths
 from src.apply import fill as F
 from src.apply.fill import FillResult, SubmitGuardError, run_one, submit
 from src.apply.plan import Plan, Unmapped
+from src.shared import paths
 
 REPO_ROOT = paths.REPO_ROOT
 

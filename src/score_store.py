@@ -23,8 +23,6 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from src.shared import paths, verticals
-from src.shared.parquet_io import locked, write_parquet
 from src.score_filter import (
     SPONSORSHIP_FACTS,
     CountryRule,
@@ -39,6 +37,8 @@ from src.score_filter import (
     wrap,
     years_required,
 )
+from src.shared import paths, verticals
+from src.shared.parquet_io import locked, write_parquet
 from src.state_io import ACTIVE_STATES, load_state_index
 
 SCORED_COLUMNS: list[str] = [

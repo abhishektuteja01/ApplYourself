@@ -22,8 +22,8 @@ from datetime import datetime
 from pathlib import Path
 
 from src import apply_cli, track_cli
-from src.shared import paths
 from src.apply import sheet
+from src.shared import paths
 
 TRIAGE = paths.JOBS / "apply_triage.json"
 

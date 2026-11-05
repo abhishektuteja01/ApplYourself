@@ -10,16 +10,15 @@ from __future__ import annotations
 import re
 import textwrap
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from src.shared import paths
-from src.shared import verticals
-from src.shared import jd_trim
+from src.shared import jd_trim, paths, verticals
 from src.shared.config_keys import check_keys
+
 SCORING_PATH = paths.PROFILE / "scoring.yaml"
 _SCHEMA_VERSION = 1
 _SCORING_KEYS = {
@@ -171,7 +170,7 @@ def normalize(text: Any) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-@lru_cache(maxsize=None)
+@cache
 def _phrase_re(phrases: tuple[str, ...]) -> re.Pattern | None:
     if not phrases:
         return None
@@ -347,7 +346,7 @@ class CountryRule:
     abroad: dict[str, frozenset[str]]
 
     @classmethod
-    def from_discovery(cls, dcfg) -> "CountryRule":
+    def from_discovery(cls, dcfg) -> CountryRule:
         abroad = {normalize(c): frozenset(v) for c, v in dcfg.abroad_lanes().items()}
         allowed = {normalize(c) for c in dcfg.location_allowlist.effective_countries()}
         return cls(home=frozenset(allowed - set(abroad)), abroad=abroad)

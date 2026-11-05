@@ -26,8 +26,8 @@ def test_a_missing_ledger_is_empty(tmp_path):
 
 
 def test_registration_refuses_a_role_the_ledger_says_was_sent(tmp_path, monkeypatch, capsys):
-    from src.shared import paths
     from src import track_cli
+    from src.shared import paths
     ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "aaaa1111",
                   "accepted", at="2026-08-12T20:38:54")
     assert track_cli.main(["ensure", "aaaa1111"]) == 1
@@ -36,8 +36,8 @@ def test_registration_refuses_a_role_the_ledger_says_was_sent(tmp_path, monkeypa
 
 
 def test_a_rejected_submit_does_not_block_registration(tmp_path, monkeypatch):
-    from src.shared import paths
     from src import track_cli
+    from src.shared import paths
     monkeypatch.setattr(track_cli, "_gather_initial_fields", lambda job_id: {"job_id": job_id, "company": "Acme", "title": "Engineer"})
     ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "bbbb2222",
                   "rejected")

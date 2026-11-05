@@ -30,7 +30,7 @@ class TestLoadBrowserConfig:
 
     def test_an_unknown_driver_is_refused_rather_than_silently_ignored(self, tmp_path):
         p = self._write(tmp_path, "schema_version: 2\nbrowser:\n  driver: selenium\n")
-        with pytest.raises(B.BrowserConfigError, match="browser.driver"):
+        with pytest.raises(B.BrowserConfigError, match=r"browser.driver"):
             B.load_browser_config(p)
 
     def test_a_non_mapping_browser_block_is_refused(self, tmp_path):

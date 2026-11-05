@@ -26,20 +26,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.shared import http_client, paths, verticals
-from src.shared.job_boards import ATS_SOURCE_NAMES
 from src.discovery import dedupe, live_view
 from src.discovery import store as S
-from src.score_filter import load_trim
 from src.discovery.config import LANE_KINDS, SOURCE_NAMES, load_config
 from src.discovery.sources.boards import base as B
 from src.discovery.sources.boards.ashby import AshbyLane
 from src.discovery.sources.boards.eightfold import EightfoldLane
 from src.discovery.sources.boards.greenhouse import GreenhouseLane
-from src.discovery.sources.inbox import InboxLane
 from src.discovery.sources.boards.lever import LeverLane
-from src.discovery.sources.feed.stapply import StapplyLane
 from src.discovery.sources.boards.workday import WorkdayLane
+from src.discovery.sources.feed.stapply import StapplyLane
+from src.discovery.sources.inbox import InboxLane
+from src.score_filter import load_trim
+from src.shared import http_client, paths, verticals
+from src.shared.job_boards import ATS_SOURCE_NAMES
 from src.shared.parquet_io import write_parquet
 from src.state_io import load_state_index
 
@@ -130,7 +130,7 @@ class Writer:
         while not self._stop.wait(FLUSH_SECONDS):
             try:
                 self.flush()
-            except Exception:  # noqa: BLE001 -- the final flush re-raises
+            except Exception:  # the final flush re-raises
                 log.exception("periodic store flush failed; will retry")
 
     def flush(self) -> None:
@@ -153,7 +153,7 @@ def _run_lane(lane, crawl) -> dict:
     try:
         with http_client.observe(tally.on_http):
             stats = lane.run(crawl, tally)
-    except Exception:  # noqa: BLE001 -- one lane's crash costs the others nothing
+    except Exception:  # one lane's crash costs the others nothing
         log.exception("lane %s crashed; continuing", lane.name)
         return {"status": "crashed", "duration_s": round(time.time() - t0, 1),
                 "crash": traceback.format_exc().rstrip(), "http": tally.totals()}

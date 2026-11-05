@@ -29,11 +29,17 @@ happily upload.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
 
 from src.apply.answers import (
-    Answers, Resolution, match_option, resolve, resolve_fact_wording, similar_questions,
+    Answers,
+    Resolution,
+    match_option,
+    resolve,
+    resolve_fact_wording,
+    similar_questions,
 )
 from src.apply.reconcile import MergedField, Reconciled
 

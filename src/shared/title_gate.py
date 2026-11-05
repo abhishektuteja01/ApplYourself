@@ -6,7 +6,6 @@ from functools import lru_cache
 
 from src.shared import verticals
 
-
 # ---------------------------------------------------------------------
 # vertical classifier and title gate
 # ---------------------------------------------------------------------

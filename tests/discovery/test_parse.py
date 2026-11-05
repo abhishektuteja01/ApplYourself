@@ -7,7 +7,6 @@ import pytest
 
 from src.discovery import parse
 
-
 # ---------- html and dates ----------
 
 def test_html_drops_script_bodies():

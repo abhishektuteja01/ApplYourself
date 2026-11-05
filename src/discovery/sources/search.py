@@ -19,11 +19,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from src.discovery import parse
-
-from src.shared import title_gate
 from src.discovery.config import MIN_PAGE_DELAY_SECONDS, pacing_floor
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
+from src.shared import title_gate
 
 DESCRIPTION_FORMAT = "markdown"
 DETAIL_PACING_SECONDS = 1.0

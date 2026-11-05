@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from src.shared.http_client import CareersError, fetch_json, fetch_json_post
 from src.discovery import parse
 from src.discovery.sources.boards.base import Board, BoardLane, job_items
 from src.discovery.store import make_posting
+from src.shared.http_client import CareersError, fetch_json, fetch_json_post
 
 API = "https://api.ashbyhq.com/posting-api/job-board"
 GRAPHQL_URL = "https://jobs.ashbyhq.com/api/non-user-graphql"

@@ -16,7 +16,7 @@ import hashlib
 import logging
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -24,17 +24,16 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src.shared import http_client
-from src.shared.job_boards import ATS_SOURCE_NAMES
-from src.shared.http_client import CareersError
 from src.discovery import parse
-from src.shared import identity, title_gate
-from src.shared.location.parser import parse_location
-from src.shared.location.places import CC_TO_COUNTRY
-from src.discovery.sources.feed import oracle
 from src.discovery.sources.boards.base import board_key_of, load_boards
+from src.discovery.sources.feed import oracle
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
+from src.shared import http_client, identity, title_gate
+from src.shared.http_client import CareersError
+from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.shared.location.parser import parse_location
+from src.shared.location.places import CC_TO_COUNTRY
 
 log = logging.getLogger(__name__)
 
@@ -56,8 +55,8 @@ def snapshot_age_hours(generated_at: str, now: datetime | None = None) -> float 
     except ValueError:
         return None
     if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return ((now or datetime.now(timezone.utc)) - when).total_seconds() / 3600
+        when = when.replace(tzinfo=UTC)
+    return ((now or datetime.now(UTC)) - when).total_seconds() / 3600
 
 
 def sha256_of(path: Path) -> str:

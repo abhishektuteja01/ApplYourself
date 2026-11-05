@@ -17,10 +17,10 @@ from pathlib import Path
 import pandas as pd
 
 from src import contacts
-from src.shared import verticals
 from src.apply.detect import is_auto_submittable
 from src.score_filter import ScoringConfig
 from src.score_store import read_scored
+from src.shared import verticals
 from src.state_io import load_state_index
 
 _JOB_ID_RE = re.compile(r"`([0-9a-f]{8})`")

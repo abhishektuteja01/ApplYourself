@@ -20,15 +20,14 @@ import sys
 
 import pandas as pd
 
-from src.shared import http_client as http
-from src.shared import paths, verticals
-from src.shared.job_boards import parse_posting_url
 from src.discovery import parse
-from src.shared import title_gate
 from src.discovery import store as S
 from src.discovery.config import load_config
 from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.score_filter import load_trim
+from src.shared import http_client as http
+from src.shared import paths, title_gate, verticals
+from src.shared.job_boards import parse_posting_url
 from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
@@ -84,7 +83,7 @@ def fetch_row(url: str, *, company: str | None = None, title: str | None = None)
 def fetch_page_text(url: str) -> str:
     try:
         status, body = http.fetch_page(url)
-    except Exception as exc:  # noqa: BLE001 -- any transport failure is one message
+    except Exception as exc:  # any transport failure is one message
         raise IngestError(f"ERROR: fetch failed: {url}: {exc}") from exc
     if status != 200:
         raise IngestError(f"ERROR: HTTP {status} fetching {url} — the posting may be gone "
@@ -96,9 +95,9 @@ def fetch_page_text(url: str) -> str:
 def ingest(url: str, *, vertical: str | None = None, company: str | None = None,
            title: str | None = None, jobs_dir=None) -> dict:
     """Fetch, save into the store, rebuild clean.parquet, return the row."""
-    from src.shared.location.allowlist import Allowlist
     from src.discovery.live_view import rebuild_view
     from src.discovery.run import Paths
+    from src.shared.location.allowlist import Allowlist
 
     p = Paths(jobs=jobs_dir or paths.JOBS)
     if not p.store.exists():

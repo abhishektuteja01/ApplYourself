@@ -229,9 +229,9 @@ class TestFetchForm:
         from src.shared.http_client import CareersError
 
         posting = parse_posting("https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001")
-        with patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)):
-            with pytest.raises(PostingExpired):
-                fetch_form(posting)
+        with (patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)),
+              pytest.raises(PostingExpired)):
+            fetch_form(posting)
 
 
 class TestLoadBoard:
@@ -265,12 +265,11 @@ class TestLoadBoard:
             '<button type="button" data-qa="btn-submit">Save for later</button></form>',
             1,
         )
-        with patch("src.apply.lever.fetch_text", return_value=html):
-            with pytest.raises(LeverScanError,
-                               match="expected one submit button, found 2"):
-                load_board(
-                    "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
-                )
+        with (patch("src.apply.lever.fetch_text", return_value=html),
+              pytest.raises(LeverScanError, match="expected one submit button, found 2")):
+            load_board(
+                "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+            )
 
     def test_plan_for_board_carries_ats_and_captcha_through(self, answers, tailor_dir):
         html = load_html("form_lever_minimal")

@@ -21,11 +21,11 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src.shared import paths
 from src import state_io, synonyms_cli
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
+from src.shared import paths
 
 LOGS = paths.REPO_ROOT / "logs"
 OUT = paths.REPO_ROOT / "summary.md"

@@ -44,7 +44,7 @@ def test_valid_states_count_and_terminal_subset():
     assert len(VALID_STATES) == 11
     assert TERMINAL_STATES <= VALID_STATES
     assert len(TERMINAL_STATES) == 4
-    assert TERMINAL_STATES == {"offer", "rejected", "withdrawn", "ghosted"}
+    assert {"offer", "rejected", "withdrawn", "ghosted"} == TERMINAL_STATES
     assert ACTIVE_STATES.isdisjoint(TERMINAL_STATES)
     assert "skip" in CLOSED_STATES and "skip" not in TERMINAL_STATES
 
@@ -416,6 +416,7 @@ def test_ensure_state_preserves_applied_at_and_history(tmp_path):
 def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
     """A second writer waits for the first instead of writing over it."""
     import threading
+
     from src.state_io import update
 
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
