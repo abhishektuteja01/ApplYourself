@@ -265,6 +265,13 @@ def test_a_missing_value_no_config_key_fills_gets_its_own_cue():
     assert M.CUES["missing_other"] in out and M.CUES["missing"] not in out
 
 
+def test_a_board_rejection_is_not_listed_as_unsent():
+    out = M.apply_section([_row("r1", "Rejected by board", "rejected by the board: duplicate")],
+                          _items(roles={}), {})
+    assert "- r1: rejected by the board: duplicate" in out
+    assert M.CUES["apply_rejected"] in out and M.CUES["apply_unsent"] not in out
+
+
 def test_every_waiting_role_is_listed():
     rows = [_row(f"w{i}", "Needs your OK", "n") for i in range(8)]
     out = M.apply_section(rows, _items(roles={}), {})

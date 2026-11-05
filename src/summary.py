@@ -53,6 +53,8 @@ CUES = {
     "apply_expired": "→ Expired: `uv run track <id> skip`.",
     "apply_failed": "→ Failed: `uv run apply plan <id> --questions` shows what the form needs now.",
     "apply_unsent": "→ Unsent: the click fired no submit request or the board refused it; check the board by hand.",
+    "apply_rejected": ("→ Rejected by board: the board declined the application; clicking again will not change it. "
+                       "Read its message on the board."),
     "sheet": "→ If the posting is gone: `uv run track <id> skip`, and it leaves the sheet.",
     "answers": ("→ For each answer the user approves: `uv run apply teach --question-id <bank id> --label \"<label>\" "
                 "--value \"<value>\" --job <id>` (one per distinct label). Then `uv run apply triage --fill --job-id <id> "
@@ -465,7 +467,8 @@ def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str],
         lines += ["", CUES["ready"]]
 
     errors: dict[str, tuple[str, str]] = {}            # job -> (kind, why)
-    errors.update({r["name"]: ("unsent", r["note"] or r["status"]) for r in of("Unsent", "Rejected by board")})
+    errors.update({r["name"]: ("unsent", r["note"] or r["status"]) for r in of("Unsent")})
+    errors.update({r["name"]: ("rejected", r["note"] or r["status"]) for r in of("Rejected by board")})
     errors.update({r["name"]: ("failed", r["note"]) for r in of("Parked")
                    if r["note"].startswith("failed:")})
     errors.update({r["name"]: ("expired", "posting gone (expired), mark it skip or leave it")
@@ -484,7 +487,7 @@ def apply_section(rows: list[dict], items: dict, unreadable: dict[str, str],
     if older:
         lines += ["", f"**Still open from earlier nights ({len(older)})**",
                   *[f"- {j} ({when(j):%Y-%m-%d}): {why}" for j, (_, why) in older.items()]]
-    for kind in ("expired", "failed", "unsent"):
+    for kind in ("expired", "failed", "unsent", "rejected"):
         if any(k == kind for k, _ in errors.values()):
             lines += ["", CUES[f"apply_{kind}"]]
 
