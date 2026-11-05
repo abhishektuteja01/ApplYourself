@@ -23,7 +23,7 @@ echo "=== pipeline start $STAMP (run dir $RUN_DIR dry_run=$DRY_RUN) ===" | tee -
 
 # Keep log_keep_days (profile/discovery.yaml) of run folders; a config that
 # fails to load skips the prune.
-KEEP="$("$UV" run python -c 'from src.discovery.config import load_config; print(load_config().log_keep_days)' 2>/dev/null)"
+KEEP="$("$UV" run config get discovery log_keep_days 2>/dev/null)"
 if [[ "$KEEP" =~ ^[0-9]+$ && "$DRY_RUN" != 1 ]]; then
   find "$REPO/logs" -maxdepth 1 -type d -name 'pipeline_*' -mtime +"$KEEP" -exec rm -rf {} +
 fi

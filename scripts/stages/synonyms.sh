@@ -29,12 +29,5 @@ run_claude auto "$TOOLS" "/suggest-synonyms --auto" || {
 if [[ -f jobs/synonyms_proposals.yaml ]]; then
   "$UV" run synonyms apply || { stage_end 1 "synonyms apply failed"; exit 1; }
 fi
-ADDED="$("$UV" run python - <<'PY'
-import json, datetime
-from src import synonyms_cli as S
-today = datetime.date.today().isoformat()
-rows = [json.loads(x) for x in S.LOG.read_text(encoding="utf-8").splitlines()] if S.LOG.exists() else []
-print(sum(r["date"] == today for r in rows))
-PY
-)"
+ADDED="$("$UV" run synonyms added)"
 stage_end 0 "$ROLES roles, $ADDED synonyms added today"

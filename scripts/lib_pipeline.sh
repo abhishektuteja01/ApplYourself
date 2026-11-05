@@ -21,21 +21,7 @@ export RUN_DIR DRY_RUN
 
 # cfg KEY: one value from profile/automation.yaml. A missing key is an error,
 # so the numbers live in the config, not here.
-cfg() {
-  "$UV" run python - "$1" <<'PY'
-import sys
-from src.shared import paths
-from src.shared.config_keys import load_automation
-try:
-    data = load_automation(paths.PROFILE / "automation.yaml")
-except ValueError as exc:
-    sys.exit(str(exc))
-key = sys.argv[1]
-if key not in data:
-    sys.exit(f"automation.yaml has no `{key}`")
-print(data[key])
-PY
-}
+cfg() { "$UV" run config get automation "$1"; }
 
 now() { date +%Y-%m-%d_%H%M%S; }
 

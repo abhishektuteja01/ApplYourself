@@ -16,6 +16,9 @@ The role folder is the only state these commands share:
   build letter <job_id>
   build answers <job_id>
   dupes <job_id>                other ids that may be this role, already in play
+  lint outreach <draft> --company C [--recipient R]
+                                fix the draft's mechanical slips in place, list
+                                the phrase violations left
 
 Every command prints one JSON object. Exit 0 = ok, 2 = problems for the
 session to fix (listed in "problems"), 1 = cannot run.
@@ -445,6 +448,16 @@ def cmd_dupes(job_id: str) -> dict:
     return {"job_id": job_id, "duplicates": sorted(found.values(), key=lambda h: h["job_id"])}
 
 
+def cmd_lint_outreach(draft: str, company: str, recipient: str | None) -> dict:
+    path = Path(draft)
+    src = resume_model.load_sources()
+    fixed, subs = lint.fix_mechanical(path.read_text(encoding="utf-8"), src.rules)
+    path.write_text(fixed, encoding="utf-8")
+    keep = resume_model.keep_terms(src, company, *([recipient] if recipient else []))
+    return {"mech_subs": len(subs),
+            "violations": lint.find_phrase_violations(fixed, context="outreach", rules=src.rules, keep=keep)}
+
+
 # =====================================================================
 # CLI
 # =====================================================================
@@ -467,6 +480,11 @@ def main(argv: list[str] | None = None) -> int:
                          help="resume only: fall back to canonical text where a rewording fails")
     p_build.add_argument("--no-pdf", action="store_true",
                          help="resume/letter: pass without a pdf page count")
+    p_lint = sub.add_parser("lint")
+    p_lint.add_argument("what", choices=["outreach"])
+    p_lint.add_argument("draft")
+    p_lint.add_argument("--company", required=True)
+    p_lint.add_argument("--recipient", default=None)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     try:
         if args.cmd == "new":
@@ -475,6 +493,8 @@ def main(argv: list[str] | None = None) -> int:
             return _emit(role_info(args.job_id))
         if args.cmd == "dupes":
             return _emit(cmd_dupes(args.job_id))
+        if args.cmd == "lint":
+            return _emit(cmd_lint_outreach(args.draft, args.company, args.recipient))
         if args.what == "resume":
             out, code = cmd_build_resume(args.job_id, final=args.final, no_pdf=args.no_pdf)
         elif args.what == "letter":

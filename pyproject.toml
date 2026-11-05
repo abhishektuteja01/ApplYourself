@@ -55,6 +55,7 @@ discover-dupes = "src.discovery.dedupe:main"
 apply = "src.apply_cli:main"
 synonyms = "src.synonyms_cli:main"
 summary = "src.summary:main"
+config = "src.config_cli:main"
 
 [dependency-groups]
 dev = [

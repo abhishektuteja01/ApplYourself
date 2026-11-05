@@ -19,23 +19,7 @@ writes a single `pipeline.md` rollup, and MUST NOT mutate any state.yaml.
 # Every path below is repo-relative, and src/ resolves its own paths from
 # the repo root — so anchor the shell there too.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
-uv run python <<'PYEOF'
-import json
-from pathlib import Path
-from src.state_io import load_all_states
-from src.state_io import ACTIVE_STATES, CLOSED_STATES
-states = load_all_states(Path("pipeline"))
-def jsonable(d):
-    return {k: (str(v) if not isinstance(v, (str, int, float, bool, list, dict, type(None))) else v)
-            for k, v in d.items()}
-out = {
-    "states":         [jsonable(s) for s in states],
-    "active_states":  sorted(ACTIVE_STATES),
-    "closed_states":  sorted(CLOSED_STATES),
-}
-Path("/tmp/standup_states.json").write_text(json.dumps(out, indent=2, default=str))
-print(f"loaded {len(states)} state.yaml file(s)")
-PYEOF
+uv run track states > /tmp/standup_states.json
 ```
 
 Read `/tmp/standup_states.json`. If there are zero states, write a

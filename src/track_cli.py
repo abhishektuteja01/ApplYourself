@@ -12,6 +12,8 @@
   outreach-sent <job_id> --channel C --to "N"
                               flip the latest matching draft outreach[]
                               entry to sent
+  states                      every state.yaml, with the active and closed
+                              state names, as JSON (read-only)
   ensure <job_id>             create state.yaml at `saved` if absent; no-op if
                               present. Bootstrap only, never a transition --
                               `app new` calls it so a re-tailor cannot rewind
@@ -23,6 +25,7 @@ Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 import pandas as pd
@@ -30,9 +33,12 @@ import pandas as pd
 from src.apply import ledger
 from src.shared import paths
 from src.state_io import (
+    ACTIVE_STATES,
+    CLOSED_STATES,
     VALID_STATES,
     append_outreach_draft,
     ensure_state,
+    load_all_states,
     load_state,
     mark_outreach_sent,
     state_path_for,
@@ -199,8 +205,21 @@ def _cmd_outreach_draft(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_states() -> int:
+    def jsonable(d: dict) -> dict:
+        return {k: (v if isinstance(v, (str, int, float, bool, list, dict, type(None))) else str(v))
+                for k, v in d.items()}
+    out = {"states": [jsonable(s) for s in load_all_states(paths.PIPELINE)],
+           "active_states": sorted(ACTIVE_STATES), "closed_states": sorted(CLOSED_STATES)}
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+
+    if argv == ["states"]:
+        return _cmd_states()
 
     if argv and argv[0] == "ensure":
         parser = argparse.ArgumentParser(prog="track ensure")
