@@ -176,7 +176,7 @@ the resume.
    at the top, `City, ST | Num| Email` under it, `NAME` again after `Sincerely,`
    — and mails as written.
 
-4. Run **`/new-vertical <lane> "<their stated roles>" pass-a`** and let it drive.
+4. Run **`/new-vertical <lane> pass-a "<their stated roles>"`** and let it drive.
    Pass A writes only the `verticals.yaml` lane block and one classifier rule,
    and asks the experience cap and the target level — **questions 3 and 4** —
    plus the confirm-or-edit — **Question 5** — in one `AskUserQuestion`. Do not
