@@ -151,6 +151,14 @@ def test_the_reason_a_role_has_no_resume_is_read_from_what_is_on_disk(tmp_path, 
     assert M.tailor_reason("dddddddd", run, {"dddddddd"}) == "no resume built and no reason recorded"
 
 
+def test_the_newest_folder_is_v10_not_v2(tmp_path):
+    lane = tmp_path / "applications" / "lane"
+    for v in ("_v2", "_v10"):
+        (lane / f"2026-09-29_a_x_eeeeeeee{v}").mkdir(parents=True)
+    (lane / "2026-09-29_a_x_eeeeeeee_v2" / "N_Resume.docx").write_bytes(b"d")
+    assert M.tailor_reason("eeeeeeee", None, {"eeeeeeee"}) == "no resume built and no reason recorded"
+
+
 def _plan(**kw):
     return {"draftable": [], "unmapped": [], "fields": [], **kw}
 

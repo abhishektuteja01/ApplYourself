@@ -229,16 +229,14 @@ def ensure_state(
 def append_tailored_dir(state_path: Path, dir_name: str,
                          *, now: datetime | None = None) -> dict:
     """Append dir_name to tailored_dirs[] (/tailor's mutation).
-    Idempotent: appending the same dir twice keeps a single entry."""
+    A dir already listed moves to the end, so [-1] is always the latest build."""
     def add(data: dict | None) -> dict:
         if data is None:
             raise ValueError(
                 f"state.yaml at {state_path} does not exist; run /track "
                 "<job_id> saved first to register the role."
             )
-        dirs = list(data.get("tailored_dirs") or [])
-        if dir_name not in dirs:
-            dirs.append(dir_name)
+        dirs = [d for d in data.get("tailored_dirs") or [] if d != dir_name] + [dir_name]
         data["tailored_dirs"] = dirs
         data["last_touch"] = _now_iso(now)
         return data

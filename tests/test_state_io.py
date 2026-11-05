@@ -228,8 +228,9 @@ def test_append_tailored_dir_idempotent(tmp_path):
     append_tailored_dir(p, "d1")
     append_tailored_dir(p, "d1")   # same again — should NOT duplicate
     append_tailored_dir(p, "d2")
+    append_tailored_dir(p, "d1")   # a rebuild of d1 moves it to the end
     data = load_state(p)
-    assert data["tailored_dirs"] == ["d1", "d2"]
+    assert data["tailored_dirs"] == ["d2", "d1"]
 
 
 def test_append_tailored_dir_requires_existing_state(tmp_path):
