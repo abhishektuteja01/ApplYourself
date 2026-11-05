@@ -43,9 +43,10 @@ only when you open the code it governs — `src-boundary`, `state-machine`,
 
 `.claude/hooks/*.sh` enforce three of these mechanically rather than by memory: the
 R7 boundary, the R10 state.yaml writer, and the PII gate.
-`.githooks/pre-commit` runs the test suite on any commit that stages `src/` or
-`tests/fixtures/`, and `ruff check --select F401,F841` on any commit that stages
-a `.py` file (`git config core.hooksPath .githooks`, once per clone).
+`.githooks/pre-commit` runs `scripts/r7_scan.sh` and the test suite on any commit
+that stages `src/`, `tests/`, `scripts/` or `profile/*.example.*`, and `ruff check`
+on any commit that stages a `.py` file (`git config core.hooksPath .githooks`,
+once per clone). CI runs the same ruff, R7 scan and shellcheck.
 
 ## Pipeline stages (data flow)
 

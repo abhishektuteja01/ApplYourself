@@ -12,9 +12,9 @@ happens inside a slash-command session in `.claude/commands/*.md`, which calls t
 `src/` helpers via Bash for the deterministic parts. When editing, keep judging out
 of `src/` and keep parquet/state mutation out of the command prose.
 
-`.claude/hooks/r7_no_llm_in_src.sh` enforces this after every edit to `src/`. It
-matches import lines and LLM API endpoints, so the `score-judge:<model>` stamp
-`score_store` reads from the judge agent's frontmatter does not trip it.
+`.claude/hooks/r7_no_llm_in_src.sh` enforces this after every edit to `src/`,
+through `scripts/r7_scan.sh`, which pre-commit and CI also run. It matches
+import lines and LLM API endpoints, so the `score-judge:<model>` stamp `score_store` reads from the judge agent's frontmatter does not trip it.
 
 ## `src/` is vertical-agnostic and company-agnostic
 

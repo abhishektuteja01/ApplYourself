@@ -651,9 +651,9 @@ loads only when you open the code it governs: `src-boundary`, `state-machine`,
 `profile-templates`, `pii-gate`, `discovery`. Run `/context` to see what actually loaded.
 
 The test suite runs from `.githooks/pre-commit` instead: any commit that stages
-`src/` or `tests/fixtures/` is blocked while the suite is red, and any commit
-that stages a `.py` file is blocked on an unused import or variable
-(`ruff check --select F401,F841`). Enable it once per clone
+`src/`, `tests/`, `scripts/` or `profile/*.example.*` is blocked while the R7
+scan or the suite is red, and any commit that stages a `.py` file is blocked on
+`ruff check`. Enable it once per clone
 with `git config core.hooksPath .githooks`.
 
 </details>
