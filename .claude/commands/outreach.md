@@ -52,7 +52,11 @@ esac
 # literal to_name='<recipient name>'.
 case "$CHANNEL" in
     referral|alumni)
-        case "$*" in
+        ARGS=$(cat <<'EOF'
+$ARGUMENTS
+EOF
+)
+        case "$ARGS" in
             *--to*) ;;
             *) echo "ERROR: --to \"<name>\" is required for channel '$CHANNEL' — a $CHANNEL message is addressed to a person."; exit 1 ;;
         esac
