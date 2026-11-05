@@ -5,6 +5,7 @@ One row per live `job_id`, exactly CLEAN_COLUMNS. Downstream reads only this.
 Deterministic and LLM-free (R7). Reads pipeline/*/state.yaml, never writes it
 (R10).
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,11 +30,25 @@ CLEAN = paths.CLEAN
 # Closed schema, fixed order: what every downstream reader of clean.parquet
 # expects.
 CLEAN_COLUMNS: list[str] = [
-    "job_id", "source", "company", "company_normalized",
-    "title", "title_normalized", "location", "posted_date",
-    "url", "jd_text", "salary_min", "salary_max", "salary_currency",
-    "employment_type", "seniority_raw", "vertical", "application_status",
+    "job_id",
+    "source",
+    "company",
+    "company_normalized",
+    "title",
+    "title_normalized",
+    "location",
+    "posted_date",
+    "url",
+    "jd_text",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "employment_type",
+    "seniority_raw",
+    "vertical",
+    "application_status",
 ]
+
 
 @dataclass
 class ViewInputs:
@@ -61,14 +76,20 @@ def read_scores(scored_path: Path) -> dict[str, float]:
 def inputs_from(cfg, today, state_index: dict, scored_path: Path) -> ViewInputs:
     scores = read_scores(scored_path)
     return ViewInputs(
-        today=pd.Timestamp(today).normalize(), state_index=state_index, scores=scores,
-        live_days=cfg.live_days, search_max_age_days=cfg.search_max_age_days,
+        today=pd.Timestamp(today).normalize(),
+        state_index=state_index,
+        scores=scores,
+        live_days=cfg.live_days,
+        search_max_age_days=cfg.search_max_age_days,
         score_threshold=cfg.retention_score_threshold,
-        high_days=cfg.retention_high_days, low_days=cfg.retention_low_days)
+        high_days=cfg.retention_high_days,
+        low_days=cfg.retention_low_days,
+    )
 
 
-def build_view(store: pd.DataFrame, allowlist, inp: ViewInputs,
-               vcfg=None) -> tuple[pd.DataFrame, dict]:
+def build_view(
+    store: pd.DataFrame, allowlist, inp: ViewInputs, vcfg=None
+) -> tuple[pd.DataFrame, dict]:
     """One row per job_id downstream should see, and the funnel that got
     there. Every count is a subset of the one before it, plus the active
     tracked roles added back at the end."""
@@ -85,26 +106,35 @@ def build_view(store: pd.DataFrame, allowlist, inp: ViewInputs,
     # Only search rows are cut on age; a board listing is its own liveness
     # signal. A search row with no posted date is kept: retention bounds it.
     posted = df_live["posted_date"]
-    fresh = (~df_live["source"].isin(JOBSPY_SOURCES) | posted.isna()
-             | (posted >= today - pd.Timedelta(days=inp.search_max_age_days))
-             | df_live["job_id"].isin(tracked))
+    fresh = (
+        ~df_live["source"].isin(JOBSPY_SOURCES)
+        | posted.isna()
+        | (posted >= today - pd.Timedelta(days=inp.search_max_age_days))
+        | df_live["job_id"].isin(tracked)
+    )
     df_live = df_live[fresh]
     funnel["after_search_age"] = len(df_live)
 
-    gate = [title_gate.title_passes(t, v, s, vcfg) for t, v, s in
-            zip(df_live["title"], df_live["vertical"], df_live["source"])]
+    gate = [
+        title_gate.title_passes(t, v, s, vcfg)
+        for t, v, s in zip(df_live["title"], df_live["vertical"], df_live["source"])
+    ]
     df_live = df_live[pd.Series(gate, index=df_live.index, dtype=bool)]
     funnel["after_title_gate"] = len(df_live)
 
-    checks = [allowlist.check(raw, v, t) for raw, v, t in
-              zip(df_live["location_raw"], df_live["vertical"], df_live["title"])]
+    checks = [
+        allowlist.check(raw, v, t)
+        for raw, v, t in zip(df_live["location_raw"], df_live["vertical"], df_live["title"])
+    ]
     keep = pd.Series([c.keep for c in checks], index=df_live.index, dtype=bool)
-    df_live = df_live.assign(location=[c.location for c in checks],
-                             _resolved=[c.resolved for c in checks])[keep]
+    df_live = df_live.assign(
+        location=[c.location for c in checks], _resolved=[c.resolved for c in checks]
+    )[keep]
     funnel["after_location"] = len(df_live)
 
-    long_enough = (df_live["jd_text"].str.strip().str.len() >= parse.MIN_JD_CHARS) \
-        | df_live["job_id"].isin(tracked)
+    long_enough = (df_live["jd_text"].str.strip().str.len() >= parse.MIN_JD_CHARS) | df_live[
+        "job_id"
+    ].isin(tracked)
     df_live = df_live[long_enough]
     funnel["after_short_jd"] = len(df_live)
 
@@ -133,8 +163,9 @@ def build_view(store: pd.DataFrame, allowlist, inp: ViewInputs,
         view = pd.concat([view, back], ignore_index=True) if len(back) else view
     funnel["active_added"] = len(view) - funnel["after_retention"]
 
-    state_map = {j: d.get("state", "") for j, d in inp.state_index.items()
-                 if isinstance(d.get("state"), str)}
+    state_map = {
+        j: d.get("state", "") for j, d in inp.state_index.items() if isinstance(d.get("state"), str)
+    }
     view = view.assign(application_status=view["job_id"].map(state_map).fillna(""))
     view = view[CLEAN_COLUMNS].sort_values("job_id", kind="stable").reset_index(drop=True)
     funnel["clean"] = len(view)
@@ -150,8 +181,11 @@ def _one_per_job(df: pd.DataFrame) -> pd.DataFrame:
         _apply=[not is_applyable(u) for u in df["url"]],
         _unres=~df["_resolved"].astype(bool),
         _jd=df["jd_text"].str.len(),
-    ).sort_values(["job_id", "_apply", "_unres", "last_seen", "_jd", "posting_key"],
-                  ascending=[True, True, True, False, False, True], kind="stable")
+    ).sort_values(
+        ["job_id", "_apply", "_unres", "last_seen", "_jd", "posting_key"],
+        ascending=[True, True, True, False, False, True],
+        kind="stable",
+    )
     out = work.drop_duplicates("job_id", keep="first")
     return out.drop(columns=["_apply", "_unres", "_jd", "_resolved"])
 
@@ -176,5 +210,8 @@ def rebuild_view(cfg, p, today, state_index: dict) -> tuple[dict, dict]:
     inp = inputs_from(cfg, today, state_index, p.scored)
     view, funnel = build_view(store, Allowlist(cfg), inp)
     write_view(view, p.clean)
-    return {"postings": len(store), "job_ids": int(store["job_id"].nunique()),
-            "forgotten": forgotten}, funnel
+    return {
+        "postings": len(store),
+        "job_ids": int(store["job_id"].nunique()),
+        "forgotten": forgotten,
+    }, funnel

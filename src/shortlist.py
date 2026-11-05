@@ -8,6 +8,7 @@ Two parts:
   One per lane  the top shortlist.top_n untracked roles at fit >= review_min,
                 excluding ineligible and suggested skip
 """
+
 from __future__ import annotations
 
 import json
@@ -26,15 +27,15 @@ from src.state_io import load_state_index
 _JOB_ID_RE = re.compile(r"`([0-9a-f]{8})`")
 
 
-def compute(scored_path: Path, clean_path: Path, pipeline_dir: Path,
-            cfg: ScoringConfig) -> dict:
+def compute(scored_path: Path, clean_path: Path, pipeline_dir: Path, cfg: ScoringConfig) -> dict:
     """{"pipeline": [row...], "lanes": {lane: [row...]}} in display order."""
     names = verticals.get_config().names
     scored = read_scored(scored_path)
     if scored.empty:
         return {"pipeline": [], "lanes": {v: [] for v in names}}
     clean = pd.read_parquet(clean_path).drop(
-        columns=[c for c in scored.columns if c != "job_id"], errors="ignore")
+        columns=[c for c in scored.columns if c != "job_id"], errors="ignore"
+    )
     df = scored.merge(clean, on="job_id", how="inner")
     states = {j: d.get("state", "") for j, d in load_state_index(pipeline_dir).items()}
     df["state"] = df["job_id"].map(states).fillna("")
@@ -43,18 +44,24 @@ def compute(scored_path: Path, clean_path: Path, pipeline_dir: Path,
     df["_posted"] = pd.to_datetime(df["posted_date"], errors="coerce")
 
     def ranked(frame: pd.DataFrame) -> pd.DataFrame:
-        return frame.sort_values(["fit_score", "_sponsor", "_posted", "job_id"],
-                                 ascending=[False, True, False, True],
-                                 na_position="last", kind="stable")
+        return frame.sort_values(
+            ["fit_score", "_sponsor", "_posted", "job_id"],
+            ascending=[False, True, False, True],
+            na_position="last",
+            kind="stable",
+        )
 
-    pool = df[(df["state"] == "")
-              & (df["sponsorship_label"] != "ineligible")
-              & (df["suggested_action"] != "skip")
-              & (df["fit_score"] >= cfg.review_min)]
+    pool = df[
+        (df["state"] == "")
+        & (df["sponsorship_label"] != "ineligible")
+        & (df["suggested_action"] != "skip")
+        & (df["fit_score"] >= cfg.review_min)
+    ]
     return {
         "pipeline": ranked(df[df["state"].isin(cfg.pipeline_states)]).to_dict("records"),
-        "lanes": {v: ranked(pool[pool["vertical"] == v]).head(cfg.top_n).to_dict("records")
-                  for v in names},
+        "lanes": {
+            v: ranked(pool[pool["vertical"] == v]).head(cfg.top_n).to_dict("records") for v in names
+        },
     }
 
 
@@ -73,24 +80,37 @@ def _date(value) -> str:
     return "unknown" if pd.isna(ts) else ts.date().isoformat()
 
 
-def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
-           n_clean: int, seen: set[str], referrals: dict[str, list[str]] | None = None) -> str:
+def render(
+    result: dict,
+    cfg: ScoringConfig,
+    date_str: str,
+    n_scored: int,
+    n_clean: int,
+    seen: set[str],
+    referrals: dict[str, list[str]] | None = None,
+) -> str:
     vcfg = verticals.get_config()
     referrals = referrals or {}
 
     def ref(company: str, sep: str) -> str:
         note = contacts.referral_note(company, referrals)
         return f"{sep}{note}" if note else ""
-    out = [f"# Shortlist — {date_str}", "",
-           f"{n_scored} of {n_clean} scored. Top {cfg.top_n} per lane with fit >= "
-           f"{cfg.review_min}. ★ = new since the last shortlist."]
+
+    out = [
+        f"# Shortlist — {date_str}",
+        "",
+        f"{n_scored} of {n_clean} scored. Top {cfg.top_n} per lane with fit >= "
+        f"{cfg.review_min}. ★ = new since the last shortlist.",
+    ]
     if cfg.note:
         out.append(cfg.note)
     pipe = result["pipeline"]
     out += ["", f"## In pipeline ({len(pipe)})", ""]
-    out += [f"- `{r['job_id']}` {r['fit_score']:.0f} — {r['company']} — {r['title']} ({r['state']})"
-            f"{ref(r['company'], ' · ')}"
-            for r in pipe[:cfg.pipeline_show]] or ["Nothing saved or tailored."]
+    out += [
+        f"- `{r['job_id']}` {r['fit_score']:.0f} — {r['company']} — {r['title']} ({r['state']})"
+        f"{ref(r['company'], ' · ')}"
+        for r in pipe[: cfg.pipeline_show]
+    ] or ["Nothing saved or tailored."]
     if len(pipe) > cfg.pipeline_show:
         out.append(f"- …and {len(pipe) - cfg.pipeline_show} more (`/standup` lists them all)")
     for v in vcfg.names:
@@ -103,7 +123,9 @@ def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
             star = "" if r["job_id"] in seen else " ★"
             extras = [n for n in [contacts.referral_note(r["company"], referrals)] if n]
             if r["sponsorship_label"] != "unknown":
-                extras.append(f"sponsorship {r['sponsorship_label']}: \"{r['sponsorship_evidence']}\"")
+                extras.append(
+                    f'sponsorship {r["sponsorship_label"]}: "{r["sponsorship_evidence"]}"'
+                )
             if r["suggested_action"] != "tailor":
                 extras.append(f"suggested {r['suggested_action']}")
             if not is_auto_submittable(r.get("url")):
@@ -122,15 +144,28 @@ def render(result: dict, cfg: ScoringConfig, date_str: str, n_scored: int,
     return "\n".join(out).rstrip() + "\n"
 
 
-def write(scored_path: Path, clean_path: Path, pipeline_dir: Path, shortlist_dir: Path,
-          cfg: ScoringConfig, date_str: str,
-          contacts_path: Path = contacts.CONTACTS_PATH) -> tuple[Path, int]:
+def write(
+    scored_path: Path,
+    clean_path: Path,
+    pipeline_dir: Path,
+    shortlist_dir: Path,
+    cfg: ScoringConfig,
+    date_str: str,
+    contacts_path: Path = contacts.CONTACTS_PATH,
+) -> tuple[Path, int]:
     """Render and write shortlist/<date_str>.md. Returns (path, lane rows)."""
     result = compute(scored_path, clean_path, pipeline_dir, cfg)
     n_scored = len(read_scored(scored_path))
     n_clean = len(pd.read_parquet(clean_path, columns=["job_id"]))
-    md = render(result, cfg, date_str, n_scored, n_clean, previous_ids(shortlist_dir, date_str),
-                contacts.referrals_by_company(contacts_path))
+    md = render(
+        result,
+        cfg,
+        date_str,
+        n_scored,
+        n_clean,
+        previous_ids(shortlist_dir, date_str),
+        contacts.referrals_by_company(contacts_path),
+    )
     shortlist_dir.mkdir(parents=True, exist_ok=True)
     path = shortlist_dir / f"{date_str}.md"
     path.write_text(md, encoding="utf-8")

@@ -3,6 +3,7 @@
 No I/O, no LLM (R7). One implementation of each rule, so discovery, scoring and
 /apply cannot drift apart.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -16,14 +17,13 @@ from src.shared.job_boards import parse_posting_url
 # ---------------------------------------------------------------------
 
 _VIA_SOURCES = ("linkedin", "indeed", "glassdoor", "google", "ziprecruiter", "zip recruiter")
-_VIA_RE = re.compile(
-    r"\s+via\s+(?:" + "|".join(re.escape(v) for v in _VIA_SOURCES) + r")\s*$"
-)
+_VIA_RE = re.compile(r"\s+via\s+(?:" + "|".join(re.escape(v) for v in _VIA_SOURCES) + r")\s*$")
 # What job portals print when the employer is not named ("see description",
 # "not provided"). Kept as a company, these would merge different employers'
 # roles under one id pair.
-_PLACEHOLDER_COMPANIES = frozenset({"siehe beschreibung", "non renseigné", "non renseigne",
-                                    "unavailable"})
+_PLACEHOLDER_COMPANIES = frozenset(
+    {"siehe beschreibung", "non renseigné", "non renseigne", "unavailable"}
+)
 _SUFFIX_RE = re.compile(r"\s+(?:inc|llc|corp|corporation|ltd|limited|co|gmbh|plc|sa)\s*$")
 _LEADING_THE_RE = re.compile(r"^the\s+")
 _WS_RE = re.compile(r"\s+")
@@ -84,10 +84,25 @@ def company_from_url(url: str) -> str:
 # Query params that only say where a click came from. Dropped from a key;
 # every other param is kept, since an unknown careers page may put its
 # posting id in any of them.
-_TRACKING_PARAMS = frozenset({
-    "src", "source", "ref", "referrer", "refid", "trk", "trackingid", "from",
-    "gh_src", "lever-source", "lever-origin", "codes", "mode", "iis", "iisn",
-})
+_TRACKING_PARAMS = frozenset(
+    {
+        "src",
+        "source",
+        "ref",
+        "referrer",
+        "refid",
+        "trk",
+        "trackingid",
+        "from",
+        "gh_src",
+        "lever-source",
+        "lever-origin",
+        "codes",
+        "mode",
+        "iis",
+        "iisn",
+    }
+)
 _LINKEDIN_VIEW_RE = re.compile(r"/jobs/view/(?:[^/?#]*-)?(\d+)")
 
 
@@ -129,8 +144,9 @@ def posting_key(url: str) -> str:
         jk = next((v for k, v in params if k == "jk"), "")
         if jk:
             return f"indeed|{jk.lower()}"
-    kept = sorted((k, v) for k, v in params
-                  if k not in _TRACKING_PARAMS and not k.startswith("utm_"))
+    kept = sorted(
+        (k, v) for k, v in params if k not in _TRACKING_PARAMS and not k.startswith("utm_")
+    )
     path = parts.path.rstrip("/")
     query = f"?{urlencode(kept)}" if kept else ""
     return f"url|{host}{path}{query}"

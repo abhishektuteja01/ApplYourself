@@ -11,6 +11,7 @@ Statuses: `clicking` (written right before the click), then one of `accepted`,
 board declined the click (the only one that lets the role be tried again), or
 `backfill` for a line rebuilt from old run reports.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,12 +31,12 @@ def url_key(url: str) -> str:
     key = (url or "").strip().casefold()
     for prefix in ("https://", "http://"):
         if key.startswith(prefix):
-            key = key[len(prefix):]
+            key = key[len(prefix) :]
     if key.startswith("www."):
         key = key[4:]
     # Lever serves one posting from its EU and global hosts alike.
     if key.startswith("jobs.eu.lever.co/"):
-        key = "jobs.lever.co/" + key[len("jobs.eu.lever.co/"):]
+        key = "jobs.lever.co/" + key[len("jobs.eu.lever.co/") :]
     return key.rstrip("/")
 
 
@@ -61,10 +62,11 @@ def records(path: Path) -> list[dict]:
 
 class Verdict(str, Enum):
     """What a role's latest line says about whether the board has it."""
-    NOT_SENT = "not_sent"     # no line, or the latest is `refused`
+
+    NOT_SENT = "not_sent"  # no line, or the latest is `refused`
     SENT = "sent"
-    UNKNOWN = "unknown"       # `clicking` (no outcome recorded) or `unsent`
-    REJECTED = "rejected"     # the board received it and said no
+    UNKNOWN = "unknown"  # `clicking` (no outcome recorded) or `unsent`
+    REJECTED = "rejected"  # the board received it and said no
 
 
 def verdict_of(rec: dict | None) -> Verdict:
@@ -103,9 +105,17 @@ def sent_job_ids(path: Path) -> set[str]:
     return {j for j, rec in latest.items() if verdict_of(rec) is not Verdict.NOT_SENT}
 
 
-def append(path: Path, job_id: str, status: str, *, form_url: str = "",
-           company: str = "", title: str = "", detail: str = "",
-           at: str | None = None) -> None:
+def append(
+    path: Path,
+    job_id: str,
+    status: str,
+    *,
+    form_url: str = "",
+    company: str = "",
+    title: str = "",
+    detail: str = "",
+    at: str | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     rec = {
         "at": at or datetime.now().isoformat(timespec="seconds"),

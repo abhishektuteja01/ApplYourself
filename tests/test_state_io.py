@@ -1,4 +1,5 @@
 """Tests for src/state_io.py — deterministic state.yaml plumbing."""
+
 from __future__ import annotations
 
 import ast
@@ -26,9 +27,15 @@ from src.state_io import (
 
 def _initial(**overrides) -> dict:
     base = {
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "example_primary", "sponsorship_label": "opt_ok", "fit_score": 75,
+        "job_id": "aaaaaaaa",
+        "company": "Acme",
+        "title": "Widget FN",
+        "source": "indeed",
+        "url": "https://x",
+        "location": "Remote",
+        "vertical": "example_primary",
+        "sponsorship_label": "opt_ok",
+        "fit_score": 75,
     }
     base.update(overrides)
     return base
@@ -39,6 +46,7 @@ def _yaml_load(path: Path) -> dict:
 
 
 # ---------- state-set constants ----------
+
 
 def test_valid_states_count_and_terminal_subset():
     """11 states locked; 4 are terminal."""
@@ -51,6 +59,7 @@ def test_valid_states_count_and_terminal_subset():
 
 
 # ---------- load_state: truncated / corrupt files ----------
+
 
 def _empty_state_file(tmp_path, content: str = "") -> Path:
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
@@ -79,10 +88,10 @@ def test_load_state_raises_on_malformed_yaml(tmp_path):
 
 # ---------- transition: creation path ----------
 
+
 def test_transition_creates_state_yaml_when_missing(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    data = transition(p, "saved", initial_fields=_initial(),
-                       now=datetime(2026, 6, 6, 10, 0))
+    data = transition(p, "saved", initial_fields=_initial(), now=datetime(2026, 6, 6, 10, 0))
     assert p.exists()
     assert data["state"] == "saved"
     assert data["state_history"] == [
@@ -119,8 +128,7 @@ def test_transition_creation_requires_core_initial_keys(tmp_path):
 def test_transition_over_an_empty_file_rebuilds_a_full_record(tmp_path):
     """A truncated state.yaml takes the creation path, not the update path."""
     p = _empty_state_file(tmp_path)
-    data = transition(p, "offer", initial_fields=_initial(),
-                       now=datetime(2026, 6, 6, 10, 0))
+    data = transition(p, "offer", initial_fields=_initial(), now=datetime(2026, 6, 6, 10, 0))
     assert data["job_id"] == "aaaaaaaa"
     assert data["company"] == "Acme"
     assert data["title"] == "Widget FN"
@@ -139,17 +147,17 @@ def test_transition_over_an_empty_file_requires_initial_fields(tmp_path):
 
 # ---------- transition: existing path ----------
 
+
 def test_transition_appends_state_history(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "saved", initial_fields=_initial(),
-                now=datetime(2026, 6, 1, 10, 0))
-    transition(p, "tailored", note="v1",
-                now=datetime(2026, 6, 2, 10, 0))
-    transition(p, "applied",
-                now=datetime(2026, 6, 3, 10, 0))
+    transition(p, "saved", initial_fields=_initial(), now=datetime(2026, 6, 1, 10, 0))
+    transition(p, "tailored", note="v1", now=datetime(2026, 6, 2, 10, 0))
+    transition(p, "applied", now=datetime(2026, 6, 3, 10, 0))
     data = load_state(p)
     assert [h["state"] for h in data["state_history"]] == [
-        "saved", "tailored", "applied",
+        "saved",
+        "tailored",
+        "applied",
     ]
     assert data["state"] == "applied"
     assert data["applied_at"] == "2026-06-03T10:00:00"
@@ -186,11 +194,14 @@ def test_transition_rejects_a_terminal_self_transition(tmp_path, terminal):
     assert load_state(p) == before
 
 
-@pytest.mark.parametrize("record", [
-    {"state": "saved", "state_history": []},
-    {"job_id": "", "state": "saved", "state_history": []},
-    {"job_id": None, "state": "saved", "state_history": []},
-])
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"state": "saved", "state_history": []},
+        {"job_id": "", "state": "saved", "state_history": []},
+        {"job_id": None, "state": "saved", "state_history": []},
+    ],
+)
 def test_transition_refuses_an_existing_record_without_job_id(tmp_path, record):
     """A partially-written file is a dict, so it reaches the update branch —
     which would otherwise write a record no downstream reader can key on."""
@@ -206,14 +217,14 @@ def test_transition_applied_at_only_set_once(tmp_path):
     overwritten by later transitions through applied (shouldn't happen,
     but defensive)."""
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
-    transition(p, "applied", initial_fields=_initial(),
-                now=datetime(2026, 6, 1, 10, 0))
+    transition(p, "applied", initial_fields=_initial(), now=datetime(2026, 6, 1, 10, 0))
     transition(p, "screen", now=datetime(2026, 6, 5, 10, 0))
     data = load_state(p)
     assert data["applied_at"] == "2026-06-01T10:00:00"
 
 
 # ---------- tailored_dirs ----------
+
 
 def test_append_tailored_dir(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
@@ -227,9 +238,9 @@ def test_append_tailored_dir_idempotent(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
     append_tailored_dir(p, "d1")
-    append_tailored_dir(p, "d1")   # same again — should NOT duplicate
+    append_tailored_dir(p, "d1")  # same again — should NOT duplicate
     append_tailored_dir(p, "d2")
-    append_tailored_dir(p, "d1")   # a rebuild of d1 moves it to the end
+    append_tailored_dir(p, "d1")  # a rebuild of d1 moves it to the end
     data = load_state(p)
     assert data["tailored_dirs"] == ["d2", "d1"]
 
@@ -242,12 +253,17 @@ def test_append_tailored_dir_requires_existing_state(tmp_path):
 
 # ---------- outreach[] ----------
 
+
 def test_append_outreach_draft(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
-    append_outreach_draft(p, channel="recruiter", to_name="Sarah K.",
-                           draft_file="2026-06-06_recruiter_sarah-k.md",
-                           now=datetime(2026, 6, 6, 11, 0))
+    append_outreach_draft(
+        p,
+        channel="recruiter",
+        to_name="Sarah K.",
+        draft_file="2026-06-06_recruiter_sarah-k.md",
+        now=datetime(2026, 6, 6, 11, 0),
+    )
     data = load_state(p)
     assert len(data["outreach"]) == 1
     e = data["outreach"][0]
@@ -260,8 +276,9 @@ def test_append_outreach_draft(tmp_path):
 def test_mark_outreach_sent_flips_status(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
-    append_outreach_draft(p, channel="alumni", to_name="John D.",
-                           draft_file="2026-06-06_alumni_john-d.md")
+    append_outreach_draft(
+        p, channel="alumni", to_name="John D.", draft_file="2026-06-06_alumni_john-d.md"
+    )
     mark_outreach_sent(p, channel="alumni", to_name="John D.")
     data = load_state(p)
     assert data["outreach"][0]["status"] == "sent"
@@ -279,12 +296,12 @@ def test_mark_outreach_sent_picks_latest_matching_draft(tmp_path):
     (Realistic: same recruiter, second outreach attempt.)"""
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
-    append_outreach_draft(p, channel="recruiter", to_name="S",
-                           draft_file="d1.md",
-                           now=datetime(2026, 6, 1, 10, 0))
-    append_outreach_draft(p, channel="recruiter", to_name="S",
-                           draft_file="d2.md",
-                           now=datetime(2026, 6, 2, 10, 0))
+    append_outreach_draft(
+        p, channel="recruiter", to_name="S", draft_file="d1.md", now=datetime(2026, 6, 1, 10, 0)
+    )
+    append_outreach_draft(
+        p, channel="recruiter", to_name="S", draft_file="d2.md", now=datetime(2026, 6, 2, 10, 0)
+    )
     mark_outreach_sent(p, channel="recruiter", to_name="S")
     data = load_state(p)
     # First draft stays draft, second flipped to sent
@@ -294,13 +311,13 @@ def test_mark_outreach_sent_picks_latest_matching_draft(tmp_path):
 
 # ---------- side lists over a truncated file ----------
 
+
 def test_side_list_helpers_refuse_an_empty_file(tmp_path):
     """Each would otherwise write a file holding only its own side list."""
     p = _empty_state_file(tmp_path)
     for call in (
         lambda: append_tailored_dir(p, "d1"),
-        lambda: append_outreach_draft(p, channel="recruiter", to_name="S",
-                                      draft_file="d.md"),
+        lambda: append_outreach_draft(p, channel="recruiter", to_name="S", draft_file="d.md"),
         lambda: mark_outreach_sent(p, channel="recruiter", to_name="S"),
     ):
         with pytest.raises(ValueError, match="does not exist"):
@@ -319,19 +336,20 @@ def test_ensure_state_over_an_empty_file_creates(tmp_path):
 
 # ---------- read-only helpers ----------
 
+
 def test_load_all_states_globs_pipeline_dir(tmp_path):
     pdir = tmp_path / "pipeline"
     for jid in ("aaaaaaaa", "bbbbbbbb", "cccccccc"):
-        transition(state_path_for(pdir, jid), "saved",
-                    initial_fields=_initial(job_id=jid, company=jid))
+        transition(
+            state_path_for(pdir, jid), "saved", initial_fields=_initial(job_id=jid, company=jid)
+        )
     states = load_all_states(pdir)
     assert {s["job_id"] for s in states} == {"aaaaaaaa", "bbbbbbbb", "cccccccc"}
 
 
 def test_load_all_states_skips_malformed(tmp_path):
     pdir = tmp_path / "pipeline"
-    transition(state_path_for(pdir, "aaaaaaaa"), "saved",
-                initial_fields=_initial())
+    transition(state_path_for(pdir, "aaaaaaaa"), "saved", initial_fields=_initial())
     bad = pdir / "bbbbbbbb"
     bad.mkdir()
     (bad / "state.yaml").write_text("this is: not\n  - valid: yaml: :\n", encoding="utf-8")
@@ -342,8 +360,7 @@ def test_load_all_states_skips_malformed(tmp_path):
 
 def test_load_all_states_skips_empty_files(tmp_path):
     pdir = tmp_path / "pipeline"
-    transition(state_path_for(pdir, "aaaaaaaa"), "saved",
-                initial_fields=_initial())
+    transition(state_path_for(pdir, "aaaaaaaa"), "saved", initial_fields=_initial())
     (pdir / "bbbbbbbb").mkdir()
     (pdir / "bbbbbbbb" / "state.yaml").write_text("", encoding="utf-8")
     assert {s["job_id"] for s in load_all_states(pdir)} == {"aaaaaaaa"}
@@ -354,6 +371,7 @@ def test_load_all_states_empty_when_no_pipeline_dir(tmp_path):
 
 
 # ---------- atomicity ----------
+
 
 def test_write_is_atomic_no_partial_corruption(tmp_path, monkeypatch):
     """If the rename step fails mid-write, the prior state.yaml must
@@ -376,6 +394,7 @@ def test_write_is_atomic_no_partial_corruption(tmp_path, monkeypatch):
 
 
 # ---------- ensure_state: bootstrap only, never a transition (R10) ----------
+
 
 def test_ensure_state_creates_at_saved_when_absent(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
@@ -434,8 +453,11 @@ def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
     a = threading.Thread(target=update, args=(p, slow))
     a.start()
     inside.wait(5)
-    b = threading.Thread(target=append_outreach_draft, args=(p,),
-                         kwargs={"channel": "recruiter", "to_name": "S", "draft_file": "d.md"})
+    b = threading.Thread(
+        target=append_outreach_draft,
+        args=(p,),
+        kwargs={"channel": "recruiter", "to_name": "S", "draft_file": "d.md"},
+    )
     b.start()
     b.join(0.3)
     release.set()
@@ -471,14 +493,17 @@ def _r10_offenders(source: str) -> list[int]:
         if isinstance(node, ast.Call):
             f = node.func
             if (isinstance(f, ast.Name) and f.id in funcs) or (
-                isinstance(f, ast.Attribute) and f.attr in _STATE_WRITERS
+                isinstance(f, ast.Attribute)
+                and f.attr in _STATE_WRITERS
                 and ast.unparse(f.value) in modules
             ):
                 hits.append(node.lineno)
         elif isinstance(node, ast.Assign):
             hits.extend(
-                node.lineno for t in node.targets
-                if isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant)
+                node.lineno
+                for t in node.targets
+                if isinstance(t, ast.Subscript)
+                and isinstance(t.slice, ast.Constant)
                 and t.slice.value == "state"
             )
     return hits
@@ -491,9 +516,8 @@ def test_only_track_cli_changes_state():
     assert _r10_offenders("from src.state_io import ensure_state as e\ne(p)\n")
     offenders = [
         f"{path.relative_to(root.parent)}:{line}"
-        for path in sorted(root.rglob("*.py")) if path not in allowed
+        for path in sorted(root.rglob("*.py"))
+        if path not in allowed
         for line in _r10_offenders(path.read_text(encoding="utf-8"))
     ]
     assert offenders == [], "R10: call track_cli.main instead"
-
-

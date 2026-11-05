@@ -10,6 +10,7 @@ the file has none for. The file is deleted once read.
 
 Deterministic and LLM-free (R7).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -39,9 +40,22 @@ log = logging.getLogger(__name__)
 
 MANIFEST_URL = "https://storage.stapply.ai/jobhive/v1/manifest.json"
 # The columns a posting is built from; the rest of the file is never read.
-COLUMNS = ["url", "title", "company", "ats_type", "location", "country_iso", "is_remote",
-           "salary_min", "salary_max", "salary_currency", "salary_period",
-           "employment_type", "description", "posted_at"]
+COLUMNS = [
+    "url",
+    "title",
+    "company",
+    "ats_type",
+    "location",
+    "country_iso",
+    "is_remote",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "salary_period",
+    "employment_type",
+    "description",
+    "posted_at",
+]
 # Our own board lanes: rows of these ATSs say which boards the file covered.
 _BOARD_ATS = frozenset(ATS_SOURCE_NAMES)
 # A site whose first this-many page reads tonight all failed is not read again
@@ -78,8 +92,9 @@ def company_names(companies: pd.DataFrame) -> dict[tuple[str, str], str]:
     row's `company` is often that slug ("whatfix101") or host
     ("jobs.danaher.com"); the list has the name ("Whatfix", "Danaher")."""
     out: dict[tuple[str, str], str] = {}
-    for ats, name, slug, url in zip(companies["ats"], companies["name"],
-                                    companies["slug"], companies["url"]):
+    for ats, name, slug, url in zip(
+        companies["ats"], companies["name"], companies["slug"], companies["url"]
+    ):
         if not isinstance(name, str) or not name.strip():
             continue
         for key in (slug, urlsplit(url).hostname if isinstance(url, str) else None):
@@ -102,17 +117,24 @@ def located(location, country_iso) -> str:
     return f"{text}, {country}" if text else country
 
 
-def posting_from(row: dict, vertical: str, names: dict[str, str],
-                 feed_names: dict[tuple[str, str], str]) -> dict:
+def posting_from(
+    row: dict, vertical: str, names: dict[str, str], feed_names: dict[tuple[str, str], str]
+) -> dict:
     """Our board's name first, then the feed list's, then the row's own."""
     url = row.get("url") or ""
     own = row.get("company") or ""
-    company = (names.get(board_key_of(url))
-               or feed_names.get((row.get("ats_type"), own.strip().lower())) or own)
+    company = (
+        names.get(board_key_of(url))
+        or feed_names.get((row.get("ats_type"), own.strip().lower()))
+        or own
+    )
     period = row.get("salary_period")
     return make_posting(
-        source="stapply", company=company if identity.normalize_company(company) else "",
-        title=row.get("title") or "", vertical=vertical, url=url,
+        source="stapply",
+        company=company if identity.normalize_company(company) else "",
+        title=row.get("title") or "",
+        vertical=vertical,
+        url=url,
         location_raw=located(row.get("location"), row.get("country_iso")),
         jd_text=parse.html_to_text(row.get("description")),
         posted_date=parse.iso_date(row.get("posted_at")),
@@ -148,7 +170,8 @@ class StapplyLane(Lane):
                 self.stats.errors.append(
                     f"snapshot {manifest.get('generated_at')!r} is "
                     f"{'undated' if age is None else f'{age:.0f}h old'} "
-                    f"(max {src.max_snapshot_age_hours}h); skipped, every board crawled")
+                    f"(max {src.max_snapshot_age_hours}h); skipped, every board crawled"
+                )
                 return
             whole = manifest["all"]
             with tempfile.TemporaryDirectory(prefix="stapply-") as tmp:
@@ -173,8 +196,9 @@ class StapplyLane(Lane):
                 raise CareersError("checksum mismatch")
             return company_names(pd.read_parquet(path, columns=["ats", "name", "slug", "url"]))
         except Exception as e:  # noqa: BLE001 -- names only
-            self.stats.notes.append(f"company list not read ({type(e).__name__}: {e}); "
-                                    f"feed company text kept")
+            self.stats.notes.append(
+                f"company list not read ({type(e).__name__}: {e}); feed company text kept"
+            )
             return {}
 
     def read(self, path: Path, crawl, feed_names: dict | None = None) -> None:
@@ -191,8 +215,9 @@ class StapplyLane(Lane):
             light = pf.read_row_group(i, columns=["title", "ats_type", "url"])
             titles = light.column("title").to_pylist()
             self.stats.listed += len(titles)
-            for url, ats in zip(light.column("url").to_pylist(),
-                                light.column("ats_type").to_pylist()):
+            for url, ats in zip(
+                light.column("url").to_pylist(), light.column("ats_type").to_pylist()
+            ):
                 if ats in _BOARD_ATS and (key := board_key_of(url or "")):
                     covered.add(key)
             keep, verticals = [], []
@@ -210,8 +235,9 @@ class StapplyLane(Lane):
             full = pf.read_row_group(i, columns=cols).filter(pa.array(keep)).to_pylist()
             for row, vertical in zip(full, verticals):
                 posting = posting_from(row, vertical, names, feed_names or {})
-                crawl.record_listing(self.name, posting["title"], vertical, True,
-                                     posting["posting_key"])
+                crawl.record_listing(
+                    self.name, posting["title"], vertical, True, posting["posting_key"]
+                )
                 self.rows.append(posting)
         if not self.stats.truncated:
             crawl.covered = frozenset(covered)
@@ -232,9 +258,14 @@ class StapplyLane(Lane):
             key = posting["posting_key"]
             known = crawl.known.get(key)
             stored = (known or {}).get("company", "")
-            if stored and not parse.looks_like_slug(stored) and (
+            if (
+                stored
+                and not parse.looks_like_slug(stored)
+                and (
                     parse.looks_like_slug(posting["company"])
-                    or oracle.site_url(posting["url"], posting["company"])):
+                    or oracle.site_url(posting["url"], posting["company"])
+                )
+            ):
                 posting = {**posting, "company": stored}
             stats.known += known is not None
             stats.new += known is None
@@ -293,8 +324,10 @@ class StapplyLane(Lane):
         if named:
             stats.notes.append(f"{named} company names read from job pages")
         if pages.given_up():
-            stats.notes.append(f"nothing read from the first {MAX_HOST_FAILURES} pages, not read "
-                               f"again tonight: {', '.join(pages.given_up())}")
+            stats.notes.append(
+                f"nothing read from the first {MAX_HOST_FAILURES} pages, not read "
+                f"again tonight: {', '.join(pages.given_up())}"
+            )
         return stats
 
 
@@ -319,7 +352,8 @@ class _PageReader:
         None when not read."""
         site = site_of(url)
         if self.crawl.deadline_reached() or (
-                site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES):
+            site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES
+        ):
             return None
         wait = self.last + self.pacing - time.time()
         if wait > 0:
@@ -344,5 +378,6 @@ class _PageReader:
             self.failures[site] = self.failures.get(site, 0) + 1
 
     def given_up(self) -> list[str]:
-        return sorted(s for s, n in self.failures.items()
-                      if n >= MAX_HOST_FAILURES and s not in self.worked)
+        return sorted(
+            s for s, n in self.failures.items() if n >= MAX_HOST_FAILURES and s not in self.worked
+        )

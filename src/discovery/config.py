@@ -4,6 +4,7 @@
 with it; `discover` runs the same check before it starts. A key the loader
 does not know is reported by name, never ignored.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,7 +24,9 @@ SCHEMA_VERSION = 2
 # Every lane and its kind: the search lanes (jobspy), the bulk-file feed, and
 # the ATS board lanes (from job_boards, which /apply shares).
 LANE_KINDS: dict[str, str] = {
-    "linkedin": "search", "indeed": "search", "stapply": "feed",
+    "linkedin": "search",
+    "indeed": "search",
+    "stapply": "feed",
     **{name: "board" for name in ATS_SOURCE_NAMES},
 }
 JOBSPY_SOURCES = tuple(n for n, k in LANE_KINDS.items() if k == "search")
@@ -32,26 +35,53 @@ SOURCE_NAMES = tuple(LANE_KINDS)
 # Default pacing where a lane differs from SourceConfig's.
 _DEFAULT_PACING = {"linkedin": 3.0, "indeed": 2.0, "ashby": 2.0, "workday": 2.0}
 
-_TOP_LEVEL_KEYS = frozenset({
-    "schema_version", "deadline_hours", "location_allowlist", "search_locations", "sources",
-    "live_days", "search_max_age_days", "retention", "forget_after_days", "raw_keep_days",
-    "log_keep_days", "dead_every_days",
-})
+_TOP_LEVEL_KEYS = frozenset(
+    {
+        "schema_version",
+        "deadline_hours",
+        "location_allowlist",
+        "search_locations",
+        "sources",
+        "live_days",
+        "search_max_age_days",
+        "retention",
+        "forget_after_days",
+        "raw_keep_days",
+        "log_keep_days",
+        "dead_every_days",
+    }
+)
 _ALLOWLIST_KEYS = frozenset({"countries"})
 _RETENTION_KEYS = frozenset({"score_threshold", "high_days", "low_days"})
-_SOURCE_KEYS = frozenset({
-    "enabled", "pacing_seconds", "page_delay_seconds", "page_delay_band_seconds",
-    "remote_queries", "abroad", "every_days", "max_pages", "hours_old", "results_wanted",
-    "max_snapshot_age_hours", "companies",
-})
+_SOURCE_KEYS = frozenset(
+    {
+        "enabled",
+        "pacing_seconds",
+        "page_delay_seconds",
+        "page_delay_band_seconds",
+        "remote_queries",
+        "abroad",
+        "every_days",
+        "max_pages",
+        "hours_old",
+        "results_wanted",
+        "max_snapshot_age_hours",
+        "companies",
+    }
+)
 _ABROAD_KEYS = frozenset({"countries", "verticals"})
 _COMPANIES_KEYS = frozenset({"terms", "ids"})
 # Keys a schema_version 1 file may still carry, and what replaced them.
 _RETIRED_KEYS = {
-    "raw_retention_days": "raw_keep_days", "board_max_age_days": "(nothing; boards are live while listed)",
-    "cold_rotation_runs": "every_days", "cadence": "every_days",
-    "pacing_spread": "(nothing)", "detail_reuse_days": "(nothing; the store keeps every JD)",
-    "states": "(nothing)", "cities": "(nothing)", "continents": "countries",
+    "raw_retention_days": "raw_keep_days",
+    "board_max_age_days": "(nothing; boards are live while listed)",
+    "cold_rotation_runs": "every_days",
+    "cadence": "every_days",
+    "pacing_spread": "(nothing)",
+    "detail_reuse_days": "(nothing; the store keeps every JD)",
+    "states": "(nothing)",
+    "cities": "(nothing)",
+    "continents": "countries",
 }
 
 # With no `search_locations`, the jobspy lanes query the allowlist's
@@ -100,24 +130,34 @@ class LocationAllowlist:
 
     def effective_countries(self) -> set[str]:
         from src.shared.location.places import canonical_country
+
         return {canonical_country(c) or c for c in self.countries}
 
     def unresolved(self) -> list[str]:
         from src.shared.location.places import canonical_country
-        return [f"location_allowlist.countries: {c!r} is not a country name"
-                for c in self.countries if canonical_country(c) is None]
+
+        return [
+            f"location_allowlist.countries: {c!r} is not a country name"
+            for c in self.countries
+            if canonical_country(c) is None
+        ]
 
 
 def _default_sources() -> dict[str, SourceConfig]:
-    return {n: SourceConfig(pacing_seconds=_DEFAULT_PACING[n]) if n in _DEFAULT_PACING else SourceConfig()
-            for n in SOURCE_NAMES}
+    return {
+        n: SourceConfig(pacing_seconds=_DEFAULT_PACING[n])
+        if n in _DEFAULT_PACING
+        else SourceConfig()
+        for n in SOURCE_NAMES
+    }
 
 
 @dataclass
 class DiscoveryConfig:
     deadline_hours: float = 4.0
     location_allowlist: LocationAllowlist = field(
-        default_factory=lambda: LocationAllowlist(["United States"]))
+        default_factory=lambda: LocationAllowlist(["United States"])
+    )
     # Where the jobspy lanes search, as against what the view accepts.
     search_locations: list[str] = field(default_factory=list)
     sources: dict[str, SourceConfig] = field(default_factory=_default_sources)
@@ -162,14 +202,17 @@ class DiscoveryConfig:
                 problems.append(
                     f"location_allowlist expands to {n} search locations (max "
                     f"{MAX_SEARCH_LOCATIONS} without an explicit search_locations). Set "
-                    f"search_locations to the countries to query.")
+                    f"search_locations to the countries to query."
+                )
         problems += self._abroad_problems()
-        board_every = [s.every_days for n, s in self.sources.items()
-                       if n in ATS_SOURCE_NAMES and s.enabled]
+        board_every = [
+            s.every_days for n, s in self.sources.items() if n in ATS_SOURCE_NAMES and s.enabled
+        ]
         if board_every and self.live_days <= max(board_every) + 1:
             problems.append(
                 f"live_days ({self.live_days}) must be above every_days + 1 "
-                f"({max(board_every) + 1}), or a board's jobs leave the view between checks")
+                f"({max(board_every) + 1}), or a board's jobs leave the view between checks"
+            )
         return problems
 
     def _abroad_problems(self) -> list[str]:
@@ -191,15 +234,18 @@ class DiscoveryConfig:
                 if canonical is None:
                     problems.append(f"{where}.countries: {c!r} is not a country name")
                 elif allowed and canonical.lower() not in allowed:
-                    problems.append(f"{where}.countries: {c!r} is not in location_allowlist, "
-                                    f"so the view would drop every row it finds")
+                    problems.append(
+                        f"{where}.countries: {c!r} is not in location_allowlist, "
+                        f"so the view would drop every row it finds"
+                    )
             lanes = verticals.get_config().verticals
             for v in src.abroad_verticals:
                 if v not in lanes:
                     problems.append(f"{where}.verticals: {v!r} is not a vertical")
                 elif not lanes[v].abroad_terms:
-                    problems.append(f"{where}.verticals: {v!r} has no abroad_terms in "
-                                    f"profile/verticals.yaml")
+                    problems.append(
+                        f"{where}.verticals: {v!r} has no abroad_terms in profile/verticals.yaml"
+                    )
         return problems
 
 
@@ -217,42 +263,55 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         enabled=bool(v.get("enabled", True)),
         pacing_seconds=float(v.get("pacing_seconds", base.pacing_seconds)),
         page_delay_seconds=float(v.get("page_delay_seconds", DEFAULT_PAGE_DELAY_SECONDS)),
-        page_delay_band_seconds=float(v.get("page_delay_band_seconds",
-                                            DEFAULT_PAGE_DELAY_BAND_SECONDS)),
+        page_delay_band_seconds=float(
+            v.get("page_delay_band_seconds", DEFAULT_PAGE_DELAY_BAND_SECONDS)
+        ),
         remote_queries=v.get("remote_queries", True),
         every_days=_int(v.get("every_days", 1), f"{where}.every_days", 1),
         max_pages=_int(v.get("max_pages", 6), f"{where}.max_pages", 1),
         hours_old=_int(v.get("hours_old", 336), f"{where}.hours_old", 1),
         results_wanted=_int(v.get("results_wanted", 100), f"{where}.results_wanted", 1),
-        max_snapshot_age_hours=_int(v.get("max_snapshot_age_hours", base.max_snapshot_age_hours),
-                                    f"{where}.max_snapshot_age_hours", 1),
+        max_snapshot_age_hours=_int(
+            v.get("max_snapshot_age_hours", base.max_snapshot_age_hours),
+            f"{where}.max_snapshot_age_hours",
+            1,
+        ),
     )
     if out.page_delay_seconds < MIN_PAGE_DELAY_SECONDS:
-        raise ValueError(f"{where}.page_delay_seconds must be >= {MIN_PAGE_DELAY_SECONDS}, "
-                         f"got {out.page_delay_seconds}")
+        raise ValueError(
+            f"{where}.page_delay_seconds must be >= {MIN_PAGE_DELAY_SECONDS}, "
+            f"got {out.page_delay_seconds}"
+        )
     if out.page_delay_band_seconds < 0:
         raise ValueError(f"{where}.page_delay_band_seconds must be >= 0")
     if not isinstance(out.remote_queries, bool):
-        raise ValueError(f"{where}.remote_queries must be true or false, got {out.remote_queries!r}")
+        raise ValueError(
+            f"{where}.remote_queries must be true or false, got {out.remote_queries!r}"
+        )
     abroad = v.get("abroad") or {}
     if not isinstance(abroad, dict):
         raise ValueError(f"{where}.abroad must be a mapping")
     cfg.unknown_keys += [f"sources.{name}.abroad.{k}" for k in abroad if k not in _ABROAD_KEYS]
     for key in _ABROAD_KEYS:
         values = abroad.get(key) or []
-        if not isinstance(values, list) or not all(isinstance(x, str) and x.strip() for x in values):
+        if not isinstance(values, list) or not all(
+            isinstance(x, str) and x.strip() for x in values
+        ):
             raise ValueError(f"{where}.abroad.{key} must be a list of names")
         setattr(out, f"abroad_{key}", [x.strip() for x in values])
     companies = v.get("companies") or {}
     if not isinstance(companies, dict):
         raise ValueError(f"{where}.companies must be a mapping")
-    cfg.unknown_keys += [f"sources.{name}.companies.{k}" for k in companies if k not in _COMPANIES_KEYS]
+    cfg.unknown_keys += [
+        f"sources.{name}.companies.{k}" for k in companies if k not in _COMPANIES_KEYS
+    ]
     terms, ids = companies.get("terms") or [], companies.get("ids") or {}
     if not isinstance(terms, list) or not all(isinstance(x, str) and x.strip() for x in terms):
         raise ValueError(f"{where}.companies.terms must be a list of search terms")
     if not isinstance(ids, dict) or not all(
-            isinstance(k, str) and k.strip() and isinstance(i, int) and not isinstance(i, bool)
-            for k, i in ids.items()):
+        isinstance(k, str) and k.strip() and isinstance(i, int) and not isinstance(i, bool)
+        for k, i in ids.items()
+    ):
         raise ValueError(f"{where}.companies.ids must map a company name to its LinkedIn id")
     if ids and name != "linkedin":
         raise ValueError(f"{where}.companies is LinkedIn only")
@@ -303,18 +362,28 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         cfg.search_locations = [str(s).strip() for s in raw if str(s).strip()]
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
-    for key in ("live_days", "search_max_age_days", "forget_after_days", "raw_keep_days",
-                "log_keep_days", "dead_every_days"):
+    for key in (
+        "live_days",
+        "search_max_age_days",
+        "forget_after_days",
+        "raw_keep_days",
+        "log_keep_days",
+        "dead_every_days",
+    ):
         setattr(cfg, key, _int(data.get(key, getattr(cfg, key)), f"{p}: {key}", 1))
     retention = data.get("retention") or {}
     if not isinstance(retention, dict):
         raise ValueError(f"{p}: retention must be a mapping")
     cfg.unknown_keys += [f"retention.{k}" for k in retention if k not in _RETENTION_KEYS]
-    cfg.retention_score_threshold = float(retention.get("score_threshold",
-                                                        cfg.retention_score_threshold))
+    cfg.retention_score_threshold = float(
+        retention.get("score_threshold", cfg.retention_score_threshold)
+    )
     for key in ("high_days", "low_days"):
-        setattr(cfg, f"retention_{key}", _int(retention.get(key, getattr(cfg, f"retention_{key}")),
-                                               f"{p}: retention.{key}", 1))
+        setattr(
+            cfg,
+            f"retention_{key}",
+            _int(retention.get(key, getattr(cfg, f"retention_{key}")), f"{p}: retention.{key}", 1),
+        )
     return cfg
 
 
@@ -325,9 +394,13 @@ def main() -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 1
-    print(f"countries: {', '.join(sorted(cfg.location_allowlist.effective_countries())) or '(any)'}")
-    print(f"search in: {', '.join(cfg.effective_search_locations())}"
-          + ("" if cfg.search_locations else "  (from the allowlist)"))
+    print(
+        f"countries: {', '.join(sorted(cfg.location_allowlist.effective_countries())) or '(any)'}"
+    )
+    print(
+        f"search in: {', '.join(cfg.effective_search_locations())}"
+        + ("" if cfg.search_locations else "  (from the allowlist)")
+    )
 
     def line(name: str, s: SourceConfig) -> str:
         bits = [f"{s.pacing_seconds:g}s"]
@@ -335,7 +408,9 @@ def main() -> int:
             if not s.remote_queries:
                 bits.append("no remote queries")
             if s.abroad_countries:
-                bits.append(f"abroad {'/'.join(s.abroad_verticals)} in {len(s.abroad_countries)} countries")
+                bits.append(
+                    f"abroad {'/'.join(s.abroad_verticals)} in {len(s.abroad_countries)} countries"
+                )
             if s.company_ids:
                 bits.append(f"{len(s.company_ids)} companies x {len(s.company_terms)} terms")
         elif name in FEED_SOURCES:
@@ -346,9 +421,11 @@ def main() -> int:
 
     enabled = [(n, s) for n, s in cfg.sources.items() if s.enabled]
     print("sources:   " + (", ".join(line(n, s) for n, s in enabled) or "(none enabled)"))
-    print(f"live view: seen within {cfg.live_days}d; search rows posted within "
-          f"{cfg.search_max_age_days}d; keep {cfg.retention_high_days}d at fit >= "
-          f"{cfg.retention_score_threshold:g}, else {cfg.retention_low_days}d")
+    print(
+        f"live view: seen within {cfg.live_days}d; search rows posted within "
+        f"{cfg.search_max_age_days}d; keep {cfg.retention_high_days}d at fit >= "
+        f"{cfg.retention_score_threshold:g}, else {cfg.retention_low_days}d"
+    )
     print(f"deadline_hours: {cfg.deadline_hours:g}")
     problems = cfg.validate()
     if problems:

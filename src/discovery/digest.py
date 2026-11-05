@@ -4,6 +4,7 @@ Reads `jobs/runs/*.json` (written by `run.py`) and `jobs/boards.parquet`.
 Every number the `/discover` digest shows is computed here; the command
 session only renders it (R7). Reads, never writes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,7 +44,7 @@ def _median(values):
 def build_digest(reports: list[dict], window: int = DEFAULT_WINDOW) -> dict | None:
     if not reports:
         return None
-    latest, history = reports[0], [r for r in reports[1:window + 1] if not r.get("unreadable")]
+    latest, history = reports[0], [r for r in reports[1 : window + 1] if not r.get("unreadable")]
     digest = {
         "run_id": latest["run_id"],
         "wall_time_s": latest.get("wall_time_s"),
@@ -51,8 +52,12 @@ def build_digest(reports: list[dict], window: int = DEFAULT_WINDOW) -> dict | No
         "new_job_ids": len(latest.get("new_job_ids") or []),
         "view": latest.get("view") or {},
         "history_runs": len(history),
-        "trends": [], "crashed": [], "silent_zeros": [], "below_median": [],
-        "truncated": [], "not_started": [],
+        "trends": [],
+        "crashed": [],
+        "silent_zeros": [],
+        "below_median": [],
+        "truncated": [],
+        "not_started": [],
         "notes": ["latest report unreadable"] if latest.get("unreadable") else [],
     }
     for name, lane in sorted((latest.get("lanes") or {}).items()):
@@ -70,10 +75,15 @@ def build_digest(reports: list[dict], window: int = DEFAULT_WINDOW) -> dict | No
                     break
                 streak += 1
         trend = {
-            "name": name, "status": lane.get("status"), "rows": rows,
-            "median_rows": median_rows, "ratio": ratio,
+            "name": name,
+            "status": lane.get("status"),
+            "rows": rows,
+            "median_rows": median_rows,
+            "ratio": ratio,
             "below_median": ratio is not None and ratio < BELOW_MEDIAN_FRACTION,
-            "zero_streak": streak, "errors": errors, "median_errors": median_errors,
+            "zero_streak": streak,
+            "errors": errors,
+            "median_errors": median_errors,
             "error_delta": errors - median_errors if median_errors is not None else None,
             # Zero rows, no error, and this lane normally finds rows: the quiet
             # block. Gated on the median, so an empty inbox never fires.
@@ -91,7 +101,9 @@ def build_digest(reports: list[dict], window: int = DEFAULT_WINDOW) -> dict | No
         if lane.get("truncated"):
             digest["truncated"].append(name)
         if lane.get("boards_due") and lane.get("boards_checked", 0) < lane["boards_due"]:
-            digest["not_started"].append(f"{name}: {lane['boards_due'] - lane['boards_checked']} boards left due")
+            digest["not_started"].append(
+                f"{name}: {lane['boards_due'] - lane['boards_checked']} boards left due"
+            )
     digest["boards"] = board_summary()
     return digest
 
@@ -103,13 +115,17 @@ def board_summary(path: Path | None = None) -> dict:
         return {}
     try:
         import pandas as pd
+
         state = pd.read_parquet(path)
     except (ImportError, OSError, ValueError):
         return {}
     out = {}
     for ats, g in state.groupby("ats"):
-        out[ats] = {"boards": len(g), "dead": int((g["status"] == "dead").sum()),
-                    "never_found": int(g["last_found"].isna().sum())}
+        out[ats] = {
+            "boards": len(g),
+            "dead": int((g["status"] == "dead").sum()),
+            "never_found": int(g["last_found"].isna().sum()),
+        }
     return out
 
 
@@ -137,8 +153,10 @@ def main(argv=None) -> int:
     if args.json:
         print(json.dumps(digest, indent=2))
         return 0
-    print(f"run {digest['run_id']}  wall {digest['wall_time_s'] or 0:.0f}s  "
-          f"clean {digest['final_rows']}  new ids {digest['new_job_ids']}")
+    print(
+        f"run {digest['run_id']}  wall {digest['wall_time_s'] or 0:.0f}s  "
+        f"clean {digest['final_rows']}  new ids {digest['new_job_ids']}"
+    )
     for t in digest["trends"]:
         bits = [f"{t['name']}: {t['status']}", f"rows={t['rows']}"]
         if t["median_rows"] is not None:

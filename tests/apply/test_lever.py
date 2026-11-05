@@ -3,6 +3,7 @@ against — the scan output is the merge, straight from the DOM.
 
 No network: fetch_text is stubbed everywhere.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -31,7 +32,8 @@ class TestParsePosting:
             "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
         )
         assert (posting.slug, posting.posting_id) == (
-            "widgetco", "00000001-0000-0000-0000-000000000001",
+            "widgetco",
+            "00000001-0000-0000-0000-000000000001",
         )
 
     def test_the_apply_suffix_is_optional_on_input_but_always_on_output(self):
@@ -81,7 +83,9 @@ class TestScanLeverForm:
         # The same board asks for resume/location as required on one posting
         # (minimal fixture) and optional on another (full fixture) — required
         # has to come from what's actually rendered, never a fixed policy.
-        minimal = {f.id: f.required for f in scan_lever_form(load_html("form_lever_minimal")).fields}
+        minimal = {
+            f.id: f.required for f in scan_lever_form(load_html("form_lever_minimal")).fields
+        }
         full = {f.id: f.required for f in scan_lever_form(load_html("form_lever_full")).fields}
         assert minimal["resume"] is True
         assert full["resume"] is False
@@ -130,8 +134,12 @@ class TestScanLeverForm:
         r = scan_lever_form(load_html("form_lever_full"))
         eeoc = {f.id: f for f in r.fields if f.section == "eeoc"}
         assert set(eeoc) == {
-            "eeo[gender]", "eeo[race]", "eeo[veteran]", "eeo[disability]",
-            "eeo[disabilitySignature]", "eeo[disabilitySignatureDate]",
+            "eeo[gender]",
+            "eeo[race]",
+            "eeo[veteran]",
+            "eeo[disability]",
+            "eeo[disabilitySignature]",
+            "eeo[disabilitySignatureDate]",
         }
         assert eeoc["eeo[gender]"].kind == "select"
         assert eeoc["eeo[race]"].kind == "radio_group"
@@ -193,12 +201,12 @@ class TestHasCaptcha:
 
 # The head and posting header of a live Lever apply page, trimmed.
 _LIVE_HEAD = (
-    '<html><head><title>Gasket Works - Agentic Software Engineer (f/m/d)</title>'
+    "<html><head><title>Gasket Works - Agentic Software Engineer (f/m/d)</title>"
     '<meta property="og:title" content="Gasket Works - Agentic Software Engineer (f/m/d)" />'
     '</head><body><div class="main-header-content"><a class="main-header-logo">'
     '<img alt="Gasket Works logo" src="x.png"></a></div>'
     '<div class="section page-centered posting-header">'
-    '<h2>Agentic Software Engineer (f/m/d)</h2></div>'
+    "<h2>Agentic Software Engineer (f/m/d)</h2></div>"
 )
 
 
@@ -208,16 +216,21 @@ class TestPageIdentity:
 
     def test_company_is_og_title_minus_the_posting_title(self):
         assert page_identity(_LIVE_HEAD + "</body></html>") == (
-            "Gasket Works", "Agentic Software Engineer (f/m/d)")
+            "Gasket Works",
+            "Agentic Software Engineer (f/m/d)",
+        )
 
     def test_a_dash_inside_the_title_stays_in_the_title(self):
-        html = _LIVE_HEAD.replace("Agentic Software Engineer (f/m/d)",
-                                  "Engineer - Platform") + "</body></html>"
+        html = (
+            _LIVE_HEAD.replace("Agentic Software Engineer (f/m/d)", "Engineer - Platform")
+            + "</body></html>"
+        )
         assert page_identity(html) == ("Gasket Works", "Engineer - Platform")
 
     def test_the_logo_alt_is_the_fallback(self):
-        html = ('<html><body><a class="main-header-logo"><img alt="Ratchet Co logo">'
-                "</a></body></html>")
+        html = (
+            '<html><body><a class="main-header-logo"><img alt="Ratchet Co logo"></a></body></html>'
+        )
         assert page_identity(html) == ("Ratchet Co", "")
 
     def test_a_page_that_states_neither_gives_empty_strings(self):
@@ -228,9 +241,13 @@ class TestFetchForm:
     def test_a_404_is_an_ordinary_expiry(self):
         from src.shared.http_client import CareersError
 
-        posting = parse_posting("https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001")
-        with (patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)),
-              pytest.raises(PostingExpired)):
+        posting = parse_posting(
+            "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
+        )
+        with (
+            patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)),
+            pytest.raises(PostingExpired),
+        ):
             fetch_form(posting)
 
 
@@ -253,7 +270,9 @@ class TestLoadBoard:
                 "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
             )
         assert (board.schema.company_name, board.schema.title) == (
-            "Gasket Works", "Agentic Software Engineer (f/m/d)")
+            "Gasket Works",
+            "Agentic Software Engineer (f/m/d)",
+        )
 
     def test_two_submit_buttons_raise_rather_than_picking_one(self):
         """`btn-submit` is a data-qa attribute, not a unique id — a board that
@@ -265,11 +284,11 @@ class TestLoadBoard:
             '<button type="button" data-qa="btn-submit">Save for later</button></form>',
             1,
         )
-        with (patch("src.apply.lever.fetch_text", return_value=html),
-              pytest.raises(LeverScanError, match="expected one submit button, found 2")):
-            load_board(
-                "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
-            )
+        with (
+            patch("src.apply.lever.fetch_text", return_value=html),
+            pytest.raises(LeverScanError, match="expected one submit button, found 2"),
+        ):
+            load_board("https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001")
 
     def test_plan_for_board_carries_ats_and_captcha_through(self, answers, tailor_dir):
         html = load_html("form_lever_minimal")
@@ -278,8 +297,12 @@ class TestLoadBoard:
                 "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
             )
         plan = plan_for_board(
-            board, answers, tailor_dir, job_id="deadbeef",
-            ats="lever", requires_captcha=board.requires_captcha,
+            board,
+            answers,
+            tailor_dir,
+            job_id="deadbeef",
+            ats="lever",
+            requires_captcha=board.requires_captcha,
         )
         assert plan.ats == "lever"
         assert plan.requires_captcha is True
@@ -390,8 +413,10 @@ class TestCheckboxes:
         assert "Privacy Policy" in f.label
 
     def test_the_rest_of_the_form_still_scans_around_it(self):
-        inner = ('<label><div class="application-label">Pronouns</div></label>'
-                 '<input type="checkbox" name="pronouns" value="they/them">')
+        inner = (
+            '<label><div class="application-label">Pronouns</div></label>'
+            '<input type="checkbox" name="pronouns" value="they/them">'
+        )
         before = len(scan_lever_form(load_html("form_lever_full")).fields)
         after = len(scan_lever_form(self._form(inner)).fields)
         assert after == before + 1
@@ -422,7 +447,7 @@ class TestStructuredLocation:
         '<input class="location-input" id="location-input" type="text" '
         'maxlength="100" name="location" required="">'
         '<input id="selected-location" type="hidden" name="selectedLocation">'
-        '</div></label>'
+        "</div></label>"
     )
 
     def test_a_location_with_a_hidden_partner_is_type_and_pick(self):

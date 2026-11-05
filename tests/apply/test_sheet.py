@@ -1,4 +1,5 @@
 """The status sheet is derived from state, ledger and run reports — never typed."""
+
 from __future__ import annotations
 
 import openpyxl
@@ -12,27 +13,40 @@ GH = "https://job-boards.greenhouse.io/acme/jobs/1"
 
 
 def _world(tmp_path, monkeypatch):
-    for name, value in (("REPO_ROOT", tmp_path), ("PROFILE", tmp_path / "profile"),
-                        ("PIPELINE", tmp_path / "pipeline"),
-                        ("SCORED", tmp_path / "scored.parquet"),
-                        ("CLEAN", tmp_path / "clean.parquet")):
+    for name, value in (
+        ("REPO_ROOT", tmp_path),
+        ("PROFILE", tmp_path / "profile"),
+        ("PIPELINE", tmp_path / "pipeline"),
+        ("SCORED", tmp_path / "scored.parquet"),
+        ("CLEAN", tmp_path / "clean.parquet"),
+    ):
         monkeypatch.setattr(paths, name, value)
     from src import apply_cli
+
     monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
     (tmp_path / "profile").mkdir()
-    (tmp_path / "profile" / "automation.yaml").write_text(yaml.safe_dump(
-        {"score_threshold": 80, "table_path": "sheet.xlsx"}), encoding="utf-8")
-    scored_rows(*({"job_id": j, "fit_score": s} for j, s in
-                  (("aaaa1111", 90), ("bbbb2222", 85), ("cccc3333", 70)))
-                ).to_parquet(tmp_path / "scored.parquet")
-    write_clean(tmp_path / "clean.parquet", *({"job_id": j, "company": "Acme", "title": "Eng",
-                                               "source": "greenhouse", "url": GH}
-                                              for j in ("aaaa1111", "bbbb2222", "cccc3333")))
+    (tmp_path / "profile" / "automation.yaml").write_text(
+        yaml.safe_dump({"score_threshold": 80, "table_path": "sheet.xlsx"}), encoding="utf-8"
+    )
+    scored_rows(
+        *(
+            {"job_id": j, "fit_score": s}
+            for j, s in (("aaaa1111", 90), ("bbbb2222", 85), ("cccc3333", 70))
+        )
+    ).to_parquet(tmp_path / "scored.parquet")
+    write_clean(
+        tmp_path / "clean.parquet",
+        *(
+            {"job_id": j, "company": "Acme", "title": "Eng", "source": "greenhouse", "url": GH}
+            for j in ("aaaa1111", "bbbb2222", "cccc3333")
+        ),
+    )
 
 
 def _state(tmp_path, job_id, state, folder=None):
-    write_state(tmp_path / "pipeline", job_id, state, url=GH,
-                tailored_dirs=[folder] if folder else [])
+    write_state(
+        tmp_path / "pipeline", job_id, state, url=GH, tailored_dirs=[folder] if folder else []
+    )
 
 
 def _rows(tmp_path):
@@ -60,7 +74,9 @@ def test_status_follows_the_records(tmp_path, monkeypatch):
     (runs).mkdir(parents=True, exist_ok=True)
     (runs / "2026-09-28T10-00-00.md").write_text(
         "# apply run\n\n## Ready (not submitted) (1)\n\n- `aaaa1111` Acme — Eng\n"
-        "  - every field resolved\n", encoding="utf-8")
+        "  - every field resolved\n",
+        encoding="utf-8",
+    )
     sheet.refresh()
     row = _rows(tmp_path)["aaaa1111"]
     assert row["status"] == "Submittable" and "--submit" in row["uv_run_command"]
@@ -74,11 +90,13 @@ def test_status_follows_the_records(tmp_path, monkeypatch):
 
 def test_answers_waiting_for_the_user(tmp_path, monkeypatch):
     import json
+
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
     (paths.APPLICATIONS / folder / "answers_override.json").write_text(
-        json.dumps({"job_id": "aaaa1111", "q": {"value": "x"}}), encoding="utf-8")
+        json.dumps({"job_id": "aaaa1111", "q": {"value": "x"}}), encoding="utf-8"
+    )
     _state(tmp_path, "aaaa1111", "tailored", folder)
     sheet.refresh(add=True)
     assert _rows(tmp_path)["aaaa1111"]["status"] == "Needs your OK"
@@ -86,10 +104,12 @@ def test_answers_waiting_for_the_user(tmp_path, monkeypatch):
 
 def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
     import json
+
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
     from src.apply import confirmation
+
     data = {"job_id": "aaaa1111", "q": {"value": "x"}}
     answers = paths.APPLICATIONS / folder / "answers_override.json"
     answers.write_text(json.dumps(data), encoding="utf-8")
@@ -101,6 +121,7 @@ def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
 
 def test_job_ids_lists_one_status_in_sheet_order(tmp_path, monkeypatch, capsys):
     from src import apply_cli
+
     _world(tmp_path, monkeypatch)
     assert sheet.job_ids("New") == []
     sheet.refresh(add=True)
@@ -133,7 +154,9 @@ def test_an_expired_role_stays_with_an_expired_note(tmp_path, monkeypatch):
     runs.mkdir(parents=True)
     (runs / "2026-09-28T10-00-00.md").write_text(
         "# apply run\n\n## Expired postings (1)\n\n- `aaaa1111` Acme — Eng\n"
-        "  - the posting is gone\n", encoding="utf-8")
+        "  - the posting is gone\n",
+        encoding="utf-8",
+    )
     sheet.refresh(add=True)
     row = _rows(tmp_path)["aaaa1111"]
     assert row["status"] == "Expired" and row["note"].startswith("expired")
@@ -165,17 +188,24 @@ def test_unsubmittable_role_is_new_until_it_has_a_resume():
 
 def test_a_ledger_line_under_another_job_id_for_the_same_form_counts_as_sent(tmp_path, monkeypatch):
     import json
+
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
     (paths.APPLICATIONS / folder / "answers_override.json").write_text(
-        json.dumps({"job_id": "aaaa1111", "q": {"value": "x"}}), encoding="utf-8")
+        json.dumps({"job_id": "aaaa1111", "q": {"value": "x"}}), encoding="utf-8"
+    )
     (paths.APPLICATIONS / folder / "plan.json").write_text(
-        json.dumps({"form_url": "https://jobs.lever.co/acme/1/apply"}), encoding="utf-8")
+        json.dumps({"form_url": "https://jobs.lever.co/acme/1/apply"}), encoding="utf-8"
+    )
     _state(tmp_path, "aaaa1111", "tailored", folder)
     sheet.refresh(add=True)
     assert _rows(tmp_path)["aaaa1111"]["status"] == "Needs your OK"
-    ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "zzzz9999", "backfill",
-                  form_url="https://jobs.lever.co/acme/1/apply")
+    ledger.append(
+        paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME,
+        "zzzz9999",
+        "backfill",
+        form_url="https://jobs.lever.co/acme/1/apply",
+    )
     counts = sheet.refresh()
     assert "aaaa1111" not in _rows(tmp_path) and counts["Applied (removed)"] == 1

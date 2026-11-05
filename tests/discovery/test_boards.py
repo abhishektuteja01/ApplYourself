@@ -1,5 +1,6 @@
 """sources/boards.py: the board list, the due rule, board state, and the
 one board loop, with a fake lane and no network."""
+
 from __future__ import annotations
 
 import time
@@ -17,14 +18,19 @@ JD = "Build retrieval systems for clinical data and ship them to production dail
 
 
 def write(path, rows):
-    path.write_text("ats,name,slug,active\n" + "\n".join(",".join(r) for r in rows) + "\n", encoding="utf-8")
+    path.write_text(
+        "ats,name,slug,active\n" + "\n".join(",".join(r) for r in rows) + "\n", encoding="utf-8"
+    )
 
 
 # ---------- the board list ----------
 
+
 def test_case_duplicates_fold_and_the_last_row_wins_the_name(tmp_path):
-    write(tmp_path / "boards.csv", [("greenhouse", "Acme", "acme", ""),
-                                    ("greenhouse", "Acme Inc", "ACME", "")])
+    write(
+        tmp_path / "boards.csv",
+        [("greenhouse", "Acme", "acme", ""), ("greenhouse", "Acme Inc", "ACME", "")],
+    )
     boards = B.load_boards(boards_dir=tmp_path)
     assert [(b.name, b.slug) for b in boards] == [("Acme Inc", "acme")]
 
@@ -35,7 +41,10 @@ def test_a_retired_spelling_does_not_retire_its_live_twin(tmp_path):
 
 
 def test_a_tombstone_outlives_a_readd(tmp_path):
-    write(tmp_path / "boards.csv", [("greenhouse", "Dead", "dead", "0"), ("greenhouse", "Dead", "dead", "")])
+    write(
+        tmp_path / "boards.csv",
+        [("greenhouse", "Dead", "dead", "0"), ("greenhouse", "Dead", "dead", "")],
+    )
     assert B.load_boards(boards_dir=tmp_path) == []
     assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 1
 
@@ -47,17 +56,20 @@ def test_unknown_ats_and_blank_rows_are_skipped(tmp_path):
 
 # ---------- due rule and state ----------
 
+
 def _state(rows):
     return pd.DataFrame([dict(zip(B.STATE_COLUMNS, r)) for r in rows], columns=B.STATE_COLUMNS)
 
 
 def test_due_boards_order_and_every_days():
     boards = [B.Board("workday", n, n) for n in ("a", "b", "c", "d")]
-    state = _state([
-        ("workday", "a", "A", TODAY - pd.Timedelta(days=1), pd.NaT, "ok", 0, 0, 0, 0),
-        ("workday", "b", "B", TODAY - pd.Timedelta(days=5), pd.NaT, "ok", 0, 0, 0, 0),
-        ("workday", "c", "C", TODAY - pd.Timedelta(days=3), pd.NaT, "ok", 0, 0, 0, 0),
-    ])
+    state = _state(
+        [
+            ("workday", "a", "A", TODAY - pd.Timedelta(days=1), pd.NaT, "ok", 0, 0, 0, 0),
+            ("workday", "b", "B", TODAY - pd.Timedelta(days=5), pd.NaT, "ok", 0, 0, 0, 0),
+            ("workday", "c", "C", TODAY - pd.Timedelta(days=3), pd.NaT, "ok", 0, 0, 0, 0),
+        ]
+    )
     due = B.due_boards(boards, state, TODAY, every_days=3, dead_every_days=14)
     assert [b.slug for b in due] == ["d", "b", "c"]
 
@@ -85,6 +97,7 @@ def test_update_state_strikes_errors_and_found(tmp_path):
 
 # ---------- the loop ----------
 
+
 class FakeLane(B.BoardLane):
     name = "greenhouse"
 
@@ -106,8 +119,16 @@ def crawl_for(tmp_path, slugs, known=None, cfg=None):
     write(tmp_path / "boards.csv", [("greenhouse", s.title(), s, "") for s in slugs])
     cfg = cfg or DiscoveryConfig()
     cfg.sources["greenhouse"].pacing_seconds = 0.5
-    return B.Crawl(cfg, None, TODAY, 0.0, known or {}, S.Batch(),
-                   board_state=tmp_path / "boards.parquet", boards_dir=tmp_path)
+    return B.Crawl(
+        cfg,
+        None,
+        TODAY,
+        0.0,
+        known or {},
+        S.Batch(),
+        board_state=tmp_path / "boards.parquet",
+        boards_dir=tmp_path,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -116,8 +137,13 @@ def no_sleep(monkeypatch):
 
 
 def post(slug, n, title="Widget Functional Consultant", jd=JD):
-    return S.make_posting(source="greenhouse", company=slug.title(), title=title,
-                          url=f"https://job-boards.greenhouse.io/{slug}/jobs/{n}", jd_text=jd)
+    return S.make_posting(
+        source="greenhouse",
+        company=slug.title(),
+        title=title,
+        url=f"https://job-boards.greenhouse.io/{slug}/jobs/{n}",
+        jd_text=jd,
+    )
 
 
 def test_loop_gates_titles_and_saves_new_postings(tmp_path, cfg):
@@ -178,6 +204,7 @@ def test_a_broken_parser_fails_the_lane(tmp_path, cfg):
     class Broken(FakeLane):
         def list_board(self, board, crawl, pause):
             raise KeyError("jobs")
+
     crawl = crawl_for(tmp_path, [f"b{i:02d}" for i in range(12)])
     crawl.vcfg = cfg
     with pytest.raises(RuntimeError, match="API shape"):
@@ -193,13 +220,22 @@ def test_a_board_the_feed_covered_is_not_crawled_and_stays_due(tmp_path, cfg):
     assert stats.boards_due == 1 and stats.notes == ["1 due boards left to the feed"]
 
 
-@pytest.mark.parametrize("url,key", [
-    ("https://job-boards.greenhouse.io/DataDome/jobs/1", "greenhouse|datadome"),
-    ("https://job-boards.anz.greenhouse.io/futuresecureai/jobs/4001528201", "greenhouse|futuresecureai"),
-    ("https://jobs.lever.co/acme/1234abcd-0000", "lever|acme"),
-    ("https://acme.wd5.myworkdayjobs.com/External/job/Berlin/AI_R1", "workday|acme|wd5|external"),
-    ("https://www.linkedin.com/jobs/view/1", ""),
-])
+@pytest.mark.parametrize(
+    "url,key",
+    [
+        ("https://job-boards.greenhouse.io/DataDome/jobs/1", "greenhouse|datadome"),
+        (
+            "https://job-boards.anz.greenhouse.io/futuresecureai/jobs/4001528201",
+            "greenhouse|futuresecureai",
+        ),
+        ("https://jobs.lever.co/acme/1234abcd-0000", "lever|acme"),
+        (
+            "https://acme.wd5.myworkdayjobs.com/External/job/Berlin/AI_R1",
+            "workday|acme|wd5|external",
+        ),
+        ("https://www.linkedin.com/jobs/view/1", ""),
+    ],
+)
 def test_board_key_of_matches_the_board_list_key(url, key):
     assert B.board_key_of(url) == key
     if key.startswith("workday"):

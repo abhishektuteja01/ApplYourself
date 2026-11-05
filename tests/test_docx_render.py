@@ -2,6 +2,7 @@
 
 Uses a programmatic fixture template at test setup so tests don't depend on
 the user's hand-authored template (which is part of slice 3 / onboarding)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,9 +26,14 @@ from src.docx_render import (
 
 # ---------- fixture templates ----------
 
-def _make_template(path: Path, *, styles: list[str] | None = None,
-                   add_table: bool = False,
-                   include_hyperlink_style: bool = True) -> Path:
+
+def _make_template(
+    path: Path,
+    *,
+    styles: list[str] | None = None,
+    add_table: bool = False,
+    include_hyperlink_style: bool = True,
+) -> Path:
     """Build a minimal template with the requested styles. styles=None means
     all 5 required paragraph styles. The Hyperlink character style is added
     explicitly because python-docx's default Document() leaves it latent
@@ -49,6 +55,7 @@ def _make_template(path: Path, *, styles: list[str] | None = None,
 
 
 # ---------- fail-loud paths ----------
+
 
 def test_render_fails_loud_on_missing_template(tmp_path):
     out = tmp_path / "resume.docx"
@@ -86,6 +93,7 @@ def test_render_fails_loud_on_tables_in_template(tmp_path):
 
 
 # ---------- render produces valid docx ----------
+
 
 def test_render_creates_non_empty_docx(tmp_path):
     template = _make_template(tmp_path / "tmpl.docx")
@@ -142,6 +150,7 @@ A line.
 
 # ---------- parse_resume_md block types ----------
 
+
 def test_parse_resume_md_name_block_only_first():
     blocks = parse_resume_md("**Jane**\n\n**WORK EXPERIENCE**")
     assert [b["type"] for b in blocks] == ["name", "section_header"]
@@ -163,9 +172,7 @@ def test_parse_resume_md_section_header_all_caps():
 
 
 def test_parse_resume_md_job_header_with_bold_prefix():
-    blocks = parse_resume_md(
-        "**Jane**\n\n**Advisory Analyst** - Acme Corp | May 2022 – Jul 2024"
-    )
+    blocks = parse_resume_md("**Jane**\n\n**Advisory Analyst** - Acme Corp | May 2022 – Jul 2024")
     job = [b for b in blocks if b["type"] == "job_header"]
     assert len(job) == 1
     runs = job[0]["runs"]
@@ -206,9 +213,7 @@ def test_parse_resume_md_skills_line_colon_prefix_routes_to_body():
 def test_parse_resume_md_job_header_without_trailing_colon_stays_job_header():
     """Sanity: prefixes that do NOT end with ':' (job titles, degree titles)
     keep routing to job_header so the right-tab-stop date logic still applies."""
-    blocks = parse_resume_md(
-        "**N**\n\n**Advisory Analyst** - Acme Corp\tMay 2022 – Jul 2024"
-    )
+    blocks = parse_resume_md("**N**\n\n**Advisory Analyst** - Acme Corp\tMay 2022 – Jul 2024")
     headers = [b for b in blocks if b["type"] == "job_header"]
     assert len(headers) == 1
     assert headers[0]["runs"][0]["text"] == "Advisory Analyst"
@@ -238,6 +243,7 @@ def test_render_centers_contact_line_first_body_after_name(tmp_path):
     line; render must force-center just that paragraph (Resume Body style
     still, alignment override)."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+
     template = _make_template(tmp_path / "tmpl.docx")
     out = tmp_path / "resume.docx"
     md = "**Jane**\n\ncontact line\n\nA later body line."
@@ -255,6 +261,7 @@ def test_render_does_not_center_when_section_header_intervenes(tmp_path):
     """If something other than body comes right after name, no contact
     centering applies to the next body line."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+
     template = _make_template(tmp_path / "tmpl.docx")
     out = tmp_path / "resume.docx"
     md = "**Jane**\n\n**SUMMARY**\n\nA summary line."
@@ -268,6 +275,7 @@ def test_render_does_not_center_when_section_header_intervenes(tmp_path):
 
 
 # ---------- inline links ----------
+
 
 def test_parse_resume_md_inline_link_emits_url_run():
     """[text](url) produces a run with url field set."""
@@ -283,9 +291,7 @@ def test_parse_resume_md_inline_link_emits_url_run():
 
 def test_parse_resume_md_mailto_link():
     """[email](mailto:email) is recognised the same as http links."""
-    blocks = parse_resume_md(
-        "**N**\n\n[me@example.com](mailto:me@example.com)"
-    )
+    blocks = parse_resume_md("**N**\n\n[me@example.com](mailto:me@example.com)")
     bodies = [b for b in blocks if b["type"] == "body"]
     runs = bodies[0]["runs"]
     link_runs = [r for r in runs if r.get("url")]
@@ -298,16 +304,13 @@ def test_parse_resume_md_link_alongside_bold_in_body():
     plain + bold + plain + link + plain runs.
     (A line that STARTS with **bold** routes to job_header by the existing
     rule -- this test deliberately doesn't start with bold so it stays body.)"""
-    blocks = parse_resume_md(
-        "**N**\n\nThe **bold** part and a [link](https://x) here"
-    )
+    blocks = parse_resume_md("**N**\n\nThe **bold** part and a [link](https://x) here")
     bodies = [b for b in blocks if b["type"] == "body"]
     assert len(bodies) == 1
     runs = bodies[0]["runs"]
     assert any(r.get("bold") and r["text"] == "bold" for r in runs)
     assert any(r.get("url") == "https://x" and r["text"] == "link" for r in runs)
-    assert any("here" in r["text"] and not r.get("bold") and not r.get("url")
-               for r in runs)
+    assert any("here" in r["text"] and not r.get("bold") and not r.get("url") for r in runs)
 
 
 def test_render_emits_hyperlink_element_with_correct_target(tmp_path):
@@ -316,15 +319,15 @@ def test_render_emits_hyperlink_element_with_correct_target(tmp_path):
     out = tmp_path / "resume.docx"
     render_resume(
         "**N**\n\n[Portfolio](https://janedoe.example.com/) and [Email](mailto:x@y.com)",
-        template, out,
+        template,
+        out,
     )
     doc = Document(str(out))
     W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     hlinks = doc.element.body.findall(f".//{W_NS}hyperlink")
     assert len(hlinks) == 2
     # Verify both target URLs landed in the doc's relationships
-    targets = [r.target_ref for r in doc.part.rels.values()
-               if "hyperlink" in r.reltype]
+    targets = [r.target_ref for r in doc.part.rels.values() if "hyperlink" in r.reltype]
     assert any("janedoe.example.com" in t for t in targets)
     assert any(t == "mailto:x@y.com" for t in targets)
 
@@ -345,6 +348,7 @@ def test_render_emits_hyperlink_with_hyperlink_char_style(tmp_path):
 def test_validate_template_requires_hyperlink_character_style(tmp_path):
     """Template missing the Hyperlink character style fails loud."""
     from src.docx_render import _validate_template
+
     # Default python-docx Document() has Hyperlink. Delete it then validate.
     template = _make_template(tmp_path / "tmpl.docx")
     doc = Document(str(template))
@@ -359,11 +363,16 @@ def test_validate_template_requires_hyperlink_character_style(tmp_path):
 # render_cover_letter — placeholder fill-in over the user's own design
 # =====================================================================
 
-def _make_cl_template(path: Path, *, tokens=("{{SALUTATION}}", "{{BODY}}"),
-                      duplicate: str | None = None,
-                      static_text=("Static header line",),
-                      body_style: str | None = None,
-                      body_bold: bool = False) -> Path:
+
+def _make_cl_template(
+    path: Path,
+    *,
+    tokens=("{{SALUTATION}}", "{{BODY}}"),
+    duplicate: str | None = None,
+    static_text=("Static header line",),
+    body_style: str | None = None,
+    body_bold: bool = False,
+) -> Path:
     """A cover-letter template: static paragraphs plus one paragraph per token.
     body_style/body_bold mark the {{BODY}} paragraph so clone-formatting is
     observable in the output."""
@@ -400,6 +409,7 @@ def _content(**over) -> dict:
 
 # ---------- fail-loud paths ----------
 
+
 def test_cover_letter_fails_loud_on_missing_template(tmp_path):
     out = tmp_path / "cl.docx"
     with pytest.raises(TemplateMissingError) as exc:
@@ -412,11 +422,14 @@ def test_cover_letter_fails_loud_on_missing_template(tmp_path):
     assert not out.exists()
 
 
-@pytest.mark.parametrize("tokens,missing", [
-    (("{{BODY}}",), "{{SALUTATION}}"),
-    (("{{SALUTATION}}",), "{{BODY}}"),
-    ((), "{{SALUTATION}}"),
-])
+@pytest.mark.parametrize(
+    "tokens,missing",
+    [
+        (("{{BODY}}",), "{{SALUTATION}}"),
+        (("{{SALUTATION}}",), "{{BODY}}"),
+        ((), "{{SALUTATION}}"),
+    ],
+)
 def test_cover_letter_missing_required_placeholder(tmp_path, tokens, missing):
     t = _make_cl_template(tmp_path / "t.docx", tokens=tokens)
     out = tmp_path / "cl.docx"
@@ -435,29 +448,35 @@ def test_cover_letter_duplicate_placeholder_is_rejected(tmp_path):
 
 
 def test_cover_letter_duplicate_optional_placeholder_is_rejected(tmp_path):
-    t = _make_cl_template(tmp_path / "t.docx",
-                          tokens=("{{SALUTATION}}", "{{BODY}}", "{{DATE}}"),
-                          duplicate="{{DATE}}")
+    t = _make_cl_template(
+        tmp_path / "t.docx", tokens=("{{SALUTATION}}", "{{BODY}}", "{{DATE}}"), duplicate="{{DATE}}"
+    )
     with pytest.raises(TemplateError, match=r"\{\{DATE\}\}"):
         render_cover_letter(_content(), t, tmp_path / "cl.docx")
 
 
-@pytest.mark.parametrize("bad", [
-    {"salutation": "", "body": ["x"]},
-    {"body": ["x"]},
-    {"salutation": None, "body": ["x"]},
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"salutation": "", "body": ["x"]},
+        {"body": ["x"]},
+        {"salutation": None, "body": ["x"]},
+    ],
+)
 def test_cover_letter_requires_a_salutation(tmp_path, bad):
     t = _make_cl_template(tmp_path / "t.docx")
     with pytest.raises(ValueError, match="salutation"):
         render_cover_letter(bad, t, tmp_path / "cl.docx")
 
 
-@pytest.mark.parametrize("bad", [
-    {"salutation": "Dear X,", "body": []},
-    {"salutation": "Dear X,"},
-    {"salutation": "Dear X,", "body": None},
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"salutation": "Dear X,", "body": []},
+        {"salutation": "Dear X,"},
+        {"salutation": "Dear X,", "body": None},
+    ],
+)
 def test_cover_letter_requires_a_nonempty_body(tmp_path, bad):
     t = _make_cl_template(tmp_path / "t.docx")
     with pytest.raises(ValueError, match="body"):
@@ -474,12 +493,16 @@ def test_cover_letter_validation_runs_before_writing(tmp_path):
 
 # ---------- happy paths ----------
 
+
 def test_cover_letter_fills_salutation_and_expands_body(tmp_path):
     t = _make_cl_template(tmp_path / "t.docx")
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(), t, out)
     assert _texts(out) == [
-        "Static header line", "Dear Hiring Manager,", "First para.", "Second para.",
+        "Static header line",
+        "Dear Hiring Manager,",
+        "First para.",
+        "Second para.",
     ]
 
 
@@ -491,46 +514,55 @@ def test_cover_letter_removes_the_body_placeholder(tmp_path):
 
 
 def test_cover_letter_leaves_no_raw_token_behind(tmp_path):
-    t = _make_cl_template(tmp_path / "t.docx",
-                          tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}"))
+    t = _make_cl_template(tmp_path / "t.docx", tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}"))
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(date="2026-06-06"), t, out)
     assert "{{" not in "\n".join(_texts(out))
     assert _texts(out) == [
-        "Static header line", "2026-06-06", "Dear Hiring Manager,",
-        "First para.", "Second para.",
+        "Static header line",
+        "2026-06-06",
+        "Dear Hiring Manager,",
+        "First para.",
+        "Second para.",
     ]
 
 
 def test_cover_letter_blanks_an_unsupplied_optional_placeholder(tmp_path):
     """A present-but-unfilled token becomes an empty line — never a literal
     {{DATE}} in a letter the user is about to send."""
-    t = _make_cl_template(tmp_path / "t.docx",
-                          tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}"))
+    t = _make_cl_template(tmp_path / "t.docx", tokens=("{{DATE}}", "{{SALUTATION}}", "{{BODY}}"))
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(), t, out)
     assert _texts(out) == [
-        "Static header line", "", "Dear Hiring Manager,",
-        "First para.", "Second para.",
+        "Static header line",
+        "",
+        "Dear Hiring Manager,",
+        "First para.",
+        "Second para.",
     ]
 
 
 def test_cover_letter_skips_optional_placeholders_absent_from_the_template(tmp_path):
     """The template may carry static text there instead; supplying the field
     must not inject a new paragraph."""
-    t = _make_cl_template(tmp_path / "t.docx",
-                          static_text=("Static header line", "Sincerely,"))
+    t = _make_cl_template(tmp_path / "t.docx", static_text=("Static header line", "Sincerely,"))
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(date="IGNORED"), t, out)
     texts = _texts(out)
     assert "IGNORED" not in texts
-    assert texts == ["Static header line", "Sincerely,", "Dear Hiring Manager,",
-                     "First para.", "Second para."]
+    assert texts == [
+        "Static header line",
+        "Sincerely,",
+        "Dear Hiring Manager,",
+        "First para.",
+        "Second para.",
+    ]
 
 
 def test_cover_letter_preserves_untouched_static_paragraphs(tmp_path):
-    t = _make_cl_template(tmp_path / "t.docx",
-                          static_text=("Jane Doe", "jane@example.com", "617-555-0100"))
+    t = _make_cl_template(
+        tmp_path / "t.docx", static_text=("Jane Doe", "jane@example.com", "617-555-0100")
+    )
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(), t, out)
     assert _texts(out)[:3] == ["Jane Doe", "jane@example.com", "617-555-0100"]
@@ -542,8 +574,7 @@ def test_cover_letter_body_clones_keep_the_placeholder_formatting(tmp_path):
     t = _make_cl_template(tmp_path / "t.docx", body_style="CL Body", body_bold=True)
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(), t, out)
-    paras = [p for p in Document(str(out)).paragraphs
-             if p.text in ("First para.", "Second para.")]
+    paras = [p for p in Document(str(out)).paragraphs if p.text in ("First para.", "Second para.")]
     assert len(paras) == 2
     for p in paras:
         assert p.style.name == "CL Body"
@@ -607,14 +638,14 @@ def test_cover_letter_surrounding_whitespace_in_a_token_is_tolerated(tmp_path):
 def test_cover_letter_token_with_other_text_is_not_a_placeholder(tmp_path):
     """Only a paragraph whose ENTIRE text is the token counts — otherwise the
     renderer would mangle prose that happens to mention a token."""
-    t = _make_cl_template(tmp_path / "t.docx",
-                          static_text=("Use {{DATE}} in your template.",))
+    t = _make_cl_template(tmp_path / "t.docx", static_text=("Use {{DATE}} in your template.",))
     out = tmp_path / "cl.docx"
     render_cover_letter(_content(date="2026-06-06"), t, out)
     assert _texts(out)[0] == "Use {{DATE}} in your template."
 
 
 # ---------- placeholders Word nests: hyperlinks and table cells ----------
+
 
 def test_cover_letter_placeholder_in_hyperlink_loses_the_link(tmp_path):
     """A {{SALUTATION}} the user pasted as a link was detected and filled, but
@@ -701,13 +732,16 @@ def test_cover_letter_blanks_tokens_in_file_properties(tmp_path):
     assert "{{" not in (Document(str(out)).core_properties.keywords or "")
 
 
-@pytest.mark.parametrize("over", [
-    {"body": "A whole letter as one string."},
-    {"body": ["Line one\nline two"]},
-    {"body": ["Tab\tinside"]},
-    {"salutation": "Dear\x0bX,"},
-    {"date": 5},
-])
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"body": "A whole letter as one string."},
+        {"body": ["Line one\nline two"]},
+        {"body": ["Tab\tinside"]},
+        {"salutation": "Dear\x0bX,"},
+        {"date": 5},
+    ],
+)
 def test_cover_letter_rejects_malformed_content(tmp_path, over):
     t = _make_cl_template(tmp_path / "t.docx")
     with pytest.raises(ValueError):
@@ -716,11 +750,13 @@ def test_cover_letter_rejects_malformed_content(tmp_path, over):
 
 # ---------- docx -> pdf ----------
 
+
 def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
     from src import docx_render
+
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render.sys, "platform", "darwin")
-    monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)          # exists
+    monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)  # exists
     monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
     monkeypatch.setattr(docx_render, "pdf_pages", lambda p: 1)
     calls = []
@@ -731,13 +767,16 @@ def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
             staged = input.split('file name "')[1].split('"')[0]
             Path(staged).write_bytes(b"%PDF-1.4 fake")
         import subprocess
+
         return subprocess.CompletedProcess(cmd, returncode, "", "boom" if returncode else "")
+
     monkeypatch.setattr(docx_render.subprocess, "run", run)
     return calls
 
 
 def test_export_pdf_ok(monkeypatch, tmp_path):
     from src.docx_render import export_pdf
+
     _fake_word(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
@@ -751,6 +790,7 @@ def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
     """A failed re-run used to leave the previous pdf beside the new docx, and
     a leftover staging pdf passed the non-empty check."""
     from src.docx_render import export_pdf
+
     _fake_word(monkeypatch, tmp_path, returncode=1)
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
@@ -763,6 +803,7 @@ def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
 
 def test_export_pdf_stages_under_a_plain_name(monkeypatch, tmp_path):
     from src.docx_render import export_pdf
+
     calls = _fake_word(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
@@ -772,6 +813,7 @@ def test_export_pdf_stages_under_a_plain_name(monkeypatch, tmp_path):
 
 def test_export_pdf_skipped_without_word(monkeypatch, tmp_path):
     from src import docx_render
+
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path / "missing.app")
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
@@ -786,6 +828,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
     import time
 
     from src import docx_render
+
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)
@@ -801,6 +844,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
         Path(staged).write_bytes(b"%PDF-1.4 fake")
         inside[0] -= 1
         return subprocess.CompletedProcess(cmd, 0, "", "")
+
     monkeypatch.setattr(docx_render.subprocess, "run", run)
     results = []
 
@@ -809,6 +853,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
         docx.parent.mkdir()
         docx.write_bytes(b"docx")
         results.append(docx_render.export_pdf(docx, f"role{n}")["status"])
+
     threads = [threading.Thread(target=go, args=(n,)) for n in range(4)]
     [t.start() for t in threads]
     [t.join() for t in threads]
@@ -816,8 +861,10 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
 
 
 def test_the_word_script_closes_an_open_namesake_first_and_always_closes_its_own(
-        monkeypatch, tmp_path):
+    monkeypatch, tmp_path
+):
     from src.docx_render import export_pdf
+
     calls = _fake_word(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
@@ -830,12 +877,14 @@ def test_the_word_script_closes_an_open_namesake_first_and_always_closes_its_own
 
 # ---------- the night's pdf helper ----------
 
+
 def _helper(monkeypatch, tmp_path):
     """A helper serving tmp_path/q from a thread, Word faked; returns (queue, stop)."""
     import os
     import threading
 
     from src import pdf_broker
+
     _fake_word(monkeypatch, tmp_path)
     monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
     queue = tmp_path / "q"
@@ -851,6 +900,7 @@ def _helper(monkeypatch, tmp_path):
 
 def test_export_pdf_goes_through_the_helper_when_one_is_up(monkeypatch, tmp_path):
     from src import docx_render
+
     queue, stop, t = _helper(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
@@ -864,6 +914,7 @@ def test_export_pdf_goes_through_the_helper_when_one_is_up(monkeypatch, tmp_path
 
 def test_a_helper_that_is_gone_fails_fast_and_leaves_no_stale_pdf(monkeypatch, tmp_path):
     from src import docx_render
+
     queue = tmp_path / "q"
     queue.mkdir()
     (queue / "broker.pid").write_text("999999999", encoding="utf-8")
@@ -881,10 +932,11 @@ def test_a_helper_that_never_answers_times_out_and_withdraws(monkeypatch, tmp_pa
     import os
 
     from src import pdf_broker
+
     monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
     queue = tmp_path / "q"
     queue.mkdir()
-    (queue / "broker.pid").write_text(str(os.getpid()), encoding="utf-8")     # alive, never serves
+    (queue / "broker.pid").write_text(str(os.getpid()), encoding="utf-8")  # alive, never serves
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
     r = pdf_broker.request(queue, docx, "role1", wait=0.05)
@@ -894,6 +946,7 @@ def test_a_helper_that_never_answers_times_out_and_withdraws(monkeypatch, tmp_pa
 
 def test_a_bad_request_gets_a_failed_result_and_the_helper_goes_on(monkeypatch, tmp_path):
     from src import docx_render
+
     queue, stop, t = _helper(monkeypatch, tmp_path)
     (queue / "bad.req").write_text("not json", encoding="utf-8")
     docx = tmp_path / "A_Resume.docx"
@@ -903,4 +956,5 @@ def test_a_bad_request_gets_a_failed_result_and_the_helper_goes_on(monkeypatch, 
     t.join()
     assert r["status"] == "ok"
     import json
+
     assert json.loads((queue / "bad.res").read_text(encoding="utf-8"))["status"] == "failed"

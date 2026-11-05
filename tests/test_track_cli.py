@@ -2,6 +2,7 @@
 state_io transition/mark_outreach_sent logic is covered by test_state_io.py;
 these tests cover only the CLI's own plumbing: dispatch, parquet-backed
 initial_fields lookup, and error exit codes."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,14 +28,25 @@ def _write_clean(tmp_path, rows):
 
 
 def test_first_transition_creates_state_from_clean_parquet(tmp_path, capsys):
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "indeed",
+                "url": "https://x",
+                "location": "Remote",
+                "vertical": "example_primary",
+            }
+        ],
+    )
     rc = track_cli.main(["aaaaaaaa", "saved"])
     assert rc == 0
-    state = yaml.safe_load((tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text(encoding="utf-8"))
+    state = yaml.safe_load(
+        (tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text(encoding="utf-8")
+    )
     assert state["state"] == "saved"
     assert state["company"] == "Acme"
     out = capsys.readouterr().out
@@ -49,10 +61,20 @@ def test_missing_job_id_in_clean_parquet_errors(tmp_path):
 
 
 def test_transition_out_of_terminal_state_errors(tmp_path, capsys):
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "", "url": "", "location": "", "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "",
+                "url": "",
+                "location": "",
+                "vertical": "example_primary",
+            }
+        ],
+    )
     assert track_cli.main(["aaaaaaaa", "rejected"]) == 0
     rc = track_cli.main(["aaaaaaaa", "applied"])
     assert rc == 1
@@ -65,9 +87,14 @@ def test_unknown_state_rejected_by_argparse(tmp_path):
 
 
 def test_outreach_sent_flips_latest_draft(tmp_path, capsys):
-    state_dir = write_state(tmp_path / "pipeline", "aaaaaaaa", title="Widget FN", outreach=[
-        {"channel": "recruiter", "to": "Jane", "status": "draft"},
-    ]).parent
+    state_dir = write_state(
+        tmp_path / "pipeline",
+        "aaaaaaaa",
+        title="Widget FN",
+        outreach=[
+            {"channel": "recruiter", "to": "Jane", "status": "draft"},
+        ],
+    ).parent
     rc = track_cli.main(["outreach-sent", "aaaaaaaa", "--channel", "recruiter", "--to", "Jane"])
     assert rc == 0
     state = yaml.safe_load((state_dir / "state.yaml").read_text(encoding="utf-8"))
@@ -83,11 +110,20 @@ def test_outreach_sent_missing_state_file_errors(tmp_path, capsys):
 
 def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
     """/tailor calls this: create the role once, then never touch it."""
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "indeed",
+                "url": "https://x",
+                "location": "Remote",
+                "vertical": "example_primary",
+            }
+        ],
+    )
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
     p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
@@ -105,19 +141,49 @@ def test_ensure_registers_then_is_a_noop(tmp_path, capsys):
 
 def test_ensure_registers_a_role_only_in_the_store(tmp_path, capsys):
     """A role retention dropped from clean.parquet can still be registered."""
-    _write_clean(tmp_path, [{"job_id": "bbbbbbbb", "company": "Other", "title": "T",
-                             "source": "ashby", "url": "", "location": "", "vertical": "v"}])
-    pd.DataFrame([
-        {"job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN", "source": "ashby",
-         "url": "https://old", "location_raw": "Remote", "vertical": "example_primary",
-         "last_seen": pd.Timestamp("2026-01-01")},
-        {"job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN", "source": "ashby",
-         "url": "https://new", "location_raw": "Boston, MA", "vertical": "example_primary",
-         "last_seen": pd.Timestamp("2026-02-01")},
-    ]).to_parquet(tmp_path / "jobs.parquet")
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "bbbbbbbb",
+                "company": "Other",
+                "title": "T",
+                "source": "ashby",
+                "url": "",
+                "location": "",
+                "vertical": "v",
+            }
+        ],
+    )
+    pd.DataFrame(
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "ashby",
+                "url": "https://old",
+                "location_raw": "Remote",
+                "vertical": "example_primary",
+                "last_seen": pd.Timestamp("2026-01-01"),
+            },
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "ashby",
+                "url": "https://new",
+                "location_raw": "Boston, MA",
+                "vertical": "example_primary",
+                "last_seen": pd.Timestamp("2026-02-01"),
+            },
+        ]
+    ).to_parquet(tmp_path / "jobs.parquet")
 
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
-    state = yaml.safe_load((tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text(encoding="utf-8"))
+    state = yaml.safe_load(
+        (tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml").read_text(encoding="utf-8")
+    )
     assert state["state"] == "saved"
     assert state["url"] == "https://new" and state["location"] == "Boston, MA"
 
@@ -135,11 +201,20 @@ def _truncated_state(tmp_path) -> Path:
 def test_transition_over_a_truncated_state_file_rebuilds_it(tmp_path, capsys):
     """The CLI gates on content, not p.exists(), so an empty state.yaml is
     rebuilt from the parquets instead of silently losing its job_id."""
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "indeed", "url": "https://x", "location": "Remote",
-        "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "indeed",
+                "url": "https://x",
+                "location": "Remote",
+                "vertical": "example_primary",
+            }
+        ],
+    )
     p = _truncated_state(tmp_path)
     assert track_cli.main(["aaaaaaaa", "applied"]) == 0
     state = yaml.safe_load(p.read_text(encoding="utf-8"))
@@ -151,10 +226,20 @@ def test_transition_over_a_truncated_state_file_rebuilds_it(tmp_path, capsys):
 
 
 def test_ensure_over_a_truncated_state_file_rebuilds_it(tmp_path, capsys):
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "", "url": "", "location": "", "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "",
+                "url": "",
+                "location": "",
+                "vertical": "example_primary",
+            }
+        ],
+    )
     p = _truncated_state(tmp_path)
     assert track_cli.main(["ensure", "aaaaaaaa"]) == 0
     state = yaml.safe_load(p.read_text(encoding="utf-8"))
@@ -167,8 +252,7 @@ def test_transition_over_a_corrupt_state_file_errors(tmp_path, capsys):
     """Content but no job_id: refuse rather than write an unkeyable record."""
     p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
     p.parent.mkdir(parents=True)
-    p.write_text(yaml.safe_dump({"state": "saved", "state_history": []}),
-                 encoding="utf-8")
+    p.write_text(yaml.safe_dump({"state": "saved", "state_history": []}), encoding="utf-8")
     before = p.read_text(encoding="utf-8")
     assert track_cli.main(["aaaaaaaa", "applied"]) == 1
     assert "no job_id" in capsys.readouterr().err
@@ -185,10 +269,20 @@ def test_transition_over_malformed_yaml_errors(tmp_path, capsys):
 
 def test_ensure_does_not_raise_on_terminal_state(tmp_path):
     """A re-tailor of a rejected role must not hit the terminal-state check."""
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "", "url": "", "location": "", "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "",
+                "url": "",
+                "location": "",
+                "vertical": "example_primary",
+            }
+        ],
+    )
     track_cli.main(["aaaaaaaa", "rejected"])
     p = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
     before = p.read_text(encoding="utf-8")
@@ -200,13 +294,23 @@ def test_ensure_does_not_raise_on_terminal_state(tmp_path):
 def test_if_guard_fires_only_from_the_named_state(tmp_path, capsys):
     """`--if saved` lets /cover-letter and /apply promote a role without
     reading its state in a separate shell call first."""
-    _write_clean(tmp_path, [{
-        "job_id": "aaaaaaaa", "company": "Acme", "title": "Widget FN",
-        "source": "", "url": "", "location": "", "vertical": "example_primary",
-    }])
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "",
+                "url": "",
+                "location": "",
+                "vertical": "example_primary",
+            }
+        ],
+    )
     state_file = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
     assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
-    assert not state_file.exists()                       # untracked: no-op
+    assert not state_file.exists()  # untracked: no-op
     assert track_cli.main(["aaaaaaaa", "saved"]) == 0
     assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
     assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "tailored"

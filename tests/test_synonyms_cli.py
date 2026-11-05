@@ -1,5 +1,6 @@
 """The deterministic side of /suggest-synonyms: what may be added, what is
 remembered, what is asked."""
+
 from __future__ import annotations
 
 import json
@@ -40,15 +41,21 @@ def world(tmp_path, monkeypatch):
     jobs.mkdir()
     (prof / "bullets.md").write_text(BULLETS, encoding="utf-8")
     (prof / "skills_master.md").write_text(SKILLS, encoding="utf-8")
-    (prof / "automation.yaml").write_text(yaml.safe_dump(
-        {"auto_add_synonyms": True, "unlock_max_open": 2}), encoding="utf-8")
-    for name, value in (("BULLETS", prof / "bullets.md"), ("SKILLS", prof / "skills_master.md"),
-                        ("AUTOMATION", prof / "automation.yaml"),
-                        ("DECLINED", prof / "synonyms_declined.yaml"),
-                        ("HISTORY", prof / ".synonym_history"),
-                        ("PROPOSALS", jobs / "synonyms_proposals.yaml"),
-                        ("LOG", jobs / "synonyms_log.jsonl"), ("OPEN", jobs / "synonyms_open.yaml"),
-                        ("SCORED", jobs / "scored.parquet"), ("CLEAN", jobs / "clean.parquet")):
+    (prof / "automation.yaml").write_text(
+        yaml.safe_dump({"auto_add_synonyms": True, "unlock_max_open": 2}), encoding="utf-8"
+    )
+    for name, value in (
+        ("BULLETS", prof / "bullets.md"),
+        ("SKILLS", prof / "skills_master.md"),
+        ("AUTOMATION", prof / "automation.yaml"),
+        ("DECLINED", prof / "synonyms_declined.yaml"),
+        ("HISTORY", prof / ".synonym_history"),
+        ("PROPOSALS", jobs / "synonyms_proposals.yaml"),
+        ("LOG", jobs / "synonyms_log.jsonl"),
+        ("OPEN", jobs / "synonyms_open.yaml"),
+        ("SCORED", jobs / "scored.parquet"),
+        ("CLEAN", jobs / "clean.parquet"),
+    ):
         monkeypatch.setattr(S, name, value)
     return tmp_path
 
@@ -62,8 +69,12 @@ def _syn(path, entry):
 
 
 def test_ready_phrases_are_added_to_a_bullet_and_a_skill(world):
-    _propose(ready=[{"target": "B-AAA-01", "phrase": "widget dashboards", "keyword": "dashboards"},
-                    {"target": "SKILL-SQL", "phrase": "RDBMS", "keyword": "rdbms"}])
+    _propose(
+        ready=[
+            {"target": "B-AAA-01", "phrase": "widget dashboards", "keyword": "dashboards"},
+            {"target": "SKILL-SQL", "phrase": "RDBMS", "keyword": "rdbms"},
+        ]
+    )
     out = S.apply()
     assert out[0] == "added=2 declined=0 unlock=0"
     assert _syn(S.BULLETS, "B-AAA-01") == ["widget reporting", "widget dashboards"]
@@ -82,13 +93,16 @@ def test_an_entry_with_no_synonym_line_gets_one_and_the_rest_is_untouched(world)
     assert _syn(S.BULLETS, "B-AAA-01") == ["widget reporting"]
 
 
-@pytest.mark.parametrize("item,why", [
-    ({"target": "B-ZZZ-09", "phrase": "x y"}, "does not exist"),
-    ({"target": "B-AAA-01", "phrase": "Widget Reporting"}, "already there"),
-    ({"target": "B-AAA-01", "phrase": "Built the widget report."}, "already there"),
-    ({"target": "B-AAA-01", "phrase": "one two three four five six seven eight nine"}, "words"),
-    ({"target": "B-AAA-01", "phrase": "  "}, "empty"),
-])
+@pytest.mark.parametrize(
+    "item,why",
+    [
+        ({"target": "B-ZZZ-09", "phrase": "x y"}, "does not exist"),
+        ({"target": "B-AAA-01", "phrase": "Widget Reporting"}, "already there"),
+        ({"target": "B-AAA-01", "phrase": "Built the widget report."}, "already there"),
+        ({"target": "B-AAA-01", "phrase": "one two three four five six seven eight nine"}, "words"),
+        ({"target": "B-AAA-01", "phrase": "  "}, "empty"),
+    ],
+)
 def test_a_proposal_that_fails_a_check_is_skipped_and_named(world, item, why):
     before = S.BULLETS.read_text(encoding="utf-8")
     _propose(ready=[item])
@@ -114,11 +128,14 @@ def test_each_write_keeps_a_backup_and_only_the_last_twenty(world, monkeypatch):
 
 
 def test_with_the_switch_off_nothing_is_added_but_the_rest_is_recorded(world):
-    S.AUTOMATION.write_text(yaml.safe_dump({"auto_add_synonyms": False, "unlock_max_open": 2}),
-                            encoding="utf-8")
+    S.AUTOMATION.write_text(
+        yaml.safe_dump({"auto_add_synonyms": False, "unlock_max_open": 2}), encoding="utf-8"
+    )
     before = S.BULLETS.read_text(encoding="utf-8")
-    _propose(ready=[{"target": "B-AAA-01", "phrase": "widget dashboards"}],
-             declined=[{"keyword": "Kubernetes", "reason": "no bullet"}])
+    _propose(
+        ready=[{"target": "B-AAA-01", "phrase": "widget dashboards"}],
+        declined=[{"keyword": "Kubernetes", "reason": "no bullet"}],
+    )
     out = S.apply()
     assert "auto_add_synonyms is off" in out[1] and out[0].startswith("added=0 declined=1")
     assert S.BULLETS.read_text(encoding="utf-8") == before
@@ -131,10 +148,18 @@ def test_a_declined_keyword_is_recorded_once_then_approved_then_skipped_by_keywo
     assert S.apply()[0] == "added=0 declined=0 unlock=0"
     rows = yaml.safe_load(S.DECLINED.read_text(encoding="utf-8"))
     assert rows[0].pop("at")
-    assert rows == [{"keyword": "Kubernetes", "reason": "no bullet",
-                     "first_seen": S._today(), "approved": False}]
-    assert S.approve(["KUBERNETES", "nothing"]) == ["approved 'KUBERNETES'",
-                                                    "no declined keyword 'nothing'"]
+    assert rows == [
+        {
+            "keyword": "Kubernetes",
+            "reason": "no bullet",
+            "first_seen": S._today(),
+            "approved": False,
+        }
+    ]
+    assert S.approve(["KUBERNETES", "nothing"]) == [
+        "approved 'KUBERNETES'",
+        "no declined keyword 'nothing'",
+    ]
     assert yaml.safe_load(S.DECLINED.read_text(encoding="utf-8"))[0]["approved"] is True
 
 
@@ -167,11 +192,19 @@ def test_keywords_count_only_roles_without_a_resume_and_skip_declined(world, mon
         {"job_id": "b2", "fit_score": 80, "keywords_to_mirror": ["rag", "Kubernetes"]},
         {"job_id": "c3", "fit_score": 99, "keywords_to_mirror": ["RAG", "Spark"]},
     ).to_parquet(S.SCORED)
-    write_clean(S.CLEAN, *({"job_id": j, "company": c} for j, c in
-                           (("a1", "Acme"), ("b2", "Beta"), ("c3", "Gamma"))))
-    S.DECLINED.write_text(yaml.safe_dump([{"keyword": "kubernetes", "reason": "",
-                                           "first_seen": "2026-09-01", "approved": False}]),
-                           encoding="utf-8")
+    write_clean(
+        S.CLEAN,
+        *(
+            {"job_id": j, "company": c}
+            for j, c in (("a1", "Acme"), ("b2", "Beta"), ("c3", "Gamma"))
+        ),
+    )
+    S.DECLINED.write_text(
+        yaml.safe_dump(
+            [{"keyword": "kubernetes", "reason": "", "first_seen": "2026-09-01", "approved": False}]
+        ),
+        encoding="utf-8",
+    )
     got = S.keywords()
     assert got["job_ids"] == ["a1", "b2"]
     assert [(k["keyword"], k["frequency"]) for k in got["keywords"]] == [("RAG", 2), ("Airflow", 1)]

@@ -19,6 +19,7 @@ of it: "are you authorized to work" and "will you require sponsorship" are Yes
 and Yes for an F-1 OPT holder, and Yes and No for a citizen. And it is per
 country: the same person is authorized in one country and not in another.
 """
+
 from __future__ import annotations
 
 import functools
@@ -72,8 +73,15 @@ EMPLOYMENT_KEYS = (
 EMPLOYMENT_FLAGS = ("current_role", "only_when_required")
 
 TOP_LEVEL_KEYS = (
-    "schema_version", "identity", "work_authorization", "education",
-    "employment", "demographics", "claims", "questions", "fact_wordings",
+    "schema_version",
+    "identity",
+    "work_authorization",
+    "education",
+    "employment",
+    "demographics",
+    "claims",
+    "questions",
+    "fact_wordings",
     # Not an answer: whether an optional cover-letter upload gets a letter.
     "cover_letter",
     # Not an answer: which browser drives the form. Owned and validated by
@@ -97,9 +105,9 @@ _IDENTITY_IDS = {
     "email": "email",
     "phone": "phone",
     "candidate-location": "location",
-    "location": "location",     # Lever's raw DOM name for the same concept
+    "location": "location",  # Lever's raw DOM name for the same concept
     "country": "country",
-    "_systemfield_email": "email",       # Ashby's raw systemfield id
+    "_systemfield_email": "email",  # Ashby's raw systemfield id
     "_systemfield_location": "location",
 }
 
@@ -138,14 +146,18 @@ DATE_FORMAT = "%m/%d/%Y"
 # The self-identification form attests who filled it in, and both fields become
 # required once the disability question is answered at all. Both values are
 # known — the configured name and the clock.
-_EEOC_SIGNATURE_IDS = frozenset({
-    "eeo[disabilitySignature]",
-    "disability_signature",
-})
-_EEOC_SIGNATURE_DATE_IDS = frozenset({
-    "eeo[disabilitySignatureDate]",
-    "disability_signature_date",
-})
+_EEOC_SIGNATURE_IDS = frozenset(
+    {
+        "eeo[disabilitySignature]",
+        "disability_signature",
+    }
+)
+_EEOC_SIGNATURE_DATE_IDS = frozenset(
+    {
+        "eeo[disabilitySignatureDate]",
+        "disability_signature_date",
+    }
+)
 
 #: `cover_letter:` values. `when_offered` attaches a letter wherever the board
 #: has a cover-letter upload; `when_required` only where it requires one.
@@ -153,14 +165,17 @@ COVER_LETTER_POLICIES = ("when_required", "when_offered")
 
 # The demographic topics `demographics.answers` may state. Any other
 # demographic question (sexual orientation, transgender, pronouns) opts out.
-DEMOGRAPHIC_TOPICS = ("gender", "race", "hispanic_ethnicity", "veteran_status",
-                      "disability_status")
+DEMOGRAPHIC_TOPICS = ("gender", "race", "hispanic_ethnicity", "veteran_status", "disability_status")
 _DEMOGRAPHIC_IDS = {
-    "gender": "gender", "eeo[gender]": "gender",
-    "race": "race", "eeo[race]": "race",
+    "gender": "gender",
+    "eeo[gender]": "gender",
+    "race": "race",
+    "eeo[race]": "race",
     "hispanic_ethnicity": "hispanic_ethnicity",
-    "veteran_status": "veteran_status", "eeo[veteran]": "veteran_status",
-    "disability_status": "disability_status", "eeo[disability]": "disability_status",
+    "veteran_status": "veteran_status",
+    "eeo[veteran]": "veteran_status",
+    "disability_status": "disability_status",
+    "eeo[disability]": "disability_status",
 }
 # For the free-labelled demographic questions (Greenhouse's numeric ids), in
 # order. `\bgender\b` so "transgender" is never the gender question, and a
@@ -335,35 +350,75 @@ REGIONS: dict[str, str] = {
 # Places whose names contain a country's: masked before any country is looked
 # for, so "New Mexico" is never Mexico and "Bank of America" never the US.
 _NOT_COUNTRIES = (
-    "new south wales", "new england", "papua new guinea", "bank of america",
-    "north america", "latin america", "south america", "central america",
+    "new south wales",
+    "new england",
+    "papua new guinea",
+    "bank of america",
+    "north america",
+    "latin america",
+    "south america",
+    "central america",
 )
-_SHORT_NAMES = {"us": "United States", "usa": "United States", "u.s.": "United States",
-                "u.s.a.": "United States", "uk": "United Kingdom",
-                "u.k.": "United Kingdom", "uae": "United Arab Emirates"}
-_ALIASES = {"england": "United Kingdom", "scotland": "United Kingdom",
-            "wales": "United Kingdom", "northern ireland": "United Kingdom",
-            "great britain": "United Kingdom", "britain": "United Kingdom",
-            "united states of america": "United States", "america": "United States",
-            "holland": "Netherlands", "the netherlands": "Netherlands",
-            "turkiye": "Turkey", "czech republic": "Czechia", "south korea": "Korea, Republic of",
-            "korea": "Korea, Republic of", "russia": "Russian Federation",
-            "vietnam": "Viet Nam", "taiwan": "Taiwan, Province of China",
-            "iran": "Iran, Islamic Republic of", "bolivia": "Bolivia, Plurinational State of",
-            "venezuela": "Venezuela, Bolivarian Republic of", "tanzania": "Tanzania, United Republic of",
-            "moldova": "Moldova, Republic of", "syria": "Syrian Arab Republic",
-            "laos": "Lao People's Democratic Republic", "republic of ireland": "Ireland"}
+_SHORT_NAMES = {
+    "us": "United States",
+    "usa": "United States",
+    "u.s.": "United States",
+    "u.s.a.": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "uae": "United Arab Emirates",
+}
+_ALIASES = {
+    "england": "United Kingdom",
+    "scotland": "United Kingdom",
+    "wales": "United Kingdom",
+    "northern ireland": "United Kingdom",
+    "great britain": "United Kingdom",
+    "britain": "United Kingdom",
+    "united states of america": "United States",
+    "america": "United States",
+    "holland": "Netherlands",
+    "the netherlands": "Netherlands",
+    "turkiye": "Turkey",
+    "czech republic": "Czechia",
+    "south korea": "Korea, Republic of",
+    "korea": "Korea, Republic of",
+    "russia": "Russian Federation",
+    "vietnam": "Viet Nam",
+    "taiwan": "Taiwan, Province of China",
+    "iran": "Iran, Islamic Republic of",
+    "bolivia": "Bolivia, Plurinational State of",
+    "venezuela": "Venezuela, Bolivarian Republic of",
+    "tanzania": "Tanzania, United Republic of",
+    "moldova": "Moldova, Republic of",
+    "syria": "Syrian Arab Republic",
+    "laos": "Lao People's Democratic Republic",
+    "republic of ireland": "Ireland",
+}
 # Country names that are also ordinary words or US places in a form label.
-_NOT_A_COUNTRY_WORD = frozenset({"jersey", "georgia", "chad", "jordan", "guinea", "niger",
-                                 "turkey", "man", "norfolk island", "christmas island"})
+_NOT_A_COUNTRY_WORD = frozenset(
+    {
+        "jersey",
+        "georgia",
+        "chad",
+        "jordan",
+        "guinea",
+        "niger",
+        "turkey",
+        "man",
+        "norfolk island",
+        "christmas island",
+    }
+)
 _OR_BETWEEN = re.compile(r"\bor\b|/", re.IGNORECASE)
 #: The job's country when its location names a place nothing could read.
 UNKNOWN_COUNTRY = "(unknown)"
 
 
 def _fold_accents(text: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFKD", text or "")
-                   if not unicodedata.combining(c))
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)
+    )
 
 
 @functools.lru_cache(maxsize=1)
@@ -382,19 +437,22 @@ def _vocabulary() -> tuple[dict[str, str], tuple, re.Pattern, tuple]:
     names.update(_SHORT_NAMES)
     us_states = [s.name.casefold() for s in pycountry.subdivisions.get(country_code="US")]
     masked = sorted({*_NOT_COUNTRIES, *us_states}, key=len, reverse=True)
-    codes = "|".join(sub.code.split("-")[1]
-                     for sub in pycountry.subdivisions.get(country_code="US"))
+    codes = "|".join(
+        sub.code.split("-")[1] for sub in pycountry.subdivisions.get(country_code="US")
+    )
     mask = (
-        re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(m) for m in masked) + r")(?![\w])",
-                   re.IGNORECASE),
+        re.compile(
+            r"(?<![\w.])(?:" + "|".join(re.escape(m) for m in masked) + r")(?![\w])", re.IGNORECASE
+        ),
         # "Columbia, MD", "Norfolk, VA": a place and a US state code.
         re.compile(r"\b[A-Z][\w.' -]{1,30},\s*(?:" + codes + r")\b"),
         # "Jersey City", "Mexico City": a city, not the country.
         re.compile(r"\b\w+\s+City\b"),
     )
     ordered = sorted((k for k in names if k != "us"), key=len, reverse=True)
-    country = re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(k) for k in ordered)
-                         + r")(?![\w])", re.IGNORECASE)
+    country = re.compile(
+        r"(?<![\w.])(?:" + "|".join(re.escape(k) for k in ordered) + r")(?![\w])", re.IGNORECASE
+    )
     regions = tuple((name, re.compile(p, re.IGNORECASE)) for name, p in REGIONS.items())
     return names, mask, country, regions
 
@@ -426,10 +484,13 @@ def _place_hits(label: str) -> list[tuple[int, int, str]]:
     lowered = folded
     for pattern in mask:
         lowered = pattern.sub(lambda m: " " * len(m.group(0)), lowered)
-    hits = [(m.start(), m.end(), names[m.group(0).casefold()])
-            for m in country.finditer(lowered)]
-    hits += [(m.start(), m.end(), name) for name, pattern in regions
-             for m in [pattern.search(folded)] if m]
+    hits = [(m.start(), m.end(), names[m.group(0).casefold()]) for m in country.finditer(lowered)]
+    hits += [
+        (m.start(), m.end(), name)
+        for name, pattern in regions
+        for m in [pattern.search(folded)]
+        if m
+    ]
     # "US" in capitals only; in a label written all in capitals, only after "THE".
     us = r"(?<=\bTHE )US(?![\w])" if folded.isupper() else r"(?<![\w.])US(?![\w])"
     hits += [(m.start(), m.end(), "United States") for m in re.finditer(us, lowered)]
@@ -451,41 +512,113 @@ def _either_place(label: str) -> bool:
     or in the future")."""
     hits = _place_hits(label)
     folded = _fold_accents(label)
-    return any(_OR_BETWEEN.search(folded[a[1]:b[0]]) for a, b in pairwise(hits)
-               if a[2] != b[2])
+    return any(_OR_BETWEEN.search(folded[a[1] : b[0]]) for a, b in pairwise(hits) if a[2] != b[2])
 
 
 # Region membership for "are you a citizen of a country in <region>?" yes/no
 # questions. Extend as real boards surface a region this doesn't cover.
-_SOUTH_ASIA = frozenset({
-    "afghanistan", "bangladesh", "bhutan", "india", "maldives", "nepal",
-    "pakistan", "sri lanka",
-})
-_SOUTHEAST_ASIA = frozenset({
-    "brunei", "cambodia", "timor-leste", "indonesia", "laos", "malaysia",
-    "myanmar", "philippines", "singapore", "thailand", "vietnam",
-})
-_EAST_ASIA = frozenset({
-    "china", "hong kong", "japan", "macau", "mongolia", "north korea",
-    "south korea", "taiwan",
-})
-_CENTRAL_ASIA = frozenset({
-    "kazakhstan", "kyrgyzstan", "tajikistan", "turkmenistan", "uzbekistan",
-})
-_WESTERN_ASIA = frozenset({
-    "armenia", "azerbaijan", "bahrain", "cyprus", "georgia", "iraq",
-    "israel", "jordan", "kuwait", "lebanon", "oman", "palestine", "qatar",
-    "saudi arabia", "syria", "turkey", "united arab emirates", "yemen",
-})
-_ASIA = (_SOUTH_ASIA | _SOUTHEAST_ASIA | _EAST_ASIA | _CENTRAL_ASIA
-         | _WESTERN_ASIA)
-_EU = frozenset({
-    "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia",
-    "denmark", "estonia", "finland", "france", "germany", "greece",
-    "hungary", "ireland", "italy", "latvia", "lithuania", "luxembourg",
-    "malta", "netherlands", "poland", "portugal", "romania", "slovakia",
-    "slovenia", "spain", "sweden",
-})
+_SOUTH_ASIA = frozenset(
+    {
+        "afghanistan",
+        "bangladesh",
+        "bhutan",
+        "india",
+        "maldives",
+        "nepal",
+        "pakistan",
+        "sri lanka",
+    }
+)
+_SOUTHEAST_ASIA = frozenset(
+    {
+        "brunei",
+        "cambodia",
+        "timor-leste",
+        "indonesia",
+        "laos",
+        "malaysia",
+        "myanmar",
+        "philippines",
+        "singapore",
+        "thailand",
+        "vietnam",
+    }
+)
+_EAST_ASIA = frozenset(
+    {
+        "china",
+        "hong kong",
+        "japan",
+        "macau",
+        "mongolia",
+        "north korea",
+        "south korea",
+        "taiwan",
+    }
+)
+_CENTRAL_ASIA = frozenset(
+    {
+        "kazakhstan",
+        "kyrgyzstan",
+        "tajikistan",
+        "turkmenistan",
+        "uzbekistan",
+    }
+)
+_WESTERN_ASIA = frozenset(
+    {
+        "armenia",
+        "azerbaijan",
+        "bahrain",
+        "cyprus",
+        "georgia",
+        "iraq",
+        "israel",
+        "jordan",
+        "kuwait",
+        "lebanon",
+        "oman",
+        "palestine",
+        "qatar",
+        "saudi arabia",
+        "syria",
+        "turkey",
+        "united arab emirates",
+        "yemen",
+    }
+)
+_ASIA = _SOUTH_ASIA | _SOUTHEAST_ASIA | _EAST_ASIA | _CENTRAL_ASIA | _WESTERN_ASIA
+_EU = frozenset(
+    {
+        "austria",
+        "belgium",
+        "bulgaria",
+        "croatia",
+        "cyprus",
+        "czechia",
+        "denmark",
+        "estonia",
+        "finland",
+        "france",
+        "germany",
+        "greece",
+        "hungary",
+        "ireland",
+        "italy",
+        "latvia",
+        "lithuania",
+        "luxembourg",
+        "malta",
+        "netherlands",
+        "poland",
+        "portugal",
+        "romania",
+        "slovakia",
+        "slovenia",
+        "spain",
+        "sweden",
+    }
+)
 _EFTA = frozenset({"iceland", "liechtenstein", "norway", "switzerland"})
 
 # Matched as whole words, longest first, so "south asia" is tried before "asia"
@@ -506,32 +639,56 @@ _NATIONALITY_REGIONS: dict[str, frozenset[str]] = {
 }
 _REGION_PATTERNS = tuple(
     (re.compile(rf"(?<![\w-]){re.escape(phrase)}(?![\w-])"), members)
-    for phrase, members in sorted(_NATIONALITY_REGIONS.items(),
-                                  key=lambda kv: len(kv[0]), reverse=True)
+    for phrase, members in sorted(
+        _NATIONALITY_REGIONS.items(), key=lambda kv: len(kv[0]), reverse=True
+    )
 )
 # Demonym -> country, for "Are you currently an Indonesian citizen?".
 _DEMONYMS: dict[str, str] = {
-    "indonesian": "indonesia", "indian": "india", "pakistani": "pakistan",
-    "bangladeshi": "bangladesh", "sri lankan": "sri lanka",
-    "nepali": "nepal", "bhutanese": "bhutan", "afghan": "afghanistan",
-    "filipino": "philippines", "malaysian": "malaysia",
-    "singaporean": "singapore", "thai": "thailand",
-    "vietnamese": "vietnam", "burmese": "myanmar", "cambodian": "cambodia",
-    "laotian": "laos", "bruneian": "brunei", "chinese": "china",
-    "japanese": "japan", "mongolian": "mongolia", "taiwanese": "taiwan",
-    "kazakh": "kazakhstan", "uzbek": "uzbekistan", "turkish": "turkey",
-    "israeli": "israel", "emirati": "united arab emirates",
+    "indonesian": "indonesia",
+    "indian": "india",
+    "pakistani": "pakistan",
+    "bangladeshi": "bangladesh",
+    "sri lankan": "sri lanka",
+    "nepali": "nepal",
+    "bhutanese": "bhutan",
+    "afghan": "afghanistan",
+    "filipino": "philippines",
+    "malaysian": "malaysia",
+    "singaporean": "singapore",
+    "thai": "thailand",
+    "vietnamese": "vietnam",
+    "burmese": "myanmar",
+    "cambodian": "cambodia",
+    "laotian": "laos",
+    "bruneian": "brunei",
+    "chinese": "china",
+    "japanese": "japan",
+    "mongolian": "mongolia",
+    "taiwanese": "taiwan",
+    "kazakh": "kazakhstan",
+    "uzbek": "uzbekistan",
+    "turkish": "turkey",
+    "israeli": "israel",
+    "emirati": "united arab emirates",
     "saudi": "saudi arabia",
 }
 # Other spellings of a nationality, folded before any comparison, so "Czech
 # Republic" and "Czechia" can never answer the same question two ways.
 _COUNTRY_ALIASES = {
-    "czech republic": "czechia", "holland": "netherlands",
-    "the netherlands": "netherlands", "uae": "united arab emirates",
-    "türkiye": "turkey", "turkiye": "turkey", "usa": "united states",
-    "united states of america": "united states", "us": "united states",
-    "uk": "united kingdom", "great britain": "united kingdom",
-    "republic of korea": "south korea", "korea": "south korea",
+    "czech republic": "czechia",
+    "holland": "netherlands",
+    "the netherlands": "netherlands",
+    "uae": "united arab emirates",
+    "türkiye": "turkey",
+    "turkiye": "turkey",
+    "usa": "united states",
+    "united states of america": "united states",
+    "us": "united states",
+    "uk": "united kingdom",
+    "great britain": "united kingdom",
+    "republic of korea": "south korea",
+    "korea": "south korea",
 }
 
 
@@ -561,9 +718,17 @@ _YES_NO_VARIANTS = {True: ("Yes", "Yes."), False: ("No", "No.")}
 _BARE_OPTIONS = frozenset({"yes", "no", "yes.", "no.", "other", "n/a"})
 
 WORK_AUTH_CATEGORIES = (
-    "plain", "qualified", "alternation", "sponsorship", "compound_option",
-    "status_disclosure", "nationality", "export_control", "proof",
-    "followup", "not_work_auth",
+    "plain",
+    "qualified",
+    "alternation",
+    "sponsorship",
+    "compound_option",
+    "status_disclosure",
+    "nationality",
+    "export_control",
+    "proof",
+    "followup",
+    "not_work_auth",
 )
 
 
@@ -593,8 +758,7 @@ def classify_work_authorization(label: str, options: tuple[str, ...] = ()) -> st
         return "proof"
 
     authorized = bool(_AUTHORIZED_FAMILY.search(text))
-    sponsorship = (bool(_SPONSORSHIP_FAMILY.search(text))
-                   and not _SPONSORSHIP_NEGATED.search(text))
+    sponsorship = bool(_SPONSORSHIP_FAMILY.search(text)) and not _SPONSORSHIP_NEGATED.search(text)
     if authorized and sponsorship:
         if _SPONSORSHIP_GOVERNS.search(text):
             authorized = False
@@ -659,6 +823,7 @@ class Question:
 @dataclass(frozen=True)
 class SalaryFloor:
     """The lowest gross salary a country's work visa allows."""
+
     amount: float
     currency: str
     per: str
@@ -738,7 +903,7 @@ class Resolution:
     optional field alone; `park` stops the whole submission; `defer` hands the
     field to plan.py, which owns the /tailor output dir."""
 
-    action: str                                 # fill | skip | park | defer
+    action: str  # fill | skip | park | defer
     value: str | tuple[str, ...] | bool | None = None
     tier: str = ""
     reason: str = ""
@@ -797,9 +962,13 @@ def _require_bool(value, where: str) -> bool:
     return value
 
 
-def _parse_block(data, key: str, required: tuple[str, ...],
-                 optional: tuple[str, ...] = (),
-                 list_keys: tuple[str, ...] = ()) -> dict[str, str]:
+def _parse_block(
+    data,
+    key: str,
+    required: tuple[str, ...],
+    optional: tuple[str, ...] = (),
+    list_keys: tuple[str, ...] = (),
+) -> dict[str, str]:
     block = data.get(key)
     if not isinstance(block, dict):
         raise AnswersError(f"{key}: missing, or not a mapping")
@@ -827,16 +996,31 @@ def _parse_block(data, key: str, required: tuple[str, ...],
     return out
 
 
-_COUNTRY_ROW_KEYS = ("authorized", "requires_sponsorship", "unrestricted",
-                     "status_label", "followup", "start_in_days", "visa_salary_floor")
+_COUNTRY_ROW_KEYS = (
+    "authorized",
+    "requires_sponsorship",
+    "unrestricted",
+    "status_label",
+    "followup",
+    "start_in_days",
+    "visa_salary_floor",
+)
 _SALARY_FLOOR_KEYS = ("amount", "currency", "per", "note")
 _SALARY_FLOOR_PER = ("year", "month")
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 _US_PERSON = ("park", "yes", "no")
 _CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 _QID = re.compile(r"^[a-z0-9_]+$")
-_QUESTION_KEYS = ("answer", "wordings", "keywords", "not", "mode",
-                  "only_when_required", "source", "from")
+_QUESTION_KEYS = (
+    "answer",
+    "wordings",
+    "keywords",
+    "not",
+    "mode",
+    "only_when_required",
+    "source",
+    "from",
+)
 
 
 def _parse_salary_floor(raw, where: str) -> SalaryFloor | None:
@@ -876,18 +1060,21 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
     if us_person not in _US_PERSON:
         raise AnswersError(
             f"work_authorization.us_person: {us_person!r} is not one of "
-            f"{list(_US_PERSON)} — quote it, since YAML reads a bare yes/no as a boolean")
+            f"{list(_US_PERSON)} — quote it, since YAML reads a bare yes/no as a boolean"
+        )
 
     nationalities = block.get("nationalities") or []
     if not isinstance(nationalities, list) or not all(
-            isinstance(n, str) and n.strip() for n in nationalities):
+        isinstance(n, str) and n.strip() for n in nationalities
+    ):
         raise AnswersError("work_authorization.nationalities: must be a list of countries")
 
     rows = block.get("countries")
     if not isinstance(rows, dict) or "default" not in rows:
         raise AnswersError(
             "work_authorization.countries: needs a `default` row, for every "
-            "country you have not listed")
+            "country you have not listed"
+        )
     countries: dict[str, CountryFacts] = {}
     for name, row in rows.items():
         where = f"work_authorization.countries.{name}"
@@ -897,16 +1084,17 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
         if unknown:
             raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
         authorized = _require_bool(row.get("authorized"), f"{where}.authorized")
-        requires = _require_bool(row.get("requires_sponsorship"),
-                                 f"{where}.requires_sponsorship")
+        requires = _require_bool(row.get("requires_sponsorship"), f"{where}.requires_sponsorship")
         unrestricted = _require_bool(row.get("unrestricted", False), f"{where}.unrestricted")
         if unrestricted and (not authorized or requires):
             raise AnswersError(
                 f"{where}: unrestricted means authorized with no sponsorship ever; "
-                f"it contradicts authorized={authorized}, requires_sponsorship={requires}")
+                f"it contradicts authorized={authorized}, requires_sponsorship={requires}"
+            )
         start = row.get("start_in_days")
-        if start is not None and (isinstance(start, bool) or not isinstance(start, int)
-                                  or start < 0):
+        if start is not None and (
+            isinstance(start, bool) or not isinstance(start, int) or start < 0
+        ):
             raise AnswersError(f"{where}.start_in_days: must be a whole number of days")
         for text_key in ("status_label", "followup"):
             if not isinstance(row.get(text_key, ""), str):
@@ -918,7 +1106,8 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
         if key in countries:
             raise AnswersError(f"{where}: another row already names {key}")
         countries[key] = CountryFacts(
-            authorized=authorized, requires_sponsorship=requires,
+            authorized=authorized,
+            requires_sponsorship=requires,
             unrestricted=unrestricted,
             status_label=str(row.get("status_label", "")).strip(),
             followup=str(row.get("followup", "")).strip(),
@@ -1002,7 +1191,8 @@ def _parse_fact_wordings(data) -> dict[str, dict]:
         if not in_work_authorization_domain(str(label)):
             raise AnswersError(
                 f"{where}: not a work-authorization or export-control question; "
-                "an ordinary question goes under questions:")
+                "an ordinary question goes under questions:"
+            )
         if key in out:
             raise AnswersError(f"{where}: another label normalizes to the same wording")
         out[key] = {"fact": spec["fact"], "yes_when": spec["yes_when"]}
@@ -1051,8 +1241,9 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
         answer = spec.get("answer")
         if isinstance(answer, dict):
             if set(answer) == {"fact"}:
-                answers = _fact_candidates(_require_str(answer["fact"], where),
-                                           identity, education, employment, where)
+                answers = _fact_candidates(
+                    _require_str(answer["fact"], where), identity, education, employment, where
+                )
             elif set(answer) == {"computed"}:
                 computed = _require_str(answer["computed"], where)
                 if computed not in COMPUTED:
@@ -1069,7 +1260,8 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
             else:
                 raise AnswersError(
                     f"{where}.answer: a mapping is one of {{fact}}, {{computed}}, "
-                    f"{{computed, fallback}}, {{role_file}}")
+                    f"{{computed, fallback}}, {{role_file}}"
+                )
         elif answer is not None:
             candidates = answer if isinstance(answer, list) else [answer]
             if not candidates:
@@ -1088,23 +1280,33 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
                 raise AnswersError(
                     f"{where}.keywords: {original!r} normalizes to {keyword!r}, under "
                     f"{MIN_KEYWORD_LENGTH} characters — put the whole label in "
-                    f"`wordings:` instead")
+                    f"`wordings:` instead"
+                )
         for text in wordings + keywords:
             if WORK_AUTHORIZATION_DOMAIN.search(text) and not _NOT_WORK_AUTH.search(text):
                 raise AnswersError(
                     f"{where}: {text!r} is a work-authorization question. Those are "
-                    "answered from work_authorization, per country, never from a question")
+                    "answered from work_authorization, per country, never from a question"
+                )
         mode = spec.get("mode", "exact")
         if mode not in ("exact", "contains"):
             raise AnswersError(f"{where}.mode: must be 'exact' or 'contains', got {mode!r}")
         only_when_required = spec.get("only_when_required", False)
         _require_bool(only_when_required, f"{where}.only_when_required")
-        questions.append(Question(
-            id=qid, answers=answers, wordings=wordings, keywords=keywords,
-            not_wordings=not_wordings, computed=computed, role_file=role_file,
-            mode=mode, only_when_required=only_when_required,
-            source=str(spec.get("source") or "").strip(),
-        ))
+        questions.append(
+            Question(
+                id=qid,
+                answers=answers,
+                wordings=wordings,
+                keywords=keywords,
+                not_wordings=not_wordings,
+                computed=computed,
+                role_file=role_file,
+                mode=mode,
+                only_when_required=only_when_required,
+                source=str(spec.get("source") or "").strip(),
+            )
+        )
 
     # A wording claimed by two questions has no single answer.
     owner: dict[str, str] = {}
@@ -1112,18 +1314,20 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
         for w in q.wordings:
             if w in owner and owner[w] != q.id:
                 raise AnswersError(
-                    f"questions.{owner[w]} and questions.{q.id} both claim the wording {w!r}")
+                    f"questions.{owner[w]} and questions.{q.id} both claim the wording {w!r}"
+                )
             owner[w] = q.id
     # Keywords are substring tests in file order, so an overlap is a question
     # silently shadowing another.
     for i, q in enumerate(questions):
-        for other in questions[i + 1:]:
+        for other in questions[i + 1 :]:
             for a in q.keywords:
                 for b in other.keywords:
                     if a in b or b in a:
                         raise AnswersError(
                             f"questions.{q.id} keyword {a!r} overlaps questions."
-                            f"{other.id} keyword {b!r}: one would shadow the other")
+                            f"{other.id} keyword {b!r}: one would shadow the other"
+                        )
     return tuple(questions)
 
 
@@ -1149,11 +1353,13 @@ def answers_from(data, where: str = "answer bank") -> Answers:
     if unknown_top:
         raise AnswersError(
             f"{where}: unknown top-level keys {sorted(unknown_top)} "
-            f"(expected {sorted(TOP_LEVEL_KEYS)})")
+            f"(expected {sorted(TOP_LEVEL_KEYS)})"
+        )
 
     identity = _parse_block(data, "identity", IDENTITY_KEYS, list_keys=IDENTITY_LIST_KEYS)
     education = _parse_block(
-        data, "education", EDUCATION_KEYS, EDUCATION_OPTIONAL_KEYS, EDUCATION_LIST_KEYS)
+        data, "education", EDUCATION_KEYS, EDUCATION_OPTIONAL_KEYS, EDUCATION_LIST_KEYS
+    )
     employment = None
     if data.get("employment") is not None:
         employment = _parse_block(data, "employment", EMPLOYMENT_KEYS)
@@ -1165,7 +1371,8 @@ def answers_from(data, where: str = "answer bank") -> Answers:
     cover_letter = data.get("cover_letter", "when_required")
     if cover_letter not in COVER_LETTER_POLICIES:
         raise AnswersError(
-            f"cover_letter: {cover_letter!r} is not one of {list(COVER_LETTER_POLICIES)}")
+            f"cover_letter: {cover_letter!r} is not one of {list(COVER_LETTER_POLICIES)}"
+        )
 
     return Answers(
         identity=identity,
@@ -1222,13 +1429,20 @@ def match_option(field: MergedField, candidate: str) -> str | None:
     return _pick_option(field, (candidate,))
 
 
-def _resolve_choice(field: MergedField, candidates: tuple[str, ...], tier: str,
-                    what: str, mode: str = "exact", source: str = "") -> Resolution:
+def _resolve_choice(
+    field: MergedField,
+    candidates: tuple[str, ...],
+    tier: str,
+    what: str,
+    mode: str = "exact",
+    source: str = "",
+) -> Resolution:
     picked = _pick_option(field, candidates, mode=mode)
     if picked is None:
         offered = [o.label for o in field.options]
-        return _park(f"{what}: none of {list(candidates)} is offered ({offered})",
-                     tier, source=source)
+        return _park(
+            f"{what}: none of {list(candidates)} is offered ({offered})", tier, source=source
+        )
     return _fill((picked,) if field.multi else picked, tier, source=source)
 
 
@@ -1245,8 +1459,7 @@ def _pick_country(field: MergedField, value: str) -> str | None:
     for option in field.options:
         if _norm_option(option.label) == wanted:
             return option.label
-    hits = [o.label for o in field.options
-            if _norm_option(o.label).startswith(f"{wanted} +")]
+    hits = [o.label for o in field.options if _norm_option(o.label).startswith(f"{wanted} +")]
     return hits[0] if len(hits) == 1 else None
 
 
@@ -1264,8 +1477,9 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
         picked = _pick_country(field, value)
         if picked is None:
             return _park(
-                f"identity.country: {value!r} matches none of "
-                f"{[o.label for o in field.options]}", "A")
+                f"identity.country: {value!r} matches none of {[o.label for o in field.options]}",
+                "A",
+            )
         return _fill(picked, "A")
     if field.kind == "react_select":
         candidates = _identity_candidates(field.id, value, answers, key)
@@ -1279,8 +1493,9 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
 _COUNTRY_FALLBACK_IDS = frozenset({"_systemfield_location"})
 
 
-def _identity_candidates(field_id: str, value: str, answers: Answers,
-                         key: str = "") -> tuple[str, ...]:
+def _identity_candidates(
+    field_id: str, value: str, answers: Answers, key: str = ""
+) -> tuple[str, ...]:
     """The values to offer a chooser for this identity field, best first.
     Keyed on the DOM id, never the label: `identity.country` also feeds
     Greenhouse's phone dial-code widget."""
@@ -1295,17 +1510,27 @@ def _identity_candidates(field_id: str, value: str, answers: Answers,
     return (value,)
 
 
-def _resolve_repeating(field: MergedField, block: dict[str, str] | None, ids: dict[str, str],
-                       suffix: re.Pattern, config_key: str) -> Resolution:
+def _resolve_repeating(
+    field: MergedField,
+    block: dict[str, str] | None,
+    ids: dict[str, str],
+    suffix: re.Pattern,
+    config_key: str,
+) -> Resolution:
     match = suffix.match(field.id)
     if match is None:
         return _park(f"{config_key}: unrecognized field id {field.id!r}", "A")
     if match.group("n") != "0":
-        return (_park(f"{config_key}: a second entry is required", "A")
-                if field.required else _skip("only entry 0 is filled", "A"))
+        return (
+            _park(f"{config_key}: a second entry is required", "A")
+            if field.required
+            else _skip("only entry 0 is filled", "A")
+        )
     if block is None:
-        missing = (f"{config_key}: this board renders an {config_key} block and "
-                   f"the answer bank has no {config_key}: section")
+        missing = (
+            f"{config_key}: this board renders an {config_key} block and "
+            f"the answer bank has no {config_key}: section"
+        )
         return _park(missing, "A") if field.required else _skip(missing, "A")
     base = match.group("base")
     if base == "current-role":
@@ -1315,8 +1540,11 @@ def _resolve_repeating(field: MergedField, block: dict[str, str] | None, ids: di
         return _park(f"{config_key}: unrecognized field id {field.id!r}", "A")
     value = block.get(key)
     if value is None:
-        return (_park(f"{config_key}.{key}: required by this board, not set", "A")
-                if field.required else _skip(f"{config_key}.{key} not set", "A"))
+        return (
+            _park(f"{config_key}.{key}: required by this board, not set", "A")
+            if field.required
+            else _skip(f"{config_key}.{key} not set", "A")
+        )
     if field.kind == "react_select":
         alternates = block.get(f"{key}_alternates") or ()
         candidates = (str(value), *(a for a in alternates if a != value))
@@ -1356,10 +1584,10 @@ def _pick_own_answer(field: MergedField, candidates: tuple[str, ...]) -> str | N
     for candidate in candidates:
         want = _norm_option(candidate)
         if len(want) < _PREFIX_MIN:
-            continue            # "No" must never pick "No, I don't wish to answer"
+            continue  # "No" must never pick "No, I don't wish to answer"
         for option in field.options:
             have = _norm_option(option.label)
-            if have.startswith(want) and not have[len(want):len(want) + 1].isalnum():
+            if have.startswith(want) and not have[len(want) : len(want) + 1].isalnum():
                 return option.label
     return None
 
@@ -1379,19 +1607,19 @@ def _resolve_eeoc(field: MergedField, answers: Answers) -> Resolution:
     if own and field.options:
         picked = _pick_own_answer(field, own)
         if picked is not None:
-            return _fill((picked,) if field.multi else picked, "A2",
-                         source=f"demographics:{topic}")
+            return _fill((picked,) if field.multi else picked, "A2", source=f"demographics:{topic}")
     picked = None
     if field.options:
         flagged = tuple(o.label for o in field.options if o.decline_to_answer)
         picked = _pick_option(field, flagged + _OPT_OUT)
     if picked is None:
-        return (_park(f"{field.id}: no opt-out option offered", "A2")
-                if field.required else _skip("no opt-out option offered", "A2"))
-    reason = (f"none of demographics.answers.{topic} {list(own)} is offered; declined"
-              if own else "")
-    return Resolution("fill", value=(picked,) if field.multi else picked, tier="A2",
-                      reason=reason)
+        return (
+            _park(f"{field.id}: no opt-out option offered", "A2")
+            if field.required
+            else _skip("no opt-out option offered", "A2")
+        )
+    reason = f"none of demographics.answers.{topic} {list(own)} is offered; declined" if own else ""
+    return Resolution("fill", value=(picked,) if field.multi else picked, tier="A2", reason=reason)
 
 
 def _yes_no(field: MergedField, value: bool, tier: str = "B0") -> Resolution | None:
@@ -1425,7 +1653,9 @@ def _resolve_nationality(field: MergedField, answers: Answers) -> Resolution:
         if picked is None:
             return _park(
                 f"nationality: second-citizenship question offers no option "
-                f"matching {(second or 'None')!r}", "B0")
+                f"matching {(second or 'None')!r}",
+                "B0",
+            )
         return _fill(picked, "B0")
 
     options = tuple(o.label for o in field.options)
@@ -1437,7 +1667,9 @@ def _resolve_nationality(field: MergedField, answers: Answers) -> Resolution:
     if options and _offers_bare_yes_no(options):
         return _park(
             "nationality: this yes/no question names a country or region not in "
-            "the lookup — extend it rather than guess", "B0")
+            "the lookup — extend it rather than guess",
+            "B0",
+        )
 
     picked = _pick_option(field, nationalities)
     if picked is None:
@@ -1460,8 +1692,9 @@ def _one_value(label: str, answers: Answers, fact) -> tuple[bool | None, str]:
     return all(values), ""
 
 
-def _true_options(field: MergedField, answers: Answers, country: str,
-                  asked: str | None) -> list[str]:
+def _true_options(
+    field: MergedField, answers: Answers, country: str, asked: str | None
+) -> list[str]:
     """Options this board offers that are known to be true of you in `country`.
 
     An option is true when the bank has a claim for its exact text and every
@@ -1478,8 +1711,11 @@ def _true_options(field: MergedField, answers: Answers, country: str,
             continue
         if asked and asked not in claim and not claim.get("holds"):
             continue
-        if any(getattr(facts, k) != v for k, v in claim.items()
-               if k in ("authorized", "requires_sponsorship")):
+        if any(
+            getattr(facts, k) != v
+            for k, v in claim.items()
+            if k in ("authorized", "requires_sponsorship")
+        ):
             continue
         if claim.get("holds") is False:
             continue
@@ -1487,25 +1723,28 @@ def _true_options(field: MergedField, answers: Answers, country: str,
     return out
 
 
-def _resolve_by_claims(field: MergedField, answers: Answers, asked: str | None,
-                       why: str) -> Resolution:
+def _resolve_by_claims(
+    field: MergedField, answers: Answers, asked: str | None, why: str
+) -> Resolution:
     countries = _question_countries(field.label, answers)
     if len(countries) != 1:
         return _park(f"work authorization: names {countries}; pick by hand", "B0")
     true = _true_options(field, answers, countries[0], asked)
     if true:
-        return _fill(tuple(true) if field.multi else true[0], "B0",
-                     source=f"claim:{countries[0]}")
+        return _fill(tuple(true) if field.multi else true[0], "B0", source=f"claim:{countries[0]}")
     offered = [o.label for o in field.options]
     return _park(
         f"work authorization: {why} No offered option is known to be true for "
-        f"{countries[0]}; add the true one under claims (offered: {offered})", "B0")
+        f"{countries[0]}; add the true one under claims (offered: {offered})",
+        "B0",
+    )
 
 
 def in_work_authorization_domain(label: str) -> bool:
     """Whether a label goes to the work-authorization resolver."""
-    return bool(WORK_AUTHORIZATION_DOMAIN.search(label or "")
-                and not _NOT_WORK_AUTH.search(label or ""))
+    return bool(
+        WORK_AUTHORIZATION_DOMAIN.search(label or "") and not _NOT_WORK_AUTH.search(label or "")
+    )
 
 
 def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> Resolution:
@@ -1515,13 +1754,21 @@ def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> 
     source = f"fact_wording:{fact}"
     if fact == "us_person":
         if answers.us_person == "park":
-            return _park("asks whether you are a \"U.S. person\". Set "
-                         "work_authorization.us_person to answer it", "B0", source=source)
+            return _park(
+                'asks whether you are a "U.S. person". Set '
+                "work_authorization.us_person to answer it",
+                "B0",
+                source=source,
+            )
         value = answers.us_person == "yes"
     else:
         if UNKNOWN_COUNTRY in _question_countries(field.label, answers):
-            return _park("work authorization: the job's country could not be read from "
-                         "its location, and this question depends on it", "B0", source=source)
+            return _park(
+                "work authorization: the job's country could not be read from "
+                "its location, and this question depends on it",
+                "B0",
+                source=source,
+            )
         value, _ = _one_value(field.label, answers, lambda f: getattr(f, fact))
     answered = _yes_no(field, value == judged["yes_when"])
     if answered is None:
@@ -1537,21 +1784,31 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
     options = tuple(o.label for o in field.options)
     category = classify_work_authorization(label, options)
     countries = _question_countries(label, answers)
-    if UNKNOWN_COUNTRY in countries and category not in ("nationality", "export_control",
-                                                         "not_work_auth"):
-        return _park("work authorization: the job's country could not be read from "
-                     "its location, and this question depends on it", "B0")
+    if UNKNOWN_COUNTRY in countries and category not in (
+        "nationality",
+        "export_control",
+        "not_work_auth",
+    ):
+        return _park(
+            "work authorization: the job's country could not be read from "
+            "its location, and this question depends on it",
+            "B0",
+        )
     facts = answers.facts_for(countries[0])
 
     if category == "export_control":
         if not _US_PERSON_QUESTION.search(label):
             return _park(
-                "export control: yours to answer, every time", "B0", source="export_control")
+                "export control: yours to answer, every time", "B0", source="export_control"
+            )
         if answers.us_person == "park":
             return _park(
-                "export control: asks whether you are a \"U.S. person\", a legal "
+                'export control: asks whether you are a "U.S. person", a legal '
                 "declaration distinct from work authorization. Set "
-                "work_authorization.us_person to answer it", "B0", source="export_control")
+                "work_authorization.us_person to answer it",
+                "B0",
+                source="export_control",
+            )
         answered = _yes_no(field, answers.us_person == "yes")
         if answered is not None:
             return Resolution("fill", answered.value, "B0", source="export_control")
@@ -1563,7 +1820,9 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
             return _fill(facts.followup, "B0")
         return _park(
             f"work authorization: a follow-up asking for detail. Set "
-            f"countries.{countries[0]}.followup to answer it", "B0")
+            f"countries.{countries[0]}.followup to answer it",
+            "B0",
+        )
     if category == "status_disclosure":
         if field.options:
             return _resolve_by_claims(field, answers, None, "asks which status you hold.")
@@ -1571,15 +1830,22 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
             return _fill(facts.status_label, "B0")
         return _park(
             f"work authorization: asks which status you hold. Set "
-            f"countries.{countries[0]}.status_label", "B0")
+            f"countries.{countries[0]}.status_label",
+            "B0",
+        )
     if category == "compound_option":
-        asked = ("requires_sponsorship" if _SPONSORSHIP_FAMILY.search(label)
-                 and not _SPONSORSHIP_NEGATED.search(label) else "authorized")
+        asked = (
+            "requires_sponsorship"
+            if _SPONSORSHIP_FAMILY.search(label) and not _SPONSORSHIP_NEGATED.search(label)
+            else "authorized"
+        )
         return _resolve_by_claims(field, answers, asked, "every option carries its own claim.")
     if category == "alternation":
         return _park(
             "work authorization: the scope qualifier is offered as an alternative "
-            "(\"permanent or temporary\"), so it does not narrow the question", "B0")
+            '("permanent or temporary"), so it does not narrow the question',
+            "B0",
+        )
     if category is None:
         return _park("work authorization: label matches no answerable family", "B0")
 
@@ -1589,7 +1855,7 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
     elif category == "sponsorship":
         value, why = _one_value(label, answers, lambda f: f.requires_sponsorship)
         asked = "requires_sponsorship"
-    else:                                   # plain, proof
+    else:  # plain, proof
         value, why = _one_value(label, answers, lambda f: f.authorized)
         asked = "authorized"
     if value is None:
@@ -1606,8 +1872,7 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
 _AGGREGATOR_SOURCE_LABELS = {"linkedin": "LinkedIn", "indeed": "Indeed"}
 # Scraped straight off the company's own board.
 _OWN_BOARD_SOURCES = frozenset({"greenhouse", "lever", "ashby"})
-_OWN_BOARD_OPTION_HINTS = ("career site", "careers page", "company website",
-                           "company career site")
+_OWN_BOARD_OPTION_HINTS = ("career site", "careers page", "company website", "company career site")
 
 
 def _how_heard_candidates(answers: Answers) -> tuple[str, ...]:
@@ -1619,20 +1884,23 @@ def _how_heard_candidates(answers: Answers) -> tuple[str, ...]:
     return ()
 
 
-def _computed(question: Question, field: MergedField, answers: Answers,
-              source: str) -> Resolution:
+def _computed(question: Question, field: MergedField, answers: Answers, source: str) -> Resolution:
     country = answers.country
     if country == UNKNOWN_COUNTRY and question.computed in ("salary", "start_date"):
-        return _park(f"{question.computed}: the job's country could not be read "
-                     f"from its location", "B", source=source)
+        return _park(
+            f"{question.computed}: the job's country could not be read from its location",
+            "B",
+            source=source,
+        )
     if question.computed == "start_date":
         days = answers.facts_for(country).start_in_days
         if days is None:
             return _park(
-                f"start date: no start_in_days set for {country} "
-                f"(work_authorization.countries)", "B", source=source)
-        return _fill((_today() + timedelta(days=days)).strftime(DATE_FORMAT), "B",
-                     source=source)
+                f"start date: no start_in_days set for {country} (work_authorization.countries)",
+                "B",
+                source=source,
+            )
+        return _fill((_today() + timedelta(days=days)).strftime(DATE_FORMAT), "B", source=source)
 
     if question.computed == "how_heard":
         own = _how_heard_candidates(answers)
@@ -1643,19 +1911,24 @@ def _computed(question: Question, field: MergedField, answers: Answers,
         if not question.answers:
             return _park("how heard: no answer for this source", "B", source=source)
         if field.options or field.kind == "react_select":
-            return _resolve_choice(field, question.answers, "B", question.id,
-                                   mode=question.mode, source=source)
+            return _resolve_choice(
+                field, question.answers, "B", question.id, mode=question.mode, source=source
+            )
         return _fill(question.answers[0], "B", source=source)
 
     # salary. A Yes/No widget asks whether the posted range is acceptable, not
     # for a figure — the literal fallback answers that.
     options = tuple(o.label for o in field.options)
     if options and _offers_bare_yes_no(options):
-        return _resolve_choice(field, question.answers, "B", question.id,
-                               mode=question.mode, source=source)
+        return _resolve_choice(
+            field, question.answers, "B", question.id, mode=question.mode, source=source
+        )
     if answers.salary_figure is None:
-        return _park(f"salary: no figure for a role in {country} "
-                     f"(verticals.yaml salary_expectation)", "B", source=source)
+        return _park(
+            f"salary: no figure for a role in {country} (verticals.yaml salary_expectation)",
+            "B",
+            source=source,
+        )
     figure = round(answers.salary_figure)
     candidates = (str(figure), f"${figure:,}")
     if field.options or field.kind == "react_select":
@@ -1684,7 +1957,8 @@ def find_question(label: str, answers: Answers) -> tuple[Question, str] | None:
 _STOPWORDS = frozenset(
     "a an and any are as at be by can do does did for from have has how i if in is it "
     "of on or our please that the this to us we what when where which who why will with "
-    "would you your yours".split())
+    "would you your yours".split()
+)
 
 
 def _words(text: str) -> set[str]:
@@ -1715,9 +1989,11 @@ def _resolve_question(field: MergedField, answers: Answers) -> Resolution | None
     if question.only_when_required and not field.required:
         return _skip(f"{question.id} is only_when_required and this field is optional", "B")
     if field.kind == "file":
-        return (_park("a question cannot answer a file upload", "B", source=source)
-                if field.required
-                else _skip("optional file upload, no question can fill it", "B"))
+        return (
+            _park("a question cannot answer a file upload", "B", source=source)
+            if field.required
+            else _skip("optional file upload, no question can fill it", "B")
+        )
     if question.computed:
         return _computed(question, field, answers, source)
     if question.role_file:
@@ -1725,11 +2001,15 @@ def _resolve_question(field: MergedField, answers: Answers) -> Resolution | None
         if not text:
             return _park(
                 f"{question.id}: company_answers.yaml has no {question.role_file} "
-                f"for this role (run /company-answers)", "B", source=source)
+                f"for this role (run /company-answers)",
+                "B",
+                source=source,
+            )
         return _fill(text, "B", source=source)
     if field.options or field.kind == "react_select":
-        return _resolve_choice(field, question.answers, "B", question.id,
-                               mode=question.mode, source=source)
+        return _resolve_choice(
+            field, question.answers, "B", question.id, mode=question.mode, source=source
+        )
     return _fill(question.answers[0], "B", source=source)
 
 
@@ -1740,10 +2020,12 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
         return _resolve_eeoc(field, answers)
     if field.section == "education":
         return _resolve_repeating(
-            field, answers.education, _EDUCATION_IDS, _EDUCATION_SUFFIX, "education")
+            field, answers.education, _EDUCATION_IDS, _EDUCATION_SUFFIX, "education"
+        )
     if field.section == "employment":
         return _resolve_repeating(
-            field, answers.employment, _EMPLOYMENT_IDS, _EMPLOYMENT_SUFFIX, "employment")
+            field, answers.employment, _EMPLOYMENT_IDS, _EMPLOYMENT_SUFFIX, "employment"
+        )
 
     identity = _resolve_identity(field, answers)
     if identity is not None:
@@ -1755,8 +2037,7 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
         # Blank is never a false claim, and an optional free-text visa question
         # is not worth parking a role over.
         if resolution.parked and not field.required:
-            return Resolution("skip", tier="B0", reason=resolution.reason,
-                              source=resolution.source)
+            return Resolution("skip", tier="B0", reason=resolution.reason, source=resolution.source)
         return resolution
 
     question = _resolve_question(field, answers)
@@ -1765,5 +2046,8 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
 
     # Tier C: nothing in the bank asks this. The /apply session maps it to a
     # question, and the run saves that mapping for next time.
-    return (_park("no question in the bank asks this", "C")
-            if field.required else _skip("optional, not in the bank", "C"))
+    return (
+        _park("no question in the bank asks this", "C")
+        if field.required
+        else _skip("optional, not in the bank", "C")
+    )

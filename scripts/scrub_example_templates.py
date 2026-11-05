@@ -25,6 +25,7 @@ What it removes:
 --check exits 1 without writing if either file still needs scrubbing. The gate CI
 and the pre-push hook actually run is tests/test_example_templates.py.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,9 +46,7 @@ COVER = paths.REPO_ROOT / "profile" / "cover_letter_template.example.docx"
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 THUMBNAIL_PART = "docProps/thumbnail.jpeg"
-_THUMBNAIL_REL_RE = re.compile(
-    r'<Relationship[^>]*Target="docProps/thumbnail\.jpeg"[^>]*/>'
-)
+_THUMBNAIL_REL_RE = re.compile(r'<Relationship[^>]*Target="docProps/thumbnail\.jpeg"[^>]*/>')
 
 # core.xml elements to empty, by qualified tag name as Word writes them.
 CORE_FIELDS = (
@@ -96,9 +95,7 @@ def _unwrap_content_controls(xml_bytes: bytes) -> bytes:
             for child in reversed(list(content)):
                 parent.insert(index, child)
         parent.remove(sdt)
-    return etree.tostring(
-        root, xml_declaration=True, encoding="UTF-8", standalone=True
-    )
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
 
 
 def _scrub_bytes(name: str, data: bytes) -> bytes:
@@ -123,9 +120,7 @@ def scrub(path: Path, *, write: bool = True) -> bool:
         entries = [(info, zf.read(info.filename)) for info in zf.infolist()]
 
     changed = False
-    with tempfile.NamedTemporaryFile(
-        dir=path.parent, suffix=".docx", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".docx", delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as out:
@@ -170,8 +165,7 @@ def main() -> int:
     if args.check and dirty:
         names = ", ".join(str(p.relative_to(paths.REPO_ROOT)) for p in dirty)
         print(
-            f"needs scrubbing: {names}\n"
-            f"run: uv run python scripts/scrub_example_templates.py",
+            f"needs scrubbing: {names}\nrun: uv run python scripts/scrub_example_templates.py",
             file=sys.stderr,
         )
         return 1

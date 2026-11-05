@@ -1,4 +1,5 @@
 """The hard rules /score applies before any judge (src/score_filter.py)."""
+
 from __future__ import annotations
 
 import pytest
@@ -30,20 +31,26 @@ class TestLoadScoring:
 
 
 class TestFindPhrase:
-    @pytest.mark.parametrize("jd", [
-        "Applicants must be a U.S. citizen.",
-        "must be a United States citizen",
-        "MUST BE A US CITIZEN",
-        "must be a **U.S.** citizen",
-    ])
+    @pytest.mark.parametrize(
+        "jd",
+        [
+            "Applicants must be a U.S. citizen.",
+            "must be a United States citizen",
+            "MUST BE A US CITIZEN",
+            "must be a **U.S.** citizen",
+        ],
+    )
     def test_us_spellings_match(self, jd):
         assert sf.find_phrase(("must be a us citizen",), jd) == "must be a us citizen"
 
-    @pytest.mark.parametrize("phrase, jd", [
-        ("concur", "work concurrently with the team"),
-        ("ts/sci", "a degree in arts/sciences"),
-        ("solution architect", "own the solution architecture"),
-    ])
+    @pytest.mark.parametrize(
+        "phrase, jd",
+        [
+            ("concur", "work concurrently with the team"),
+            ("ts/sci", "a degree in arts/sciences"),
+            ("solution architect", "own the solution architecture"),
+        ],
+    )
     def test_whole_words_only(self, phrase, jd):
         assert sf.find_phrase((phrase,), jd) is None
 
@@ -52,22 +59,25 @@ class TestFindPhrase:
 
 
 class TestYearsRequired:
-    @pytest.mark.parametrize("jd, years", [
-        ("5+ years of experience in Python", 5),
-        ("3-6 years of relevant experience", 3),
-        ("3 to 5 years of experience", 3),
-        ("3–4 years experience", 3),
-        ("7+ years building production software", 0),
-        ("2 years of hands-on software experience", 2),
-        ("our 150 year legacy", 0),
-        ("with over 100 years of experience serving clients", 0),
-        ("a company with more than 60 years of experience", 0),
-        ("education – 15 years experience", 0),
-        ("34 years of experience as a systems analyst", 0),
-        ("the program runs for 4 years", 0),
-        ("", 0),
-        (None, 0),
-    ])
+    @pytest.mark.parametrize(
+        "jd, years",
+        [
+            ("5+ years of experience in Python", 5),
+            ("3-6 years of relevant experience", 3),
+            ("3 to 5 years of experience", 3),
+            ("3–4 years experience", 3),
+            ("7+ years building production software", 0),
+            ("2 years of hands-on software experience", 2),
+            ("our 150 year legacy", 0),
+            ("with over 100 years of experience serving clients", 0),
+            ("a company with more than 60 years of experience", 0),
+            ("education – 15 years experience", 0),
+            ("34 years of experience as a systems analyst", 0),
+            ("the program runs for 4 years", 0),
+            ("", 0),
+            (None, 0),
+        ],
+    )
     def test_reads_the_minimum(self, jd, years):
         assert sf.years_required(jd) == years
 
@@ -76,15 +86,21 @@ class TestYearsRequired:
         assert sf.years_required(jd) == 3
 
     def test_highest_required_wins(self):
-        assert sf.years_required("2+ years of Python experience and 4+ years of SQL experience") == 4
+        assert (
+            sf.years_required("2+ years of Python experience and 4+ years of SQL experience") == 4
+        )
 
     def test_inline_preferred_heading_ignored(self):
-        jd = ("Basic Qualifications: At least 4 years of experience in software engineering. "
-              "Preferred Qualifications: Master's degree, 9+ years of experience coding")
+        jd = (
+            "Basic Qualifications: At least 4 years of experience in software engineering. "
+            "Preferred Qualifications: Master's degree, 9+ years of experience coding"
+        )
         assert sf.years_required(jd) == 4
 
-    DEGREE_PATHS = ("Bachelor's degree and 7+ years of related experience, "
-                    "or a Master's degree and 4+ years of related experience")
+    DEGREE_PATHS = (
+        "Bachelor's degree and 7+ years of related experience, "
+        "or a Master's degree and 4+ years of related experience"
+    )
 
     @pytest.mark.parametrize("degree, years", [(3, 4), (4, 4), (2, 7), (None, 7)])
     def test_degree_paths_take_the_open_one(self, degree, years):
@@ -95,18 +111,28 @@ class TestYearsRequired:
         assert sf.years_required(jd, 2) == 2
 
     def test_lower_degree_path_open_to_a_higher_degree(self):
-        jd = ("Bachelor's degree and 5-7 years of job-related experience or "
-              "high school diploma/GED and 10 years of the same job-related experience")
+        jd = (
+            "Bachelor's degree and 5-7 years of job-related experience or "
+            "high school diploma/GED and 10 years of the same job-related experience"
+        )
         assert sf.years_required(jd, 3) == 5
 
     def test_or_without_degrees_is_not_a_path(self):
         jd = "3+ years of Python experience or 6+ years of Java experience"
         assert sf.years_required(jd, 3) == 6
 
-    @pytest.mark.parametrize("text, rank", [
-        ("Master's Degree", 3), ("Bachelor of Technology", 2), ("PhD", 4),
-        ("Associate's", 1), ("High School Diploma", 0), ("", None), (None, None),
-    ])
+    @pytest.mark.parametrize(
+        "text, rank",
+        [
+            ("Master's Degree", 3),
+            ("Bachelor of Technology", 2),
+            ("PhD", 4),
+            ("Associate's", 1),
+            ("High School Diploma", 0),
+            ("", None),
+            (None, None),
+        ],
+    )
     def test_degree_rank(self, text, rank):
         assert sf.degree_rank(text) == rank
 
@@ -120,15 +146,19 @@ class TestTrimJd:
         assert sf.load_trim(tmp_path / "missing.yaml") == ((), ())
 
     def test_boilerplate_section_cut_until_next_heading(self, scfg):
-        jd = ("## About the role\n\nBuild LLM agents.\n\n## Benefits\n\nDental.\n\n"
-              "Free lunch.\n\n## Requirements\n\n3+ years of Python.")
+        jd = (
+            "## About the role\n\nBuild LLM agents.\n\n## Benefits\n\nDental.\n\n"
+            "Free lunch.\n\n## Requirements\n\n3+ years of Python."
+        )
         out = sf.trim_jd(jd, scfg)
         assert "Build LLM agents." in out and "3+ years of Python." in out
         assert "Dental." not in out and "Free lunch." not in out
 
     def test_keep_word_paragraph_survives_inside_boilerplate(self, scfg):
-        jd = ("Build agents.\n\n## Equal Opportunity\n\nWe are an EEO employer.\n\n"
-              "We do not offer visa sponsorship for this role.")
+        jd = (
+            "Build agents.\n\n## Equal Opportunity\n\nWe are an EEO employer.\n\n"
+            "We do not offer visa sponsorship for this role."
+        )
         out = sf.trim_jd(jd, scfg)
         assert "visa sponsorship" in out
         assert "EEO employer" not in out
@@ -156,8 +186,12 @@ def test_wrap_leaves_no_long_line():
 
 class TestDropReason:
     def _row(self, **kw):
-        return {"job_id": "aaaaaaaa", "vertical": "example_primary",
-                "jd_text": "Build widgets.", **kw}
+        return {
+            "job_id": "aaaaaaaa",
+            "vertical": "example_primary",
+            "jd_text": "Build widgets.",
+            **kw,
+        }
 
     def test_no_lane(self, cfg, scfg):
         assert sf.drop_reason(self._row(vertical=""), scfg)[0] == "no-lane"
@@ -166,11 +200,14 @@ class TestDropReason:
         code, detail = sf.drop_reason(self._row(jd_text="Must be a U.S. citizen."), scfg)
         assert (code, detail) == ("ineligible", "must be a us citizen")
 
-    @pytest.mark.parametrize("jd, dropped", [
-        ("This position does require security clearance.", True),
-        ("The role requires a security clearance.", True),
-        ("This role may require a security clearance.", False),
-    ])
+    @pytest.mark.parametrize(
+        "jd, dropped",
+        [
+            ("This position does require security clearance.", True),
+            ("The role requires a security clearance.", True),
+            ("This role may require a security clearance.", False),
+        ],
+    )
     def test_clearance_wording(self, cfg, scfg, jd, dropped):
         assert (sf.drop_reason(self._row(jd_text=jd), scfg) is not None) is dropped
 
@@ -185,7 +222,9 @@ class TestDropReason:
         assert sf.drop_reason(row, scfg)[0] == "ineligible"
 
     def test_lane_phrase(self, cfg, scfg):
-        assert sf.drop_reason(self._row(jd_text="Uses the rival widget suite."), scfg)[0] == "phrase"
+        assert (
+            sf.drop_reason(self._row(jd_text="Uses the rival widget suite."), scfg)[0] == "phrase"
+        )
 
     def test_years_above_lane_max(self, cfg, scfg):
         assert sf.drop_reason(self._row(jd_text="5+ years of experience"), scfg)[0] == "years"
@@ -198,24 +237,34 @@ def test_seniority_cap(cfg):
 
 
 def _need(scfg, need):
-    return sf.ScoringConfig(**{**scfg.__dict__, "sponsorship_need": need,
-                               "country_needs": (("United States", need), ("India", need)),
-                               "default_need": "now"})
+    return sf.ScoringConfig(
+        **{
+            **scfg.__dict__,
+            "sponsorship_need": need,
+            "country_needs": (("United States", need), ("India", need)),
+            "default_need": "now",
+        }
+    )
 
 
 class TestSponsorshipLabel:
-    @pytest.mark.parametrize("fact, never, later, now", [
-        ("offers", "sponsors", "sponsors", "sponsors"),
-        ("silent", "unknown", "unknown", "unknown"),
-        ("status_bar", "ineligible", "ineligible", "ineligible"),
-        ("no_sponsorship", "opt_ok", "opt_ok", "ineligible"),
-        ("no_future_sponsorship", "opt_ok", "ineligible", "ineligible"),
-        ("no_opt_support", "opt_ok", "ineligible", "opt_ok"),
-        ("right_to_work", "unknown", "unknown", "ineligible"),
-    ])
+    @pytest.mark.parametrize(
+        "fact, never, later, now",
+        [
+            ("offers", "sponsors", "sponsors", "sponsors"),
+            ("silent", "unknown", "unknown", "unknown"),
+            ("status_bar", "ineligible", "ineligible", "ineligible"),
+            ("no_sponsorship", "opt_ok", "opt_ok", "ineligible"),
+            ("no_future_sponsorship", "opt_ok", "ineligible", "ineligible"),
+            ("no_opt_support", "opt_ok", "ineligible", "opt_ok"),
+            ("right_to_work", "unknown", "unknown", "ineligible"),
+        ],
+    )
     def test_fact_times_need(self, scfg, fact, never, later, now):
-        got = [sf.sponsorship_label([fact], "United States", _need(scfg, n))
-               for n in ("never", "later", "now")]
+        got = [
+            sf.sponsorship_label([fact], "United States", _need(scfg, n))
+            for n in ("never", "later", "now")
+        ]
         assert got == [never, later, now]
 
     def test_visa_needed_country_always_needs_sponsorship(self, scfg):
@@ -228,53 +277,67 @@ class TestSponsorshipLabel:
         assert sf.sponsorship_label(["right_to_work"], "Germany; USA", cfg) == "unknown"
 
     def test_each_country_has_its_own_need(self, scfg):
-        cfg = sf.ScoringConfig(**{**scfg.__dict__, "sponsorship_need": "later",
-                                  "country_needs": (("United States", "later"),
-                                                    ("India", "never")),
-                                  "default_need": "now"})
+        cfg = sf.ScoringConfig(
+            **{
+                **scfg.__dict__,
+                "sponsorship_need": "later",
+                "country_needs": (("United States", "later"), ("India", "never")),
+                "default_need": "now",
+            }
+        )
         assert sf.sponsorship_label(["no_future_sponsorship"], "India", cfg) == "opt_ok"
-        assert sf.sponsorship_label(["no_future_sponsorship"], "United States", cfg) == \
-            "ineligible"
+        assert sf.sponsorship_label(["no_future_sponsorship"], "United States", cfg) == "ineligible"
 
-
-    @pytest.mark.parametrize("facts, label", [
-        (["no_sponsorship", "no_opt_support"], "ineligible"),
-        (["no_sponsorship"], "opt_ok"),
-        (["offers", "no_sponsorship"], "sponsors"),
-        (["offers", "status_bar"], "ineligible"),
-        ([], "unknown"),
-    ])
+    @pytest.mark.parametrize(
+        "facts, label",
+        [
+            (["no_sponsorship", "no_opt_support"], "ineligible"),
+            (["no_sponsorship"], "opt_ok"),
+            (["offers", "no_sponsorship"], "sponsors"),
+            (["offers", "status_bar"], "ineligible"),
+            ([], "unknown"),
+        ],
+    )
     def test_strictest_statement_wins(self, scfg, facts, label):
         assert sf.sponsorship_label(facts, "United States", _need(scfg, "later")) == label
 
     def test_offer_cancels_right_to_work_abroad(self, scfg):
-        assert sf.sponsorship_label(["right_to_work", "offers"], "Germany",
-                                    _need(scfg, "never")) == "sponsors"
+        assert (
+            sf.sponsorship_label(["right_to_work", "offers"], "Germany", _need(scfg, "never"))
+            == "sponsors"
+        )
 
 
 class TestCountryAllowed:
-    RULE = sf.CountryRule(home=frozenset({"us"}),
-                          abroad={"germany": frozenset({"lane_a"})})
+    RULE = sf.CountryRule(home=frozenset({"us"}), abroad={"germany": frozenset({"lane_a"})})
 
-    @pytest.mark.parametrize("country, lane, ok", [
-        ("United States", "lane_b", True),
-        ("USA", "lane_b", True),
-        ("U.S.", "lane_b", True),
-        ("", "lane_b", True),
-        ("Remote", "lane_b", True),
-        ("Germany", "lane_a", True),
-        ("Germany", "lane_b", False),
-        ("Switzerland", "lane_a", False),
-        ("Switzerland; United States", "lane_b", True),
-    ])
+    @pytest.mark.parametrize(
+        "country, lane, ok",
+        [
+            ("United States", "lane_b", True),
+            ("USA", "lane_b", True),
+            ("U.S.", "lane_b", True),
+            ("", "lane_b", True),
+            ("Remote", "lane_b", True),
+            ("Germany", "lane_a", True),
+            ("Germany", "lane_b", False),
+            ("Switzerland", "lane_a", False),
+            ("Switzerland; United States", "lane_b", True),
+        ],
+    )
     def test_rule(self, country, lane, ok):
         assert sf.country_allowed(country, lane, self.RULE) is ok
 
     def test_from_discovery(self):
         from src.discovery.config import DiscoveryConfig, LocationAllowlist, SourceConfig
+
         d = DiscoveryConfig(
             location_allowlist=LocationAllowlist(countries=["United States", "Germany"]),
-            sources={"linkedin": SourceConfig(True, 3.0, abroad_countries=["Germany"],
-                                              abroad_verticals=["lane_a"])})
+            sources={
+                "linkedin": SourceConfig(
+                    True, 3.0, abroad_countries=["Germany"], abroad_verticals=["lane_a"]
+                )
+            },
+        )
         rule = sf.CountryRule.from_discovery(d)
         assert rule.home == {"us"} and rule.abroad == {"germany": {"lane_a"}}

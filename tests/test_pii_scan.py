@@ -35,7 +35,10 @@ def _repo(tmp_path, tracked, denylist="Quimby\n"):
 
 def _scan(repo):
     return subprocess.run(
-        ["bash", str(SCRIPT)], cwd=repo, capture_output=True, text=True,
+        ["bash", str(SCRIPT)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
         encoding="utf-8",
     )
 
@@ -92,8 +95,12 @@ def test_missing_denylist_fails_closed(tmp_path):
 def test_missing_denylist_can_be_opted_out_of_explicitly(tmp_path):
     repo = _repo(tmp_path, {"README.md": "clean\n"}, denylist=None)
     result = subprocess.run(
-        ["bash", str(SCRIPT)], cwd=repo, capture_output=True, text=True,
-        encoding="utf-8", env={**os.environ, "PII_SCAN_ALLOW_MISSING": "1"},
+        ["bash", str(SCRIPT)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PII_SCAN_ALLOW_MISSING": "1"},
     )
     assert result.returncode == 0
 
@@ -101,8 +108,7 @@ def test_missing_denylist_can_be_opted_out_of_explicitly(tmp_path):
 def test_tilde_prefix_matches_inside_a_longer_word(tmp_path):
     """-w is why a handle pattern misses the handle with a suffix — the exact
     case the real denylist had to special-case by hand."""
-    repo = _repo(tmp_path, {"README.md": "see quimby01 for details\n"},
-                 denylist="~quimby\n")
+    repo = _repo(tmp_path, {"README.md": "see quimby01 for details\n"}, denylist="~quimby\n")
     assert _scan(repo).returncode == 1
 
 
@@ -131,8 +137,9 @@ def test_shipped_example_denylist_scans_this_repo_clean(tmp_path):
     clone.mkdir()
     # The working tree's tracked files, not HEAD: the point is whether the
     # example ships clean against the repo as it stands.
-    listed = subprocess.run(["git", "ls-files", "-z"], cwd=repo_root,
-                            capture_output=True, check=True).stdout
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
+    ).stdout
     for raw in listed.split(b"\0"):
         if not raw:
             continue
@@ -145,15 +152,14 @@ def test_shipped_example_denylist_scans_this_repo_clean(tmp_path):
         shutil.copyfile(src, dest)
     subprocess.run(["git", "init", "-q"], cwd=clone, check=True)
     subprocess.run(["git", "add", "-A"], cwd=clone, check=True)
-    shutil.copyfile(clone / "profile" / "pii_denylist.example.txt",
-                    clone / "profile" / "pii_denylist.txt")
+    shutil.copyfile(
+        clone / "profile" / "pii_denylist.example.txt", clone / "profile" / "pii_denylist.txt"
+    )
     result = _scan(clone)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_denylist_with_only_comments_is_an_error(tmp_path):
     """Refuse to report a clean scan that never ran."""
-    result = _scan(
-        _repo(tmp_path, {"README.md": "clean\n"}, denylist="# just a comment\n\n")
-    )
+    result = _scan(_repo(tmp_path, {"README.md": "clean\n"}, denylist="# just a comment\n\n"))
     assert result.returncode == 2

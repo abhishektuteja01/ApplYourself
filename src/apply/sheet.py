@@ -10,6 +10,7 @@ tracked as done and not in the ledger. A row that is Applied or Closed is
 removed on the rebuild (state.yaml and the ledger keep the record, and `--add`
 never brings it back); an Expired row stays, so it can be marked skip.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,15 +27,22 @@ from src.apply import confirmation, detect, ledger
 from src.shared import paths
 from src.shared.config_keys import load_automation
 
-COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note",
-           "uv_run_command")
+COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "recruiter_contact", "screen", "interview", "offer"})
 _CLOSED = frozenset({"skip", "withdrawn", "rejected", "ghosted"})
 _ROLE_LINE = re.compile(r"^- `([0-9a-f]{8})`")
-_HEADINGS = (("SUBMITTED", "submitted"), ("Submitted", "submitted"),
-             ("Rejected", "rejected"), ("Clicked", "unsent"), ("Parked", "parked"),
-             ("Ready", "ready"), ("Manual", "manual"), ("Skipped", "skipped"),
-             ("Failed", "failed"), ("Expired", "expired"))
+_HEADINGS = (
+    ("SUBMITTED", "submitted"),
+    ("Submitted", "submitted"),
+    ("Rejected", "rejected"),
+    ("Clicked", "unsent"),
+    ("Parked", "parked"),
+    ("Ready", "ready"),
+    ("Manual", "manual"),
+    ("Skipped", "skipped"),
+    ("Failed", "failed"),
+    ("Expired", "expired"),
+)
 
 
 def latest_outcomes(runs_dir: Path) -> dict[str, tuple[str, str, str]]:
@@ -83,8 +91,13 @@ def _waiting(state: dict, since: str) -> str:
     return str(path)
 
 
-def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | None,
-               outcome: tuple[str, str, str] | None) -> tuple[str, str, str]:
+def status_for(
+    job_id: str,
+    submittable: bool,
+    state: dict | None,
+    sent: dict | None,
+    outcome: tuple[str, str, str] | None,
+) -> tuple[str, str, str]:
     """(status, note, uv_run_command) for one row."""
     state = state or {}
     current = state.get("state", "")
@@ -92,8 +105,11 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
     if verdict is ledger.Verdict.REJECTED:
         return "Rejected by board", f"rejected by the board: {sent.get('detail', '')}", ""
     if verdict is ledger.Verdict.UNKNOWN:
-        why = ("the board fired no submit request" if sent.get("status") == "unsent"
-               else "no outcome was recorded after the click")
+        why = (
+            "the board fired no submit request"
+            if sent.get("status") == "unsent"
+            else "no outcome was recorded after the click"
+        )
         return "Unsent", f"clicked {sent.get('at', '')[:10]}; {why}, verify on the board", ""
     if verdict is ledger.Verdict.SENT or current in _DONE:
         when = (sent or {}).get("at", "") or state.get("applied_at", "")
@@ -112,9 +128,12 @@ def status_for(job_id: str, submittable: bool, state: dict | None, sent: dict | 
         if category == "ready":
             folder = built_folder(state)
             answers = folder / "answers_override.json"
-            return ("Submittable", "",
-                    f"uv run apply run --job-id {job_id} --answers {answers} "
-                    f"--manifest {folder / 'form_manifest.submit.json'} --submit")
+            return (
+                "Submittable",
+                "",
+                f"uv run apply run --job-id {job_id} --answers {answers} "
+                f"--manifest {folder / 'form_manifest.submit.json'} --submit",
+            )
         if category == "expired":
             return "Expired", f"expired — {detail}" if detail else "expired", ""
         if category in ("parked", "failed"):
@@ -148,8 +167,7 @@ def _load(table: Path):
     return wb, ws, {name: i + 1 for i, name in enumerate(header)}
 
 
-def _candidates(threshold: float, present: set[str], sent: set[str],
-                states: dict) -> list[dict]:
+def _candidates(threshold: float, present: set[str], sent: set[str], states: dict) -> list[dict]:
     if not paths.SCORED.exists() or not paths.CLEAN.exists():
         return []
     scored = pd.read_parquet(paths.SCORED, columns=["job_id", "fit_score"])
@@ -161,8 +179,16 @@ def _candidates(threshold: float, present: set[str], sent: set[str],
         state = (states.get(r.job_id) or {}).get("state", "")
         if r.job_id in present or r.job_id in sent or state in _DONE | _CLOSED:
             continue
-        out.append({"score": int(r.fit_score), "name": r.job_id, "company": r.company,
-                    "title": r.title, "source": r.source, "url": r.url})
+        out.append(
+            {
+                "score": int(r.fit_score),
+                "name": r.job_id,
+                "company": r.company,
+                "title": r.title,
+                "source": r.source,
+                "url": r.url,
+            }
+        )
     return out
 
 
@@ -188,10 +214,12 @@ def job_ids(status: str, automation: Path | None = None) -> list[str]:
     if not table.is_file():
         return []
     _, ws, col = _load(table)
-    return [str(ws.cell(row=r, column=col["name"]).value)
-            for r in range(2, ws.max_row + 1)
-            if ws.cell(row=r, column=col["status"]).value == status
-            and ws.cell(row=r, column=col["name"]).value]
+    return [
+        str(ws.cell(row=r, column=col["name"]).value)
+        for r in range(2, ws.max_row + 1)
+        if ws.cell(row=r, column=col["status"]).value == status
+        and ws.cell(row=r, column=col["name"]).value
+    ]
 
 
 def _finished(status: str) -> bool:
@@ -211,12 +239,18 @@ def _form_url(state: dict | None) -> str:
         return ""
 
 
-def _row_status(job_id: str, url: str, states: dict, ledger_path: Path,
-                outcomes: dict) -> tuple[str, str, str]:
+def _row_status(
+    job_id: str, url: str, states: dict, ledger_path: Path, outcomes: dict
+) -> tuple[str, str, str]:
     submittable = detect.is_auto_submittable(url) or _submittable(job_id)
     state = states.get(job_id)
-    return status_for(job_id, submittable, state,
-                      ledger.prior(ledger_path, job_id, _form_url(state)), outcomes.get(job_id))
+    return status_for(
+        job_id,
+        submittable,
+        state,
+        ledger.prior(ledger_path, job_id, _form_url(state)),
+        outcomes.get(job_id),
+    )
 
 
 def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:
@@ -232,13 +266,10 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
     outcomes = latest_outcomes(runs)
 
     wb, ws, col = _load(table)
-    present = {str(ws.cell(row=r, column=col["name"]).value)
-               for r in range(2, ws.max_row + 1)}
+    present = {str(ws.cell(row=r, column=col["name"]).value) for r in range(2, ws.max_row + 1)}
     if add:
-        for row in _candidates(float(config.get("score_threshold", 0)), present,
-                               sent_ids, states):
-            ws.append([row.get(name, "") for name in
-                       sorted(col, key=col.get)])
+        for row in _candidates(float(config.get("score_threshold", 0)), present, sent_ids, states):
+            ws.append([row.get(name, "") for name in sorted(col, key=col.get)])
 
     counts: dict[str, int] = {}
     finished: list[int] = []
@@ -268,8 +299,12 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     give now. Every list is empty on a clean sheet."""
     config = load_automation(automation or paths.PROFILE / "automation.yaml")
     table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
-    out: dict[str, list[str]] = {"finished": [], "duplicates": [], "not_live": [],
-                                 "wrong_status": []}
+    out: dict[str, list[str]] = {
+        "finished": [],
+        "duplicates": [],
+        "not_live": [],
+        "wrong_status": [],
+    }
     if not table.is_file():
         return out
     runs = paths.APPLICATIONS / "apply_runs"
@@ -277,8 +312,11 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     states = state_io.load_state_index(paths.PIPELINE)
     outcomes = latest_outcomes(runs)
     _, ws, col = _load(table)
-    live = (set(pd.read_parquet(paths.CLEAN, columns=["job_id"])["job_id"])
-            if paths.CLEAN.exists() else None)
+    live = (
+        set(pd.read_parquet(paths.CLEAN, columns=["job_id"])["job_id"])
+        if paths.CLEAN.exists()
+        else None
+    )
     seen: set[str] = set()
     for r in range(2, ws.max_row + 1):
         job_id = str(ws.cell(row=r, column=col["name"]).value or "")

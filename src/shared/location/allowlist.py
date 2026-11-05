@@ -1,4 +1,5 @@
 """Whether a location is inside the allowlist, and the countries a title restricts the hire to."""
+
 from __future__ import annotations
 
 import re
@@ -15,6 +16,7 @@ from src.shared.location.places import (
 # ---------------------------------------------------------------------
 # The allowlist decision, one row at a time
 # ---------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Allowed:
@@ -37,7 +39,12 @@ class Allowlist:
     def check(self, raw, vertical: str = "", title: str = "") -> Allowed:
         got = self._check_location(raw, vertical)
         limit = residency_countries(title)
-        if got.keep and limit and self.countries and not {c.lower() for c in limit} & self.countries:
+        if (
+            got.keep
+            and limit
+            and self.countries
+            and not {c.lower() for c in limit} & self.countries
+        ):
             # "AI Engineer (Remote - ES/UK only)": the title names where the
             # hire must live, and none of it is allowed.
             return Allowed(False, got.location, True)
@@ -72,7 +79,10 @@ class Allowlist:
             canon = f"{parsed.city}, {parsed.country}"
         elif parsed.state and us:
             canon = parsed.state
-        elif len([p for p in _SEPARATOR_RE.split(text) if p.strip() and "remote" not in p.lower()]) > 1:
+        elif (
+            len([p for p in _SEPARATOR_RE.split(text) if p.strip() and "remote" not in p.lower()])
+            > 1
+        ):
             return Allowed(True, text, True)
         else:
             canon = parsed.country
@@ -113,9 +123,9 @@ def residency_countries(title: str) -> set[str]:
     something else ("US Citizens only", "W2 only") and is left alone."""
     out: set[str] = set()
     for m in _RESIDENCY_RE.finditer(title or ""):
-        head = title[:m.start()]
+        head = title[: m.start()]
         cut = list(_RESIDENCY_CUT_RE.finditer(head))
-        chunk = _TITLE_NOISE_RE.sub(" ", head[cut[-1].end():] if cut else head)
+        chunk = _TITLE_NOISE_RE.sub(" ", head[cut[-1].end() :] if cut else head)
         tokens = [t for t in _RESIDENCY_SPLIT_RE.split(chunk) if t.strip(" .-")]
         found = [_residency_token(t) for t in tokens]
         if tokens and all(found):

@@ -9,6 +9,7 @@ tailored_dirs[-1] folder holds.
 
 State.yaml schema. State set + terminal-state rules.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,20 +27,43 @@ log = logging.getLogger(__name__)
 
 
 # 11 states
-VALID_STATES: frozenset[str] = frozenset({
-    "saved", "skip", "tailored", "applied", "recruiter_contact",
-    "screen", "interview", "offer", "rejected", "withdrawn", "ghosted",
-})
+VALID_STATES: frozenset[str] = frozenset(
+    {
+        "saved",
+        "skip",
+        "tailored",
+        "applied",
+        "recruiter_contact",
+        "screen",
+        "interview",
+        "offer",
+        "rejected",
+        "withdrawn",
+        "ghosted",
+    }
+)
 
 # Terminal states reject all out-transitions
-TERMINAL_STATES: frozenset[str] = frozenset({
-    "offer", "rejected", "withdrawn", "ghosted",
-})
+TERMINAL_STATES: frozenset[str] = frozenset(
+    {
+        "offer",
+        "rejected",
+        "withdrawn",
+        "ghosted",
+    }
+)
 
 # /standup table splits
-ACTIVE_STATES: frozenset[str] = frozenset({
-    "saved", "tailored", "applied", "recruiter_contact", "screen", "interview",
-})
+ACTIVE_STATES: frozenset[str] = frozenset(
+    {
+        "saved",
+        "tailored",
+        "applied",
+        "recruiter_contact",
+        "screen",
+        "interview",
+    }
+)
 # Closed = terminal + skip (skip is NOT terminal but closed for /standup view)
 CLOSED_STATES: frozenset[str] = TERMINAL_STATES | {"skip"}
 
@@ -47,6 +71,7 @@ CLOSED_STATES: frozenset[str] = TERMINAL_STATES | {"skip"}
 # ---------------------------------------------------------------
 # I/O primitives
 # ---------------------------------------------------------------
+
 
 def state_path_for(pipeline_dir: Path, job_id: str) -> Path:
     return pipeline_dir / job_id / "state.yaml"
@@ -75,8 +100,7 @@ def _write_state(state_path: Path, data: dict) -> None:
     """Atomic write: a temp file unique to this writer, fsynced, then renamed
     over state.yaml, so a partial write can't corrupt it."""
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=state_path.parent, prefix=f".{state_path.name}.",
-                               suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=state_path.parent, prefix=f".{state_path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
@@ -109,6 +133,7 @@ def _now_iso(now: datetime | None = None) -> str:
 # State transitions (sole writer per R10)
 # ---------------------------------------------------------------
 
+
 def transition(
     state_path: Path,
     new_state: str,
@@ -135,16 +160,24 @@ def transition(
 
     Raises ValueError on any of those rejections."""
     if new_state not in VALID_STATES:
-        raise ValueError(
-            f"unknown state {new_state!r}; valid: {sorted(VALID_STATES)}"
-        )
+        raise ValueError(f"unknown state {new_state!r}; valid: {sorted(VALID_STATES)}")
     now_iso = _now_iso(now)
-    return update(state_path, lambda existing: _transitioned(
-        state_path, existing, new_state, note, now_iso, initial_fields))
+    return update(
+        state_path,
+        lambda existing: _transitioned(
+            state_path, existing, new_state, note, now_iso, initial_fields
+        ),
+    )
 
 
-def _transitioned(state_path: Path, existing: dict | None, new_state: str,
-                  note: str | None, now_iso: str, initial_fields: dict | None) -> dict:
+def _transitioned(
+    state_path: Path,
+    existing: dict | None,
+    new_state: str,
+    note: str | None,
+    now_iso: str,
+    initial_fields: dict | None,
+) -> dict:
     if existing is None:
         if not initial_fields:
             raise ValueError(
@@ -154,27 +187,24 @@ def _transitioned(state_path: Path, existing: dict | None, new_state: str,
         required = {"job_id", "company", "title"}
         missing = required - set(initial_fields)
         if missing:
-            raise ValueError(
-                f"initial_fields missing required keys: {sorted(missing)}"
-            )
+            raise ValueError(f"initial_fields missing required keys: {sorted(missing)}")
         data = {
-            "job_id":            initial_fields["job_id"],
-            "company":           initial_fields["company"],
-            "title":             initial_fields["title"],
-            "source":            initial_fields.get("source", ""),
-            "url":               initial_fields.get("url", ""),
-            "location":          initial_fields.get("location", ""),
-            "vertical":          initial_fields.get("vertical", ""),
+            "job_id": initial_fields["job_id"],
+            "company": initial_fields["company"],
+            "title": initial_fields["title"],
+            "source": initial_fields.get("source", ""),
+            "url": initial_fields.get("url", ""),
+            "location": initial_fields.get("location", ""),
+            "vertical": initial_fields.get("vertical", ""),
             "sponsorship_label": initial_fields.get("sponsorship_label", "unknown"),
-            "fit_score":         initial_fields.get("fit_score"),
-            "state":             new_state,
-            "state_history":     [{"state": new_state, "at": now_iso,
-                                   "note": note or ""}],
-            "applied_at":        now_iso if new_state == "applied" else None,
-            "last_touch":        now_iso,
-            "tailored_dirs":     [],
-            "notes":             "",
-            "outreach":          [],
+            "fit_score": initial_fields.get("fit_score"),
+            "state": new_state,
+            "state_history": [{"state": new_state, "at": now_iso, "note": note or ""}],
+            "applied_at": now_iso if new_state == "applied" else None,
+            "last_touch": now_iso,
+            "tailored_dirs": [],
+            "notes": "",
+            "outreach": [],
         }
     else:
         if not existing.get("job_id"):
@@ -216,8 +246,9 @@ def ensure_state(
         if existing is not None:
             return None
         created.append(True)
-        return _transitioned(state_path, None, "saved", "auto-registered by /tailor",
-                             _now_iso(now), initial_fields)
+        return _transitioned(
+            state_path, None, "saved", "auto-registered by /tailor", _now_iso(now), initial_fields
+        )
 
     return update(state_path, create), bool(created)
 
@@ -226,10 +257,11 @@ def ensure_state(
 # Side-list mutations (/tailor + /outreach helpers)
 # ---------------------------------------------------------------
 
-def append_tailored_dir(state_path: Path, dir_name: str,
-                         *, now: datetime | None = None) -> dict:
+
+def append_tailored_dir(state_path: Path, dir_name: str, *, now: datetime | None = None) -> dict:
     """Append dir_name to tailored_dirs[] (/tailor's mutation).
     A dir already listed moves to the end, so [-1] is always the latest build."""
+
     def add(data: dict | None) -> dict:
         if data is None:
             raise ValueError(
@@ -290,23 +322,25 @@ def mark_outreach_sent(
 ) -> dict:
     """Flip the LATEST matching outreach[] entry from draft -> sent.
     Raises ValueError if no draft entry matches (channel, to_name)."""
+
     def flip(data: dict | None) -> dict:
         if data is None:
             raise ValueError(f"state.yaml at {state_path} does not exist")
         entries = list(data.get("outreach") or [])
         for i in range(len(entries) - 1, -1, -1):
             e = entries[i]
-            if (isinstance(e, dict)
-                    and e.get("channel") == channel
-                    and e.get("to") == to_name
-                    and e.get("status") == "draft"):
+            if (
+                isinstance(e, dict)
+                and e.get("channel") == channel
+                and e.get("to") == to_name
+                and e.get("status") == "draft"
+            ):
                 entries[i] = {**e, "status": "sent"}
                 data["outreach"] = entries
                 data["last_touch"] = _now_iso(now)
                 return data
         raise ValueError(
-            f"no draft outreach found for channel={channel!r} to={to_name!r} "
-            f"in {state_path}"
+            f"no draft outreach found for channel={channel!r} to={to_name!r} in {state_path}"
         )
 
     return update(state_path, flip)
@@ -315,6 +349,7 @@ def mark_outreach_sent(
 # ---------------------------------------------------------------
 # Read-only helpers (/standup, /score skip suppression)
 # ---------------------------------------------------------------
+
 
 def iter_states(pipeline_dir: Path):
     """Yield every readable pipeline/*/state.yaml dict, in alphabetical order.
@@ -344,5 +379,4 @@ def load_state_index(pipeline_dir: Path) -> dict[str, dict]:
     """{job_id: state dict} for the consumers that key on job_id --
     the discovery view's application_status and the shortlist's skip suppression.
     Records without a str job_id are skipped: they cannot be joined to a row."""
-    return {d["job_id"]: d for d in iter_states(pipeline_dir)
-            if isinstance(d.get("job_id"), str)}
+    return {d["job_id"]: d for d in iter_states(pipeline_dir) if isinstance(d.get("job_id"), str)}

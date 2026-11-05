@@ -6,6 +6,7 @@ is paced HTTP and a CSV writer. So the tests are on the pure parts: what each
 board family's payload says about count and newest-posting date, and what
 `classify` concludes from the pair.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -55,10 +56,12 @@ class TestClassify:
 
 class TestGreenhouse:
     def test_counts_and_takes_the_newest_date(self, audit):
-        payload = {"jobs": [
-            {"updated_at": "2026-01-02T00:00:00Z"},
-            {"first_published": "2026-08-09T10:00:00Z", "updated_at": "2026-09-01T00:00:00Z"},
-        ]}
+        payload = {
+            "jobs": [
+                {"updated_at": "2026-01-02T00:00:00Z"},
+                {"first_published": "2026-08-09T10:00:00Z", "updated_at": "2026-09-01T00:00:00Z"},
+            ]
+        }
         assert audit.greenhouse_summary(payload) == (2, date(2026, 8, 9))
 
     def test_empty_board_is_zero_not_an_error(self, audit):
@@ -73,10 +76,12 @@ class TestGreenhouse:
 
 class TestAshby:
     def test_reads_published_at(self, audit):
-        payload = {"jobs": [
-            {"publishedAt": "2026-03-04T00:00:00Z"},
-            {"publishedAt": "2026-07-08T00:00:00+00:00"},
-        ]}
+        payload = {
+            "jobs": [
+                {"publishedAt": "2026-03-04T00:00:00Z"},
+                {"publishedAt": "2026-07-08T00:00:00+00:00"},
+            ]
+        }
         assert audit.ashby_summary(payload) == (2, date(2026, 7, 8))
 
     def test_missing_dates_still_count_the_postings(self, audit):
@@ -108,7 +113,7 @@ class TestWorkday:
         assert count == 2
 
     def test_relative_text_it_cannot_parse_yields_no_date(self, audit):
-        """"30+ Days Ago" does parse (as exactly 30); an undated board does not,
+        """ "30+ Days Ago" does parse (as exactly 30); an undated board does not,
         and a count with no date lands on `active` by classify's rule."""
         payload = {"total": 5, "jobPostings": [{"postedOn": "Posted recently"}]}
         assert audit.workday_summary(payload) == (5, None)

@@ -5,6 +5,7 @@ paragraph, style, header, footer and image it does not own byte-for-byte
 untouched. The resume renderer next door does the opposite — it clears the body
 and writes fresh blocks — so the two share nothing but the template contract.
 """
+
 from __future__ import annotations
 
 import copy
@@ -20,6 +21,7 @@ from src.docx_render import TemplateError, TemplateMissingError
 # The placeholder contract this renderer fills.
 COVER_LETTER_REQUIRED_PLACEHOLDERS = ["{{SALUTATION}}", "{{BODY}}"]
 COVER_LETTER_OPTIONAL_PLACEHOLDERS = ["{{DATE}}"]
+
 
 def render_cover_letter(content: dict, template_path: Path, out_path: Path) -> None:
     """Fill placeholder paragraphs in the user's own cover-letter .docx
@@ -71,8 +73,14 @@ def _iter_paragraphs(doc):
     date in a header."""
     containers = [doc]
     for section in doc.sections:
-        for part in (section.header, section.first_page_header, section.even_page_header,
-                     section.footer, section.first_page_footer, section.even_page_footer):
+        for part in (
+            section.header,
+            section.first_page_header,
+            section.even_page_header,
+            section.footer,
+            section.first_page_footer,
+            section.even_page_footer,
+        ):
             if not part.is_linked_to_previous:
                 containers.append(part)
     seen_cells: set[int] = set()
@@ -102,7 +110,8 @@ def list_cover_letter_placeholders(template_path: Path) -> set[str]:
     doc = Document(str(template_path))
     all_tokens = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(COVER_LETTER_OPTIONAL_PLACEHOLDERS)
     return {
-        text for p in _iter_paragraphs(doc)
+        text
+        for p in _iter_paragraphs(doc)
         if (text := _paragraph_full_text(p).strip()) in all_tokens
     }
 
@@ -160,17 +169,25 @@ def _check_content(content: dict) -> None:
     body = content.get("body")
     if not isinstance(salutation, str) or not salutation.strip():
         raise ValueError("content['salutation'] is required and must be a non-empty string.")
-    if (not isinstance(body, list) or not body
-            or not all(isinstance(p, str) and p.strip() for p in body)):
+    if (
+        not isinstance(body, list)
+        or not body
+        or not all(isinstance(p, str) and p.strip() for p in body)
+    ):
         raise ValueError("content['body'] must be a non-empty list of non-empty paragraph strings.")
     for key in ("salutation", "date"):
         value = content.get(key)
         if value is not None and not isinstance(value, str):
             raise ValueError(f"content[{key!r}] must be a string.")
-    for key, value in [("salutation", salutation), *((f"body[{i}]", p) for i, p in enumerate(body))]:
+    for key, value in [
+        ("salutation", salutation),
+        *((f"body[{i}]", p) for i, p in enumerate(body)),
+    ]:
         if _CONTROL.search(value):
-            raise ValueError(f"content[{key!r}] contains a tab, newline or other control "
-                             f"character; split paragraphs into separate body entries.")
+            raise ValueError(
+                f"content[{key!r}] contains a tab, newline or other control "
+                f"character; split paragraphs into separate body entries."
+            )
 
 
 _PROPERTY_FIELDS = ("title", "subject", "keywords", "comments", "category")

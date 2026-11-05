@@ -1,4 +1,5 @@
 """Place-name tables: countries, states, cities and regions, worldwide."""
+
 from __future__ import annotations
 
 import gettext
@@ -14,9 +15,12 @@ def _fold(s: str) -> str:
     ASCII forms match accented canonical spellings (e.g. "Iasi" ->
     "Iaşi", "Karnataka" -> "Karnātaka") regardless of stray whitespace a
     pre-split segment can leave on a libpostal component."""
-    return "".join(
-        c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
-    ).lower().strip()
+    return (
+        "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+        .lower()
+        .strip()
+    )
+
 
 gc = geonamescache.GeonamesCache()
 _ALL_CITIES = gc.get_cities()
@@ -42,8 +46,30 @@ for _c in pycountry.countries:
 # missing a rare locale just means that one native name stays unresolved,
 # same as any other unmapped input, not a crash.
 _MAJOR_LOCALES = (
-    "de", "fr", "es", "nl", "it", "pt", "pl", "tr", "ru", "zh", "ja", "ko",
-    "ar", "sv", "da", "fi", "cs", "ro", "hu", "el", "he", "th", "vi", "id",
+    "de",
+    "fr",
+    "es",
+    "nl",
+    "it",
+    "pt",
+    "pl",
+    "tr",
+    "ru",
+    "zh",
+    "ja",
+    "ko",
+    "ar",
+    "sv",
+    "da",
+    "fi",
+    "cs",
+    "ro",
+    "hu",
+    "el",
+    "he",
+    "th",
+    "vi",
+    "id",
     "uk",
 )
 for _lang in _MAJOR_LOCALES:
@@ -64,28 +90,30 @@ for _lang in _MAJOR_LOCALES:
 # of false-positive collision this rewrite replaced the old keyword matcher
 # to avoid. Add names here only when confirmed missing from pycountry's own
 # fields (see COUNTRY_NAMES construction above).
-COUNTRY_NAMES.update({
-    "usa": "United States",
-    "us": "United States",
-    "u.s.": "United States",
-    "u.s.a.": "United States",
-    "united states of america": "United States",
-    "uk": "United Kingdom",
-    "u.k.": "United Kingdom",
-    "uae": "United Arab Emirates",
-    "u.a.e.": "United Arab Emirates",
-    "ksa": "Saudi Arabia",
-    "drc": "Congo, The Democratic Republic of the",
-    "dr congo": "Congo, The Democratic Republic of the",
-    "democratic republic of congo": "Congo, The Democratic Republic of the",
-    "ivory coast": "Côte d'Ivoire",
-    "burma": "Myanmar",
-    "korea": "Korea, Republic of",
-    "south korea": "Korea, Republic of",
-    "holland": "Netherlands",
-    "russia": "Russian Federation",
-    "macedonia": "North Macedonia",
-})
+COUNTRY_NAMES.update(
+    {
+        "usa": "United States",
+        "us": "United States",
+        "u.s.": "United States",
+        "u.s.a.": "United States",
+        "united states of america": "United States",
+        "uk": "United Kingdom",
+        "u.k.": "United Kingdom",
+        "uae": "United Arab Emirates",
+        "u.a.e.": "United Arab Emirates",
+        "ksa": "Saudi Arabia",
+        "drc": "Congo, The Democratic Republic of the",
+        "dr congo": "Congo, The Democratic Republic of the",
+        "democratic republic of congo": "Congo, The Democratic Republic of the",
+        "ivory coast": "Côte d'Ivoire",
+        "burma": "Myanmar",
+        "korea": "Korea, Republic of",
+        "south korea": "Korea, Republic of",
+        "holland": "Netherlands",
+        "russia": "Russian Federation",
+        "macedonia": "North Macedonia",
+    }
+)
 
 CC_TO_COUNTRY: dict[str, str] = {_c.alpha_2: _c.name for _c in pycountry.countries}
 COUNTRY_TO_CC: dict[str, str] = {name: cc for cc, name in CC_TO_COUNTRY.items()}
@@ -114,9 +142,7 @@ for _s in pycountry.subdivisions:
 # "Noord-Brabant" -> "North Brabant" does not) -- this narrows the gap,
 # it doesn't close it.
 try:
-    _en_subdivision_cat = gettext.translation(
-        "iso3166-2", pycountry.LOCALES_DIR, languages=["en"]
-    )
+    _en_subdivision_cat = gettext.translation("iso3166-2", pycountry.LOCALES_DIR, languages=["en"])
     for _s in pycountry.subdivisions:
         _native_name = _en_subdivision_cat.gettext(_s.name)
         if _native_name != _s.name:
@@ -143,8 +169,12 @@ _COMMONLY_ABBREVIATED_CC = {"US", "CA", "AU", "IN", "MX", "BR"}
 # ---------------------------------------------------------------------
 
 _CONTINENT_CODE_TO_NAME = {
-    "AF": "Africa", "AS": "Asia", "EU": "Europe",
-    "NA": "North America", "OC": "Oceania", "SA": "South America",
+    "AF": "Africa",
+    "AS": "Asia",
+    "EU": "Europe",
+    "NA": "North America",
+    "OC": "Oceania",
+    "SA": "South America",
     "AN": "Antarctica",
 }
 
@@ -163,15 +193,42 @@ for _cc, _data in _GC_COUNTRIES.items():
 # listed here is parsed as ordinary text.
 # ---------------------------------------------------------------------
 
-_MIDDLE_EAST_CC = frozenset({
-    "AE", "BH", "IL", "IQ", "IR", "JO", "KW", "LB", "OM",
-    "PS", "QA", "SA", "SY", "TR", "YE",
-})
+_MIDDLE_EAST_CC = frozenset(
+    {
+        "AE",
+        "BH",
+        "IL",
+        "IQ",
+        "IR",
+        "JO",
+        "KW",
+        "LB",
+        "OM",
+        "PS",
+        "QA",
+        "SA",
+        "SY",
+        "TR",
+        "YE",
+    }
+)
 # Latin America outside the South American continent code.
-_LATAM_EXTRA_CC = frozenset({
-    "MX", "GT", "BZ", "SV", "HN", "NI", "CR", "PA",
-    "CU", "DO", "PR", "HT",
-})
+_LATAM_EXTRA_CC = frozenset(
+    {
+        "MX",
+        "GT",
+        "BZ",
+        "SV",
+        "HN",
+        "NI",
+        "CR",
+        "PA",
+        "CU",
+        "DO",
+        "PR",
+        "HT",
+    }
+)
 
 
 def _countries_from_cc(codes) -> set[str]:
@@ -255,7 +312,11 @@ _MIN_LONE_CITY_POPULATION = 100_000
 # closed and geography-descriptor-specific, not a blind heuristic. Longest
 # first so "bay area" is stripped before the shorter "area" would match.
 _GENERIC_AREA_SUFFIXES = (
-    "metropolitan area", "bay area", "metro area", "region", "area",
+    "metropolitan area",
+    "bay area",
+    "metro area",
+    "region",
+    "area",
 )
 
 # Same idea, leading side: geonames lists the parent city ("Jakarta") but

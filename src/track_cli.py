@@ -22,6 +22,7 @@
 Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
 `uv run track ensure <job_id>`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -75,7 +76,9 @@ def _gather_initial_fields(job_id: str) -> dict:
         store = pd.read_parquet(STORE) if STORE.exists() else pd.DataFrame(columns=["job_id"])
         hits = store[store["job_id"] == job_id]
         if hits.empty:
-            raise SystemExit(f"ERROR: job_id {job_id} not in clean.parquet or the jobs store -- check the id")
+            raise SystemExit(
+                f"ERROR: job_id {job_id} not in clean.parquet or the jobs store -- check the id"
+            )
         row = hits.sort_values("last_seen").iloc[-1].to_dict()
         row["location"] = row.get("location_raw", "")
     initial = {
@@ -110,8 +113,9 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     if args.if_state is not None:
         current = (existing or {}).get("state")
         if current != args.if_state:
-            print(f"OK: {job_id} is {current or 'untracked'}, not {args.if_state} "
-                  f"-- left unchanged")
+            print(
+                f"OK: {job_id} is {current or 'untracked'}, not {args.if_state} -- left unchanged"
+            )
             return 0
     initial = None if existing is not None else _gather_initial_fields(job_id)
     try:
@@ -119,8 +123,10 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    print(f"OK: {job_id}  state={new_state}  vertical={data.get('vertical') or 'unknown'}  "
-          f"history_len={len(data['state_history'])}")
+    print(
+        f"OK: {job_id}  state={new_state}  vertical={data.get('vertical') or 'unknown'}  "
+        f"history_len={len(data['state_history'])}"
+    )
     print(f"     file: {p}")
     action = NEXT_ACTION.get(new_state)
     if action:
@@ -149,15 +155,21 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
             # The role's history is gone but the board may have it. Registering
             # it fresh at `saved` is how 68 roles were applied to twice.
             if ledger.verdict_of(sent) is ledger.Verdict.UNKNOWN:
-                advice = ("The click may not have reached the board: check it, then run "
-                          f"`uv run track {job_id} applied` if it did, or delete its "
-                          "lines from the ledger if it did not")
+                advice = (
+                    "The click may not have reached the board: check it, then run "
+                    f"`uv run track {job_id} applied` if it did, or delete its "
+                    "lines from the ledger if it did not"
+                )
             else:
-                advice = (f"Restore it with: uv run track {job_id} applied --note "
-                          "\"restored from the submit ledger\"")
-            print(f"ERROR: {job_id} has no state.yaml, but the submit ledger has a "
-                  f"`{sent.get('status', '')}` line from {sent.get('at', '?')}. {advice}",
-                  file=sys.stderr)
+                advice = (
+                    f"Restore it with: uv run track {job_id} applied --note "
+                    '"restored from the submit ledger"'
+                )
+            print(
+                f"ERROR: {job_id} has no state.yaml, but the submit ledger has a "
+                f"`{sent.get('status', '')}` line from {sent.get('at', '?')}. {advice}",
+                file=sys.stderr,
+            )
             return 1
     initial = None if existing is not None else _gather_initial_fields(job_id)
     try:
@@ -168,8 +180,7 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
     if created:
         print(f"OK: registered {job_id} at state=saved  file: {p}")
     else:
-        print(f"OK: {job_id} already registered  state={data.get('state')}  "
-              f"(unchanged)  file: {p}")
+        print(f"OK: {job_id} already registered  state={data.get('state')}  (unchanged)  file: {p}")
     return 0
 
 
@@ -184,20 +195,30 @@ def _cmd_outreach_sent(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    print(f"OK: outreach[] entry flipped to sent  (job_id={job_id}, channel={channel}, to={to_name!r})")
+    print(
+        f"OK: outreach[] entry flipped to sent  (job_id={job_id}, channel={channel}, to={to_name!r})"
+    )
     return 0
 
 
 def _cmd_outreach_draft(args: argparse.Namespace) -> int:
     p = state_path_for(paths.PIPELINE, args.job_id)
     if not p.exists():
-        print(f"ERROR: pipeline/{args.job_id}/state.yaml missing -- run /track "
-              f"{args.job_id} saved first", file=sys.stderr)
+        print(
+            f"ERROR: pipeline/{args.job_id}/state.yaml missing -- run /track "
+            f"{args.job_id} saved first",
+            file=sys.stderr,
+        )
         return 1
     try:
-        data = append_outreach_draft(p, channel=args.channel, to_name=args.to,
-                                     draft_file=args.draft_file,
-                                     contact_id=args.contact_id, medium=args.medium)
+        data = append_outreach_draft(
+            p,
+            channel=args.channel,
+            to_name=args.to,
+            draft_file=args.draft_file,
+            contact_id=args.contact_id,
+            medium=args.medium,
+        )
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -207,10 +228,16 @@ def _cmd_outreach_draft(args: argparse.Namespace) -> int:
 
 def _cmd_states() -> int:
     def jsonable(d: dict) -> dict:
-        return {k: (v if isinstance(v, (str, int, float, bool, list, dict, type(None))) else str(v))
-                for k, v in d.items()}
-    out = {"states": [jsonable(s) for s in load_all_states(paths.PIPELINE)],
-           "active_states": sorted(ACTIVE_STATES), "closed_states": sorted(CLOSED_STATES)}
+        return {
+            k: (v if isinstance(v, (str, int, float, bool, list, dict, type(None))) else str(v))
+            for k, v in d.items()
+        }
+
+    out = {
+        "states": [jsonable(s) for s in load_all_states(paths.PIPELINE)],
+        "active_states": sorted(ACTIVE_STATES),
+        "closed_states": sorted(CLOSED_STATES),
+    }
     print(json.dumps(out, indent=2, default=str))
     return 0
 
@@ -246,8 +273,9 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv[1:])
         return _cmd_outreach_draft(args)
 
-    parser = argparse.ArgumentParser(prog="track", description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        prog="track", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("job_id")
     parser.add_argument("state", choices=sorted(VALID_STATES))
     parser.add_argument("--note", default=None)

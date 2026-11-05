@@ -9,6 +9,7 @@ of the 14-day window.
 
 No network: load_board is stubbed everywhere.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,11 +58,16 @@ def repo(tmp_path, monkeypatch, tailor_dir):
         def write_clean(self, **rows):
             factories.write_clean(clean, *({"job_id": j, "url": u} for j, u in rows.items()))
 
-        def write_state(self, job_id=JOB_ID, url=GH_URL, tailored_dirs=None,
-                        state="tailored"):
+        def write_state(self, job_id=JOB_ID, url=GH_URL, tailored_dirs=None, state="tailored"):
             factories.write_state(
-                pipeline, job_id, state, company="Bushing Group", title="Widget Engineer", url=url,
-                tailored_dirs=[tailored] if tailored_dirs is None else tailored_dirs)
+                pipeline,
+                job_id,
+                state,
+                company="Bushing Group",
+                title="Widget Engineer",
+                url=url,
+                tailored_dirs=[tailored] if tailored_dirs is None else tailored_dirs,
+            )
 
     return Repo()
 
@@ -81,7 +87,10 @@ def stub_board(monkeypatch):
         schema = parse_schema(load_fixture(name))
         return BoardForm(
             posting=Posting(token="1000003", url_slug=None),
-            slug="bushinggroup", html="", scan=scan, schema=schema,
+            slug="bushinggroup",
+            html="",
+            scan=scan,
+            schema=schema,
             reconciled=reconcile(scan, schema),
         )
 
@@ -113,16 +122,18 @@ class TestDetectAts:
         assert apply_cli.detect_ats(ASHBY_URL) == "ashby"
 
     def test_eu_lever_is_detected_as_plain_lever(self):
-        assert apply_cli.detect_ats(
-            LEVER_URL.replace("jobs.lever.co", "jobs.eu.lever.co")) == "lever"
+        assert (
+            apply_cli.detect_ats(LEVER_URL.replace("jobs.lever.co", "jobs.eu.lever.co")) == "lever"
+        )
 
     def test_eu_greenhouse(self):
-        assert apply_cli.detect_ats(
-            "https://boards.eu.greenhouse.io/widgetco/jobs/1000001") == "greenhouse"
+        assert (
+            apply_cli.detect_ats("https://boards.eu.greenhouse.io/widgetco/jobs/1000001")
+            == "greenhouse"
+        )
 
     def test_a_gh_jid_careers_page(self):
-        assert apply_cli.detect_ats(
-            "https://widgetco.com/jobs?gh_jid=1000001") == "greenhouse"
+        assert apply_cli.detect_ats("https://widgetco.com/jobs?gh_jid=1000001") == "greenhouse"
 
     def test_workday_is_recognised_but_not_submittable(self):
         url = "https://widgetco.wd5.myworkdayjobs.com/Careers/job/US/Eng_JR1"
@@ -138,8 +149,10 @@ class TestBuildDispatchesToLever:
         repo.write_clean(**{JOB_ID: LEVER_URL})
         repo.write_state(url=LEVER_URL)
         from .conftest import load_html
-        monkeypatch.setattr("src.apply.lever.fetch_text",
-                            lambda *a, **k: load_html("form_lever_minimal"))
+
+        monkeypatch.setattr(
+            "src.apply.lever.fetch_text", lambda *a, **k: load_html("form_lever_minimal")
+        )
 
         plan, _ = apply_cli.build(JOB_ID)
         assert plan.ats == "lever"
@@ -150,12 +163,13 @@ class TestBuildDispatchesToLever:
 class TestBuildDispatchesToAshby:
     def _stub_api(self, monkeypatch):
         from .conftest import load_api
-        monkeypatch.setattr("src.apply.ashby.fetch_json_post",
-                            lambda *a, **k: load_api("api_ashby_form"))
+
+        monkeypatch.setattr(
+            "src.apply.ashby.fetch_json_post", lambda *a, **k: load_api("api_ashby_form")
+        )
         # Otherwise `load_board` would open a real headless browser to read
         # DOM-only descriptions — no network in this test module.
-        monkeypatch.setattr("src.apply.ashby.fetch_dom_enrichment",
-                            lambda *a, **k: {})
+        monkeypatch.setattr("src.apply.ashby.fetch_dom_enrichment", lambda *a, **k: {})
 
     def test_an_ashby_url_builds_an_ashby_plan(self, repo, monkeypatch, tailor_dir):
         repo.write_clean(**{JOB_ID: ASHBY_URL})
@@ -177,15 +191,17 @@ class TestBuildDispatchesToAshby:
         assert plan.submit_selector == ashby.SUBMIT_SELECTOR
 
     def test_ashby_now_reaches_the_browser_rather_than_the_manual_bucket(
-            self, repo, monkeypatch, tailor_dir):
+        self, repo, monkeypatch, tailor_dir
+    ):
         """Registering the driver is what moves these roles out of `manual`.
         The shortlist reads the same flag, so the two cannot disagree."""
         repo.write_clean(**{JOB_ID: ASHBY_URL})
         repo.write_state(url=ASHBY_URL)
         self._stub_api(monkeypatch)
         opened = []
-        monkeypatch.setattr("src.apply_cli.run_one",
-                            lambda plan, *a, **k: opened.append(plan.ats) or _fake_result())
+        monkeypatch.setattr(
+            "src.apply_cli.run_one", lambda plan, *a, **k: opened.append(plan.ats) or _fake_result()
+        )
 
         outcome = apply_cli._run_role(JOB_ID, submit=False, headless=False)
         assert opened == ["ashby"]
@@ -255,16 +271,26 @@ class TestSalaryFor:
     posting's parsed compensation and the lane's `salary_expectation`."""
 
     def _write_clean(self, path, job_id, salary_min, salary_currency):
-        factories.write_clean(path, {
-            "job_id": job_id, "url": GH_URL,
-            "salary_min": salary_min, "salary_currency": salary_currency,
-        })
+        factories.write_clean(
+            path,
+            {
+                "job_id": job_id,
+                "url": GH_URL,
+                "salary_min": salary_min,
+                "salary_currency": salary_currency,
+            },
+        )
 
     def _verticals(self, tmp_path, monkeypatch, expectation):
         path = tmp_path / "verticals.yaml"
-        path.write_text(yaml.safe_dump({
-            "verticals": {"example_primary": {"salary_expectation": expectation}},
-        }), encoding="utf-8")
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    "verticals": {"example_primary": {"salary_expectation": expectation}},
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
 
     def test_a_us_role_marks_up_its_posted_minimum(self, tmp_path, monkeypatch):
@@ -288,14 +314,16 @@ class TestSalaryFor:
 
     def test_a_per_country_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
-        self._verticals(tmp_path, monkeypatch,
-                        {"fallback": {"United States": 110000, "Germany": 70000}})
+        self._verticals(
+            tmp_path, monkeypatch, {"fallback": {"United States": 110000, "Germany": 70000}}
+        )
         assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") == 70000.0
 
     def test_no_salary_expectation_is_none(self, tmp_path, monkeypatch):
         monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
         (tmp_path / "verticals.yaml").write_text(
-            yaml.safe_dump({"verticals": {"example_primary": {}}}), encoding="utf-8")
+            yaml.safe_dump({"verticals": {"example_primary": {}}}), encoding="utf-8"
+        )
         monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
         assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") is None
 
@@ -323,11 +351,11 @@ class TestPlanCommand:
         assert any(f["id"] == "email" for f in data["fields"])
         assert any(f["id"] == "resume" for f in data["files"])
         # react-selects are marked for the post-selection assert fill.py owes.
-        assert all(f["assert_selected"] == (f["kind"] == "react_select")
-                   for f in data["fields"])
+        assert all(f["assert_selected"] == (f["kind"] == "react_select") for f in data["fields"])
 
     def test_a_filled_field_carries_what_was_offered_and_what_answered_it(
-            self, repo, stub_board, capsys):
+        self, repo, stub_board, capsys
+    ):
         """An answer can only be audited against the alternatives it beat.
         `options` used to reach the JSON for parked fields only, so a keyword
         guess that picked the wrong one of nine options was indistinguishable
@@ -366,9 +394,9 @@ class TestPlanCommand:
 
     def test_url_and_out_dir_overrides_skip_lookup(self, repo, stub_board, capsys):
         # No clean.parquet, no state.yaml: both overrides supplied.
-        assert apply_cli.main(
-            ["plan", JOB_ID, "--url", GH_URL, "--out-dir", str(repo.out_dir)]
-        ) == 0
+        assert (
+            apply_cli.main(["plan", JOB_ID, "--url", GH_URL, "--out-dir", str(repo.out_dir)]) == 0
+        )
         assert "READY" in capsys.readouterr().out
 
     def test_an_expired_posting_exits_2_not_1(self, repo, monkeypatch, capsys):
@@ -378,10 +406,13 @@ class TestPlanCommand:
         assert apply_cli.main(["plan", JOB_ID]) == 2
         assert "EXPIRED" in capsys.readouterr().err
 
-    @pytest.mark.parametrize("exc", [
-        AnswersError("profile/application_answers.yaml missing"),
-        PlanError("out_dir is not a directory"),
-    ])
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            AnswersError("profile/application_answers.yaml missing"),
+            PlanError("out_dir is not a directory"),
+        ],
+    )
     def test_config_failures_exit_1_with_the_message(self, repo, monkeypatch, capsys, exc):
         repo.write_clean(**{JOB_ID: GH_URL})
         repo.write_state()
@@ -389,9 +420,7 @@ class TestPlanCommand:
         assert apply_cli.main(["plan", JOB_ID]) == 1
         assert str(exc) in capsys.readouterr().err
 
-    def test_a_non_greenhouse_role_exits_1_and_says_apply_by_hand(
-        self, repo, stub_board, capsys
-    ):
+    def test_a_non_greenhouse_role_exits_1_and_says_apply_by_hand(self, repo, stub_board, capsys):
         repo.write_clean(**{JOB_ID: LINKEDIN_URL})
         repo.write_state(url=LINKEDIN_URL)
         assert apply_cli.main(["plan", JOB_ID]) == 1
@@ -418,10 +447,18 @@ class TestPlanCommand:
 
         scan = scan_form(load_html(name))
         schema = parse_schema(load_fixture(name))
-        monkeypatch.setattr(apply_cli, "load_board", lambda url, timeout=30: BoardForm(
-            posting=Posting(token="1000001", url_slug=None), slug="gasketworks",
-            html="", scan=scan, schema=schema, reconciled=reconcile(scan, schema),
-        ))
+        monkeypatch.setattr(
+            apply_cli,
+            "load_board",
+            lambda url, timeout=30: BoardForm(
+                posting=Posting(token="1000001", url_slug=None),
+                slug="gasketworks",
+                html="",
+                scan=scan,
+                schema=schema,
+                reconciled=reconcile(scan, schema),
+            ),
+        )
         assert apply_cli.main(["plan", JOB_ID]) == 0
         out = capsys.readouterr().out
         assert "PARKED" in out and "Nothing would be submitted" in out
@@ -437,7 +474,9 @@ class TestPrepareCommand:
         answers_path = tmp_path / "application_answers.yaml"
         answers_path.write_text("schema_version: 2\n", encoding="utf-8")
         monkeypatch.setattr(apply_cli, "DEFAULT_PATH", answers_path)
-        monkeypatch.setattr(apply_cli, "EXAMPLE_PATH", tmp_path / "application_answers.example.yaml")
+        monkeypatch.setattr(
+            apply_cli, "EXAMPLE_PATH", tmp_path / "application_answers.example.yaml"
+        )
         monkeypatch.setattr(apply_cli, "_playwright_available", lambda: True)
 
     def test_happy_path_prints_every_field(self, repo, capsys):
@@ -450,14 +489,17 @@ class TestPrepareCommand:
         assert shlex.split(lines["STATE"])[0] == "tailored"
         assert shlex.split(lines["OUT_DIR"])[0] == str(repo.out_dir)
         assert shlex.split(lines["VERTICAL"])[0] == "example_primary"
-        assert shlex.split(lines["COMPANY_ANSWERS"])[0] == str(repo.out_dir / "company_answers.yaml")
-        assert shlex.split(lines["OVERRIDES_FILE"])[0] == str(repo.out_dir / "answers_override.json")
+        assert shlex.split(lines["COMPANY_ANSWERS"])[0] == str(
+            repo.out_dir / "company_answers.yaml"
+        )
+        assert shlex.split(lines["OVERRIDES_FILE"])[0] == str(
+            repo.out_dir / "answers_override.json"
+        )
 
     def test_resets_the_overrides_file_to_just_job_id(self, repo, capsys):
         repo.write_state()
         stale = repo.out_dir / "answers_override.json"
-        stale.write_text(json.dumps({"job_id": JOB_ID, "leftover_field": "old"}),
-                          encoding="utf-8")
+        stale.write_text(json.dumps({"job_id": JOB_ID, "leftover_field": "old"}), encoding="utf-8")
         assert apply_cli.main(["prepare", JOB_ID]) == 0
         assert json.loads(stale.read_text(encoding="utf-8")) == {"job_id": JOB_ID}
 
@@ -517,32 +559,56 @@ class TestCliShape:
 def _raise(exc):
     def raiser(*args, **kwargs):
         raise exc
+
     return raiser
 
 
 # ------------------------------------------------------------------ run: queue
 
 
-def _fake_plan(job_id=JOB_ID, company="Bushing Group", title="Widget Engineer",
-               unmapped=(), submit_selector="#application-form button[type=submit]",
-               ats="greenhouse", requires_captcha=False):
+def _fake_plan(
+    job_id=JOB_ID,
+    company="Bushing Group",
+    title="Widget Engineer",
+    unmapped=(),
+    submit_selector="#application-form button[type=submit]",
+    ats="greenhouse",
+    requires_captcha=False,
+):
     from src.apply.plan import Plan
+
     return Plan(
-        job_id=job_id, board="bushinggroup", token="1",
+        job_id=job_id,
+        board="bushinggroup",
+        token="1",
         form_url=GH_URL if job_id == JOB_ID else f"{GH_URL}?role={job_id}",
-        company=company, title=title, out_dir=Path("/tmp"),
-        fields=(), files=(), unmapped=tuple(unmapped), draftable=(), skipped=(),
-        submit_selector=submit_selector, submit_disabled=False, ats=ats,
+        company=company,
+        title=title,
+        out_dir=Path("/tmp"),
+        fields=(),
+        files=(),
+        unmapped=tuple(unmapped),
+        draftable=(),
+        skipped=(),
+        submit_selector=submit_selector,
+        submit_disabled=False,
+        ats=ats,
         requires_captcha=requires_captcha,
     )
 
 
-def _fake_result(*, submitted=False, failures=(), recovered=(), submit_error="",
-                  confirmed=False, manifest=None):
+def _fake_result(
+    *, submitted=False, failures=(), recovered=(), submit_error="", confirmed=False, manifest=None
+):
     from src.apply.fill import FillResult
+
     return FillResult(
-        form_url=GH_URL, failures=list(failures), recovered=list(recovered),
-        submitted=submitted, submit_error=submit_error, confirmed=confirmed,
+        form_url=GH_URL,
+        failures=list(failures),
+        recovered=list(recovered),
+        submitted=submitted,
+        submit_error=submit_error,
+        confirmed=confirmed,
         manifest=list(manifest or []),
     )
 
@@ -553,27 +619,39 @@ class TestManifest:
     beside the run report would make "no run was started, so no report
     exists" untrue."""
 
-    ROWS = [{"id": "q1", "label": "Start date?", "kind": "text", "group": "filled",
-             "planned": "Immediately.", "actual": "September 2026", "matches": False,
-             "prefilled": True, "before": "September 2026", "invalid": False,
-             "options": []}]
+    ROWS = [
+        {
+            "id": "q1",
+            "label": "Start date?",
+            "kind": "text",
+            "group": "filled",
+            "planned": "Immediately.",
+            "actual": "September 2026",
+            "matches": False,
+            "prefilled": True,
+            "before": "September 2026",
+            "invalid": False,
+            "options": [],
+        }
+    ]
 
     def test_a_queue_walk_refuses_one_manifest_path(self, repo, tmp_path):
         """Every role would overwrite the last one's read-back."""
         repo.write_state()
-        assert apply_cli.main(
-            ["run", "--manifest", str(tmp_path / "m.json")]) == 1
+        assert apply_cli.main(["run", "--manifest", str(tmp_path / "m.json")]) == 1
 
     def test_the_run_path_writes_it_for_one_role(self, repo, monkeypatch, tmp_path):
         repo.write_state()
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result(manifest=self.ROWS))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one", lambda plan, answers, **kw: _fake_result(manifest=self.ROWS)
+        )
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "runs")
         out_path = tmp_path / "m.json"
-        assert apply_cli.main(
-            ["run", "--job-id", JOB_ID, "--headless", "--manifest", str(out_path)]) == 0
+        assert (
+            apply_cli.main(["run", "--job-id", JOB_ID, "--headless", "--manifest", str(out_path)])
+            == 0
+        )
         assert json.loads(out_path.read_text(encoding="utf-8"))["job_id"] == JOB_ID
 
 
@@ -587,14 +665,21 @@ class TestEligibleQueue:
         assert apply_cli.eligible_queue(repo.pipeline) == []
 
     def test_terminal_states_are_excluded(self, repo):
-        for job_id, state in [("aaaa0001", "rejected"), ("aaaa0002", "withdrawn"),
-                               ("aaaa0003", "offer"), ("aaaa0004", "ghosted")]:
+        for job_id, state in [
+            ("aaaa0001", "rejected"),
+            ("aaaa0002", "withdrawn"),
+            ("aaaa0003", "offer"),
+            ("aaaa0004", "ghosted"),
+        ]:
             repo.write_state(job_id=job_id, state=state)
         assert apply_cli.eligible_queue(repo.pipeline) == []
 
     def test_non_tailored_active_states_are_excluded(self, repo):
-        for job_id, state in [("bbbb0001", "saved"), ("bbbb0002", "applied"),
-                               ("bbbb0003", "screen")]:
+        for job_id, state in [
+            ("bbbb0001", "saved"),
+            ("bbbb0002", "applied"),
+            ("bbbb0003", "screen"),
+        ]:
             repo.write_state(job_id=job_id, state=state)
         assert apply_cli.eligible_queue(repo.pipeline) == []
 
@@ -605,9 +690,16 @@ class TestEligibleQueue:
 
 
 class TestParseDuration:
-    @pytest.mark.parametrize("spec,seconds", [
-        ("4m", 240.0), ("60s", 60.0), ("90", 90.0), ("1.5h", 5400.0), ("0m", 0.0),
-    ])
+    @pytest.mark.parametrize(
+        "spec,seconds",
+        [
+            ("4m", 240.0),
+            ("60s", 60.0),
+            ("90", 90.0),
+            ("1.5h", 5400.0),
+            ("0m", 0.0),
+        ],
+    )
     def test_units(self, spec, seconds):
         assert apply_cli.parse_duration(spec) == seconds
 
@@ -621,20 +713,24 @@ class TestRunQueue:
         monkeypatch.setattr(apply_cli, "build", _raise(apply_cli.ApplyCliError("nope")))
         sleeps = []
         apply_cli.run_queue(
-            ["a1", "a2", "a3"], submit=False,
-            rate=999, jitter=0, sleeper=sleeps.append, jitter_fn=lambda a, b: 0,
+            ["a1", "a2", "a3"],
+            submit=False,
+            rate=999,
+            jitter=0,
+            sleeper=sleeps.append,
+            jitter_fn=lambda a, b: 0,
         )
         # 3 roles, 2 gaps between them — never on the first.
         assert len(sleeps) == 2
         assert all(s == 999 for s in sleeps)
 
     def test_a_parked_role_does_not_stop_the_run(self, monkeypatch):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result())
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         outcomes = apply_cli.run_queue(
-            ["parked1", "parked2"], submit=False, sleeper=lambda s: None,
+            ["parked1", "parked2"],
+            submit=False,
+            sleeper=lambda s: None,
         )
         assert [o.category for o in outcomes] == ["ready", "ready"]
 
@@ -656,14 +752,17 @@ class TestRunQueue:
 
     def test_a_successful_submit_calls_track_cli_not_state_io(self, monkeypatch):
         track_calls = []
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result(submitted=True))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one", lambda plan, answers, **kw: _fake_result(submitted=True)
+        )
         monkeypatch.setattr(apply_cli.track_cli, "main", track_calls.append)
         # state_io.transition must never be reached from this path.
-        monkeypatch.setattr(apply_cli.state_io, "transition",
-                             _raise(AssertionError("state_io.transition must not be called")))
+        monkeypatch.setattr(
+            apply_cli.state_io,
+            "transition",
+            _raise(AssertionError("state_io.transition must not be called")),
+        )
 
         outcomes = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
 
@@ -671,25 +770,28 @@ class TestRunQueue:
         # unconfirmed — but it still transitions, because a duplicate
         # application is worse than a state row that needs an eyeball.
         assert outcomes[0].category == "submitted_unconfirmed"
-        assert track_calls == [[JOB_ID, "applied", "--note",
-                                 "auto-submitted via /apply (bushinggroup)"]]
+        assert track_calls == [
+            [JOB_ID, "applied", "--note", "auto-submitted via /apply (bushinggroup)"]
+        ]
 
     def test_a_recovered_field_is_no_longer_blocking(self, monkeypatch):
         u = type("U", (), {"id": "hispanic_ethnicity"})()
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id, unmapped=[u]), None))
         monkeypatch.setattr(
-            apply_cli, "run_one",
+            apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id, unmapped=[u]), None)
+        )
+        monkeypatch.setattr(
+            apply_cli,
+            "run_one",
             lambda plan, answers, **kw: _fake_result(recovered=["hispanic_ethnicity"]),
         )
         outcomes = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None)
         assert outcomes[0].category == "ready"
 
     def test_a_fill_failure_is_a_failed_category(self, monkeypatch):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(
-            apply_cli, "run_one",
+            apply_cli,
+            "run_one",
             lambda plan, answers, **kw: _fake_result(failures=["country: no option matching"]),
         )
         outcomes = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None)
@@ -700,13 +802,27 @@ class TestRunQueue:
 class TestRunReport:
     def test_render_groups_by_category(self):
         from src.apply_cli import RunOutcome
+
         outcomes = [
             RunOutcome("a1", "A Co", "Eng", "submitted"),
-            RunOutcome("a2", "B Co", "Eng", "parked", detail="required unresolved",
-                       unmapped=({"id": "why_us", "tier": "C", "label": "Why us?",
-                                  "reason": "no question in the bank asks this",
-                                  "source": "", "options": ["Yes", "No"],
-                                  "description": ""},)),
+            RunOutcome(
+                "a2",
+                "B Co",
+                "Eng",
+                "parked",
+                detail="required unresolved",
+                unmapped=(
+                    {
+                        "id": "why_us",
+                        "tier": "C",
+                        "label": "Why us?",
+                        "reason": "no question in the bank asks this",
+                        "source": "",
+                        "options": ["Yes", "No"],
+                        "description": "",
+                    },
+                ),
+            ),
             RunOutcome("a3", "C Co", "Eng", "failed", detail="boom"),
         ]
         text = apply_cli.render_report(outcomes, apply_cli.datetime(2026, 1, 1))
@@ -723,10 +839,12 @@ class TestRunReport:
 
     def test_write_report_creates_a_dated_file(self, tmp_path):
         from src.apply_cli import RunOutcome
+
         out_dir = tmp_path / "apply_runs"
         path = apply_cli.write_report(
             [RunOutcome("a1", "A Co", "Eng", "submitted")],
-            apply_cli.datetime(2026, 1, 1, 9, 30, 0), out_dir=out_dir,
+            apply_cli.datetime(2026, 1, 1, 9, 30, 0),
+            out_dir=out_dir,
         )
         assert path.parent == out_dir
         assert path.read_text(encoding="utf-8").startswith("# apply run")
@@ -740,27 +858,24 @@ class TestRunCommand:
     def test_default_path_never_submits(self, repo, monkeypatch, tmp_path):
         repo.write_state()
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         submit_after_seen = []
         monkeypatch.setattr(
-            apply_cli, "run_one",
+            apply_cli,
+            "run_one",
             lambda plan, answers, **kw: (
-                submit_after_seen.append(kw.get("submit_after")), _fake_result()
+                submit_after_seen.append(kw.get("submit_after")),
+                _fake_result(),
             )[1],
         )
         assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
         assert submit_after_seen == [False]
 
-    def test_job_id_override_runs_one_role_even_off_queue_order(
-        self, repo, monkeypatch, tmp_path
-    ):
+    def test_job_id_override_runs_one_role_even_off_queue_order(self, repo, monkeypatch, tmp_path):
         repo.write_state()
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result())
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         assert apply_cli.main(["run", "--job-id", JOB_ID, "--rate", "0s"]) == 0
 
     def test_unknown_job_id_is_an_error(self, repo, capsys):
@@ -778,8 +893,7 @@ class TestRunCommand:
             return _fake_plan(job_id), None
 
         monkeypatch.setattr(apply_cli, "build", build_and_record)
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result())
+        monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         assert apply_cli.main(["run", "--limit", "1", "--rate", "0s"]) == 0
         assert len(seen) == 1
 
@@ -787,10 +901,10 @@ class TestRunCommand:
         repo.write_state()
         out_dir = tmp_path / "apply_runs"
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", out_dir)
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(
-            apply_cli, "run_one",
+            apply_cli,
+            "run_one",
             lambda plan, answers, **kw: _fake_result(failures=["boom"]),
         )
         assert apply_cli.main(["run", "--rate", "0s"]) == 1
@@ -801,47 +915,42 @@ class TestASubmissionIsNeverSilentlyLost:
     """The three ways a run used to submit without leaving a usable trace."""
 
     def test_a_confirmed_submit_is_plain_submitted(self, monkeypatch):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result(
-                                 submitted=True, confirmed=True))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli,
+            "run_one",
+            lambda plan, answers, **kw: _fake_result(submitted=True, confirmed=True),
+        )
         monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
         out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
         assert out[0].category == "submitted"
 
-    def test_track_cli_returning_nonzero_is_not_reported_as_a_clean_submit(
-        self, monkeypatch
-    ):
+    def test_track_cli_returning_nonzero_is_not_reported_as_a_clean_submit(self, monkeypatch):
         # track_cli.main RETURNS 1 on a rejected transition, it does not raise.
         # Reporting "submitted" here leaves the role at `tailored`, so the next
         # --submit run applies to the same board a second time.
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result(submitted=True))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one", lambda plan, answers, **kw: _fake_result(submitted=True)
+        )
         monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 1)
         out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
         assert out[0].category == "submitted_untracked"
         assert "still says tailored" in out[0].detail
 
-    def test_track_cli_raising_does_not_abort_the_run_or_lose_the_submission(
-        self, monkeypatch
-    ):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result(submitted=True))
-        monkeypatch.setattr(apply_cli.track_cli, "main",
-                             _raise(OSError("disk full")))
+    def test_track_cli_raising_does_not_abort_the_run_or_lose_the_submission(self, monkeypatch):
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(
+            apply_cli, "run_one", lambda plan, answers, **kw: _fake_result(submitted=True)
+        )
+        monkeypatch.setattr(apply_cli.track_cli, "main", _raise(OSError("disk full")))
         out = apply_cli.run_queue([JOB_ID, "second"], submit=True, sleeper=lambda s: None)
         assert out[0].category == "submitted_untracked"
         assert "OSError" in out[0].detail
         assert len(out) == 2, "the second role must still run"
 
     def test_a_driver_error_is_isolated_to_its_role(self, monkeypatch):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
 
         def explode(plan, answers, **kw):
             if plan.job_id == "boom":
@@ -860,17 +969,18 @@ class TestManualApplyIsItsOwnCategory:
         """Every registered board has a driver now, so this needs an ats that
         never will — the category still has to exist for LinkedIn, Indeed and
         company careers pages."""
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id, ats="workday"), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             _raise(AssertionError("must not open a browser")))
+        monkeypatch.setattr(
+            apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id, ats="workday"), None)
+        )
+        monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not open a browser")))
         out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
         assert out[0].category == "manual"
         assert "apply by hand" in out[0].detail
 
     def test_a_manual_apply_url_is_manual_not_failed(self, monkeypatch):
         monkeypatch.setattr(
-            apply_cli, "build",
+            apply_cli,
+            "build",
             _raise(apply_cli.ManualApplyOnly("workday — apply by hand")),
         )
         out = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None)
@@ -878,13 +988,10 @@ class TestManualApplyIsItsOwnCategory:
 
 
 class TestTheReportSurvivesACrash:
-    def test_the_report_holds_every_completed_role_when_the_walk_dies(
-        self, monkeypatch, tmp_path
-    ):
+    def test_the_report_holds_every_completed_role_when_the_walk_dies(self, monkeypatch, tmp_path):
         # The report is the only record of what went out. A crash on role 3
         # must not erase roles 1 and 2.
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
 
         def explode(plan, answers, **kw):
             if plan.job_id == "third":
@@ -896,11 +1003,15 @@ class TestTheReportSurvivesACrash:
 
         collected: list = []
         apply_cli.run_queue(
-            ["first", "second", "third"], submit=True, sleeper=lambda s: None,
+            ["first", "second", "third"],
+            submit=True,
+            sleeper=lambda s: None,
             collect_into=collected,
         )
         assert [o.category for o in collected] == [
-            "submitted", "submitted", "failed",
+            "submitted",
+            "submitted",
+            "failed",
         ]
         started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
         text = apply_cli.write_report(collected, started, tmp_path).read_text(encoding="utf-8")
@@ -914,14 +1025,25 @@ class TestOverridesAreBoundToOneRole:
         return p
 
     def test_a_file_drafted_for_another_role_is_refused(self, tmp_path):
-        p = self._write(tmp_path, {"job_id": "other123",
-                                   "question_1": {"value": "Because I admire their work."}})
+        p = self._write(
+            tmp_path,
+            {"job_id": "other123", "question_1": {"value": "Because I admire their work."}},
+        )
         with pytest.raises(apply_cli.ApplyCliError, match="drafted for job_id"):
             apply_cli.load_overrides(p, JOB_ID)
 
     def test_a_matching_job_id_loads(self, tmp_path):
-        p = self._write(tmp_path, {"job_id": JOB_ID, "question_1": {
-            "value": "An answer.", "source": "bullets:B-1", "question": "project_proud"}})
+        p = self._write(
+            tmp_path,
+            {
+                "job_id": JOB_ID,
+                "question_1": {
+                    "value": "An answer.",
+                    "source": "bullets:B-1",
+                    "question": "project_proud",
+                },
+            },
+        )
         loaded = apply_cli.load_overrides(p, JOB_ID)
         assert loaded["question_1"].value == "An answer."
         assert loaded["question_1"].question == "project_proud"
@@ -969,29 +1091,25 @@ class TestTheReportNeverOverwritesAnotherRun:
 
 
 class TestHeadlessAndCaptchaAreRefusedTogether:
-    def test_a_captcha_board_headless_with_submit_is_refused_before_the_browser(
-        self, monkeypatch
-    ):
+    def test_a_captcha_board_headless_with_submit_is_refused_before_the_browser(self, monkeypatch):
         monkeypatch.setattr(
-            apply_cli, "build",
-            lambda job_id, **kw: (_fake_plan(job_id, ats="lever",
-                                              requires_captcha=True), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             _raise(AssertionError("must not open a browser")))
-        out = apply_cli.run_queue([JOB_ID], submit=True, headless=True,
-                                   sleeper=lambda s: None)
+            apply_cli,
+            "build",
+            lambda job_id, **kw: (_fake_plan(job_id, ats="lever", requires_captcha=True), None),
+        )
+        monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not open a browser")))
+        out = apply_cli.run_queue([JOB_ID], submit=True, headless=True, sleeper=lambda s: None)
         assert out[0].category == "failed"
         assert "nobody to" in out[0].detail
 
     def test_headed_is_fine(self, monkeypatch):
         monkeypatch.setattr(
-            apply_cli, "build",
-            lambda job_id, **kw: (_fake_plan(job_id, ats="lever",
-                                              requires_captcha=True), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result())
-        out = apply_cli.run_queue([JOB_ID], submit=True, headless=False,
-                                   sleeper=lambda s: None)
+            apply_cli,
+            "build",
+            lambda job_id, **kw: (_fake_plan(job_id, ats="lever", requires_captcha=True), None),
+        )
+        monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
+        out = apply_cli.run_queue([JOB_ID], submit=True, headless=False, sleeper=lambda s: None)
         assert out[0].category == "ready"
 
 
@@ -1004,13 +1122,10 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
     """
 
     def _plan_only(self, monkeypatch):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
 
-    def test_teardown_blowing_up_after_a_submit_is_still_a_submission(
-        self, monkeypatch
-    ):
+    def test_teardown_blowing_up_after_a_submit_is_still_a_submission(self, monkeypatch):
         self._plan_only(monkeypatch)
 
         def submit_then_die(plan, answers, sink=None, **kw):
@@ -1022,9 +1137,7 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         assert out[0].category == "submitted_unconfirmed"
         assert "SUBMITTED" in out[0].detail
 
-    def test_a_keyboard_interrupt_after_a_submit_is_recorded_then_reraised(
-        self, monkeypatch
-    ):
+    def test_a_keyboard_interrupt_after_a_submit_is_recorded_then_reraised(self, monkeypatch):
         self._plan_only(monkeypatch)
 
         def submit_then_interrupt(plan, answers, sink=None, **kw):
@@ -1035,13 +1148,10 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         out = apply_cli._run_role(JOB_ID, submit=True, headless=False)
         assert out.category == "submitted_unconfirmed"
 
-    def test_a_failed_state_write_on_the_crash_path_is_submitted_untracked(
-        self, monkeypatch
-    ):
+    def test_a_failed_state_write_on_the_crash_path_is_submitted_untracked(self, monkeypatch):
         # Same bar as the non-crash path: a refused transition leaves the role
         # `tailored`, so the next --submit run applies to the same board again.
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 1)
 
         def submit_then_die(plan, answers, sink=None, **kw):
@@ -1053,9 +1163,7 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         assert out[0].category == "submitted_untracked"
         assert "still says tailored" in out[0].detail
 
-    def test_a_crash_with_nothing_submitted_is_an_ordinary_failure(
-        self, monkeypatch
-    ):
+    def test_a_crash_with_nothing_submitted_is_an_ordinary_failure(self, monkeypatch):
         self._plan_only(monkeypatch)
 
         def die_early(plan, answers, sink=None, **kw):
@@ -1066,9 +1174,7 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
         out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
         assert out[0].category == "failed"
 
-    def test_a_keyboard_interrupt_with_nothing_submitted_propagates(
-        self, monkeypatch
-    ):
+    def test_a_keyboard_interrupt_with_nothing_submitted_propagates(self, monkeypatch):
         self._plan_only(monkeypatch)
 
         def interrupt(plan, answers, sink=None, **kw):
@@ -1082,9 +1188,16 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
 
 def _unmapped(field_id="why_us"):
     from src.apply.plan import Unmapped
-    return Unmapped(id=field_id, label="Why us?", required=True, kind="textarea",
-                     section="questions", tier="C",
-                     reason="no question in the bank asks this")
+
+    return Unmapped(
+        id=field_id,
+        label="Why us?",
+        required=True,
+        kind="textarea",
+        section="questions",
+        tier="C",
+        reason="no question in the bank asks this",
+    )
 
 
 class TestSubmitRequiresAnExplicitBound:
@@ -1099,25 +1212,24 @@ class TestSubmitRequiresAnExplicitBound:
         runs = tmp_path / "apply_runs"
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", runs)
         planned: list[str] = []
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (planned.append(job_id),
-                                                   (_fake_plan(job_id), None))[1])
-        monkeypatch.setattr(apply_cli, "run_one",
-                             _raise(AssertionError("must not open a browser")))
+        monkeypatch.setattr(
+            apply_cli,
+            "build",
+            lambda job_id, **kw: (planned.append(job_id), (_fake_plan(job_id), None))[1],
+        )
+        monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not open a browser")))
 
         assert apply_cli.main(["run", "--submit"]) == 1
         assert "--limit" in capsys.readouterr().err
         assert planned == [], "nothing may even be fetched"
         assert not runs.exists(), "no run was started, so no report belongs to one"
 
-    def test_unattended_refuses_submit_and_bank_writes(
-        self, repo, monkeypatch, tmp_path, capsys
-    ):
+    def test_unattended_refuses_submit_and_bank_writes(self, repo, monkeypatch, tmp_path, capsys):
         import shutil
+
         repo.write_state()
         monkeypatch.setenv("APPLY_UNATTENDED", "1")
-        monkeypatch.setattr(apply_cli, "run_one",
-                             _raise(AssertionError("must not open a browser")))
+        monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not open a browser")))
         assert apply_cli.main(["run", "--job-id", JOB_ID, "--submit", "--yes"]) == 1
         assert "APPLY_UNATTENDED=1" in capsys.readouterr().err
 
@@ -1133,10 +1245,8 @@ class TestSubmitRequiresAnExplicitBound:
         # sends nothing, so it stays unbounded.
         repo.write_state()
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
-        monkeypatch.setattr(apply_cli, "run_one",
-                             lambda plan, answers, **kw: _fake_result())
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
 
     def test_job_id_is_exempt_because_one_named_role_is_already_a_bound(
@@ -1144,17 +1254,17 @@ class TestSubmitRequiresAnExplicitBound:
     ):
         repo.write_state()
         monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         seen: list = []
         monkeypatch.setattr(
-            apply_cli, "run_one",
-            lambda plan, answers, **kw: (seen.append((plan.job_id,
-                                                      kw.get("submit_after"))),
-                                          _fake_result())[1],
+            apply_cli,
+            "run_one",
+            lambda plan, answers, **kw: (
+                seen.append((plan.job_id, kw.get("submit_after"))),
+                _fake_result(),
+            )[1],
         )
-        assert apply_cli.main(
-            ["run", "--submit", "--yes", "--job-id", JOB_ID, "--rate", "0s"]) == 0
+        assert apply_cli.main(["run", "--submit", "--yes", "--job-id", JOB_ID, "--rate", "0s"]) == 0
         assert seen == [(JOB_ID, True)]
 
 
@@ -1205,29 +1315,34 @@ class TestOneSubmissionPerCompanyPerRun:
     def _stub(self, monkeypatch, plan_companies):
         opened: list[str] = []
         monkeypatch.setattr(
-            apply_cli, "build",
-            lambda job_id, **kw: (_fake_plan(job_id,
-                                              company=plan_companies[job_id]), None))
+            apply_cli,
+            "build",
+            lambda job_id, **kw: (_fake_plan(job_id, company=plan_companies[job_id]), None),
+        )
         monkeypatch.setattr(
-            apply_cli, "run_one",
-            lambda plan, answers, **kw: (opened.append(plan.job_id),
-                                          _fake_result(submitted=True,
-                                                       confirmed=True))[1])
+            apply_cli,
+            "run_one",
+            lambda plan, answers, **kw: (
+                opened.append(plan.job_id),
+                _fake_result(submitted=True, confirmed=True),
+            )[1],
+        )
         monkeypatch.setattr(apply_cli.track_cli, "main", lambda argv: 0)
         return opened
 
-    def test_the_second_role_at_one_company_is_skipped_and_never_opened(
-        self, monkeypatch
-    ):
-        opened = self._stub(monkeypatch, {"a1": "Bushing Group",
-                                           "a2": "Bushing Group",
-                                           "b1": "Gasket Works"})
+    def test_the_second_role_at_one_company_is_skipped_and_never_opened(self, monkeypatch):
+        opened = self._stub(
+            monkeypatch, {"a1": "Bushing Group", "a2": "Bushing Group", "b1": "Gasket Works"}
+        )
         sleeps: list[float] = []
         out = apply_cli.run_queue(
-            ["a1", "a2", "b1"], submit=True, rate=30, jitter=0,
-            sleeper=sleeps.append, jitter_fn=lambda a, b: 0,
-            companies={"a1": "Bushing Group", "a2": "Bushing Group",
-                        "b1": "Gasket Works"},
+            ["a1", "a2", "b1"],
+            submit=True,
+            rate=30,
+            jitter=0,
+            sleeper=sleeps.append,
+            jitter_fn=lambda a, b: 0,
+            companies={"a1": "Bushing Group", "a2": "Bushing Group", "b1": "Gasket Works"},
         )
         assert [o.category for o in out] == ["submitted", "skipped", "submitted"]
         assert opened == ["a1", "b1"]
@@ -1238,7 +1353,9 @@ class TestOneSubmissionPerCompanyPerRun:
     def test_the_skipped_role_says_which_company_capped_it(self, monkeypatch):
         self._stub(monkeypatch, {"a1": "Bushing Group", "a2": "Bushing Group"})
         out = apply_cli.run_queue(
-            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            ["a1", "a2"],
+            submit=True,
+            sleeper=lambda s: None,
             companies={"a1": "Bushing Group", "a2": "Bushing Group"},
         )
         assert out[1].company == "Bushing Group"
@@ -1247,15 +1364,20 @@ class TestOneSubmissionPerCompanyPerRun:
     def test_a_role_that_did_not_submit_does_not_cap_its_company(self, monkeypatch):
         # Only a submission spends the company's one slot. A parked or failed
         # first role must leave the second one applyable.
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         opened: list[str] = []
         monkeypatch.setattr(
-            apply_cli, "run_one",
-            lambda plan, answers, **kw: (opened.append(plan.job_id),
-                                          _fake_result(failures=["boom"]))[1])
+            apply_cli,
+            "run_one",
+            lambda plan, answers, **kw: (
+                opened.append(plan.job_id),
+                _fake_result(failures=["boom"]),
+            )[1],
+        )
         out = apply_cli.run_queue(
-            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            ["a1", "a2"],
+            submit=True,
+            sleeper=lambda s: None,
             companies={"a1": "Bushing Group", "a2": "Bushing Group"},
         )
         assert opened == ["a1", "a2"]
@@ -1263,39 +1385,40 @@ class TestOneSubmissionPerCompanyPerRun:
 
     def test_a_fill_and_stop_walk_is_not_capped(self, monkeypatch):
         # Nothing is sent without --submit, so there is nothing to cap.
-        opened = self._stub(monkeypatch, {"a1": "Bushing Group",
-                                           "a2": "Bushing Group"})
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group", "a2": "Bushing Group"})
         apply_cli.run_queue(
-            ["a1", "a2"], submit=False, sleeper=lambda s: None,
+            ["a1", "a2"],
+            submit=False,
+            sleeper=lambda s: None,
             companies={"a1": "Bushing Group", "a2": "Bushing Group"},
         )
         assert opened == ["a1", "a2"]
 
-    def test_a_differently_spelled_company_is_still_the_same_company(
-        self, monkeypatch
-    ):
+    def test_a_differently_spelled_company_is_still_the_same_company(self, monkeypatch):
         # state.yaml carries whatever each board called itself. Comparing the
         # raw strings would let "Bushing Group, Inc." and "The Bushing Group
         # LLC" both submit.
-        opened = self._stub(monkeypatch, {"a1": "Bushing Group, Inc.",
-                                           "a2": "The Bushing Group LLC"})
+        opened = self._stub(
+            monkeypatch, {"a1": "Bushing Group, Inc.", "a2": "The Bushing Group LLC"}
+        )
         out = apply_cli.run_queue(
-            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            ["a1", "a2"],
+            submit=True,
+            sleeper=lambda s: None,
             companies={"a1": "Bushing Group, Inc.", "a2": "The Bushing Group LLC"},
         )
         assert [o.category for o in out] == ["submitted", "skipped"]
         assert opened == ["a1"]
 
-    def test_the_plan_company_counts_even_when_the_index_carried_none(
-        self, monkeypatch
-    ):
+    def test_the_plan_company_counts_even_when_the_index_carried_none(self, monkeypatch):
         # state.yaml can be missing `company:` entirely; the board's own name
         # is only known once the plan is built. Both spellings are counted, so
         # a blank index entry does not hand the company a second submission.
-        opened = self._stub(monkeypatch, {"a1": "Bushing Group, Inc.",
-                                           "a2": "Bushing Group"})
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group, Inc.", "a2": "Bushing Group"})
         out = apply_cli.run_queue(
-            ["a1", "a2"], submit=True, sleeper=lambda s: None,
+            ["a1", "a2"],
+            submit=True,
+            sleeper=lambda s: None,
             companies={"a1": "", "a2": "The Bushing Group LLC"},
         )
         assert [o.category for o in out] == ["submitted", "skipped"]
@@ -1303,9 +1426,17 @@ class TestOneSubmissionPerCompanyPerRun:
 
     def test_the_report_gives_skipped_its_own_section(self):
         from src.apply_cli import RunOutcome
+
         text = apply_cli.render_report(
-            [RunOutcome("a2", "Bushing Group", "Eng", "skipped",
-                        detail="already submitted to this company in this run")],
+            [
+                RunOutcome(
+                    "a2",
+                    "Bushing Group",
+                    "Eng",
+                    "skipped",
+                    detail="already submitted to this company in this run",
+                )
+            ],
             apply_cli.datetime(2026, 1, 1),
         )
         assert "one submission per company per run" in text
@@ -1319,10 +1450,8 @@ class TestQueueCompanies:
     def test_the_company_comes_from_state_yaml(self, repo):
         repo.write_state(job_id="aaaa1111")
         repo.write_state(job_id="bbbb2222")
-        got = apply_cli.queue_companies(["aaaa1111", "bbbb2222", "nosuchrole"],
-                                         repo.pipeline)
-        assert got == {"aaaa1111": "Bushing Group", "bbbb2222": "Bushing Group",
-                        "nosuchrole": ""}
+        got = apply_cli.queue_companies(["aaaa1111", "bbbb2222", "nosuchrole"], repo.pipeline)
+        assert got == {"aaaa1111": "Bushing Group", "bbbb2222": "Bushing Group", "nosuchrole": ""}
 
 
 class TestLearnCommand:
@@ -1330,6 +1459,7 @@ class TestLearnCommand:
 
     def _bank(self, tmp_path):
         import shutil
+
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
         return path
@@ -1345,8 +1475,7 @@ class TestLearnCommand:
         assert "pronouns" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
     def test_undo_of_an_unknown_question_fails(self, tmp_path, capsys):
-        assert apply_cli.main(["learn", "--path", str(self._bank(tmp_path)),
-                               "--undo", "nope"]) == 1
+        assert apply_cli.main(["learn", "--path", str(self._bank(tmp_path)), "--undo", "nope"]) == 1
         assert "no question" in capsys.readouterr().err
 
 
@@ -1369,8 +1498,7 @@ class TestApplyConfirm:
         assert not apply_cli.answers_confirmed(path)
 
     def test_a_session_flag_or_a_non_tty_never_confirms(self, tmp_path, monkeypatch):
-        path = self._file(tmp_path, {"job_id": JOB_ID, "confirmed": True,
-                                     "q": {"value": "x"}})
+        path = self._file(tmp_path, {"job_id": JOB_ID, "confirmed": True, "q": {"value": "x"}})
         assert not apply_cli.answers_confirmed(path)
         monkeypatch.setattr("sys.stdin.isatty", lambda: False)
         monkeypatch.setattr("builtins.input", _raise(AssertionError("must not prompt")))
@@ -1386,6 +1514,7 @@ class TestARunLearnsWhatWasConfirmed:
         import shutil
 
         from src.apply import bank
+
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
         monkeypatch.setattr(bank, "DEFAULT_PATH", path)
@@ -1393,13 +1522,26 @@ class TestARunLearnsWhatWasConfirmed:
 
     def _plan(self, fields):
         from dataclasses import replace
+
         return replace(_fake_plan(JOB_ID), fields=tuple(fields))
 
     def _field(self, fid, label, value, source="", options=(), replaced=""):
         from src.apply.plan import FieldPlan
-        return FieldPlan(id=fid, name=fid, label=label, kind="select" if options else "text",
-                         section="questions", required=True, multi=False, value=value,
-                         tier="C", options=tuple(options), source=source, replaced=replaced)
+
+        return FieldPlan(
+            id=fid,
+            name=fid,
+            label=label,
+            kind="select" if options else "text",
+            section="questions",
+            required=True,
+            multi=False,
+            value=value,
+            tier="C",
+            options=tuple(options),
+            source=source,
+            replaced=replaced,
+        )
 
     def _run(self, tmp_path, monkeypatch, plan, overrides):
         answers_path = tmp_path / "answers.json"
@@ -1408,15 +1550,18 @@ class TestARunLearnsWhatWasConfirmed:
         confirmation.record(answers_path, data)
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
         monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
-        return apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None,
-                                   answers_path=answers_path)[0]
+        return apply_cli.run_queue(
+            [JOB_ID], submit=False, sleeper=lambda s: None, answers_path=answers_path
+        )[0]
 
     def test_a_mapped_wording_joins_its_question(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
-        plan = self._plan([self._field("q", "Your LinkedIn URL please", "https://x",
-                                       source="override")])
-        out = self._run(tmp_path, monkeypatch, plan, {"q": {
-            "value": "https://x", "question": "linkedin"}})
+        plan = self._plan(
+            [self._field("q", "Your LinkedIn URL please", "https://x", source="override")]
+        )
+        out = self._run(
+            tmp_path, monkeypatch, plan, {"q": {"value": "https://x", "question": "linkedin"}}
+        )
         bank_data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert "Your LinkedIn URL please" in bank_data["questions"]["linkedin"]["wordings"]
         assert out.learned
@@ -1425,9 +1570,18 @@ class TestARunLearnsWhatWasConfirmed:
         path = self._bank(tmp_path, monkeypatch)
         label = "Tell us about a project you're proud of"
         plan = self._plan([self._field("q", label, "I built a widget.", source="override")])
-        self._run(tmp_path, monkeypatch, plan, {"q": {
-            "value": "I built a widget.", "question": "project_proud",
-            "source": "bullets:B-1"}})
+        self._run(
+            tmp_path,
+            monkeypatch,
+            plan,
+            {
+                "q": {
+                    "value": "I built a widget.",
+                    "question": "project_proud",
+                    "source": "bullets:B-1",
+                }
+            },
+        )
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["project_proud"]
         assert q["answer"] == "I built a widget." and q["wordings"] == [label]
         assert q["source"] == "bullets:B-1"
@@ -1435,25 +1589,49 @@ class TestARunLearnsWhatWasConfirmed:
     def test_a_why_us_answer_never_becomes_a_bank_answer(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
         plan = self._plan([self._field("q", "Why Acme?", "Because Acme.", source="override")])
-        self._run(tmp_path, monkeypatch, plan, {"q": {
-            "value": "Because Acme.", "question": "why_acme", "source": "company_answers"}})
+        self._run(
+            tmp_path,
+            monkeypatch,
+            plan,
+            {"q": {"value": "Because Acme.", "question": "why_acme", "source": "company_answers"}},
+        )
         assert "why_acme" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
     def test_an_unchallenged_keyword_guess_becomes_exact(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
-        plan = self._plan([self._field("q", "What's your LinkedIn?", "https://linkedin.com/in/example",
-                                       source="bank:linkedin~linkedin")])
+        plan = self._plan(
+            [
+                self._field(
+                    "q",
+                    "What's your LinkedIn?",
+                    "https://linkedin.com/in/example",
+                    source="bank:linkedin~linkedin",
+                )
+            ]
+        )
         self._run(tmp_path, monkeypatch, plan, {})
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"]
         assert "What's your LinkedIn?" in q["wordings"]
 
     def test_a_corrected_keyword_guess_is_never_guessed_again(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
-        plan = self._plan([self._field("q", "Is LinkedIn required?", "No",
-                                       source="override",
-                                       replaced="bank:linkedin~linkedin")])
-        self._run(tmp_path, monkeypatch, plan, {"q": {"value": "No", "source": "user",
-                                                      "question": "linkedin_required"}})
+        plan = self._plan(
+            [
+                self._field(
+                    "q",
+                    "Is LinkedIn required?",
+                    "No",
+                    source="override",
+                    replaced="bank:linkedin~linkedin",
+                )
+            ]
+        )
+        self._run(
+            tmp_path,
+            monkeypatch,
+            plan,
+            {"q": {"value": "No", "source": "user", "question": "linkedin_required"}},
+        )
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
         assert "is linkedin required" in q["linkedin"]["not"]
         assert q["linkedin_required"]["answer"] == "No"
@@ -1461,16 +1639,22 @@ class TestARunLearnsWhatWasConfirmed:
     def test_a_confirmed_claim_is_saved(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
         option = "Yes, I will require sponsorship in the future."
-        plan = self._plan([self._field("q", "Sponsorship?", option, source="override",
-                                       options=[option, "No"])])
-        self._run(tmp_path, monkeypatch, plan, {"q": {
-            "value": option, "claim": {"requires_sponsorship": True}}})
+        plan = self._plan(
+            [self._field("q", "Sponsorship?", option, source="override", options=[option, "No"])]
+        )
+        self._run(
+            tmp_path,
+            monkeypatch,
+            plan,
+            {"q": {"value": option, "claim": {"requires_sponsorship": True}}},
+        )
         claims = yaml.safe_load(path.read_text(encoding="utf-8"))["claims"]
         assert claims[option] == {"requires_sponsorship": True}
 
     def test_answers_that_cannot_apply_fail_the_role(self, tmp_path, monkeypatch):
         self._bank(tmp_path, monkeypatch)
         from dataclasses import replace
+
         plan = replace(_fake_plan(JOB_ID), ignored_overrides=("q: not a field on this form",))
         out = self._run(tmp_path, monkeypatch, plan, {})
         assert out.category == "failed" and "cannot apply" in out.detail
@@ -1493,8 +1677,7 @@ class TestTheSubmitLedger:
     was re-created (68 roles were applied to twice that way)."""
 
     def _stub(self, monkeypatch, result):
-        monkeypatch.setattr(apply_cli, "build",
-                             lambda job_id, **kw: (_fake_plan(job_id), None))
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         calls = []
 
         def run_one(plan, answers, **kw):
@@ -1513,11 +1696,13 @@ class TestTheSubmitLedger:
         self._stub(monkeypatch, r)
         apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
         from src.apply import ledger
+
         statuses = [x["status"] for x in ledger.records(apply_cli.ledger_path())]
         assert statuses == ["clicking", "accepted"]
 
     def test_a_role_in_the_ledger_is_skipped_without_opening_a_browser(self, monkeypatch):
         from src.apply import ledger
+
         ledger.append(apply_cli.ledger_path(), JOB_ID, "accepted", form_url=GH_URL)
         calls = self._stub(monkeypatch, _fake_result())
         out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
@@ -1547,6 +1732,7 @@ class TestTheSubmitLedger:
 
     def test_the_queue_leaves_out_sent_roles(self, repo):
         from src.apply import ledger
+
         repo.write_state()
         assert apply_cli.eligible_queue() == [JOB_ID]
         ledger.append(apply_cli.ledger_path(), JOB_ID, "backfill")
@@ -1555,6 +1741,7 @@ class TestTheSubmitLedger:
 
 def test_tests_never_touch_the_real_applications_folder():
     from src.shared import paths
+
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
     assert apply_cli.APPLY_RUNS.parent != paths.REPO_ROOT / "applications"
 
@@ -1564,6 +1751,7 @@ class TestKeywordsGeneralize:
         import shutil
 
         from src.apply import bank
+
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
         monkeypatch.setattr(bank, "DEFAULT_PATH", path)
@@ -1572,20 +1760,37 @@ class TestKeywordsGeneralize:
     def test_a_keyword_lets_the_next_wording_be_guessed(self, tmp_path, monkeypatch):
         from src.apply import bank
         from src.apply.answers import find_question, load_answers
+
         path = self._bank(tmp_path, monkeypatch)
-        bank.learn([bank.Lesson(label="Tell us about a project you're proud of",
-                                question="project_proud", value="I built a widget.",
-                                keyword="proud of", source="bullets:B-1")])
+        bank.learn(
+            [
+                bank.Lesson(
+                    label="Tell us about a project you're proud of",
+                    question="project_proud",
+                    value="I built a widget.",
+                    keyword="proud of",
+                    source="bullets:B-1",
+                )
+            ]
+        )
         found = find_question("What are you most proud of building?", load_answers(path))
         assert found and found[0].id == "project_proud" and "~" in found[1]
 
-    def test_a_keyword_that_shadows_another_question_is_refused_alone(
-            self, tmp_path, monkeypatch):
+    def test_a_keyword_that_shadows_another_question_is_refused_alone(self, tmp_path, monkeypatch):
         from src.apply import bank
+
         path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn([bank.Lesson(label="Your personal LinkedIn page",
-                                          question="linkedin_page", value="x",
-                                          keyword="linkedin page", source="user")])
+        changes = bank.learn(
+            [
+                bank.Lesson(
+                    label="Your personal LinkedIn page",
+                    question="linkedin_page",
+                    value="x",
+                    keyword="linkedin page",
+                    source="user",
+                )
+            ]
+        )
         assert any("keyword refused" in c for c in changes)
         assert "linkedin_page" in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
@@ -1594,18 +1799,30 @@ def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
     import shutil
 
     from src.apply import bank
+
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
     monkeypatch.setattr(bank, "DEFAULT_PATH", path)
     data = bank.read()
     data["questions"]["years_of_professional_experience_total"] = {
-        "answer": "2", "wordings": ["Years of professional experience"]}
+        "answer": "2",
+        "wordings": ["Years of professional experience"],
+    }
     bank.write(data)
-    changes = bank.learn([bank.Lesson(label="How many years have you worked?",
-                                      question="years_of_professional_exp", value="2",
-                                      source="user")])
-    assert changes == ["not saved: years_of_professional_exp: did you mean "
-                       "'years_of_professional_experience_total'?"]
+    changes = bank.learn(
+        [
+            bank.Lesson(
+                label="How many years have you worked?",
+                question="years_of_professional_exp",
+                value="2",
+                source="user",
+            )
+        ]
+    )
+    assert changes == [
+        "not saved: years_of_professional_exp: did you mean "
+        "'years_of_professional_experience_total'?"
+    ]
 
 
 class TestEachLessonMustHold:
@@ -1616,6 +1833,7 @@ class TestEachLessonMustHold:
         import shutil
 
         from src.apply import bank
+
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
         monkeypatch.setattr(bank, "DEFAULT_PATH", path)
@@ -1623,54 +1841,98 @@ class TestEachLessonMustHold:
 
     def test_a_different_answer_under_the_same_id_is_refused(self, tmp_path, monkeypatch):
         from src.apply import bank
+
         path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn([bank.Lesson(label="Pronouns, please", question="pronouns",
-                                          value="He/Him", offered=("They/Them", "He/Him"))])
+        changes = bank.learn(
+            [
+                bank.Lesson(
+                    label="Pronouns, please",
+                    question="pronouns",
+                    value="He/Him",
+                    offered=("They/Them", "He/Him"),
+                )
+            ]
+        )
         assert changes[0].startswith("not saved: pronouns answers 'They/Them'")
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["pronouns"]
         assert q["answer"] == ["They/Them"]
 
     def test_a_new_spelling_is_learned_when_the_board_offered_none_of_the_bank_s(
-            self, tmp_path, monkeypatch):
+        self, tmp_path, monkeypatch
+    ):
         from src.apply import bank
+
         path = self._bank(tmp_path, monkeypatch)
-        bank.learn([bank.Lesson(label="Pronouns", question="pronouns",
-                                value="they / them", offered=("they / them", "he / him"))])
+        bank.learn(
+            [
+                bank.Lesson(
+                    label="Pronouns",
+                    question="pronouns",
+                    value="they / them",
+                    offered=("they / them", "he / him"),
+                )
+            ]
+        )
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["pronouns"]
         assert q["answer"] == ["They/Them", "they / them"]
 
     def test_a_one_employer_answer_never_becomes_a_question(self, tmp_path, monkeypatch):
         from src.apply import bank
+
         path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn([bank.Lesson(label="What excites you about this role?",
-                                          question="excites_role", source="jd",
-                                          value="Your fraud roadmap at Acme.")])
+        changes = bank.learn(
+            [
+                bank.Lesson(
+                    label="What excites you about this role?",
+                    question="excites_role",
+                    source="jd",
+                    value="Your fraud roadmap at Acme.",
+                )
+            ]
+        )
         assert "stays with this role" in changes[0]
         assert "excites_role" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
     def test_one_bad_lesson_does_not_lose_the_rest(self, tmp_path, monkeypatch):
         from src.apply import bank
+
         path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn([
-            bank.Lesson(label="Will you require visa sponsorship?", question="clash",
-                        value="No", source="user"),
-            bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them"),
-        ])
+        changes = bank.learn(
+            [
+                bank.Lesson(
+                    label="Will you require visa sponsorship?",
+                    question="clash",
+                    value="No",
+                    source="user",
+                ),
+                bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them"),
+            ]
+        )
         q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
         assert "clash" not in q and "Your pronouns?" in q["pronouns"]["wordings"]
         assert any(c.startswith("not saved") for c in changes)
 
     def test_undo_of_the_last_wording_removes_the_question(self, tmp_path, monkeypatch):
         from src.apply import bank
+
         path = self._bank(tmp_path, monkeypatch)
-        bank.learn([bank.Lesson(label="Why widgets?", question="why_widgets",
-                                value="I like them.", source="user")])
+        bank.learn(
+            [
+                bank.Lesson(
+                    label="Why widgets?",
+                    question="why_widgets",
+                    value="I like them.",
+                    source="user",
+                )
+            ]
+        )
         out = bank.undo("why_widgets", wording="Why widgets?")
         assert "removed" in out
         assert "why_widgets" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
     def test_every_write_keeps_a_history(self, tmp_path, monkeypatch):
         from src.apply import bank
+
         self._bank(tmp_path, monkeypatch)
         bank.learn([bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them")])
         assert list((tmp_path / ".bank_history").glob("bank.*.yaml"))
@@ -1678,11 +1940,22 @@ class TestEachLessonMustHold:
 
 def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
     clean = tmp_path / "clean.parquet"
-    factories.write_clean(clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0,
-                                  "salary_currency": "USD"})
+    factories.write_clean(
+        clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0, "salary_currency": "USD"}
+    )
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
-    (tmp_path / "verticals.yaml").write_text(yaml.safe_dump({"verticals": {"example_primary": {
-        "salary_expectation": {"markup_pct": 10, "fallback": 110000}}}}), encoding="utf-8")
+    (tmp_path / "verticals.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "verticals": {
+                    "example_primary": {
+                        "salary_expectation": {"markup_pct": 10, "fallback": 110000}
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
     assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
 
@@ -1690,20 +1963,38 @@ def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
 def test_an_optional_export_control_question_takes_no_override(answers, tailor_dir):
     from src.apply.plan import Override, build_plan
     from src.apply.reconcile import MergedField, MergedOption, Reconciled
-    f = MergedField(id="q", name="q", label="Does the deemed export rule affect you?",
-                    required=False, kind="select", section="questions", multi=False,
-                    options=(MergedOption(label="Yes"), MergedOption(label="No")))
-    plan = build_plan(Reconciled(fields=(f,), api_only=()), answers, tailor_dir,
-                      overrides={"q": Override(value="No")})
+
+    f = MergedField(
+        id="q",
+        name="q",
+        label="Does the deemed export rule affect you?",
+        required=False,
+        kind="select",
+        section="questions",
+        multi=False,
+        options=(MergedOption(label="Yes"), MergedOption(label="No")),
+    )
+    plan = build_plan(
+        Reconciled(fields=(f,), api_only=()),
+        answers,
+        tailor_dir,
+        overrides={"q": Override(value="No")},
+    )
     assert not plan.fields and "export control" in plan.ignored_overrides[0]
 
 
 def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
     clean = tmp_path / "clean.parquet"
-    factories.write_clean(clean,
-                          {"job_id": "a", "url": "", "jd_text": "Our team in India builds tools. "
-                           "This role is remote and you must be based in the United States."},
-                          {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."})
+    factories.write_clean(
+        clean,
+        {
+            "job_id": "a",
+            "url": "",
+            "jd_text": "Our team in India builds tools. "
+            "This role is remote and you must be based in the United States.",
+        },
+        {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."},
+    )
     monkeypatch.setattr(apply_cli, "CLEAN", clean)
     assert apply_cli._jd_country("a") == "United States"
     assert apply_cli._jd_country("b") == ""
@@ -1721,26 +2012,32 @@ def _has_libpostal() -> bool:
 class TestTheJobsCountry:
     """Where a role is, read from discovery's location in every shape seen live."""
 
-    @pytest.mark.parametrize("location,country", [
-        ("VA - Tysons Corner", "United States"),
-        ("USA-CA San Jose Innovation Drive", "United States"),
-        ("US, CA, Santa Clara", "United States"),
-        ("IN Pune", "India"),
-        ("MH, IN", "India"),
-        ("Wrocław, DO, PL", "Poland"),
-        ("München, BY, DE", "Germany"),
-        ("SGP Work-at-Home", "Singapore"),
-        ("Northern Virginia - On-site", "United States"),
-        ("Hybrid", ""),
-        ("Remote", ""),
-    ])
+    @pytest.mark.parametrize(
+        "location,country",
+        [
+            ("VA - Tysons Corner", "United States"),
+            ("USA-CA San Jose Innovation Drive", "United States"),
+            ("US, CA, Santa Clara", "United States"),
+            ("IN Pune", "India"),
+            ("MH, IN", "India"),
+            ("Wrocław, DO, PL", "Poland"),
+            ("München, BY, DE", "Germany"),
+            ("SGP Work-at-Home", "Singapore"),
+            ("Northern Virginia - On-site", "United States"),
+            ("Hybrid", ""),
+            ("Remote", ""),
+        ],
+    )
     def test_a_location_names_its_country(self, answers, location, country):
         assert apply_cli.job_country({"job_id": "", "location": location}, answers) == country
 
     def test_a_location_nothing_reads_is_unknown(self, answers):
         from src.apply.answers import UNKNOWN_COUNTRY
-        assert apply_cli.job_country({"job_id": "", "location": "HLT-Hong Leong Tower"},
-                                     answers) == UNKNOWN_COUNTRY
+
+        assert (
+            apply_cli.job_country({"job_id": "", "location": "HLT-Hong Leong Tower"}, answers)
+            == UNKNOWN_COUNTRY
+        )
 
 
 def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path, monkeypatch):
@@ -1749,32 +2046,57 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
 
     from src.apply import bank
     from src.apply.plan import FieldPlan
+
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
     monkeypatch.setattr(bank, "DEFAULT_PATH", path)
-    guess = FieldPlan(id="q", name="q", label="What's your LinkedIn?", kind="text",
-                      section="questions", required=True, multi=False, value="https://x",
-                      tier="B", source="bank:linkedin~linkedin")
-    monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (
-        replace(_fake_plan(JOB_ID), fields=(guess,)), None))
+    guess = FieldPlan(
+        id="q",
+        name="q",
+        label="What's your LinkedIn?",
+        kind="text",
+        section="questions",
+        required=True,
+        multi=False,
+        value="https://x",
+        tier="B",
+        source="bank:linkedin~linkedin",
+    )
+    monkeypatch.setattr(
+        apply_cli,
+        "build",
+        lambda job_id, **kw: (replace(_fake_plan(JOB_ID), fields=(guess,)), None),
+    )
     monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not fill")))
     stale = tmp_path / "answers.json"
     stale.write_text(json.dumps({"job_id": JOB_ID}), encoding="utf-8")
     out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None, answers_path=stale)
     assert out[0].category == "parked" and not out[0].learned
-    assert "What's your LinkedIn?" not in (yaml.safe_load(path.read_text(encoding="utf-8"))
-                                          ["questions"]["linkedin"].get("wordings") or [])
+    assert "What's your LinkedIn?" not in (
+        yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"].get("wordings")
+        or []
+    )
 
 
 def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monkeypatch):
     import shutil
 
     from src.apply import bank
+
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
     monkeypatch.setattr(bank, "DEFAULT_PATH", path)
-    bank.learn([bank.Lesson(label="Is LinkedIn required?", question="linkedin_required",
-                            value="No", source="jd", misfired="linkedin")])
+    bank.learn(
+        [
+            bank.Lesson(
+                label="Is LinkedIn required?",
+                question="linkedin_required",
+                value="No",
+                source="jd",
+                misfired="linkedin",
+            )
+        ]
+    )
     assert not yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"].get("not")
 
 
@@ -1787,31 +2109,55 @@ class TestAConfirmedFactJudgmentIsLearned:
         from src.apply import bank
         from src.apply.answers import load_answers, resolve
         from src.apply.reconcile import MergedField, MergedOption
+
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
-        changes = bank.learn([bank.Lesson(label=self.LABEL, value="Yes",
-                                          fact={"fact": "us_person", "yes_when": False})],
-                             path=path)
+        changes = bank.learn(
+            [
+                bank.Lesson(
+                    label=self.LABEL, value="Yes", fact={"fact": "us_person", "yes_when": False}
+                )
+            ],
+            path=path,
+        )
         assert any("fact wording" in c for c in changes)
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         data["work_authorization"]["us_person"] = "no"
         path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        f = MergedField(id="q", name="q", label=self.LABEL, required=True, kind="select",
-                        section="questions", multi=False,
-                        options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        f = MergedField(
+            id="q",
+            name="q",
+            label=self.LABEL,
+            required=True,
+            kind="select",
+            section="questions",
+            multi=False,
+            options=(MergedOption(label="Yes"), MergedOption(label="No")),
+        )
         assert resolve(f, load_answers(path)).value == "Yes"
-        refused = bank.learn([bank.Lesson(label=self.LABEL, value="No",
-                                          fact={"fact": "us_person", "yes_when": True})],
-                             path=path)
+        refused = bank.learn(
+            [
+                bank.Lesson(
+                    label=self.LABEL, value="No", fact={"fact": "us_person", "yes_when": True}
+                )
+            ],
+            path=path,
+        )
         assert refused and refused[0].startswith("not saved")
         assert "removed" in bank.undo(fact=self.LABEL, path=path)
         assert resolve(f, load_answers(path)).parked
 
     def test_the_answers_file_takes_a_fact_without_a_value(self, tmp_path):
         p = tmp_path / "a.json"
-        p.write_text(json.dumps({"job_id": JOB_ID, "q": {
-            "fact": {"fact": "us_person", "yes_when": False}, "source": "work_auth"}}),
-            encoding="utf-8")
+        p.write_text(
+            json.dumps(
+                {
+                    "job_id": JOB_ID,
+                    "q": {"fact": {"fact": "us_person", "yes_when": False}, "source": "work_auth"},
+                }
+            ),
+            encoding="utf-8",
+        )
         ov = apply_cli.load_overrides(p, JOB_ID)["q"]
         assert ov.fact == {"fact": "us_person", "yes_when": False}
         p.write_text(json.dumps({"q": {"fact": {"fact": "us_person"}}}), encoding="utf-8")
@@ -1823,17 +2169,34 @@ def test_teach_saves_one_answer_and_a_keyword_finds_the_next_wording(tmp_path, c
     import shutil
 
     from src.apply.answers import find_question, load_answers
+
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
-    argv = ["teach", "--question-id", "background_check", "--path", str(path),
-            "--label", "Do you consent to a background investigation and drug test?",
-            "--value", "Yes", "--offered", "Yes", "--offered", "No",
-            "--keyword", "background investigation", "--job", "aaaa1111"]
+    argv = [
+        "teach",
+        "--question-id",
+        "background_check",
+        "--path",
+        str(path),
+        "--label",
+        "Do you consent to a background investigation and drug test?",
+        "--value",
+        "Yes",
+        "--offered",
+        "Yes",
+        "--offered",
+        "No",
+        "--keyword",
+        "background investigation",
+        "--job",
+        "aaaa1111",
+    ]
     assert apply_cli.main(argv) == 0
     saved = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["background_check"]
     assert saved["answer"] == "Yes"
-    found = find_question("Will you undergo a background investigation before you start?",
-                          load_answers(path))
+    found = find_question(
+        "Will you undergo a background investigation before you start?", load_answers(path)
+    )
     assert found and found[0].id == "background_check" and "~" in found[1]
     assert apply_cli.main(argv) == 0
     assert "nothing to change" in capsys.readouterr().out

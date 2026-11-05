@@ -8,6 +8,7 @@ No network: fetch_json_post is stubbed everywhere, and every
 real headless browser against a fake URL. `TestDomEnrichment` below is the one
 place that exercises `fetch_dom_enrichment` itself, against a fake Playwright.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -34,7 +35,8 @@ class TestParsePosting:
             "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001"
         )
         assert (posting.slug, posting.job_id) == (
-            "widgetco", "00000001-0000-0000-0000-000000000001",
+            "widgetco",
+            "00000001-0000-0000-0000-000000000001",
         )
 
     def test_the_form_url_is_the_application_page_not_the_ad(self):
@@ -52,8 +54,7 @@ class TestParsePosting:
         """The Posting is canonical and the URLs derive from it, so pasting
         either spelling in resolves to the same one."""
         posting = parse_posting(
-            "https://jobs.ashbyhq.com/widgetco/"
-            "00000001-0000-0000-0000-000000000001/application"
+            "https://jobs.ashbyhq.com/widgetco/00000001-0000-0000-0000-000000000001/application"
         )
         assert posting.form_url.count("/application") == 1
 
@@ -86,9 +87,13 @@ class TestLoadBoard:
     fixtures."""
 
     def _board(self, payload=None):
-        with patch("src.apply.ashby.fetch_json_post",
-                   return_value=payload or load_api("api_ashby_form")), \
-             patch("src.apply.ashby.fetch_dom_enrichment", return_value={}):
+        with (
+            patch(
+                "src.apply.ashby.fetch_json_post",
+                return_value=payload or load_api("api_ashby_form"),
+            ),
+            patch("src.apply.ashby.fetch_dom_enrichment", return_value={}),
+        ):
             return load_board(ASHBY_URL)
 
     def test_the_submit_selector_is_the_shared_one(self):
@@ -126,10 +131,13 @@ class TestLoadBoard:
             seen.update(body["variables"])
             return load_api("api_ashby_form")
 
-        with patch("src.apply.ashby.fetch_json_post", side_effect=capture), \
-             patch("src.apply.ashby.fetch_dom_enrichment", return_value={}):
-            load_board("https://jobs.ashbyhq.com/Gasket%20Works/"
-                       "00000001-0000-0000-0000-000000000001")
+        with (
+            patch("src.apply.ashby.fetch_json_post", side_effect=capture),
+            patch("src.apply.ashby.fetch_dom_enrichment", return_value={}),
+        ):
+            load_board(
+                "https://jobs.ashbyhq.com/Gasket%20Works/00000001-0000-0000-0000-000000000001"
+            )
         assert seen["organizationHostedJobsPageName"] == "Gasket Works"
 
     def test_a_null_job_posting_is_an_expired_posting(self):
@@ -140,8 +148,7 @@ class TestLoadBoard:
 
     def test_graphql_errors_are_reported_not_swallowed(self):
         with pytest.raises(AshbyScanError, match="Cannot query field"):
-            self._board({"errors": [{"message": "Cannot query field 'nope'"}],
-                         "data": None})
+            self._board({"errors": [{"message": "Cannot query field 'nope'"}], "data": None})
 
 
 class TestDomEnrichment:
@@ -190,7 +197,8 @@ class TestDomEnrichment:
 
     def test_returns_whatever_the_page_carries(self, monkeypatch):
         monkeypatch.setattr(
-            ashby, "require_playwright",
+            ashby,
+            "require_playwright",
             lambda: self._fake_playwright({"q1": "Please explain briefly."}),
         )
         result = ashby.fetch_dom_enrichment(ASHBY_URL)
@@ -198,7 +206,8 @@ class TestDomEnrichment:
 
     def test_load_board_merges_descriptions_into_matching_fields(self, monkeypatch):
         monkeypatch.setattr(
-            ashby, "fetch_dom_enrichment",
+            ashby,
+            "fetch_dom_enrichment",
             lambda url, timeout=30: {"_systemfield_name": "Legal name as on ID."},
         )
         with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
@@ -213,7 +222,8 @@ class TestDomEnrichment:
         description dict is keyed by that real path, so the merge must match
         on `.name`, not `.id`."""
         monkeypatch.setattr(
-            ashby, "fetch_dom_enrichment",
+            ashby,
+            "fetch_dom_enrichment",
             lambda url, timeout=30: {"_systemfield_resume": "PDF only, 5MB max."},
         )
         with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
@@ -222,9 +232,7 @@ class TestDomEnrichment:
         assert by_id["resume"].name == "_systemfield_resume"
         assert by_id["resume"].description == "PDF only, 5MB max."
 
-    def test_a_failed_enrichment_degrades_to_no_descriptions_not_a_broken_plan(
-        self, monkeypatch
-    ):
+    def test_a_failed_enrichment_degrades_to_no_descriptions_not_a_broken_plan(self, monkeypatch):
         def boom(url, timeout=30):
             raise RuntimeError("chrome not installed")
 
@@ -252,24 +260,25 @@ class TestApiFieldMapping:
 
     def _fields(self):
         board_fields = fields_from_application_form(
-            load_api("api_ashby_form")["data"]["jobPosting"])
+            load_api("api_ashby_form")["data"]["jobPosting"]
+        )
         return {f.id: f for f in board_fields.fields}
 
     def test_every_scalar_type_maps_to_a_kind_the_planner_speaks(self):
         by_id = self._fields()
         kinds = {f.id: f.kind for f in by_id.values()}
-        assert kinds["_systemfield_name"] == "text"          # String
-        assert kinds["_systemfield_email"] == "text"         # Email
+        assert kinds["_systemfield_name"] == "text"  # String
+        assert kinds["_systemfield_email"] == "text"  # Email
         assert kinds["_systemfield_location"] == "combobox"  # Location
-        assert kinds["resume"] == "file"                     # File
-        assert kinds["20000000-0000-0000-0000-000000000003"] == "text"      # Phone
-        assert kinds["20000000-0000-0000-0000-000000000004"] == "text"      # Url
-        assert kinds["20000000-0000-0000-0000-000000000005"] == "yesno"     # Boolean
+        assert kinds["resume"] == "file"  # File
+        assert kinds["20000000-0000-0000-0000-000000000003"] == "text"  # Phone
+        assert kinds["20000000-0000-0000-0000-000000000004"] == "text"  # Url
+        assert kinds["20000000-0000-0000-0000-000000000005"] == "yesno"  # Boolean
         assert kinds["20000000-0000-0000-0000-000000000007"] == "textarea"  # LongText
-        assert kinds["20000000-0000-0000-0000-000000000008"] == "text"      # Number
-        assert kinds["20000000-0000-0000-0000-000000000009"] == "date"      # Date
-        assert kinds["20000000-0000-0000-0000-00000000000a"] == "select"    # ValueSelect
-        assert kinds["20000000-0000-0000-0000-00000000000b"] == "select"    # MultiValueSelect
+        assert kinds["20000000-0000-0000-0000-000000000008"] == "text"  # Number
+        assert kinds["20000000-0000-0000-0000-000000000009"] == "date"  # Date
+        assert kinds["20000000-0000-0000-0000-00000000000a"] == "select"  # ValueSelect
+        assert kinds["20000000-0000-0000-0000-00000000000b"] == "select"  # MultiValueSelect
 
     def test_a_boolean_gets_the_yes_no_pair_the_resolvers_read(self):
         """`answers.py`'s work-authorization and opt-out logic reads
@@ -279,8 +288,7 @@ class TestApiFieldMapping:
 
     def test_selectable_values_become_options(self):
         field = self._fields()["20000000-0000-0000-0000-00000000000a"]
-        assert [o.label for o in field.options] == [
-            "Job board", "Referral", "Company website"]
+        assert [o.label for o in field.options] == ["Job board", "Referral", "Company website"]
         assert [o.value for o in field.options] == ["1001", "1002", "1003"]
 
     def test_multi_comes_from_is_many_not_from_the_type_name(self):
@@ -299,7 +307,7 @@ class TestApiFieldMapping:
         assert "cover_letter" in self._fields()
 
     def test_another_file_field_keeps_its_own_id(self):
-        """"Additional Attachments" is a real optional upload with no /tailor
+        """ "Additional Attachments" is a real optional upload with no /tailor
         artifact behind it — aliasing it to a known id would attach the wrong
         document."""
         other = self._fields()["20000000-0000-0000-0000-000000000002"]
@@ -346,10 +354,24 @@ class TestApiFieldMapping:
         # The same path twice is one field, kept once.
         assert len(fields_from_application_form(form).fields) == 1
         entries = form["applicationForm"]["sections"][0]["fieldEntries"]
-        entries.append({"id": "e-x", "isRequired": False, "field": {
-            "type": "String", "path": "cover_letter", "title": "Cover letter note"}})
-        entries.append({"id": "e-y", "isRequired": False, "field": {
-            "type": "File", "path": "_systemfield_coverletter", "title": "Cover Letter"}})
+        entries.append(
+            {
+                "id": "e-x",
+                "isRequired": False,
+                "field": {"type": "String", "path": "cover_letter", "title": "Cover letter note"},
+            }
+        )
+        entries.append(
+            {
+                "id": "e-y",
+                "isRequired": False,
+                "field": {
+                    "type": "File",
+                    "path": "_systemfield_coverletter",
+                    "title": "Cover Letter",
+                },
+            }
+        )
         with pytest.raises(AshbyScanError, match="two fields map to id 'cover_letter'"):
             fields_from_application_form(form)
 
@@ -362,8 +384,7 @@ class TestApiFieldMapping:
         """Loud, matching the DOM scanner's unknown-input behaviour — a guessed
         mapping on a legal or compensation question is worse than a failure."""
         payload = load_api("api_ashby_form")
-        entry = payload["data"]["jobPosting"]["applicationForm"]["sections"][0][
-            "fieldEntries"][0]
+        entry = payload["data"]["jobPosting"]["applicationForm"]["sections"][0]["fieldEntries"][0]
         entry["field"]["type"] = "SomeTypeAshbyAddedLater"
         with pytest.raises(AshbyScanError, match="unknown Ashby field type"):
             fields_from_application_form(payload["data"]["jobPosting"])
@@ -391,14 +412,13 @@ class TestEducationHistoryIsExpandedNotRejected:
 
     def _payload(self, field=None):
         payload = load_api("api_ashby_form")
-        payload["data"]["jobPosting"]["applicationForm"]["sections"][0][
-            "fieldEntries"].append({"id": "e1", "isRequired": True,
-                                    "field": field or dict(self.FIELD)})
+        payload["data"]["jobPosting"]["applicationForm"]["sections"][0]["fieldEntries"].append(
+            {"id": "e1", "isRequired": True, "field": field or dict(self.FIELD)}
+        )
         return payload["data"]["jobPosting"]
 
     def _fields(self, field=None):
-        return {f.id: f for f in fields_from_application_form(
-            self._payload(field)).fields}
+        return {f.id: f for f in fields_from_application_form(self._payload(field)).fields}
 
     def test_the_three_answerable_subfields_get_greenhouse_ids(self):
         by_id = self._fields()
@@ -423,8 +443,9 @@ class TestEducationHistoryIsExpandedNotRejected:
 
     def test_a_required_date_is_emitted_and_parks_loudly(self, answers, tailor_dir):
         field = dict(self.FIELD, startDate="required")
-        plan = build_plan(fields_from_application_form(self._payload(field)),
-                          answers, tailor_dir, ats="ashby")
+        plan = build_plan(
+            fields_from_application_form(self._payload(field)), answers, tailor_dir, ats="ashby"
+        )
         parked = [u.id for u in plan.unmapped]
         assert any(i.endswith("startDate") for i in parked)
 
@@ -439,14 +460,18 @@ class TestEducationHistoryIsExpandedNotRejected:
         assert "degree--0" not in self._fields(field)
 
     def test_the_required_school_resolves_from_config(self, answers, tailor_dir):
-        plan = build_plan(fields_from_application_form(self._payload()),
-                          answers, tailor_dir, ats="ashby")
+        plan = build_plan(
+            fields_from_application_form(self._payload()), answers, tailor_dir, ats="ashby"
+        )
         by_id = {f.id: f.value for f in plan.fields}
         assert by_id["school--0"] == answers.education["school"]
 
     def test_a_block_declaring_no_subfields_raises(self):
-        field = {"path": "_systemfield_education_history", "title": "Education",
-                 "type": "EducationHistory"}
+        field = {
+            "path": "_systemfield_education_history",
+            "title": "Education",
+            "type": "EducationHistory",
+        }
         with pytest.raises(AshbyScanError, match="declaring no sub-fields"):
             fields_from_application_form(self._payload(field))
 
@@ -459,9 +484,11 @@ class TestEducationHistoryIsExpandedNotRejected:
 
 class TestApiEndToEndResolution:
     def test_the_real_shaped_form_resolves_identity_and_defers_the_resume(
-            self, answers, tailor_dir):
+        self, answers, tailor_dir
+    ):
         board_fields = fields_from_application_form(
-            load_api("api_ashby_form")["data"]["jobPosting"])
+            load_api("api_ashby_form")["data"]["jobPosting"]
+        )
         plan = build_plan(board_fields, answers, tailor_dir, ats="ashby")
         assert [f.id for f in plan.files] == ["resume", "cover_letter"]
         by_id = {f.id: f.value for f in plan.fields}
@@ -470,10 +497,10 @@ class TestApiEndToEndResolution:
         assert by_id["_systemfield_name"] == "Alex Example"
         assert by_id["_systemfield_email"] == answers.identity["email"]
 
-    def test_the_work_authorization_pair_resolves_from_status(
-            self, answers, tailor_dir):
+    def test_the_work_authorization_pair_resolves_from_status(self, answers, tailor_dir):
         board_fields = fields_from_application_form(
-            load_api("api_ashby_form")["data"]["jobPosting"])
+            load_api("api_ashby_form")["data"]["jobPosting"]
+        )
         plan = build_plan(board_fields, answers, tailor_dir, ats="ashby")
         by_id = {f.id: f.value for f in plan.fields}
         # time_limited: authorized today, will need sponsorship later.
@@ -483,8 +510,19 @@ class TestApiEndToEndResolution:
 
 def _form_with_files(*files):
     """A `jobPosting` node holding only upload fields: (path, title, required)."""
-    return {"applicationForm": {"sections": [{"fieldEntries": [
-        {"id": f"entry-{i}", "isRequired": required,
-         "field": {"type": "File", "path": path, "title": title}}
-        for i, (path, title, required) in enumerate(files)
-    ]}]}}
+    return {
+        "applicationForm": {
+            "sections": [
+                {
+                    "fieldEntries": [
+                        {
+                            "id": f"entry-{i}",
+                            "isRequired": required,
+                            "field": {"type": "File", "path": path, "title": title},
+                        }
+                        for i, (path, title, required) in enumerate(files)
+                    ]
+                }
+            ]
+        }
+    }

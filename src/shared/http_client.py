@@ -2,6 +2,7 @@
 scrapers and `src/apply/`'s live application-form fetching. The retry and
 timeout constants below govern both — a change here reaches live forms.
 """
+
 from __future__ import annotations
 
 import logging
@@ -58,7 +59,8 @@ class HttpTally:
         host = (urlsplit(url).hostname or "").lower()
         with self._lock:
             h = self.hosts.setdefault(
-                host, {"requests": 0, "seconds": 0.0, "403": 0, "429": 0, "errors": 0})
+                host, {"requests": 0, "seconds": 0.0, "403": 0, "429": 0, "errors": 0}
+            )
             h["requests"] += 1
             h["seconds"] += secs
             if status is None:
@@ -112,11 +114,13 @@ class CareersError(Exception):
         self.status = status
         self.permanent = permanent
 
+
 def _sleep_or_raise(delay: float, deadline_ts: float | None, url: str) -> None:
     """Sleep `delay`, unless that would cross the run deadline."""
     if deadline_ts and time.time() + delay > deadline_ts:
         raise CareersError(f"deadline reached before retry ({delay:.1f}s): {url}")
     time.sleep(delay)
+
 
 def _fetch(
     url: str,
@@ -162,7 +166,7 @@ def _fetch(
                 )
             delay = _retry_after(resp.headers.get("Retry-After"))
             if delay is None:
-                delay = RETRY_BASE_DELAY * (2 ** attempt)
+                delay = RETRY_BASE_DELAY * (2**attempt)
             _sleep_or_raise(delay, deadline_ts, url)
             continue
         # 401/403 walls included: a live board behind Cloudflare must not get a strike.
@@ -181,6 +185,7 @@ def _retry_after(value: str | None) -> float | None:
     if value.isdigit():
         return min(float(value), MAX_RETRY_AFTER)
     from email.utils import parsedate_to_datetime
+
     try:
         when = parsedate_to_datetime(value)
     except (TypeError, ValueError):
@@ -195,10 +200,12 @@ def _retry_after(value: str | None) -> float | None:
 DOWNLOAD_CHUNK = 1 << 20
 
 
-def download(url: str, dest, timeout: int = REQUEST_TIMEOUT,
-             deadline_ts: float | None = None) -> int:
+def download(
+    url: str, dest, timeout: int = REQUEST_TIMEOUT, deadline_ts: float | None = None
+) -> int:
     """Stream url to the file `dest`, retrying a failed or 429/5xx start like
     `_fetch`. Returns the bytes written. A file this size never sits in memory."""
+
     def read(resp) -> int:
         size = 0
         with open(dest, "wb") as out:
@@ -214,14 +221,16 @@ def download(url: str, dest, timeout: int = REQUEST_TIMEOUT,
                 _notify(url=url, secs=time.monotonic() - t0, status=resp.status_code)
                 if resp.status_code == 200:
                     return read(resp)
-                if not (resp.status_code == 429 or 500 <= resp.status_code < 600) \
-                        or attempt == MAX_RETRIES:
+                if (
+                    not (resp.status_code == 429 or 500 <= resp.status_code < 600)
+                    or attempt == MAX_RETRIES
+                ):
                     raise CareersError(f"HTTP {resp.status_code}: {url}", status=resp.status_code)
         except requests.RequestException as exc:
             _notify(url=url, secs=time.monotonic() - t0, status=None)
             if attempt == MAX_RETRIES:
                 raise CareersError(f"download failed: {url}: {exc}") from exc
-        _sleep_or_raise(RETRY_BASE_DELAY * (2 ** attempt), deadline_ts, url)
+        _sleep_or_raise(RETRY_BASE_DELAY * (2**attempt), deadline_ts, url)
     raise CareersError(f"exhausted retries: {url}")  # pragma: no cover
 
 
@@ -241,6 +250,7 @@ def fetch_page(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[int, str]:
 def _json_reader(url: str):
     """A `read` for `_fetch` that decodes JSON. A 200 that is not JSON is a wall
     or a wrong slug, not a blip, so it is permanent."""
+
     def read(resp):
         try:
             return resp.json()
@@ -289,6 +299,7 @@ def fetch_text(
     JSON. An empty 200 body is permanent: a board that answers with nothing is
     not going to answer with something on a retry.
     """
+
     def read(resp) -> str:
         text = resp.text or ""
         if not text.strip():

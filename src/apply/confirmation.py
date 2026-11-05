@@ -5,6 +5,7 @@ terminal, and stores a hash of what it showed in `<file>.confirmed`. A file
 counts as confirmed only while that hash matches its current content, so a
 session-written `"confirmed": true` or a later edit does not.
 """
+
 from __future__ import annotations
 
 import hashlib

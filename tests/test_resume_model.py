@@ -2,6 +2,7 @@
 
 Everything runs against the committed example world (profile/*.example.*),
 copied into tmp_path when a test needs to break it."""
+
 from __future__ import annotations
 
 import shutil
@@ -18,14 +19,17 @@ PROFILE = paths.PROFILE
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     """The example sources in tmp_path, with the example lanes configured."""
-    for name, target in (("resume.example.yaml", "resume.yaml"),
-                         ("bullets.example.md", "bullets.md"),
-                         ("skills_master.example.md", "skills_master.md")):
+    for name, target in (
+        ("resume.example.yaml", "resume.yaml"),
+        ("bullets.example.md", "bullets.md"),
+        ("skills_master.example.md", "skills_master.md"),
+    ):
         shutil.copy(PROFILE / name, tmp_path / target)
     monkeypatch.setattr(resume_model, "RESUME", tmp_path / "resume.yaml")
     monkeypatch.setattr(resume_model, "BULLETS", tmp_path / "bullets.md")
     monkeypatch.setattr(resume_model, "SKILLS", tmp_path / "skills_master.md")
     from tests.conftest import FIXTURE_PATH
+
     cfg = verticals.load_verticals(FIXTURE_PATH)
     verticals.set_config(cfg)
     yield tmp_path, cfg
@@ -50,12 +54,13 @@ def _codes(built):
 
 # ---------- source checks ----------
 
+
 def test_deleting_a_skill_needs_no_other_edit(world):
     tmp, cfg = world
     text = (tmp / "skills_master.md").read_text(encoding="utf-8")
     start = text.index("## SKILL-DOCKER")
     end = text.index("\n## ", start + 1)
-    (tmp / "skills_master.md").write_text(text[:start] + text[end + 1:], encoding="utf-8")
+    (tmp / "skills_master.md").write_text(text[:start] + text[end + 1 :], encoding="utf-8")
     assert resume_model.check_sources(resume_model.load_sources(), cfg) == []
 
 
@@ -64,18 +69,36 @@ def test_deleting_a_bullet_names_every_pointer_to_fix(world):
     text = (tmp / "bullets.md").read_text(encoding="utf-8")
     start = text.index("## B-WID-03")
     end = text.index("\n## ", start + 1)
-    (tmp / "bullets.md").write_text(text[:start] + text[end + 1:], encoding="utf-8")
+    (tmp / "bullets.md").write_text(text[:start] + text[end + 1 :], encoding="utf-8")
     problems = resume_model.check_sources(resume_model.load_sources(), cfg)
     assert any("B-WID-03 is not in bullets.md" in p for p in problems)
 
 
-@pytest.mark.parametrize("file,old,new,expect", [
-    ("bullets.md", "## B-WID-01", "## B-ZZZ-01", "no context 'ZZZ'"),
-    ("bullets.md", "default_for: [example_primary]", "default_for: [nope]", "'nope' is not a configured lane"),
-    ("skills_master.md", 'show: {example_secondary: "Programming"}', 'show: {example_secondary: "Nope"}', "'Nope' is not one of"),
-    ("resume.yaml", "lanes: {example_primary: {min: 2", "lanes: {example_primary: {min: 9", "0 <= min <= max"),
-    ("resume.yaml", "section: work", "section: jobs", "must be work or projects"),
-])
+@pytest.mark.parametrize(
+    "file,old,new,expect",
+    [
+        ("bullets.md", "## B-WID-01", "## B-ZZZ-01", "no context 'ZZZ'"),
+        (
+            "bullets.md",
+            "default_for: [example_primary]",
+            "default_for: [nope]",
+            "'nope' is not a configured lane",
+        ),
+        (
+            "skills_master.md",
+            'show: {example_secondary: "Programming"}',
+            'show: {example_secondary: "Nope"}',
+            "'Nope' is not one of",
+        ),
+        (
+            "resume.yaml",
+            "lanes: {example_primary: {min: 2",
+            "lanes: {example_primary: {min: 9",
+            "0 <= min <= max",
+        ),
+        ("resume.yaml", "section: work", "section: jobs", "must be work or projects"),
+    ],
+)
 def test_broken_pointer_is_named(world, file, old, new, expect):
     tmp, cfg = world
     _edit(tmp / file, old, new)
@@ -88,10 +111,15 @@ def test_a_skill_name_containing_another_shown_skill_is_flagged(world):
     printed scikit-learn twice on 206 resumes."""
     tmp, cfg = world
     _edit(tmp / "skills_master.md", "name: SQL", "name: SQL (Postgres, R)")
-    _edit(tmp / "skills_master.md", "name: Retrieval-Augmented Generation", "name: Agentic Retrieval-Augmented Generation")
+    _edit(
+        tmp / "skills_master.md",
+        "name: Retrieval-Augmented Generation",
+        "name: Agentic Retrieval-Augmented Generation",
+    )
     problems = resume_model.check_sources(resume_model.load_sources(), cfg)
     assert [p for p in problems if "show it twice" in p] == [
-        "lane example_secondary: SKILL-SQL name 'SQL (Postgres, R)' lists SKILL-R ('R'); the resume would show it twice"]
+        "lane example_secondary: SKILL-SQL name 'SQL (Postgres, R)' lists SKILL-R ('R'); the resume would show it twice"
+    ]
 
 
 def test_ids_in_tailoring_prose_are_flagged(world, monkeypatch, tmp_path):
@@ -112,10 +140,15 @@ def test_banned_phrase_in_a_source_is_flagged_once_at_the_source(world):
 
 # ---------- assembly ----------
 
+
 def test_baseline_resume_copies_fixed_lines_from_the_source(world):
     src = resume_model.load_sources()
-    md = resume_model.build(src, "example_primary", resume_model.baseline_plan(src, "example_primary")).markdown
-    assert "**Widget Operations Analyst** - Widget Corp\tExampletown, ST | Jan 2023 - Jun 2025" in md
+    md = resume_model.build(
+        src, "example_primary", resume_model.baseline_plan(src, "example_primary")
+    ).markdown
+    assert (
+        "**Widget Operations Analyst** - Widget Corp\tExampletown, ST | Jan 2023 - Jun 2025" in md
+    )
     assert "**B.S. Industrial Engineering**\tSep 2019 - Dec 2022" in md
     # sections in the lane's order
     assert md.index("**WORK EXPERIENCE**") < md.index("**PROJECTS**") < md.index("**EDUCATION**")
@@ -123,45 +156,60 @@ def test_baseline_resume_copies_fixed_lines_from_the_source(world):
 
 def test_bullets_render_in_canonical_order_whatever_the_plan_order(world):
     src = resume_model.load_sources()
-    plan = _plan(src, "example_primary", entries=[{"id": "B-WID-03"}, {"id": "B-WID-01"},
-                                                  {"id": "B-WID-02"}, {"id": "B-SPR-01"}])
+    plan = _plan(
+        src,
+        "example_primary",
+        entries=[{"id": "B-WID-03"}, {"id": "B-WID-01"}, {"id": "B-WID-02"}, {"id": "B-SPR-01"}],
+    )
     md = resume_model.build(src, "example_primary", plan).markdown
     lines = [ln for ln in md.split("\n") if ln.startswith("* ")]
     wid = [src.bullets[b]["canonical"][:20] for b in ("B-WID-01", "B-WID-02", "B-WID-03")]
     assert [ln[2:22] for ln in lines[:3]] == wid
 
 
-@pytest.mark.parametrize("entries,code", [
-    ([{"id": "B-NOPE-01"}], "unknown_id"),
-    ([{"id": "B-EDU-01"}], "context"),
-    ([{"id": "B-WID-01"}], "budget"),
-])
+@pytest.mark.parametrize(
+    "entries,code",
+    [
+        ([{"id": "B-NOPE-01"}], "unknown_id"),
+        ([{"id": "B-EDU-01"}], "context"),
+        ([{"id": "B-WID-01"}], "budget"),
+    ],
+)
 def test_plan_problems(world, entries, code):
     src = resume_model.load_sources()
-    built = resume_model.build(src, "example_primary", _plan(src, "example_primary", entries=entries))
+    built = resume_model.build(
+        src, "example_primary", _plan(src, "example_primary", entries=entries)
+    )
     assert code in _codes(built)
 
 
 def _reword(src, lane, bid, text):
     plan = resume_model.baseline_plan(src, lane)
-    plan["entries"] = [{"id": e["id"], **({"text": text} if e["id"] == bid else {})}
-                       for e in plan["entries"]]
+    plan["entries"] = [
+        {"id": e["id"], **({"text": text} if e["id"] == bid else {})} for e in plan["entries"]
+    ]
     return plan
 
 
 def test_rewording_with_licensed_words_passes(world):
     src = resume_model.load_sources()
-    text = ("Owned the daily widget assembly throughput report for a national "
-            "manufacturing client, reconciling line output against the production plan.")
-    built = resume_model.build(src, "example_primary", _reword(src, "example_primary", "B-WID-01", text))
+    text = (
+        "Owned the daily widget assembly throughput report for a national "
+        "manufacturing client, reconciling line output against the production plan."
+    )
+    built = resume_model.build(
+        src, "example_primary", _reword(src, "example_primary", "B-WID-01", text)
+    )
     assert built.problems == []
     assert any("transformation=rephrase" in t for t in built.trace)
 
 
 def test_rewording_with_a_new_word_or_number_is_refused(world):
     src = resume_model.load_sources()
-    text = ("Spearheaded the daily widget assembly throughput report across 9 plants.")
-    built = resume_model.build(src, "example_primary", _reword(src, "example_primary", "B-WID-01", text))
+    text = "Spearheaded the daily widget assembly throughput report across 9 plants."
+    built = resume_model.build(
+        src, "example_primary", _reword(src, "example_primary", "B-WID-01", text)
+    )
     assert {"license", "number", "lint"} <= _codes(built)
 
 
@@ -176,23 +224,35 @@ def test_final_falls_back_to_the_canonical_bullet(world):
 
 def test_written_summary_numbers_and_skills_must_trace_to_cited_bullets(world):
     src = resume_model.load_sources()
-    plan = _plan(src, "example_primary",
-                 summary={"text": "Analyst with 15 years of Docker work.", "uses": ["B-WID-01"]})
+    plan = _plan(
+        src,
+        "example_primary",
+        summary={"text": "Analyst with 15 years of Docker work.", "uses": ["B-WID-01"]},
+    )
     built = resume_model.build(src, "example_primary", plan)
     assert {"number", "skill"} <= _codes(built)
-    ok = _plan(src, "example_primary",
-               summary={"text": "Analyst who reconciles output across four plants with SQL.",
-                        "uses": ["B-WID-01", "B-WID-03"]})
+    ok = _plan(
+        src,
+        "example_primary",
+        summary={
+            "text": "Analyst who reconciles output across four plants with SQL.",
+            "uses": ["B-WID-01", "B-WID-03"],
+        },
+    )
     assert resume_model.build(src, "example_primary", ok).problems == []
 
 
 def test_skills_layout_and_alias_are_enforced(world):
     src = resume_model.load_sources()
-    plan = _plan(src, "example_primary", skills={
-        "Programming": ["SKILL-R"],                                  # not on this lane
-        "Databases & Tools": [{"id": "SKILL-GIT", "alias": "GitHub"}],  # not a synonym
-        "Nope": ["SKILL-SQL"],
-    })
+    plan = _plan(
+        src,
+        "example_primary",
+        skills={
+            "Programming": ["SKILL-R"],  # not on this lane
+            "Databases & Tools": [{"id": "SKILL-GIT", "alias": "GitHub"}],  # not a synonym
+            "Nope": ["SKILL-SQL"],
+        },
+    )
     codes = _codes(resume_model.build(src, "example_primary", plan))
     assert {"layout", "skill"} <= codes
 
@@ -202,8 +262,9 @@ def test_a_skills_line_in_the_plan_reorders_and_keeps_the_rest(world):
     base = resume_model.shown_skills(src, "example_primary")
     label = next(lab for lab, ids in base.items() if len(ids) >= 2)
     ids = base[label]
-    built = resume_model.build(src, "example_primary",
-                               _plan(src, "example_primary", skills={label: [ids[-1]]}))
+    built = resume_model.build(
+        src, "example_primary", _plan(src, "example_primary", skills={label: [ids[-1]]})
+    )
     line = next(ln for ln in built.markdown.splitlines() if ln.lstrip("*- ").startswith(label))
     names = [src.skills[i]["name"] for i in [ids[-1]] + ids[:-1]]
     assert all(n in line for n in names)
@@ -212,28 +273,43 @@ def test_a_skills_line_in_the_plan_reorders_and_keeps_the_rest(world):
 
 def test_company_name_is_never_linted(world):
     src = resume_model.load_sources()
-    plan = _plan(src, "example_primary",
-                 summary={"text": "Analyst who reconciles output for Robust Widgets.", "uses": ["B-WID-01"]})
+    plan = _plan(
+        src,
+        "example_primary",
+        summary={"text": "Analyst who reconciles output for Robust Widgets.", "uses": ["B-WID-01"]},
+    )
     built = resume_model.build(src, "example_primary", plan, company="Robust Widgets")
     assert "lint" not in _codes(built)
 
 
 def test_keyword_coverage_is_traced(world):
     src = resume_model.load_sources()
-    built = resume_model.build(src, "example_primary", resume_model.baseline_plan(src, "example_primary"),
-                               keywords=("SQL", "Kubernetes"))
+    built = resume_model.build(
+        src,
+        "example_primary",
+        resume_model.baseline_plan(src, "example_primary"),
+        keywords=("SQL", "Kubernetes"),
+    )
     assert "- Kubernetes: not landed" in built.trace
     assert any(t.startswith("- SQL: L") for t in built.trace)
 
 
 def test_baseline_orders_contexts_by_the_lane_order(world):
     tmp, _ = world
-    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2, order: 1},",
-          "example_secondary: {min: 1, max: 2, order: 5},")
-    _edit(tmp / "resume.yaml", "example_secondary: {min: 1, max: 2}, example_tertiary: {min: 1, max: 2}}\n  EDU",
-          "example_secondary: {min: 1, max: 2, order: 1}, example_tertiary: {min: 1, max: 2}}\n  EDU")
+    _edit(
+        tmp / "resume.yaml",
+        "example_secondary: {min: 1, max: 2, order: 1},",
+        "example_secondary: {min: 1, max: 2, order: 5},",
+    )
+    _edit(
+        tmp / "resume.yaml",
+        "example_secondary: {min: 1, max: 2}, example_tertiary: {min: 1, max: 2}}\n  EDU",
+        "example_secondary: {min: 1, max: 2, order: 1}, example_tertiary: {min: 1, max: 2}}\n  EDU",
+    )
     src = resume_model.load_sources()
-    md = resume_model.build(src, "example_secondary", resume_model.baseline_plan(src, "example_secondary")).markdown
+    md = resume_model.build(
+        src, "example_secondary", resume_model.baseline_plan(src, "example_secondary")
+    ).markdown
     assert md.index("**Cog Assistant**") < md.index("**Sprocket Validator**")
 
 

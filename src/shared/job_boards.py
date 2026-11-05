@@ -11,6 +11,7 @@ Not here on purpose: `fill.py`'s SUBMIT_REQUEST_* tables. Those are measured
 submit-*endpoint* paths, not board identity — folding them in would break the
 POST-gating that makes submission detection safe.
 """
+
 from __future__ import annotations
 
 import re
@@ -43,10 +44,13 @@ class AtsSource:
     host_res: tuple[re.Pattern[str], ...] = field(init=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "host_res", tuple(
-            re.compile(rf"(?:^|\.){re.escape(s)}$", re.IGNORECASE)
-            for s in self.host_suffixes
-        ))
+        object.__setattr__(
+            self,
+            "host_res",
+            tuple(
+                re.compile(rf"(?:^|\.){re.escape(s)}$", re.IGNORECASE) for s in self.host_suffixes
+            ),
+        )
 
     def matches_host(self, host: str) -> bool:
         return any(r.search(host) for r in self.host_res)
@@ -143,16 +147,12 @@ _BY_NAME = {s.name: s for s in ATS_SOURCES}
 ATS_SOURCE_NAMES: tuple[str, ...] = tuple(s.name for s in ATS_SOURCES if s.board_lane)
 
 #: Boards `apply run --submit` can actually reach.
-SUBMITTABLE_SOURCES: frozenset[str] = frozenset(
-    s.name for s in ATS_SOURCES if s.submittable
-)
+SUBMITTABLE_SOURCES: frozenset[str] = frozenset(s.name for s in ATS_SOURCES if s.submittable)
 
 #: Board -> browser driver class name. Keys equal SUBMITTABLE_SOURCES by
 #: construction, so a driver cannot be added without widening the promise the
 #: shortlist makes.
-DRIVER_NAMES: dict[str, str] = {
-    s.name: s.driver_name for s in ATS_SOURCES if s.driver_name
-}
+DRIVER_NAMES: dict[str, str] = {s.name: s.driver_name for s in ATS_SOURCES if s.driver_name}
 
 
 @dataclass(frozen=True)
@@ -199,8 +199,9 @@ def _query_fallback(src: AtsSource, url: str) -> PostingUrl | None:
     posting_id = ids.pop()
     if not posting_id.isdigit():
         return None
-    return PostingUrl(source=src.name, slug=slugs.pop() if len(slugs) == 1 else "",
-                      posting_id=posting_id)
+    return PostingUrl(
+        source=src.name, slug=slugs.pop() if len(slugs) == 1 else "", posting_id=posting_id
+    )
 
 
 def parse_posting_url(url: str) -> PostingUrl | None:

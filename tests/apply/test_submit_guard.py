@@ -5,6 +5,7 @@
 half — the guard in front of the click that `run_one(submit_after=True)` and
 a future `/apply run --submit` both go through.
 """
+
 from __future__ import annotations
 
 import ast
@@ -21,21 +22,38 @@ from src.shared import paths
 REPO_ROOT = paths.REPO_ROOT
 
 
-def plan(*, unmapped=(), submit_selector="#application-form button[type=submit]",
-         requires_captcha=False) -> Plan:
+def plan(
+    *, unmapped=(), submit_selector="#application-form button[type=submit]", requires_captcha=False
+) -> Plan:
     return Plan(
-        job_id="a1b2c3d4", board="gasketworks", token="1",
+        job_id="a1b2c3d4",
+        board="gasketworks",
+        token="1",
         form_url="https://boards.greenhouse.io/embed/job_app?token=1",
-        company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
-        fields=(), files=(), unmapped=tuple(unmapped), draftable=(), skipped=(),
-        submit_selector=submit_selector, submit_disabled=False,
+        company="Gasket Works",
+        title="Widget Engineer",
+        out_dir=Path("/tmp"),
+        fields=(),
+        files=(),
+        unmapped=tuple(unmapped),
+        draftable=(),
+        skipped=(),
+        submit_selector=submit_selector,
+        submit_disabled=False,
         requires_captcha=requires_captcha,
     )
 
 
 def unmapped(id="why_us", required=True) -> Unmapped:
-    return Unmapped(id=id, label="Why us?", required=required, kind="textarea",
-                     section="questions", tier="C", reason="no question in the bank asks this")
+    return Unmapped(
+        id=id,
+        label="Why us?",
+        required=required,
+        kind="textarea",
+        section="questions",
+        tier="C",
+        reason="no question in the bank asks this",
+    )
 
 
 class FakeSubmitDriver:
@@ -88,7 +106,7 @@ class FakeSubmitDriver:
         """The board is given time to answer before the page is judged."""
 
     def submission_rejected(self):
-        return getattr(self, 'rejects', '')
+        return getattr(self, "rejects", "")
 
     def submission_refused(self):
         """No refusal. The default has to stay "it went out": absence of
@@ -140,7 +158,6 @@ class TestFillFailureBlocks:
         submit(plan(), result, d)
         assert len(d.clicked) == 1
 
-
     def test_an_unattended_run_never_clicks(self, monkeypatch):
         monkeypatch.setenv("APPLY_UNATTENDED", "1")
         d = FakeSubmitDriver()
@@ -175,20 +192,28 @@ class TestRunOneNeverSubmitsByDefault:
 
         class Ctx:
             pages = []
+
             def new_page(self):
                 return object()
+
             def close(self):
                 pass
 
         class P:
-            chromium = type("C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+            chromium = type(
+                "C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())}
+            )()
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 return False
 
         monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
-        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x"))
+        monkeypatch.setattr(
+            F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x")
+        )
 
         run_one(plan(), submit_after=False)
         assert called == []
@@ -196,20 +221,28 @@ class TestRunOneNeverSubmitsByDefault:
     def test_submit_after_true_reaches_submit_and_records_the_result(self, monkeypatch):
         class Ctx:
             pages = []
+
             def new_page(self):
                 return object()
+
             def close(self):
                 pass
 
         class P:
-            chromium = type("C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+            chromium = type(
+                "C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())}
+            )()
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 return False
 
         monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
-        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x"))
+        monkeypatch.setattr(
+            F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x")
+        )
         monkeypatch.setattr(F, "BrowserDriver", lambda page: FakeSubmitDriver())
 
         result = run_one(plan(), submit_after=True)
@@ -220,15 +253,21 @@ class TestRunOneNeverSubmitsByDefault:
         # One parked role in a queue must not kill the run.
         class Ctx:
             pages = []
+
             def new_page(self):
                 return object()
+
             def close(self):
                 pass
 
         class P:
-            chromium = type("C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+            chromium = type(
+                "C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())}
+            )()
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 return False
 
@@ -262,8 +301,9 @@ class TestRunOneWithoutSubmitCannotClick:
                 pass
 
         class P:
-            chromium = type("C", (), {
-                "launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+            chromium = type(
+                "C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())}
+            )()
 
             def __enter__(self):
                 return self
@@ -276,8 +316,7 @@ class TestRunOneWithoutSubmitCannotClick:
     def test_a_driver_that_would_have_clicked_is_never_asked_to(self, monkeypatch):
         driver = FakeSubmitDriver()
         monkeypatch.setattr(F, "_require_playwright", self._playwright())
-        monkeypatch.setattr(F, "fill_plan",
-                            lambda plan, drv, answers, result=None: result)
+        monkeypatch.setattr(F, "fill_plan", lambda plan, drv, answers, result=None: result)
         monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
 
         result = F.run_one(plan())
@@ -286,14 +325,11 @@ class TestRunOneWithoutSubmitCannotClick:
         assert result.submitted is False
         assert result.submit_error == ""
 
-    def test_the_same_driver_does_click_from_the_submitting_entry_point(
-        self, monkeypatch
-    ):
+    def test_the_same_driver_does_click_from_the_submitting_entry_point(self, monkeypatch):
         """Otherwise the test above passes because the fake never clicks."""
         driver = FakeSubmitDriver()
         monkeypatch.setattr(F, "_require_playwright", self._playwright())
-        monkeypatch.setattr(F, "fill_plan",
-                            lambda plan, drv, answers, result=None: result)
+        monkeypatch.setattr(F, "fill_plan", lambda plan, drv, answers, result=None: result)
         monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
 
         result = F.run_one(plan(), submit_after=True)
@@ -301,13 +337,10 @@ class TestRunOneWithoutSubmitCannotClick:
         assert driver.clicked == [plan().submit_selector]
         assert result.submitted is True
 
-    def test_fill_publishes_its_result_into_the_sink_before_the_browser_opens(
-        self, monkeypatch
-    ):
+    def test_fill_publishes_its_result_into_the_sink_before_the_browser_opens(self, monkeypatch):
         sink: list = []
         monkeypatch.setattr(F, "_require_playwright", self._playwright())
-        monkeypatch.setattr(F, "fill_plan",
-                            lambda plan, drv, answers, result=None: result)
+        monkeypatch.setattr(F, "fill_plan", lambda plan, drv, answers, result=None: result)
         monkeypatch.setattr(F, "_driver_for", lambda ats, page: FakeSubmitDriver())
 
         result = F.run_one(plan(), sink=sink)
@@ -330,8 +363,13 @@ class TestStaticSubmitSelectorBoundary:
         straight past it — and it only visited `ast.FunctionDef`, so an
         `async def` driver method was not even looked at.
         """
-        allowed = {"submit", "click_submit", "submit_disabled_now",
-                    "submission_confirmed", "wait_for_captcha"}
+        allowed = {
+            "submit",
+            "click_submit",
+            "submit_disabled_now",
+            "submission_confirmed",
+            "wait_for_captcha",
+        }
         # Anything that can activate a control. `press` covers Enter-in-input,
         # which submits a form without any click at all.
         activating = {"click", "press", "dblclick", "tap", "check", "submit"}
@@ -367,13 +405,14 @@ class TestStaticSubmitSelectorBoundary:
         """A guard that cannot fail is not a guard. The old substring form
         passed this exact line."""
         source = (
-            "def rogue(page):\n"
-            "    page.get_by_role('button', name='Submit application').click()\n"
+            "def rogue(page):\n    page.get_by_role('button', name='Submit application').click()\n"
         )
         activating = {"click", "press", "dblclick", "tap", "check", "submit"}
         hits = [
-            n for n in ast.walk(ast.parse(source))
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            n
+            for n in ast.walk(ast.parse(source))
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
             and n.func.attr in activating
             and "submit" in (ast.get_source_segment(source, n) or "").lower()
         ]
@@ -382,14 +421,13 @@ class TestStaticSubmitSelectorBoundary:
     def test_the_guard_visits_async_methods(self):
         """`ast.FunctionDef` does not match `async def`, so an async driver
         method was invisible to the old guard."""
-        source = (
-            "async def rogue(page):\n"
-            "    await page.locator(submit_selector).click()\n"
-        )
-        seen = [n.name for n in ast.walk(ast.parse(source))
-                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        source = "async def rogue(page):\n    await page.locator(submit_selector).click()\n"
+        seen = [
+            n.name
+            for n in ast.walk(ast.parse(source))
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
         assert seen == ["rogue"]
-
 
 
 class TestACaptchaNeverSolvedIsNeverSubmitted:
@@ -417,32 +455,36 @@ class TestACaptchaNeverSolvedIsNeverSubmitted:
         assert d.clicked == [p.submit_selector]
         assert result.submitted is False, "the captcha was never solved; nothing was sent"
 
-    def test_run_one_reports_unsubmitted_when_the_captcha_wait_explodes(
-        self, monkeypatch
-    ):
+    def test_run_one_reports_unsubmitted_when_the_captcha_wait_explodes(self, monkeypatch):
         class CaptchaExplodes(FakeSubmitDriver):
             def wait_for_captcha(self):
                 raise TimeoutError("hCaptcha never solved")
 
         class Ctx:
             pages = []
+
             def new_page(self):
                 return object()
+
             def close(self):
                 pass
 
         class P:
-            chromium = type("C", (), {
-                "launch_persistent_context": staticmethod(lambda **kw: Ctx())})()
+            chromium = type(
+                "C", (), {"launch_persistent_context": staticmethod(lambda **kw: Ctx())}
+            )()
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 return False
 
         p = plan(requires_captcha=True)
         monkeypatch.setattr(F, "_require_playwright", lambda: lambda: P())
-        monkeypatch.setattr(F, "fill_plan",
-                            lambda plan, driver, answers, result=None: FillResult(form_url="x"))
+        monkeypatch.setattr(
+            F, "fill_plan", lambda plan, driver, answers, result=None: FillResult(form_url="x")
+        )
         monkeypatch.setattr(F, "BrowserDriver", lambda page: CaptchaExplodes())
 
         result = run_one(p, submit_after=True)
@@ -496,8 +538,7 @@ class TestTheBrowserItselfCanRefuseTheForm:
         assert result.submitted is False
 
     def test_the_guard_names_every_offending_field(self):
-        d = FakeSubmitDriver(invalid=["eeo[disabilitySignature]",
-                                      "eeo[disabilitySignatureDate]"])
+        d = FakeSubmitDriver(invalid=["eeo[disabilitySignature]", "eeo[disabilitySignatureDate]"])
         with pytest.raises(F.SubmitGuardError) as exc:
             submit(plan(), FillResult(form_url="x"), d)
         assert "eeo[disabilitySignature]" in str(exc.value)
@@ -613,10 +654,15 @@ class TestTheLeverSubmitMarker:
             self.handler = handler
 
     def _response(self, method, url, status):
-        return type("Resp", (), {
-            "status": status, "url": url,
-            "request": type("R", (), {"method": method})(),
-        })()
+        return type(
+            "Resp",
+            (),
+            {
+                "status": status,
+                "url": url,
+                "request": type("R", (), {"method": method})(),
+            },
+        )()
 
     def _sink_for(self, method, url, status, ats="lever"):
         page = self.FakePage()
@@ -643,9 +689,11 @@ class TestTheLeverSubmitMarker:
 
     def test_the_captcha_and_third_party_posts_are_not_the_submission(self):
         """Measured alongside the submit: these fire on their own hosts."""
-        for url in ("https://api.hcaptcha.com/getcaptcha/e33f87f8",
-                    "https://www.linkedin.com/li/track",
-                    "https://www.linkedin.com/talentwidgets/apply-with-linkedin"):
+        for url in (
+            "https://api.hcaptcha.com/getcaptcha/e33f87f8",
+            "https://www.linkedin.com/li/track",
+            "https://www.linkedin.com/talentwidgets/apply-with-linkedin",
+        ):
             assert self._sink_for("POST", url, 200) == [], url
 
     def test_the_redirect_allowance_is_not_global(self):
@@ -653,10 +701,15 @@ class TestTheLeverSubmitMarker:
         treating one as success there would be a guess."""
         assert "ashby" not in F.SUBMIT_REQUEST_REDIRECT_OK
         assert "greenhouse" not in F.SUBMIT_REQUEST_REDIRECT_OK
-        assert self._sink_for(
-            "POST", "https://jobs.ashbyhq.com/api/non-user-graphql", 302,
-            ats="ashby",
-        ) == []
+        assert (
+            self._sink_for(
+                "POST",
+                "https://jobs.ashbyhq.com/api/non-user-graphql",
+                302,
+                ats="ashby",
+            )
+            == []
+        )
 
 
 class TestTheOutcomeOfAClick:
@@ -700,8 +753,9 @@ class TestTheOutcomeOfAClick:
     def test_before_click_runs_before_the_click(self):
         d = FakeSubmitDriver()
         seen = []
-        submit(plan(), FillResult(form_url="x"), d,
-               before_click=lambda: seen.append(list(d.clicked)))
+        submit(
+            plan(), FillResult(form_url="x"), d, before_click=lambda: seen.append(list(d.clicked))
+        )
         assert seen == [[]]
 
 
@@ -709,7 +763,9 @@ def test_an_ashby_autosave_is_not_a_submit_request():
     # 8475e862 was reported submitted on two `op=ApiSetFormValue` autosaves.
     marker = F.SUBMIT_REQUEST_MARKERS["ashby"][0]
     assert marker not in "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSetFormValue"
-    assert marker in ("https://jobs.ashbyhq.com/api/non-user-graphql"
-                      "?op=ApiSubmitSingleApplicationFormAction")
-    assert marker in ("https://jobs.ashbyhq.com/api/non-user-graphql"
-                      "?op=ApiSubmitMultipleFormsAction")
+    assert marker in (
+        "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction"
+    )
+    assert marker in (
+        "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitMultipleFormsAction"
+    )

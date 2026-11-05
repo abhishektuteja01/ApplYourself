@@ -7,6 +7,7 @@ are touched, new ones get an id (dedupe.py). Nothing is re-derived from raw file
 Deterministic and LLM-free (R7). Reads pipeline/*/state.yaml, never writes it
 (R10).
 """
+
 from __future__ import annotations
 
 import json
@@ -29,17 +30,50 @@ STORE = paths.STORE
 MAYBE_DUPES = paths.MAYBE_DUPES
 
 STORE_COLUMNS: list[str] = [
-    "posting_key", "job_id", "source", "board",
-    "company", "company_normalized", "title", "title_normalized", "vertical",
-    "location_raw", "url", "jd_text", "posted_date", "remote_flag",
-    "salary_min", "salary_max", "salary_currency", "employment_type", "seniority_raw",
-    "found_by_term", "found_by_remote", "updated_at",
-    "first_seen", "last_seen", "last_score",
+    "posting_key",
+    "job_id",
+    "source",
+    "board",
+    "company",
+    "company_normalized",
+    "title",
+    "title_normalized",
+    "vertical",
+    "location_raw",
+    "url",
+    "jd_text",
+    "posted_date",
+    "remote_flag",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "employment_type",
+    "seniority_raw",
+    "found_by_term",
+    "found_by_remote",
+    "updated_at",
+    "first_seen",
+    "last_seen",
+    "last_score",
 ]
 _STRING_COLUMNS = [
-    "posting_key", "job_id", "source", "board", "company", "company_normalized",
-    "title", "title_normalized", "vertical", "location_raw", "url", "jd_text",
-    "salary_currency", "employment_type", "seniority_raw", "found_by_term", "updated_at",
+    "posting_key",
+    "job_id",
+    "source",
+    "board",
+    "company",
+    "company_normalized",
+    "title",
+    "title_normalized",
+    "vertical",
+    "location_raw",
+    "url",
+    "jd_text",
+    "salary_currency",
+    "employment_type",
+    "seniority_raw",
+    "found_by_term",
+    "updated_at",
 ]
 _DATE_COLUMNS = ["posted_date", "first_seen", "last_seen"]
 # Fields a fresh copy of a known posting may update. job_id, first_seen and
@@ -47,14 +81,26 @@ _DATE_COLUMNS = ["posted_date", "first_seen", "last_seen"]
 # next copy of the same role look like a hash collision. The shown company
 # name may improve ("whatfix101" -> "Whatfix").
 _REFRESH_FIELDS = [
-    "company", "vertical", "location_raw", "url", "jd_text", "posted_date", "remote_flag",
-    "salary_min", "salary_max", "salary_currency", "employment_type",
-    "seniority_raw", "updated_at", "board",
+    "company",
+    "vertical",
+    "location_raw",
+    "url",
+    "jd_text",
+    "posted_date",
+    "remote_flag",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "employment_type",
+    "seniority_raw",
+    "updated_at",
+    "board",
 ]
 
 # ---------------------------------------------------------------------
 # load / save
 # ---------------------------------------------------------------------
+
 
 def empty_store() -> pd.DataFrame:
     return coerce_store(pd.DataFrame(columns=STORE_COLUMNS))
@@ -90,16 +136,30 @@ def save_store(df: pd.DataFrame, path: Path | None = None) -> None:
 # a night's changes, collected from the lane threads
 # ---------------------------------------------------------------------
 
+
 def make_posting(**fields) -> dict:
     """A store-shaped row from a source. `url` is required; the key, the
     normalized names and the board are derived here, once."""
     row = {c: "" for c in _STRING_COLUMNS}
-    row.update({"posted_date": None, "remote_flag": False, "found_by_remote": False,
-                "salary_min": None, "salary_max": None, "last_score": None})
+    row.update(
+        {
+            "posted_date": None,
+            "remote_flag": False,
+            "found_by_remote": False,
+            "salary_min": None,
+            "salary_max": None,
+            "last_score": None,
+        }
+    )
     # "_"-prefixed fields ride along for the lane (a posting id to fetch the
     # JD with) and never reach the store: coerce_store keeps STORE_COLUMNS only.
-    row.update({k: v for k, v in fields.items()
-                if k in STORE_COLUMNS or k == "key_url" or k.startswith("_")})
+    row.update(
+        {
+            k: v
+            for k, v in fields.items()
+            if k in STORE_COLUMNS or k == "key_url" or k.startswith("_")
+        }
+    )
     for col in _STRING_COLUMNS:
         if row[col] is None:
             row[col] = ""
@@ -170,9 +230,14 @@ class ApplyStats:
         self.maybe_duplicates += [m for m in other.maybe_duplicates if m["pair"] not in seen]
 
 
-def apply_batch(store: pd.DataFrame, batch: Batch, today: pd.Timestamp,
-                tracked: frozenset[str], live_days: int,
-                trim: Trim = NO_TRIM) -> tuple[pd.DataFrame, ApplyStats]:
+def apply_batch(
+    store: pd.DataFrame,
+    batch: Batch,
+    today: pd.Timestamp,
+    tracked: frozenset[str],
+    live_days: int,
+    trim: Trim = NO_TRIM,
+) -> tuple[pd.DataFrame, ApplyStats]:
     """The store with `batch` folded in. Known keys are refreshed or touched;
     new keys get an id by the first rule that matches: a known url, a known
     company+title pair, the same role from another source, else the hash."""
@@ -230,12 +295,19 @@ def apply_batch(store: pd.DataFrame, batch: Batch, today: pd.Timestamp,
                 continue
             maybe_pairs.add(key)
             c = m["cand"]
-            stats.maybe_duplicates.append({
-                "pair": key, "job_id": jid, "other": other,
-                "company": row["company_normalized"], "other_company": c["company_normalized"],
-                "title": row["title_normalized"], "jd_score": round(m["score"], 1),
-                "reason": m["reason"],
-                "date": str(today.date())})
+            stats.maybe_duplicates.append(
+                {
+                    "pair": key,
+                    "job_id": jid,
+                    "other": other,
+                    "company": row["company_normalized"],
+                    "other_company": c["company_normalized"],
+                    "title": row["title_normalized"],
+                    "jd_score": round(m["score"], 1),
+                    "reason": m["reason"],
+                    "date": str(today.date()),
+                }
+            )
         if jid not in known_ids:
             known_ids.add(jid)
             stats.new_job_ids.append(jid)
@@ -247,8 +319,14 @@ def apply_batch(store: pd.DataFrame, batch: Batch, today: pd.Timestamp,
     return store, stats
 
 
-def flush(batch: Batch, today: pd.Timestamp, tracked: frozenset[str], live_days: int,
-          path: Path | None = None, trim: Trim = NO_TRIM) -> ApplyStats:
+def flush(
+    batch: Batch,
+    today: pd.Timestamp,
+    tracked: frozenset[str],
+    live_days: int,
+    path: Path | None = None,
+    trim: Trim = NO_TRIM,
+) -> ApplyStats:
     """Empty `batch` into the store: read, fold in, write, under the store's
     lock, so a concurrent `ingest-url` waits rather than being overwritten.
     New maybe duplicates are appended to the store's maybe_duplicates.jsonl."""
@@ -299,8 +377,9 @@ def remember_scores(store: pd.DataFrame, scores: dict[str, float]) -> pd.DataFra
     return store
 
 
-def forget(store: pd.DataFrame, today: pd.Timestamp, forget_after_days: int,
-           tracked: frozenset[str]) -> tuple[pd.DataFrame, int]:
+def forget(
+    store: pd.DataFrame, today: pd.Timestamp, forget_after_days: int, tracked: frozenset[str]
+) -> tuple[pd.DataFrame, int]:
     """Drop untracked postings not seen for `forget_after_days`."""
     cutoff = pd.Timestamp(today).normalize() - pd.Timedelta(days=forget_after_days)
     old = (store["last_seen"] < cutoff) & ~store["job_id"].isin(tracked)

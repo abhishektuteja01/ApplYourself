@@ -4,6 +4,7 @@ Every other test monkeypatches fetch_json away, so these are the only tests that
 execute the retry loop. No real network call: requests.get and time.sleep are
 both replaced.
 """
+
 import pytest
 import requests
 
@@ -44,6 +45,7 @@ def responses(monkeypatch):
             if isinstance(item, Exception):
                 raise item
             return item
+
         monkeypatch.setattr(http, "_get", fake_get)
         return calls
 
@@ -57,10 +59,13 @@ def test_200_returns_payload_without_sleeping(responses, sleeps):
     assert sleeps == []
 
 
-@pytest.mark.parametrize("exc", [
-    requests.exceptions.JSONDecodeError("Expecting value", "<html>", 0),
-    ValueError("no json"),
-])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        requests.exceptions.JSONDecodeError("Expecting value", "<html>", 0),
+        ValueError("no json"),
+    ],
+)
 def test_non_json_200_raises_careers_error_without_retrying(responses, sleeps, exc):
     calls = responses([FakeResponse(200, json_exc=exc)])
     with pytest.raises(CareersError, match="invalid JSON body"):
@@ -86,29 +91,35 @@ def test_non_retryable_status_raises_immediately(responses, sleeps):
 
 
 def test_retry_after_is_capped(responses, sleeps):
-    responses([
-        FakeResponse(429, headers={"Retry-After": "3600"}),
-        FakeResponse(200, {"ok": True}),
-    ])
+    responses(
+        [
+            FakeResponse(429, headers={"Retry-After": "3600"}),
+            FakeResponse(200, {"ok": True}),
+        ]
+    )
     assert fetch_json("https://x/board") == {"ok": True}
     assert sleeps == [http.MAX_RETRY_AFTER]
 
 
 def test_retry_after_below_cap_is_honored_verbatim(responses, sleeps):
-    responses([
-        FakeResponse(429, headers={"Retry-After": "5"}),
-        FakeResponse(200, {"ok": True}),
-    ])
+    responses(
+        [
+            FakeResponse(429, headers={"Retry-After": "5"}),
+            FakeResponse(200, {"ok": True}),
+        ]
+    )
     assert fetch_json("https://x/board") == {"ok": True}
     assert sleeps == [5.0]
 
 
 @pytest.mark.parametrize("header", ["Wed, 05 Aug 2026 07:28:00 GMT", "1.5", "soon", ""])
 def test_unparseable_retry_after_falls_back_to_exponential(responses, sleeps, header):
-    responses([
-        FakeResponse(503, headers={"Retry-After": header}),
-        FakeResponse(200, {"ok": True}),
-    ])
+    responses(
+        [
+            FakeResponse(503, headers={"Retry-After": header}),
+            FakeResponse(200, {"ok": True}),
+        ]
+    )
     assert fetch_json("https://x/board") == {"ok": True}
     assert sleeps == [http.RETRY_BASE_DELAY * 2]
 
@@ -116,16 +127,20 @@ def test_unparseable_retry_after_falls_back_to_exponential(responses, sleeps, he
 def test_future_http_date_retry_after_is_honoured(responses, sleeps, monkeypatch):
     monkeypatch.setattr(http.time, "time", lambda: 1_000_000_000.0)
     from email.utils import formatdate
-    responses([
-        FakeResponse(429, headers={"Retry-After": formatdate(1_000_000_020.0, usegmt=True)}),
-        FakeResponse(200, {"ok": True}),
-    ])
+
+    responses(
+        [
+            FakeResponse(429, headers={"Retry-After": formatdate(1_000_000_020.0, usegmt=True)}),
+            FakeResponse(200, {"ok": True}),
+        ]
+    )
     assert fetch_json("https://x/board") == {"ok": True}
     assert sleeps == [20.0]
 
 
 def test_session_is_reused_per_thread_and_refuses_cookies():
     import threading
+
     a, b = http._session(), http._session()
     assert a is b
     other = []
@@ -184,10 +199,12 @@ def test_deadline_crossing_retry_raises_without_sleeping(responses, sleeps, monk
 
 def test_deadline_with_room_still_sleeps(responses, sleeps, monkeypatch):
     monkeypatch.setattr(http.time, "time", lambda: 1000.0)
-    responses([
-        FakeResponse(429, headers={"Retry-After": "10"}),
-        FakeResponse(200, {"ok": True}),
-    ])
+    responses(
+        [
+            FakeResponse(429, headers={"Retry-After": "10"}),
+            FakeResponse(200, {"ok": True}),
+        ]
+    )
     assert fetch_json("https://x/board", deadline_ts=9999.0) == {"ok": True}
     assert sleeps == [10.0]
 
@@ -198,17 +215,22 @@ def test_deadline_ts_zero_means_no_deadline(responses, sleeps):
     assert sleeps == [http.MAX_RETRY_AFTER]
 
 
-@pytest.mark.parametrize("queue, status, permanent", [
-    ([FakeResponse(404)], 404, True),
-    ([FakeResponse(200, json_exc=ValueError("no json"))], 200, True),
-    ([FakeResponse(403)], 403, False),
-    ([FakeResponse(401)], 401, False),
-    ([FakeResponse(500)], 500, False),
-    ([FakeResponse(429)], 429, False),
-    ([requests.Timeout("timed out")], None, False),
-    ([requests.ConnectionError("reset")], None, False),
-])
-def test_error_carries_structured_status_and_permanence(responses, sleeps, queue, status, permanent):
+@pytest.mark.parametrize(
+    "queue, status, permanent",
+    [
+        ([FakeResponse(404)], 404, True),
+        ([FakeResponse(200, json_exc=ValueError("no json"))], 200, True),
+        ([FakeResponse(403)], 403, False),
+        ([FakeResponse(401)], 401, False),
+        ([FakeResponse(500)], 500, False),
+        ([FakeResponse(429)], 429, False),
+        ([requests.Timeout("timed out")], None, False),
+        ([requests.ConnectionError("reset")], None, False),
+    ],
+)
+def test_error_carries_structured_status_and_permanence(
+    responses, sleeps, queue, status, permanent
+):
     """Only a 404 or a non-JSON 200 is permanent; nothing else may strike a board."""
     responses(queue)
     with pytest.raises(CareersError) as exc_info:
@@ -234,13 +256,19 @@ def test_status_404_is_not_inferred_from_a_url_containing_404(responses, sleeps)
 
 
 def test_an_observer_sees_every_attempt_including_the_retry(responses, sleeps):
-    responses([FakeResponse(429, headers={"Retry-After": "2", "cf-mitigated": "challenge"}),
-               FakeResponse(200, {"ok": 1})])
+    responses(
+        [
+            FakeResponse(429, headers={"Retry-After": "2", "cf-mitigated": "challenge"}),
+            FakeResponse(200, {"ok": 1}),
+        ]
+    )
     events = []
     with http.observe(events.append):
         assert fetch_json("https://x/board") == {"ok": 1}
     assert [(e["url"], e["status"]) for e in events] == [
-        ("https://x/board", 429), ("https://x/board", 200)]
+        ("https://x/board", 429),
+        ("https://x/board", 200),
+    ]
     assert all(e["secs"] >= 0 for e in events)
 
 
@@ -257,6 +285,7 @@ def test_a_failing_observer_does_not_fail_the_fetch(responses, sleeps):
 
     def broken(event):
         raise RuntimeError("trace bug")
+
     with http.observe(broken):
         assert fetch_json("https://x/board") == {"ok": 1}
 

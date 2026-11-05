@@ -8,6 +8,7 @@ DOM at all — `reconcile.py` adds them from the API.
 
 Pure function over an HTML string: no browser, no network.
 """
+
 from __future__ import annotations
 
 import re
@@ -19,16 +20,18 @@ FORM_ID = "application-form"
 
 # Widget kinds the scanner emits. A rendered control that maps to none of these
 # raises rather than being dropped — a missed required field is a failed submit.
-KINDS = frozenset({
-    "text",
-    "number",
-    "tel",
-    "textarea",
-    "file",
-    "react_select",
-    "checkbox",
-    "checkbox_group",
-})
+KINDS = frozenset(
+    {
+        "text",
+        "number",
+        "tel",
+        "textarea",
+        "file",
+        "react_select",
+        "checkbox",
+        "checkbox_group",
+    }
+)
 
 # input[type] -> kind. Types absent here raise.
 _INPUT_TYPES = {
@@ -62,11 +65,19 @@ _SECTION_IDS = {"demographic-section": "demographic"}
 # authored — which is exactly how the employment block was missed. Disagreement
 # is an error, not a fallback.
 _BLOCK_ID_SHAPES = (
-    ("education", re.compile(
-        r"^(?:school|degree|discipline|start-year|end-year|start-month|end-month)--\d+$")),
-    ("employment", re.compile(
-        r"^(?:company-name|title|start-date-month|start-date-year|end-date-month"
-        r"|end-date-year|current-role)-\d+(?:_\d+)?$")),
+    (
+        "education",
+        re.compile(
+            r"^(?:school|degree|discipline|start-year|end-year|start-month|end-month)--\d+$"
+        ),
+    ),
+    (
+        "employment",
+        re.compile(
+            r"^(?:company-name|title|start-date-month|start-date-year|end-date-month"
+            r"|end-date-year|current-role)-\d+(?:_\d+)?$"
+        ),
+    ),
     ("eeoc", re.compile(r"^(?:gender|hispanic_ethnicity|veteran_status|disability_status)$")),
     ("demographic", re.compile(r"^\d+$")),
 )
@@ -86,14 +97,14 @@ class DomOption:
 
 @dataclass(frozen=True)
 class DomField:
-    id: str            # verbatim, including any "[]" — this is the selector
-    name: str          # "[]" stripped, so it matches the API's field name
+    id: str  # verbatim, including any "[]" — this is the selector
+    name: str  # "[]" stripped, so it matches the API's field name
     label: str
     required: bool
     kind: str
     section: str
     multi: bool = False
-    options: tuple[DomOption, ...] = ()   # checkbox_group only
+    options: tuple[DomOption, ...] = ()  # checkbox_group only
 
 
 @dataclass(frozen=True)
@@ -196,10 +207,7 @@ def _is_multi_select(el) -> bool:
     # Walk the whole way up rather than stopping at the first `select`-ish
     # ancestor: the two classes can nest in either order, and breaking on the
     # inner one hid an `--is-multi` sitting outside it.
-    return any(
-        "select__value-container--is-multi" in _classes(anc)
-        for anc in _ancestors(el)
-    )
+    return any("select__value-container--is-multi" in _classes(anc) for anc in _ancestors(el))
 
 
 def _file_group(el):
@@ -224,7 +232,7 @@ def _file_group(el):
         # adopting it hands the file field that section's label and required
         # flag — an optional cover letter became a required
         # "Voluntary Self-Identification".
-        controls = anc.xpath('.//input | .//select | .//textarea')
+        controls = anc.xpath(".//input | .//select | .//textarea")
         if all((c.get("type") or "").lower() == "file" for c in controls):
             fallback = anc
     return fallback
@@ -275,8 +283,7 @@ def scan_form(page_html: str) -> FormScan:
         # ParserError on a bodyless doctype. Neither is a DomScanError, so
         # neither was in `apply_cli.BUILD_ERRORS` — instead of one role
         # failing, the whole queue walk died.
-        raise DomScanError(f"could not parse the document: "
-                            f"{type(exc).__name__}: {exc}") from exc
+        raise DomScanError(f"could not parse the document: {type(exc).__name__}: {exc}") from exc
     forms = doc.xpath(f'//form[@id="{FORM_ID}"]')
     if not forms:
         raise DomScanError(f"no <form id={FORM_ID!r}> in the document")
@@ -330,7 +337,9 @@ def scan_form(page_html: str) -> FormScan:
             # Nothing can be filled without a selector. Loud only when it
             # matters — an unlabelled optional decoy is not worth failing on.
             if _required(el):
-                raise DomScanError(f"required {kind} field has no id: {lxml_html.tostring(el)[:200]!r}")
+                raise DomScanError(
+                    f"required {kind} field has no id: {lxml_html.tostring(el)[:200]!r}"
+                )
             continue
 
         if kind == "file":
@@ -345,15 +354,17 @@ def scan_form(page_html: str) -> FormScan:
             label = _label_for(form, el, field_id)
             required = _required(el)
 
-        fields.append(DomField(
-            id=field_id,
-            name=(el.get("name") or field_id).removesuffix("[]"),
-            label=label,
-            required=required,
-            kind=kind,
-            section=_section(el),
-            multi=_is_multi_select(el) if kind == "react_select" else False,
-        ))
+        fields.append(
+            DomField(
+                id=field_id,
+                name=(el.get("name") or field_id).removesuffix("[]"),
+                label=label,
+                required=required,
+                kind=kind,
+                section=_section(el),
+                multi=_is_multi_select(el) if kind == "react_select" else False,
+            )
+        )
 
     for field in fields:
         for block, pattern in _BLOCK_ID_SHAPES:

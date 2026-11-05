@@ -10,6 +10,7 @@
 
 Nothing here writes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,11 +22,13 @@ from src.shared import paths
 def _get(section: str, key: str) -> object:
     if section == "automation":
         from src.shared.config_keys import load_automation
+
         data = load_automation(paths.PROFILE / "automation.yaml")
         if key not in data:
             raise ValueError(f"automation.yaml has no `{key}`")
         return data[key]
     from src.discovery.config import load_config
+
     cfg = load_config()
     if not hasattr(cfg, key):
         raise ValueError(f"discovery.yaml has no `{key}`")
@@ -34,6 +37,7 @@ def _get(section: str, key: str) -> object:
 
 def _verticals(lane: str | None) -> list[str]:
     from src.shared.verticals import load_verticals
+
     c = load_verticals()
     out = [f"lanes: {' '.join(c.names)}", f"default: {c.default_vertical}"]
     if lane is None:
@@ -54,6 +58,7 @@ def _verticals(lane: str | None) -> list[str]:
 def _misclassified(lane: str) -> str:
     from src.shared.title_gate import classify_vertical_from_title as c
     from src.shared.verticals import get_config
+
     v = get_config().verticals[lane]
     bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != lane]
     return f"MISCLASSIFIED: {bad or 'none'}"
@@ -63,15 +68,19 @@ def _reclassify() -> list[str]:
     import pandas as pd
 
     from src.shared.title_gate import classify_vertical_from_title as c
+
     d = pd.read_parquet(paths.CLEAN)
     now = d.title.map(c)
     moved = d[now != d.vertical.fillna("")]
-    return [f"{len(moved)} rows would reclassify",
-            moved.assign(new=now[moved.index])[["title", "vertical", "new"]].head(30).to_string()]
+    return [
+        f"{len(moved)} rows would reclassify",
+        moved.assign(new=now[moved.index])[["title", "vertical", "new"]].head(30).to_string(),
+    ]
 
 
 def _work_auth(country: str) -> str:
     from src.apply.answers import AnswersError, load_answers
+
     try:
         a = load_answers()
     except AnswersError as exc:
@@ -82,8 +91,9 @@ def _work_auth(country: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="config", description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        prog="config", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("get")
     g.add_argument("section", choices=("automation", "discovery"))
@@ -105,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(_verticals(args.lane)))
         elif args.cmd == "classify":
             from src.shared.title_gate import classify_vertical_from_title as c
+
             for t in args.titles:
                 print(f"{t} -> {c(t) or '(none)'}")
         elif args.cmd == "misclassified":

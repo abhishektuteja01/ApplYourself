@@ -20,6 +20,7 @@ no option list to validate against beforehand are `country` (32),
 `playwright` is an optional dependency (`uv sync --group apply`); `browser.py`
 is the only module in `src/` that names the driver.
 """
+
 from __future__ import annotations
 
 import logging
@@ -115,7 +116,7 @@ UPLOAD_ERROR_MARKERS = (
 # it is safe where inverting CONFIRMATION_MARKERS would not be. Absence still
 # means "assume submitted"; only an explicit refusal reopens the question.
 SUBMIT_REFUSED_MARKERS = (
-    "please try again when they",       # "...when they're finished"
+    "please try again when they",  # "...when they're finished"
     "updating your application",
     # Ashby can answer the submit request 200 (GraphQL's success-status
     # convention, not the application's) and still re-render the form with
@@ -192,9 +193,7 @@ SUBMIT_REQUEST_POLL_MS = 500
 # entry for required field: LinkedIn Profile". Generic — matched against
 # whatever `submission_refused()` read, not gated to one ats — so a board that
 # renders the same wording gets the same recovery for free.
-MISSING_FIELD_PATTERN = re.compile(
-    r"missing entry for required field:\s*(.+)", re.IGNORECASE
-)
+MISSING_FIELD_PATTERN = re.compile(r"missing entry for required field:\s*(.+)", re.IGNORECASE)
 # Wait between field writes. A board can debounce its own answered/validation
 # state, and a fill fast enough to outrun that gets a varying subset of
 # correctly-written fields reported missing at submit. Applied to every board:
@@ -221,8 +220,8 @@ class SubmitGuardError(Exception):
 @dataclass
 class FieldOutcome:
     id: str
-    action: str             # filled | attached | failed
-    before: str = ""        # what was in the field before we wrote to it
+    action: str  # filled | attached | failed
+    before: str = ""  # what was in the field before we wrote to it
     after: str = ""
     note: str = ""
 
@@ -342,7 +341,8 @@ def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
     name once per unticked box.
     """
     checked_names = {
-        r["name"] for r in rows
+        r["name"]
+        for r in rows
         if r.get("name") and r.get("type") == "checkbox" and r.get("checked")
     }
     reported: dict[str, list[dict]] = {}
@@ -357,10 +357,7 @@ def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
         satisfied_group = (
             key
             and key in checked_names
-            and all(
-                m.get("type") == "checkbox" and m.get("valueMissing")
-                for m in members
-            )
+            and all(m.get("type") == "checkbox" and m.get("valueMissing") for m in members)
         )
         if satisfied_group:
             continue
@@ -444,8 +441,9 @@ class BrowserDriver:
         return self.selected_label(field_id)
 
     def selected_label(self, field_id: str) -> str:
-        container = self._locator(field_id).locator("xpath=ancestor::*[contains(@class,"
-                                                    "'select__container')][1]")
+        container = self._locator(field_id).locator(
+            "xpath=ancestor::*[contains(@class,'select__container')][1]"
+        )
         if container.count() == 0:
             return ""
         parts = []
@@ -459,9 +457,7 @@ class BrowserDriver:
 
     def _upload_group(self, field_id: str):
         """The widget wrapping this file input, or an empty locator."""
-        return self.page.locator(
-            f"div.file-upload[aria-labelledby='upload-label-{field_id}']"
-        )
+        return self.page.locator(f"div.file-upload[aria-labelledby='upload-label-{field_id}']")
 
     def set_files(self, field_id: str, path: Path) -> None:
         """Upload through the widget's own control rather than the input.
@@ -483,9 +479,7 @@ class BrowserDriver:
             button = group.first.get_by_role("button", name="Attach")
             if button.count():
                 try:
-                    with self.page.expect_file_chooser(
-                        timeout=UPLOAD_CHOOSER_TIMEOUT
-                    ) as chooser:
+                    with self.page.expect_file_chooser(timeout=UPLOAD_CHOOSER_TIMEOUT) as chooser:
                         button.first.click()
                     chooser.value.set_files(str(path))
                     return
@@ -620,8 +614,7 @@ class BrowserDriver:
         the board actually rendered.
         """
         try:
-            text = self.page.locator("body").inner_text(
-                timeout=UPLOAD_READBACK_TIMEOUT)
+            text = self.page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
         except Exception:  # noqa: BLE001 - unreadable page is not a refusal
             return ""
         lowered = text.casefold()
@@ -638,8 +631,7 @@ class BrowserDriver:
         itself when nothing follows it.
         """
         try:
-            text = self.page.locator("body").inner_text(
-                timeout=UPLOAD_READBACK_TIMEOUT)
+            text = self.page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
         except Exception:  # noqa: BLE001 - unreadable page is not a rejection
             return ""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -1385,14 +1377,18 @@ def _merged_from(field: FieldPlan, options: tuple[str, ...]) -> MergedField:
     """The planned field as reconcile would have produced it, had the options
     been readable without a browser."""
     return MergedField(
-        id=field.id, name=field.name, label=field.label, required=field.required,
-        kind=field.kind, section=field.section, multi=field.multi,
+        id=field.id,
+        name=field.name,
+        label=field.label,
+        required=field.required,
+        kind=field.kind,
+        section=field.section,
+        multi=field.multi,
         options=tuple(MergedOption(label=o) for o in options),
     )
 
 
-def _relabel(field: FieldPlan, options: tuple[str, ...],
-             answers: Answers | None) -> str | None:
+def _relabel(field: FieldPlan, options: tuple[str, ...], answers: Answers | None) -> str | None:
     """Re-resolve a field against the options actually on screen. Same rule as
     the plan used, better input — never a fuzzy match on the planned string."""
     if answers is None:
@@ -1401,13 +1397,16 @@ def _relabel(field: FieldPlan, options: tuple[str, ...],
     if resolution.action != "fill":
         return None
     value = resolution.value
-    return value[0] if isinstance(value, tuple) and value else (
-        value if isinstance(value, str) else None
+    return (
+        value[0]
+        if isinstance(value, tuple) and value
+        else (value if isinstance(value, str) else None)
     )
 
 
-def _select(driver, field: FieldPlan, label: str, result: FillResult,
-            answers: Answers | None = None) -> str:
+def _select(
+    driver, field: FieldPlan, label: str, result: FillResult, answers: Answers | None = None
+) -> str:
     """Type a label into a react-select, click the matching option, and prove it
     stuck. Returns the value now showing; raises FillError if nothing stuck."""
     driver.type_into(field.id, label)
@@ -1453,8 +1452,9 @@ def _select(driver, field: FieldPlan, label: str, result: FillResult,
     return shown
 
 
-def _apply_field(driver, field: FieldPlan, result: FillResult,
-                 answers: Answers | None = None) -> FieldOutcome:
+def _apply_field(
+    driver, field: FieldPlan, result: FillResult, answers: Answers | None = None
+) -> FieldOutcome:
     before = driver.value_of(field.id)
     kind = driver.resolve_kind(field.id, field.kind)
     if kind != field.kind:
@@ -1534,7 +1534,10 @@ def _attach(driver, upload: FilePlan) -> FieldOutcome:
     held = driver.attached_files(upload.name)
     if held is None:
         return FieldOutcome(
-            upload.id, "attached", "", upload.path.name,
+            upload.id,
+            "attached",
+            "",
+            upload.path.name,
             note="attached, unverified: the input was replaced after upload",
         )
     if not held:
@@ -1546,8 +1549,9 @@ def _attach(driver, upload: FilePlan) -> FieldOutcome:
     return FieldOutcome(upload.id, "attached", "", upload.path.name)
 
 
-def fill_plan(plan: Plan, driver, answers: Answers | None = None,
-              result: FillResult | None = None) -> FillResult:
+def fill_plan(
+    plan: Plan, driver, answers: Answers | None = None, result: FillResult | None = None
+) -> FillResult:
     """Drive one plan to a filled — never submitted — form.
 
     Attachments go first and the page is allowed to settle, because an upload
@@ -1587,8 +1591,9 @@ def fill_plan(plan: Plan, driver, answers: Answers | None = None,
     return result
 
 
-def _probe_parked_selects(driver, plan: Plan, result: FillResult,
-                          answers: Answers | None = None) -> None:
+def _probe_parked_selects(
+    driver, plan: Plan, result: FillResult, answers: Answers | None = None
+) -> None:
     """Read the option list of every parked react-select, and re-resolve it.
 
     A parked field is not filled, so its widget is never opened, so the one
@@ -1628,8 +1633,12 @@ def _probe_parked_selects(driver, plan: Plan, result: FillResult,
             continue
 
         field = MergedField(
-            id=parked.id, name=parked.id, label=parked.label,
-            required=parked.required, kind=parked.kind, section=parked.section,
+            id=parked.id,
+            name=parked.id,
+            label=parked.label,
+            required=parked.required,
+            kind=parked.kind,
+            section=parked.section,
             multi=parked.multi,
             options=tuple(MergedOption(label=o) for o in options),
         )
@@ -1637,9 +1646,15 @@ def _probe_parked_selects(driver, plan: Plan, result: FillResult,
         if resolution.action != "fill":
             continue
         plan_field = FieldPlan(
-            id=parked.id, name=parked.id, label=parked.label, kind=parked.kind,
-            section=parked.section, required=parked.required, multi=parked.multi,
-            value=resolution.value, tier=resolution.tier,
+            id=parked.id,
+            name=parked.id,
+            label=parked.label,
+            kind=parked.kind,
+            section=parked.section,
+            required=parked.required,
+            multi=parked.multi,
+            value=resolution.value,
+            tier=resolution.tier,
         )
         try:
             outcome = _apply_field(driver, plan_field, result, answers)
@@ -1682,15 +1697,17 @@ def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
     for u in plan.unmapped:
         if u.id in recovered:
             continue
-        rows.append({
-            "id": u.id,
-            "label": u.label,
-            "tier": u.tier,
-            "reason": u.reason,
-            "source": u.source,
-            "options": list(result.observed_options.get(u.id) or u.options),
-            "description": u.description,
-        })
+        rows.append(
+            {
+                "id": u.id,
+                "label": u.label,
+                "tier": u.tier,
+                "reason": u.reason,
+                "source": u.source,
+                "options": list(result.observed_options.get(u.id) or u.options),
+                "description": u.description,
+            }
+        )
     return tuple(rows)
 
 
@@ -1773,8 +1790,9 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
             "group": group,
             "planned": planned,
             "actual": actual,
-            "matches": any(_matches(field_id, live, want, actual)
-                           for want in (planned, *alternates)),
+            "matches": any(
+                _matches(field_id, live, want, actual) for want in (planned, *alternates)
+            ),
             "prefilled": bool(outcome.was_prefilled) if outcome else False,
             "before": outcome.before if outcome else "",
             "invalid": field_id in invalid,
@@ -1783,15 +1801,27 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
         }
 
     for f in plan.fields:
-        rows.append(row(f.id, f.label, f.kind, _planned_text(f.value), "filled",
-                        options=f.options, tier=f.tier, source=f.source,
-                        alternates=f.alternates))
+        rows.append(
+            row(
+                f.id,
+                f.label,
+                f.kind,
+                _planned_text(f.value),
+                "filled",
+                options=f.options,
+                tier=f.tier,
+                source=f.source,
+                alternates=f.alternates,
+            )
+        )
     for u in plan.unmapped:
-        rows.append(row(u.id, u.label, u.kind, "", "parked",
-                        options=u.options, tier=u.tier, reason=u.reason))
+        rows.append(
+            row(
+                u.id, u.label, u.kind, "", "parked", options=u.options, tier=u.tier, reason=u.reason
+            )
+        )
     for d in plan.draftable:
-        rows.append(row(d.id, d.label, d.kind, "", "left blank",
-                        options=d.options, tier=d.tier))
+        rows.append(row(d.id, d.label, d.kind, "", "left blank", options=d.options, tier=d.tier))
     for s in plan.skipped:
         rows.append(row(s.id, s.label, "text", "", "skipped", tier=s.tier))
     for f in plan.files:
@@ -1800,14 +1830,21 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
             attached = driver.attached_files(f.id)
         except Exception:  # noqa: BLE001
             pass
-        rows.append({
-            "id": f.id, "label": f.label, "kind": "file", "group": "attached",
-            "planned": f.path.name,
-            "actual": ", ".join(attached) if attached else "",
-            "matches": bool(attached) and f.path.name in attached,
-            "prefilled": False, "before": "", "invalid": f.id in invalid,
-            "options": [],
-        })
+        rows.append(
+            {
+                "id": f.id,
+                "label": f.label,
+                "kind": "file",
+                "group": "attached",
+                "planned": f.path.name,
+                "actual": ", ".join(attached) if attached else "",
+                "matches": bool(attached) and f.path.name in attached,
+                "prefilled": False,
+                "before": "",
+                "invalid": f.id in invalid,
+                "options": [],
+            }
+        )
     return rows
 
 
@@ -1819,8 +1856,7 @@ def _planned_text(value) -> str:
     return str(value)
 
 
-_CHOICE_KINDS = frozenset({"select", "react_select", "yesno", "radio_group",
-                           "checkbox_group"})
+_CHOICE_KINDS = frozenset({"select", "react_select", "yesno", "radio_group", "checkbox_group"})
 
 
 def _matches(field_id: str, kind: str, planned: str, actual: str) -> bool:
@@ -1848,8 +1884,11 @@ def _matches(field_id: str, kind: str, planned: str, actual: str) -> bool:
 def form_check(manifest: list[dict]) -> list[str]:
     """Filled fields whose page value is not what was planned. Any one refuses
     the submit click: the form that goes out must be the form that was read."""
-    return [f"{r['label'] or r['id']}: planned {r['planned']!r}, page holds {r['actual']!r}"
-            for r in manifest if r.get("group") == "filled" and not r.get("matches")]
+    return [
+        f"{r['label'] or r['id']}: planned {r['planned']!r}, page holds {r['actual']!r}"
+        for r in manifest
+        if r.get("group") == "filled" and not r.get("matches")
+    ]
 
 
 def _reverify_fields(driver, plan: Plan) -> None:
@@ -1944,8 +1983,9 @@ def _reverify_fields(driver, plan: Plan) -> None:
                 continue
 
 
-def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = None,
-           before_click=None) -> None:
+def submit(
+    plan: Plan, result: FillResult, driver, answers: Answers | None = None, before_click=None
+) -> None:
     """Click the one submit button on an already-filled form.
 
     The only path to a real click — `fill_plan` never reaches it, by
@@ -2102,8 +2142,7 @@ def submit(plan: Plan, result: FillResult, driver, answers: Answers | None = Non
                 try:
                     outcome = _apply_field(driver, missed, result, answers)
                 except FillError as exc:
-                    log.info("re-apply after refusal failed for %s: %s",
-                              missed.id, exc)
+                    log.info("re-apply after refusal failed for %s: %s", missed.id, exc)
                     continue
                 outcome.note = "reapplied after the board named it missing"
                 result.outcomes.append(outcome)
@@ -2177,9 +2216,16 @@ def capture_submit_evidence(driver, plan, result: FillResult | None = None) -> P
         return None
 
 
-def run_one(plan: Plan, answers: Answers | None = None, *, sink: list | None = None,
-            headless: bool = False, submit_after: bool = False, after=None,
-            before_click=None) -> FillResult:
+def run_one(
+    plan: Plan,
+    answers: Answers | None = None,
+    *,
+    sink: list | None = None,
+    headless: bool = False,
+    submit_after: bool = False,
+    after=None,
+    before_click=None,
+) -> FillResult:
     """Open a browser, fill the form, and — only when `submit_after` is set —
     make the one guarded click, all inside the same session. A real
     submission needs the click on the page it just filled; a fresh browser

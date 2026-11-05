@@ -4,6 +4,7 @@ The interesting cases are the ones that silently return nothing: a table-based
 resume (python-docx's .paragraphs list is empty for it) and contact details
 parked in a header.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -128,9 +129,7 @@ class TestCLI:
         assert main() == 0
         assert "Jane Roe" in capsys.readouterr().out
 
-    def test_empty_document_is_an_error_not_silent_success(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_empty_document_is_an_error_not_silent_success(self, tmp_path, monkeypatch, capsys):
         """A scanned-image resume extracts to nothing; saying so beats handing
         the onboarding session an empty string to interview against."""
         p = tmp_path / "r.md"

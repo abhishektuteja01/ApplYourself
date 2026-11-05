@@ -36,6 +36,7 @@ works unchanged.
 
 `fields_from_application_form` is pure; network lives in `load_board`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -105,10 +106,12 @@ _TYPE_KINDS = {
 # it (some boards render the resume under a UUID path). Any other upload
 # keeps its own path, even one whose title says "CV".
 _FILE_ALIASES = (
-    ("resume", frozenset({"_systemfield_resume"}),
-     re.compile(r"\bresume\b|\bcv\b", re.IGNORECASE)),
-    ("cover_letter", frozenset({"cover_letter", "_systemfield_coverletter"}),
-     re.compile(r"cover\s*letter", re.IGNORECASE)),
+    ("resume", frozenset({"_systemfield_resume"}), re.compile(r"\bresume\b|\bcv\b", re.IGNORECASE)),
+    (
+        "cover_letter",
+        frozenset({"cover_letter", "_systemfield_coverletter"}),
+        re.compile(r"cover\s*letter", re.IGNORECASE),
+    ),
 )
 
 # `EducationHistory` is not a question — it is a repeating sub-form delivered
@@ -153,7 +156,7 @@ _QUESTION_DESCRIPTION_CLASS = "ashby-application-form-question-description"
 _SUBMIT_CLASS = "ashby-application-form-submit-button"
 #: Stated without the DOM in hand: the class is unhashed and resolves to
 #: exactly one button on every live board measured.
-SUBMIT_SELECTOR = f'#{ROOT_ID} .{_SUBMIT_CLASS}'
+SUBMIT_SELECTOR = f"#{ROOT_ID} .{_SUBMIT_CLASS}"
 
 
 class AshbyScanError(DomScanError):
@@ -204,6 +207,7 @@ class _Schema:
 class AshbyBoard:
     """Same attribute shape as `greenhouse.BoardForm` — `plan_for_board` is
     duck-typed over it on purpose."""
+
     posting: Posting
     slug: str
     scan: _Scan
@@ -255,9 +259,7 @@ def fetch_application_form(posting: Posting, timeout: int = 30) -> dict:
 
     job_posting = (payload.get("data") or {}).get("jobPosting")
     if not job_posting:
-        raise PostingExpired(
-            f"posting {posting.job_id} is gone: {posting.form_url}"
-        )
+        raise PostingExpired(f"posting {posting.job_id} is gone: {posting.form_url}")
     if not job_posting.get("applicationForm"):
         raise AshbyScanError(
             f"{posting.form_url}: the posting exists but carries no applicationForm"
@@ -282,8 +284,7 @@ def _file_aliases(job_posting: dict) -> dict[str, str]:
     for alias, system_paths, title_re in _FILE_ALIASES:
         pick = next((p for p, _ in uploads if p in system_paths), None)
         if pick is None:
-            pick = next((p for p, t in uploads
-                         if p not in aliases and title_re.search(t)), None)
+            pick = next((p for p, t in uploads if p not in aliases and title_re.search(t)), None)
         if pick is not None and pick not in aliases:
             aliases[pick] = alias
     return aliases
@@ -301,7 +302,7 @@ def _education_history_fields(field: dict, path: str) -> list[MergedField]:
     for sub in _EDUCATION_SUBFIELD_ORDER:
         declared = field.get(sub)
         if declared is None:
-            continue      # this board does not collect that sub-field
+            continue  # this board does not collect that sub-field
         required = str(declared).lower() == "required"
         if sub not in _EDUCATION_SUBFIELDS and not required:
             # An unmapped sub-field is dropped while optional rather than
@@ -311,28 +312,28 @@ def _education_history_fields(field: dict, path: str) -> list[MergedField]:
             # leaving them alone. Required ones are still emitted, and park
             # loudly, which is the outcome that deserves attention.
             continue
-        fields.append(MergedField(
-            id=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
-            name=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
-            label=f"{field.get('title') or 'Education'}: {sub}",
-            required=required,
-            kind=_EDUCATION_KINDS.get(sub, "text"),
-            # `id` above is Greenhouse's, for `answers.py`. Ashby renders the
-            # whole block under one path, so the DOM lookup needs the real
-            # one plus which control in it.
-            dom_path=path,
-            dom_control=_EDUCATION_CONTROLS.get(sub, "").format(path=path),
-            # `resolve` dispatches the repeating blocks on section, not on id,
-            # so this is what routes these to `answers.education` rather than
-            # leaving them to the keyword rules.
-            section="education",
-            multi=False,
-            options=(),
-        ))
-    if not fields:
-        raise AshbyScanError(
-            f"{path}: an EducationHistory field declaring no sub-fields"
+        fields.append(
+            MergedField(
+                id=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
+                name=_EDUCATION_SUBFIELDS.get(sub, f"{path}.{sub}"),
+                label=f"{field.get('title') or 'Education'}: {sub}",
+                required=required,
+                kind=_EDUCATION_KINDS.get(sub, "text"),
+                # `id` above is Greenhouse's, for `answers.py`. Ashby renders the
+                # whole block under one path, so the DOM lookup needs the real
+                # one plus which control in it.
+                dom_path=path,
+                dom_control=_EDUCATION_CONTROLS.get(sub, "").format(path=path),
+                # `resolve` dispatches the repeating blocks on section, not on id,
+                # so this is what routes these to `answers.education` rather than
+                # leaving them to the keyword rules.
+                section="education",
+                multi=False,
+                options=(),
+            )
         )
+    if not fields:
+        raise AshbyScanError(f"{path}: an EducationHistory field declaring no sub-fields")
     return fields
 
 
@@ -351,15 +352,13 @@ def _api_field(entry: dict, file_aliases: dict[str, str]) -> list[MergedField]:
     if kind is None:
         # Loud rather than guessed.
         raise AshbyScanError(
-            f"unknown Ashby field type {raw_type!r} on path={path!r} "
-            f"({field.get('title')!r})"
+            f"unknown Ashby field type {raw_type!r} on path={path!r} ({field.get('title')!r})"
         )
 
     field_id = file_aliases.get(path, path) if kind == "file" else path
 
     if kind == "yesno":
-        options = (MergedOption(label="Yes", value="yes"),
-                   MergedOption(label="No", value="no"))
+        options = (MergedOption(label="Yes", value="yes"), MergedOption(label="No", value="no"))
     else:
         options = tuple(
             MergedOption(label=str(v.get("label", "")), value=str(v.get("value", "")))
@@ -367,25 +366,27 @@ def _api_field(entry: dict, file_aliases: dict[str, str]) -> list[MergedField]:
             if isinstance(v, dict)
         )
 
-    return [MergedField(
-        id=field_id,
-        # File fields alias `id` to the canonical `resume`/`cover_letter` the
-        # planner speaks, but the DOM still keys the field by its real path —
-        # `_systemfield_resume` on most boards, an employer-authored UUID on
-        # Nen. `name` carries that real path through to fill.py rather than
-        # a static id->path table, which only ever knew the two systemfield
-        # spellings and left every other real path unreachable.
-        name=path if kind == "file" else field_id,
-        label=field.get("title") or "",
-        required=bool(entry.get("isRequired")),
-        kind=kind,
-        # Ashby's demographic questionnaire is a separate form this query does
-        # not return — no section across 150 boards was one — so everything
-        # here is an ordinary application question.
-        section="questions",
-        multi=bool(field.get("isMany")),
-        options=options,
-    )]
+    return [
+        MergedField(
+            id=field_id,
+            # File fields alias `id` to the canonical `resume`/`cover_letter` the
+            # planner speaks, but the DOM still keys the field by its real path —
+            # `_systemfield_resume` on most boards, an employer-authored UUID on
+            # Nen. `name` carries that real path through to fill.py rather than
+            # a static id->path table, which only ever knew the two systemfield
+            # spellings and left every other real path unreachable.
+            name=path if kind == "file" else field_id,
+            label=field.get("title") or "",
+            required=bool(entry.get("isRequired")),
+            kind=kind,
+            # Ashby's demographic questionnaire is a separate form this query does
+            # not return — no section across 150 boards was one — so everything
+            # here is an ordinary application question.
+            section="questions",
+            multi=bool(field.get("isMany")),
+            options=options,
+        )
+    ]
 
 
 def fields_from_application_form(job_posting: dict) -> Reconciled:
@@ -405,8 +406,7 @@ def fields_from_application_form(job_posting: dict) -> Reconciled:
                     if seen[merged.id] == source:
                         continue
                     raise AshbyScanError(
-                        f"two fields map to id {merged.id!r}: "
-                        f"{seen[merged.id]!r} and {source!r}"
+                        f"two fields map to id {merged.id!r}: {seen[merged.id]!r} and {source!r}"
                     )
                 seen[merged.id] = source
                 fields.append(merged)
@@ -451,7 +451,9 @@ def fetch_dom_enrichment(url: str, timeout: int = 30) -> dict[str, str]:
             page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
             page.wait_for_selector("[data-field-path]", timeout=timeout * 1000)
             return page.eval_on_selector_all(
-                "[data-field-path]", _DOM_ENRICHMENT_SCRIPT, _QUESTION_DESCRIPTION_CLASS,
+                "[data-field-path]",
+                _DOM_ENRICHMENT_SCRIPT,
+                _QUESTION_DESCRIPTION_CLASS,
             )
         finally:
             context.close()
@@ -511,8 +513,7 @@ def load_board(url: str, timeout: int = 30) -> AshbyBoard:
         posting=posting,
         slug=posting.slug,
         scan=_Scan(submit_selector=SUBMIT_SELECTOR, submit_disabled=False),
-        schema=_Schema(company_name=unquote(posting.slug),
-                       title=job_posting.get("title") or ""),
+        schema=_Schema(company_name=unquote(posting.slug), title=job_posting.get("title") or ""),
         reconciled=reconciled,
         html="",
         requires_captcha=False,

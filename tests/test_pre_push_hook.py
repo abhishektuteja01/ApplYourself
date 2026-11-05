@@ -33,8 +33,13 @@ pytestmark = pytest.mark.skipif(
 
 def _git(repo, *args, **kw):
     return subprocess.run(
-        ["git", *args], cwd=repo, check=kw.pop("check", True),
-        capture_output=True, text=True, encoding="utf-8", **kw
+        ["git", *args],
+        cwd=repo,
+        check=kw.pop("check", True),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        **kw,
     )
 
 
@@ -72,7 +77,11 @@ def _push(repo, local_sha, remote_sha=ZERO):
     line = f"refs/heads/master {local_sha} refs/heads/master {remote_sha}\n"
     return subprocess.run(
         ["bash", str(HOOK), "origin", "git@example.com:x/y.git"],
-        cwd=repo, input=line, capture_output=True, text=True, encoding="utf-8",
+        cwd=repo,
+        input=line,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
 
 

@@ -14,6 +14,7 @@ returns empty.
 Sources (bullets.md, skills_master.md, resume.yaml) are linted once at the
 source by `verticals-check`; builds lint only the text a session wrote.
 """
+
 from __future__ import annotations
 
 import re
@@ -46,8 +47,15 @@ _DEFAULT_RULES_PATH = paths.PROFILE / "de_ai_rules.yaml"
 # The keys de_ai_rules.yaml `mechanical:` must define. The file is the only
 # source of the replacement values.
 MECH_KEYS = (
-    "em_dash", "en_dash_in_range", "en_dash_parenthetical", "hyphen",
-    "smart_quote_single", "smart_quote_double", "ellipsis", "nbsp", "zero_width",
+    "em_dash",
+    "en_dash_in_range",
+    "en_dash_parenthetical",
+    "hyphen",
+    "smart_quote_single",
+    "smart_quote_double",
+    "ellipsis",
+    "nbsp",
+    "zero_width",
 )
 
 
@@ -58,6 +66,7 @@ class LintConfigError(ValueError):
 # =====================================================================
 # Rule loading
 # =====================================================================
+
 
 def load_de_ai_rules(path: Path | None = None) -> dict:
     """Load profile/de_ai_rules.yaml. A missing file raises LintConfigError."""
@@ -73,8 +82,7 @@ def _mech_rules(rules: dict | None) -> dict:
     m = rules.get("mechanical") or {}
     missing = [k for k in MECH_KEYS if k not in m]
     if missing:
-        raise LintConfigError(
-            f"profile/de_ai_rules.yaml mechanical: missing keys {missing}")
+        raise LintConfigError(f"profile/de_ai_rules.yaml mechanical: missing keys {missing}")
     return m
 
 
@@ -82,24 +90,28 @@ def _mech_rules(rules: dict | None) -> dict:
 # Shared token tests
 # =====================================================================
 
-_MONTHS = (r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|"
-           r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?")
-_WEEKDAYS = (r"mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs(?:day)?)?|"
-             r"fri(?:day)?|sat(?:urday)?|sun(?:day)?")
+_MONTHS = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|"
+    r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
+_WEEKDAYS = (
+    r"mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs(?:day)?)?|"
+    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?"
+)
 _DATE_WORD = re.compile(rf"(?:{_MONTHS}|{_WEEKDAYS})\.?", re.IGNORECASE)
 # An open-ended range ends in a word, not a digit: "May 2022 – Present".
 # The lookahead keeps an aside out: in "in 2024 – now the standard" the word
 # continues into prose, where a real end-date terminates its field.
 _OPEN_ENDED_RANGE = re.compile(
-    r"\s*(present|current|now|ongoing|to date)\b(?!\s+\w)", re.IGNORECASE)
+    r"\s*(present|current|now|ongoing|to date)\b(?!\s+\w)", re.IGNORECASE
+)
 _EDGE_PUNCT = "()[]{},;:'\"*"
 
 
 def _is_range_end(token: str) -> bool:
     """A number ("2024", "40%", "'26") or a month/weekday name."""
     token = token.strip(_EDGE_PUNCT)
-    return bool(re.fullmatch(r"[~$]?\d[\d.,]*%?|'\d\d", token)
-                or _DATE_WORD.fullmatch(token))
+    return bool(re.fullmatch(r"[~$]?\d[\d.,]*%?|'\d\d", token) or _DATE_WORD.fullmatch(token))
 
 
 def _dash_is_range(line: str, i: int) -> bool:
@@ -107,18 +119,17 @@ def _dash_is_range(line: str, i: int) -> bool:
     "2022–2024", "May 2022 – Jul 2024", "Mon–Fri", "May 2022 – Present",
     "40%–60%". Anything else is an aside ("the plan – now revised")."""
     left = re.search(r"(\S+)\s*$", line[:i])
-    right = re.match(r"\s*(\S+)", line[i + 1:])
+    right = re.match(r"\s*(\S+)", line[i + 1 :])
     if not left or not _is_range_end(re.split(r"[–—―]", left.group(1))[-1]):
         return False
-    if _OPEN_ENDED_RANGE.match(line[i + 1:]):
+    if _OPEN_ENDED_RANGE.match(line[i + 1 :]):
         return True
     return bool(right) and _is_range_end(re.split(r"[–—―]", right.group(1))[0])
 
 
 def _dash_is_minus(line: str, i: int) -> bool:
     """A dash glued to a number on its right with nothing on its left: "–5%"."""
-    return (i + 1 < len(line) and line[i + 1].isdigit()
-            and (i == 0 or line[i - 1] in " (["))
+    return i + 1 < len(line) and line[i + 1].isdigit() and (i == 0 or line[i - 1] in " ([")
 
 
 # =====================================================================
@@ -169,18 +180,30 @@ def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Subs
                     j += 1
                 last = j
             parts.append(repl)
-            subs.append(Substitution(line=lineno, column=i + 1, original=dash.group(),
-                                     replacement=repl, category=category))
+            subs.append(
+                Substitution(
+                    line=lineno,
+                    column=i + 1,
+                    original=dash.group(),
+                    replacement=repl,
+                    category=category,
+                )
+            )
         parts.append(line[last:])
         new_line = "".join(parts)
 
         for category, chars in _CHAR_SUBSTITUTIONS:
             for ch in chars:
                 for match in re.finditer(re.escape(ch), line):
-                    subs.append(Substitution(
-                        line=lineno, column=match.start() + 1, original=ch,
-                        replacement=m[category], category=category,
-                    ))
+                    subs.append(
+                        Substitution(
+                            line=lineno,
+                            column=match.start() + 1,
+                            original=ch,
+                            replacement=m[category],
+                            category=category,
+                        )
+                    )
                 new_line = new_line.replace(ch, m[category])
 
         out_lines.append(new_line)
@@ -223,8 +246,7 @@ _PROTECTED = (
 )
 # Where a sentence starts: the line start after any list marker, or after
 # sentence-ending punctuation.
-_SENTENCE_START = re.compile(
-    r"^\s*(?:[-*•]\s+|\d+[.)]\s+)?|[.!?;:][\"')\]]*\s+")
+_SENTENCE_START = re.compile(r"^\s*(?:[-*•]\s+|\d+[.)]\s+)?|[.!?;:][\"')\]]*\s+")
 _NUMBER_AHEAD = re.compile(r"\s*[~$]?\d")
 
 
@@ -274,9 +296,7 @@ def find_phrase_violations(
 
     # Phrase categories: every banned_phrases sub-list (skip the no_emoji /
     # no_exclamation booleans).
-    phrase_cats: dict[str, list[str]] = {
-        k: v for k, v in banned.items() if isinstance(v, list)
-    }
+    phrase_cats: dict[str, list[str]] = {k: v for k, v in banned.items() if isinstance(v, list)}
     if context == "outreach":
         outreach_only = rules.get("outreach_only", []) or []
         if outreach_only:
@@ -298,20 +318,28 @@ def find_phrase_violations(
                         r"\b(?:hi|hello|hey|dear|greetings)[^.!?\n]*!",
                         lower,
                     ):
-                        violations.append(Violation(
-                            line=lineno, column=m.start() + 1,
-                            phrase=line[m.start():m.end()], category=category,
-                        ))
+                        violations.append(
+                            Violation(
+                                line=lineno,
+                                column=m.start() + 1,
+                                phrase=line[m.start() : m.end()],
+                                category=category,
+                            )
+                        )
                     continue
                 # filler_starters are sentence-openers: checked at the start of
                 # every sentence, never mid-sentence (the job board "Indeed,").
                 if category == "filler_starters":
                     for pos in starts:
                         if lower.startswith(phrase.lower(), pos):
-                            violations.append(Violation(
-                                line=lineno, column=pos + 1,
-                                phrase=phrase, category=category,
-                            ))
+                            violations.append(
+                                Violation(
+                                    line=lineno,
+                                    column=pos + 1,
+                                    phrase=phrase,
+                                    category=category,
+                                )
+                            )
                     continue
                 pat = re.escape(phrase.lower())
                 # Word-boundary only when phrase starts AND ends with a word char.
@@ -322,25 +350,40 @@ def find_phrase_violations(
                 for m in re.finditer(pat, lower):
                     # A hedge before a number states precision, not doubt:
                     # "approximately 40%" is the bullet's own claim.
-                    if (category == "hedges_when_softening_own_work"
-                            and _NUMBER_AHEAD.match(lower, m.end())):
+                    if category == "hedges_when_softening_own_work" and _NUMBER_AHEAD.match(
+                        lower, m.end()
+                    ):
                         continue
-                    violations.append(Violation(
-                        line=lineno, column=m.start() + 1,
-                        phrase=phrase, category=category,
-                    ))
+                    violations.append(
+                        Violation(
+                            line=lineno,
+                            column=m.start() + 1,
+                            phrase=phrase,
+                            category=category,
+                        )
+                    )
 
         if no_emoji:
             for i, ch in enumerate(lower):
                 if _is_emoji(ch):
-                    violations.append(Violation(
-                        line=lineno, column=i + 1, phrase=ch, category="emoji",
-                    ))
+                    violations.append(
+                        Violation(
+                            line=lineno,
+                            column=i + 1,
+                            phrase=ch,
+                            category="emoji",
+                        )
+                    )
         if no_exclamation:
             for i, ch in enumerate(lower):
                 if ch == "!":
-                    violations.append(Violation(
-                        line=lineno, column=i + 1, phrase="!", category="exclamation",
-                    ))
+                    violations.append(
+                        Violation(
+                            line=lineno,
+                            column=i + 1,
+                            phrase="!",
+                            category="exclamation",
+                        )
+                    )
 
     return violations

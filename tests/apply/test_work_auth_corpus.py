@@ -16,6 +16,7 @@ Two assertions per row, deliberately separate:
 work-authorization questions at all; they must fall through to the question
 bank, never park at B0.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,17 +36,19 @@ from .conftest import FIXTURES
 
 CORPUS = [
     json.loads(line)
-    for line in (FIXTURES / "work_auth_labels.jsonl").read_text(
-        encoding="utf-8").splitlines()
+    for line in (FIXTURES / "work_auth_labels.jsonl").read_text(encoding="utf-8").splitlines()
     if line.strip()
 ]
 
 STATUS_CLAIM = ("status_disclosure", "compound_option")
 
-OPT = CountryFacts(authorized=True, requires_sponsorship=True,
-                   status_label="F-1 STEM OPT",
-                   followup="Currently authorized to work under F-1 STEM OPT; will "
-                            "require H-1B sponsorship upon its expiration.")
+OPT = CountryFacts(
+    authorized=True,
+    requires_sponsorship=True,
+    status_label="F-1 STEM OPT",
+    followup="Currently authorized to work under F-1 STEM OPT; will "
+    "require H-1B sponsorship upon its expiration.",
+)
 CITIZEN = CountryFacts(authorized=True, requires_sponsorship=False, unrestricted=True)
 ABROAD = CountryFacts(authorized=False, requires_sponsorship=True)
 
@@ -53,16 +56,24 @@ CLAIMS = {
     "f-1": {"holds": True, "country": "United States"},
     "f1": {"holds": True, "country": "United States"},
     "stem opt": {"holds": True, "country": "United States"},
-    "i am authorized to work in the united states for any employer":
-        {"authorized": True, "country": "United States"},
-    "i require sponsorship in the country of my application now or in the future":
-        {"requires_sponsorship": True},
+    "i am authorized to work in the united states for any employer": {
+        "authorized": True,
+        "country": "United States",
+    },
+    "i require sponsorship in the country of my application now or in the future": {
+        "requires_sponsorship": True
+    },
     "yes, and i am currently in f-1 status (if you currently have opt or "
-    "stem-ext opt or cpt, you will select this answer.)":
-        {"authorized": True, "holds": True, "country": "United States"},
-    "i am authorized to work lawfully in the united states and do require "
-    "future sponsorship.":
-        {"authorized": True, "requires_sponsorship": True, "country": "United States"},
+    "stem-ext opt or cpt, you will select this answer.)": {
+        "authorized": True,
+        "holds": True,
+        "country": "United States",
+    },
+    "i am authorized to work lawfully in the united states and do require future sponsorship.": {
+        "authorized": True,
+        "requires_sponsorship": True,
+        "country": "United States",
+    },
 }
 
 
@@ -76,8 +87,13 @@ def rows_for(*categories):
 
 def field_of(row) -> MergedField:
     return MergedField(
-        id="q", name="q", label=row["label"], required=row["required"],
-        kind=row["kind"], section="questions", multi=row["multi"],
+        id="q",
+        name="q",
+        label=row["label"],
+        required=row["required"],
+        kind=row["kind"],
+        section="questions",
+        multi=row["multi"],
         api_type="multi_value_single_select" if row["options"] else "input_text",
         options=tuple(MergedOption(value=o, label=o) for o in row["options"]),
     )
@@ -91,27 +107,34 @@ def says(value, word: str) -> bool:
 def offers(row, word: str) -> bool:
     if not row["options"]:
         return True
-    return any(o.strip().rstrip(".").casefold() == word.casefold()
-               for o in row["options"])
+    return any(o.strip().rstrip(".").casefold() == word.casefold() for o in row["options"])
 
 
 def names_only_the_us(row) -> bool:
     from src.apply.answers import places_named
+
     return places_named(row["label"]) in ([], ["United States"])
 
 
 @pytest.fixture
 def opt_holder(answers):
     """An F-1 OPT holder in the US, a citizen of India, not authorized elsewhere."""
-    return dc_replace(answers, countries={"default": ABROAD, "United States": OPT,
-                                          "India": CITIZEN},
-                      nationalities=("India",), claims=CLAIMS, job_country="United States")
+    return dc_replace(
+        answers,
+        countries={"default": ABROAD, "United States": OPT, "India": CITIZEN},
+        nationalities=("India",),
+        claims=CLAIMS,
+        job_country="United States",
+    )
 
 
 @pytest.fixture
 def us_citizen(answers):
-    return dc_replace(answers, countries={"default": ABROAD, "United States": CITIZEN},
-                      job_country="United States")
+    return dc_replace(
+        answers,
+        countries={"default": ABROAD, "United States": CITIZEN},
+        job_country="United States",
+    )
 
 
 class TestTheCorpusIsWellFormed:
@@ -178,8 +201,10 @@ class TestNationality:
         r = resolve(field_of(row), opt_holder)
         assert r.action == "fill" and r.value.strip() == "India"
 
-    SECOND = ("If you hold citizenship in a second country, please select it "
-              "below. Otherwise, select None.")
+    SECOND = (
+        "If you hold citizenship in a second country, please select it "
+        "below. Otherwise, select None."
+    )
 
     def test_second_citizenship_is_none_with_one_nationality(self, opt_holder):
         r = resolve(field_of(self.ROWS[self.SECOND]), opt_holder)
@@ -234,8 +259,9 @@ class TestFollowup:
 
     @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
     def test_it_parks_without_one(self, row, opt_holder):
-        a = dc_replace(opt_holder, countries={"default": ABROAD,
-                                              "United States": dc_replace(OPT, followup="")})
+        a = dc_replace(
+            opt_holder, countries={"default": ABROAD, "United States": dc_replace(OPT, followup="")}
+        )
         r = resolve(field_of(row), a)
         assert r.action == ("park" if row["required"] else "skip")
 
@@ -248,6 +274,7 @@ class TestTheAnswerableFamilies:
     def test_authorization_follows_the_named_country(self, row, opt_holder):
         r = resolve(field_of(row), opt_holder)
         from src.apply.answers import places_named
+
         either = " or " in row["label"] and "United States" in places_named(row["label"])
         assert r.action == "fill"
         assert says(r.value, "Yes" if names_only_the_us(row) or either else "No")
@@ -288,8 +315,11 @@ class TestStatusClaims:
 
     @pytest.mark.parametrize("row", ROWS, ids=ids(ROWS))
     def test_it_parks_with_no_claims_and_no_label(self, row, opt_holder):
-        a = dc_replace(opt_holder, claims={}, countries={
-            "default": ABROAD, "United States": dc_replace(OPT, status_label="")})
+        a = dc_replace(
+            opt_holder,
+            claims={},
+            countries={"default": ABROAD, "United States": dc_replace(OPT, status_label="")},
+        )
         r = resolve(field_of(row), a)
         assert r.action == ("park" if row["required"] else "skip")
         assert r.tier == "B0"
@@ -311,11 +341,17 @@ class TestStatusClaims:
             assert r.action == "fill" and r.value == "F-1 STEM OPT"
 
     def test_an_authorization_claim_never_answers_a_sponsorship_question(self, opt_holder):
-        row = {"label": "Will you now or in the future require visa sponsorship?",
-               "required": True, "kind": "select", "multi": False,
-               "options": ["I am authorized to work in the United States for any employer",
-                           "I am authorized to work lawfully in the United States and "
-                           "DO require future sponsorship."]}
+        row = {
+            "label": "Will you now or in the future require visa sponsorship?",
+            "required": True,
+            "kind": "select",
+            "multi": False,
+            "options": [
+                "I am authorized to work in the United States for any employer",
+                "I am authorized to work lawfully in the United States and "
+                "DO require future sponsorship.",
+            ],
+        }
         r = resolve(field_of(row), opt_holder)
         assert r.value == row["options"][1]
 
@@ -331,9 +367,15 @@ class TestNoRowEverStatesSomethingFalse:
             return
         value = r.value[0] if isinstance(r.value, tuple) else r.value
         text = str(value).casefold()
-        for claim in ("will not require", "do not require", "without sponsorship",
-                      "no time limitations", "permanently authorized",
-                      "will not need sponsorship", "i am a u.s. person"):
+        for claim in (
+            "will not require",
+            "do not require",
+            "without sponsorship",
+            "no time limitations",
+            "permanently authorized",
+            "will not need sponsorship",
+            "i am a u.s. person",
+        ):
             assert claim not in text, f"{row['label']!r} answered {value!r}"
 
 
@@ -341,27 +383,36 @@ class TestCountries:
     """The same person is authorized in one country and not another."""
 
     def field(self, label, options=("Yes", "No")):
-        return MergedField(id="q", name="q", label=label, required=True, kind="select",
-                           section="questions", multi=False, api_type="x",
-                           options=tuple(MergedOption(value=o, label=o) for o in options))
+        return MergedField(
+            id="q",
+            name="q",
+            label=label,
+            required=True,
+            kind="select",
+            section="questions",
+            multi=False,
+            api_type="x",
+            options=tuple(MergedOption(value=o, label=o) for o in options),
+        )
 
     def test_an_eu_question_answers_from_the_default_row(self, opt_holder):
-        assert says(resolve(self.field("Are you eligible to work in the EU?"),
-                            opt_holder).value, "No")
+        assert says(
+            resolve(self.field("Are you eligible to work in the EU?"), opt_holder).value, "No"
+        )
 
     def test_a_country_with_no_row_is_default(self, opt_holder):
         r = resolve(self.field("Are you authorized to work in Luxembourg?"), opt_holder)
         assert says(r.value, "No")
 
     def test_sponsorship_reads_the_named_country(self, opt_holder):
-        r = resolve(self.field("Will you require visa sponsorship to work in India?"),
-                    opt_holder)
+        r = resolve(self.field("Will you require visa sponsorship to work in India?"), opt_holder)
         assert says(r.value, "No")
 
     def test_the_job_country_answers_an_unnamed_country(self, opt_holder):
         a = dc_replace(opt_holder, job_country="Germany")
-        r = resolve(self.field(
-            "Are you authorized to work in the country where this role is located?"), a)
+        r = resolve(
+            self.field("Are you authorized to work in the country where this role is located?"), a
+        )
         assert says(r.value, "No")
 
     def test_either_country_is_enough_for_or(self, opt_holder):
@@ -391,11 +442,18 @@ class TestCountries:
 
 def test_an_unreadable_job_country_parks_instead_of_guessing_home(opt_holder):
     from src.apply.answers import UNKNOWN_COUNTRY
-    f = MergedField(id="q", name="q", label="Are you authorized to work in the country "
-                    "where this role is located?", required=True, kind="select",
-                    section="questions", multi=False, api_type="x",
-                    options=(MergedOption(value="Yes", label="Yes"),
-                             MergedOption(value="No", label="No")))
+
+    f = MergedField(
+        id="q",
+        name="q",
+        label="Are you authorized to work in the country where this role is located?",
+        required=True,
+        kind="select",
+        section="questions",
+        multi=False,
+        api_type="x",
+        options=(MergedOption(value="Yes", label="Yes"), MergedOption(value="No", label="No")),
+    )
     r = resolve(f, dc_replace(opt_holder, job_country=UNKNOWN_COUNTRY))
     assert r.action == "park" and "could not be read" in r.reason
     named = MergedField(**{**f.__dict__, "label": "Are you authorized to work in the US?"})
@@ -405,27 +463,38 @@ def test_an_unreadable_job_country_parks_instead_of_guessing_home(opt_holder):
 class TestPlaceNames:
     """One vocabulary (discovery's), with the places that only look like countries masked."""
 
-    @pytest.mark.parametrize("label,expected", [
-        ("Are you authorized to work in the U.S.?", ["United States"]),
-        ("New South Wales, Australia", ["Australia"]),
-        ("Candidates in New England or New Mexico", []),
-        ("Northern Ireland", ["United Kingdom"]),
-        ("Bank of America", []),
-        ("LET US KNOW", []),
-        ("Are you authorized to work in Estonia?", ["Estonia"]),
-        ("Indiana", []),
-        ("Czech Republic", ["Czechia"]),
-        ("Are you authorized to work in Latin America?", ["Latin America"]),
-    ])
+    @pytest.mark.parametrize(
+        "label,expected",
+        [
+            ("Are you authorized to work in the U.S.?", ["United States"]),
+            ("New South Wales, Australia", ["Australia"]),
+            ("Candidates in New England or New Mexico", []),
+            ("Northern Ireland", ["United Kingdom"]),
+            ("Bank of America", []),
+            ("LET US KNOW", []),
+            ("Are you authorized to work in Estonia?", ["Estonia"]),
+            ("Indiana", []),
+            ("Czech Republic", ["Czechia"]),
+            ("Are you authorized to work in Latin America?", ["Latin America"]),
+        ],
+    )
     def test_what_a_label_names(self, label, expected):
         from src.apply.answers import places_named
+
         assert places_named(label) == expected
 
     def field(self, label):
-        return MergedField(id="q", name="q", label=label, required=True, kind="select",
-                           section="questions", multi=False, api_type="x",
-                           options=(MergedOption(value="Yes", label="Yes"),
-                                    MergedOption(value="No", label="No")))
+        return MergedField(
+            id="q",
+            name="q",
+            label=label,
+            required=True,
+            kind="select",
+            section="questions",
+            multi=False,
+            api_type="x",
+            options=(MergedOption(value="Yes", label="Yes"), MergedOption(value="No", label="No")),
+        )
 
     def test_us_with_dots_is_the_us_on_a_foreign_job(self, opt_holder):
         a = dc_replace(opt_holder, job_country="India")
@@ -433,17 +502,21 @@ class TestPlaceNames:
         assert says(r.value, "Yes")
 
     def test_an_or_elsewhere_in_the_label_is_not_either_country(self, opt_holder):
-        r = resolve(self.field("Are you authorized to work in the US and Canada? (yes or no)"),
-                    opt_holder)
+        r = resolve(
+            self.field("Are you authorized to work in the US and Canada? (yes or no)"), opt_holder
+        )
         assert says(r.value, "No")
 
     def test_a_bank_row_must_name_a_real_place(self, tmp_path):
         import yaml
 
         from src.apply.answers import AnswersError, load_answers
+
         data = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(encoding="utf-8"))
         data["work_authorization"]["countries"]["Narnia"] = {
-            "authorized": True, "requires_sponsorship": False}
+            "authorized": True,
+            "requires_sponsorship": False,
+        }
         p = tmp_path / "bank.yaml"
         p.write_text(yaml.safe_dump(data), encoding="utf-8")
         with pytest.raises(AnswersError, match="Narnia"):
@@ -451,32 +524,52 @@ class TestPlaceNames:
 
 
 class TestPlacesThatAreNotCountries:
-    @pytest.mark.parametrize("label", [
-        "Are you authorized to work in the United States? (Role based in Columbia, MD)",
-        "Are you authorized to work in the US, at our Jersey City office?",
-        "Are you authorized to work in the US (Long Island)?",
-        "Are you authorized to work in the US, at our Norfolk, VA site?",
-    ])
+    @pytest.mark.parametrize(
+        "label",
+        [
+            "Are you authorized to work in the United States? (Role based in Columbia, MD)",
+            "Are you authorized to work in the US, at our Jersey City office?",
+            "Are you authorized to work in the US (Long Island)?",
+            "Are you authorized to work in the US, at our Norfolk, VA site?",
+        ],
+    )
     def test_a_us_place_never_reads_as_another_country(self, label, opt_holder):
-        f = MergedField(id="q", name="q", label=label, required=True, kind="select",
-                        section="questions", multi=False, api_type="x",
-                        options=(MergedOption(value="Yes", label="Yes"),
-                                 MergedOption(value="No", label="No")))
+        f = MergedField(
+            id="q",
+            name="q",
+            label=label,
+            required=True,
+            kind="select",
+            section="questions",
+            multi=False,
+            api_type="x",
+            options=(MergedOption(value="Yes", label="Yes"), MergedOption(value="No", label="No")),
+        )
         assert says(resolve(f, opt_holder).value, "Yes")
 
-    @pytest.mark.parametrize("label,expected", [
-        ("Are you authorized to work in Türkiye?", ["Turkey"]),
-        ("WILL YOU REQUIRE VISA SPONSORSHIP TO WORK IN THE US?", ["United States"]),
-        ("Will you require sponsorship to work in the US/India?", ["United States", "India"]),
-    ])
+    @pytest.mark.parametrize(
+        "label,expected",
+        [
+            ("Are you authorized to work in Türkiye?", ["Turkey"]),
+            ("WILL YOU REQUIRE VISA SPONSORSHIP TO WORK IN THE US?", ["United States"]),
+            ("Will you require sponsorship to work in the US/India?", ["United States", "India"]),
+        ],
+    )
     def test_accents_capitals_and_slashes(self, label, expected):
         from src.apply.answers import places_named
+
         assert places_named(label) == expected
 
     def test_a_slash_between_places_is_either(self, opt_holder):
-        f = MergedField(id="q", name="q", label="Will you require sponsorship to work in "
-                        "the US/India?", required=True, kind="select", section="questions",
-                        multi=False, api_type="x",
-                        options=(MergedOption(value="Yes", label="Yes"),
-                                 MergedOption(value="No", label="No")))
+        f = MergedField(
+            id="q",
+            name="q",
+            label="Will you require sponsorship to work in the US/India?",
+            required=True,
+            kind="select",
+            section="questions",
+            multi=False,
+            api_type="x",
+            options=(MergedOption(value="Yes", label="Yes"), MergedOption(value="No", label="No")),
+        )
         assert says(resolve(f, opt_holder).value, "Yes")

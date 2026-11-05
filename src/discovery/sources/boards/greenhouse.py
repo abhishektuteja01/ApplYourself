@@ -1,4 +1,5 @@
 """Greenhouse: list without JDs, fetch the JD only for a new or updated posting."""
+
 from __future__ import annotations
 
 from src.discovery import parse
@@ -15,7 +16,10 @@ def posting_from(item: dict, company: str, jd: str = "") -> dict | None:
     if not title or not url:
         return None
     return make_posting(
-        source="greenhouse", company=company, title=title, url=url,
+        source="greenhouse",
+        company=company,
+        title=title,
+        url=url,
         location_raw=(item.get("location") or {}).get("name") or "",
         posted_date=parse.iso_date(item.get("first_published") or item.get("updated_at")),
         updated_at=str(item.get("updated_at") or ""),
@@ -55,6 +59,9 @@ class GreenhouseLane(BoardLane):
         if full is None:
             return None
         # The list row's dates are the ones every other night compares with.
-        return {**full, "vertical": posting["vertical"],
-                "posted_date": posting["posted_date"] or full["posted_date"],
-                "updated_at": posting["updated_at"] or full["updated_at"]}
+        return {
+            **full,
+            "vertical": posting["vertical"],
+            "posted_date": posting["posted_date"] or full["posted_date"],
+            "updated_at": posting["updated_at"] or full["updated_at"],
+        }

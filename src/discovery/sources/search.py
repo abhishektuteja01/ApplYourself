@@ -4,6 +4,7 @@ Every result is title-gated the moment it arrives. A posting the store
 already holds is only touched; LinkedIn's separate detail page is fetched for
 new postings alone, once per posting, paced.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -67,8 +68,10 @@ def _paced_linkedin(page_delay: float, band: float, tally):
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.session.mount("https://", _TallyingAdapter(
-                tally, max_retries=self.session.adapters["https://"].max_retries))
+            self.session.mount(
+                "https://",
+                _TallyingAdapter(tally, max_retries=self.session.adapters["https://"].max_retries),
+            )
 
     original = jobspy.LinkedIn
     jobspy.LinkedIn = PacedLinkedIn
@@ -82,10 +85,12 @@ def _detail_client(tally) -> LinkedIn:
     """A LinkedIn scraper for detail pages only, with a short retry budget:
     jobspy's default spends ~50s on one dead page."""
     client = LinkedIn()
-    client.scraper_input = ScraperInput(site_type=[Site.LINKEDIN],
-                                        description_format=DescriptionFormat(DESCRIPTION_FORMAT))
-    retries = Retry(total=1, connect=1, status=1,
-                    status_forcelist=[500, 502, 503, 504, 429], backoff_factor=1)
+    client.scraper_input = ScraperInput(
+        site_type=[Site.LINKEDIN], description_format=DescriptionFormat(DESCRIPTION_FORMAT)
+    )
+    retries = Retry(
+        total=1, connect=1, status=1, status_forcelist=[500, 502, 503, 504, 429], backoff_factor=1
+    )
     client.session.mount("https://", _TallyingAdapter(tally, max_retries=retries))
     return client
 
@@ -118,8 +123,11 @@ def build_queries(name: str, src, vcfg, locations) -> list[tuple]:
             if v is not None:
                 queries.extend((lane, term, country, False, None) for term in v.abroad_terms)
     for company_id in src.company_ids.values():
-        queries.extend(("", term, location, False, [company_id])
-                       for term in src.company_terms for location in locations)
+        queries.extend(
+            ("", term, location, False, [company_id])
+            for term in src.company_terms
+            for location in locations
+        )
     return queries
 
 
@@ -134,8 +142,11 @@ def posting_from(record: dict, name: str, vertical: str, term: str, is_remote: b
     if isinstance(job_type, list):
         job_type = ", ".join(str(getattr(t, "value", [t])[0]) for t in job_type)
     return make_posting(
-        source=name, company=_value(record, "company"), title=_value(record, "title"),
-        url=_value(record, "job_url_direct") or job_url, key_url=job_url,
+        source=name,
+        company=_value(record, "company"),
+        title=_value(record, "title"),
+        url=_value(record, "job_url_direct") or job_url,
+        key_url=job_url,
         location_raw=_value(record, "location"),
         jd_text=_value(record, "description"),
         posted_date=record.get("date_posted"),
@@ -143,8 +154,11 @@ def posting_from(record: dict, name: str, vertical: str, term: str, is_remote: b
         salary_min=parse.yearly_salary(record.get("min_amount"), record.get("interval")),
         salary_max=parse.yearly_salary(record.get("max_amount"), record.get("interval")),
         salary_currency=_value(record, "currency"),
-        employment_type=str(job_type or ""), seniority_raw=_value(record, "job_level"),
-        vertical=vertical, found_by_term=term, found_by_remote=is_remote,
+        employment_type=str(job_type or ""),
+        seniority_raw=_value(record, "job_level"),
+        vertical=vertical,
+        found_by_term=term,
+        found_by_remote=is_remote,
     )
 
 
@@ -179,21 +193,34 @@ class SearchLane(Lane):
                 made += 1
                 try:
                     df = scrape_jobs(
-                        site_name=self.name, search_term=term, location=location,
-                        is_remote=is_remote, results_wanted=src.results_wanted,
-                        hours_old=src.hours_old, country_indeed=_country_indeed(location),
+                        site_name=self.name,
+                        search_term=term,
+                        location=location,
+                        is_remote=is_remote,
+                        results_wanted=src.results_wanted,
+                        hours_old=src.hours_old,
+                        country_indeed=_country_indeed(location),
                         description_format=DESCRIPTION_FORMAT,
                         linkedin_company_ids=company_ids,
-                        linkedin_fetch_description=False, verbose=1)
+                        linkedin_fetch_description=False,
+                        verbose=1,
+                    )
                 except Exception as e:  # noqa: BLE001 -- one bad query must not cost the run
-                    stats.errors.append(f"term={term!r} remote={is_remote}: {type(e).__name__}: {e}")
+                    stats.errors.append(
+                        f"term={term!r} remote={is_remote}: {type(e).__name__}: {e}"
+                    )
                     continue
                 if df is None or df.empty:
                     continue
                 new_before = stats.new
                 for record in df.where(pd.notnull(df), None).to_dict("records"):
-                    self._one(posting_from(record, self.name, vertical, term, is_remote),
-                              crawl, stats, fetch, seen)
+                    self._one(
+                        posting_from(record, self.name, vertical, term, is_remote),
+                        crawl,
+                        stats,
+                        fetch,
+                        seen,
+                    )
                 if len(df) >= src.results_wanted:
                     saturated += 1
                     where = f"{location} (remote)" if is_remote else location
@@ -204,11 +231,14 @@ class SearchLane(Lane):
                 if client is not None and fetch:
                     self._details(fetch, crawl, stats, client)
                     fetch.clear()
-        stats.notes.append(f"queries: {made} of {len(queries)}, {saturated} hit the "
-                           f"{src.results_wanted}-result cap")
+        stats.notes.append(
+            f"queries: {made} of {len(queries)}, {saturated} hit the "
+            f"{src.results_wanted}-result cap"
+        )
         if self.name == "linkedin":
-            stats.notes.append(f"page delay {page_delay:g}-{page_delay + band:g}s, "
-                               f"{pacing:g}s between queries")
+            stats.notes.append(
+                f"page delay {page_delay:g}-{page_delay + band:g}s, {pacing:g}s between queries"
+            )
         return stats
 
     def _one(self, posting: dict, crawl, stats: LaneStats, fetch: dict, seen: set) -> None:
@@ -221,7 +251,9 @@ class SearchLane(Lane):
             if not posting["vertical"]:
                 return
         stats.classified += 1
-        passes = title_gate.title_passes(posting["title"], posting["vertical"], self.name, crawl.vcfg)
+        passes = title_gate.title_passes(
+            posting["title"], posting["vertical"], self.name, crawl.vcfg
+        )
         crawl.record_listing(self.name, posting["title"], posting["vertical"], passes, key)
         if not passes:
             return

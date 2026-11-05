@@ -1,4 +1,5 @@
 """Tests for src/lint.py — deterministic two-tier linter."""
+
 from __future__ import annotations
 
 import pytest
@@ -11,6 +12,7 @@ from src.lint import (
 )
 
 # ---------- helpers ----------
+
 
 def _rules(**overrides) -> dict:
     """Build a minimal de_ai_rules dict for tests."""
@@ -51,6 +53,7 @@ def _rules(**overrides) -> dict:
 # Tier 1 — mechanical
 # ===========================================================
 
+
 def test_em_dash_pass_does_not_shift_reported_columns():
     """Columns reference the ORIGINAL line, per fix_mechanical's contract."""
     text = "Role — Company 2022–2024 done"
@@ -87,7 +90,7 @@ def test_fix_mechanical_reports_substitutions_with_line_and_column():
     em = [s for s in subs if s["category"] == "em_dash"]
     assert len(em) == 2
     assert em[0]["line"] == 1
-    assert em[0]["column"] == 9   # 1-indexed column of "—" on line 1
+    assert em[0]["column"] == 9  # 1-indexed column of "—" on line 1
     assert em[1]["line"] == 2
     assert em[1]["column"] == 9
 
@@ -95,6 +98,7 @@ def test_fix_mechanical_reports_substitutions_with_line_and_column():
 # ===========================================================
 # Tier 2 — phrase
 # ===========================================================
+
 
 def test_find_phrase_violations_soft_verbs():
     v = find_phrase_violations("I leveraged the new system.", context="resume", rules=_rules())
@@ -119,18 +123,21 @@ def test_find_phrase_violations_filler_starters():
 def test_find_phrase_violations_filler_starters_not_mid_sentence():
     v = find_phrase_violations(
         "The board is called Notably, not a filler word here.",
-        context="resume", rules=_rules(),
+        context="resume",
+        rules=_rules(),
     )
     assert not any(x["category"] == "filler_starters" for x in v)
 
 
 def test_find_phrase_violations_hedges():
     v = find_phrase_violations("This may improve outcomes.", context="resume", rules=_rules())
-    assert any(x["phrase"] == "may" and x["category"] == "hedges_when_softening_own_work" for x in v)
+    assert any(
+        x["phrase"] == "may" and x["category"] == "hedges_when_softening_own_work" for x in v
+    )
 
 
 def test_find_phrase_violations_no_emoji():
-    v = find_phrase_violations("Shipped \U0001F680 today.", context="resume", rules=_rules())
+    v = find_phrase_violations("Shipped \U0001f680 today.", context="resume", rules=_rules())
     assert any(x["category"] == "emoji" for x in v)
 
 
@@ -142,7 +149,8 @@ def test_find_phrase_violations_no_exclamation_in_resume():
 def test_find_phrase_violations_outreach_only_NOT_flagged_in_resume():
     v = find_phrase_violations(
         "I wanted to reach out about the role.",
-        context="resume", rules=_rules(),
+        context="resume",
+        rules=_rules(),
     )
     assert not any(x["category"] == "outreach_only" for x in v)
 
@@ -150,7 +158,8 @@ def test_find_phrase_violations_outreach_only_NOT_flagged_in_resume():
 def test_find_phrase_violations_outreach_only_flagged_in_outreach():
     v = find_phrase_violations(
         "I wanted to reach out about the role.",
-        context="outreach", rules=_rules(),
+        context="outreach",
+        rules=_rules(),
     )
     assert any(x["category"] == "outreach_only" for x in v)
 
@@ -176,6 +185,7 @@ def test_find_phrase_violations_reports_line_and_column():
 # Rule loading
 # ===========================================================
 
+
 def test_load_de_ai_rules_missing_file_fails_loud(tmp_path):
     with pytest.raises(LintConfigError, match="missing"):
         load_de_ai_rules(tmp_path / "absent.yaml")
@@ -185,35 +195,39 @@ def test_load_de_ai_rules_missing_file_fails_loud(tmp_path):
 # One dash rule, protected text, sentence starts
 # ===========================================================
 
-@pytest.mark.parametrize("text,expected", [
-    # ranges: dates, numbers, day names, open-ended ends
-    ("May 2022 — Jul 2024", "May 2022 - Jul 2024"),
-    ("Tenure: May 2022 – Jul 2024", "Tenure: May 2022 - Jul 2024"),
-    ("Tenure 2022–2024", "Tenure 2022-2024"),
-    ("Open Mon–Fri", "Open Mon-Fri"),
-    ("Jan – May 2024", "Jan - May 2024"),
-    ("grew 40%–60%", "grew 40%-60%"),
-    ("Acme (May 2022 – Present)", "Acme (May 2022 - Present)"),
-    ("Acme (2022 – Present)", "Acme (2022 - Present)"),
-    ("Acme (May 2022 – present)", "Acme (May 2022 - present)"),
-    ("Acme (Jun 2021 – Current)", "Acme (Jun 2021 - Current)"),
-    ("Acme (Mar 2019 – ongoing)", "Acme (Mar 2019 - ongoing)"),
-    ("Acme (Mar 2019 – to date)", "Acme (Mar 2019 - to date)"),
-    ("Acme | May 2022 – Present | Boston", "Acme | May 2022 - Present | Boston"),
-    # minus sign
-    ("Cut cost by –5%", "Cut cost by -5%"),
-    # asides, including open-ended words that continue into prose
-    ("We had a meeting — it went well.", "We had a meeting, it went well."),
-    ("see the report (a small – b sized).", "see the report (a small, b sized)."),
-    ("the plan — now revised", "the plan, now revised"),
-    ("the plan – now revised", "the plan, now revised"),
-    ("Shipped in 2024 – now the standard", "Shipped in 2024, now the standard"),
-    ("Cut latency 40% – currently the fastest", "Cut latency 40%, currently the fastest"),
-    ("Raised 3 rounds – ongoing work continues", "Raised 3 rounds, ongoing work continues"),
-    # an earlier dash does not change how a later one reads
-    ("aaaa – 2024", "aaaa, 2024"),
-    ("1 — aaaa – 2024", "1, aaaa, 2024"),
-])
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # ranges: dates, numbers, day names, open-ended ends
+        ("May 2022 — Jul 2024", "May 2022 - Jul 2024"),
+        ("Tenure: May 2022 – Jul 2024", "Tenure: May 2022 - Jul 2024"),
+        ("Tenure 2022–2024", "Tenure 2022-2024"),
+        ("Open Mon–Fri", "Open Mon-Fri"),
+        ("Jan – May 2024", "Jan - May 2024"),
+        ("grew 40%–60%", "grew 40%-60%"),
+        ("Acme (May 2022 – Present)", "Acme (May 2022 - Present)"),
+        ("Acme (2022 – Present)", "Acme (2022 - Present)"),
+        ("Acme (May 2022 – present)", "Acme (May 2022 - present)"),
+        ("Acme (Jun 2021 – Current)", "Acme (Jun 2021 - Current)"),
+        ("Acme (Mar 2019 – ongoing)", "Acme (Mar 2019 - ongoing)"),
+        ("Acme (Mar 2019 – to date)", "Acme (Mar 2019 - to date)"),
+        ("Acme | May 2022 – Present | Boston", "Acme | May 2022 - Present | Boston"),
+        # minus sign
+        ("Cut cost by –5%", "Cut cost by -5%"),
+        # asides, including open-ended words that continue into prose
+        ("We had a meeting — it went well.", "We had a meeting, it went well."),
+        ("see the report (a small – b sized).", "see the report (a small, b sized)."),
+        ("the plan — now revised", "the plan, now revised"),
+        ("the plan – now revised", "the plan, now revised"),
+        ("Shipped in 2024 – now the standard", "Shipped in 2024, now the standard"),
+        ("Cut latency 40% – currently the fastest", "Cut latency 40%, currently the fastest"),
+        ("Raised 3 rounds – ongoing work continues", "Raised 3 rounds, ongoing work continues"),
+        # an earlier dash does not change how a later one reads
+        ("aaaa – 2024", "aaaa, 2024"),
+        ("1 — aaaa – 2024", "1, aaaa, 2024"),
+    ],
+)
 def test_fix_mechanical_one_dash_rule(text, expected):
     out, _ = fix_mechanical(text, _rules())
     assert out == expected
@@ -227,38 +241,51 @@ def test_fix_mechanical_hyphen_variants_and_invisibles():
 
 def test_fix_mechanical_missing_mechanical_key_fails_loud():
     from src.lint import LintConfigError
+
     rules = _rules()
     del rules["mechanical"]["hyphen"]
     with pytest.raises(LintConfigError, match="hyphen"):
         fix_mechanical("x", rules)
 
 
-@pytest.mark.parametrize("text", [
-    "* Notably, the system scaled.",
-    "Built X. Furthermore, it ran nightly.",
-    "1. Notably, it shipped.",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "* Notably, the system scaled.",
+        "Built X. Furthermore, it ran nightly.",
+        "1. Notably, it shipped.",
+    ],
+)
 def test_filler_starters_caught_at_every_sentence_start(text):
     v = find_phrase_violations(text, context="resume", rules=_rules())
     assert any(x["category"] == "filler_starters" for x in v)
 
 
-@pytest.mark.parametrize("text", [
-    "Tenure: May 2022 - Jul 2024",
-    "Tenure: May - Jul 2024",
-    "Joined May, 2026",
-    "Since May '26",
-    "Jan-May 2024",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Tenure: May 2022 - Jul 2024",
+        "Tenure: May - Jul 2024",
+        "Joined May, 2026",
+        "Since May '26",
+        "Jan-May 2024",
+    ],
+)
 def test_month_may_is_not_a_hedge(text):
     v = find_phrase_violations(text, context="resume", rules=_rules())
     assert not any(x["phrase"] == "may" for x in v)
 
 
 def test_keep_terms_are_not_scanned():
-    rules = _rules(banned_phrases={"stock_adjectives": ["myriad"], "hedges_when_softening_own_work": ["may"]})
-    v = find_phrase_violations("Dear May Chen, Myriad Genetics builds tests.",
-                               context="resume", rules=rules, keep=["Myriad Genetics", "May Chen"])
+    rules = _rules(
+        banned_phrases={"stock_adjectives": ["myriad"], "hedges_when_softening_own_work": ["may"]}
+    )
+    v = find_phrase_violations(
+        "Dear May Chen, Myriad Genetics builds tests.",
+        context="resume",
+        rules=rules,
+        keep=["Myriad Genetics", "May Chen"],
+    )
     assert v == []
 
 
@@ -270,5 +297,7 @@ def test_exclamation_inside_url_or_email_is_not_flagged():
 
 def test_hedge_before_a_number_is_precision_not_doubt():
     rules = _rules(banned_phrases={"hedges_when_softening_own_work": ["approximately"]})
-    assert find_phrase_violations("Cut cost approximately 40%.", context="resume", rules=rules) == []
+    assert (
+        find_phrase_violations("Cut cost approximately 40%.", context="resume", rules=rules) == []
+    )
     assert find_phrase_violations("It approximately works.", context="resume", rules=rules) != []

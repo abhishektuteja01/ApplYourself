@@ -1,6 +1,7 @@
 """Manual JD clips: `inbox/*.md` with YAML frontmatter (company, title, url
 required). A clip moves to `.processed/` only after its row is saved, so a
 crash leaves it in the inbox for the next run."""
+
 from __future__ import annotations
 
 import logging
@@ -47,12 +48,17 @@ def parse_clip(path: Path) -> dict | None:
             return None
     title = meta["title"].strip()
     return make_posting(
-        source="manual", company=meta["company"].strip(), title=title,
-        url=(meta.get("url_direct") or meta["url"]).strip(), key_url=meta["url"].strip(),
+        source="manual",
+        company=meta["company"].strip(),
+        title=title,
+        url=(meta.get("url_direct") or meta["url"]).strip(),
+        key_url=meta["url"].strip(),
         location_raw=(meta.get("location") or "").strip(),
-        jd_text="\n".join(lines[end + 1:]).strip(),
-        posted_date=meta.get("posted_date"), remote_flag=bool(meta.get("remote", False)),
-        salary_min=meta.get("salary_min"), salary_max=meta.get("salary_max"),
+        jd_text="\n".join(lines[end + 1 :]).strip(),
+        posted_date=meta.get("posted_date"),
+        remote_flag=bool(meta.get("remote", False)),
+        salary_min=meta.get("salary_min"),
+        salary_max=meta.get("salary_max"),
         salary_currency=meta.get("salary_currency") or "",
         employment_type=meta.get("employment_type") or "",
         seniority_raw=meta.get("seniority") or "",

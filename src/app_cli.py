@@ -23,6 +23,7 @@ The role folder is the only state these commands share:
 Every command prints one JSON object. Exit 0 = ok, 2 = problems for the
 session to fix (listed in "problems"), 1 = cannot run.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -67,6 +68,7 @@ class AppError(Exception):
 # =====================================================================
 # Small helpers
 # =====================================================================
+
 
 def _emit(obj: dict, code: int = 0) -> int:
     print(json.dumps(obj, indent=2, ensure_ascii=False, default=str))
@@ -154,6 +156,7 @@ def _identity() -> tuple[str, str]:
 # dir
 # =====================================================================
 
+
 def built_folder(state: dict) -> Path | None:
     """The last folder a resume was built in (tailored_dirs[-1]), or None."""
     dirs = state.get("tailored_dirs") or []
@@ -175,8 +178,13 @@ def role_info(job_id: str) -> dict:
     return {
         "job_id": job_id,
         "state": state.get("state", ""),
-        "vertical": (built_dir.relative_to(APPLICATIONS).parts[0] if built_dir
-                     else newest.parent.name if newest else ""),
+        "vertical": (
+            built_dir.relative_to(APPLICATIONS).parts[0]
+            if built_dir
+            else newest.parent.name
+            if newest
+            else ""
+        ),
         "dir": str(built_dir.relative_to(APPLICATIONS.parent)) if built_dir else "",
         "work_dir": str(newest.relative_to(APPLICATIONS.parent)) if newest else "",
         "name": name,
@@ -200,6 +208,7 @@ def _built_dir(job_id: str) -> Path:
 # =====================================================================
 # new
 # =====================================================================
+
 
 def _load_row(job_id: str) -> dict:
     if not CLEAN.exists():
@@ -226,8 +235,10 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
     cfg = verticals.get_config()
     lane = row.get("vertical") or ""
     if lane not in cfg.verticals or cfg.verticals[lane].resume is None:
-        raise AppError(f"{job_id} is scored in lane {lane!r}, which has no resume: block in "
-                       f"profile/verticals.yaml. Re-score it or add the lane.")
+        raise AppError(
+            f"{job_id} is scored in lane {lane!r}, which has no resume: block in "
+            f"profile/verticals.yaml. Re-score it or add the lane."
+        )
     with contextlib.redirect_stdout(sys.stderr):
         registered = track_cli.main(["ensure", job_id])
     if registered != 0:
@@ -236,10 +247,15 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
     newest = role_folder(job_id)
     _, slug = _identity()
     recorded = _state(job_id).get("tailored_dirs") or []
-    if newest and newest.parent.name == lane and (
+    if (
+        newest
+        and newest.parent.name == lane
+        and (
             not (newest / f"{slug}_Resume.docx").exists()
-            or str(newest.relative_to(APPLICATIONS)) not in recorded):
-        folder = newest                                     # an unfinished or unrecorded run: resume it
+            or str(newest.relative_to(APPLICATIONS)) not in recorded
+        )
+    ):
+        folder = newest  # an unfinished or unrecorded run: resume it
     else:
         base = f"{today}_{_slug(row.get('company', '')) or job_id}_{_slug(row.get('title', ''))}_{job_id}"
         folder = APPLICATIONS / lane / (f"{base}_v{_version(newest) + 1}" if newest else base)
@@ -255,20 +271,35 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
         "keywords_to_mirror": [str(k) for k in row.get("keywords_to_mirror") or []],
         "snapshot_at": today,
     }
-    _atomic_write(folder / SNAPSHOT, "---\n" + yaml.safe_dump(facts, sort_keys=False, allow_unicode=True)
-                  + "---\n\n" + str(row.get("jd_text") or "") + "\n")
-    return {**role_info(job_id), "work_dir": str(folder.relative_to(APPLICATIONS.parent)),
-            "company": facts["company"], "title": facts["title"],
-            "keywords_to_mirror": facts["keywords_to_mirror"]}
+    _atomic_write(
+        folder / SNAPSHOT,
+        "---\n"
+        + yaml.safe_dump(facts, sort_keys=False, allow_unicode=True)
+        + "---\n\n"
+        + str(row.get("jd_text") or "")
+        + "\n",
+    )
+    return {
+        **role_info(job_id),
+        "work_dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "company": facts["company"],
+        "title": facts["title"],
+        "keywords_to_mirror": facts["keywords_to_mirror"],
+    }
 
 
 # =====================================================================
 # build resume
 # =====================================================================
 
+
 def _pdf_unknown(where: str, pdf: dict) -> dict:
-    return {"where": where, "code": "pages", "detail": f"page count unknown: pdf {pdf['status']} "
-            f"({pdf['detail']}); not a plan problem: rebuild once the pdf works, or pass --no-pdf"}
+    return {
+        "where": where,
+        "code": "pages",
+        "detail": f"page count unknown: pdf {pdf['status']} "
+        f"({pdf['detail']}); not a plan problem: rebuild once the pdf works, or pass --no-pdf",
+    }
 
 
 def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> tuple[dict, int]:
@@ -280,8 +311,14 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
     facts, _ = _read_snapshot(folder)
     plan = _load_yaml(folder / RESUME_PLAN)
     src = resume_model.load_sources()
-    built = resume_model.build(src, lane, plan, company=str(facts.get("company", "")),
-                               keywords=tuple(facts.get("keywords_to_mirror") or ()), final=final)
+    built = resume_model.build(
+        src,
+        lane,
+        plan,
+        company=str(facts.get("company", "")),
+        keywords=tuple(facts.get("keywords_to_mirror") or ()),
+        final=final,
+    )
     if built.problems:
         return {"ok": False, "problems": [p.as_dict() for p in built.problems]}, 2
 
@@ -292,35 +329,66 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
         raise AppError(str(exc)) from exc
     pdf = export_pdf(docx, folder.name)
     if pdf["status"] == "ok" and pdf["pages"] > 1:
-        return {"ok": False, "problems": [{"where": "resume", "code": "pages",
-                "detail": f"renders to {pdf['pages']} pages; drop or shorten bullets"}]}, 2
+        return {
+            "ok": False,
+            "problems": [
+                {
+                    "where": "resume",
+                    "code": "pages",
+                    "detail": f"renders to {pdf['pages']} pages; drop or shorten bullets",
+                }
+            ],
+        }, 2
     if pdf["status"] != "ok" and not no_pdf:
         return {"ok": False, "problems": [_pdf_unknown("resume", pdf)]}, 2
 
-    header = [f"# trace — {folder.name}", "",
-              f"job_id `{job_id}`, lane `{lane}`. Written by `uv run app build resume`.", ""]
+    header = [
+        f"# trace — {folder.name}",
+        "",
+        f"job_id `{job_id}`, lane `{lane}`. Written by `uv run app build resume`.",
+        "",
+    ]
     _atomic_write(folder / "trace.md", "\n".join(header + built.trace) + "\n")
     rel = str(folder.relative_to(APPLICATIONS))
     state_io.append_tailored_dir(state_io.state_path_for(paths.PIPELINE, job_id), rel)
-    return {"ok": True, "dir": str(folder.relative_to(APPLICATIONS.parent)), "docx": docx.name,
-            "pdf": pdf, "swapped": built.swapped}, 0
+    return {
+        "ok": True,
+        "dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "docx": docx.name,
+        "pdf": pdf,
+        "swapped": built.swapped,
+    }, 0
 
 
 # =====================================================================
 # Prose checks (letter, answers)
 # =====================================================================
 
-def _prose_problems(src, where: str, text: str, uses: list[str], grounds: str,
-                    keep: list[str]) -> list[dict]:
+
+def _prose_problems(
+    src, where: str, text: str, uses: list[str], grounds: str, keep: list[str]
+) -> list[dict]:
     """Numbers must come from a cited bullet or the JD; lint with keep-terms."""
-    out = [{"where": where, "code": "unknown_id", "detail": f"{u} is not in bullets.md"}
-           for u in uses if u not in src.bullets]
-    allowed = " ".join([grounds, resume_model.context_text(src)]
-                       + [resume_model.bullet_text(src, u) for u in uses])
-    out += [{"where": where, "code": "number", "detail": f"{n} is in no cited bullet and not in the JD"}
-            for n in resume_model.ungrounded_numbers(text, allowed)]
-    out += [{"where": where, "code": "lint", "detail": f"banned phrase {v['phrase']!r} ({v['category']})"}
-            for v in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)]
+    out = [
+        {"where": where, "code": "unknown_id", "detail": f"{u} is not in bullets.md"}
+        for u in uses
+        if u not in src.bullets
+    ]
+    allowed = " ".join(
+        [grounds, resume_model.context_text(src)] + [resume_model.bullet_text(src, u) for u in uses]
+    )
+    out += [
+        {"where": where, "code": "number", "detail": f"{n} is in no cited bullet and not in the JD"}
+        for n in resume_model.ungrounded_numbers(text, allowed)
+    ]
+    out += [
+        {
+            "where": where,
+            "code": "lint",
+            "detail": f"banned phrase {v['phrase']!r} ({v['category']})",
+        }
+        for v in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+    ]
     return out
 
 
@@ -336,8 +404,9 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
     problems: list[dict] = []
     expected = {"researched_at", "sources", "uses", *ANSWER_KEYS}
     for k in sorted(set(data) ^ expected):
-        problems.append({"where": k, "code": "layout",
-                         "detail": "unknown key" if k in data else "missing key"})
+        problems.append(
+            {"where": k, "code": "layout", "detail": "unknown key" if k in data else "missing key"}
+        )
     uses = [str(u) for u in data.get("uses") or []]
     keep = resume_model.keep_terms(src, str(facts.get("company", "")))
     for k in ANSWER_KEYS:
@@ -350,25 +419,35 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
         v = lint.fix_mechanical(v.strip(), src.rules)[0]
         data[k] = v
         if not 2 <= _sentences(v) <= 4:
-            problems.append({"where": k, "code": "layout", "detail": f"{_sentences(v)} sentences; write 2-4"})
+            problems.append(
+                {"where": k, "code": "layout", "detail": f"{_sentences(v)} sentences; write 2-4"}
+            )
         problems += _prose_problems(src, k, v, uses, jd, keep)
     if problems:
         return {"ok": False, "problems": problems}, 2
-    _atomic_write(folder / ANSWERS, yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=1000))
-    return {"ok": True, "dir": str(folder.relative_to(APPLICATIONS.parent)),
-            "answered": [k for k in ANSWER_KEYS if data.get(k)],
-            "no_research": [k for k in ANSWER_KEYS if not data.get(k)]}, 0
+    _atomic_write(
+        folder / ANSWERS, yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=1000)
+    )
+    return {
+        "ok": True,
+        "dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "answered": [k for k in ANSWER_KEYS if data.get(k)],
+        "no_research": [k for k in ANSWER_KEYS if not data.get(k)],
+    }, 0
 
 
 def _names_company(company: str, text: str) -> bool:
     """The full name, or its first word ("Bain" for "Bain & Company")."""
     low = text.lower()
     first = re.split(r"[\s,&]+", company.strip())[0]
-    return company.lower() in low or (len(first) >= 3 and re.search(
-        rf"(?<!\w){re.escape(first.lower())}(?!\w)", low) is not None)
+    return company.lower() in low or (
+        len(first) >= 3 and re.search(rf"(?<!\w){re.escape(first.lower())}(?!\w)", low) is not None
+    )
 
 
-def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = False) -> tuple[dict, int]:
+def cmd_build_letter(
+    job_id: str, today: date | None = None, no_pdf: bool = False
+) -> tuple[dict, int]:
     folder = _built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / LETTER_PLAN)
@@ -378,9 +457,17 @@ def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = Fals
     problems: list[dict] = []
 
     body = data.get("body")
-    if not isinstance(body, list) or not body or not all(isinstance(p, str) and p.strip() for p in body):
-        return {"ok": False, "problems": [{"where": "body", "code": "layout",
-                "detail": "must be a list of paragraph strings"}]}, 2
+    if (
+        not isinstance(body, list)
+        or not body
+        or not all(isinstance(p, str) and p.strip() for p in body)
+    ):
+        return {
+            "ok": False,
+            "problems": [
+                {"where": "body", "code": "layout", "detail": "must be a list of paragraph strings"}
+            ],
+        }, 2
     salutation = str(data.get("salutation") or "").strip()
     if not salutation:
         problems.append({"where": "salutation", "code": "layout", "detail": "missing"})
@@ -388,9 +475,13 @@ def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = Fals
     keep = resume_model.keep_terms(src, company, recipient)
     uses = [str(u) for u in data.get("uses") or []]
     if not uses:
-        problems.append({"where": "uses", "code": "layout", "detail": "cite the bullets the letter draws on"})
+        problems.append(
+            {"where": "uses", "code": "layout", "detail": "cite the bullets the letter draws on"}
+        )
+
     def fix(t):
         return lint.fix_mechanical(t.strip(), src.rules)[0]
+
     salutation = fix(salutation)
     body = [fix(p) for p in body]
     problems += _prose_problems(src, "salutation", salutation, [], "", keep)
@@ -402,8 +493,11 @@ def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = Fals
         return {"ok": False, "problems": problems}, 2
 
     today = today or date.today()  # noqa: DTZ011 - the user's local date
-    content = {"salutation": salutation, "body": body,
-               "date": f"{today:%B} {today.day}, {today.year}"}
+    content = {
+        "salutation": salutation,
+        "body": body,
+        "date": f"{today:%B} {today.day}, {today.year}",
+    }
     docx = folder / f"{slug}_Cover_Letter.docx"
     try:
         render_cover_letter(content, PROFILE / "cover_letter_template.docx", docx)
@@ -412,12 +506,26 @@ def cmd_build_letter(job_id: str, today: date | None = None, no_pdf: bool = Fals
     pdf = export_pdf(docx, folder.name)
     words = sum(len(p.split()) for p in body)
     if pdf["status"] == "ok" and pdf["pages"] > 1:
-        return {"ok": False, "words": words, "problems": [{"where": "body", "code": "pages",
-                "detail": f"renders to {pdf['pages']} pages ({words} words); cut the body"}]}, 2
+        return {
+            "ok": False,
+            "words": words,
+            "problems": [
+                {
+                    "where": "body",
+                    "code": "pages",
+                    "detail": f"renders to {pdf['pages']} pages ({words} words); cut the body",
+                }
+            ],
+        }, 2
     if pdf["status"] != "ok" and not no_pdf:
         return {"ok": False, "words": words, "problems": [_pdf_unknown("body", pdf)]}, 2
-    return {"ok": True, "dir": str(folder.relative_to(APPLICATIONS.parent)), "docx": docx.name,
-            "pdf": pdf, "words": words}, 0
+    return {
+        "ok": True,
+        "dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "docx": docx.name,
+        "pdf": pdf,
+        "words": words,
+    }, 0
 
 
 # =====================================================================
@@ -448,8 +556,10 @@ def cmd_dupes(job_id: str) -> dict:
             "job_id": other,
             "company": state.get("company") or rec.get("company" if mine else "other_company", ""),
             "title": state.get("title") or rec.get("title", ""),
-            "state": status, "submitted": other in sent,
-            "reason": rec.get("reason", ""), "jd_score": rec.get("jd_score"),
+            "state": status,
+            "submitted": other in sent,
+            "reason": rec.get("reason", ""),
+            "jd_score": rec.get("jd_score"),
         }
         if other not in found or (hit["jd_score"] or 0) > (found[other]["jd_score"] or 0):
             found[other] = hit
@@ -462,17 +572,23 @@ def cmd_lint_outreach(draft: str, company: str, recipient: str | None) -> dict:
     fixed, subs = lint.fix_mechanical(path.read_text(encoding="utf-8"), src.rules)
     path.write_text(fixed, encoding="utf-8")
     keep = resume_model.keep_terms(src, company, *([recipient] if recipient else []))
-    return {"mech_subs": len(subs),
-            "violations": lint.find_phrase_violations(fixed, context="outreach", rules=src.rules, keep=keep)}
+    return {
+        "mech_subs": len(subs),
+        "violations": lint.find_phrase_violations(
+            fixed, context="outreach", rules=src.rules, keep=keep
+        ),
+    }
 
 
 # =====================================================================
 # CLI
 # =====================================================================
 
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="uv run app", description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        prog="uv run app", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_new = sub.add_parser("new")
     p_new.add_argument("job_id")
@@ -484,10 +600,14 @@ def main(argv: list[str] | None = None) -> int:
     p_build = sub.add_parser("build")
     p_build.add_argument("what", choices=["resume", "letter", "answers"])
     p_build.add_argument("job_id")
-    p_build.add_argument("--final", action="store_true",
-                         help="resume only: fall back to canonical text where a rewording fails")
-    p_build.add_argument("--no-pdf", action="store_true",
-                         help="resume/letter: pass without a pdf page count")
+    p_build.add_argument(
+        "--final",
+        action="store_true",
+        help="resume only: fall back to canonical text where a rewording fails",
+    )
+    p_build.add_argument(
+        "--no-pdf", action="store_true", help="resume/letter: pass without a pdf page count"
+    )
     p_lint = sub.add_parser("lint")
     p_lint.add_argument("what", choices=["outreach"])
     p_lint.add_argument("draft")

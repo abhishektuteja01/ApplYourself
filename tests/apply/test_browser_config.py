@@ -5,6 +5,7 @@ plain launch reports `navigator.webdriver: true`, and Lever locks its location
 dropdown for a caller it scores as automation. Which driver to use is a
 preference, so it lives in config and `src/` only reads it.
 """
+
 import pytest
 
 from src.apply import browser as B
@@ -17,8 +18,9 @@ class TestLoadBrowserConfig:
         return p
 
     def test_reads_the_driver_and_stealth_flag(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 2\nbrowser:\n"
-                                  "  driver: patchright\n  stealth: true\n")
+        p = self._write(
+            tmp_path, "schema_version: 2\nbrowser:\n  driver: patchright\n  stealth: true\n"
+        )
         assert B.load_browser_config(p) == ("patchright", True)
 
     def test_a_missing_file_falls_back_to_the_stock_driver(self, tmp_path):
@@ -87,4 +89,5 @@ class TestAnswerConfigAcceptsTheBlock:
         """The answer loader refuses unknown top-level keys, so the real
         config would fail to load without this."""
         from src.apply.answers import TOP_LEVEL_KEYS
+
         assert "browser" in TOP_LEVEL_KEYS

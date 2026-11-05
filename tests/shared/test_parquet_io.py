@@ -1,4 +1,5 @@
 """write_parquet: the tmp+rename guarantee for every canonical parquet."""
+
 from __future__ import annotations
 
 import stat

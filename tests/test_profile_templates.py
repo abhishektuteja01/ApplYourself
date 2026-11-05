@@ -8,6 +8,7 @@ The coverage check derives its list from the commands and modules themselves
 rather than a hardcoded inventory, so a newly referenced profile file fails here
 until it is either committed or templated.
 """
+
 from __future__ import annotations
 
 import ast
@@ -55,9 +56,7 @@ def _text_files(root: Path) -> list[Path]:
     return sorted(
         p
         for p in root.rglob("*")
-        if p.is_file()
-        and "__pycache__" not in p.parts
-        and p.suffix.lower() not in _BINARY_SUFFIXES
+        if p.is_file() and "__pycache__" not in p.parts and p.suffix.lower() not in _BINARY_SUFFIXES
     )
 
 
@@ -178,9 +177,7 @@ class TestTemplateCoverage:
                     f"{rel_path} (referenced by {', '.join(sorted(referrers))}) "
                     f"has no template at {template}"
                 )
-        assert not missing, "profile inputs with no template:\n  " + "\n  ".join(
-            missing
-        )
+        assert not missing, "profile inputs with no template:\n  " + "\n  ".join(missing)
 
     def test_the_scan_actually_finds_things(self):
         """A scan that silently stops matching would make the test above pass
@@ -275,9 +272,7 @@ class TestExampleConfigsAreValid:
         assert data.get("schema_version") == version
 
     def test_contacts_template_entries_carry_the_documented_fields(self):
-        data = yaml.safe_load(
-            (PROFILE / "contacts.example.yaml").read_text(encoding="utf-8")
-        )
+        data = yaml.safe_load((PROFILE / "contacts.example.yaml").read_text(encoding="utf-8"))
         for entry in data["contacts"]:
             for field in ("id", "name", "company", "relationship", "channel"):
                 assert field in entry, f"contact {entry.get('id')} missing {field}"
@@ -287,9 +282,7 @@ class TestExampleConfigsAreValid:
 
     def test_contacts_relationships_match_the_outreach_channels(self):
         """/outreach has exactly three channel rubrics."""
-        data = yaml.safe_load(
-            (PROFILE / "contacts.example.yaml").read_text(encoding="utf-8")
-        )
+        data = yaml.safe_load((PROFILE / "contacts.example.yaml").read_text(encoding="utf-8"))
         used = {e["relationship"] for e in data["contacts"]}
         assert used <= {"recruiter", "referral", "alumni", "other"}
 
@@ -304,16 +297,19 @@ class TestExampleSourcesResolve:
     @pytest.fixture
     def example_cfg(self):
         from src.shared import verticals
+
         cfg = load_verticals(PROFILE / "verticals.example.yaml")
         verticals.set_config(cfg)
         return cfg
 
     def test_example_sources_check_clean(self, example_cfg):
         from src import resume_model
+
         assert resume_model.check_sources(resume_model.load_sources(), example_cfg) == []
 
     def test_every_example_lane_baseline_builds(self, example_cfg):
         from src import resume_model
+
         src = resume_model.load_sources()
         for lane in example_cfg.names:
             built = resume_model.build(src, lane, resume_model.baseline_plan(src, lane))
@@ -323,8 +319,11 @@ class TestExampleSourcesResolve:
     def test_every_bullet_is_cited_by_some_skill(self):
         text = (PROFILE / "skills_master.example.md").read_text(encoding="utf-8")
         cited = set(re.findall(r"B-[A-Z]+-\d+", text))
-        defined = set(re.findall(r"^## (B-\S+)", (PROFILE / "bullets.example.md")
-                                 .read_text(encoding="utf-8"), re.M))
+        defined = set(
+            re.findall(
+                r"^## (B-\S+)", (PROFILE / "bullets.example.md").read_text(encoding="utf-8"), re.M
+            )
+        )
         assert not (defined - cited)
 
 
@@ -334,14 +333,19 @@ class TestExampleEntrySchemas:
     @staticmethod
     def _entries(name: str) -> dict[str, dict]:
         from src.resume_model import parse_entries
+
         return parse_entries((PROFILE / name).read_text(encoding="utf-8"))
 
-    @pytest.mark.parametrize("name,keys_attr", [
-        ("bullets.example.md", "BULLET_KEYS"),
-        ("skills_master.example.md", "SKILL_KEYS"),
-    ])
+    @pytest.mark.parametrize(
+        "name,keys_attr",
+        [
+            ("bullets.example.md", "BULLET_KEYS"),
+            ("skills_master.example.md", "SKILL_KEYS"),
+        ],
+    )
     def test_entries_use_exactly_the_loader_keys(self, name, keys_attr):
         from src import resume_model
+
         keys = set(getattr(resume_model, keys_attr))
         entries = self._entries(name)
         for entry_id, entry in entries.items():
@@ -420,8 +424,7 @@ class TestStoriesTemplate:
             anchors = re.search(r"^anchors: \[(.*)\]$", entry, re.M).group(1)
             for anchor in (a.strip() for a in anchors.split(",") if a.strip()):
                 assert anchor in defined, (
-                    f"story {entry_id} anchors {anchor!r}, which bullets.example.md "
-                    f"does not define"
+                    f"story {entry_id} anchors {anchor!r}, which bullets.example.md does not define"
                 )
 
     def test_every_anchored_bullet_is_a_real_id_shape(self):
@@ -436,9 +439,7 @@ class TestStoriesTemplate:
     def test_the_template_covers_more_than_one_kind(self):
         """One kind means /apply's routing has nothing to choose between and a
         new user learns the wrong shape from the template."""
-        kinds = {
-            re.search(r"^kind: (.+)$", e, re.M).group(1).strip() for e in self._entries()
-        }
+        kinds = {re.search(r"^kind: (.+)$", e, re.M).group(1).strip() for e in self._entries()}
         assert len(kinds) > 1, f"template only demonstrates {kinds}"
 
     def test_stories_is_optional_in_the_scaffolder(self):

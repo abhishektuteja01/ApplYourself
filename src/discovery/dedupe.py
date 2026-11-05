@@ -7,6 +7,7 @@ already stored.
 Deterministic and LLM-free (R7). Reads pipeline/*/state.yaml, never writes it
 (R10).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,45 +41,98 @@ _SLUG_DIGITS_RE = re.compile(r"(?<=[a-z]{3})\d+$")
 _GLUED_THE_RE = re.compile(r"^the(?=[a-z]{4})")
 # Two titles that disagree on these tokens are different roles, however close
 # the rest of the title and the JD are.
-LEVEL_TOKENS = frozenset({
-    "i", "ii", "iii", "iv", "intern", "coop", "trainee", "apprentice",
-    "junior", "entry", "graduate", "associate", "senior", "staff", "principal",
-    "distinguished", "fellow", "lead", "manager", "director", "head", "vp",
-    "chief", "president",
-})
+LEVEL_TOKENS = frozenset(
+    {
+        "i",
+        "ii",
+        "iii",
+        "iv",
+        "intern",
+        "coop",
+        "trainee",
+        "apprentice",
+        "junior",
+        "entry",
+        "graduate",
+        "associate",
+        "senior",
+        "staff",
+        "principal",
+        "distinguished",
+        "fellow",
+        "lead",
+        "manager",
+        "director",
+        "head",
+        "vp",
+        "chief",
+        "president",
+    }
+)
 _LEVEL_SYNONYMS = {
-    "jr": "junior", "sr": "senior", "mgr": "manager", "mgmt": "manager",
-    "management": "manager", "interns": "intern", "internship": "intern",
-    "internships": "intern", "grad": "graduate", "apprenticeship": "apprentice",
-    "1": "i", "2": "ii", "3": "iii", "4": "iv", "vice": "vp",
+    "jr": "junior",
+    "sr": "senior",
+    "mgr": "manager",
+    "mgmt": "manager",
+    "management": "manager",
+    "interns": "intern",
+    "internship": "intern",
+    "internships": "intern",
+    "grad": "graduate",
+    "apprenticeship": "apprentice",
+    "1": "i",
+    "2": "ii",
+    "3": "iii",
+    "4": "iv",
+    "vice": "vp",
 }
 _CO_OP_RE = re.compile(r"\bco op\b")
 
 
 def level_tokens(title_normalized: str) -> frozenset[str]:
-    tokens = (_LEVEL_SYNONYMS.get(t, t)
-              for t in _CO_OP_RE.sub("coop", title_normalized or "").split())
+    tokens = (
+        _LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title_normalized or "").split()
+    )
     return frozenset(LEVEL_TOKENS.intersection(tokens))
 
 
 # Title words that say where or how, not what: two titles differing only in
 # these (or in the rows' own location words) still name one role.
-_TITLE_NOISE = frozenset({
-    "remote", "hybrid", "onsite", "wfh", "anywhere", "and", "of", "the", "for", "to",
-    "a", "an", "with", "in", "at",
-})
+_TITLE_NOISE = frozenset(
+    {
+        "remote",
+        "hybrid",
+        "onsite",
+        "wfh",
+        "anywhere",
+        "and",
+        "of",
+        "the",
+        "for",
+        "to",
+        "a",
+        "an",
+        "with",
+        "in",
+        "at",
+    }
+)
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
 
 def _title_words(title_normalized: str) -> set[str]:
-    return {_LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title_normalized or "").split()}
+    return {
+        _LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title_normalized or "").split()
+    }
 
 
 def titles_differ(new: dict, old: dict) -> bool:
     """Do the titles disagree on a word that names the role ("Applied AI
     Engineer, Codex" / "..., Enterprise")? Workplace words, one-letter
     tokens and either row's location words do not count."""
-    where = set(_WORD_RE.findall(f"{new.get('location_raw', '')} {old.get('location_raw', '')}".lower()))
+    where = set(
+        _WORD_RE.findall(f"{new.get('location_raw', '')} {old.get('location_raw', '')}".lower())
+    )
     diff = _title_words(new["title_normalized"]) ^ _title_words(old["title_normalized"])
     return any(len(t) > 1 and t not in _TITLE_NOISE and t not in where for t in diff)
 
@@ -110,11 +164,19 @@ def same_company(a: str, b: str) -> bool:
     if sa == sb:
         return True
     short, long = sorted((wa, wb), key=len)
-    if len(short) < len(long) and long[:len(short)] == short and len("".join(short)) >= WORD_PREFIX_MIN:
+    if (
+        len(short) < len(long)
+        and long[: len(short)] == short
+        and len("".join(short)) >= WORD_PREFIX_MIN
+    ):
         return True
     (s, ws), (lg, wl) = sorted(((sa, wa), (sb, wb)), key=lambda x: len(x[0]))
-    return ((len(ws) == 1 or len(wl) == 1) and len(s) >= GLUED_MIN
-            and lg.startswith(s) and len(lg) - len(s) >= GLUED_REST)
+    return (
+        (len(ws) == 1 or len(wl) == 1)
+        and len(s) >= GLUED_MIN
+        and lg.startswith(s)
+        and len(lg) - len(s) >= GLUED_REST
+    )
 
 
 Trim = tuple[tuple[str, ...], tuple[str, ...]]
@@ -170,7 +232,8 @@ def same_job_elsewhere(new: dict, old: dict, trim: Trim = NO_TRIM) -> tuple[str,
 def _hash_ids(company: str, title: str, salts: int = 3) -> set[str]:
     """A pair's own hash and its first salted forms."""
     return {identity.compute_job_id(company, title)} | {
-        identity.compute_job_id(company, f"{title}#{n}") for n in range(2, salts + 2)}
+        identity.compute_job_id(company, f"{title}#{n}") for n in range(2, salts + 2)
+    }
 
 
 class _Index:
@@ -189,7 +252,8 @@ class _Index:
         # Tracked first, then oldest, then smallest id: which id a pair keeps
         # when the store holds more than one.
         order = store.assign(_t=~store["job_id"].isin(tracked)).sort_values(
-            ["_t", "first_seen", "job_id"], kind="stable")
+            ["_t", "first_seen", "job_id"], kind="stable"
+        )
         for rec in order.to_dict("records"):
             self.add(rec)
 
@@ -205,12 +269,24 @@ class _Index:
             ids.append(jid)
         self.pair_of_id.setdefault(jid, set()).add(pair)
         if jid not in self.own and jid in _hash_ids(
-                rec["company_normalized"], rec["title_normalized"]):
-            self.own[jid] = {"title_normalized": rec["title_normalized"],
-                             "location_raw": rec.get("location_raw", "")}
-        cand = {k: rec.get(k, "") for k in (
-            "job_id", "source", "board", "company_normalized", "title_normalized", "jd_text",
-            "location_raw")}
+            rec["company_normalized"], rec["title_normalized"]
+        ):
+            self.own[jid] = {
+                "title_normalized": rec["title_normalized"],
+                "location_raw": rec.get("location_raw", ""),
+            }
+        cand = {
+            k: rec.get(k, "")
+            for k in (
+                "job_id",
+                "source",
+                "board",
+                "company_normalized",
+                "title_normalized",
+                "jd_text",
+                "location_raw",
+            )
+        }
         if "_jd_key" in rec:
             cand["_jd_key"] = rec["_jd_key"]
         s = squash(rec["company_normalized"])
@@ -224,8 +300,11 @@ class _Index:
         seen, out = set(), []
         pools = [self.by_squash.get(s, []), self.by_title.get(row["title_normalized"], [])]
         if len(s) >= 4:
-            pools += [v for k, v in self.by_squash.items()
-                      if k != s and len(k) >= 4 and (k.startswith(s) or s.startswith(k))]
+            pools += [
+                v
+                for k, v in self.by_squash.items()
+                if k != s and len(k) >= 4 and (k.startswith(s) or s.startswith(k))
+            ]
         for pool in pools:
             for cand in pool:
                 marker = id(cand)
@@ -254,8 +333,14 @@ class _Index:
             if self.belongs(row, jid):
                 return jid, "pair", {}
         # Ids that hold this pair but name another role: a maybe, never a join.
-        maybes = {jid: {"cand": {"job_id": jid, "company_normalized": row["company_normalized"]},
-                        "score": 0.0, "reason": "other_title"} for jid in held}
+        maybes = {
+            jid: {
+                "cand": {"job_id": jid, "company_normalized": row["company_normalized"]},
+                "score": 0.0,
+                "reason": "other_title",
+            }
+            for jid in held
+        }
         matches = set()
         for c in self.candidates(row):
             verdict, score = same_job_elsewhere(row, c, self.trim)
@@ -273,7 +358,9 @@ class _Index:
         jid, n = identity.compute_job_id(row["company_normalized"], row["title_normalized"]), 1
         while jid in self.pair_of_id and pair not in self.pair_of_id[jid]:
             n += 1
-            jid = identity.compute_job_id(row["company_normalized"], f"{row['title_normalized']}#{n}")
+            jid = identity.compute_job_id(
+                row["company_normalized"], f"{row['title_normalized']}#{n}"
+            )
         return jid, "hash", {k: v for k, v in maybes.items() if k != jid}
 
 
@@ -281,13 +368,13 @@ class _Index:
 # discover-dupes: the same matcher over ids already stored
 # ---------------------------------------------------------------------
 
+
 def _rank(r: dict) -> tuple[bool, float]:
     """A merge verdict outranks any maybe; then the higher JD score."""
     return r["reason"] == "backfill_merge", r["jd_score"]
 
 
-def find_pairs(store: pd.DataFrame, trim: Trim = NO_TRIM,
-               date: str = "") -> list[dict]:
+def find_pairs(store: pd.DataFrame, trim: Trim = NO_TRIM, date: str = "") -> list[dict]:
     """One record per pair of stored job_ids the matcher calls the same role
     ("backfill_merge") or a maybe ("backfill_" + a MAYBE_REASONS entry), best
     JD score kept."""
@@ -309,10 +396,16 @@ def find_pairs(store: pd.DataFrame, trim: Trim = NO_TRIM,
             if key in best and _rank(best[key]) >= (verdict == "merge", round(score, 1)):
                 continue
             best[key] = {
-                "pair": key, "job_id": row["job_id"], "other": other,
-                "company": row["company_normalized"], "other_company": c["company_normalized"],
-                "title": row["title_normalized"], "jd_score": round(score, 1),
-                "reason": reason, "date": date}
+                "pair": key,
+                "job_id": row["job_id"],
+                "other": other,
+                "company": row["company_normalized"],
+                "other_company": c["company_normalized"],
+                "title": row["title_normalized"],
+                "jd_score": round(score, 1),
+                "reason": reason,
+                "date": date,
+            }
     return sorted(best.values(), key=lambda r: (r["reason"], -r["jd_score"], r["pair"]))
 
 
@@ -320,15 +413,19 @@ def _line(r: dict, states: dict) -> str:
     def side(jid, company):
         st = states.get(jid, {}).get("state")
         return f"{jid} {company}" + (f" [{st}]" if st else "")
-    return (f"{r['reason']:<20} {r['jd_score']:>5g}  {side(r['job_id'], r['company'])}"
-            f"  /  {side(r['other'], r['other_company'])}  — {r['title']}")
+
+    return (
+        f"{r['reason']:<20} {r['jd_score']:>5g}  {side(r['job_id'], r['company'])}"
+        f"  /  {side(r['other'], r['other_company'])}  — {r['title']}"
+    )
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="discover-dupes",
         description="List stored job_ids that look like one role and record them in "
-                    "jobs/maybe_duplicates.jsonl. Never changes an id.")
+        "jobs/maybe_duplicates.jsonl. Never changes an id.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="print only; write nothing")
     parser.add_argument("--jobs-dir", type=Path, default=paths.JOBS)
     args = parser.parse_args(argv)

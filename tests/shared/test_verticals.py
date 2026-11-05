@@ -126,7 +126,9 @@ class TestValidation:
         data = _load_raw()
         lane = data["verticals"]["example_primary"]
         lane["title_exclude_term"] = lane.pop("title_exclude_terms", ["x"])
-        with pytest.raises(ValueError, match="'title_exclude_term' \\(did you mean 'title_exclude_terms'"):
+        with pytest.raises(
+            ValueError, match="'title_exclude_term' \\(did you mean 'title_exclude_terms'"
+        ):
             _write_and_load(tmp_path, data)
 
     def test_missing_linkedin_terms(self, tmp_path):
@@ -135,9 +137,9 @@ class TestValidation:
         with pytest.raises(ValueError, match="linkedin_terms"):
             _write_and_load(tmp_path, data)
 
-    @pytest.mark.parametrize("key", ["title_exclude_terms",
-                                     "title_include_terms",
-                                     "title_strong_keep_terms"])
+    @pytest.mark.parametrize(
+        "key", ["title_exclude_terms", "title_include_terms", "title_strong_keep_terms"]
+    )
     @pytest.mark.parametrize("blank", ["", "   "])
     def test_blank_title_term_is_rejected(self, tmp_path, key, blank):
         """A blank term compiles to a pattern matching every title. In an
@@ -157,17 +159,23 @@ class TestValidation:
     def test_focus_parsed(self, tmp_path):
         data = _load_raw()
         data["verticals"]["example_primary"]["focus"] = {
-            "question": "Is it  widgets?", "yes_min": 18, "no_max": 17}
+            "question": "Is it  widgets?",
+            "yes_min": 18,
+            "no_max": 17,
+        }
         lane = _write_and_load(tmp_path, data).verticals["example_primary"]
         assert lane.focus == verticals.Focus("Is it widgets?", 18, 17)
 
-    @pytest.mark.parametrize("focus", [
-        {"question": "Q?", "yes_min": 17, "no_max": 17},
-        {"question": "Q?", "yes_min": 21, "no_max": 17},
-        {"question": "", "yes_min": 18, "no_max": 17},
-        {"question": "Q?", "yes_min": 18},
-        {"question": "Q?", "yes_min": 18, "no_max": 17, "bonus": 2},
-    ])
+    @pytest.mark.parametrize(
+        "focus",
+        [
+            {"question": "Q?", "yes_min": 17, "no_max": 17},
+            {"question": "Q?", "yes_min": 21, "no_max": 17},
+            {"question": "", "yes_min": 18, "no_max": 17},
+            {"question": "Q?", "yes_min": 18},
+            {"question": "Q?", "yes_min": 18, "no_max": 17, "bonus": 2},
+        ],
+    )
     def test_bad_focus(self, tmp_path, focus):
         data = _load_raw()
         data["verticals"]["example_primary"]["focus"] = focus
@@ -187,6 +195,7 @@ class TestExampleTemplate:
     @pytest.mark.parametrize("fname", ["rubric.md", "tailoring.md"])
     def test_example_dirs_have_prose_files(self, name, fname):
         assert (REPO_ROOT / "profile" / "verticals" / name / fname).is_file()
+
 
 class TestSingleton:
     def test_set_config_wins(self, cfg):
@@ -217,15 +226,21 @@ class TestMainCli:
         """Build a self-contained repo root from the fixture config, minus any
         prose files named in drop_prose."""
         monkeypatch.setattr(verticals, "REPO_ROOT", tmp_path)
-        monkeypatch.setattr(verticals, "DEFAULT_CONFIG_PATH",
-                            tmp_path / "profile" / "verticals.yaml")
-        monkeypatch.setattr(verticals, "VERTICALS_DIR",
-                            tmp_path / "profile" / "verticals")
+        monkeypatch.setattr(
+            verticals, "DEFAULT_CONFIG_PATH", tmp_path / "profile" / "verticals.yaml"
+        )
+        monkeypatch.setattr(verticals, "VERTICALS_DIR", tmp_path / "profile" / "verticals")
         (tmp_path / "profile").mkdir()
-        (tmp_path / "profile" / "verticals.yaml").write_text(FIXTURE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        (tmp_path / "profile" / "verticals.yaml").write_text(
+            FIXTURE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+        )
         from src import resume_model
-        for attr, name in (("RESUME", "resume.example.yaml"), ("BULLETS", "bullets.example.md"),
-                           ("SKILLS", "skills_master.example.md")):
+
+        for attr, name in (
+            ("RESUME", "resume.example.yaml"),
+            ("BULLETS", "bullets.example.md"),
+            ("SKILLS", "skills_master.example.md"),
+        ):
             monkeypatch.setattr(resume_model, attr, REPO_ROOT / "profile" / name)
         cfg = verticals.load_verticals(FIXTURE_PATH)
         for name in cfg.verticals:
@@ -240,13 +255,12 @@ class TestMainCli:
         cfg = self._setup(tmp_path, monkeypatch)
         assert verticals.main() == 0
         out = capsys.readouterr().out
-        assert out.strip() == (
-            f"verticals={','.join(cfg.names)} default={cfg.default_vertical}"
-        )
+        assert out.strip() == (f"verticals={','.join(cfg.names)} default={cfg.default_vertical}")
 
     def test_missing_config_file(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.setattr(verticals, "DEFAULT_CONFIG_PATH",
-                            tmp_path / "profile" / "verticals.yaml")
+        monkeypatch.setattr(
+            verticals, "DEFAULT_CONFIG_PATH", tmp_path / "profile" / "verticals.yaml"
+        )
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert out.startswith("ERROR: ")
@@ -276,16 +290,26 @@ class TestMainCli:
         assert "example_tertiary/tailoring.md" in capsys.readouterr().out
 
     def test_every_missing_prose_file_is_listed_not_just_the_first(
-            self, tmp_path, monkeypatch, capsys):
+        self, tmp_path, monkeypatch, capsys
+    ):
         """A half-onboarded vertical usually misses several files; listing one
         per run turns onboarding into a guessing game."""
-        self._setup(tmp_path, monkeypatch, drop_prose={
-            ("example_primary", "rubric.md"), ("example_primary", "tailoring.md"),
-            ("example_secondary", "rubric.md"),
-        })
+        self._setup(
+            tmp_path,
+            monkeypatch,
+            drop_prose={
+                ("example_primary", "rubric.md"),
+                ("example_primary", "tailoring.md"),
+                ("example_secondary", "rubric.md"),
+            },
+        )
         assert verticals.main() == 1
         out = capsys.readouterr().out
-        for expected in ("example_primary/rubric.md", "example_primary/tailoring.md", "example_secondary/rubric.md"):
+        for expected in (
+            "example_primary/rubric.md",
+            "example_primary/tailoring.md",
+            "example_secondary/rubric.md",
+        ):
             assert expected in out
 
     def test_a_lane_without_a_resume_block_is_named(self, tmp_path, monkeypatch, capsys):
@@ -300,28 +324,30 @@ class TestMainCli:
 
     def test_a_source_problem_is_reported(self, tmp_path, monkeypatch, capsys):
         from src import resume_model
+
         self._setup(tmp_path, monkeypatch)
         broken = tmp_path / "bullets.md"
-        broken.write_text((REPO_ROOT / "profile" / "bullets.example.md").read_text(encoding="utf-8")
-                          .replace("## B-WID-01", "## B-ZZZ-01"), encoding="utf-8")
+        broken.write_text(
+            (REPO_ROOT / "profile" / "bullets.example.md")
+            .read_text(encoding="utf-8")
+            .replace("## B-WID-01", "## B-ZZZ-01"),
+            encoding="utf-8",
+        )
         monkeypatch.setattr(resume_model, "BULLETS", broken)
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "problem(s) in the resume sources" in out and "no context 'ZZZ'" in out
 
-    def test_prose_check_reports_before_the_resume_check(
-            self, tmp_path, monkeypatch, capsys):
+    def test_prose_check_reports_before_the_resume_check(self, tmp_path, monkeypatch, capsys):
         """Both are broken; the prose error returns first. Pin the order so a
         reshuffle doesn't silently change what the user sees."""
-        self._setup(tmp_path, monkeypatch,
-                    drop_prose={("example_primary", "rubric.md")})
+        self._setup(tmp_path, monkeypatch, drop_prose={("example_primary", "rubric.md")})
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "prose files" in out
         assert "scoring resume files" not in out
 
-    def test_a_dir_that_is_not_a_file_counts_as_missing(
-            self, tmp_path, monkeypatch, capsys):
+    def test_a_dir_that_is_not_a_file_counts_as_missing(self, tmp_path, monkeypatch, capsys):
         """is_file(), not exists() — a directory named rubric.md is not prose."""
         self._setup(tmp_path, monkeypatch, drop_prose={("example_primary", "rubric.md")})
         (tmp_path / "profile" / "verticals" / "example_primary" / "rubric.md").mkdir()
@@ -335,8 +361,7 @@ class TestClassifierRuleProtocol:
     coverage at all while being reachable from the live config."""
 
     def test_regex_rule_matches_are_case_insensitive(self, cfg):
-        rule = next(r for v, r in cfg.classifier_rules
-                    if isinstance(r, verticals.RegexRule))
+        rule = next(r for v, r in cfg.classifier_rules if isinstance(r, verticals.RegexRule))
         title = "Widget Assembly Functional Consultant"
         assert rule.matches(title) is True
         assert rule.matches(title.upper()) is True
@@ -354,8 +379,12 @@ class TestClassifierRuleProtocol:
     def test_compound_normalizes_hyphens_case_and_nbsp(self):
         """Boards write the same title three ways; a rule must not care."""
         rule = verticals.CompoundRule("Co-Pilot", ("Engineer",))
-        for title in ("Co-Pilot Engineer", "co pilot engineer",
-                      "CO PILOT ENGINEER", "Co-pilot Engineer"):
+        for title in (
+            "Co-Pilot Engineer",
+            "co pilot engineer",
+            "CO PILOT ENGINEER",
+            "Co-pilot Engineer",
+        ):
             assert rule.matches(title) is True, title
 
     def test_both_kinds_return_a_real_bool(self, cfg):
@@ -373,9 +402,15 @@ class TestAbroadTerms:
 
     def test_a_list_is_loaded_in_order(self, tmp_path):
         data = _load_raw()
-        data["verticals"]["example_primary"]["abroad_terms"] = ["Widget Engineer", "Junior Widget Engineer"]
+        data["verticals"]["example_primary"]["abroad_terms"] = [
+            "Widget Engineer",
+            "Junior Widget Engineer",
+        ]
         loaded = _write_and_load(tmp_path, data)
-        assert loaded.verticals["example_primary"].abroad_terms == ("Widget Engineer", "Junior Widget Engineer")
+        assert loaded.verticals["example_primary"].abroad_terms == (
+            "Widget Engineer",
+            "Junior Widget Engineer",
+        )
 
     @pytest.mark.parametrize("bad", ["Widget Engineer", [""], [3]])
     def test_a_bad_value_is_rejected(self, tmp_path, bad):

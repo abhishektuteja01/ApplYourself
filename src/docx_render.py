@@ -17,6 +17,7 @@ shapes (images, icons).
 Cover letters are the opposite operation — preserve the user's design and fill
 placeholders — and live in src/docx_cover_letter.py.
 """
+
 from __future__ import annotations
 
 import os
@@ -63,12 +64,12 @@ class ResumeContentError(ValueError):
 class Run(TypedDict, total=False):
     text: str
     bold: bool
-    url: str   # optional; when set, emit as a Word hyperlink (clickable,
-               # Hyperlink character style applied for blue+underline)
+    url: str  # optional; when set, emit as a Word hyperlink (clickable,
+    # Hyperlink character style applied for blue+underline)
 
 
 class Block(TypedDict, total=False):
-    type: str   # "name" | "section_header" | "job_header" | "body" | "bullet"
+    type: str  # "name" | "section_header" | "job_header" | "body" | "bullet"
     text: str
     runs: list[Run]
 
@@ -76,6 +77,7 @@ class Block(TypedDict, total=False):
 # =====================================================================
 # Public API
 # =====================================================================
+
 
 def render_resume(md_content: str, template_path: Path, out_path: Path) -> None:
     """Render resume markdown to an ATS-clean docx using the template.
@@ -121,10 +123,13 @@ def parse_resume_md(md: str) -> list[Block]:
         # Bullet
         if line.startswith("* "):
             body = line[2:].strip()
-            blocks.append({
-                "type": "bullet", "text": body,
-                "runs": _inline_runs(body),
-            })
+            blocks.append(
+                {
+                    "type": "bullet",
+                    "text": body,
+                    "runs": _inline_runs(body),
+                }
+            )
             continue
         # Section header: a line that is entirely **ALL CAPS WORDS**
         m = re.fullmatch(r"\*\*([A-Z][A-Z0-9 &/]*[A-Z])\*\*", line)
@@ -147,10 +152,13 @@ def parse_resume_md(md: str) -> list[Block]:
         if m and m.group(2).strip():
             bold_prefix = m.group(1).strip()
             if bold_prefix.endswith(":"):
-                blocks.append({
-                    "type": "body", "text": line,
-                    "runs": _inline_runs(line),
-                })
+                blocks.append(
+                    {
+                        "type": "body",
+                        "text": line,
+                        "runs": _inline_runs(line),
+                    }
+                )
                 continue
             runs: list[Run] = [
                 {"text": bold_prefix, "bold": True},
@@ -161,16 +169,20 @@ def parse_resume_md(md: str) -> list[Block]:
             blocks.append({"type": "job_header", "text": line, "runs": runs})
             continue
         # Plain body (may contain inline bold)
-        blocks.append({
-            "type": "body", "text": line,
-            "runs": _inline_runs(line),
-        })
+        blocks.append(
+            {
+                "type": "body",
+                "text": line,
+                "runs": _inline_runs(line),
+            }
+        )
     return blocks
 
 
 # =====================================================================
 # Internals
 # =====================================================================
+
 
 def _validate_template(doc, path: Path) -> None:
     style_names = {s.name for s in doc.styles}
@@ -239,8 +251,8 @@ def _write_blocks(doc, blocks: list[Block]) -> None:
             continue
         style_map = {
             "job_header": "Resume Job Header",
-            "body":       "Resume Body",
-            "bullet":     "Resume Bullet",
+            "body": "Resume Body",
+            "bullet": "Resume Bullet",
         }
         if btype not in style_map:
             raise ValueError(f"Unknown block type: {btype}")
@@ -251,13 +263,15 @@ def _write_blocks(doc, blocks: list[Block]) -> None:
         runs = block.get("runs") or [{"text": block["text"], "bold": False}]
         for r in runs:
             _emit_run_splitting_tabs(
-                p, r["text"], bold=bool(r.get("bold")), url=r.get("url"),
+                p,
+                r["text"],
+                bold=bool(r.get("bold")),
+                url=r.get("url"),
             )
         name_just_emitted = False
 
 
-def _emit_run_splitting_tabs(paragraph, text: str, *, bold: bool,
-                              url: str | None = None) -> None:
+def _emit_run_splitting_tabs(paragraph, text: str, *, bold: bool, url: str | None = None) -> None:
     """Add runs to paragraph, splitting on tab characters and routing
     URL-bearing runs through the Word hyperlink path. Each "\\t" becomes
     its own non-bold non-link run so Word's layout engine advances to the
@@ -322,15 +336,14 @@ def _inline_runs(text: str) -> list[Run]:
     for m in _BOLD_RE.finditer(text):
         matches.append((m.start(), m.end(), {"text": m.group(1), "bold": True}))
     for m in _LINK_RE.finditer(text):
-        matches.append((m.start(), m.end(),
-                        {"text": m.group(1), "bold": False, "url": m.group(2)}))
+        matches.append((m.start(), m.end(), {"text": m.group(1), "bold": False, "url": m.group(2)}))
     matches.sort(key=lambda x: x[0])
 
     runs: list[Run] = []
     pos = 0
     for start, end, run in matches:
         if start < pos:
-            continue   # overlap with a prior match; drop
+            continue  # overlap with a prior match; drop
         if start > pos:
             runs.append({"text": text[pos:start], "bold": False})
         runs.append(run)
@@ -353,8 +366,8 @@ PDF_STAGING = paths.REPO_ROOT / ".pdf_staging"
 
 
 class PdfResult(TypedDict):
-    status: str        # "ok" | "skipped" | "failed"
-    path: str          # the pdf, when status == "ok"
+    status: str  # "ok" | "skipped" | "failed"
+    path: str  # the pdf, when status == "ok"
     pages: int
     detail: str
 
@@ -372,35 +385,46 @@ def _convert(docx_path: Path, pdf_path: Path, token: str) -> PdfResult | None:
     # with -1728, so close any first; and close ours whether or not the save worked.
     script = (
         'tell application "Microsoft Word"\n'
-        '    repeat with i from (count of documents) to 1 by -1\n'
-        '        try\n'
+        "    repeat with i from (count of documents) to 1 by -1\n"
+        "        try\n"
         f'            if (name of document i) is "{name}" then close document i saving no\n'
-        '        end try\n'
-        '    end repeat\n'
+        "        end try\n"
+        "    end repeat\n"
         f'    open POSIX file "{staged_docx}"\n'
         f'    set theDoc to document "{name}"\n'
-        '    try\n'
+        "    try\n"
         f'        save as theDoc file format format PDF file name "{staged_pdf}"\n'
-        '    on error errMsg number errNum\n'
-        '        try\n'
-        '            close theDoc saving no\n'
-        '        end try\n'
-        '        error errMsg number errNum\n'
-        '    end try\n'
-        '    close theDoc saving no\n'
-        'end tell\n'
+        "    on error errMsg number errNum\n"
+        "        try\n"
+        "            close theDoc saving no\n"
+        "        end try\n"
+        "        error errMsg number errNum\n"
+        "    end try\n"
+        "    close theDoc saving no\n"
+        "end tell\n"
     )
     try:
-        proc = subprocess.run(["osascript"], input=script, text=True, encoding="utf-8",
-                              capture_output=True, timeout=180, check=False)
+        proc = subprocess.run(
+            ["osascript"],
+            input=script,
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            timeout=180,
+            check=False,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         staged_docx.unlink(missing_ok=True)
         return PdfResult(status="failed", path="", pages=0, detail=f"osascript: {exc}")
     staged_docx.unlink(missing_ok=True)
     if proc.returncode != 0 or not staged_pdf.is_file() or staged_pdf.stat().st_size == 0:
         staged_pdf.unlink(missing_ok=True)
-        return PdfResult(status="failed", path="", pages=0,
-                         detail=(proc.stderr or "Word produced no pdf").strip())
+        return PdfResult(
+            status="failed",
+            path="",
+            pages=0,
+            detail=(proc.stderr or "Word produced no pdf").strip(),
+        )
     shutil.move(str(staged_pdf), pdf_path)
     return None
 
@@ -416,6 +440,7 @@ def export_pdf(docx_path: Path, token: str) -> PdfResult:
     queue = os.environ.get("PDF_BROKER_DIR")
     if queue:
         from src import pdf_broker
+
         return pdf_broker.request(Path(queue), docx_path, token)
     return convert_locally(docx_path, token)
 
@@ -425,8 +450,12 @@ def convert_locally(docx_path: Path, token: str) -> PdfResult:
     pdf_path = docx_path.with_suffix(".pdf")
     pdf_path.unlink(missing_ok=True)
     if sys.platform != "darwin" or not WORD_APP.exists():
-        return PdfResult(status="skipped", path="", pages=0,
-                         detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable")
+        return PdfResult(
+            status="skipped",
+            path="",
+            pages=0,
+            detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable",
+        )
     PDF_STAGING.mkdir(exist_ok=True)
     # Word is one app: two conversions at once (parallel /tailor runs) collide with
     # -1728 "object does not exist", so they take turns.
@@ -439,4 +468,5 @@ def convert_locally(docx_path: Path, token: str) -> PdfResult:
 
 def pdf_pages(pdf_path: Path) -> int:
     from pypdf import PdfReader
+
     return len(PdfReader(str(pdf_path)).pages)

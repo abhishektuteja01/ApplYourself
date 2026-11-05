@@ -1,5 +1,6 @@
 """Unknown-key check for the profile/*.yaml loaders, so a typo'd key fails
 loud instead of silently reading as empty (R7: no LLM)."""
+
 from __future__ import annotations
 
 import difflib
@@ -7,12 +8,22 @@ from pathlib import Path
 
 import yaml
 
-AUTOMATION_KEYS = frozenset({
-    "schema_version", "score_threshold", "table_path", "tailor_parallel",
-    "tailor_stagger_seconds", "retries", "max_budget_usd_per_call",
-    "auto_add_synonyms", "unlock_max_open", "summary_email",
-    "tailor_max_per_night", "apply_prep_max_per_night",
-})
+AUTOMATION_KEYS = frozenset(
+    {
+        "schema_version",
+        "score_threshold",
+        "table_path",
+        "tailor_parallel",
+        "tailor_stagger_seconds",
+        "retries",
+        "max_budget_usd_per_call",
+        "auto_add_synonyms",
+        "unlock_max_open",
+        "summary_email",
+        "tailor_max_per_night",
+        "apply_prep_max_per_night",
+    }
+)
 
 
 def check_keys(raw: dict, allowed, where: str, path) -> None:
@@ -24,8 +35,9 @@ def check_keys(raw: dict, allowed, where: str, path) -> None:
         close = difflib.get_close_matches(str(key), allowed, n=1)
         bad.append(f"{key!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
     if bad:
-        raise ValueError(f"{path}: {where}: unknown key {', '.join(bad)}; "
-                         f"valid keys: {', '.join(allowed)}")
+        raise ValueError(
+            f"{path}: {where}: unknown key {', '.join(bad)}; valid keys: {', '.join(allowed)}"
+        )
 
 
 def load_automation(path: Path) -> dict:

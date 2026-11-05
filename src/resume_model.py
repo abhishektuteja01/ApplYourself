@@ -17,6 +17,7 @@ pointer is named. `build` turns a plan (the model's choices) into resume
 markdown plus a trace, and reports every broken rule as a problem instead of
 rendering it.
 """
+
 from __future__ import annotations
 
 import re
@@ -35,8 +36,11 @@ SECTIONS = ("summary", "work", "projects", "education", "skills")
 BULLET_KEYS = ("canonical", "tags", "default_for", "evidence", "allowable_synonyms")
 SKILL_KEYS = ("name", "evidence", "allowable_synonyms", "show")
 SECTION_TITLES = {
-    "summary": "SUMMARY", "work": "WORK EXPERIENCE", "projects": "PROJECTS",
-    "education": "EDUCATION", "skills": "TECHNICAL SKILLS",
+    "summary": "SUMMARY",
+    "work": "WORK EXPERIENCE",
+    "projects": "PROJECTS",
+    "education": "EDUCATION",
+    "skills": "TECHNICAL SKILLS",
 }
 _BULLET_ID = re.compile(r"^B-([A-Z0-9]+)-(\d+)$")
 _BULLET_REF = re.compile(r"\bB-([A-Z0-9]+)-(\d+(?:/\d+)*)")
@@ -50,6 +54,7 @@ class SourceError(ValueError):
 # =====================================================================
 # Loading
 # =====================================================================
+
 
 def parse_entries(text: str) -> dict[str, dict]:
     """Parse the `## ID` / `key: value` format of bullets.md and
@@ -94,8 +99,9 @@ class Sources:
 def load_sources() -> Sources:
     for p in (RESUME, BULLETS, SKILLS):
         if not p.is_file():
-            raise SourceError(f"{p.relative_to(paths.REPO_ROOT)} missing — copy its "
-                              f".example twin and fill it in.")
+            raise SourceError(
+                f"{p.relative_to(paths.REPO_ROOT)} missing — copy its .example twin and fill it in."
+            )
     resume = yaml.safe_load(RESUME.read_text(encoding="utf-8")) or {}
     if not isinstance(resume, dict):
         raise SourceError("profile/resume.yaml: top level must be a mapping")
@@ -143,6 +149,7 @@ def shown_skills(src: Sources, lane: str) -> dict[str, list[str]]:
 # Checking the sources (once, at the source)
 # =====================================================================
 
+
 def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
     """Every problem in the sources, as one line each. Empty = clean."""
     problems: list[str] = []
@@ -158,7 +165,9 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
     if not r.get("contact"):
         problems.append("resume.yaml: `contact` must list at least one item")
     for i, e in enumerate(r.get("education") or []):
-        if not isinstance(e, dict) or not all(isinstance(e.get(k), str) for k in ("degree", "dates")):
+        if not isinstance(e, dict) or not all(
+            isinstance(e.get(k), str) for k in ("degree", "dates")
+        ):
             problems.append(f"resume.yaml education[{i}]: needs `degree` and `dates`")
     for ctx, c in src.contexts.items():
         where = f"resume.yaml contexts.{ctx}"
@@ -170,20 +179,28 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
         for k in ("title", "dates"):
             if not isinstance(c.get(k), str) or not c[k].strip():
                 problems.append(f"{where}.{k}: must be a nonempty string")
-        if c.get("section") == "work" and not all(isinstance(c.get(k), str) for k in ("org", "location")):
+        if c.get("section") == "work" and not all(
+            isinstance(c.get(k), str) for k in ("org", "location")
+        ):
             problems.append(f"{where}: a work context needs `org` and `location`")
         for lane, b in (c.get("lanes") or {}).items():
             if lane not in lane_names:
                 problems.append(f"{where}.lanes: {lane!r} is not a configured lane")
-            elif not (isinstance(b, dict) and set(b) <= {"min", "max", "order"}
-                      and all(type(b.get(k)) is int for k in ("min", "max"))
-                      and 0 <= b["min"] <= b["max"]
-                      and type(b.get("order", 0)) is int):
-                problems.append(f"{where}.lanes.{lane}: must be {{min, max, order?}} "
-                                f"with 0 <= min <= max")
+            elif not (
+                isinstance(b, dict)
+                and set(b) <= {"min", "max", "order"}
+                and all(type(b.get(k)) is int for k in ("min", "max"))
+                and 0 <= b["min"] <= b["max"]
+                and type(b.get("order", 0)) is int
+            ):
+                problems.append(
+                    f"{where}.lanes.{lane}: must be {{min, max, order?}} with 0 <= min <= max"
+                )
 
-    for label, entries, keys in (("bullets.md", src.bullets, BULLET_KEYS),
-                                 ("skills_master.md", src.skills, SKILL_KEYS)):
+    for label, entries, keys in (
+        ("bullets.md", src.bullets, BULLET_KEYS),
+        ("skills_master.md", src.skills, SKILL_KEYS),
+    ):
         for eid, e in entries.items():
             for k in sorted(set(e) - set(keys)):
                 problems.append(f"{label} {eid}: unknown key {k!r} (allowed: {', '.join(keys)})")
@@ -203,8 +220,10 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
             if lane not in lane_names:
                 problems.append(f"bullets.md {bid}.default_for: {lane!r} is not a configured lane")
             elif lane_budget(src, m.group(1), lane) is None:
-                problems.append(f"bullets.md {bid}.default_for: context {m.group(1)} "
-                                f"is not shown on lane {lane}")
+                problems.append(
+                    f"bullets.md {bid}.default_for: context {m.group(1)} "
+                    f"is not shown on lane {lane}"
+                )
     for ctx in src.contexts:
         if ctx not in ctx_bullets:
             problems.append(f"resume.yaml contexts.{ctx}: no bullets in bullets.md")
@@ -220,8 +239,10 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
             if lane not in lane_names:
                 problems.append(f"skills_master.md {sid}.show: {lane!r} is not a configured lane")
             elif lane in lanes and label not in lanes[lane].resume.skill_lines:
-                problems.append(f"skills_master.md {sid}.show.{lane}: {label!r} is not one of "
-                                f"that lane's skill_lines")
+                problems.append(
+                    f"skills_master.md {sid}.show.{lane}: {label!r} is not one of "
+                    f"that lane's skill_lines"
+                )
         for ref in sorted(evidence_bullets(s) - set(src.bullets)):
             problems.append(f"skills_master.md {sid}.evidence: {ref} is not in bullets.md")
 
@@ -241,17 +262,23 @@ def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
     mins = sum(lane_budget(src, c, lane)[0] for c in shown)
     maxes = sum(lane_budget(src, c, lane)[1] for c in shown)
     if mins > hi or maxes < lo:
-        problems.append(f"lane {lane}: context budgets ({mins}-{maxes}) cannot meet "
-                        f"resume.bullets {list(v.resume.bullets)}")
+        problems.append(
+            f"lane {lane}: context budgets ({mins}-{maxes}) cannot meet "
+            f"resume.bullets {list(v.resume.bullets)}"
+        )
     defaults = [b for b, e in src.bullets.items() if lane in (e.get("default_for") or [])]
     if not lo <= len(defaults) <= hi:
-        problems.append(f"lane {lane}: {len(defaults)} default_for bullets, outside "
-                        f"resume.bullets {list(v.resume.bullets)}")
+        problems.append(
+            f"lane {lane}: {len(defaults)} default_for bullets, outside "
+            f"resume.bullets {list(v.resume.bullets)}"
+        )
     for c in shown:
         n = sum(1 for b in defaults if src.context_of(b) == c)
         cmin, cmax = lane_budget(src, c, lane)
         if not cmin <= n <= cmax:
-            problems.append(f"lane {lane}: {n} default_for bullets in {c}, outside [{cmin}, {cmax}]")
+            problems.append(
+                f"lane {lane}: {n} default_for bullets in {c}, outside [{cmin}, {cmax}]"
+            )
     lines = shown_skills(src, lane)
     for label in v.resume.skill_lines:
         if not lines.get(label):
@@ -262,22 +289,29 @@ def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
         for group in re.findall(r"\(([^)]*)\)", na):
             for item in (i.strip().lower() for i in group.split(",")):
                 if item in by_name and by_name[item] != a:
-                    problems.append(f"lane {lane}: {a} name {na!r} lists {by_name[item]} "
-                                    f"({names[by_name[item]]!r}); the resume would show it twice")
+                    problems.append(
+                        f"lane {lane}: {a} name {na!r} lists {by_name[item]} "
+                        f"({names[by_name[item]]!r}); the resume would show it twice"
+                    )
     prose = verticals.VERTICALS_DIR / lane / "tailoring.md"
     if prose.is_file():
         ids = sorted(set(_ANY_ID.findall(prose.read_text(encoding="utf-8"))))
         if ids:
-            problems.append(f"profile/verticals/{lane}/tailoring.md names ids {ids[:5]}: "
-                            f"picks live in bullets.md default_for and skills in `show`")
+            problems.append(
+                f"profile/verticals/{lane}/tailoring.md names ids {ids[:5]}: "
+                f"picks live in bullets.md default_for and skills in `show`"
+            )
     return problems
 
 
 def _source_texts(src: Sources, lanes: dict) -> list[tuple[str, str]]:
     out = [(str(b.get("canonical") or ""), f"bullets.md {bid}") for bid, b in src.bullets.items()]
     out += [(v.resume.summary, f"verticals.yaml {n}.resume.summary") for n, v in lanes.items()]
-    out += [(str(c.get(k) or ""), f"resume.yaml contexts.{ctx}.{k}")
-            for ctx, c in src.contexts.items() for k in ("title", "subtitle")]
+    out += [
+        (str(c.get(k) or ""), f"resume.yaml contexts.{ctx}.{k}")
+        for ctx, c in src.contexts.items()
+        for k in ("title", "subtitle")
+    ]
     return out
 
 
@@ -306,7 +340,9 @@ def words(text: str) -> list[str]:
 
 def bullet_text(src: Sources, bid: str) -> str:
     b = src.bullets.get(bid) or {}
-    return " ".join([str(b.get("canonical") or "")] + [str(s) for s in b.get("allowable_synonyms") or []])
+    return " ".join(
+        [str(b.get("canonical") or "")] + [str(s) for s in b.get("allowable_synonyms") or []]
+    )
 
 
 def unlicensed_words(src: Sources, bid: str, text: str) -> list[str]:
@@ -347,10 +383,11 @@ def keep_terms(src: Sources, *extra: str) -> list[str]:
 # Plans and assembly
 # =====================================================================
 
+
 @dataclass
 class Problem:
     where: str
-    code: str      # unknown_id | context | budget | license | number | skill | layout | lint
+    code: str  # unknown_id | context | budget | license | number | skill | layout | lint
     detail: str
 
     def as_dict(self) -> dict:
@@ -362,7 +399,7 @@ class Built:
     markdown: str
     trace: list[str] = field(default_factory=list)
     problems: list[Problem] = field(default_factory=list)
-    swapped: list[str] = field(default_factory=list)   # --final fallbacks taken
+    swapped: list[str] = field(default_factory=list)  # --final fallbacks taken
 
 
 def baseline_plan(src: Sources, lane: str) -> dict:
@@ -370,9 +407,13 @@ def baseline_plan(src: Sources, lane: str) -> dict:
     shown skill in file order."""
     return {
         "summary": {"text": verticals.get_config().verticals[lane].resume.summary, "uses": []},
-        "entries": [{"id": b} for b in sorted(
-            (b for b, e in src.bullets.items() if lane in (e.get("default_for") or [])),
-            key=lambda b: lane_order(src, src.context_of(b), lane))],
+        "entries": [
+            {"id": b}
+            for b in sorted(
+                (b for b, e in src.bullets.items() if lane in (e.get("default_for") or [])),
+                key=lambda b: lane_order(src, src.context_of(b), lane),
+            )
+        ],
         "skills": {},
     }
 
@@ -387,8 +428,15 @@ def _canonical_key(bid: str) -> tuple[str, int]:
     return (m.group(1), int(m.group(2))) if m else (bid, 0)
 
 
-def build(src: Sources, lane: str, plan: dict, *, company: str = "",
-          keywords: tuple[str, ...] = (), final: bool = False) -> Built:
+def build(
+    src: Sources,
+    lane: str,
+    plan: dict,
+    *,
+    company: str = "",
+    keywords: tuple[str, ...] = (),
+    final: bool = False,
+) -> Built:
     """Assemble resume markdown from a plan. Problems are collected, never
     raised; with `final`, a failing rewording falls back to its canonical text
     and a failing summary to the lane baseline, and the swap is recorded."""
@@ -397,12 +445,15 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     problems: list[Problem] = []
     swapped: list[str] = []
     keep = keep_terms(src, company)
+
     def fix(t):
         return lint.fix_mechanical(t, src.rules)[0]
 
     def lint_problems(text: str, where: str) -> list[Problem]:
-        return [Problem(where, "lint", f"banned phrase {x['phrase']!r} ({x['category']})")
-                for x in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)]
+        return [
+            Problem(where, "lint", f"banned phrase {x['phrase']!r} ({x['category']})")
+            for x in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+        ]
 
     # --- summary
     summary = plan.get("summary") or {}
@@ -411,13 +462,28 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     s_source = "baseline"
     if s_text != shape.summary:
         s_source = "written"
-        sp = [Problem("summary", "unknown_id", f"{u} is not in bullets.md") for u in s_uses if u not in src.bullets]
-        grounds = " ".join([shape.summary, context_text(src)] + [bullet_text(src, u) for u in s_uses])
-        sp += [Problem("summary", "number", f"{n} is in none of the cited bullets") for n in ungrounded_numbers(s_text, grounds)]
-        backed = {s for s in claimed_skills(src, grounds)} | {sid for sid, s in src.skills.items()
-                                                              if evidence_bullets(s) & set(s_uses)}
-        sp += [Problem("summary", "skill", f"{src.skills[s]['name']!r} ({s}) is backed by no cited bullet")
-               for s in claimed_skills(src, s_text) if s not in backed]
+        sp = [
+            Problem("summary", "unknown_id", f"{u} is not in bullets.md")
+            for u in s_uses
+            if u not in src.bullets
+        ]
+        grounds = " ".join(
+            [shape.summary, context_text(src)] + [bullet_text(src, u) for u in s_uses]
+        )
+        sp += [
+            Problem("summary", "number", f"{n} is in none of the cited bullets")
+            for n in ungrounded_numbers(s_text, grounds)
+        ]
+        backed = {s for s in claimed_skills(src, grounds)} | {
+            sid for sid, s in src.skills.items() if evidence_bullets(s) & set(s_uses)
+        }
+        sp += [
+            Problem(
+                "summary", "skill", f"{src.skills[s]['name']!r} ({s}) is backed by no cited bullet"
+            )
+            for s in claimed_skills(src, s_text)
+            if s not in backed
+        ]
         sp += lint_problems(s_text, "summary")
         if sp and final:
             swapped.append("summary -> lane baseline")
@@ -432,7 +498,9 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     for e in plan.get("entries") or []:
         bid = str((e or {}).get("id") or "")
         if bid not in src.bullets:
-            problems.append(Problem(bid or "entries", "unknown_id", f"{bid!r} is not in bullets.md"))
+            problems.append(
+                Problem(bid or "entries", "unknown_id", f"{bid!r} is not in bullets.md")
+            )
             continue
         if bid in chosen:
             problems.append(Problem(bid, "unknown_id", "listed twice"))
@@ -444,10 +512,14 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
         canonical = fix(str(src.bullets[bid]["canonical"]).strip())
         text = fix(str(e.get("text") or "").strip())
         if text and text != canonical:
-            bp = [Problem(bid, "license", f"{w!r} is in neither the bullet nor its synonyms")
-                  for w in dict.fromkeys(unlicensed_words(src, bid, text))]
-            bp += [Problem(bid, "number", f"{n} is not in the bullet")
-                   for n in ungrounded_numbers(text, bullet_text(src, bid))]
+            bp = [
+                Problem(bid, "license", f"{w!r} is in neither the bullet nor its synonyms")
+                for w in dict.fromkeys(unlicensed_words(src, bid, text))
+            ]
+            bp += [
+                Problem(bid, "number", f"{n} is not in the bullet")
+                for n in ungrounded_numbers(text, bullet_text(src, bid))
+            ]
             bp += lint_problems(text, bid)
             if bp and final:
                 swapped.append(f"{bid} -> canonical")
@@ -463,10 +535,14 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     for c in src.contexts:
         budget = lane_budget(src, c, lane)
         if budget and not budget[0] <= counts[c] <= budget[1]:
-            problems.append(Problem(c, "budget", f"{counts[c]} bullets, lane {lane} allows {list(budget)}"))
+            problems.append(
+                Problem(c, "budget", f"{counts[c]} bullets, lane {lane} allows {list(budget)}")
+            )
     lo, hi = shape.bullets
     if not lo <= len(chosen) <= hi:
-        problems.append(Problem("entries", "budget", f"{len(chosen)} bullets, lane {lane} allows [{lo}, {hi}]"))
+        problems.append(
+            Problem("entries", "budget", f"{len(chosen)} bullets, lane {lane} allows [{lo}, {hi}]")
+        )
     for c in src.contexts:
         budget = lane_budget(src, c, lane)
         if budget and budget[0] > 0 and c not in order:
@@ -478,27 +554,50 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
     skill_lines: list[tuple[str, list[tuple[str, str]]]] = []
     for label in plan_skills:
         if label not in shape.skill_lines:
-            problems.append(Problem(f"skills.{label}", "layout", f"not one of lane {lane}'s skill_lines"))
+            problems.append(
+                Problem(f"skills.{label}", "layout", f"not one of lane {lane}'s skill_lines")
+            )
     for label in shape.skill_lines:
         picks = plan_skills.get(label)
         rendered: list[tuple[str, str]] = []
-        for item in (picks if picks else lines.get(label, [])):
-            sid, alias = (item, "") if isinstance(item, str) else (str(item.get("id")), str(item.get("alias") or ""))
+        for item in picks if picks else lines.get(label, []):
+            sid, alias = (
+                (item, "")
+                if isinstance(item, str)
+                else (str(item.get("id")), str(item.get("alias") or ""))
+            )
             s = src.skills.get(sid)
             if s is None:
-                problems.append(Problem(f"skills.{label}", "unknown_id", f"{sid} is not in skills_master.md"))
+                problems.append(
+                    Problem(f"skills.{label}", "unknown_id", f"{sid} is not in skills_master.md")
+                )
                 continue
             if sid not in lines.get(label, []):
-                problems.append(Problem(f"skills.{label}", "layout", f"{sid} does not show on this line for lane {lane}"))
+                problems.append(
+                    Problem(
+                        f"skills.{label}",
+                        "layout",
+                        f"{sid} does not show on this line for lane {lane}",
+                    )
+                )
                 continue
             if alias and alias not in (s.get("allowable_synonyms") or []):
-                problems.append(Problem(f"skills.{label}", "skill", f"{alias!r} is not an allowable synonym of {sid}"))
+                problems.append(
+                    Problem(
+                        f"skills.{label}",
+                        "skill",
+                        f"{alias!r} is not an allowable synonym of {sid}",
+                    )
+                )
                 continue
             rendered.append((sid, alias or str(s["name"])))
         if picks:  # a plan reorders a line; the skills it leaves out follow in default order
             listed = {sid for sid, _ in rendered}
-            rendered += [(sid, str(src.skills[sid]["name"])) for sid in lines.get(label, [])
-                         if sid not in listed and sid in src.skills]
+            rendered += [
+                (sid, str(src.skills[sid]["name"]))
+                for sid in lines.get(label, [])
+                if sid not in listed and sid in src.skills
+            ]
         if rendered:
             skill_lines.append((label, rendered))
 
@@ -509,7 +608,9 @@ def build(src: Sources, lane: str, plan: dict, *, company: str = "",
 
 
 def context_text(src: Sources) -> str:
-    return " ".join(str(c.get(k) or "") for c in src.contexts.values() for k in ("title", "org", "dates"))
+    return " ".join(
+        str(c.get(k) or "") for c in src.contexts.values() for k in ("title", "org", "dates")
+    )
 
 
 def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines):
@@ -526,7 +627,11 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
             trace.extend(extra or [])
 
     add(f"**{r['name']}**")
-    add(" | ".join(f"[{c['text']}]({c['url']})" if c.get("url") else c["text"] for c in r["contact"]))
+    add(
+        " | ".join(
+            f"[{c['text']}]({c['url']})" if c.get("url") else c["text"] for c in r["contact"]
+        )
+    )
     for section in v.resume.sections:
         add(f"**{SECTION_TITLES[section]}**")
         if section == "summary":
@@ -541,12 +646,19 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
                 else:
                     sub = f" - {c['subtitle']}" if c.get("subtitle") else ""
                     add(f"**{c['title']}**{sub}\t{c['dates']}")
-                for bid in sorted((b for b in chosen if src.context_of(b) == ctx), key=_canonical_key):
+                for bid in sorted(
+                    (b for b in chosen if src.context_of(b) == ctx), key=_canonical_key
+                ):
                     if bid in rewordings:
-                        add(f"* {chosen[bid]}", bid, "rephrase", [
-                            f"  before:   {src.bullets[bid]['canonical']}",
-                            f"  after:    {chosen[bid]}",
-                        ])
+                        add(
+                            f"* {chosen[bid]}",
+                            bid,
+                            "rephrase",
+                            [
+                                f"  before:   {src.bullets[bid]['canonical']}",
+                                f"  after:    {chosen[bid]}",
+                            ],
+                        )
                     else:
                         add(f"* {chosen[bid]}", bid, "unchanged")
         elif section == "education":
@@ -556,8 +668,11 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
                     add(e["detail"])
         elif section == "skills":
             for label, items in skill_lines:
-                add(f"**{label}:** " + ", ".join(t for _, t in items),
-                    ",".join(s for s, _ in items), "skills")
+                add(
+                    f"**{label}:** " + ", ".join(t for _, t in items),
+                    ",".join(s for s, _ in items),
+                    "skills",
+                )
     return "\n".join(lines).rstrip() + "\n", trace
 
 
@@ -567,7 +682,10 @@ def _keyword_trace(md: str, keywords: tuple[str, ...]) -> list[str]:
     md_lines = md.split("\n")
     out = ["", "## Keywords"]
     for kw in keywords:
-        hit = [f"L{i}" for i, line in enumerate(md_lines, start=1)
-               if re.search(rf"(?<!\w){re.escape(kw.lower())}(?!\w)", line.lower())]
+        hit = [
+            f"L{i}"
+            for i, line in enumerate(md_lines, start=1)
+            if re.search(rf"(?<!\w){re.escape(kw.lower())}(?!\w)", line.lower())
+        ]
         out.append(f"- {kw}: {', '.join(hit) if hit else 'not landed'}")
     return out

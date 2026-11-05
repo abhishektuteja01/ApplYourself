@@ -12,6 +12,7 @@ Staging holds only:
   out_<lane>_NNN.json      the judge's answer for that slice
   rejected_<lane>_NNN.json an answer finish refused, kept until the run closes
 """
+
 from __future__ import annotations
 
 import json
@@ -43,9 +44,9 @@ from src.state_io import ACTIVE_STATES, load_state_index
 
 SCORED_COLUMNS: list[str] = [
     "job_id",
-    "fit_score",           # sum of fit_subscores, 0-100
-    "fit_subscores",       # JSON string: {title, skills, seniority, domain}
-    "vertical",            # a profile/verticals.yaml name | "" (no lane)
+    "fit_score",  # sum of fit_subscores, 0-100
+    "fit_subscores",  # JSON string: {title, skills, seniority, domain}
+    "vertical",  # a profile/verticals.yaml name | "" (no lane)
     "sponsorship_label",
     "sponsorship_evidence",
     "reasoning",
@@ -73,6 +74,7 @@ class RunOpen(RuntimeError):
 # ---------------------------------------------------------------------
 # scored.parquet
 # ---------------------------------------------------------------------
+
 
 def read_scored(scored_path: Path) -> pd.DataFrame:
     if not scored_path.exists():
@@ -104,8 +106,9 @@ def prune(scored_path: Path, clean_path: Path, pipeline_dir: Path) -> int:
     if not scored_path.exists():
         return 0
     keep = set(pd.read_parquet(clean_path, columns=["job_id"])["job_id"])
-    keep |= {j for j, d in load_state_index(pipeline_dir).items()
-             if d.get("state") in ACTIVE_STATES}
+    keep |= {
+        j for j, d in load_state_index(pipeline_dir).items() if d.get("state") in ACTIVE_STATES
+    }
     with locked(scored_path):
         scored = pd.read_parquet(scored_path)
         mask = scored["job_id"].isin(keep)
@@ -114,8 +117,18 @@ def prune(scored_path: Path, clean_path: Path, pipeline_dir: Path) -> int:
     return int((~mask).sum())
 
 
-def _row(job_id: str, vertical: str, subs: dict, label: str, evidence: str,
-         reasoning: str, keywords: list, action: str, model: str, now: datetime) -> dict:
+def _row(
+    job_id: str,
+    vertical: str,
+    subs: dict,
+    label: str,
+    evidence: str,
+    reasoning: str,
+    keywords: list,
+    action: str,
+    model: str,
+    now: datetime,
+) -> dict:
     return {
         "job_id": job_id,
         "fit_score": float(sum(subs.values())),
@@ -137,14 +150,24 @@ def _zero() -> dict:
 
 def drop_row(row: dict, code: str, detail: str, now: datetime) -> dict:
     ineligible = code == "ineligible"
-    return _row(row["job_id"], row.get("vertical") or "", _zero(),
-                "ineligible" if ineligible else "unknown", detail if ineligible else "",
-                f"Filtered ({code}): {detail}", [], "skip", f"filter:{code}", now)
+    return _row(
+        row["job_id"],
+        row.get("vertical") or "",
+        _zero(),
+        "ineligible" if ineligible else "unknown",
+        detail if ineligible else "",
+        f"Filtered ({code}): {detail}",
+        [],
+        "skip",
+        f"filter:{code}",
+        now,
+    )
 
 
 # ---------------------------------------------------------------------
 # start
 # ---------------------------------------------------------------------
+
 
 def _judge_model() -> str:
     text = JUDGE_AGENT.read_text(encoding="utf-8")
@@ -156,6 +179,7 @@ def _lane_resume(lane: verticals.Vertical) -> str:
     """The lane's baseline resume, built from the profile sources by the same
     assembler /tailor uses."""
     from src import resume_model
+
     if lane.resume is None:
         raise ValueError(f"lane {lane.name} has no resume: block in profile/verticals.yaml")
     return resume_model.baseline_markdown(lane.name)
@@ -169,34 +193,47 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
         SHARED_RUBRIC.read_text(encoding="utf-8"),
         (verticals.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
         "## Skill weights\n\n```yaml\n"
-        + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip() + "\n```\n",
+        + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip()
+        + "\n```\n",
         "## Resume\n\n" + _lane_resume(lane),
     ]
     if lane.focus:
         f = lane.focus
-        parts.insert(4, "## Focus\n\n"
-                     f"Add `focus`: true or false, and `focus_evidence`. {f.question}\n\n"
-                     "Default false. Answer true only when the JD itself shows it, and put "
-                     "that JD phrase, verbatim, in `focus_evidence`; leave it \"\" when false. "
-                     "A strong fit is not a reason for true.\n\n"
-                     f"Then `domain` is set for you: true lifts it to at least {f.yes_min}, "
-                     f"false holds it at {f.no_max} or below.\n")
+        parts.insert(
+            4,
+            "## Focus\n\n"
+            f"Add `focus`: true or false, and `focus_evidence`. {f.question}\n\n"
+            "Default false. Answer true only when the JD itself shows it, and put "
+            'that JD phrase, verbatim, in `focus_evidence`; leave it "" when false. '
+            "A strong fit is not a reason for true.\n\n"
+            f"Then `domain` is set for you: true lifts it to at least {f.yes_min}, "
+            f"false holds it at {f.no_max} or below.\n",
+        )
     (staging / f"packet_{lane.name}.md").write_text("\n".join(parts), encoding="utf-8")
 
 
 def _slice_text(name: str, rows: list[dict], staging: Path) -> str:
     lane = rows[0]["vertical"]
-    out = [f"# {name} — {len(rows)} role(s)\n",
-           f"- packet: {staging / f'packet_{lane}.md'}",
-           f"- write your answer to: {staging / f'out_{name}.json'}",
-           f"- job_ids, exactly these: {', '.join(r['job_id'] for r in rows)}\n"]
+    out = [
+        f"# {name} — {len(rows)} role(s)\n",
+        f"- packet: {staging / f'packet_{lane}.md'}",
+        f"- write your answer to: {staging / f'out_{name}.json'}",
+        f"- job_ids, exactly these: {', '.join(r['job_id'] for r in rows)}\n",
+    ]
     for i, r in enumerate(rows, 1):
-        salary = " - ".join(str(int(v)) for v in (r.get("salary_min"), r.get("salary_max"))
-                            if isinstance(v, (int, float)) and v == v)
-        facts = [("title", r.get("title")), ("company", r.get("company")),
-                 ("location", r.get("location")), ("employment type", r.get("employment_type")),
-                 ("seniority as posted", r.get("seniority_raw")),
-                 ("salary", f"{salary} {r.get('salary_currency') or ''}".strip() if salary else "")]
+        salary = " - ".join(
+            str(int(v))
+            for v in (r.get("salary_min"), r.get("salary_max"))
+            if isinstance(v, (int, float)) and v == v
+        )
+        facts = [
+            ("title", r.get("title")),
+            ("company", r.get("company")),
+            ("location", r.get("location")),
+            ("employment type", r.get("employment_type")),
+            ("seniority as posted", r.get("seniority_raw")),
+            ("salary", f"{salary} {r.get('salary_currency') or ''}".strip() if salary else ""),
+        ]
         out.append(f"## {i}. job_id {r['job_id']}\n")
         out += [f"- {k}: {v}" for k, v in facts if isinstance(v, str) and v.strip()]
         out.append("\n" + wrap(r["_jd"]) + "\n")
@@ -221,8 +258,11 @@ def judge_lines(run: dict, staging: Path) -> list[str]:
     for name, meta in run["slices"].items():
         if (staging / f"out_{name}.json").exists():
             continue
-        if cur and (len(cur) >= JUDGE_SLICES or size + meta["bytes"] > JUDGE_BYTES
-                    or meta["vertical"] != lane):
+        if cur and (
+            len(cur) >= JUDGE_SLICES
+            or size + meta["bytes"] > JUDGE_BYTES
+            or meta["vertical"] != lane
+        ):
             lines.append("judge " + " ".join(cur))
             cur, size = [], 0
         cur.append(str(staging / f"slice_{name}.md"))
@@ -240,10 +280,18 @@ def _save_run(staging: Path, run: dict) -> None:
     (staging / "run.json").write_text(json.dumps(run, indent=1), encoding="utf-8")
 
 
-def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig, *,
-          rescore: bool = False, vertical: str | None = None,
-          job_ids: list[str] | None = None, pipeline_dir: Path | None = None,
-          now: datetime | None = None) -> dict:
+def start(
+    clean_path: Path,
+    scored_path: Path,
+    staging: Path,
+    cfg: ScoringConfig,
+    *,
+    rescore: bool = False,
+    vertical: str | None = None,
+    job_ids: list[str] | None = None,
+    pipeline_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict:
     """Stage a run. Returns {"dropped": {code: n}, "judge": n, "lines": [...],
     "resumed": bool}.
     An open run is resumed when no selector is given, refused otherwise."""
@@ -251,8 +299,12 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
     if run is not None:
         if rescore or vertical or job_ids:
             raise RunOpen("a /score run is still open: run `/score` to finish it first")
-        return {"dropped": {}, "judge": sum(len(m["job_ids"]) for m in run["slices"].values()),
-                "lines": judge_lines(run, staging), "resumed": True}
+        return {
+            "dropped": {},
+            "judge": sum(len(m["job_ids"]) for m in run["slices"].values()),
+            "lines": judge_lines(run, staging),
+            "resumed": True,
+        }
     now = now or datetime.now()
     vcfg = verticals.get_config()
     clean = pd.read_parquet(clean_path)
@@ -260,8 +312,11 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
         clean = clean[~clean["job_id"].isin(set(read_scored(scored_path)["job_id"]))]
     if rescore and not job_ids and pipeline_dir is not None:
         # Re-judging a role you have applied to, skipped or closed buys nothing.
-        done = {j for j, d in load_state_index(pipeline_dir).items()
-                if d.get("state") and d.get("state") not in cfg.pipeline_states}
+        done = {
+            j
+            for j, d in load_state_index(pipeline_dir).items()
+            if d.get("state") and d.get("state") not in cfg.pipeline_states
+        }
         clean = clean[~clean["job_id"].isin(done)]
     if vertical is not None:
         clean = clean[clean["vertical"] == vertical]
@@ -282,8 +337,13 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
         keep.append(row)
     merge_rows(scored_path, dropped)
 
-    keep.sort(key=lambda r: (vcfg.names.index(r["vertical"]),
-                             str(r.get("company") or "").lower(), str(r.get("title") or "").lower()))
+    keep.sort(
+        key=lambda r: (
+            vcfg.names.index(r["vertical"]),
+            str(r.get("company") or "").lower(),
+            str(r.get("title") or "").lower(),
+        )
+    )
     if not keep:
         return {"dropped": counts, "judge": 0, "lines": [], "resumed": False}
     staging.mkdir(parents=True, exist_ok=True)
@@ -301,22 +361,32 @@ def start(clean_path: Path, scored_path: Path, staging: Path, cfg: ScoringConfig
                 "vertical": lane.name,
                 "bytes": len(text.encode("utf-8")),
                 "job_ids": [r["job_id"] for r in part],
-                "facts": {r["job_id"]: {
-                    "years": years_required(r.get("jd_text"), cfg.degree_rank),
-                    "words": word_count(r.get("jd_text")),
-                    "contract": "contract" in str(r.get("employment_type") or "").lower(),
-                    # everything the judge is shown, so a quote from the title or company counts
-                    "jd": normalize(f"{r.get('title') or ''}\n{r.get('company') or ''}\n{r['_jd']}"),
-                } for r in part},
+                "facts": {
+                    r["job_id"]: {
+                        "years": years_required(r.get("jd_text"), cfg.degree_rank),
+                        "words": word_count(r.get("jd_text")),
+                        "contract": "contract" in str(r.get("employment_type") or "").lower(),
+                        # everything the judge is shown, so a quote from the title or company counts
+                        "jd": normalize(
+                            f"{r.get('title') or ''}\n{r.get('company') or ''}\n{r['_jd']}"
+                        ),
+                    }
+                    for r in part
+                },
             }
     _save_run(staging, run)
-    return {"dropped": counts, "judge": len(keep), "lines": judge_lines(run, staging),
-            "resumed": False}
+    return {
+        "dropped": counts,
+        "judge": len(keep),
+        "lines": judge_lines(run, staging),
+        "resumed": False,
+    }
 
 
 # ---------------------------------------------------------------------
 # finish
 # ---------------------------------------------------------------------
+
 
 def _letters(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", normalize(text))
@@ -356,8 +426,14 @@ def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
         if not isinstance(a.get("country"), str):
             errs.append(f"{where} country must be a string")
         facts, ev = a.get("sponsorship"), a.get("evidence")
-        if not isinstance(facts, list) or not facts or not all(f in SPONSORSHIP_FACTS for f in facts):
-            errs.append(f"{where} sponsorship must be a nonempty list of: {', '.join(SPONSORSHIP_FACTS)}")
+        if (
+            not isinstance(facts, list)
+            or not facts
+            or not all(f in SPONSORSHIP_FACTS for f in facts)
+        ):
+            errs.append(
+                f"{where} sponsorship must be a nonempty list of: {', '.join(SPONSORSHIP_FACTS)}"
+            )
             facts = []
         elif "silent" in facts and len(facts) > 1:
             errs.append(f"{where} sponsorship cannot mix silent with other statements")
@@ -365,8 +441,11 @@ def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
             errs.append(f"{where} evidence must be a string")
         elif facts and facts != ["silent"] and not ev.strip():
             errs.append(f"{where} evidence must quote the JD for {', '.join(facts)}")
-        elif ev.strip() and a.get("job_id") in meta["facts"] \
-                and not _quote_ok(ev, meta["facts"][a["job_id"]]["jd"]):
+        elif (
+            ev.strip()
+            and a.get("job_id") in meta["facts"]
+            and not _quote_ok(ev, meta["facts"][a["job_id"]]["jd"])
+        ):
             errs.append(f"{where} evidence is not a quote from the JD: {ev[:100]!r}")
         kws = a.get("keywords_to_mirror")
         if not isinstance(kws, list) or not all(isinstance(k, str) for k in kws):
@@ -381,13 +460,22 @@ def check_answer(answer: Any, meta: dict, focus: bool = False) -> list[str]:
             fev = a.get("focus_evidence")
             if not isinstance(fev, str) or not fev.strip():
                 errs.append(f"{where} focus true must quote the JD in focus_evidence")
-            elif a.get("job_id") in meta["facts"] and not _quote_ok(fev, meta["facts"][a["job_id"]]["jd"]):
+            elif a.get("job_id") in meta["facts"] and not _quote_ok(
+                fev, meta["facts"][a["job_id"]]["jd"]
+            ):
                 errs.append(f"{where} focus_evidence is not a quote from the JD: {fev[:100]!r}")
     return errs
 
 
-def derive(a: dict, lane: verticals.Vertical, facts: dict, cfg: ScoringConfig,
-           rule: CountryRule, model: str, now: datetime) -> dict:
+def derive(
+    a: dict,
+    lane: verticals.Vertical,
+    facts: dict,
+    cfg: ScoringConfig,
+    rule: CountryRule,
+    model: str,
+    now: datetime,
+) -> dict:
     """The stored row for one judge answer. The judge reads the facts (years,
     country, what the JD says about sponsorship); every rule is applied here."""
     subs = {axis: a[axis] for axis in AXIS_MAXIMA}
@@ -407,7 +495,9 @@ def derive(a: dict, lane: verticals.Vertical, facts: dict, cfg: ScoringConfig,
         forced_skip = True
     if lane.focus:
         f = lane.focus
-        subs["domain"] = max(subs["domain"], f.yes_min) if a["focus"] else min(subs["domain"], f.no_max)
+        subs["domain"] = (
+            max(subs["domain"], f.yes_min) if a["focus"] else min(subs["domain"], f.no_max)
+        )
     if facts["words"] < cfg.min_words:
         subs["skills"] = min(subs["skills"], cfg.skills_cap)
         reasoning += " [vague JD]"
@@ -416,23 +506,50 @@ def derive(a: dict, lane: verticals.Vertical, facts: dict, cfg: ScoringConfig,
     if label == "ineligible" or forced_skip:
         subs = _zero()  # a role you cannot apply to scores 0
     total = sum(subs.values())
-    action = ("skip" if label == "ineligible" or forced_skip else
-              "tailor" if total >= cfg.tailor_min else
-              "manual-review" if total >= cfg.review_min else "skip")
+    action = (
+        "skip"
+        if label == "ineligible" or forced_skip
+        else "tailor"
+        if total >= cfg.tailor_min
+        else "manual-review"
+        if total >= cfg.review_min
+        else "skip"
+    )
     if a.get("action") and ACTION_RANK[a["action"]] < ACTION_RANK[action]:
         action = a["action"]
-    return _row(a["job_id"], lane.name, subs, label, a["evidence"].strip(),
-                reasoning, a["keywords_to_mirror"][:cfg.keywords_max], action, model, now)
+    return _row(
+        a["job_id"],
+        lane.name,
+        subs,
+        label,
+        a["evidence"].strip(),
+        reasoning,
+        a["keywords_to_mirror"][: cfg.keywords_max],
+        action,
+        model,
+        now,
+    )
 
 
-def finish(clean_path: Path, scored_path: Path, staging: Path, pipeline_dir: Path,
-           cfg: ScoringConfig, rule: CountryRule, now: datetime | None = None) -> dict:
+def finish(
+    clean_path: Path,
+    scored_path: Path,
+    staging: Path,
+    pipeline_dir: Path,
+    cfg: ScoringConfig,
+    rule: CountryRule,
+    now: datetime | None = None,
+) -> dict:
     """Merge every answered, valid slice. Returns {"merged", "pruned",
     "bad": {slice: [errors]}, "lines": judge lines still owed}."""
     run = load_run(staging)
     if run is None:
-        return {"merged": 0, "pruned": prune(scored_path, clean_path, pipeline_dir),
-                "bad": {}, "lines": []}
+        return {
+            "merged": 0,
+            "pruned": prune(scored_path, clean_path, pipeline_dir),
+            "bad": {},
+            "lines": [],
+        }
     now = now or datetime.now()
     lanes = verticals.get_config().verticals
     rows, bad, done = [], {}, []
@@ -451,8 +568,10 @@ def finish(clean_path: Path, scored_path: Path, staging: Path, pipeline_dir: Pat
         if errs:
             bad[name] = errs
             continue
-        rows += [derive(a, lane, meta["facts"][a["job_id"]], cfg, rule, run["model"], now)
-                 for a in answer]
+        rows += [
+            derive(a, lane, meta["facts"][a["job_id"]], cfg, rule, run["model"], now)
+            for a in answer
+        ]
         done.append(name)
     merged = merge_rows(scored_path, rows)
     for name in done:
@@ -468,5 +587,9 @@ def finish(clean_path: Path, scored_path: Path, staging: Path, pipeline_dir: Pat
     else:
         for f in staging.glob("*"):
             f.unlink()
-    return {"merged": merged, "pruned": prune(scored_path, clean_path, pipeline_dir),
-            "bad": bad, "lines": judge_lines(run, staging) if run["slices"] else []}
+    return {
+        "merged": merged,
+        "pruned": prune(scored_path, clean_path, pipeline_dir),
+        "bad": bad,
+        "lines": judge_lines(run, staging) if run["slices"] else [],
+    }

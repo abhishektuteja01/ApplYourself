@@ -65,14 +65,17 @@ VERTICAL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 LIBPOSTAL_INSTALL = {
     "darwin": "brew install libpostal",
-    "linux": ("build libpostal from source (github.com/openvenues/libpostal) "
-              "— no distro packages it; install its dev headers, ~2 GB data download"),
+    "linux": (
+        "build libpostal from source (github.com/openvenues/libpostal) "
+        "— no distro packages it; install its dev headers, ~2 GB data download"
+    ),
 }
 
 
 @dataclass
 class Report:
     """What happened, in the order it happened, plus what was left alone."""
+
     done: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -101,8 +104,7 @@ def _templates(with_optional: bool) -> list[Path]:
     return [p for p in sorted(PROFILE.glob("*.example.*")) if p.name not in excluded]
 
 
-def copy_templates(templates: list[Path], force: bool, dry_run: bool,
-                   rep: Report) -> set[str]:
+def copy_templates(templates: list[Path], force: bool, dry_run: bool, rep: Report) -> set[str]:
     """Copy each template to its real name. Returns the target names written
     (or, under --dry-run, that would be written)."""
     written: set[str] = set()
@@ -122,6 +124,7 @@ def copy_templates(templates: list[Path], force: bool, dry_run: bool,
 
 
 # --- verticals.yaml -------------------------------------------------------
+
 
 def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
@@ -206,8 +209,7 @@ def strip_example_lanes(text: str, lanes: list[str], default_vertical: str) -> s
     return "\n".join(out) + "\n"
 
 
-def reconcile_verticals(default_vertical: str, copied: bool, dry_run: bool,
-                        rep: Report) -> None:
+def reconcile_verticals(default_vertical: str, copied: bool, dry_run: bool, rep: Report) -> None:
     """Strip the example scaffolding out of the freshly copied verticals.yaml.
 
     Only ever touches a file this run wrote — so skip/force are inherited from
@@ -265,15 +267,18 @@ def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
     data = bank.read(source)
     home = A.canonical_place((data.get("identity") or {}).get("country", ""))
     if not home:
-        rep.failed.append(f"{_rel(target)}: identity.country names no country, so the "
-                          "home work-authorization row cannot be set")
+        rep.failed.append(
+            f"{_rel(target)}: identity.country names no country, so the "
+            "home work-authorization row cannot be set"
+        )
         return
     countries = data.setdefault("work_authorization", {}).setdefault("countries", {})
     key = next((k for k in countries if A.canonical_place(str(k)) == home), home)
     old = dict(countries.get(key) or {})
     row = dict(_ROW_BY_WORK_AUTH[work_auth])
-    same = all(old.get(k) == v for k, v in row.items()) and \
-        bool(old.get("unrestricted")) == bool(row.get("unrestricted"))
+    same = all(old.get(k) == v for k, v in row.items()) and bool(old.get("unrestricted")) == bool(
+        row.get("unrestricted")
+    )
     if same:
         rep.notes.append(f"{_rel(target)} already says {work_auth} for {home}")
         return
@@ -288,11 +293,14 @@ def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
     bank.write(data, target)
     rep.done.append(f"{label} — {_rel(target)}")
     if cleared:
-        rep.notes.append(f"{_rel(target)}: {', '.join(cleared)} described the old status "
-                         f"and were cleared; set them for {home} if a form should use them")
+        rep.notes.append(
+            f"{_rel(target)}: {', '.join(cleared)} described the old status "
+            f"and were cleared; set them for {home} if a form should use them"
+        )
 
 
 # --- advisory probes and the optional apply path --------------------------
+
 
 def probe_libpostal(rep: Report) -> None:
     """Advisory only: never installs, never changes the exit code."""
@@ -353,24 +361,35 @@ def _print_report(rep: Report, dry_run: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="onboard-scaffold", description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--vertical", required=True,
-                        help="name of the lane /new-vertical will write; becomes "
-                             "default_vertical. Must match ^[a-z][a-z0-9_]*$")
+        prog="onboard-scaffold",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--vertical",
+        required=True,
+        help="name of the lane /new-vertical will write; becomes "
+        "default_vertical. Must match ^[a-z][a-z0-9_]*$",
+    )
     parser.add_argument("--work-auth", required=True, choices=WORK_AUTH_CHOICES)
-    parser.add_argument("--with-apply", action="store_true",
-                        help="also set up the /apply submission path")
-    parser.add_argument("--with-optional", action="store_true",
-                        help="also copy the later-menu templates (voice samples, contacts, PII denylist)")
+    parser.add_argument(
+        "--with-apply", action="store_true", help="also set up the /apply submission path"
+    )
+    parser.add_argument(
+        "--with-optional",
+        action="store_true",
+        help="also copy the later-menu templates (voice samples, contacts, PII denylist)",
+    )
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
     parser.add_argument("--dry-run", action="store_true", help="print the plan; write nothing")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     if not VERTICAL_NAME_RE.match(args.vertical):
-        print(f"--vertical {args.vertical!r} must match "
-              f"{VERTICAL_NAME_RE.pattern} (lowercase, digits, underscores)",
-              file=sys.stderr)
+        print(
+            f"--vertical {args.vertical!r} must match "
+            f"{VERTICAL_NAME_RE.pattern} (lowercase, digits, underscores)",
+            file=sys.stderr,
+        )
         return 2
 
     rep = Report()

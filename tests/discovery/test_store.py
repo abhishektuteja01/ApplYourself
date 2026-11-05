@@ -1,4 +1,5 @@
 """store.py with dedupe.py and live_view.py: job_id rules, refresh/touch, and the live view."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -15,11 +16,20 @@ JD_OTHER = "Run the warehouse shift schedule and own inventory accuracy end to e
 
 
 def post(url, company="Acme", title="AI Engineer", source="greenhouse", jd=JD, **kw):
-    return S.make_posting(url=url, company=company, title=title, source=source,
-                          jd_text=jd, vertical=kw.pop("vertical", "primary"), **kw)
+    return S.make_posting(
+        url=url,
+        company=company,
+        title=title,
+        source=source,
+        jd_text=jd,
+        vertical=kw.pop("vertical", "primary"),
+        **kw,
+    )
 
 
-def fold(store, *rows, touched=(), tracked=frozenset(), today=TODAY, live_days=14, trim=dedupe.NO_TRIM):
+def fold(
+    store, *rows, touched=(), tracked=frozenset(), today=TODAY, live_days=14, trim=dedupe.NO_TRIM
+):
     batch = S.Batch()
     for r in rows:
         batch.upsert(r)
@@ -33,6 +43,7 @@ GH = "https://job-boards.greenhouse.io/acme/jobs/{}"
 
 # ---------- id rules ----------
 
+
 def test_new_posting_gets_the_hash():
     store, stats = fold(S.empty_store(), post(GH.format(1)))
     assert store.at[0, "job_id"] == identity.compute_job_id("acme", "ai engineer")
@@ -40,8 +51,11 @@ def test_new_posting_gets_the_hash():
 
 
 def test_same_pair_elsewhere_reuses_the_id_even_when_it_is_not_the_hash():
-    store = S.coerce_store(pd.DataFrame([{**post(GH.format(1)), "job_id": "inherit1",
-                                           "first_seen": TODAY, "last_seen": TODAY}]))
+    store = S.coerce_store(
+        pd.DataFrame(
+            [{**post(GH.format(1)), "job_id": "inherit1", "first_seen": TODAY, "last_seen": TODAY}]
+        )
+    )
     li = post("https://www.linkedin.com/jobs/view/99", source="linkedin")
     store, stats = fold(store, li)
     assert set(store["job_id"]) == {"inherit1"} and stats.by_rule == {"pair": 1}
@@ -50,16 +64,28 @@ def test_same_pair_elsewhere_reuses_the_id_even_when_it_is_not_the_hash():
 
 def test_a_known_direct_url_joins_its_posting():
     store, _ = fold(S.empty_store(), post(GH.format(1)))
-    li = post(GH.format(1) + "?src=LinkedIn", company="Acme Corp Hiring", title="AI Engineer (Remote)",
-              source="linkedin", key_url="https://www.linkedin.com/jobs/view/5")
+    li = post(
+        GH.format(1) + "?src=LinkedIn",
+        company="Acme Corp Hiring",
+        title="AI Engineer (Remote)",
+        source="linkedin",
+        key_url="https://www.linkedin.com/jobs/view/5",
+    )
     store, stats = fold(store, li)
     assert store["job_id"].nunique() == 1 and stats.by_rule == {"url": 1}
 
 
 def test_fuzzy_joins_the_same_role_from_another_source():
-    store, _ = fold(S.empty_store(), post(GH.format(1), company="Hilbert", title="Senior AI Engineer"))
-    li = post("https://www.linkedin.com/jobs/view/7", company="Hilbert's AI",
-              title="Senior AI Engineer, Remote", source="linkedin", jd=JD + " Travel.")
+    store, _ = fold(
+        S.empty_store(), post(GH.format(1), company="Hilbert", title="Senior AI Engineer")
+    )
+    li = post(
+        "https://www.linkedin.com/jobs/view/7",
+        company="Hilbert's AI",
+        title="Senior AI Engineer, Remote",
+        source="linkedin",
+        jd=JD + " Travel.",
+    )
     store, stats = fold(store, li)
     assert store["job_id"].nunique() == 1 and stats.by_rule == {"fuzzy": 1}
 
@@ -71,8 +97,9 @@ def test_fuzzy_never_merges_two_postings_of_one_board():
     assert store["job_id"].nunique() == 2
 
 
-@pytest.mark.parametrize("a,b", [("AI Engineer II", "AI Engineer III"),
-                                 ("Senior AI Engineer", "Staff AI Engineer")])
+@pytest.mark.parametrize(
+    "a,b", [("AI Engineer II", "AI Engineer III"), ("Senior AI Engineer", "Staff AI Engineer")]
+)
 def test_fuzzy_never_merges_two_levels(a, b):
     store, _ = fold(S.empty_store(), post(GH.format(1), title=a))
     store, _ = fold(store, post("https://www.linkedin.com/jobs/view/8", title=b, source="linkedin"))
@@ -81,21 +108,39 @@ def test_fuzzy_never_merges_two_levels(a, b):
 
 def test_fuzzy_needs_jd_evidence():
     store, _ = fold(S.empty_store(), post(GH.format(1), company="Goal Solutions"))
-    store, _ = fold(store, post("https://www.linkedin.com/jobs/view/9", company="Shakti Solutions",
-                                source="linkedin", jd=JD_OTHER))
+    store, _ = fold(
+        store,
+        post(
+            "https://www.linkedin.com/jobs/view/9",
+            company="Shakti Solutions",
+            source="linkedin",
+            jd=JD_OTHER,
+        ),
+    )
     assert store["job_id"].nunique() == 2
 
 
 def test_a_hash_clash_gets_a_salted_id_that_the_pair_keeps(monkeypatch):
     store, _ = fold(S.empty_store(), post(GH.format(1)))
     held, real = store.at[0, "job_id"], identity.compute_job_id
-    monkeypatch.setattr(identity, "compute_job_id",
-                        lambda c, t: held if (c, t) == ("zeta", "chef") else real(c, t))
-    store, _ = fold(store, post(GH.format(2), company="Zeta", title="Chef", jd=JD_OTHER, source="lever"))
+    monkeypatch.setattr(
+        identity, "compute_job_id", lambda c, t: held if (c, t) == ("zeta", "chef") else real(c, t)
+    )
+    store, _ = fold(
+        store, post(GH.format(2), company="Zeta", title="Chef", jd=JD_OTHER, source="lever")
+    )
     salted = real("zeta", "chef#2")
     assert list(store["job_id"]) == [held, salted]
-    store, stats = fold(store, post("https://jobs.lever.co/zeta/9", company="Zeta", title="Chef",
-                                    jd=JD_OTHER, source="lever"))
+    store, stats = fold(
+        store,
+        post(
+            "https://jobs.lever.co/zeta/9",
+            company="Zeta",
+            title="Chef",
+            jd=JD_OTHER,
+            source="lever",
+        ),
+    )
     assert stats.by_rule == {"pair": 1} and store["job_id"].iloc[-1] == salted
 
 
@@ -118,12 +163,18 @@ def test_two_new_postings_in_one_night_agree():
 
 # ---------- the same role elsewhere: names, JD order, maybes ----------
 
-ROLE = ("## The Role\n\nYou will build retrieval pipelines, evaluation harnesses and agent tooling "
-        "for underwriting work, shipping weekly to real customers with a small expert team.\n\n")
-REQ = ("## Requirements\n\nThree years of Python, production LLM systems, strong SQL and a habit "
-       "of measuring everything you ship before and after release.\n\n")
-ABOUT = ("## About Vouch\n\nVouch is the insurance broker that powers ambition, purpose built for "
-         "growing technology companies and their leaders across the country.\n\n")
+ROLE = (
+    "## The Role\n\nYou will build retrieval pipelines, evaluation harnesses and agent tooling "
+    "for underwriting work, shipping weekly to real customers with a small expert team.\n\n"
+)
+REQ = (
+    "## Requirements\n\nThree years of Python, production LLM systems, strong SQL and a habit "
+    "of measuring everything you ship before and after release.\n\n"
+)
+ABOUT = (
+    "## About Vouch\n\nVouch is the insurance broker that powers ambition, purpose built for "
+    "growing technology companies and their leaders across the country.\n\n"
+)
 LI = "https://www.linkedin.com/jobs/view/{}"
 
 
@@ -133,39 +184,72 @@ def _pair(a, b, **kw):
 
 
 def test_the_same_jd_with_its_sections_reordered_merges():
-    store, stats = _pair(post(LI.format(1), company="Vouch Insurance", source="linkedin",
-                              jd=ROLE + REQ + ABOUT),
-                         post("https://ats.rippling.com/vouch-inc/jobs/a7099d11-3586-4b85-9d0c-904c9203c8d0",
-                              company="Vouch, Inc", source="stapply", jd=ABOUT + REQ + ROLE))
+    store, stats = _pair(
+        post(LI.format(1), company="Vouch Insurance", source="linkedin", jd=ROLE + REQ + ABOUT),
+        post(
+            "https://ats.rippling.com/vouch-inc/jobs/a7099d11-3586-4b85-9d0c-904c9203c8d0",
+            company="Vouch, Inc",
+            source="stapply",
+            jd=ABOUT + REQ + ROLE,
+        ),
+    )
     assert store["job_id"].nunique() == 1 and stats.by_rule == {"fuzzy": 1}
 
 
-@pytest.mark.parametrize("a,b", [("vouch", "vouch insurance"), ("ifs", "ifs1"), ("frost", "frostbank"),
-                                 ("red bull", "redbull"), ("hartford", "thehartford"),
-                                 ("hilbert", "hilbert s ai"), ("radiance technologies", "radiancetech")])
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("vouch", "vouch insurance"),
+        ("ifs", "ifs1"),
+        ("frost", "frostbank"),
+        ("red bull", "redbull"),
+        ("hartford", "thehartford"),
+        ("hilbert", "hilbert s ai"),
+        ("radiance technologies", "radiancetech"),
+    ],
+)
 def test_one_employer_under_two_spellings(a, b):
     assert dedupe.same_company(a, b) and dedupe.same_company(b, a)
 
 
-@pytest.mark.parametrize("a,b", [("x", "xander"), ("apex", "apexa"), ("stripe", "stripes"),
-                                 ("vouch", "voucher"), ("vouch", "vouchr"), ("ai", "ai solutions"),
-                                 ("goal solutions", "shakti solutions"), ("", "acme")])
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("x", "xander"),
+        ("apex", "apexa"),
+        ("stripe", "stripes"),
+        ("vouch", "voucher"),
+        ("vouch", "vouchr"),
+        ("ai", "ai solutions"),
+        ("goal solutions", "shakti solutions"),
+        ("", "acme"),
+    ],
+)
 def test_near_spellings_are_two_employers(a, b):
     assert not dedupe.same_company(a, b)
 
 
 def test_two_sites_of_one_source_merge_but_one_board_never_does():
-    store, _ = _pair(post(GH.format(1), company="Vouch", source="stapply"),
-                     post("https://jobs.lever.co/vouch-insurance/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e",
-                          company="Vouch Insurance", source="stapply"))
+    store, _ = _pair(
+        post(GH.format(1), company="Vouch", source="stapply"),
+        post(
+            "https://jobs.lever.co/vouch-insurance/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e",
+            company="Vouch Insurance",
+            source="stapply",
+        ),
+    )
     assert store["job_id"].nunique() == 1
-    store, _ = _pair(post(GH.format(1), company="Vouch"), post(GH.format(2), company="Vouch Insurance"))
+    store, _ = _pair(
+        post(GH.format(1), company="Vouch"), post(GH.format(2), company="Vouch Insurance")
+    )
     assert store["job_id"].nunique() == 2
 
 
 def test_unrelated_names_with_one_jd_are_recorded_not_merged():
-    store, stats = _pair(post(GH.format(1), company="Capgemini"),
-                         post(LI.format(2), company="Sogeti", source="linkedin"))
+    store, stats = _pair(
+        post(GH.format(1), company="Capgemini"),
+        post(LI.format(2), company="Sogeti", source="linkedin"),
+    )
     assert store["job_id"].nunique() == 2
     [m] = stats.maybe_duplicates
     assert m["reason"] == "other_name" and m["jd_score"] == 100
@@ -173,51 +257,88 @@ def test_unrelated_names_with_one_jd_are_recorded_not_merged():
 
 
 def test_related_names_with_a_weaker_jd_are_recorded_not_merged():
-    other = ROLE + ("## Requirements\n\nFive years of Java, distributed data platforms, Kafka "
-                    "streams, on call duty and a habit of measuring before release.\n\n") + ABOUT
-    store, stats = _pair(post(GH.format(1), company="Vouch", jd=ROLE + REQ + ABOUT),
-                         post(LI.format(3), company="Vouch Insurance", source="linkedin", jd=other))
+    other = (
+        ROLE
+        + (
+            "## Requirements\n\nFive years of Java, distributed data platforms, Kafka "
+            "streams, on call duty and a habit of measuring before release.\n\n"
+        )
+        + ABOUT
+    )
+    store, stats = _pair(
+        post(GH.format(1), company="Vouch", jd=ROLE + REQ + ABOUT),
+        post(LI.format(3), company="Vouch Insurance", source="linkedin", jd=other),
+    )
     assert store["job_id"].nunique() == 2
     assert [m["reason"] for m in stats.maybe_duplicates] == ["weak_jd"]
 
 
 def test_titles_naming_another_team_are_recorded_not_merged():
-    store, stats = _pair(post(GH.format(1), company="OpenAI", title="Applied AI Engineer"),
-                         post(LI.format(4), company="OpenAI Inc", title="Applied AI Engineer, Codex",
-                              source="linkedin"))
+    store, stats = _pair(
+        post(GH.format(1), company="OpenAI", title="Applied AI Engineer"),
+        post(
+            LI.format(4),
+            company="OpenAI Inc",
+            title="Applied AI Engineer, Codex",
+            source="linkedin",
+        ),
+    )
     assert store["job_id"].nunique() == 2
     assert [m["reason"] for m in stats.maybe_duplicates] == ["other_title"]
 
 
 def test_a_title_that_only_adds_its_city_or_workplace_merges():
-    store, _ = _pair(post(GH.format(1), company="OpenAI", title="Applied AI Engineer",
-                          location_raw="Tokyo, Japan"),
-                     post(LI.format(5), company="OpenAI Inc", title="Applied AI Engineer, Tokyo (Hybrid)",
-                          source="linkedin", location_raw="Tokyo, Japan"))
+    store, _ = _pair(
+        post(
+            GH.format(1), company="OpenAI", title="Applied AI Engineer", location_raw="Tokyo, Japan"
+        ),
+        post(
+            LI.format(5),
+            company="OpenAI Inc",
+            title="Applied AI Engineer, Tokyo (Hybrid)",
+            source="linkedin",
+            location_raw="Tokyo, Japan",
+        ),
+    )
     assert store["job_id"].nunique() == 1
 
 
-BOILER = ("## Benefits\n\n" + "Medical, dental and vision cover, a learning budget, a home office "
-          "stipend, paid parental leave and flexible hours. " * 10
-          + "\n\n## Equal Opportunity\n\n" + "We are an equal opportunity employer. " * 10)
+BOILER = (
+    "## Benefits\n\n" + "Medical, dental and vision cover, a learning budget, a home office "
+    "stipend, paid parental leave and flexible hours. "
+    * 10
+    + "\n\n## Equal Opportunity\n\n"
+    + "We are an equal opportunity employer. " * 10
+)
 
 
 def test_shared_boilerplate_never_makes_two_roles_one():
-    a = "## The Role\n\n" + "Own the warehouse shift schedule and the weekly cycle counts at both sites. " * 3
-    b = "## The Role\n\n" + "Build retrieval pipelines and evaluation harnesses for clinical trials. " * 3
+    a = (
+        "## The Role\n\n"
+        + "Own the warehouse shift schedule and the weekly cycle counts at both sites. " * 3
+    )
+    b = (
+        "## The Role\n\n"
+        + "Build retrieval pipelines and evaluation harnesses for clinical trials. " * 3
+    )
     trim = (("benefits", "equal opportunity"), ("visa",))
     plain = dedupe.jd_key(a + "\n\n" + BOILER), dedupe.jd_key(b + "\n\n" + BOILER)
     assert dedupe.fuzz.ratio(*plain) >= dedupe.JD_MERGE
-    store, stats = _pair(post(GH.format(1), company="Acme", jd=a + "\n\n" + BOILER),
-                         post(LI.format(6), company="Acme Labs", source="linkedin", jd=b + "\n\n" + BOILER),
-                         trim=trim)
+    store, stats = _pair(
+        post(GH.format(1), company="Acme", jd=a + "\n\n" + BOILER),
+        post(LI.format(6), company="Acme Labs", source="linkedin", jd=b + "\n\n" + BOILER),
+        trim=trim,
+    )
     assert store["job_id"].nunique() == 2 and stats.maybe_duplicates == []
 
 
 def test_a_maybe_pair_is_written_once_across_flushes(tmp_path):
     path = tmp_path / "jobs.parquet"
-    for row in (post(GH.format(1), company="Capgemini"), post(LI.format(2), company="Sogeti", source="linkedin"),
-                post(LI.format(7), company="Sogeti", source="linkedin")):
+    for row in (
+        post(GH.format(1), company="Capgemini"),
+        post(LI.format(2), company="Sogeti", source="linkedin"),
+        post(LI.format(7), company="Sogeti", source="linkedin"),
+    ):
         batch = S.Batch()
         batch.upsert(row)
         S.flush(batch, TODAY, frozenset(), 14, path=path)
@@ -235,11 +356,25 @@ def test_merged_stats_keep_each_pair_once():
 
 def test_the_backfill_finds_two_stored_ids_of_one_role():
     from src.discovery.dedupe import find_pairs
-    rows = [{**post(LI.format(1), company="Vouch Insurance", source="linkedin", jd=ROLE + REQ + ABOUT),
-             "job_id": "aaaa1111"},
-            {**post("https://jobs.lever.co/vouch/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e", company="Vouch",
-                    source="lever", jd=ABOUT + REQ + ROLE), "job_id": "bbbb2222"},
-            {**post(GH.format(9), company="Zeta", title="Chef", jd=JD_OTHER), "job_id": "cccc3333"}]
+
+    rows = [
+        {
+            **post(
+                LI.format(1), company="Vouch Insurance", source="linkedin", jd=ROLE + REQ + ABOUT
+            ),
+            "job_id": "aaaa1111",
+        },
+        {
+            **post(
+                "https://jobs.lever.co/vouch/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e",
+                company="Vouch",
+                source="lever",
+                jd=ABOUT + REQ + ROLE,
+            ),
+            "job_id": "bbbb2222",
+        },
+        {**post(GH.format(9), company="Zeta", title="Chef", jd=JD_OTHER), "job_id": "cccc3333"},
+    ]
     store = S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY, last_seen=TODAY))
     [pair] = find_pairs(store, date="2026-09-27")
     assert pair["pair"] == "aaaa1111|bbbb2222" and pair["reason"] == "backfill_merge"
@@ -253,12 +388,30 @@ CODEX = identity.compute_job_id("openai", "applied ai engineer codex")
 def _over_merged(*extra):
     """CODEX holds its own role plus a row of another team, as an id merged
     before the store can."""
-    rows = [{**post("https://jobs.ashbyhq.com/openai/1", company="OpenAI", title="Applied AI Engineer, Codex",
-                    source="ashby"), "job_id": CODEX},
-            {**post(LI.format(20), company="OpenAI", title="Applied AI Engineer, Cyber", source="linkedin"),
-             "job_id": CODEX}, *extra]
-    return S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY - pd.Timedelta(days=30),
-                                                    last_seen=TODAY))
+    rows = [
+        {
+            **post(
+                "https://jobs.ashbyhq.com/openai/1",
+                company="OpenAI",
+                title="Applied AI Engineer, Codex",
+                source="ashby",
+            ),
+            "job_id": CODEX,
+        },
+        {
+            **post(
+                LI.format(20),
+                company="OpenAI",
+                title="Applied AI Engineer, Cyber",
+                source="linkedin",
+            ),
+            "job_id": CODEX,
+        },
+        *extra,
+    ]
+    return S.coerce_store(
+        pd.DataFrame(rows).assign(first_seen=TODAY - pd.Timedelta(days=30), last_seen=TODAY)
+    )
 
 
 def test_a_pair_held_by_another_roles_id_gets_its_own_id():
@@ -268,9 +421,15 @@ def test_a_pair_held_by_another_roles_id_gets_its_own_id():
     assert stats.by_rule == {"hash": 1} and stats.new_job_ids == [jid]
     [m] = stats.maybe_duplicates
     assert m["pair"] == "|".join(sorted((jid, CODEX))) and m["reason"] == "other_title"
-    again = post("https://jobs.lever.co/openai/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e", company="OpenAI",
-                 title="Applied AI Engineer, Cyber", source="lever")
-    store, stats = fold(store, again, tracked=frozenset({CODEX}), today=TODAY + pd.Timedelta(days=1))
+    again = post(
+        "https://jobs.lever.co/openai/636fc05c-d348-4a3a-9f0f-2e1a2b3c4d5e",
+        company="OpenAI",
+        title="Applied AI Engineer, Cyber",
+        source="lever",
+    )
+    store, stats = fold(
+        store, again, tracked=frozenset({CODEX}), today=TODAY + pd.Timedelta(days=1)
+    )
     assert stats.by_rule == {"pair": 1} and store.iloc[-1]["job_id"] == jid
 
 
@@ -282,24 +441,41 @@ def test_fuzzy_never_joins_another_roles_id():
 
 
 def test_an_ids_own_role_still_joins_it_from_another_city():
-    sf = {**post(LI.format(23), company="OpenAI", title="Applied AI Engineer, Codex, San Francisco",
-                 source="linkedin", location_raw="San Francisco, CA"), "job_id": CODEX}
-    again = post(GH.format(24), company="OpenAI", title="Applied AI Engineer, Codex, San Francisco",
-                 location_raw="San Francisco, CA")
+    sf = {
+        **post(
+            LI.format(23),
+            company="OpenAI",
+            title="Applied AI Engineer, Codex, San Francisco",
+            source="linkedin",
+            location_raw="San Francisco, CA",
+        ),
+        "job_id": CODEX,
+    }
+    again = post(
+        GH.format(24),
+        company="OpenAI",
+        title="Applied AI Engineer, Codex, San Francisco",
+        location_raw="San Francisco, CA",
+    )
     store, stats = fold(_over_merged(sf), again)
     assert stats.by_rule == {"pair": 1} and store.iloc[-1]["job_id"] == CODEX
 
 
 def test_a_name_variant_inside_an_id_still_joins_it():
     own = identity.compute_job_id("vouch insurance", "ai engineer")
-    rows = [{**post(LI.format(25), company="Vouch Insurance", source="linkedin"), "job_id": own},
-            {**post(GH.format(26), company="Vouch, Inc"), "job_id": own}]
+    rows = [
+        {**post(LI.format(25), company="Vouch Insurance", source="linkedin"), "job_id": own},
+        {**post(GH.format(26), company="Vouch, Inc"), "job_id": own},
+    ]
     store = S.coerce_store(pd.DataFrame(rows).assign(first_seen=TODAY, last_seen=TODAY))
-    store, stats = fold(store, post("https://jobs.lever.co/vouch/1", company="Vouch, Inc", source="lever"))
+    store, stats = fold(
+        store, post("https://jobs.lever.co/vouch/1", company="Vouch, Inc", source="lever")
+    )
     assert stats.by_rule == {"pair": 1} and set(store["job_id"]) == {own}
 
 
 # ---------- refresh, touch, repost ----------
+
 
 def test_refresh_keeps_id_and_first_seen_and_takes_the_newer_jd():
     store, _ = fold(S.empty_store(), post(GH.format(1)), today=TODAY - pd.Timedelta(days=5))
@@ -323,9 +499,16 @@ def test_a_refresh_updates_the_shown_name_but_never_the_id_pair():
 def test_a_refresh_from_another_source_does_not_clash_with_its_own_id():
     """The refreshed posting and a new copy of the same role elsewhere keep
     agreeing on the pair, so the newcomer is not dropped as a collision."""
-    store, _ = fold(S.empty_store(), post(GH.format(1), company="Telnyx", title="Forward Deployed Engineer"))
-    other = post("https://www.welcometothejungle.com/en/companies/x/jobs/fde", company="Telnyx",
-                 title="Forward Deployed Engineer", source="stapply", jd=JD_OTHER)
+    store, _ = fold(
+        S.empty_store(), post(GH.format(1), company="Telnyx", title="Forward Deployed Engineer")
+    )
+    other = post(
+        "https://www.welcometothejungle.com/en/companies/x/jobs/fde",
+        company="Telnyx",
+        title="Forward Deployed Engineer",
+        source="stapply",
+        jd=JD_OTHER,
+    )
     store, _stats = fold(store, post(GH.format(1), company="telnyx54", source="stapply"), other)
     assert len(store) == 2 and store["job_id"].nunique() == 1
 
@@ -355,8 +538,12 @@ def test_a_repost_after_the_live_window_restarts_first_seen():
 
 
 def test_forget_keeps_tracked_rows():
-    store, _ = fold(S.empty_store(), post(GH.format(1)), post(GH.format(2), title="Chef", jd=JD_OTHER),
-                    today=TODAY - pd.Timedelta(days=200))
+    store, _ = fold(
+        S.empty_store(),
+        post(GH.format(1)),
+        post(GH.format(2), title="Chef", jd=JD_OTHER),
+        today=TODAY - pd.Timedelta(days=200),
+    )
     keep_id = store.at[0, "job_id"]
     out, n = S.forget(store, TODAY, 120, frozenset({keep_id}))
     assert n == 1 and list(out["job_id"]) == [keep_id]
@@ -374,6 +561,7 @@ def test_flush_round_trips(tmp_path):
 
 # ---------- the live view ----------
 
+
 class AllowAll:
     def check(self, raw, vertical="", title=""):
         if raw == "Paris, France":
@@ -382,9 +570,16 @@ class AllowAll:
 
 
 def view(store, state_index=None, scores=None, today=TODAY):
-    inp = live_view.ViewInputs(today=today, state_index=state_index or {}, scores=scores or {},
-                       live_days=14, search_max_age_days=14, score_threshold=80,
-                       high_days=60, low_days=15)
+    inp = live_view.ViewInputs(
+        today=today,
+        state_index=state_index or {},
+        scores=scores or {},
+        live_days=14,
+        search_max_age_days=14,
+        score_threshold=80,
+        high_days=60,
+        low_days=15,
+    )
     return live_view.build_view(store, AllowAll(), inp)
 
 
@@ -393,8 +588,11 @@ def at(days_ago):
 
 
 def test_view_has_the_clean_columns_one_row_per_job():
-    store, _ = fold(S.empty_store(), post(GH.format(1), location_raw="Austin, TX"),
-                    post("https://www.linkedin.com/jobs/view/1", source="linkedin"))
+    store, _ = fold(
+        S.empty_store(),
+        post(GH.format(1), location_raw="Austin, TX"),
+        post("https://www.linkedin.com/jobs/view/1", source="linkedin"),
+    )
     out, funnel = view(store)
     assert list(out.columns) == live_view.CLEAN_COLUMNS
     assert len(out) == 1 and funnel["jobs"] == 1
@@ -407,10 +605,16 @@ def test_view_drops_postings_not_seen_within_the_live_window():
 
 
 def test_view_cuts_old_search_rows_but_not_board_rows():
-    store, _ = fold(S.empty_store(),
-                    post(GH.format(1), posted_date=at(90)),
-                    post("https://www.linkedin.com/jobs/view/2", title="Data Engineer",
-                         source="linkedin", posted_date=at(30)))
+    store, _ = fold(
+        S.empty_store(),
+        post(GH.format(1), posted_date=at(90)),
+        post(
+            "https://www.linkedin.com/jobs/view/2",
+            title="Data Engineer",
+            source="linkedin",
+            posted_date=at(30),
+        ),
+    )
     out, _ = view(store)
     assert list(out["source"]) == ["greenhouse"]
 
@@ -422,8 +626,10 @@ def test_view_applies_the_location_allowlist():
 
 
 def test_view_retention_tiers():
-    rows = [post(GH.format(i), title=t, jd=JD + t) for i, t in
-            enumerate(["AI Engineer", "ML Engineer", "Data Engineer"], start=1)]
+    rows = [
+        post(GH.format(i), title=t, jd=JD + t)
+        for i, t in enumerate(["AI Engineer", "ML Engineer", "Data Engineer"], start=1)
+    ]
     store, _ = fold(S.empty_store(), *rows, today=at(30))
     store["last_seen"] = TODAY
     ids = dict(zip(store["title"], store["job_id"]))

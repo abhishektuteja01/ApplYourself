@@ -44,9 +44,7 @@ def test_every_search_term_classifies_into_its_own_lane(real_cfg):
     for vertical in real_cfg.verticals.values():
         for term in vertical.search_terms + vertical.linkedin_terms:
             got = classify_vertical_from_title(term)
-            assert got == vertical.name, (
-                f"{vertical.name} search term classifies as {got!r}"
-            )
+            assert got == vertical.name, f"{vertical.name} search term classifies as {got!r}"
 
 
 def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):
@@ -74,9 +72,9 @@ def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
         )
         for term in vertical.search_terms:
             if vertical.title_strong_keep_terms and re.search(
-                "|".join(rf"\b{re.escape(t)}\b"
-                         for t in vertical.title_strong_keep_terms),
-                term, re.IGNORECASE,
+                "|".join(rf"\b{re.escape(t)}\b" for t in vertical.title_strong_keep_terms),
+                term,
+                re.IGNORECASE,
             ):
                 continue
             assert not exclude_rx.search(term), (
@@ -90,8 +88,11 @@ def test_real_resume_sources_check_clean_and_every_baseline_builds(real_cfg, mon
     from src import resume_model
 
     profile = REPO_ROOT / "profile"
-    for attr, name in (("RESUME", "resume.yaml"), ("BULLETS", "bullets.md"),
-                       ("SKILLS", "skills_master.md")):
+    for attr, name in (
+        ("RESUME", "resume.yaml"),
+        ("BULLETS", "bullets.md"),
+        ("SKILLS", "skills_master.md"),
+    ):
         if not (profile / name).is_file():
             pytest.skip(f"profile/{name} is gitignored user data")
         monkeypatch.setattr(resume_model, attr, profile / name)

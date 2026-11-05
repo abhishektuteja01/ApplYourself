@@ -5,6 +5,7 @@ is the last checkpoint before a browser exists, so the tests that matter are the
 ones about what must NOT happen: a required field quietly dropping out, a
 guessed value going into one, a lock file being uploaded as a resume.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,8 +32,14 @@ from .conftest import FORM_FIXTURES, load_fixture
 
 def field(**kw) -> MergedField:
     base = dict(
-        id="question_1", name="question_1", label="A question", required=False,
-        kind="text", section="questions", multi=False, options=(),
+        id="question_1",
+        name="question_1",
+        label="A question",
+        required=False,
+        kind="text",
+        section="questions",
+        multi=False,
+        options=(),
     )
     base.update(kw)
     return MergedField(**base)
@@ -55,9 +62,11 @@ class TestEveryFixture:
     ):
         reconciled = merged(name)
         plan = build_plan(reconciled, answers, tailor_dir)
-        planned = [i.id for group in (plan.fields, plan.files, plan.unmapped,
-                                      plan.draftable, plan.skipped)
-                   for i in group]
+        planned = [
+            i.id
+            for group in (plan.fields, plan.files, plan.unmapped, plan.draftable, plan.skipped)
+            for i in group
+        ]
         assert sorted(planned) == sorted(f.id for f in reconciled.fields)
         assert len(planned) == len(set(planned))
 
@@ -82,9 +91,7 @@ class TestEveryFixture:
             assert values and all(str(v).strip() for v in values), f.id
 
     @pytest.mark.parametrize("name", FORM_FIXTURES)
-    def test_a_parked_question_carries_no_value_anywhere(
-        self, name, merged, answers, tailor_dir
-    ):
+    def test_a_parked_question_carries_no_value_anywhere(self, name, merged, answers, tailor_dir):
         plan = build_plan(merged(name), answers, tailor_dir)
         parked = {u.id for u in plan.unmapped}
         assert parked.isdisjoint({f.id for f in plan.fields})
@@ -103,8 +110,12 @@ class TestFullyResolvedBoard:
     """form_education is the one captured board every field of which resolves."""
 
     def test_it_is_ready_to_submit(self, merged, answers, tailor_dir):
-        plan = build_plan(merged("form_education"), answers, tailor_dir,
-                          submit_selector="#application-form button[type=submit]")
+        plan = build_plan(
+            merged("form_education"),
+            answers,
+            tailor_dir,
+            submit_selector="#application-form button[type=submit]",
+        )
         assert plan.unmapped == ()
         assert plan.parked is False
         assert plan.submittable is True
@@ -125,16 +136,13 @@ class TestFullyResolvedBoard:
         assert attached["cover_letter"].name == "Alex_Example_Cover_Letter.pdf"
 
     def test_no_submit_selector_means_not_submittable(self, merged, answers, tailor_dir):
-        plan = build_plan(merged("form_education"), answers, tailor_dir,
-                          submit_selector=None)
+        plan = build_plan(merged("form_education"), answers, tailor_dir, submit_selector=None)
         assert plan.parked is False
         assert plan.submittable is False
 
 
 class TestUnmapped:
-    def test_an_unmatched_question_keeps_its_label_and_options(
-        self, merged, answers, tailor_dir
-    ):
+    def test_an_unmatched_question_keeps_its_label_and_options(self, merged, answers, tailor_dir):
         reconciled = merged("form_minimal")
         plan = build_plan(reconciled, answers, tailor_dir)
         assert plan.parked is True
@@ -150,15 +158,22 @@ class TestUnmapped:
         assert set(plan.required_parked) == {u.id for u in plan.unmapped if u.required}
         assert plan.submittable is False
 
-    def test_an_optional_unmatched_free_text_is_draftable_not_parked(
-        self, answers, tailor_dir
-    ):
+    def test_an_optional_unmatched_free_text_is_draftable_not_parked(self, answers, tailor_dir):
         """An optional "why do you want to work here" must not go out blank
         just because it does not block submission."""
         plan = build_plan(
-            one([field(id="question_9", label="Why do you want to work here?",
-                       kind="textarea", required=False)]),
-            answers, tailor_dir,
+            one(
+                [
+                    field(
+                        id="question_9",
+                        label="Why do you want to work here?",
+                        kind="textarea",
+                        required=False,
+                    )
+                ]
+            ),
+            answers,
+            tailor_dir,
         )
         assert plan.unmapped == ()
         assert plan.skipped == ()
@@ -167,18 +182,27 @@ class TestUnmapped:
 
     def test_a_draftable_question_does_not_park_the_role(self, answers, tailor_dir):
         plan = build_plan(
-            one([field(id="question_9", label="Additional Information",
-                       kind="textarea", required=False)]),
-            answers, tailor_dir,
+            one(
+                [
+                    field(
+                        id="question_9",
+                        label="Additional Information",
+                        kind="textarea",
+                        required=False,
+                    )
+                ]
+            ),
+            answers,
+            tailor_dir,
         )
         assert plan.parked is False
 
     def test_an_optional_checkbox_is_skipped_not_drafted(self, answers, tailor_dir):
         # A stray checkbox is not something a person would write an answer into.
         plan = build_plan(
-            one([field(id="question_9", label="Subscribe?", kind="checkbox",
-                       required=False)]),
-            answers, tailor_dir,
+            one([field(id="question_9", label="Subscribe?", kind="checkbox", required=False)]),
+            answers,
+            tailor_dir,
         )
         assert plan.draftable == ()
         assert [s.id for s in plan.skipped] == ["question_9"]
@@ -193,54 +217,74 @@ class TestOverrides:
     and export control; whatever cannot apply is named, never dropped."""
 
     def why_us(self, required=True):
-        return field(id="question_9", label="Why do you want to work here?",
-                     kind="textarea", required=required)
+        return field(
+            id="question_9",
+            label="Why do you want to work here?",
+            kind="textarea",
+            required=required,
+        )
 
     def test_an_override_resolves_a_required_park(self, answers, tailor_dir):
         plan = build_plan(one([self.why_us()]), answers, tailor_dir)
         assert [u.id for u in plan.unmapped] == ["question_9"]
-        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
-                          overrides={"question_9": ov("Drafted.", "bullets:B-1")})
+        plan = build_plan(
+            one([self.why_us()]),
+            answers,
+            tailor_dir,
+            overrides={"question_9": ov("Drafted.", "bullets:B-1")},
+        )
         assert plan.unmapped == () and not plan.parked
         assert plan.fields[0].value == "Drafted."
         assert plan.fields[0].source == "override:bullets:B-1"
 
     def test_a_yes_override_ticks_a_single_checkbox(self, answers, tailor_dir):
-        box = field(id="gdpr", label="I agree to the processing of my data.",
-                    kind="checkbox", required=True)
+        box = field(
+            id="gdpr", label="I agree to the processing of my data.", kind="checkbox", required=True
+        )
         plan = build_plan(one([box]), answers, tailor_dir, overrides={"gdpr": ov("Yes")})
         assert plan.unmapped == () and not plan.parked
         assert plan.fields[0].value == "Yes"
 
     def test_a_non_yes_override_on_a_single_checkbox_parks(self, answers, tailor_dir):
-        box = field(id="gdpr", label="I agree to the processing of my data.",
-                    kind="checkbox", required=True)
+        box = field(
+            id="gdpr", label="I agree to the processing of my data.", kind="checkbox", required=True
+        )
         plan = build_plan(one([box]), answers, tailor_dir, overrides={"gdpr": ov("No")})
         assert [u.id for u in plan.unmapped] == ["gdpr"]
 
     def test_an_override_resolves_an_optional_draftable(self, answers, tailor_dir):
-        plan = build_plan(one([self.why_us(required=False)]), answers, tailor_dir,
-                          overrides={"question_9": ov("From company_answers.")})
+        plan = build_plan(
+            one([self.why_us(required=False)]),
+            answers,
+            tailor_dir,
+            overrides={"question_9": ov("From company_answers.")},
+        )
         assert plan.draftable == ()
         assert plan.fields[0].value == "From company_answers."
 
     def test_an_id_not_on_the_form_is_named(self, answers, tailor_dir):
-        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
-                          overrides={"q_typo": ov("x")})
+        plan = build_plan(one([self.why_us()]), answers, tailor_dir, overrides={"q_typo": ov("x")})
         assert [u.id for u in plan.unmapped] == ["question_9"]
         assert plan.ignored_overrides == ("q_typo: not a field on this form",)
 
     def test_identity_takes_no_override(self, answers, tailor_dir):
-        plan = build_plan(one([field(id="first_name", label="First Name")]),
-                          answers, tailor_dir, overrides={"first_name": ov("Somebody Else")})
+        plan = build_plan(
+            one([field(id="first_name", label="First Name")]),
+            answers,
+            tailor_dir,
+            overrides={"first_name": ov("Somebody Else")},
+        )
         assert plan.fields[0].value == "Alex"
-        assert plan.ignored_overrides == (
-            "first_name: identity and EEOC fields take no override",)
+        assert plan.ignored_overrides == ("first_name: identity and EEOC fields take no override",)
 
     def test_export_control_takes_no_override(self, answers, tailor_dir):
-        us_person = field(id="q", label="Are you a U.S. person?", kind="select",
-                          required=True, options=(MergedOption(label="Yes"),
-                                                  MergedOption(label="No")))
+        us_person = field(
+            id="q",
+            label="Are you a U.S. person?",
+            kind="select",
+            required=True,
+            options=(MergedOption(label="Yes"), MergedOption(label="No")),
+        )
         plan = build_plan(one([us_person]), answers, tailor_dir, overrides={"q": ov("No")})
         assert [u.id for u in plan.unmapped] == ["q"]
         assert "export control" in plan.ignored_overrides[0]
@@ -252,49 +296,71 @@ class TestOverrides:
         assert plan.fields[0].replaced == "bank:linkedin~linkedin"
 
     def test_an_override_supersedes_a_work_authorization_park(self, answers, tailor_dir):
-        options = ("Yes, I will require sponsorship now or in the future.",
-                   "No, I will not require sponsorship.")
-        f = field(id="visa", label="Will you now or in the future require sponsorship "
-                  "to work in the United States?", kind="select", required=True,
-                  options=tuple(MergedOption(label=o) for o in options))
+        options = (
+            "Yes, I will require sponsorship now or in the future.",
+            "No, I will not require sponsorship.",
+        )
+        f = field(
+            id="visa",
+            label="Will you now or in the future require sponsorship to work in the United States?",
+            kind="select",
+            required=True,
+            options=tuple(MergedOption(label=o) for o in options),
+        )
         assert [u.id for u in build_plan(one([f]), answers, tailor_dir).unmapped] == ["visa"]
-        plan = build_plan(one([f]), answers, tailor_dir, overrides={
-            "visa": ov(options[0], claim={"requires_sponsorship": True})})
+        plan = build_plan(
+            one([f]),
+            answers,
+            tailor_dir,
+            overrides={"visa": ov(options[0], claim={"requires_sponsorship": True})},
+        )
         assert plan.fields[0].value == options[0]
 
     def test_a_value_the_widget_does_not_offer_parks_with_a_reason(self, answers, tailor_dir):
-        f = field(id="q", label="Pick one", kind="select", required=True,
-                  options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        f = field(
+            id="q",
+            label="Pick one",
+            kind="select",
+            required=True,
+            options=(MergedOption(label="Yes"), MergedOption(label="No")),
+        )
         plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": ov("Maybe")})
         assert "matches none of the options" in plan.unmapped[0].reason
 
     def test_two_values_for_a_single_select_park_rather_than_crash(self, answers, tailor_dir):
-        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
-                          overrides={"question_9": ov(("a", "b"))})
+        plan = build_plan(
+            one([self.why_us()]), answers, tailor_dir, overrides={"question_9": ov(("a", "b"))}
+        )
         assert "single-valued" in plan.unmapped[0].reason
 
     def test_a_one_item_list_into_free_text_is_its_value(self, answers, tailor_dir):
-        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
-                          overrides={"question_9": ov(("Python",))})
+        plan = build_plan(
+            one([self.why_us()]), answers, tailor_dir, overrides={"question_9": ov(("Python",))}
+        )
         assert plan.fields[0].value == "Python"
 
     def test_an_override_is_canonicalized_to_the_boards_spelling(self, answers, tailor_dir):
-        f = field(id="q", label="Pick one", kind="select", required=True,
-                  options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        f = field(
+            id="q",
+            label="Pick one",
+            kind="select",
+            required=True,
+            options=(MergedOption(label="Yes"), MergedOption(label="No")),
+        )
         plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": ov("yes")})
         assert plan.fields[0].value == "Yes"
 
     def test_a_file_override_attaches_a_file_from_the_role_folder(self, answers, tailor_dir):
         (tailor_dir / "transcript.pdf").write_bytes(b"x")
         f = field(id="transcript", label="Transcript", kind="file", required=True)
-        plan = build_plan(one([f]), answers, tailor_dir,
-                          overrides={"transcript": ov("transcript.pdf")})
+        plan = build_plan(
+            one([f]), answers, tailor_dir, overrides={"transcript": ov("transcript.pdf")}
+        )
         assert plan.files[0].path.name == "transcript.pdf"
 
     def test_a_missing_file_override_is_named(self, answers, tailor_dir):
         f = field(id="transcript", label="Transcript", kind="file", required=True)
-        plan = build_plan(one([f]), answers, tailor_dir,
-                          overrides={"transcript": ov("nope.pdf")})
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"transcript": ov("nope.pdf")})
         assert "is not a file" in plan.ignored_overrides[0]
 
 
@@ -309,21 +375,32 @@ class TestEmploymentSwitch:
         from src.apply.answers import load_answers
 
         from .conftest import FIXTURES
-        data = yaml.safe_load(
-            (FIXTURES / "application_answers.yaml").read_text(encoding="utf-8")
-        )
+
+        data = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(encoding="utf-8"))
         data["employment"] = {**data["employment"], **employment}
         path = tmp_path / "answers.yaml"
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         return load_answers(path)
 
     def _block(self, required: bool):
-        return one([
-            field(id="company-name-0", name="company-name-0", label="Company Name",
-                  section="employment", required=required),
-            field(id="title-0", name="title-0", label="Title",
-                  section="employment", required=required),
-        ])
+        return one(
+            [
+                field(
+                    id="company-name-0",
+                    name="company-name-0",
+                    label="Company Name",
+                    section="employment",
+                    required=required,
+                ),
+                field(
+                    id="title-0",
+                    name="title-0",
+                    label="Title",
+                    section="employment",
+                    required=required,
+                ),
+            ]
+        )
 
     def test_off_by_default_the_block_fills_wherever_it_renders(self, tmp_path, tailor_dir):
         a = self._answers(tmp_path)
@@ -347,27 +424,51 @@ class TestEmploymentSwitch:
         # Filling company and title while leaving an optional end date blank
         # would read as "still works there".
         a = self._answers(tmp_path, only_when_required=True)
-        mixed = one([
-            field(id="company-name-0", name="company-name-0", label="Company",
-                  section="employment", required=True),
-            field(id="end-date-year-0", name="end-date-year-0", label="End year",
-                  section="employment", required=False),
-        ])
+        mixed = one(
+            [
+                field(
+                    id="company-name-0",
+                    name="company-name-0",
+                    label="Company",
+                    section="employment",
+                    required=True,
+                ),
+                field(
+                    id="end-date-year-0",
+                    name="end-date-year-0",
+                    label="End year",
+                    section="employment",
+                    required=False,
+                ),
+            ]
+        )
         plan = build_plan(mixed, a, tailor_dir)
         assert {f.id for f in plan.fields} == {"company-name-0", "end-date-year-0"}
 
     def test_the_switch_does_not_touch_the_education_block(self, tmp_path, tailor_dir):
         a = self._answers(tmp_path, only_when_required=True)
-        plan = build_plan(one([
-            field(id="school--0", name="school--0", label="School",
-                  section="education", required=False),
-        ]), a, tailor_dir)
+        plan = build_plan(
+            one(
+                [
+                    field(
+                        id="school--0",
+                        name="school--0",
+                        label="School",
+                        section="education",
+                        required=False,
+                    ),
+                ]
+            ),
+            a,
+            tailor_dir,
+        )
         assert [f.id for f in plan.fields] == ["school--0"]
 
     def test_an_unknown_flag_is_still_rejected(self, tmp_path):
         from src.apply.answers import AnswersError
+
         with pytest.raises(AnswersError, match="unknown keys"):
-            self._answers(tmp_path, only_when_requried=True)   # typo on purpose
+            self._answers(tmp_path, only_when_requried=True)  # typo on purpose
 
 
 class TestArtifacts:
@@ -388,12 +489,15 @@ class TestArtifacts:
         out = self._dir(tmp_path, "A_B_Resume.docx")
         assert find_artifact(out, "resume")[0].name == "A_B_Resume.docx"
 
-    @pytest.mark.parametrize("name", [
-        "Alex_Example_Resume.pdf",   # the usual spelling, 116 real dirs
-        "Alex_Example_resume.pdf",   # 3 real dirs
-        "Alex_example_resume.pdf",   # 1 real dir
-        "resume.pdf",                # the legacy bare name, 12 real dirs
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "Alex_Example_Resume.pdf",  # the usual spelling, 116 real dirs
+            "Alex_Example_resume.pdf",  # 3 real dirs
+            "Alex_example_resume.pdf",  # 1 real dir
+            "resume.pdf",  # the legacy bare name, 12 real dirs
+        ],
+    )
     def test_real_world_resume_spellings_all_match(self, tmp_path, name):
         assert find_artifact(self._dir(tmp_path, name), "resume")[0].name == name
 
@@ -412,8 +516,9 @@ class TestArtifacts:
         assert find_artifact(out, "resume")[0] is None
         assert find_artifact(out, "cover_letter")[0].name == "A_B_Cover_Letter.pdf"
 
-    @pytest.mark.parametrize("name", ["A_B_Cover_Letter.pdf", "A_B_cover-letter.pdf",
-                                      "cover letter.pdf"])
+    @pytest.mark.parametrize(
+        "name", ["A_B_Cover_Letter.pdf", "A_B_cover-letter.pdf", "cover letter.pdf"]
+    )
     def test_cover_letter_spellings(self, tmp_path, name):
         assert find_artifact(self._dir(tmp_path, name), "cover_letter")[0].name == name
 
@@ -441,38 +546,54 @@ class TestMissingArtifacts:
         out = tmp_path / "empty"
         out.mkdir()
         plan = build_plan(
-            one([field(id="resume", name="resume", label="Resume/CV",
-                       kind="file", required=True)]),
-            answers, out,
+            one([field(id="resume", name="resume", label="Resume/CV", kind="file", required=True)]),
+            answers,
+            out,
         )
         assert [u.id for u in plan.unmapped] == ["resume"]
         assert "no pdf/docx" in plan.unmapped[0].reason
         assert plan.files == ()
 
-    def test_an_optional_cover_letter_with_nothing_to_attach_is_skipped(
-        self, answers, tmp_path
-    ):
+    def test_an_optional_cover_letter_with_nothing_to_attach_is_skipped(self, answers, tmp_path):
         out = tmp_path / "empty"
         out.mkdir()
         plan = build_plan(
-            one([field(id="cover_letter", name="cover_letter", label="Cover Letter",
-                       kind="file", required=False)]),
-            answers, out,
+            one(
+                [
+                    field(
+                        id="cover_letter",
+                        name="cover_letter",
+                        label="Cover Letter",
+                        kind="file",
+                        required=False,
+                    )
+                ]
+            ),
+            answers,
+            out,
         )
         assert plan.unmapped == ()
         assert [s.id for s in plan.skipped] == ["cover_letter"]
 
-    def test_a_required_cover_letter_with_nothing_to_attach_still_parks(
-        self, answers, tmp_path
-    ):
+    def test_a_required_cover_letter_with_nothing_to_attach_still_parks(self, answers, tmp_path):
         # A required cover letter with nothing to attach is caught here, at
         # plan time.
         out = tmp_path / "empty"
         out.mkdir()
         plan = build_plan(
-            one([field(id="cover_letter", name="cover_letter", label="Cover Letter",
-                       kind="file", required=True)]),
-            answers, out,
+            one(
+                [
+                    field(
+                        id="cover_letter",
+                        name="cover_letter",
+                        label="Cover Letter",
+                        kind="file",
+                        required=True,
+                    )
+                ]
+            ),
+            answers,
+            out,
         )
         assert [u.id for u in plan.unmapped] == ["cover_letter"]
         assert plan.unmapped[0].required is True
@@ -488,9 +609,9 @@ class TestMissingArtifacts:
         out.mkdir()
         (out / "Alex_Example_Resume.pdf").write_bytes(b"x")
         plan = build_plan(
-            one([field(id="resume", name="resume", label="Resume/CV",
-                       kind="file", required=True)]),
-            answers, out,
+            one([field(id="resume", name="resume", label="Resume/CV", kind="file", required=True)]),
+            answers,
+            out,
         )
         assert plan.unmapped == ()
         assert plan.parked is False
@@ -502,9 +623,9 @@ class TestMissingArtifacts:
         (out / "A_Resume.pdf").write_bytes(b"x")
         (out / "B_Resume.pdf").write_bytes(b"x")
         plan = build_plan(
-            one([field(id="resume", name="resume", label="Resume/CV",
-                       kind="file", required=True)]),
-            answers, out,
+            one([field(id="resume", name="resume", label="Resume/CV", kind="file", required=True)]),
+            answers,
+            out,
         )
         assert "cannot choose" in plan.unmapped[0].reason
 
@@ -559,8 +680,7 @@ class TestValueSanity:
 
     def test_a_checkbox_takes_a_boolean(self, monkeypatch, answers, tailor_dir):
         self._with_resolution(monkeypatch, Resolution("fill", value=False, tier="A"))
-        plan = build_plan(one([field(id="current-role-0", kind="checkbox")]),
-                          answers, tailor_dir)
+        plan = build_plan(one([field(id="current-role-0", kind="checkbox")]), answers, tailor_dir)
         assert plan.fields[0].value is False
 
     def test_a_non_string_value_raises(self, monkeypatch, answers, tailor_dir):
@@ -586,9 +706,21 @@ class TestAccountedForGuard:
 
     def _plan(self, out_dir, **kw) -> Plan:
         base = dict(
-            job_id="", board="", token="", form_url="", company="", title="",
-            out_dir=out_dir, fields=(), files=(), unmapped=(), draftable=(), skipped=(),
-            submit_selector=None, submit_disabled=False, api_only=(),
+            job_id="",
+            board="",
+            token="",
+            form_url="",
+            company="",
+            title="",
+            out_dir=out_dir,
+            fields=(),
+            files=(),
+            unmapped=(),
+            draftable=(),
+            skipped=(),
+            submit_selector=None,
+            submit_disabled=False,
+            api_only=(),
         )
         base.update(kw)
         return Plan(**base)
@@ -598,25 +730,44 @@ class TestAccountedForGuard:
             P._assert_accounted_for(one([field(id="a")]), self._plan(tailor_dir))
 
     def test_a_field_planned_twice_raises(self, tailor_dir):
-        f = FieldPlan(id="a", name="a", label="", kind="text", section="questions",
-                      required=False, multi=False, value="x", tier="A")
+        f = FieldPlan(
+            id="a",
+            name="a",
+            label="",
+            kind="text",
+            section="questions",
+            required=False,
+            multi=False,
+            value="x",
+            tier="A",
+        )
         s = Skipped(id="a", label="", tier="A", reason="")
         with pytest.raises(PlanError, match="more than once"):
-            P._assert_accounted_for(one([field(id="a")]),
-                                    self._plan(tailor_dir, fields=(f,), skipped=(s,)))
+            P._assert_accounted_for(
+                one([field(id="a")]), self._plan(tailor_dir, fields=(f,), skipped=(s,))
+            )
 
     def test_a_field_the_form_does_not_render_raises(self, tailor_dir):
-        f = FieldPlan(id="ghost", name="ghost", label="", kind="text",
-                      section="questions", required=False, multi=False,
-                      value="x", tier="A")
+        f = FieldPlan(
+            id="ghost",
+            name="ghost",
+            label="",
+            kind="text",
+            section="questions",
+            required=False,
+            multi=False,
+            value="x",
+            tier="A",
+        )
         with pytest.raises(PlanError, match="does not render"):
             P._assert_accounted_for(one([]), self._plan(tailor_dir, fields=(f,)))
 
     def test_a_required_field_only_skipped_raises(self, tailor_dir):
         s = Skipped(id="a", label="", tier="C", reason="")
         with pytest.raises(PlanError, match="neither resolved nor parked"):
-            P._assert_accounted_for(one([field(id="a", required=True)]),
-                                    self._plan(tailor_dir, skipped=(s,)))
+            P._assert_accounted_for(
+                one([field(id="a", required=True)]), self._plan(tailor_dir, skipped=(s,))
+            )
 
 
 class TestPassThrough:
@@ -626,13 +777,12 @@ class TestPassThrough:
         assert plan.api_only == reconciled.api_only
 
     def test_submit_state_is_carried(self, merged, answers, tailor_dir):
-        plan = build_plan(merged("form_minimal"), answers, tailor_dir,
-                          submit_selector="#s", submit_disabled=True)
+        plan = build_plan(
+            merged("form_minimal"), answers, tailor_dir, submit_selector="#s", submit_disabled=True
+        )
         assert (plan.submit_selector, plan.submit_disabled) == ("#s", True)
 
-    def test_plan_for_board_carries_the_board_identifiers(
-        self, merged, answers, tailor_dir, scan
-    ):
+    def test_plan_for_board_carries_the_board_identifiers(self, merged, answers, tailor_dir, scan):
         from src.apply.schema import parse_schema
 
         name = "form_education"
@@ -661,22 +811,41 @@ class TestDraftedTextIsLinted:
         return field(id="q", label="Why us?", kind="textarea", required=True)
 
     def test_mechanical_fixes_are_applied(self, answers, tailor_dir):
-        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
-                          overrides={"q": Override(value="I build widgets — fast.")})
+        plan = build_plan(
+            one([self.why_us()]),
+            answers,
+            tailor_dir,
+            overrides={"q": Override(value="I build widgets — fast.")},
+        )
         assert "—" not in plan.fields[0].value
 
     def test_a_banned_phrase_parks_naming_it(self, answers, tailor_dir):
         from src.lint import load_de_ai_rules
-        banned = next(p for v in load_de_ai_rules()["banned_phrases"].values()
-                      if isinstance(v, list) for p in v if p.isalpha())
-        plan = build_plan(one([self.why_us()]), answers, tailor_dir,
-                          overrides={"q": Override(value=f"I {banned} widgets.")})
+
+        banned = next(
+            p
+            for v in load_de_ai_rules()["banned_phrases"].values()
+            if isinstance(v, list)
+            for p in v
+            if p.isalpha()
+        )
+        plan = build_plan(
+            one([self.why_us()]),
+            answers,
+            tailor_dir,
+            overrides={"q": Override(value=f"I {banned} widgets.")},
+        )
         assert plan.unmapped and "lint" in plan.unmapped[0].reason
 
     def test_an_option_is_never_linted(self, answers, tailor_dir):
         option = "Open — happy to discuss"
-        f = field(id="q", label="Pick", kind="select", required=True,
-                  options=(MergedOption(label=option),))
+        f = field(
+            id="q",
+            label="Pick",
+            kind="select",
+            required=True,
+            options=(MergedOption(label=option),),
+        )
         plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value=option)})
         assert plan.fields[0].value == option
 
@@ -686,8 +855,13 @@ class TestCoverLetterWhenOffered:
     in the folder parks the role, so /apply writes one."""
 
     def letter(self, required=False):
-        return field(id="cover_letter", name="cover_letter", label="Cover Letter",
-                     kind="file", required=required)
+        return field(
+            id="cover_letter",
+            name="cover_letter",
+            label="Cover Letter",
+            kind="file",
+            required=required,
+        )
 
     def folder(self, tmp_path, with_letter):
         out = tmp_path / "role"
@@ -703,15 +877,23 @@ class TestCoverLetterWhenOffered:
 
     def test_when_offered_parks_without_a_letter(self, answers, tmp_path):
         from dataclasses import replace
-        plan = build_plan(one([self.letter()]), replace(answers, cover_letter="when_offered"),
-                          self.folder(tmp_path, False))
+
+        plan = build_plan(
+            one([self.letter()]),
+            replace(answers, cover_letter="when_offered"),
+            self.folder(tmp_path, False),
+        )
         assert plan.parked and plan.required_parked == ("cover_letter",)
         assert "when_offered" in plan.unmapped[0].reason
 
     def test_when_offered_attaches_the_letter_it_has(self, answers, tmp_path):
         from dataclasses import replace
-        plan = build_plan(one([self.letter()]), replace(answers, cover_letter="when_offered"),
-                          self.folder(tmp_path, True))
+
+        plan = build_plan(
+            one([self.letter()]),
+            replace(answers, cover_letter="when_offered"),
+            self.folder(tmp_path, True),
+        )
         assert not plan.parked and [f.id for f in plan.files] == ["cover_letter"]
 
 
@@ -720,26 +902,41 @@ class TestFactJudgmentOverride:
     export-control label by computing it from your facts."""
 
     def export_q(self):
-        return field(id="q", label="Does the deemed export rule apply to you?",
-                     kind="select", required=True,
-                     options=(MergedOption(label="Yes"), MergedOption(label="No")))
+        return field(
+            id="q",
+            label="Does the deemed export rule apply to you?",
+            kind="select",
+            required=True,
+            options=(MergedOption(label="Yes"), MergedOption(label="No")),
+        )
 
     def test_it_answers_export_control_from_us_person(self, answers, tailor_dir):
         from dataclasses import replace
-        plan = build_plan(one([self.export_q()]), replace(answers, us_person="no"), tailor_dir,
-                          overrides={"q": Override(value="", fact={"fact": "us_person",
-                                                                   "yes_when": False})})
+
+        plan = build_plan(
+            one([self.export_q()]),
+            replace(answers, us_person="no"),
+            tailor_dir,
+            overrides={"q": Override(value="", fact={"fact": "us_person", "yes_when": False})},
+        )
         assert plan.fields[0].value == "Yes"
         assert plan.fields[0].source == "fact_wording:us_person"
 
     def test_it_parks_while_us_person_is_park(self, answers, tailor_dir):
-        plan = build_plan(one([self.export_q()]), answers, tailor_dir,
-                          overrides={"q": Override(value="", fact={"fact": "us_person",
-                                                                   "yes_when": False})})
+        plan = build_plan(
+            one([self.export_q()]),
+            answers,
+            tailor_dir,
+            overrides={"q": Override(value="", fact={"fact": "us_person", "yes_when": False})},
+        )
         assert plan.parked and not plan.ignored_overrides
 
     def test_it_is_refused_on_an_ordinary_question(self, answers, tailor_dir):
         f = field(id="q", label="What is your LinkedIn?", kind="text")
-        plan = build_plan(one([f]), answers, tailor_dir, overrides={
-            "q": Override(value="", fact={"fact": "authorized", "yes_when": True})})
+        plan = build_plan(
+            one([f]),
+            answers,
+            tailor_dir,
+            overrides={"q": Override(value="", fact={"fact": "authorized", "yes_when": True})},
+        )
         assert "fact judgment" in plan.ignored_overrides[0]

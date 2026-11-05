@@ -29,12 +29,14 @@ def _is_kept_unresolved(raw):
     # branch (conservative: shown for manual review, not auto-dropped).
     return parse_location(raw).country == ""
 
+
 def test_location_austin_tx():
     res = parse_location("Austin, TX")
     assert res.country == "United States"
     assert res.state == "TX"
     assert res.city == "Austin"
     assert res.remote is False
+
 
 def test_location_remote():
     res = parse_location("Remote")
@@ -43,6 +45,7 @@ def test_location_remote():
     assert res.state == ""
     assert res.city == ""
 
+
 def test_location_empty():
     res = parse_location("")
     assert res.country == ""
@@ -50,9 +53,11 @@ def test_location_empty():
     assert res.city == ""
     assert res.remote is False
 
+
 def test_location_berlin_germany():
     res = parse_location("Berlin, Germany")
     assert res.country == "Germany"
+
 
 def test_location_sf_bay_area():
     res = parse_location("San Francisco Bay Area")
@@ -65,6 +70,7 @@ def test_location_sf_bay_area():
         assert res.state == ""
         assert res.city == ""
 
+
 def test_location_multiple():
     res = parse_location("New York, London or Singapore")
     # must NOT resolve to a single US location (all-empty acceptable)
@@ -74,11 +80,13 @@ def test_location_multiple():
         assert res.state == ""
         assert res.city == ""
 
+
 def test_location_bare_ca():
     res = parse_location("CA")
     assert res.country == ""
     assert res.state == ""
     assert res.city == ""
+
 
 def test_location_remote_austin():
     res = parse_location("Remote - Austin, TX")
@@ -87,6 +95,7 @@ def test_location_remote_austin():
     assert res.state == "TX"
     assert res.city == "Austin"
 
+
 def test_location_oregon_not_eaten_by_or_separator():
     # "OR" the Oregon postal code must not be treated as the "or" separator.
     res = parse_location("Portland, OR")
@@ -94,10 +103,12 @@ def test_location_oregon_not_eaten_by_or_separator():
     assert res.state == "OR"
     assert res.city == "Portland"
 
+
 def test_location_oregon_with_country():
     res = parse_location("Bend, OR, USA")
     assert res.country == "United States"
     assert res.state == "OR"
+
 
 def test_location_city_list_not_hijacked_by_state_namesake():
     # "New York" alone would libpostal-tag as a state; in a list of plain
@@ -110,12 +121,14 @@ def test_location_city_list_not_hijacked_by_state_namesake():
     assert res.country == "United States"
     assert res.state == "" and res.city == ""
 
+
 def test_location_many_state_dump_stays_unresolved():
     res = parse_location(
         "Raleigh-Cary, NC, Austin/Dallas, TX, Tampa Bay, FL, "
         "Greater Boston Area, MA, Denver, CO, Atlanta, GA, CA, NJ, TN, PA"
     )
     assert res.state != "NJ" or res.city != "Austin"
+
 
 def test_location_state_name_collision_does_not_override_country():
     # libpostal splits "New York, USA" into ("new", city) + ("york", state);
@@ -124,6 +137,7 @@ def test_location_state_name_collision_does_not_override_country():
     res = parse_location("New York, USA")
     assert res.country == "United States"
 
+
 def test_location_uae_multiregion_flagged_not_dropped():
     # libpostal can't tokenize "Dubai, UAE" at all without the pre-parse
     # expansion; before that fix this silently resolved to Qatar only.
@@ -131,17 +145,21 @@ def test_location_uae_multiregion_flagged_not_dropped():
     assert res.country == ""
     assert res.candidate_countries == {"Qatar", "United Arab Emirates"}
 
+
 def test_location_ksa_resolves():
     res = parse_location("Riyadh, KSA")
     assert res.country == "Saudi Arabia"
+
 
 def test_location_drc_resolves():
     res = parse_location("Kinshasa, DRC")
     assert res.country == "Congo, The Democratic Republic of the"
 
+
 def test_location_burma_resolves():
     res = parse_location("Yangon, Burma")
     assert res.country == "Myanmar"
+
 
 def test_location_ivory_coast_resolves():
     res = parse_location("Abidjan, Ivory Coast")
@@ -154,14 +172,18 @@ def test_location_ivory_coast_resolves():
 # allowlist drops it, instead of parsing to nothing and being kept.
 # ---------------------------------------------------------------------
 
+
 # The exact strings that leaked onto a real shortlist.
-@pytest.mark.parametrize("raw,country,city", [
-    ("London", "United Kingdom", "London"),
-    ("Stockholm", "Sweden", "Stockholm"),
-    ("Lisbon", "Portugal", "Lisbon"),
-    ("Kuala Lumpur", "Malaysia", "Kuala Lumpur"),  # multi-word foreign city (n-gram)
-    ("Iasi", "Romania", "Iaşi"),                   # ASCII form of geonames "Iaşi"
-])
+@pytest.mark.parametrize(
+    "raw,country,city",
+    [
+        ("London", "United Kingdom", "London"),
+        ("Stockholm", "Sweden", "Stockholm"),
+        ("Lisbon", "Portugal", "Lisbon"),
+        ("Kuala Lumpur", "Malaysia", "Kuala Lumpur"),  # multi-word foreign city (n-gram)
+        ("Iasi", "Romania", "Iaşi"),  # ASCII form of geonames "Iaşi"
+    ],
+)
 def test_bare_foreign_city_resolves_to_country(raw, country, city):
     res = parse_location(raw)
     assert res.country == country
@@ -179,21 +201,35 @@ def test_foreign_city_diacritic_folding(raw):
 
 
 # A wide spread of world cities from different regions, none a US namesake.
-@pytest.mark.parametrize("raw", [
-    "Berlin", "Toronto", "Tel Aviv", "Bengaluru", "Singapore",
-    "Munich", "Tokyo", "Sydney", "Dubai", "Warsaw",
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Berlin",
+        "Toronto",
+        "Tel Aviv",
+        "Bengaluru",
+        "Singapore",
+        "Munich",
+        "Tokyo",
+        "Sydney",
+        "Dubai",
+        "Warsaw",
+    ],
+)
 def test_assorted_foreign_cities_dropped(raw):
     assert _is_foreign(raw), f"{raw!r} should be positively non-US"
 
 
 # Explicit country suffix still works (regression on the pre-existing path).
-@pytest.mark.parametrize("raw,country", [
-    ("Berlin, Germany", "Germany"),
-    ("London, United Kingdom", "United Kingdom"),
-    ("London, UK", "United Kingdom"),
-    ("Toronto, Canada", "Canada"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Berlin, Germany", "Germany"),
+        ("London, United Kingdom", "United Kingdom"),
+        ("London, UK", "United Kingdom"),
+        ("Toronto, Canada", "Canada"),
+    ],
+)
 def test_foreign_city_with_country_suffix(raw, country):
     assert parse_location(raw).country == country
 
@@ -211,13 +247,17 @@ def test_foreign_city_with_country_suffix(raw, country):
 # of resolution a US-based user's does, and "assume US" doesn't generalize.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,country", [
-    ("Paris", "France"),
-    ("Vancouver", "Canada"),
-    ("Manchester", "United Kingdom"),
-    ("Cambridge", "United Kingdom"),
-    ("Amsterdam", "Netherlands"),
-])
+
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Paris", "France"),
+        ("Vancouver", "Canada"),
+        ("Manchester", "United Kingdom"),
+        ("Cambridge", "United Kingdom"),
+        ("Amsterdam", "Netherlands"),
+    ],
+)
 def test_bare_namesake_resolves_to_globally_dominant_place(raw, country):
     res = parse_location(raw)
     assert res.country == country
@@ -227,12 +267,15 @@ def test_bare_namesake_resolves_to_globally_dominant_place(raw, country):
 # An EXPLICIT state code or name is real disambiguating context, not a
 # population guess, so it still resolves confidently to its own US place
 # regardless of the bare-name namesake's global population.
-@pytest.mark.parametrize("raw,state", [
-    ("Paris, TX", "TX"),
-    ("Cambridge, MA", "MA"),
-    ("Vancouver, WA", "WA"),
-    ("Manchester, NH", "NH"),
-])
+@pytest.mark.parametrize(
+    "raw,state",
+    [
+        ("Paris, TX", "TX"),
+        ("Cambridge, MA", "MA"),
+        ("Vancouver, WA", "WA"),
+        ("Manchester, NH", "NH"),
+    ],
+)
 def test_us_namesake_with_explicit_state_stays_us(raw, state):
     res = parse_location(raw)
     assert res.country == "United States"
@@ -243,6 +286,7 @@ def test_us_namesake_with_explicit_state_stays_us(raw, state):
 # ---------------------------------------------------------------------
 # Multi-region reconciliation.
 # ---------------------------------------------------------------------
+
 
 def test_all_foreign_multicountry_dropped():
     # Two foreign countries, no US anywhere -> positively non-US -> drop.
@@ -284,6 +328,7 @@ def test_strong_us_anchor_with_foreign_city_kept():
 # Remote / degenerate inputs are unchanged.
 # ---------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("raw", ["Remote", "remote", "Fully Remote", "Remote - US"])
 def test_remote_flag_still_detected(raw):
     assert parse_location(raw).remote is True
@@ -310,16 +355,20 @@ def test_unrecognized_strings_kept_unresolved(raw):
 # silently bypassing the location allowlist.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,state,city", [
-    ("Washington, DC", "DC", "Washington"),        # state name inside the city
-    ("Kansas City, MO", "MO", "Kansas City"),
-    ("Oklahoma City, OK", "OK", "Oklahoma City"),
-    ("New York, NY", "NY", "New York City"),       # geonames spells it "New York City"
-    ("Atlanta, Georgia", "GA", "Atlanta"),         # state name that is also a country
-    ("Jamaica, NY", "NY", "Jamaica"),              # city name that is also a country
-    ("Jersey City, NJ", "NJ", "Jersey City"),      # country name nested in the city
-    ("Panama City, FL", "FL", "Panama City"),
-])
+
+@pytest.mark.parametrize(
+    "raw,state,city",
+    [
+        ("Washington, DC", "DC", "Washington"),  # state name inside the city
+        ("Kansas City, MO", "MO", "Kansas City"),
+        ("Oklahoma City, OK", "OK", "Oklahoma City"),
+        ("New York, NY", "NY", "New York City"),  # geonames spells it "New York City"
+        ("Atlanta, Georgia", "GA", "Atlanta"),  # state name that is also a country
+        ("Jamaica, NY", "NY", "Jamaica"),  # city name that is also a country
+        ("Jersey City, NJ", "NJ", "Jersey City"),  # country name nested in the city
+        ("Panama City, FL", "FL", "Panama City"),
+    ],
+)
 def test_us_namesake_resolves_to_its_us_place(raw, state, city):
     res = parse_location(raw)
     assert res.country == "United States"
@@ -327,12 +376,15 @@ def test_us_namesake_resolves_to_its_us_place(raw, state, city):
     assert res.city == city
 
 
-@pytest.mark.parametrize("raw,state,city", [
-    ("Boston, MA", "MA", "Boston"),
-    ("Boston, Massachusetts", "MA", "Boston"),
-    ("Austin, TX", "TX", "Austin"),
-    ("San Francisco Bay Area", "CA", "San Francisco"),
-])
+@pytest.mark.parametrize(
+    "raw,state,city",
+    [
+        ("Boston, MA", "MA", "Boston"),
+        ("Boston, Massachusetts", "MA", "Boston"),
+        ("Austin, TX", "TX", "Austin"),
+        ("San Francisco Bay Area", "CA", "San Francisco"),
+    ],
+)
 def test_unambiguous_us_locations_are_unchanged(raw, state, city):
     res = parse_location(raw)
     assert res.country == "United States"
@@ -340,12 +392,15 @@ def test_unambiguous_us_locations_are_unchanged(raw, state, city):
     assert res.city == city
 
 
-@pytest.mark.parametrize("raw,country", [
-    ("Toronto, Canada", "Canada"),
-    ("Berlin, Germany", "Germany"),
-    ("Hyderabad, India", "India"),
-    ("London, United Kingdom", "United Kingdom"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Toronto, Canada", "Canada"),
+        ("Berlin, Germany", "Germany"),
+        ("Hyderabad, India", "India"),
+        ("London, United Kingdom", "United Kingdom"),
+    ],
+)
 def test_foreign_locations_still_resolve_after_the_namesake_rule(raw, country):
     assert parse_location(raw).country == country
     assert _is_foreign(raw)
@@ -358,10 +413,13 @@ def test_foreign_locations_still_resolve_after_the_namesake_rule(raw, country):
 # of context and collapsed the parse to ambiguous. Bare "Georgia" alone
 # (no anchoring city) stays genuinely ambiguous -- see
 # test_bare_state_country_namesake_stays_unresolved below.
-@pytest.mark.parametrize("raw,country", [
-    ("Beirut, Lebanon", "Lebanon"),
-    ("Tbilisi, Georgia", "Georgia"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Beirut, Lebanon", "Lebanon"),
+        ("Tbilisi, Georgia", "Georgia"),
+    ],
+)
 def test_us_foreign_namesake_resolves_confidently_in_context(raw, country):
     res = parse_location(raw)
     assert res.country == country
@@ -382,10 +440,17 @@ def test_bare_state_country_namesake_stays_unresolved():
 # the collision-inducing sub-token match never happens.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw", [
-    "Central Jakarta", "South Jakarta", "North Jakarta",
-    "East Jakarta", "West Jakarta",
-])
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Central Jakarta",
+        "South Jakarta",
+        "North Jakarta",
+        "East Jakarta",
+        "West Jakarta",
+    ],
+)
 def test_jakarta_district_no_longer_leaks_past_the_allowlist(raw):
     res = parse_location(raw)
     assert res.country == "Indonesia"
@@ -399,12 +464,16 @@ def test_jakarta_district_no_longer_leaks_past_the_allowlist(raw):
 # found by direct testing this session, same bug class as Jakarta.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,country", [
-    ("Rome, Italy", "Italy"),
-    ("Athens, Greece", "Greece"),
-    ("Cairo, Egypt", "Egypt"),
-    ("Delhi, India", "India"),
-])
+
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Rome, Italy", "Italy"),
+        ("Athens, Greece", "Greece"),
+        ("Cairo, Egypt", "Egypt"),
+        ("Delhi, India", "India"),
+    ],
+)
 def test_us_city_foreign_country_collisions_resolve_foreign(raw, country):
     res = parse_location(raw)
     assert res.country == country
@@ -417,28 +486,35 @@ def test_us_city_foreign_country_collisions_resolve_foreign(raw, country):
 # showing it right next to its counterpart.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,state", [
-    ("Athens, OH", "OH"),
-    ("Rome, GA", "GA"),
-    ("Birmingham, AL", "AL"),
-    ("Dublin, OH", "OH"),
-    ("Valencia, CA", "CA"),
-    ("York, PA", "PA"),
-])
+
+@pytest.mark.parametrize(
+    "raw,state",
+    [
+        ("Athens, OH", "OH"),
+        ("Rome, GA", "GA"),
+        ("Birmingham, AL", "AL"),
+        ("Dublin, OH", "OH"),
+        ("Valencia, CA", "CA"),
+        ("York, PA", "PA"),
+    ],
+)
 def test_namesake_pair_us_side(raw, state):
     res = parse_location(raw)
     assert res.country == "United States"
     assert res.state == state
 
 
-@pytest.mark.parametrize("raw,country", [
-    ("Athens, Greece", "Greece"),
-    ("Rome, Italy", "Italy"),
-    ("Birmingham, UK", "United Kingdom"),
-    ("Dublin, Ireland", "Ireland"),
-    ("Valencia, Spain", "Spain"),
-    ("York, UK", "United Kingdom"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Athens, Greece", "Greece"),
+        ("Rome, Italy", "Italy"),
+        ("Birmingham, UK", "United Kingdom"),
+        ("Dublin, Ireland", "Ireland"),
+        ("Valencia, Spain", "Spain"),
+        ("York, UK", "United Kingdom"),
+    ],
+)
 def test_namesake_pair_foreign_side(raw, country):
     res = parse_location(raw)
     assert res.country == country
@@ -449,6 +525,7 @@ def test_namesake_pair_foreign_side(raw, country):
 # The libpostal single-merged-token quirk and its repair (see location.py's
 # module-level comment on the "Paris, TX" case).
 # ---------------------------------------------------------------------
+
 
 def test_paris_tx_merge_quirk_is_repaired():
     res = parse_location("Paris, TX")
@@ -469,6 +546,7 @@ def test_paris_tx_usa_agrees_with_the_repaired_case():
 # Worldwide subdivision correctness -- new coverage class, not present in
 # the old US-only design at all.
 # ---------------------------------------------------------------------
+
 
 def test_vancouver_bc_resolves_to_canada_without_a_country_suffix():
     # Under the old US-only state table this wrongly resolved to
@@ -496,10 +574,13 @@ def test_bangalore_ka_code_collision_does_not_silently_pick_the_wrong_country():
     assert res.country == "India"
 
 
-@pytest.mark.parametrize("raw,country,state", [
-    ("Toronto, Ontario, Canada", "Canada", "ON"),
-    ("Recife, PE, Brazil", "Brazil", "PE"),
-])
+@pytest.mark.parametrize(
+    "raw,country,state",
+    [
+        ("Toronto, Ontario, Canada", "Canada", "ON"),
+        ("Recife, PE, Brazil", "Brazil", "PE"),
+    ],
+)
 def test_full_hierarchical_strings_outside_north_america_and_europe(raw, country, state):
     res = parse_location(raw)
     assert res.country == country
@@ -510,6 +591,7 @@ def test_full_hierarchical_strings_outside_north_america_and_europe(raw, country
 # New Mexico vs. Mexico: a country name that is a strict substring of a US
 # state's name must not bleed a phantom country signal into the state.
 # ---------------------------------------------------------------------
+
 
 def test_albuquerque_new_mexico_is_us():
     res = parse_location("Albuquerque, New Mexico")
@@ -536,9 +618,15 @@ def test_mexico_the_country_is_unaffected_by_the_new_mexico_namesake(raw):
 # regex for exactly this reason (see location.py's module docstring).
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw", [
-    "Trinidad and Tobago", "Antigua and Barbuda", "Bosnia and Herzegovina",
-])
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Trinidad and Tobago",
+        "Antigua and Barbuda",
+        "Bosnia and Herzegovina",
+    ],
+)
 def test_and_countries_survive_the_list_separator_presplit(raw):
     assert parse_location(raw).country == raw
 
@@ -553,6 +641,7 @@ def test_and_countries_survive_the_list_separator_presplit(raw):
 # hypothetical: bare short codes/words that are also real (tiny) places
 # elsewhere in the world must not silently hijack the country resolution.
 # ---------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("raw", ["PA", "WA", "Asia"])
 def test_bare_short_tokens_dont_resolve_via_a_tiny_unrelated_namesake(raw):
@@ -573,6 +662,7 @@ def test_ambiguous_state_code_does_not_get_overridden_by_an_unrelated_city():
 
 
 # ---------------------------------------------------------------------
+
 
 def test_slash_separator_resolves_the_real_segment_and_ignores_remote():
     res = parse_location("Austin, TX / Remote")
@@ -604,7 +694,10 @@ def test_semicolon_all_foreign_list_has_no_us_candidate():
 # a job poster writes.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw", ["US and Canada", "United States and Canada", "United States & Canada"])
+
+@pytest.mark.parametrize(
+    "raw", ["US and Canada", "United States and Canada", "United States & Canada"]
+)
 def test_and_ampersand_country_lists_surface_as_candidates(raw):
     # libpostal folds the whole phrase into one unparseable "house" blob
     # (confirmed via parse_address), so ordinary segment mining finds
@@ -670,26 +763,33 @@ def test_saint_petersburg_alone_still_means_russia():
     assert parse_location("Saint Petersburg").country == "Russian Federation"
 
 
-@pytest.mark.parametrize("raw,country", [
-    ("Bruxelles", "Belgium"),
-    ("Bangalore", "India"),
-    ("Ciudad de México", "Mexico"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Bruxelles", "Belgium"),
+        ("Bangalore", "India"),
+        ("Ciudad de México", "Mexico"),
+    ],
+)
 def test_curated_city_name_aliases_resolve_the_local_or_common_spelling(raw, country):
     assert parse_location(raw).country == country
 
 
-@pytest.mark.parametrize("raw,country", [
-    ("Deutschland", "Germany"),
-    ("España", "Spain"),
-    ("Brasil", "Brazil"),
-    ("Nederland", "Netherlands"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Deutschland", "Germany"),
+        ("España", "Spain"),
+        ("Brasil", "Brazil"),
+        ("Nederland", "Netherlands"),
+    ],
+)
 def test_native_language_country_names_resolve_via_pycountrys_own_locale_data(raw, country):
     assert parse_location(raw).country == country
 
 
 # --- lru_cache on parse_location (D4.4) ---
+
 
 def test_cache_is_transparent_first_call_equals_cached_call():
     parse_location.cache_clear()
@@ -721,12 +821,16 @@ def test_monkeypatched_country_table_is_honoured(monkeypatch):
 # admin1 -> state inference stays US-only.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,country,city", [
-    ("Berlin, Germany", "Germany", "Berlin"),
-    ("Bengaluru, India", "India", "Bengaluru"),
-    ("Lisbon, Portugal", "Portugal", "Lisbon"),
-    ("Toronto, Canada", "Canada", "Toronto"),
-])
+
+@pytest.mark.parametrize(
+    "raw,country,city",
+    [
+        ("Berlin, Germany", "Germany", "Berlin"),
+        ("Bengaluru, India", "India", "Bengaluru"),
+        ("Lisbon, Portugal", "Portugal", "Lisbon"),
+        ("Toronto, Canada", "Canada", "Toronto"),
+    ],
+)
 def test_non_us_city_is_returned_with_no_state(raw, country, city):
     res = parse_location(raw)
     assert res.country == country
@@ -734,12 +838,15 @@ def test_non_us_city_is_returned_with_no_state(raw, country, city):
     assert res.city == city
 
 
-@pytest.mark.parametrize("raw,state,city", [
-    ("Austin, TX", "TX", "Austin"),
-    ("Portland, OR", "OR", "Portland"),
-    ("Washington, DC", "DC", "Washington"),
-    ("Remote - Austin, TX", "TX", "Austin"),
-])
+@pytest.mark.parametrize(
+    "raw,state,city",
+    [
+        ("Austin, TX", "TX", "Austin"),
+        ("Portland, OR", "OR", "Portland"),
+        ("Washington, DC", "DC", "Washington"),
+        ("Remote - Austin, TX", "TX", "Austin"),
+    ],
+)
 def test_us_parses_are_unchanged_by_the_non_us_city_change(raw, state, city):
     res = parse_location(raw)
     assert res.country == "United States"
@@ -761,13 +868,17 @@ def test_non_us_state_is_still_inferred_only_from_an_explicit_state_token():
 # allowlist decides keep-vs-drop.
 # ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,present,absent", [
-    ("EMEA", ["Germany", "South Africa", "United Arab Emirates"], ["United States", "India"]),
-    ("EMEIA", ["Germany", "India"], ["United States"]),
-    ("APAC", ["India", "Japan", "Australia"], ["United States", "Germany"]),
-    ("LATAM", ["Brazil", "Mexico", "Argentina"], ["United States", "Spain"]),
-    ("ANZ", ["Australia", "New Zealand"], ["United States", "India"]),
-])
+
+@pytest.mark.parametrize(
+    "raw,present,absent",
+    [
+        ("EMEA", ["Germany", "South Africa", "United Arab Emirates"], ["United States", "India"]),
+        ("EMEIA", ["Germany", "India"], ["United States"]),
+        ("APAC", ["India", "Japan", "Australia"], ["United States", "Germany"]),
+        ("LATAM", ["Brazil", "Mexico", "Argentina"], ["United States", "Spain"]),
+        ("ANZ", ["Australia", "New Zealand"], ["United States", "India"]),
+    ],
+)
 def test_region_token_expands_to_candidate_countries(raw, present, absent):
     res = parse_location(raw)
     assert res.country == ""
@@ -808,9 +919,11 @@ def test_ambiguous_strings_are_not_region_tokens(raw):
 # The allowlist decision
 # ---------------------------------------------------------------------
 
+
 class _Cfg:
     def __init__(self, countries, abroad=None):
         from src.discovery.config import LocationAllowlist
+
         self.location_allowlist = LocationAllowlist(countries)
         self._abroad = abroad or {}
 
@@ -818,49 +931,58 @@ class _Cfg:
         return self._abroad
 
 
-@pytest.mark.parametrize("raw,keep,shown", [
-    ("London; Manchester", False, "London; Manchester"),
-    ("Toronto, ON; Vancouver, BC", False, "Toronto, ON; Vancouver, BC"),
-    ("Seoul, Korea", False, "Seoul, Korea"),
-    ("Malta", False, "Malta"),
-    ("Tel Aviv (Onsite)", False, "Tel Aviv (Onsite)"),
-    ("London Office", False, "London Office"),
-    ("Chennai, TN", True, "Chennai, India"),
-    ("Mumbai, Maharashtra, India", True, "Mumbai, India"),
-    ("New York, NY (HQ)", True, "New York City, NY"),
-    ("Austin, TX; Seattle, WA", True, "Austin, TX; Seattle, WA"),
-    ("Remote - US", True, "Remote - United States"),
-    ("Remote", True, "Remote"),
-])
+@pytest.mark.parametrize(
+    "raw,keep,shown",
+    [
+        ("London; Manchester", False, "London; Manchester"),
+        ("Toronto, ON; Vancouver, BC", False, "Toronto, ON; Vancouver, BC"),
+        ("Seoul, Korea", False, "Seoul, Korea"),
+        ("Malta", False, "Malta"),
+        ("Tel Aviv (Onsite)", False, "Tel Aviv (Onsite)"),
+        ("London Office", False, "London Office"),
+        ("Chennai, TN", True, "Chennai, India"),
+        ("Mumbai, Maharashtra, India", True, "Mumbai, India"),
+        ("New York, NY (HQ)", True, "New York City, NY"),
+        ("Austin, TX; Seattle, WA", True, "Austin, TX; Seattle, WA"),
+        ("Remote - US", True, "Remote - United States"),
+        ("Remote", True, "Remote"),
+    ],
+)
 def test_allowlist_check(raw, keep, shown):
     from src.shared.location.allowlist import Allowlist
+
     got = Allowlist(_Cfg(["United States", "India"])).check(raw)
     assert (got.keep, got.location) == (keep, shown)
 
 
 def test_an_abroad_country_keeps_only_its_lanes():
     from src.shared.location.allowlist import Allowlist
+
     al = Allowlist(_Cfg(["United States", "India"], abroad={"india": {"lane_a"}}))
     assert al.check("Bengaluru", "lane_a").keep
     assert not al.check("Bengaluru", "lane_b").keep
 
 
-@pytest.mark.parametrize("title,expected", [
-    ("AI Engineer Backend (Remote - ES/UK only)", {"Spain", "United Kingdom"}),
-    ("Forward Deployed Engineer (UK Based)", {"United Kingdom"}),
-    ("AI Engineer - US only", {"United States"}),
-    ("Engineer (Remote - EU only)", "europe"),
-    ("W2 only - SAP SD OTC Consultant", set()),
-    ("AI Developer (US Citizens/ Green Cards only)", set()),
-    ("AI Engineer (On-Site, Indiana Only)", set()),
-    ("Credit Risk Analyst (UAE Nationals Only)", set()),
-    ("Founding Engineer (AI + Geometry / CAD)", set()),
-    ("SAP Specialist - Columbia, MD", set()),
-    ("AI Engineer (in only one team)", set()),
-])
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("AI Engineer Backend (Remote - ES/UK only)", {"Spain", "United Kingdom"}),
+        ("Forward Deployed Engineer (UK Based)", {"United Kingdom"}),
+        ("AI Engineer - US only", {"United States"}),
+        ("Engineer (Remote - EU only)", "europe"),
+        ("W2 only - SAP SD OTC Consultant", set()),
+        ("AI Developer (US Citizens/ Green Cards only)", set()),
+        ("AI Engineer (On-Site, Indiana Only)", set()),
+        ("Credit Risk Analyst (UAE Nationals Only)", set()),
+        ("Founding Engineer (AI + Geometry / CAD)", set()),
+        ("SAP Specialist - Columbia, MD", set()),
+        ("AI Engineer (in only one team)", set()),
+    ],
+)
 def test_residency_countries(title, expected):
     from src.shared.location.allowlist import residency_countries
     from src.shared.location.places import REGION_TOKEN_COUNTRIES
+
     if expected == "europe":
         expected = set(REGION_TOKEN_COUNTRIES["europe"])
     assert residency_countries(title) == expected
@@ -868,6 +990,7 @@ def test_residency_countries(title, expected):
 
 def test_a_title_limited_to_disallowed_countries_is_dropped():
     from src.shared.location.allowlist import Allowlist
+
     al = Allowlist(_Cfg(["United States", "India"]))
     assert not al.check("Remote", "", "AI Engineer Backend (Remote - ES/UK only)").keep
     assert al.check("Remote", "", "AI Engineer (US or UK only)").keep
@@ -876,38 +999,44 @@ def test_a_title_limited_to_disallowed_countries_is_dropped():
 
 # A country code closing an address names its country, beating a state code
 # that shares the letters. Real strings from Indeed and the stapply feed.
-@pytest.mark.parametrize("raw,country", [
-    ("Amsterdam, NH, NL", "Netherlands"),
-    ("Tilburg, NB, NL", "Netherlands"),
-    ("Abu Dhabi, AZ, AE", "United Arab Emirates"),
-    ("Stockholm, Stockholm County, SE", "Sweden"),
-    ("Amsterdam, NH, nl", "Netherlands"),
-    ("Pune, MH, in", "India"),
-    ("Madrid, MD, ES", "Spain"),
-    ("Schiltigheim, Grand Est, fr", "France"),
-    ("München, BY, DE", "Germany"),
-    ("Wrocław, DO, PL", "Poland"),
-    ("Hamburg, DE, 20095", "Germany"),
-    ("Toronto, ON, CA", "Canada"),
-    ("Bengaluru, KA, IN", "India"),
-    ("New York, United States, USA", "United States"),
-    ("TUN - ARIANA", "Tunisia"),
-    ("SGP Work-at-Home", "Singapore"),
-])
+@pytest.mark.parametrize(
+    "raw,country",
+    [
+        ("Amsterdam, NH, NL", "Netherlands"),
+        ("Tilburg, NB, NL", "Netherlands"),
+        ("Abu Dhabi, AZ, AE", "United Arab Emirates"),
+        ("Stockholm, Stockholm County, SE", "Sweden"),
+        ("Amsterdam, NH, nl", "Netherlands"),
+        ("Pune, MH, in", "India"),
+        ("Madrid, MD, ES", "Spain"),
+        ("Schiltigheim, Grand Est, fr", "France"),
+        ("München, BY, DE", "Germany"),
+        ("Wrocław, DO, PL", "Poland"),
+        ("Hamburg, DE, 20095", "Germany"),
+        ("Toronto, ON, CA", "Canada"),
+        ("Bengaluru, KA, IN", "India"),
+        ("New York, United States, USA", "United States"),
+        ("TUN - ARIANA", "Tunisia"),
+        ("SGP Work-at-Home", "Singapore"),
+    ],
+)
 def test_a_closing_country_code_names_the_country(raw, country):
     assert parse_location(raw).country == country
 
 
 # The same letters after a US city stay a US state.
-@pytest.mark.parametrize("raw,state", [
-    ("Chicago, IL", "IL"),
-    ("Indianapolis, IN", "IN"),
-    ("Wilmington, DE", "DE"),
-    ("San Francisco, CA", "CA"),
-    ("Columbia, MD", "MD"),
-    ("Portland, OR", "OR"),
-    ("Pittsburgh, PA, 15222", "PA"),
-])
+@pytest.mark.parametrize(
+    "raw,state",
+    [
+        ("Chicago, IL", "IL"),
+        ("Indianapolis, IN", "IN"),
+        ("Wilmington, DE", "DE"),
+        ("San Francisco, CA", "CA"),
+        ("Columbia, MD", "MD"),
+        ("Portland, OR", "OR"),
+        ("Pittsburgh, PA, 15222", "PA"),
+    ],
+)
 def test_a_us_city_keeps_its_state(raw, state):
     r = parse_location(raw)
     assert (r.country, r.state) == ("United States", state)

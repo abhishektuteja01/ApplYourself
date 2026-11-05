@@ -3,6 +3,7 @@
 A plist with a typo does not error — launchd just never runs the job. These
 tests cover the parts that fail silently.
 """
+
 from __future__ import annotations
 
 import plistlib
@@ -43,8 +44,12 @@ def test_plist_starts_the_nightly_pipeline_script():
 def test_the_log_directory_is_committed():
     """launchd does not create StandardOutPath's directory; without a committed
     logs/, the agent fails to spawn on a fresh clone with no log saying why."""
-    tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "logs/.gitkeep"],
-                             cwd=REPO_ROOT, capture_output=True, encoding="utf-8")
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "logs/.gitkeep"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        encoding="utf-8",
+    )
     assert tracked.returncode == 0, "logs/.gitkeep is not tracked"
 
 
@@ -56,4 +61,5 @@ def test_every_script_is_valid_bash(script):
 
 def test_the_example_automation_config_passes_the_key_check():
     from src.shared.config_keys import load_automation
+
     load_automation(REPO_ROOT / "profile" / "automation.example.yaml")

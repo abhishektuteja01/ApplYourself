@@ -10,6 +10,7 @@ A killed run leaves the rest due, so there is nothing to resume.
 Deterministic and LLM-free (R7). Vendor code lives in the modules next to
 this one; each only lists a board and fetches one posting.
 """
+
 from __future__ import annotations
 
 import csv
@@ -45,8 +46,18 @@ PAYLOAD_SHAPE_ERRORS = (AttributeError, TypeError, KeyError, ValueError, IndexEr
 ESCALATE_MIN_BOARDS = 10
 ESCALATE_FAILURE_RATE = 0.9
 
-STATE_COLUMNS = ["ats", "slug", "name", "last_checked", "last_found", "status",
-                 "listed", "passed", "new", "strikes"]
+STATE_COLUMNS = [
+    "ats",
+    "slug",
+    "name",
+    "last_checked",
+    "last_found",
+    "status",
+    "listed",
+    "passed",
+    "new",
+    "strikes",
+]
 
 
 @dataclass(frozen=True)
@@ -67,13 +78,16 @@ def board_key_of(url: str) -> str:
     if hit is None or not hit.slug:
         return ""
     if hit.source == "workday":
-        return f"workday|{hit.slug}|{hit.pod}|{hit.site_id}".lower() if hit.pod and hit.site_id else ""
+        return (
+            f"workday|{hit.slug}|{hit.pod}|{hit.site_id}".lower() if hit.pod and hit.site_id else ""
+        )
     return f"{hit.source}|{hit.slug}".lower()
 
 
 # ---------------------------------------------------------------------
 # the board list
 # ---------------------------------------------------------------------
+
 
 def search_terms(vcfg) -> tuple[str, ...]:
     """Each lane's first search term, default lane first, duplicates once:
@@ -94,8 +108,9 @@ def _read_csv(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def load_boards(ats: str | None = None, include_retired: bool = False,
-                boards_dir: Path | None = None) -> list[Board]:
+def load_boards(
+    ats: str | None = None, include_retired: bool = False, boards_dir: Path | None = None
+) -> list[Board]:
     """Every live board, one per (ats, slug) whatever the slug's case.
 
     `active=0` retires that exact spelling. A board listed in two cases stays
@@ -135,12 +150,19 @@ def load_state(path: Path | None = None) -> pd.DataFrame:
     return df
 
 
-def due_boards(boards: list[Board], state: pd.DataFrame, today: pd.Timestamp,
-               every_days: int, dead_every_days: int) -> list[Board]:
+def due_boards(
+    boards: list[Board],
+    state: pd.DataFrame,
+    today: pd.Timestamp,
+    every_days: int,
+    dead_every_days: int,
+) -> list[Board]:
     """Boards due tonight, never-checked and oldest-checked first."""
     today = pd.Timestamp(today).normalize()
-    known = {f"{a}|{str(s).lower()}": r for a, s, r in
-             zip(state["ats"], state["slug"], state.to_dict("records"))}
+    known = {
+        f"{a}|{str(s).lower()}": r
+        for a, s, r in zip(state["ats"], state["slug"], state.to_dict("records"))
+    }
     due = []
     for b in boards:
         rec = known.get(b.key)
@@ -158,14 +180,13 @@ def due_boards(boards: list[Board], state: pd.DataFrame, today: pd.Timestamp,
 @dataclass
 class BoardResult:
     board: Board
-    status: str          # ok | empty | 404 | error
+    status: str  # ok | empty | 404 | error
     listed: int = 0
     passed: int = 0
     new: int = 0
 
 
-def update_state(results: list[BoardResult], today: pd.Timestamp,
-                 path: Path | None = None) -> None:
+def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | None = None) -> None:
     """Fold a batch of board results into boards.parquet, under its lock.
     An error leaves last_checked alone, so the board is first in line next
     run; a 404 counts a strike."""
@@ -175,17 +196,28 @@ def update_state(results: list[BoardResult], today: pd.Timestamp,
     today = pd.Timestamp(today).normalize()
     with locked(path):
         state = load_state(path)
-        index = {f"{a}|{str(s).lower()}": i for i, (a, s) in
-                 enumerate(zip(state["ats"], state["slug"]))}
+        index = {
+            f"{a}|{str(s).lower()}": i for i, (a, s) in enumerate(zip(state["ats"], state["slug"]))
+        }
         new_rows = []
         for r in results:
             b = r.board
             i = index.get(b.key)
             if i is None:
-                new_rows.append({"ats": b.ats, "slug": b.slug, "name": b.name,
-                                 "last_checked": pd.NaT, "last_found": pd.NaT,
-                                 "status": "", "listed": 0, "passed": 0, "new": 0,
-                                 "strikes": 0})
+                new_rows.append(
+                    {
+                        "ats": b.ats,
+                        "slug": b.slug,
+                        "name": b.name,
+                        "last_checked": pd.NaT,
+                        "last_found": pd.NaT,
+                        "status": "",
+                        "listed": 0,
+                        "passed": 0,
+                        "new": 0,
+                        "strikes": 0,
+                    }
+                )
                 index[b.key] = len(state) + len(new_rows) - 1
         if new_rows:
             fresh = pd.DataFrame(new_rows)
@@ -204,8 +236,11 @@ def update_state(results: list[BoardResult], today: pd.Timestamp,
                 continue
             state.at[i, "strikes"] = 0
             state.at[i, "status"] = r.status
-            state.at[i, "listed"], state.at[i, "passed"], state.at[i, "new"] = \
-                r.listed, r.passed, r.new
+            state.at[i, "listed"], state.at[i, "passed"], state.at[i, "new"] = (
+                r.listed,
+                r.passed,
+                r.new,
+            )
             if r.passed:
                 state.at[i, "last_found"] = today
         state = state.sort_values(["ats", "slug"], kind="stable").reset_index(drop=True)
@@ -216,12 +251,22 @@ def update_state(results: list[BoardResult], today: pd.Timestamp,
 # the one loop
 # ---------------------------------------------------------------------
 
+
 class Crawl:
     """What a lane needs from the run: the clock, the store's known keys, and
     the places results go. Shared by every lane thread."""
 
-    def __init__(self, cfg, vcfg, today, deadline_ts: float, known: dict[str, dict], batch,
-                 board_state: Path | None = None, boards_dir: Path | None = None):
+    def __init__(
+        self,
+        cfg,
+        vcfg,
+        today,
+        deadline_ts: float,
+        known: dict[str, dict],
+        batch,
+        board_state: Path | None = None,
+        boards_dir: Path | None = None,
+    ):
         self.cfg = cfg
         self.vcfg = vcfg
         self.today = pd.Timestamp(today).normalize()
@@ -248,12 +293,20 @@ class Crawl:
             out, self.board_results = self.board_results, []
             return out
 
-    def record_listing(self, source: str, title: str, vertical: str, passed: bool,
-                       key: str) -> None:
+    def record_listing(
+        self, source: str, title: str, vertical: str, passed: bool, key: str
+    ) -> None:
         """One classified listing for tonight's debug shard."""
         with self._lock:
-            self.listed.append({"source": source, "title": title, "vertical": vertical,
-                                "passed": passed, "posting_key": key})
+            self.listed.append(
+                {
+                    "source": source,
+                    "title": title,
+                    "vertical": vertical,
+                    "passed": passed,
+                    "posting_key": key,
+                }
+            )
 
     def take_listed(self) -> list[dict]:
         with self._lock:
@@ -284,7 +337,9 @@ class BoardLane(Lane):
         """Whether a known posting's stored copy is out of date."""
         return False
 
-    def paged_search(self, crawl: Crawl, pause, page_size: int, fetch_page, to_posting) -> list[dict]:
+    def paged_search(
+        self, crawl: Crawl, pause, page_size: int, fetch_page, to_posting
+    ) -> list[dict]:
         """A board that filters server-side: each search term, up to `max_pages`
         pages. A term stops on a short page or a page with nothing past the
         title gate; everything stops at the deadline. `fetch_page(term, offset)`
@@ -315,8 +370,13 @@ class BoardLane(Lane):
         src = crawl.cfg.sources[self.name]
         pacing = max(pacing_floor(self.name), src.pacing_seconds)
         state = load_state(crawl.board_state)
-        boards = due_boards(load_boards(self.name, boards_dir=crawl.boards_dir), state, crawl.today,
-                            src.every_days, crawl.cfg.dead_every_days)
+        boards = due_boards(
+            load_boards(self.name, boards_dir=crawl.boards_dir),
+            state,
+            crawl.today,
+            src.every_days,
+            crawl.cfg.dead_every_days,
+        )
         # A covered board is not marked checked, so it is first in line on a
         # night the feed is missing.
         due = len(boards)
@@ -351,13 +411,18 @@ class BoardLane(Lane):
             except PAYLOAD_SHAPE_ERRORS as e:
                 shape_errors += 1
                 stats.boards_error += 1
-                stats.errors.append(f"{board.name}: malformed board payload: {type(e).__name__}: {e}")
+                stats.errors.append(
+                    f"{board.name}: malformed board payload: {type(e).__name__}: {e}"
+                )
                 crawl.record_board(BoardResult(board, "error"))
-                if (stats.boards_checked >= ESCALATE_MIN_BOARDS
-                        and shape_errors / stats.boards_checked >= ESCALATE_FAILURE_RATE):
+                if (
+                    stats.boards_checked >= ESCALATE_MIN_BOARDS
+                    and shape_errors / stats.boards_checked >= ESCALATE_FAILURE_RATE
+                ):
                     raise RuntimeError(
                         f"{self.name}: {shape_errors}/{stats.boards_checked} boards unparseable; "
-                        f"the API shape has changed") from e
+                        f"the API shape has changed"
+                    ) from e
                 continue
             result = BoardResult(board, "ok", listed=len(postings))
             for posting in postings:

@@ -4,6 +4,7 @@ means the same thing whichever entry point you came in through.
 Consumers keep their own module-level names bound to these values, because the
 tests redirect those names and the slash commands read them.
 """
+
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

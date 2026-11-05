@@ -5,6 +5,7 @@ attachments before fields, config overwriting whatever an upload parsed into the
 form, and a react-select that did not stick counting as a failure rather than a
 filled field. The selector work is what the live run at step 6 checks.
 """
+
 from __future__ import annotations
 
 import ast
@@ -23,22 +24,43 @@ REPO_ROOT = paths.REPO_ROOT
 
 
 def field(**kw) -> FieldPlan:
-    base = dict(id="q1", name="q1", label="A question", kind="text",
-                section="questions", required=False, multi=False, value="v", tier="B")
+    base = dict(
+        id="q1",
+        name="q1",
+        label="A question",
+        kind="text",
+        section="questions",
+        required=False,
+        multi=False,
+        value="v",
+        tier="B",
+    )
     base.update(kw)
     return FieldPlan(**base)
 
 
-def plan(fields=(), files=(), form_url="https://boards.greenhouse.io/embed/job_app?token=1") -> Plan:
+def plan(
+    fields=(), files=(), form_url="https://boards.greenhouse.io/embed/job_app?token=1"
+) -> Plan:
     # `ats` defaults to a board with no measured request marker — most tests
     # here are about ordering/guard behaviour, not the marker feature, and
     # must not silently start asserting on whichever real board picks one up
     # next. Tests that care use `plan_ashby()` or set `ats` explicitly.
     return Plan(
-        job_id="a1b2c3d4", board="gasketworks", token="1", form_url=form_url,
-        company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
-        fields=tuple(fields), files=tuple(files), unmapped=(), draftable=(), skipped=(),
-        submit_selector="#application-form button[type=submit]", submit_disabled=False,
+        job_id="a1b2c3d4",
+        board="gasketworks",
+        token="1",
+        form_url=form_url,
+        company="Gasket Works",
+        title="Widget Engineer",
+        out_dir=Path("/tmp"),
+        fields=tuple(fields),
+        files=tuple(files),
+        unmapped=(),
+        draftable=(),
+        skipped=(),
+        submit_selector="#application-form button[type=submit]",
+        submit_disabled=False,
         ats="lever",
     )
 
@@ -51,8 +73,11 @@ def plan_ashby(**kw) -> Plan:
 class FakePage:
     """Just enough page for the post-submit capture to read."""
 
-    def __init__(self, text="Thank you for applying to Gasket Works.",
-                 url="https://boards.greenhouse.io/confirmation"):
+    def __init__(
+        self,
+        text="Thank you for applying to Gasket Works.",
+        url="https://boards.greenhouse.io/confirmation",
+    ):
         self._text, self.url = text, url
 
     def title(self):
@@ -71,25 +96,24 @@ class FakePage:
 class FakeDriver:
     """A page that records what was done to it, in order."""
 
-    def __init__(self, *, values=None, options=None, sticks=True, expanded_after=False,
-                 kinds=None):
+    def __init__(self, *, values=None, options=None, sticks=True, expanded_after=False, kinds=None):
         self.calls: list[tuple] = []
-        self.kinds = dict(kinds or {})         # id -> kind the DOM really shows
-        self.values = dict(values or {})       # id -> what the field reads back
-        self.options = dict(options or {})     # id -> what the listbox offers
-        self.sticks = sticks                   # does a selection register
-        self.expanded_after = expanded_after   # listbox left open after clicking
+        self.kinds = dict(kinds or {})  # id -> kind the DOM really shows
+        self.values = dict(values or {})  # id -> what the field reads back
+        self.options = dict(options or {})  # id -> what the listbox offers
+        self.sticks = sticks  # does a selection register
+        self.expanded_after = expanded_after  # listbox left open after clicking
         self._selected: dict[str, str] = {}
         self._checked_groups: dict[str, set[str]] = {}
         self._typed: str | None = None
         self._last_field: str | None = None
         self._files: dict[str, tuple[str, ...]] = {}
-        self.uploads_stick = True              # does set_files actually attach
-        self.upload_readback = True            # None = input gone, unreadable
-        self.upload_widget = None              # what the widget shows: T/F/None
-        self.confirms = False                  # board acknowledges the submit
-        self._page = FakePage()                # what the post-submit capture reads
-        self.refusals: list[str] = []          # the board's refusal, per click
+        self.uploads_stick = True  # does set_files actually attach
+        self.upload_readback = True  # None = input gone, unreadable
+        self.upload_widget = None  # what the widget shows: T/F/None
+        self.confirms = False  # board acknowledges the submit
+        self._page = FakePage()  # what the post-submit capture reads
+        self.refusals: list[str] = []  # the board's refusal, per click
         self.named_missing: list[list[str]] = []  # labels named missing, per refusal
         self._dom_paths: dict[str, str] = {}
         self._dom_controls: dict[str, str] = {}
@@ -129,7 +153,7 @@ class FakeDriver:
 
     def attached_files(self, field_id):
         if self.upload_readback is None:
-            return None                      # detached node: cannot verify
+            return None  # detached node: cannot verify
         return self._files.get(field_id, ())
 
     def upload_shows(self, field_id, filename):
@@ -224,7 +248,7 @@ class FakeDriver:
         self.calls.append(("wait", ms))
 
     def submission_rejected(self):
-        return getattr(self, 'rejects', '')
+        return getattr(self, "rejects", "")
 
     def submission_refused(self):
         self.calls.append(("submission_refused",))
@@ -255,10 +279,13 @@ class TestOrder:
         # An upload can trigger a parse that writes into fields, so nothing may
         # be read or written before it has landed.
         d = FakeDriver()
-        fill_plan(plan(
-            fields=[field(id="first_name", value="Alex")],
-            files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
-        ), d)
+        fill_plan(
+            plan(
+                fields=[field(id="first_name", value="Alex")],
+                files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
+            ),
+            d,
+        )
         kinds = [c[0] for c in d.calls]
         attach = kinds.index("attach")
         after = [i for i, k in enumerate(kinds) if k == "settle" and i > attach]
@@ -271,10 +298,13 @@ class TestOrder:
         # settle that follows the attach gets its own longer ceiling and a
         # floor; the one that precedes it keeps the default.
         d = FakeDriver()
-        fill_plan(plan(
-            fields=[field(id="first_name", value="Alex")],
-            files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
-        ), d)
+        fill_plan(
+            plan(
+                fields=[field(id="first_name", value="Alex")],
+                files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
+            ),
+            d,
+        )
         settles = [c for c in d.calls if c[0] == "settle"]
         assert settles[0] == ("settle", None, 0)
         assert settles[-1] == ("settle", F.UPLOAD_PARSE_TIMEOUT, F.UPLOAD_PARSE_FLOOR_MS)
@@ -283,9 +313,12 @@ class TestOrder:
         # The upload widget is wired by script that lands after the form
         # element does. Clicking Attach too early is refused outright.
         d = FakeDriver()
-        fill_plan(plan(
-            files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
-        ), d)
+        fill_plan(
+            plan(
+                files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)],
+            ),
+            d,
+        )
         kinds = [c[0] for c in d.calls]
         assert kinds.index("settle") < kinds.index("attach")
 
@@ -301,10 +334,13 @@ class TestOrder:
 
     def test_nothing_ever_clicks_submit(self, resume):
         d = FakeDriver()
-        fill_plan(plan(
-            fields=[field()],
-            files=[FilePlan(id="resume", label="R", required=True, path=resume)],
-        ), d)
+        fill_plan(
+            plan(
+                fields=[field()],
+                files=[FilePlan(id="resume", label="R", required=True, path=resume)],
+            ),
+            d,
+        )
         assert not any("submit" in str(c).lower() for c in d.calls)
 
 
@@ -345,9 +381,15 @@ class TestConfigWins:
 
     def test_prefilled_fields_are_reported(self):
         d = FakeDriver(values={"first_name": "Parsed", "email": ""})
-        result = fill_plan(plan(fields=[
-            field(id="first_name", value="Alex"), field(id="email", value="a@b.c"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="first_name", value="Alex"),
+                    field(id="email", value="a@b.c"),
+                ]
+            ),
+            d,
+        )
         assert result.prefilled == ("first_name",)
 
     def test_a_field_that_does_not_hold_what_was_written_fails(self):
@@ -364,26 +406,41 @@ class TestConfigWins:
 class TestReactSelect:
     def test_a_selection_that_sticks_is_a_fill(self):
         d = FakeDriver(options={"country": ("United States", "Canada")})
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+        )
         assert result.ok
         assert ("select", "country", "United States") in d.calls
         assert result.outcomes[0].after == "United States"
 
     def test_typing_comes_before_selecting(self):
         d = FakeDriver(options={"country": ("United States",)})
-        fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d)
+        fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+        )
         kinds = [c[0] for c in d.calls]
         assert kinds.index("type") < kinds.index("select")
 
     def test_a_value_matching_no_option_fails_and_says_what_was_offered(self):
         d = FakeDriver(options={"degree--0": ("Bachelor's Degree", "Doctorate")})
-        result = fill_plan(plan(fields=[
-            field(id="degree--0", kind="react_select", value="Master's Degree"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="degree--0", kind="react_select", value="Master's Degree"),
+                ]
+            ),
+            d,
+        )
         assert result.ok is False
         assert "no option matching" in result.failures[0]
         assert "Bachelor's Degree" in result.failures[0]
@@ -392,17 +449,27 @@ class TestReactSelect:
         # The failure this whole assert exists for: the widget accepts the
         # keystrokes and ends up empty.
         d = FakeDriver(options={"country": ("United States",)}, sticks=False)
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+        )
         assert result.ok is False
         assert "is empty" in result.failures[0]
 
     def test_a_listbox_left_open_fails(self):
         d = FakeDriver(options={"country": ("United States",)}, expanded_after=True)
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+        )
         assert result.ok is False
         assert "still open" in result.failures[0]
 
@@ -410,17 +477,27 @@ class TestReactSelect:
         # For hispanic_ethnicity and every other select whose options exist
         # nowhere but the opened widget.
         d = FakeDriver(options={"country": ("United States", "Canada")})
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+        )
         assert result.observed_options["country"] == ("United States", "Canada")
 
     def test_a_select_with_no_option_list_still_asserts(self):
         # country on 32 of 45 boards: nothing to validate against beforehand.
         d = FakeDriver()
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+        )
         assert result.ok
         assert result.outcomes[0].after == "United States"
 
@@ -431,9 +508,17 @@ class TestParkedProbe:
 
     def _parked(self, **kw):
         from src.apply.plan import Unmapped
-        base = dict(id="hispanic_ethnicity", label="Are you Hispanic/Latino?",
-                    required=True, kind="react_select", section="eeoc",
-                    tier="A2", reason="no option list", options=())
+
+        base = dict(
+            id="hispanic_ethnicity",
+            label="Are you Hispanic/Latino?",
+            required=True,
+            kind="react_select",
+            section="eeoc",
+            tier="A2",
+            reason="no option list",
+            options=(),
+        )
         base.update(kw)
         return Unmapped(**base)
 
@@ -454,9 +539,7 @@ class TestParkedProbe:
 
     def test_a_parked_text_question_is_not_probed(self):
         d = FakeDriver(options={"question_9": ("never", "read")})
-        result = fill_plan(
-            self._plan_with(self._parked(id="question_9", kind="textarea")), d
-        )
+        result = fill_plan(self._plan_with(self._parked(id="question_9", kind="textarea")), d)
         assert result.observed_options == {}
         assert not any(c[0] == "open" for c in d.calls)
 
@@ -487,9 +570,17 @@ class TestRecovery:
 
     def _parked(self, **kw):
         from src.apply.plan import Unmapped
-        base = dict(id="hispanic_ethnicity", label="Are you Hispanic/Latino?",
-                    required=True, kind="react_select", section="eeoc",
-                    tier="A2", reason="no option list to opt out against", options=())
+
+        base = dict(
+            id="hispanic_ethnicity",
+            label="Are you Hispanic/Latino?",
+            required=True,
+            kind="react_select",
+            section="eeoc",
+            tier="A2",
+            reason="no option list to opt out against",
+            options=(),
+        )
         base.update(kw)
         return Unmapped(**base)
 
@@ -497,9 +588,11 @@ class TestRecovery:
         return Plan(**{**plan().__dict__, "unmapped": (parked,)})
 
     def test_the_eeoc_opt_out_applies_once_the_options_are_readable(self, answers):
-        d = FakeDriver(options={
-            "hispanic_ethnicity": ("Yes", "No", "Decline To Self Identify"),
-        })
+        d = FakeDriver(
+            options={
+                "hispanic_ethnicity": ("Yes", "No", "Decline To Self Identify"),
+            }
+        )
         result = fill_plan(self._plan_with(self._parked()), d, answers)
         assert result.recovered == ["hispanic_ethnicity"]
         assert ("select", "hispanic_ethnicity", "Decline To Self Identify") in d.calls
@@ -519,11 +612,19 @@ class TestRecovery:
     def test_a_tier_c_question_is_never_invented_an_answer(self, answers):
         # Nothing about reading options makes an unanswerable question answerable.
         d = FakeDriver(options={"question_9": ("Yes", "No")})
-        result = fill_plan(self._plan_with(self._parked(
-            id="question_9", section="questions", tier="C",
-            label="What interests you about our product?",
-            reason="no question in the bank asks this",
-        )), d, answers)
+        result = fill_plan(
+            self._plan_with(
+                self._parked(
+                    id="question_9",
+                    section="questions",
+                    tier="C",
+                    label="What interests you about our product?",
+                    reason="no question in the bank asks this",
+                )
+            ),
+            d,
+            answers,
+        )
         assert result.recovered == []
 
     def test_no_answers_means_no_recovery_only_a_read(self, answers):
@@ -533,8 +634,7 @@ class TestRecovery:
         assert result.observed_options["hispanic_ethnicity"]
 
     def test_a_recovered_field_that_will_not_take_the_value_is_not_claimed(self, answers):
-        d = FakeDriver(options={"hispanic_ethnicity": ("Decline To Self Identify",)},
-                       sticks=False)
+        d = FakeDriver(options={"hispanic_ethnicity": ("Decline To Self Identify",)}, sticks=False)
         result = fill_plan(self._plan_with(self._parked()), d, answers)
         assert result.recovered == []
 
@@ -545,52 +645,92 @@ class TestRelabelRetry:
 
     def test_the_planned_string_is_re_resolved_against_the_real_options(self, answers):
         d = FakeDriver(options={"country": ("United States +1", "Canada +1")})
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d, answers)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+            answers,
+        )
         assert result.ok
         assert ("select", "country", "United States +1") in d.calls
 
     def test_no_retry_without_the_answer_config(self):
         d = FakeDriver(options={"country": ("United States +1",)})
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d, None)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+            None,
+        )
         assert result.ok is False
 
     def test_a_genuinely_absent_option_still_fails(self, answers):
         d = FakeDriver(options={"country": ("Canada +1", "Mexico +52")})
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d, answers)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+            answers,
+        )
         assert result.ok is False
         assert "no option matching" in result.failures[0]
 
     def test_the_retry_is_not_a_fuzzy_match(self, answers):
         # "United States" must not reach "United States Minor Outlying Islands".
-        d = FakeDriver(options={
-            "country": ("United States Minor Outlying Islands +246", "Canada +1"),
-        })
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-        ]), d, answers)
+        d = FakeDriver(
+            options={
+                "country": ("United States Minor Outlying Islands +246", "Canada +1"),
+            }
+        )
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                ]
+            ),
+            d,
+            answers,
+        )
         assert result.ok is False
 
 
 class TestOtherWidgets:
     def test_a_checkbox_takes_a_boolean(self):
         d = FakeDriver()
-        fill_plan(plan(fields=[
-            field(id="current-role-0", kind="checkbox", value=False),
-        ]), d)
+        fill_plan(
+            plan(
+                fields=[
+                    field(id="current-role-0", kind="checkbox", value=False),
+                ]
+            ),
+            d,
+        )
         assert ("checkbox", "current-role-0", False) in d.calls
 
     def test_a_checkbox_group_ticks_every_label(self):
         d = FakeDriver()
-        fill_plan(plan(fields=[
-            field(id="question_1[]", kind="checkbox_group", multi=True,
-                  value=("Alpha", "Beta")),
-        ]), d)
+        fill_plan(
+            plan(
+                fields=[
+                    field(
+                        id="question_1[]",
+                        kind="checkbox_group",
+                        multi=True,
+                        value=("Alpha", "Beta"),
+                    ),
+                ]
+            ),
+            d,
+        )
         assert ("check_group", "question_1[]", "Alpha") in d.calls
         assert ("check_group", "question_1[]", "Beta") in d.calls
 
@@ -600,18 +740,28 @@ class TestNativeSelect:
 
     def test_selecting_a_real_option_is_a_fill(self):
         d = FakeDriver(options={"eeo[gender]": ("Male", "Female")})
-        result = fill_plan(plan(fields=[
-            field(id="eeo[gender]", kind="select", value="Female"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="eeo[gender]", kind="select", value="Female"),
+                ]
+            ),
+            d,
+        )
         assert result.ok
         assert ("select_native", "eeo[gender]", "Female") in d.calls
         assert result.outcomes[0].after == "Female"
 
     def test_a_value_the_select_does_not_offer_fails(self):
         d = FakeDriver(options={"eeo[gender]": ("Male", "Female")})
-        result = fill_plan(plan(fields=[
-            field(id="eeo[gender]", kind="select", value="Nonbinary"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="eeo[gender]", kind="select", value="Nonbinary"),
+                ]
+            ),
+            d,
+        )
         assert result.ok is False
         assert "eeo[gender]" in result.failures[0]
 
@@ -624,17 +774,27 @@ class TestNativeSelect:
 class TestRadioGroup:
     def test_checking_a_real_option_is_a_fill(self):
         d = FakeDriver(options={"eeo[race]": ("Decline to self-identify", "Asian")})
-        result = fill_plan(plan(fields=[
-            field(id="eeo[race]", kind="radio_group", value="Decline to self-identify"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="eeo[race]", kind="radio_group", value="Decline to self-identify"),
+                ]
+            ),
+            d,
+        )
         assert result.ok
         assert ("check_radio", "eeo[race]", "Decline to self-identify") in d.calls
 
     def test_no_matching_radio_fails(self):
         d = FakeDriver(options={"eeo[race]": ("Asian",)})
-        result = fill_plan(plan(fields=[
-            field(id="eeo[race]", kind="radio_group", value="Decline to self-identify"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="eeo[race]", kind="radio_group", value="Decline to self-identify"),
+                ]
+            ),
+            d,
+        )
         assert result.ok is False
         assert "eeo[race]" in result.failures[0]
 
@@ -646,9 +806,11 @@ class TestLeverBrowserDriverSelectorBoundary:
         class FakePage:
             def locator(self, selector):
                 calls.append(selector)
+
                 class L:
                     def click(self_inner):
                         pass
+
                 return L()
 
         driver = F.LeverBrowserDriver(FakePage())
@@ -689,6 +851,7 @@ class TestLeverCardRadios:
 
                 def inner_text(self_inner):
                     return label
+
             return Span()
 
     def _driver(self, radios):
@@ -702,6 +865,7 @@ class TestLeverCardRadios:
         class FakePage:
             def locator(self_inner, selector):
                 return Group()
+
         return F.LeverBrowserDriver(FakePage())
 
     def test_checks_the_radio_whose_sibling_span_carries_the_label(self):
@@ -764,6 +928,7 @@ class TestLeverConsentCheckbox:
         class FakePage:
             def locator(self_inner, selector):
                 return Group()
+
         return F.LeverBrowserDriver(FakePage())
 
     def test_checks_the_real_box_and_skips_the_hidden_decoy(self):
@@ -793,6 +958,7 @@ class TestCaptchaWait:
         d = FakeDriver()
         p = plan(fields=[])
         from dataclasses import replace
+
         captcha_plan = replace(p, requires_captcha=True)
         F.submit(captcha_plan, FillResult(form_url="x"), d)
         assert ("click_submit", captcha_plan.submit_selector) in d.calls
@@ -810,12 +976,14 @@ class TestCaptchaWait:
         """
         d = FakeDriver()
         from dataclasses import replace
+
         captcha_plan = replace(plan(fields=[]), requires_captcha=True)
         F.submit(captcha_plan, FillResult(form_url="x"), d)
 
         names = [c[0] for c in d.calls]
-        assert names.index("clear_captcha_token") < names.index("click_submit"), \
+        assert names.index("clear_captcha_token") < names.index("click_submit"), (
             "the token must be cleared before the click that asks for a new one"
+        )
         assert names.index("clear_captcha_token") < names.index("wait_for_captcha")
 
     def test_the_token_is_not_cleared_on_a_board_with_no_captcha(self):
@@ -827,18 +995,28 @@ class TestCaptchaWait:
 class TestAttachments:
     def test_a_missing_file_fails_rather_than_uploading_nothing(self, tmp_path):
         d = FakeDriver()
-        result = fill_plan(plan(files=[
-            FilePlan(id="resume", label="R", required=True, path=tmp_path / "gone.pdf"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                files=[
+                    FilePlan(id="resume", label="R", required=True, path=tmp_path / "gone.pdf"),
+                ]
+            ),
+            d,
+        )
         assert result.ok is False
         assert "is gone" in result.failures[0]
         assert not any(c[0] == "attach" for c in d.calls)
 
     def test_the_attachment_is_recorded_by_name(self, resume):
         d = FakeDriver()
-        result = fill_plan(plan(files=[
-            FilePlan(id="resume", label="R", required=True, path=resume),
-        ]), d)
+        result = fill_plan(
+            plan(
+                files=[
+                    FilePlan(id="resume", label="R", required=True, path=resume),
+                ]
+            ),
+            d,
+        )
         assert result.outcomes[0].action == "attached"
         assert result.outcomes[0].after == resume.name
 
@@ -846,10 +1024,15 @@ class TestAttachments:
 class TestFailureIsolation:
     def test_one_bad_field_does_not_stop_the_rest(self):
         d = FakeDriver(options={"country": ("Canada",)})
-        result = fill_plan(plan(fields=[
-            field(id="country", kind="react_select", value="United States"),
-            field(id="email", value="a@b.c"),
-        ]), d)
+        result = fill_plan(
+            plan(
+                fields=[
+                    field(id="country", kind="react_select", value="United States"),
+                    field(id="email", value="a@b.c"),
+                ]
+            ),
+            d,
+        )
         assert len(result.failures) == 1
         assert ("fill", "email", "a@b.c") in d.calls
         assert [o.action for o in result.outcomes] == ["failed", "filled"]
@@ -891,7 +1074,8 @@ class TestDriverGuards:
         mod = tmp_path / "rogue.py"
         mod.write_text("from playwright.sync_api import sync_playwright\n", encoding="utf-8")
         found = [
-            n for n in ast.walk(ast.parse(mod.read_text(encoding="utf-8")))
+            n
+            for n in ast.walk(ast.parse(mod.read_text(encoding="utf-8")))
             if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("playwright")
         ]
         assert found, "the AST predicate must match a real offending import"
@@ -903,6 +1087,7 @@ class TestDriverGuards:
         while the configured driver was `patchright` and importable.
         """
         import builtins
+
         real_import = builtins.__import__
 
         def no_driver(name, *args, **kwargs):
@@ -916,6 +1101,7 @@ class TestDriverGuards:
 
     def test_the_install_message_names_the_configured_driver(self, monkeypatch):
         import builtins
+
         real_import = builtins.__import__
 
         def no_patchright(name, *args, **kwargs):
@@ -972,6 +1158,7 @@ class TestTheDriverSetAndTheShortlistAgree:
         submission the queue will not make — or hides one it would."""
         from src.apply.detect import SUBMITTABLE_ATS
         from src.shared.job_boards import SUBMITTABLE_SOURCES
+
         assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_ATS)
         # both derive from the one board table; pin that too
         assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_SOURCES)
@@ -990,26 +1177,32 @@ class TestUploadVerificationIsConfirmatoryNotPunitive:
 
     def test_an_unreadable_input_is_attached_but_flagged_unverified(self, resume):
         d = FakeDriver()
-        d.upload_readback = None                     # node gone after upload
-        out = F._attach(d, FilePlan(id="cover_letter", label="Cover Letter",
-                                     required=False, path=resume))
+        d.upload_readback = None  # node gone after upload
+        out = F._attach(
+            d, FilePlan(id="cover_letter", label="Cover Letter", required=False, path=resume)
+        )
         assert out.action == "attached"
         assert "unverified" in out.note
 
     def test_an_unreadable_input_does_not_block_submission(self, resume):
         d = FakeDriver()
         d.upload_readback = None
-        result = fill_plan(plan(files=[FilePlan(
-            id="cover_letter", label="Cover Letter", required=True, path=resume)]), d)
+        result = fill_plan(
+            plan(
+                files=[
+                    FilePlan(id="cover_letter", label="Cover Letter", required=True, path=resume)
+                ]
+            ),
+            d,
+        )
         assert result.failures == []
 
     def test_a_readable_but_empty_input_is_still_a_failure(self, resume):
         # The real bug this check exists for: the upload silently did nothing.
         d = FakeDriver()
-        d.uploads_stick = False                      # readable, and empty
+        d.uploads_stick = False  # readable, and empty
         with pytest.raises(FillError, match="holds no file"):
-            F._attach(d, FilePlan(id="resume", label="Resume/CV",
-                                   required=True, path=resume))
+            F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
 
 
 class TestTheWidgetOutranksTheInput:
@@ -1020,29 +1213,26 @@ class TestTheWidgetOutranksTheInput:
     would have passed and sent an application with no resume on it.
     """
 
-    def test_a_rendered_upload_error_fails_even_when_the_input_reads_back(
-            self, resume):
+    def test_a_rendered_upload_error_fails_even_when_the_input_reads_back(self, resume):
         d = FakeDriver()
-        d.uploads_stick = True                       # input holds the file...
-        d.upload_widget = False                      # ...but the widget errored
+        d.uploads_stick = True  # input holds the file...
+        d.upload_widget = False  # ...but the widget errored
         with pytest.raises(FillError, match="rejected"):
-            F._attach(d, FilePlan(id="resume", label="Resume/CV",
-                                   required=True, path=resume))
+            F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
 
     def test_that_error_blocks_the_submission(self, resume):
         d = FakeDriver()
         d.upload_widget = False
-        result = fill_plan(plan(files=[FilePlan(
-            id="resume", label="Resume/CV", required=True, path=resume)]), d)
+        result = fill_plan(
+            plan(files=[FilePlan(id="resume", label="Resume/CV", required=True, path=resume)]), d
+        )
         assert result.failures, "a refused resume must block the submit guard"
 
-    def test_a_widget_showing_the_filename_is_attached_even_if_the_input_is_gone(
-            self, resume):
+    def test_a_widget_showing_the_filename_is_attached_even_if_the_input_is_gone(self, resume):
         d = FakeDriver()
-        d.upload_readback = None                     # input torn out by React
-        d.upload_widget = True                       # but the name is on screen
-        out = F._attach(d, FilePlan(id="resume", label="Resume/CV",
-                                     required=True, path=resume))
+        d.upload_readback = None  # input torn out by React
+        d.upload_widget = True  # but the name is on screen
+        out = F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
         assert out.action == "attached"
         assert out.note == "", "a visible filename is verification, not a caveat"
 
@@ -1052,8 +1242,7 @@ class TestTheWidgetOutranksTheInput:
         d.upload_widget = None
         d.uploads_stick = False
         with pytest.raises(FillError, match="holds no file"):
-            F._attach(d, FilePlan(id="resume", label="Resume/CV",
-                                   required=True, path=resume))
+            F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
 
 
 class TestThePostSubmitCapture:
@@ -1077,16 +1266,14 @@ class TestThePostSubmitCapture:
         out = F.capture_submit_evidence(FakeDriver(), plan())
         assert out.with_suffix(".png").exists()
 
-    def test_a_capture_failure_never_fails_the_submission(self, tmp_path,
-                                                          monkeypatch):
+    def test_a_capture_failure_never_fails_the_submission(self, tmp_path, monkeypatch):
         # Diagnostics must not turn an application that went out into an error.
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
-        d._page = None                               # unreadable driver
+        d._page = None  # unreadable driver
         assert F.capture_submit_evidence(d, plan()) is None
 
-    def test_the_submit_path_hangs_the_capture_off_the_result(self, tmp_path,
-                                                              monkeypatch):
+    def test_the_submit_path_hangs_the_capture_off_the_result(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         result = FillResult(form_url="x")
@@ -1121,8 +1308,11 @@ class TestAshbyFindsItsFileFields:
         # DOM path is an employer-authored UUID, not `_systemfield_resume`.
         d = FakeDriver()
         upload = FilePlan(
-            id="resume", name="f81a7cc9-0d9a-4922-800b", label="Resume/CV",
-            required=True, path=resume,
+            id="resume",
+            name="f81a7cc9-0d9a-4922-800b",
+            label="Resume/CV",
+            required=True,
+            path=resume,
         )
         F._attach(d, upload)
         assert d.calls[0] == ("attach", "f81a7cc9-0d9a-4922-800b", resume.name)
@@ -1175,8 +1365,7 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
     not reverified at all.
     """
 
-    def test_a_drifted_toggle_is_reapplied_before_the_click(self, tmp_path,
-                                                             monkeypatch):
+    def test_a_drifted_toggle_is_reapplied_before_the_click(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._selected["q1"] = "No"  # drifted since fill_plan set it to "Yes"
@@ -1195,8 +1384,7 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         F.submit(p, result, d)
         assert ("yesno", "q1", "Yes") not in d.calls
 
-    def test_a_drifted_radio_group_is_reapplied_before_the_click(self, tmp_path,
-                                                                   monkeypatch):
+    def test_a_drifted_radio_group_is_reapplied_before_the_click(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._selected["q1"] = "No"  # drifted since fill_plan set it to "Yes"
@@ -1216,7 +1404,8 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_radio", "q1", "Yes") not in d.calls
 
     def test_a_dropped_checkbox_group_option_is_reapplied_before_the_click(
-            self, tmp_path, monkeypatch):
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._checked_groups["q1"] = {"Python"}  # "Go" drifted out since fill_plan
@@ -1224,7 +1413,8 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         result = FillResult(form_url="x")
         F.submit(p, result, d)
         assert d.checked_group_labels("q1") == ("Python", "Go") or set(
-            d.checked_group_labels("q1")) == {"Python", "Go"}
+            d.checked_group_labels("q1")
+        ) == {"Python", "Go"}
         assert ("check_group", "q1", "Go") in d.calls
         assert ("check_group", "q1", "Python") not in d.calls
 
@@ -1238,13 +1428,11 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_group", "q1", "Python") not in d.calls
         assert ("check_group", "q1", "Go") not in d.calls
 
-    def test_a_drifted_text_field_is_refilled_before_the_click(self, tmp_path,
-                                                                monkeypatch):
+    def test_a_drifted_text_field_is_refilled_before_the_click(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.values["q1"] = "https://linkedin.com/in/wrong"  # drifted after fill_plan
-        p = plan(fields=[field(id="q1", kind="text",
-                               value="https://linkedin.com/in/right")])
+        p = plan(fields=[field(id="q1", kind="text", value="https://linkedin.com/in/right")])
         result = FillResult(form_url="x")
         F.submit(p, result, d)
         assert d.values["q1"] == "https://linkedin.com/in/right"
@@ -1254,14 +1442,14 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.values["q1"] = "https://linkedin.com/in/right"
-        p = plan(fields=[field(id="q1", kind="text",
-                               value="https://linkedin.com/in/right")])
+        p = plan(fields=[field(id="q1", kind="text", value="https://linkedin.com/in/right")])
         result = FillResult(form_url="x")
         F.submit(p, result, d)
         assert ("fill", "q1", "https://linkedin.com/in/right") not in d.calls
 
     def test_a_select_planned_field_ashby_rendered_as_radio_group_is_reverified(
-            self, tmp_path, monkeypatch):
+        self, tmp_path, monkeypatch
+    ):
         # b9a009ad: `field.kind` is the API-declared "select", but Ashby
         # rendered (and filled) it as a live radio group — the reverify must
         # follow the live kind, not the planned one, or it silently skips
@@ -1275,8 +1463,7 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert d._selected["q1"] == "I have built agents"
         assert ("check_radio", "q1", "I have built agents") in d.calls
 
-    def test_a_drifted_native_select_is_reapplied_before_the_click(self, tmp_path,
-                                                                    monkeypatch):
+    def test_a_drifted_native_select_is_reapplied_before_the_click(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(options={"q1": ("Yes", "No")})
         d._selected["q1"] = "No"
@@ -1286,8 +1473,7 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert d._selected["q1"] == "Yes"
         assert ("select_native", "q1", "Yes") in d.calls
 
-    def test_reverify_runs_again_on_every_retry_not_just_once(self, tmp_path,
-                                                                monkeypatch):
+    def test_reverify_runs_again_on_every_retry_not_just_once(self, tmp_path, monkeypatch):
         # A single reverify call before the retry loop only catches a drift
         # that happens once. `_reverify_fields` must run right before *every*
         # click, including the retry, or a re-drift between attempts (e.g.
@@ -1359,8 +1545,7 @@ class TestARefusedClickIsNotASubmission:
     never have been applied to again. Nothing was sent.
     """
 
-    def test_an_explicit_refusal_leaves_submitted_false(self, tmp_path,
-                                                        monkeypatch):
+    def test_an_explicit_refusal_leaves_submitted_false(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.refusals = ["updating your application"] * F.SUBMIT_ATTEMPTS
@@ -1369,18 +1554,16 @@ class TestARefusedClickIsNotASubmission:
         assert result.submitted is False
         assert "refused" in result.submit_error
 
-    def test_it_retries_because_a_refusal_proves_nothing_was_sent(
-            self, tmp_path, monkeypatch):
+    def test_it_retries_because_a_refusal_proves_nothing_was_sent(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
-        d.refusals = ["updating your application"]   # first click only
+        d.refusals = ["updating your application"]  # first click only
         result = FillResult(form_url="x")
         F.submit(plan(), result, d)
         assert result.submitted is True, "the retry went through"
         assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 2
 
-    def test_a_quiet_board_is_still_treated_as_submitted(self, tmp_path,
-                                                          monkeypatch):
+    def test_a_quiet_board_is_still_treated_as_submitted(self, tmp_path, monkeypatch):
         # The default must not invert: absence of a refusal means it went out,
         # or every unrecognised confirmation page becomes a duplicate.
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
@@ -1390,8 +1573,7 @@ class TestARefusedClickIsNotASubmission:
         assert result.submitted is True
         assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 1
 
-    def test_the_page_is_given_time_before_it_is_judged(self, tmp_path,
-                                                        monkeypatch):
+    def test_the_page_is_given_time_before_it_is_judged(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         F.submit(plan(), FillResult(form_url="x"), d)
@@ -1399,19 +1581,17 @@ class TestARefusedClickIsNotASubmission:
         assert kinds.index("click_submit") < kinds.index("wait")
         assert kinds.index("wait") < kinds.index("submission_confirmed")
 
-    def test_uploads_are_allowed_to_finish_before_the_click(self, tmp_path,
-                                                            monkeypatch):
+    def test_uploads_are_allowed_to_finish_before_the_click(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         F.submit(plan(), FillResult(form_url="x"), d)
         kinds = [c[0] for c in d.calls]
         assert kinds.index("settle") < kinds.index("click_submit")
 
-    def test_a_refused_click_is_never_reported_as_confirmed(self, tmp_path,
-                                                             monkeypatch):
+    def test_a_refused_click_is_never_reported_as_confirmed(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
-        d.confirms = True                      # a stale marker still on screen
+        d.confirms = True  # a stale marker still on screen
         d.refusals = ["updating your application"] * F.SUBMIT_ATTEMPTS
         result = FillResult(form_url="x")
         F.submit(plan(), result, d)
@@ -1431,42 +1611,52 @@ class TestNamedMissingFieldsAreReappliedAfterARefusal:
     """
 
     def test_a_field_the_board_named_missing_is_rewritten_even_though_it_reads_correct(
-            self, tmp_path, monkeypatch):
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(values={"q1": "https://linkedin.com/in/right"})  # already correct
         d.refusals = ["missing entry for required field"]  # first click only
         d.named_missing = [["LinkedIn Profile"]]
-        p = plan(fields=[field(id="q1", kind="text", label="LinkedIn Profile",
-                               value="https://linkedin.com/in/right")])
+        p = plan(
+            fields=[
+                field(
+                    id="q1",
+                    kind="text",
+                    label="LinkedIn Profile",
+                    value="https://linkedin.com/in/right",
+                )
+            ]
+        )
         result = FillResult(form_url="x")
         F.submit(p, result, d)
         assert result.submitted is True
         assert ("fill", "q1", "https://linkedin.com/in/right") in d.calls
 
-    def test_a_field_the_board_did_not_name_is_left_alone(self, tmp_path,
-                                                            monkeypatch):
+    def test_a_field_the_board_did_not_name_is_left_alone(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(values={"q1": "v", "q2": "w"})
         d.refusals = ["missing entry for required field"]
         d.named_missing = [["Only Q1"]]
-        p = plan(fields=[
-            field(id="q1", kind="text", label="Only Q1", value="v"),
-            field(id="q2", kind="text", label="Some Other Question", value="w"),
-        ])
+        p = plan(
+            fields=[
+                field(id="q1", kind="text", label="Only Q1", value="v"),
+                field(id="q2", kind="text", label="Some Other Question", value="w"),
+            ]
+        )
         result = FillResult(form_url="x")
         F.submit(p, result, d)
         assert ("fill", "q1", "v") in d.calls
         assert ("fill", "q2", "w") not in d.calls
 
-    def test_a_named_radio_group_field_is_reapplied_too(self, tmp_path,
-                                                          monkeypatch):
+    def test_a_named_radio_group_field_is_reapplied_too(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(kinds={"q1": "radio_group"})
         d._selected["q1"] = "Yes"  # already correct
         d.refusals = ["missing entry for required field"]
         d.named_missing = [["Which best describes it?"]]
-        p = plan(fields=[field(id="q1", kind="select", label="Which best describes it?",
-                               value="Yes")])
+        p = plan(
+            fields=[field(id="q1", kind="select", label="Which best describes it?", value="Yes")]
+        )
         result = FillResult(form_url="x")
         F.submit(p, result, d)
         assert ("check_radio", "q1", "Yes") in d.calls
@@ -1503,25 +1693,23 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         d.click_submit = click
         return d
 
-    def test_a_recorded_submit_response_confirms_on_its_own(self, tmp_path,
-                                                            monkeypatch):
+    def test_a_recorded_submit_response_confirms_on_its_own(self, tmp_path, monkeypatch):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = self._driver_that_fires()
-        d.confirms = False                  # no marker text anywhere
+        d.confirms = False  # no marker text anywhere
         result = FillResult(form_url="x")
         F.submit(plan_ashby(), result, d)
         assert result.submitted is True
         assert result.confirmed is True, "the board accepted it; text is irrelevant"
 
-    def test_a_click_that_fires_nothing_is_ambiguous_not_failed(self, tmp_path,
-                                                                 monkeypatch):
+    def test_a_click_that_fires_nothing_is_ambiguous_not_failed(self, tmp_path, monkeypatch):
         # Airwallex (64dcf405): the request landed late enough that the old
         # fixed wait had already read it as silence, even though the board's
         # own confirmation email proved the click went through. Absence alone
         # must never flip `submitted` back off, or a real submission gets
         # re-clicked on the next attempt.
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
-        d = FakeDriver()                    # never records a request
+        d = FakeDriver()  # never records a request
         result = FillResult(form_url="x")
         F.submit(plan_ashby(), result, d)
         assert result.submitted is True
@@ -1531,7 +1719,9 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         assert "ambiguous" in result.submit_error
 
     def test_a_refused_first_attempts_request_does_not_confirm_a_silent_retry(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         # Attempt 1 fires a real (marker-matching) request but the board
         # refuses the click, so it is retried. Attempt 2's click fires
@@ -1571,8 +1761,7 @@ class TestTheSubmitRequestIsTheRealConfirmation:
             "attempt 1's rejected click must not confirm attempt 2's silent one"
         )
 
-    def test_an_unwatched_board_still_falls_back_to_page_text(self, tmp_path,
-                                                              monkeypatch):
+    def test_an_unwatched_board_still_falls_back_to_page_text(self, tmp_path, monkeypatch):
         # A board whose submit request has never been measured must keep the
         # old behaviour — assume submitted — or every role on it breaks.
         # Lever was this case until its marker was measured off cae17aa7.
@@ -1604,11 +1793,13 @@ class TestAshbyValidationErrorIsARefusalNotASuccess:
     """
 
     def test_the_corrections_banner_is_a_refusal(self):
-        page = FakePage(text=(
-            "Your form needs corrections\n"
-            "Missing entry for required field: Are you legally authorized "
-            "to work in the United States?"
-        ))
+        page = FakePage(
+            text=(
+                "Your form needs corrections\n"
+                "Missing entry for required field: Are you legally authorized "
+                "to work in the United States?"
+            )
+        )
         driver = F.BrowserDriver(page)
         assert driver.submission_refused() == "your form needs corrections"
 
@@ -1634,6 +1825,7 @@ class TestGreenhouseSubmitMarkerIgnoresItsOwnGetLoad:
 
             class _Req:
                 pass
+
             self.request = _Req()
             self.request.method = method
 
@@ -1642,8 +1834,11 @@ class TestGreenhouseSubmitMarkerIgnoresItsOwnGetLoad:
         driver = F.BrowserDriver(page)
         sink: list[str] = []
         driver.watch_submit_requests("greenhouse", sink)
-        page.handler(self._FakeResponse(
-            "https://job-boards.greenhouse.io/embed/job_app?for=acme", 200, "GET"))
+        page.handler(
+            self._FakeResponse(
+                "https://job-boards.greenhouse.io/embed/job_app?for=acme", 200, "GET"
+            )
+        )
         assert sink == []
 
     def test_a_post_to_the_embed_path_is_recorded(self):
@@ -1651,8 +1846,9 @@ class TestGreenhouseSubmitMarkerIgnoresItsOwnGetLoad:
         driver = F.BrowserDriver(page)
         sink: list[str] = []
         driver.watch_submit_requests("greenhouse", sink)
-        page.handler(self._FakeResponse(
-            "https://boards.greenhouse.io/embed/acme/jobs/123", 200, "POST"))
+        page.handler(
+            self._FakeResponse("https://boards.greenhouse.io/embed/acme/jobs/123", 200, "POST")
+        )
         assert sink == ["200 https://boards.greenhouse.io/embed/acme/jobs/123"]
 
 
@@ -1672,8 +1868,7 @@ class TestMissingFieldLabelsParsesTheBoardsOwnComplaint:
 
     def test_one_named_field(self):
         page = self._TextPage(
-            "Your form needs corrections\n"
-            "Missing entry for required field: LinkedIn Profile\n"
+            "Your form needs corrections\nMissing entry for required field: LinkedIn Profile\n"
         )
         driver = F.BrowserDriver(page)
         assert driver.missing_field_labels() == ("LinkedIn Profile",)
@@ -1688,13 +1883,13 @@ class TestMissingFieldLabelsParsesTheBoardsOwnComplaint:
         driver = F.BrowserDriver(page)
         assert driver.missing_field_labels() == (
             "Email",
-            "Which best describes your experience with AI agents or agentic "
-            "workflows?",
+            "Which best describes your experience with AI agents or agentic workflows?",
         )
 
     def test_no_named_fields_on_an_unrelated_refusal(self):
-        page = self._TextPage("We're updating your application, please try "
-                              "again when they're finished.")
+        page = self._TextPage(
+            "We're updating your application, please try again when they're finished."
+        )
         driver = F.BrowserDriver(page)
         assert driver.missing_field_labels() == ()
 
@@ -1720,19 +1915,23 @@ class TestAReverifyThatCannotWriteStillReachesTheClick:
         setattr(d, method, blow_up)
         return d
 
-    @pytest.mark.parametrize("kind,method,value,drift", [
-        ("yesno", "set_yesno", "Yes", "No"),
-        ("radio_group", "check_radio_group", "Yes", "No"),
-        ("checkbox_group", "check_group_option", ("Python", "Go"), None),
-        ("select", "select_native", "Yes", "No"),
-        ("text", "fill_text", "right", "wrong"),
-    ])
+    @pytest.mark.parametrize(
+        "kind,method,value,drift",
+        [
+            ("yesno", "set_yesno", "Yes", "No"),
+            ("radio_group", "check_radio_group", "Yes", "No"),
+            ("checkbox_group", "check_group_option", ("Python", "Go"), None),
+            ("select", "select_native", "Yes", "No"),
+            ("text", "fill_text", "right", "wrong"),
+        ],
+    )
     def test_a_field_that_refuses_the_rewrite_does_not_block_the_click(
-            self, kind, method, value, drift, tmp_path, monkeypatch):
+        self, kind, method, value, drift, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = self._driver(method)
         if kind == "checkbox_group":
-            d._checked_groups["q1"] = {"Python"}   # "Go" drifted out
+            d._checked_groups["q1"] = {"Python"}  # "Go" drifted out
         elif kind == "text":
             d.values["q1"] = drift
         else:
@@ -1769,7 +1968,7 @@ class TestAReapplyThatFailsStillLetsTheRetryClick:
                 raise FillError("the field would not take it")
 
         d = RefusesTheRewrite(values={"q1": "v"})
-        d.refusals = ["missing entry for required field"]   # first click only
+        d.refusals = ["missing entry for required field"]  # first click only
         d.named_missing = [["Only Q1"]]
         p = plan(fields=[field(id="q1", kind="text", label="Only Q1", value="v")])
         result = FillResult(form_url="x")
@@ -1779,8 +1978,9 @@ class TestAReapplyThatFailsStillLetsTheRetryClick:
         assert len([c for c in d.calls if c[0] == "click_submit"]) == 2
         assert result.submitted is True
         # The failed re-apply must not be reported as a field that was fixed.
-        assert [o for o in result.outcomes
-                if o.note == "reapplied after the board named it missing"] == []
+        assert [
+            o for o in result.outcomes if o.note == "reapplied after the board named it missing"
+        ] == []
 
 
 class TestTeardownAndReportingNeverLoseALandedSubmit:
@@ -1792,8 +1992,9 @@ class TestTeardownAndReportingNeverLoseALandedSubmit:
 
     def _playwright(self, ctx):
         class P:
-            chromium = type("C", (), {
-                "launch_persistent_context": staticmethod(lambda **kw: ctx)})()
+            chromium = type(
+                "C", (), {"launch_persistent_context": staticmethod(lambda **kw: ctx)}
+            )()
 
             def __enter__(self):
                 return self
@@ -1819,24 +2020,24 @@ class TestTeardownAndReportingNeverLoseALandedSubmit:
     def _run(self, monkeypatch, ctx, *, after=None, sink=None):
         driver = FakeDriver()
         monkeypatch.setattr(F, "_require_playwright", self._playwright(ctx))
-        monkeypatch.setattr(F, "fill_plan",
-                            lambda plan, driver, answers, result=None: result)
+        monkeypatch.setattr(F, "fill_plan", lambda plan, driver, answers, result=None: result)
         monkeypatch.setattr(F, "_driver_for", lambda ats, page: driver)
         result = F.run_one(plan(), submit_after=True, after=after, sink=sink)
         return driver, result
 
     def test_a_context_that_will_not_close_still_returns_the_submission(
-            self, tmp_path, monkeypatch):
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         sink: list = []
-        driver, result = self._run(monkeypatch, self._ctx(close_raises=True),
-                                    sink=sink)
+        driver, result = self._run(monkeypatch, self._ctx(close_raises=True), sink=sink)
         assert ("click_submit", plan().submit_selector) in driver.calls
         assert result.submitted is True
         assert sink[0] is result
 
     def test_a_reporting_callback_that_blows_up_does_not_lose_the_submission(
-            self, tmp_path, monkeypatch):
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         called: list = []
 
@@ -1920,16 +2121,19 @@ class TestLeverLocationAutocomplete:
 
         assert driver.click_option("Exampletown, Example State, United States") is True
         assert F.LEVER_OPTION in page.selectors
-        assert F.SELECT_OPTION not in page.selectors, \
+        assert F.SELECT_OPTION not in page.selectors, (
             "react-select's class never appears on a Lever board"
+        )
 
     def test_click_option_reports_a_miss_rather_than_clicking_the_wrong_place(self):
         page = self._page(options=[self.Node("Othertown, Example State, United States")])
         assert F.LeverBrowserDriver(page).click_option("Exampletown") is False
 
     def test_visible_options_lists_the_suggestions(self):
-        nodes = [self.Node("Exampletown, Example State, United States"),
-                 self.Node("South Exampletown, Example State, United States")]
+        nodes = [
+            self.Node("Exampletown, Example State, United States"),
+            self.Node("South Exampletown, Example State, United States"),
+        ]
         driver = F.LeverBrowserDriver(self._page(options=nodes))
         assert driver.visible_options() == (
             "Exampletown, Example State, United States",
@@ -1943,20 +2147,21 @@ class TestLeverLocationAutocomplete:
         """The exact failure: the visible box shows the location, the hidden
         partner is empty, and the board refuses the submission. Reporting the
         visible text here would call that field filled."""
-        page = self._page(location="Exampletown, Example State, United States",
-                          selected="")
+        page = self._page(location="Exampletown, Example State, United States", selected="")
         assert F.LeverBrowserDriver(page).selected_label("location") == ""
 
     def test_a_resolved_location_reads_back(self):
-        page = self._page(location="Exampletown, Example State, United States",
-                          selected='{"id":"abc"}')
-        assert F.LeverBrowserDriver(page).selected_label("location") == \
-            "Exampletown, Example State, United States"
+        page = self._page(
+            location="Exampletown, Example State, United States", selected='{"id":"abc"}'
+        )
+        assert (
+            F.LeverBrowserDriver(page).selected_label("location")
+            == "Exampletown, Example State, United States"
+        )
 
     def test_a_field_with_no_hidden_partner_reads_straight_off_the_input(self):
         page = self._page(location="Example University", selected=None)
-        assert F.LeverBrowserDriver(page).selected_label("org") == \
-            "Example University"
+        assert F.LeverBrowserDriver(page).selected_label("org") == "Example University"
 
 
 class TestLeverCookieBanner:
@@ -1988,6 +2193,7 @@ class TestLeverCookieBanner:
             def locator(self_inner, selector):
                 assert selector == F.COOKIE_ACCEPT
                 return Group()
+
         return FakePage()
 
     def test_accepts_the_banner_when_one_is_up(self):
@@ -2053,13 +2259,14 @@ class TestLeverCheckboxGroupIgnoresNonCheckboxes:
         class FakePage:
             def locator(self_inner, selector):
                 return Group()
+
         return F.LeverBrowserDriver(FakePage())
 
     def _group(self):
         return [
             self.Box("checkbox", "He/him"),
             self.Box("checkbox", "They/them"),
-            self.Box("text", None),        # customPronounsTextField
+            self.Box("text", None),  # customPronounsTextField
         ]
 
     def test_reading_back_does_not_explode_on_the_text_input(self):
@@ -2070,8 +2277,10 @@ class TestLeverCheckboxGroupIgnoresNonCheckboxes:
 
     def test_the_text_input_is_not_offered_as_an_option(self):
         driver = self._driver(self._group())
-        assert [label for _, label in driver._checkbox_options("pronouns")] == \
-            ["He/him", "They/them"]
+        assert [label for _, label in driver._checkbox_options("pronouns")] == [
+            "He/him",
+            "They/them",
+        ]
 
     def test_ticking_still_works(self):
         boxes = self._group()
@@ -2092,12 +2301,20 @@ class TestFormManifest:
 
     def _plan_with_parks(self):
         from src.apply.plan import Unmapped
+
         return replace(
             plan(fields=[field(id="q1", value="Yes", kind="yesno")]),
-            unmapped=(Unmapped(id="q9", label="Did you use AI for this application?",
-                                required=True, kind="react_select",
-                                section="questions", tier="C",
-                                reason="no question in the bank asks this"),),
+            unmapped=(
+                Unmapped(
+                    id="q9",
+                    label="Did you use AI for this application?",
+                    required=True,
+                    kind="react_select",
+                    section="questions",
+                    tier="C",
+                    reason="no question in the bank asks this",
+                ),
+            ),
         )
 
     def test_it_pairs_planned_against_what_the_page_holds(self):
@@ -2113,19 +2330,20 @@ class TestFormManifest:
     def test_a_listed_alternate_spelling_is_a_match(self):
         """A chooser with no option list at plan time gets the first spelling;
         the board may settle on another one the user listed."""
-        f = replace(field(id="loc", value="Exampletown, Example State, United States",
-                          kind="react_select"),
-                    alternates=("Exampletown, Example State, United States",
-                                "Exampletown, ES, USA"))
+        f = replace(
+            field(id="loc", value="Exampletown, Example State, United States", kind="react_select"),
+            alternates=("Exampletown, Example State, United States", "Exampletown, ES, USA"),
+        )
         driver = FakeDriver()
         driver._selected["loc"] = "Exampletown, ES, USA"
         rows = F.form_manifest(driver, plan(fields=[f]), F.FillResult(form_url=""))
         assert rows[0]["matches"] is True
 
     def test_a_spelling_nobody_listed_still_refuses(self):
-        f = replace(field(id="loc", value="Exampletown, Example State, United States",
-                          kind="react_select"),
-                    alternates=("Exampletown, ES, USA",))
+        f = replace(
+            field(id="loc", value="Exampletown, Example State, United States", kind="react_select"),
+            alternates=("Exampletown, ES, USA",),
+        )
         driver = FakeDriver()
         driver._selected["loc"] = "Otherville, ES, USA"
         rows = F.form_manifest(driver, plan(fields=[f]), F.FillResult(form_url=""))
@@ -2185,8 +2403,12 @@ class TestFormManifest:
 def row(**kw) -> dict:
     """One validating control as `invalid_fields`' DOM read reports it."""
     base = {
-        "name": "", "type": "text", "checked": False,
-        "valueMissing": False, "invalid": False, "fallback": "",
+        "name": "",
+        "type": "text",
+        "checked": False,
+        "valueMissing": False,
+        "invalid": False,
+        "fallback": "",
     }
     base.update(kw)
     return base
@@ -2195,8 +2417,11 @@ def row(**kw) -> dict:
 def box(name: str, *, checked: bool) -> dict:
     """A checkbox in a required group: unticked means required-and-empty."""
     return row(
-        name=name, type="checkbox", checked=checked,
-        valueMissing=not checked, invalid=not checked,
+        name=name,
+        type="checkbox",
+        checked=checked,
+        valueMissing=not checked,
+        invalid=not checked,
     )
 
 
@@ -2245,10 +2470,7 @@ class TestRefusedFieldNames:
         assert F.refused_field_names([box("agree", checked=False)]) == ("agree",)
 
     def test_an_unselected_radio_group_still_refuses(self):
-        rows = [
-            row(name="gender", type="radio", valueMissing=True, invalid=True)
-            for _ in range(3)
-        ]
+        rows = [row(name="gender", type="radio", valueMissing=True, invalid=True) for _ in range(3)]
         assert F.refused_field_names(rows) == ("gender",)
 
     def test_a_valid_form_reports_nothing(self):
@@ -2284,6 +2506,7 @@ class TestDatePickerIsDismissed:
     def test_a_date_the_widget_clears_is_a_failure(self):
         """The picker clears an unparseable value on blur; closing before the
         read-back is what catches it instead of reporting a filled field."""
+
         class Clearing(FakeDriver):
             def close(self):
                 super().close()
@@ -2298,11 +2521,16 @@ class TestDomAliasesReachTheDriver:
     """An `id` that answers.py needs is not always an id the DOM has."""
 
     def test_the_plan_teaches_the_driver_where_a_field_really_is(self):
-        p = plan(fields=[field(
-            id="school--0", value="Northeastern University",
-            dom_path="_systemfield_education_history",
-            dom_control='input[role="combobox"]',
-        )])
+        p = plan(
+            fields=[
+                field(
+                    id="school--0",
+                    value="Northeastern University",
+                    dom_path="_systemfield_education_history",
+                    dom_control='input[role="combobox"]',
+                )
+            ]
+        )
         d = FakeDriver()
         fill_plan(p, d)
         assert d._dom_paths == {"school--0": "_systemfield_education_history"}
@@ -2316,18 +2544,25 @@ class TestDomAliasesReachTheDriver:
 
 
 class TestTheReadBackComparison:
-    @pytest.mark.parametrize("kind,planned,actual,same", [
-        ("select", "Female", "Male", False),
-        ("select", "Man", "Woman", False),
-        ("select", "No", "None of the above", False),
-        ("select", "No", "Unknown", False),
-        ("react_select", "Northeastern University",
-         "Northeastern University United States northeastern.edu", True),
-        ("checkbox_group", "Python, SQL", "SQL, Python", True),
-        ("checkbox_group", "Python, SQL", "Python", False),
-        ("text", "Hello ", "Hello", True),
-        ("checkbox", "True", "on", True),
-    ])
+    @pytest.mark.parametrize(
+        "kind,planned,actual,same",
+        [
+            ("select", "Female", "Male", False),
+            ("select", "Man", "Woman", False),
+            ("select", "No", "None of the above", False),
+            ("select", "No", "Unknown", False),
+            (
+                "react_select",
+                "Northeastern University",
+                "Northeastern University United States northeastern.edu",
+                True,
+            ),
+            ("checkbox_group", "Python, SQL", "SQL, Python", True),
+            ("checkbox_group", "Python, SQL", "Python", False),
+            ("text", "Hello ", "Hello", True),
+            ("checkbox", "True", "on", True),
+        ],
+    )
     def test_it_compares_the_way_each_widget_shows_a_value(self, kind, planned, actual, same):
         assert F._matches("q", kind, planned, actual) is same
 

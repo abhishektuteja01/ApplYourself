@@ -10,6 +10,7 @@ so a killed run loses at most that much and the next run simply finds the
 unchecked boards still due. Exits nonzero only when preflight fails or the
 store cannot be written.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -88,14 +89,20 @@ class Paths:
         return self.jobs / paths.JOBS_RUNS.name
 
 
-_BOARD_LANES = {"greenhouse": GreenhouseLane, "lever": LeverLane, "ashby": AshbyLane,
-                "workday": WorkdayLane, "eightfold": EightfoldLane}
+_BOARD_LANES = {
+    "greenhouse": GreenhouseLane,
+    "lever": LeverLane,
+    "ashby": AshbyLane,
+    "workday": WorkdayLane,
+    "eightfold": EightfoldLane,
+}
 
 
 def _lane(name: str):
     kind = LANE_KINDS[name]
     if kind == "search":
         from src.discovery.sources.search import SearchLane  # jobspy is slow to import
+
         return SearchLane(name)
     if kind == "feed":
         return StapplyLane()
@@ -103,9 +110,15 @@ def _lane(name: str):
 
 
 def _cap_terms(vcfg, n: int):
-    capped = {name: replace(v, search_terms=v.search_terms[:n], linkedin_terms=v.linkedin_terms[:n],
-                            abroad_terms=v.abroad_terms[:n])
-              for name, v in vcfg.verticals.items()}
+    capped = {
+        name: replace(
+            v,
+            search_terms=v.search_terms[:n],
+            linkedin_terms=v.linkedin_terms[:n],
+            abroad_terms=v.abroad_terms[:n],
+        )
+        for name, v in vcfg.verticals.items()
+    }
     return replace(vcfg, verticals=capped)
 
 
@@ -137,8 +150,16 @@ class Writer:
         with self._lock:
             results = self.crawl.take_board_results()
             if len(self.crawl.batch):
-                self.stats.merge(S.flush(self.crawl.batch, self.today, self.tracked,
-                                         self.live_days, path=self.p.store, trim=self.trim))
+                self.stats.merge(
+                    S.flush(
+                        self.crawl.batch,
+                        self.today,
+                        self.tracked,
+                        self.live_days,
+                        path=self.p.store,
+                        trim=self.trim,
+                    )
+                )
             B.update_state(results, self.today, path=self.p.board_state)
 
     def close(self) -> None:
@@ -155,11 +176,18 @@ def _run_lane(lane, crawl) -> dict:
             stats = lane.run(crawl, tally)
     except Exception:  # one lane's crash costs the others nothing
         log.exception("lane %s crashed; continuing", lane.name)
-        return {"status": "crashed", "duration_s": round(time.time() - t0, 1),
-                "crash": traceback.format_exc().rstrip(), "http": tally.totals()}
+        return {
+            "status": "crashed",
+            "duration_s": round(time.time() - t0, 1),
+            "crash": traceback.format_exc().rstrip(),
+            "http": tally.totals(),
+        }
     out = asdict(stats)
-    out.update(status="ok" if stats.passed else "zero",
-               duration_s=round(time.time() - t0, 1), http=tally.totals())
+    out.update(
+        status="ok" if stats.passed else "zero",
+        duration_s=round(time.time() - t0, 1),
+        http=tally.totals(),
+    )
     return out
 
 
@@ -183,46 +211,72 @@ def _write_raw(listed: list[dict], p: Paths, run_id: str, today, keep_days: int)
 
 
 def render_md(report: dict) -> str:
-    lines = [f"# Run {report['run_id']}", "",
-             f"Wall time: {report['wall_time_s']:.0f}s | clean rows: {report['view'].get('clean', 0)}"
-             f" | new job ids: {len(report['new_job_ids'])}", ""]
+    lines = [
+        f"# Run {report['run_id']}",
+        "",
+        f"Wall time: {report['wall_time_s']:.0f}s | clean rows: {report['view'].get('clean', 0)}"
+        f" | new job ids: {len(report['new_job_ids'])}",
+        "",
+    ]
     if report["overrides"]:
         lines += [f"Overrides (this run only): {', '.join(report['overrides'])}", ""]
-    lines += ["| lane | status | time | listed | passed | known | new | detail ok/failed | errors |",
-              "|---|---|---|---|---|---|---|---|---|"]
+    lines += [
+        "| lane | status | time | listed | passed | known | new | detail ok/failed | errors |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
     for name, lane in report["lanes"].items():
         lines.append(
             f"| {name} | {lane['status']}{' (cut short)' if lane.get('truncated') else ''} "
             f"| {lane.get('duration_s', 0):.0f}s | {lane.get('listed', 0)} | {lane.get('passed', 0)} "
             f"| {lane.get('known', 0)} | {lane.get('new', 0)} "
             f"| {lane.get('detail_ok', 0)}/{lane.get('detail_failed', 0)} "
-            f"| {len(lane.get('errors', []))} |")
-    lines += ["", "## Boards", "",
-              "| lane | due | checked | ok | empty | 404 | error |", "|---|---|---|---|---|---|---|"]
+            f"| {len(lane.get('errors', []))} |"
+        )
+    lines += [
+        "",
+        "## Boards",
+        "",
+        "| lane | due | checked | ok | empty | 404 | error |",
+        "|---|---|---|---|---|---|---|",
+    ]
     for name, lane in report["lanes"].items():
         if "boards_due" in lane and name in ATS_SOURCE_NAMES:
-            lines.append(f"| {name} | {lane['boards_due']} | {lane['boards_checked']} "
-                         f"| {lane['boards_ok']} | {lane['boards_empty']} | {lane['boards_404']} "
-                         f"| {lane['boards_error']} |")
-    lines += ["", "## HTTP", "", "| lane | requests | seconds | 403 | 429 | errors |",
-              "|---|---|---|---|---|---|"]
+            lines.append(
+                f"| {name} | {lane['boards_due']} | {lane['boards_checked']} "
+                f"| {lane['boards_ok']} | {lane['boards_empty']} | {lane['boards_404']} "
+                f"| {lane['boards_error']} |"
+            )
+    lines += [
+        "",
+        "## HTTP",
+        "",
+        "| lane | requests | seconds | 403 | 429 | errors |",
+        "|---|---|---|---|---|---|",
+    ]
     for name, lane in report["lanes"].items():
         h = lane.get("http") or {}
         if h.get("requests"):
-            lines.append(f"| {name} | {h['requests']} | {h['seconds']:.0f} | {h['403']} "
-                         f"| {h['429']} | {h['errors']} |")
+            lines.append(
+                f"| {name} | {h['requests']} | {h['seconds']:.0f} | {h['403']} "
+                f"| {h['429']} | {h['errors']} |"
+            )
     st = report["store"]
-    lines += ["", "## Store", "",
-              f"- inserted {st.get('inserted', 0)}, refreshed {st.get('refreshed', 0)}, "
-              f"touched {st.get('touched', 0)}, reposted {st.get('reposted', 0)}, "
-              f"forgotten {st.get('forgotten', 0)}",
-              f"- new postings by id rule: {st.get('by_rule', {})}",
-              f"- postings {st.get('postings', 0)}, job ids {st.get('job_ids', 0)}"]
+    lines += [
+        "",
+        "## Store",
+        "",
+        f"- inserted {st.get('inserted', 0)}, refreshed {st.get('refreshed', 0)}, "
+        f"touched {st.get('touched', 0)}, reposted {st.get('reposted', 0)}, "
+        f"forgotten {st.get('forgotten', 0)}",
+        f"- new postings by id rule: {st.get('by_rule', {})}",
+        f"- postings {st.get('postings', 0)}, job ids {st.get('job_ids', 0)}",
+    ]
     if st.get("maybe_duplicates"):
         lines += ["- **maybe duplicates (not merged):**"] + [
             f"  - {m['job_id']} {m['company']} / {m['other']} {m['other_company']} "
             f"— {m['title']} (JD {m['jd_score']:g}, {m['reason']})"
-            for m in st["maybe_duplicates"]]
+            for m in st["maybe_duplicates"]
+        ]
     lines += ["", "## Clean view", ""]
     lines += [f"- {k}: {v}" for k, v in report["view"].items()]
     for name, lane in report["lanes"].items():
@@ -242,16 +296,30 @@ def render_md(report: dict) -> str:
 def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="discover")
-    parser.add_argument("--deadline-hours", type=float, metavar="H",
-                        help="this run's budget; 0 checks nothing and only rebuilds clean.parquet")
-    parser.add_argument("--source", action="append", metavar="NAME",
-                        help=f"run only these lanes, repeatable: {', '.join(LANE_NAMES)}")
-    parser.add_argument("--max-terms", type=int, metavar="N",
-                        help="use only each lane's first N search terms")
-    parser.add_argument("--jobs-dir", type=Path, default=paths.JOBS,
-                        help="read and write the store, view and reports here")
-    parser.add_argument("--boards-dir", type=Path, default=B.BOARDS_DIR,
-                        help="where boards.csv lives")
+    parser.add_argument(
+        "--deadline-hours",
+        type=float,
+        metavar="H",
+        help="this run's budget; 0 checks nothing and only rebuilds clean.parquet",
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        metavar="NAME",
+        help=f"run only these lanes, repeatable: {', '.join(LANE_NAMES)}",
+    )
+    parser.add_argument(
+        "--max-terms", type=int, metavar="N", help="use only each lane's first N search terms"
+    )
+    parser.add_argument(
+        "--jobs-dir",
+        type=Path,
+        default=paths.JOBS,
+        help="read and write the store, view and reports here",
+    )
+    parser.add_argument(
+        "--boards-dir", type=Path, default=B.BOARDS_DIR, help="where boards.csv lives"
+    )
     args = parser.parse_args(argv)
 
     unknown = sorted(set(args.source or []) - set(LANE_NAMES))
@@ -264,13 +332,16 @@ def main(argv=None) -> int:
     try:
         cfg = load_config()
         from src.shared.location.parser import require_libpostal
+
         require_libpostal()
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         sys.exit(f"ERROR: {e}")
     problems = cfg.validate()
     if problems:
-        sys.exit("ERROR: discovery config problems (run `uv run discovery-check`):\n"
-                 + "\n".join(f"  {p}" for p in problems))
+        sys.exit(
+            "ERROR: discovery config problems (run `uv run discovery-check`):\n"
+            + "\n".join(f"  {p}" for p in problems)
+        )
 
     started = datetime.now()
     run_id = current_run_id(started)
@@ -291,8 +362,9 @@ def main(argv=None) -> int:
         overrides.append("--source " + " ".join(args.source))
         wanted = [n for n in LANE_NAMES if n in args.source]
     else:
-        wanted = [n for n in LANE_NAMES if n == "manual"
-                  or (n in cfg.sources and cfg.sources[n].enabled)]
+        wanted = [
+            n for n in LANE_NAMES if n == "manual" or (n in cfg.sources and cfg.sources[n].enabled)
+        ]
     if cfg.deadline_hours <= 0:
         wanted = []
     deadline_ts = time.time() + cfg.deadline_hours * 3600 if wanted else 0.0
@@ -300,11 +372,21 @@ def main(argv=None) -> int:
     state_index = load_state_index(p.pipeline)
     tracked = frozenset(state_index)
     store = S.load_store(p.store)
-    known = {k: {"updated_at": u, "company": c}
-             for k, u, c in zip(store["posting_key"], store["updated_at"], store["company"])}
+    known = {
+        k: {"updated_at": u, "company": c}
+        for k, u, c in zip(store["posting_key"], store["updated_at"], store["company"])
+    }
     del store
-    crawl = B.Crawl(cfg, vcfg, today, deadline_ts, known, S.Batch(),
-                    board_state=p.board_state, boards_dir=p.boards_dir)
+    crawl = B.Crawl(
+        cfg,
+        vcfg,
+        today,
+        deadline_ts,
+        known,
+        S.Batch(),
+        board_state=p.board_state,
+        boards_dir=p.boards_dir,
+    )
     writer = Writer(crawl, p, today, tracked, cfg.live_days, trim=load_trim())
 
     lanes: dict[str, dict] = {}
@@ -330,18 +412,28 @@ def main(argv=None) -> int:
     pruned = _write_raw(crawl.take_listed(), p, run_id, today, cfg.raw_keep_days)
     applied = asdict(writer.stats)
     report = {
-        "run_id": run_id, "run_date": str(today.date()),
-        "wall_time_s": round(time.time() - t0, 1), "overrides": overrides,
+        "run_id": run_id,
+        "run_date": str(today.date()),
+        "wall_time_s": round(time.time() - t0, 1),
+        "overrides": overrides,
         "lanes": {n: lanes[n] for n in LANE_NAMES if n in lanes},
-        "store": {**{k: v for k, v in applied.items() if k != "new_job_ids"},
-                  **store_stats, "raw_pruned": pruned},
+        "store": {
+            **{k: v for k, v in applied.items() if k != "new_job_ids"},
+            **store_stats,
+            "raw_pruned": pruned,
+        },
         "new_job_ids": applied["new_job_ids"],
         "view": funnel,
     }
-    (p.runs / f"{run_id}.json").write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    (p.runs / f"{run_id}.json").write_text(
+        json.dumps(report, indent=1, default=str), encoding="utf-8"
+    )
     (p.runs / f"{run_id}.md").write_text(render_md(report), encoding="utf-8")
-    print(f"clean rows: {funnel.get('clean', 0)} | new job ids: {len(report['new_job_ids'])} "
-          f"| report: {p.runs / (run_id + '.md')}", flush=True)
+    print(
+        f"clean rows: {funnel.get('clean', 0)} | new job ids: {len(report['new_job_ids'])} "
+        f"| report: {p.runs / (run_id + '.md')}",
+        flush=True,
+    )
     return 0
 
 

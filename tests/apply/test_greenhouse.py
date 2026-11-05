@@ -9,6 +9,7 @@ live postings.
 
 No network: fetch_text and fetch_questions are both stubbed.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -38,26 +39,38 @@ FIXTURE_BOARDS = {
 
 
 class TestParsePosting:
-    @pytest.mark.parametrize("url,slug,token", [
-        # Every shape below is verbatim from clean.parquet.
-        ("https://job-boards.greenhouse.io/asteralabs/jobs/4719162005",
-         "asteralabs", "4719162005"),
-        ("https://boards.greenhouse.io/accenturefederalservices/jobs/4699491006?gh_jid=4699491006",
-         "accenturefederalservices", "4699491006"),
-        ("https://job-boards.eu.greenhouse.io/someco/jobs/123", "someco", "123"),
-    ])
+    @pytest.mark.parametrize(
+        "url,slug,token",
+        [
+            # Every shape below is verbatim from clean.parquet.
+            (
+                "https://job-boards.greenhouse.io/asteralabs/jobs/4719162005",
+                "asteralabs",
+                "4719162005",
+            ),
+            (
+                "https://boards.greenhouse.io/accenturefederalservices/jobs/4699491006?gh_jid=4699491006",
+                "accenturefederalservices",
+                "4699491006",
+            ),
+            ("https://job-boards.eu.greenhouse.io/someco/jobs/123", "someco", "123"),
+        ],
+    )
     def test_board_path_form(self, url, slug, token):
         posting = parse_posting(url)
         assert (posting.url_slug, posting.token) == (slug, token)
 
-    @pytest.mark.parametrize("url,token", [
-        ("https://www.hubspot.com/careers/jobs/8084478?gh_jid=8084478", "8084478"),
-        ("https://careers.ovo.com/?gh_jid=8088319", "8088319"),
-        ("https://www.workato.com/careers?gh_jid=8112909002#open-roles", "8112909002"),
-        ("http://bankrate.com/careers/current-openings?gh_jid=8099793", "8099793"),
-        # One live row spells the same id twice.
-        ("https://jobs.elastic.co/jobs?gh_jid=8079636&gh_jid=8079636", "8079636"),
-    ])
+    @pytest.mark.parametrize(
+        "url,token",
+        [
+            ("https://www.hubspot.com/careers/jobs/8084478?gh_jid=8084478", "8084478"),
+            ("https://careers.ovo.com/?gh_jid=8088319", "8088319"),
+            ("https://www.workato.com/careers?gh_jid=8112909002#open-roles", "8112909002"),
+            ("http://bankrate.com/careers/current-openings?gh_jid=8099793", "8099793"),
+            # One live row spells the same id twice.
+            ("https://jobs.elastic.co/jobs?gh_jid=8079636&gh_jid=8079636", "8079636"),
+        ],
+    )
     def test_company_page_with_gh_jid_and_no_slug(self, url, token):
         posting = parse_posting(url)
         assert posting.token == token
@@ -77,13 +90,18 @@ class TestParsePosting:
         with pytest.raises(ApplyUrlError, match="not numeric"):
             parse_posting("https://x.com/jobs?gh_jid=abc")
 
-    @pytest.mark.parametrize("url,token,slug", [
-        ("https://job-boards.greenhouse.io/embed/job_app"
-         "?for=towerresearchcapital&gh_src=be8ebc4b1&token=7583213",
-         "7583213", "towerresearchcapital"),
-        ("https://boards.greenhouse.io/embed/job_app?token=4719162005",
-         "4719162005", None),
-    ])
+    @pytest.mark.parametrize(
+        "url,token,slug",
+        [
+            (
+                "https://job-boards.greenhouse.io/embed/job_app"
+                "?for=towerresearchcapital&gh_src=be8ebc4b1&token=7583213",
+                "7583213",
+                "towerresearchcapital",
+            ),
+            ("https://boards.greenhouse.io/embed/job_app?token=4719162005", "4719162005", None),
+        ],
+    )
     def test_embed_job_app_form(self, url, token, slug):
         posting = parse_posting(url)
         assert (posting.token, posting.url_slug) == (token, slug)
@@ -107,11 +125,14 @@ class TestParsePosting:
         assert set(gh.id_query_keys) == {"token", "gh_jid"}
         assert set(gh.slug_query_keys) == {"for", "board"}
 
-    @pytest.mark.parametrize("url", [
-        "https://www.linkedin.com/jobs/view/4422512798",
-        "https://jobs.ashbyhq.com/farsight/820c851b-ae40-45a7-af9b-03ec087aff6c",
-        "https://jobs.lever.co/someco/abc-123",
-    ])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.linkedin.com/jobs/view/4422512798",
+            "https://jobs.ashbyhq.com/farsight/820c851b-ae40-45a7-af9b-03ec087aff6c",
+            "https://jobs.lever.co/someco/abc-123",
+        ],
+    )
     def test_other_boards_are_rejected(self, url):
         with pytest.raises(ApplyUrlError, match="not a Greenhouse"):
             parse_posting(url)
@@ -123,8 +144,10 @@ class TestParsePosting:
 
         with pytest.raises(ApplyUrlError, match="no job token"):
             parse_posting("https://job-boards.greenhouse.io/someco/jobs/12abc")
-        assert job_boards.parse_posting_url(
-            "https://job-boards.greenhouse.io/someco/jobs/12abc") is None
+        assert (
+            job_boards.parse_posting_url("https://job-boards.greenhouse.io/someco/jobs/12abc")
+            is None
+        )
         for tail in ("", "/", "?gh_src=x", "#apply"):
             url = f"https://job-boards.greenhouse.io/someco/jobs/12{tail}"
             assert parse_posting(url).token == "12"
@@ -149,7 +172,11 @@ class TestParsePosting:
         url = f"https://job-boards.{region}.greenhouse.io/futuresecureai/jobs/4001528201"
         hit = job_boards.parse_posting_url(url)
         assert (hit.source, hit.slug, hit.posting_id, hit.region) == (
-            "greenhouse", "futuresecureai", "4001528201", region)
+            "greenhouse",
+            "futuresecureai",
+            "4001528201",
+            region,
+        )
         assert parse_posting(url).token == "4001528201"
 
     def test_greenhouse_url_with_no_token_says_so(self):
@@ -163,9 +190,7 @@ class TestParsePosting:
 
     def test_form_url_carries_the_token_and_no_slug(self):
         posting = parse_posting("https://job-boards.greenhouse.io/asteralabs/jobs/4719162005")
-        assert posting.form_url == (
-            "https://boards.greenhouse.io/embed/job_app?token=4719162005"
-        )
+        assert posting.form_url == ("https://boards.greenhouse.io/embed/job_app?token=4719162005")
         assert "for=" not in posting.form_url
 
 
@@ -181,8 +206,9 @@ class TestSlugFromForm:
         with pytest.raises(CareersError, match="not 999"):
             slug_from_form(load_html("form_minimal"), "999")
 
-    @pytest.mark.parametrize("html", ["", "<html><body>gone</body></html>",
-                                      '<form action="/somewhere/else"></form>'])
+    @pytest.mark.parametrize(
+        "html", ["", "<html><body>gone</body></html>", '<form action="/somewhere/else"></form>']
+    )
     def test_no_readable_action_raises(self, html):
         with pytest.raises(CareersError, match="board slug"):
             slug_from_form(html, "1000001")
@@ -191,6 +217,7 @@ class TestSlugFromForm:
 @pytest.fixture
 def stub(monkeypatch):
     """Serve one canned form and one canned schema payload."""
+
     def install(name="form_minimal", *, text_exc=None):
         calls = {"text": [], "questions": []}
 
@@ -216,9 +243,7 @@ class TestFetchForm:
         # 3 of 58 sampled live postings were already gone.
         stub(text_exc=CareersError("gone", status=404, permanent=True))
         with pytest.raises(PostingExpired, match="4719162005"):
-            fetch_form(parse_posting(
-                "https://job-boards.greenhouse.io/x/jobs/4719162005"
-            ))
+            fetch_form(parse_posting("https://job-boards.greenhouse.io/x/jobs/4719162005"))
 
     def test_other_fetch_failures_propagate(self, stub):
         stub(text_exc=CareersError("HTTP 503", status=503))
@@ -231,9 +256,7 @@ class TestLoadBoard:
         calls = stub("form_minimal")
         board = load_board("https://www.hubspot.com/careers/jobs/1000001?gh_jid=1000001")
 
-        assert calls["text"] == [
-            "https://boards.greenhouse.io/embed/job_app?token=1000001"
-        ]
+        assert calls["text"] == ["https://boards.greenhouse.io/embed/job_app?token=1000001"]
         # The slug the API is asked for came from the form, not the URL.
         assert calls["questions"] == [("gasketworks", "1000001")]
         assert board.slug == "gasketworks"

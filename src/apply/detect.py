@@ -12,6 +12,7 @@ a URL is.
 Deterministic and LLM-free (R7). No company or vertical names — detection
 keys off URL shape only.
 """
+
 from __future__ import annotations
 
 from src.shared.job_boards import (

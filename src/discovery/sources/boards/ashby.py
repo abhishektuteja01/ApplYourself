@@ -1,5 +1,6 @@
 """Ashby: the posting API when the board has it on, else the board page's own
 GraphQL, which lists without JDs."""
+
 from __future__ import annotations
 
 from urllib.parse import quote
@@ -15,12 +16,14 @@ BOARD_QUERY = (
     "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) "
     "{ jobBoard: jobBoardWithTeams("
     "organizationHostedJobsPageName: $organizationHostedJobsPageName) "
-    "{ jobPostings { id title locationName workplaceType employmentType } } }")
+    "{ jobPostings { id title locationName workplaceType employmentType } } }"
+)
 POSTING_QUERY = (
     "query ApiJobPosting($organizationHostedJobsPageName: String!, "
     "$jobPostingId: String!) { jobPosting("
     "organizationHostedJobsPageName: $organizationHostedJobsPageName, "
-    "jobPostingId: $jobPostingId) { id descriptionHtml publishedDate } }")
+    "jobPostingId: $jobPostingId) { id descriptionHtml publishedDate } }"
+)
 
 
 def _salary(comp) -> tuple:
@@ -30,9 +33,11 @@ def _salary(comp) -> tuple:
         for part in (tier or {}).get("components") or [] if isinstance(tier, dict) else []:
             if isinstance(part, dict) and part.get("compensationType") == "Salary":
                 period = part.get("interval")
-                return (parse.yearly_salary(part.get("minValue"), period),
-                        parse.yearly_salary(part.get("maxValue"), period),
-                        part.get("currencyCode") or "")
+                return (
+                    parse.yearly_salary(part.get("minValue"), period),
+                    parse.yearly_salary(part.get("maxValue"), period),
+                    part.get("currencyCode") or "",
+                )
     return None, None, ""
 
 
@@ -43,12 +48,17 @@ def posting_from(item: dict, company: str) -> dict | None:
         return None
     lo, hi, currency = _salary(item.get("compensation"))
     return make_posting(
-        source="ashby", company=company, title=title, url=url,
+        source="ashby",
+        company=company,
+        title=title,
+        url=url,
         jd_text=parse.html_to_text(item.get("descriptionHtml") or item.get("descriptionPlain")),
         location_raw=item.get("location") or "",
         posted_date=parse.iso_date(item.get("publishedAt")),
         remote_flag=item.get("isRemote") is True,
-        salary_min=lo, salary_max=hi, salary_currency=currency,
+        salary_min=lo,
+        salary_max=hi,
+        salary_currency=currency,
         employment_type=item.get("employmentType") or "",
         _id=item.get("id"),
     )
@@ -62,9 +72,11 @@ def list_rest(slug: str, company: str, deadline_ts=None) -> list[dict]:
 def graphql(op: str, query: str, variables: dict, deadline_ts: float | None = None) -> dict:
     """The `data` of one GraphQL call. A rejected query is transient: it is
     not evidence the board is gone."""
-    payload = fetch_json_post(f"{GRAPHQL_URL}?op={op}",
-                              {"operationName": op, "variables": variables, "query": query},
-                              deadline_ts=deadline_ts)
+    payload = fetch_json_post(
+        f"{GRAPHQL_URL}?op={op}",
+        {"operationName": op, "variables": variables, "query": query},
+        deadline_ts=deadline_ts,
+    )
     if not isinstance(payload, dict):
         raise TypeError(f"expected a JSON object, got {type(payload).__name__}")
     if payload.get("errors"):
@@ -74,8 +86,9 @@ def graphql(op: str, query: str, variables: dict, deadline_ts: float | None = No
 
 def graphql_board(slug: str, deadline_ts: float | None = None) -> list[dict] | None:
     """The board's postings, or None when Ashby has no board under `slug`."""
-    board = graphql("ApiJobBoardWithTeams", BOARD_QUERY,
-                    {"organizationHostedJobsPageName": slug}, deadline_ts).get("jobBoard")
+    board = graphql(
+        "ApiJobBoardWithTeams", BOARD_QUERY, {"organizationHostedJobsPageName": slug}, deadline_ts
+    ).get("jobBoard")
     return None if board is None else job_items(board, "jobPostings")
 
 
@@ -99,21 +112,31 @@ class AshbyLane(BoardLane):
         for item in items:
             if not item.get("id") or not item.get("title"):
                 continue
-            out.append(make_posting(
-                source="ashby", company=board.name, title=item["title"],
-                url=f"https://jobs.ashbyhq.com/{quote(board.slug)}/{item['id']}",
-                location_raw=item.get("locationName") or "",
-                remote_flag=item.get("workplaceType") == "Remote",
-                employment_type=item.get("employmentType") or "",
-                _id=item["id"],
-            ))
+            out.append(
+                make_posting(
+                    source="ashby",
+                    company=board.name,
+                    title=item["title"],
+                    url=f"https://jobs.ashbyhq.com/{quote(board.slug)}/{item['id']}",
+                    location_raw=item.get("locationName") or "",
+                    remote_flag=item.get("workplaceType") == "Remote",
+                    employment_type=item.get("employmentType") or "",
+                    _id=item["id"],
+                )
+            )
         return out
 
     def detail(self, board: Board, posting: dict, crawl) -> dict | None:
-        found = graphql("ApiJobPosting", POSTING_QUERY,
-                        {"organizationHostedJobsPageName": board.slug,
-                         "jobPostingId": posting["_id"]}, crawl.deadline_ts).get("jobPosting")
+        found = graphql(
+            "ApiJobPosting",
+            POSTING_QUERY,
+            {"organizationHostedJobsPageName": board.slug, "jobPostingId": posting["_id"]},
+            crawl.deadline_ts,
+        ).get("jobPosting")
         if not isinstance(found, dict):
             return None
-        return {**posting, "jd_text": parse.html_to_text(found.get("descriptionHtml")),
-                "posted_date": parse.iso_date(found.get("publishedDate"))}
+        return {
+            **posting,
+            "jd_text": parse.html_to_text(found.get("descriptionHtml")),
+            "posted_date": parse.iso_date(found.get("publishedDate")),
+        }

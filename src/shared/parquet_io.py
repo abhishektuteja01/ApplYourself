@@ -9,6 +9,7 @@ a temp file; this is the same guarantee for parquet.
 The temp name is unique per writer: an `ingest-url` concurrent with a nightly
 run would otherwise race on one shared `<name>.tmp`.
 """
+
 from __future__ import annotations
 
 import contextlib

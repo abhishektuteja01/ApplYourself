@@ -1,6 +1,7 @@
 """Read fields out of what a source sends: HTML, JobPosting blocks, dates,
 salary, booleans. One reading of each, whichever source sends it.
 """
+
 from __future__ import annotations
 
 import html as html_mod
@@ -52,7 +53,8 @@ def html_to_text(value) -> str:
 # A schema.org JobPosting block, the structured copy job sites embed for
 # search engines: the JD of a page whose own markup is a JS shell.
 _LD_JSON_RE = re.compile(
-    r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", re.I | re.S)
+    r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", re.I | re.S
+)
 
 
 def _job_postings(node):
@@ -107,7 +109,9 @@ def looks_like_slug(name) -> bool:
     ("whatfix", "careers.pnc.com"), or a long digit run ("appsilon-1739358905")."""
     if not isinstance(name, str):
         return False
-    return bool(_LOWER_RE.search(name) and not _UPPER_RE.search(name)) or bool(_DIGIT_RUN_RE.search(name))
+    return bool(_LOWER_RE.search(name) and not _UPPER_RE.search(name)) or bool(
+        _DIGIT_RUN_RE.search(name)
+    )
 
 
 # ---------------------------------------------------------------------
@@ -127,8 +131,7 @@ def as_bool(value) -> bool:
 
 
 # Working periods per year, by the word a pay period is named with.
-_PERIODS_PER_YEAR = (("hour", 2080), ("day", 260), ("daily", 260), ("week", 52),
-                     ("month", 12))
+_PERIODS_PER_YEAR = (("hour", 2080), ("day", 260), ("daily", 260), ("week", 52), ("month", 12))
 
 
 def yearly_salary(amount, period) -> float | None:
@@ -191,6 +194,4 @@ def relative_posted_date(text: str, today: date) -> date | None:
 def naive_datetime(values) -> pd.Series:
     """Parse to tz-naive UTC. `utc=True` and `format="mixed"` are both needed
     on an object column mixing naive and aware values."""
-    return pd.to_datetime(
-        values, errors="coerce", utc=True, format="mixed"
-    ).dt.tz_localize(None)
+    return pd.to_datetime(values, errors="coerce", utc=True, format="mixed").dt.tz_localize(None)

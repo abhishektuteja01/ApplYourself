@@ -1,4 +1,5 @@
 """Which lane a title belongs to, and whether it passes that lane's title gate."""
+
 from __future__ import annotations
 
 import re
@@ -9,6 +10,7 @@ from src.shared import verticals
 # ---------------------------------------------------------------------
 # vertical classifier and title gate
 # ---------------------------------------------------------------------
+
 
 def classify_vertical_from_title(title: str | None) -> str:
     """The first `classifier_rules` lane whose rule matches, or ""."""
@@ -53,8 +55,10 @@ def title_passes(title: str, vertical: str, source: str = "", vcfg=None) -> bool
     if lane is None:
         return True
     exclude, include, strong = _gate_patterns(
-        tuple(lane.title_exclude_terms), tuple(lane.title_include_terms),
-        tuple(lane.title_strong_keep_terms))
+        tuple(lane.title_exclude_terms),
+        tuple(lane.title_include_terms),
+        tuple(lane.title_strong_keep_terms),
+    )
     # "_" is a word character to \b, so "IN_Manager_Tax" hides "manager".
     text = (title or "").replace("_", " ")
     if strong and strong.search(text):

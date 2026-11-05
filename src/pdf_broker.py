@@ -7,6 +7,7 @@ it each conversion when PDF_BROKER_DIR is set.
 
   uv run python -m src.pdf_broker <dir> --parent <pid>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,7 +22,7 @@ from src.docx_render import PdfResult
 
 ENV = "PDF_BROKER_DIR"
 PID_FILE = "broker.pid"
-WAIT_SECONDS = 600     # queue wait included: conversions take turns at Word
+WAIT_SECONDS = 600  # queue wait included: conversions take turns at Word
 POLL_SECONDS = 0.2
 
 
@@ -69,8 +70,9 @@ def request(queue: Path, docx_path: Path, token: str, wait: float = WAIT_SECONDS
             req.unlink(missing_ok=True)
             if res.is_file():
                 continue
-            return _failed("pdf helper is not running" if gone
-                           else f"pdf helper gave no result in {wait:.0f}s")
+            return _failed(
+                "pdf helper is not running" if gone else f"pdf helper gave no result in {wait:.0f}s"
+            )
         time.sleep(POLL_SECONDS)
 
 
@@ -93,7 +95,7 @@ def serve(queue: Path, parent: int) -> None:
         for req in sorted(queue.glob("*.req")):
             work = req.with_suffix(".work")
             try:
-                os.replace(req, work)       # a request its client withdrew is gone
+                os.replace(req, work)  # a request its client withdrew is gone
             except FileNotFoundError:
                 continue
             handle(work)

@@ -16,6 +16,7 @@ The templates are hand-authored in Word, not generated. Run
 scripts/scrub_example_templates.py after any Word edit; these tests verify it
 was run.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -221,11 +222,7 @@ def _all_package_text(path: Path) -> set[str]:
             if not name.endswith(".xml"):
                 continue
             xml = zf.read(name).decode("utf-8")
-            found |= {
-                text.strip()
-                for text in _W_T_RE.findall(xml)
-                if text.strip()
-            }
+            found |= {text.strip() for text in _W_T_RE.findall(xml) if text.strip()}
     return found
 
 
@@ -268,6 +265,7 @@ class TestResumeTemplateContract:
         """The example_primary baseline resume, built from the example sources
         a new clone actually has."""
         from src import resume_model
+
         md = resume_model.baseline_markdown("example_primary")
         out = tmp_path / "resume.docx"
         render_resume(md, RESUME_TEMPLATE, out)
@@ -303,9 +301,7 @@ class TestCoverLetterTemplateContract:
     def test_declares_no_placeholder_the_renderer_cannot_fill(self):
         """A typo'd token is preserved verbatim, so it ships as literal
         '{{SALUTATON}}' inside a real cover letter."""
-        declared = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(
-            COVER_LETTER_OPTIONAL_PLACEHOLDERS
-        )
+        declared = set(COVER_LETTER_REQUIRED_PLACEHOLDERS) | set(COVER_LETTER_OPTIONAL_PLACEHOLDERS)
         stray = {
             token
             for token in re.findall(r"\{\{[A-Z_]+\}\}", " ".join(_all_package_text(COVER_TEMPLATE)))
@@ -481,9 +477,7 @@ class TestNoPIILeak:
         never see."""
         with zipfile.ZipFile(path) as zf:
             names = zf.namelist()
-        assert not [n for n in names if n.startswith("word/media/")], (
-            f"{path.name} embeds media"
-        )
+        assert not [n for n in names if n.startswith("word/media/")], f"{path.name} embeds media"
         assert "docProps/thumbnail.jpeg" not in names, (
             f"{path.name} carries an embedded thumbnail image; run "
             f"scripts/scrub_example_templates.py, which strips it"

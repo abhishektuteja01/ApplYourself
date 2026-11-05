@@ -5,6 +5,7 @@ package ships libpostal — so it lives in the optional `discovery` group and
 must not be needed to *import* anything. Only address parsing itself may
 require it, and only with a message that says how to fix it.
 """
+
 from __future__ import annotations
 
 import os
@@ -47,7 +48,11 @@ def _run_without_postal(tmp_path: Path, code: str) -> subprocess.CompletedProces
     env["PYTHONPATH"] = os.pathsep.join([str(stub), str(REPO_ROOT)])
     return subprocess.run(
         [sys.executable, "-c", code],
-        cwd=REPO_ROOT, env=env, capture_output=True, text=True, encoding="utf-8",
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
 
 
@@ -59,15 +64,18 @@ def test_discovery_modules_import_without_postal(tmp_path):
 
 
 def test_parse_location_without_postal_raises_an_actionable_error(tmp_path):
-    proc = _run_without_postal(tmp_path, (
-        "from src.shared.location.parser import parse_location\n"
-        "try:\n"
-        "    parse_location('Austin, TX')\n"
-        "except RuntimeError as exc:\n"
-        "    print(exc)\n"
-        "else:\n"
-        "    raise AssertionError('expected RuntimeError')\n"
-    ))
+    proc = _run_without_postal(
+        tmp_path,
+        (
+            "from src.shared.location.parser import parse_location\n"
+            "try:\n"
+            "    parse_location('Austin, TX')\n"
+            "except RuntimeError as exc:\n"
+            "    print(exc)\n"
+            "else:\n"
+            "    raise AssertionError('expected RuntimeError')\n"
+        ),
+    )
     assert proc.returncode == 0, proc.stderr
     message = proc.stdout
     # Names the library, both install steps, and what still works without it.

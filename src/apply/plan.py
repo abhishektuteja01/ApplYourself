@@ -27,6 +27,7 @@ present in 116 and DOCX in 109, so PDF is preferred and DOCX is the fallback;
 and Word leaves `~$`-prefixed lock files behind, which a naive glob would
 happily upload.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -76,7 +77,7 @@ class PlanError(Exception):
 
 @dataclass(frozen=True)
 class FieldPlan:
-    id: str                 # the selector, verbatim
+    id: str  # the selector, verbatim
     name: str
     label: str
     kind: str
@@ -255,7 +256,8 @@ def find_artifact(out_dir: Path, artifact_id: str) -> tuple[Path | None, str]:
 
     for suffix in ARTIFACT_SUFFIXES:
         hits = sorted(
-            p for p in out_dir.iterdir()
+            p
+            for p in out_dir.iterdir()
             if p.is_file()
             and not p.name.startswith(_LOCK_PREFIX)
             and p.suffix.casefold() == suffix
@@ -343,16 +345,18 @@ def _linted(text: str, company: str) -> tuple[str, str]:
 
     rules = load_de_ai_rules()
     fixed, _ = fix_mechanical(text, rules)
-    found = find_phrase_violations(fixed, context="resume", rules=rules,
-                                   keep=[company] if company else [])
+    found = find_phrase_violations(
+        fixed, context="resume", rules=rules, keep=[company] if company else []
+    )
     if found:
         phrases = sorted({v["phrase"] for v in found})
         return fixed, f"lint: banned phrase(s) {phrases}"
     return fixed, ""
 
 
-def _override_resolution(field: MergedField, value, source: str, tier: str,
-                         company: str = "") -> Resolution:
+def _override_resolution(
+    field: MergedField, value, source: str, tier: str, company: str = ""
+) -> Resolution:
     """Apply an override, held to the same standard as every other answer: a
     select takes only an option it offers, spelled the board's way. A value the
     widget does not take parks, and the reason says why."""
@@ -360,14 +364,19 @@ def _override_resolution(field: MergedField, value, source: str, tier: str,
     candidates = (value,) if isinstance(value, str) else tuple(value)
     tag = f"override:{source}" if source else "override"
     if not multi and len(candidates) > 1:
-        return Resolution("park", tier=tier, source=tag,
-                          reason=f"{len(candidates)} values for a single-valued field")
+        return Resolution(
+            "park",
+            tier=tier,
+            source=tag,
+            reason=f"{len(candidates)} values for a single-valued field",
+        )
     if field.kind == "checkbox":
         # fill.py ticks on any truthy value, so only an explicit Yes may pass.
         if candidates[0].strip().casefold() in ("yes", "yes."):
             return Resolution("fill", value="Yes", tier=tier, source=tag)
-        return Resolution("park", tier=tier, source=tag,
-                          reason="a single checkbox takes only a Yes override")
+        return Resolution(
+            "park", tier=tier, source=tag, reason="a single checkbox takes only a Yes override"
+        )
     if not field.options:
         if field.kind in _PROSE_KINDS and not multi:
             text, problem = _linted(candidates[0], company)
@@ -380,9 +389,11 @@ def _override_resolution(field: MergedField, value, source: str, tier: str,
     if len(picked) != len(candidates):
         missing = [c for c in candidates if match_option(field, c) is None]
         return Resolution(
-            "park", tier=tier, source=tag,
+            "park",
+            tier=tier,
+            source=tag,
             reason=f"override {missing!r} matches none of the options this widget "
-                   f"offers ({list(o.label for o in field.options)!r})",
+            f"offers ({list(o.label for o in field.options)!r})",
         )
     return Resolution("fill", value=picked if multi else picked[0], tier=tier, source=tag)
 
@@ -393,10 +404,16 @@ def _work_authorization_facts(answers: Answers) -> dict[str, object]:
     from src.apply.answers import UNKNOWN_COUNTRY
 
     if answers.country == UNKNOWN_COUNTRY:
-        return {"job_country": None, "authorized": None, "requires_sponsorship": None,
-                "unrestricted": None, "status_label": None,
-                "nationalities": list(answers.nationalities), "us_person": answers.us_person,
-                "known_claims": len(answers.claims)}
+        return {
+            "job_country": None,
+            "authorized": None,
+            "requires_sponsorship": None,
+            "unrestricted": None,
+            "status_label": None,
+            "nationalities": list(answers.nationalities),
+            "us_person": answers.us_person,
+            "known_claims": len(answers.claims),
+        }
     facts = answers.facts_for(answers.country)
     return {
         "job_country": answers.country,
@@ -410,10 +427,18 @@ def _work_authorization_facts(answers: Answers) -> dict[str, object]:
     }
 
 
-def _unmapped(field: MergedField, resolution: Resolution, reason: str = "",
-              answers: Answers | None = None, blocks: bool = False) -> Unmapped:
-    similar = (similar_questions(field.label, answers)
-               if answers is not None and resolution.tier == "C" else ())
+def _unmapped(
+    field: MergedField,
+    resolution: Resolution,
+    reason: str = "",
+    answers: Answers | None = None,
+    blocks: bool = False,
+) -> Unmapped:
+    similar = (
+        similar_questions(field.label, answers)
+        if answers is not None and resolution.tier == "C"
+        else ()
+    )
     return Unmapped(
         similar=similar,
         id=field.id,
@@ -479,11 +504,15 @@ def build_plan(
 
     for field in reconciled.fields:
         if field.section == "employment" and not fill_employment:
-            skipped.append(Skipped(
-                id=field.id, label=field.label, tier="A",
-                reason="employment.only_when_required, and this board does not "
-                       "require the block",
-            ))
+            skipped.append(
+                Skipped(
+                    id=field.id,
+                    label=field.label,
+                    tier="A",
+                    reason="employment.only_when_required, and this board does not "
+                    "require the block",
+                )
+            )
             continue
 
         override = overrides.get(field.id)
@@ -494,10 +523,15 @@ def build_plan(
             if candidate is not None and not candidate.is_absolute():
                 candidate = out_dir / candidate
             if candidate is not None and candidate.is_file():
-                files.append(FilePlan(
-                    id=field.id, name=field.name, label=field.label,
-                    required=field.required, path=candidate,
-                ))
+                files.append(
+                    FilePlan(
+                        id=field.id,
+                        name=field.name,
+                        label=field.label,
+                        required=field.required,
+                        path=candidate,
+                    )
+                )
                 continue
             ignored.append(f"{field.id}: override path {override.value!r} is not a file")
             override = None
@@ -509,18 +543,23 @@ def build_plan(
                 ignored.append(f"{field.id}: identity and EEOC fields take no override")
             elif override.fact is not None:
                 if resolution.tier != "B0":
-                    ignored.append(f"{field.id}: a fact judgment is only for a "
-                                   "work-authorization or export-control question")
+                    ignored.append(
+                        f"{field.id}: a fact judgment is only for a "
+                        "work-authorization or export-control question"
+                    )
                 else:
                     replaced = resolution.source
                     resolution = resolve_fact_wording(field, answers, override.fact)
             elif resolution.source == "export_control":
-                ignored.append(f"{field.id}: export control takes a fact judgment "
-                               "({fact, yes_when}), never a typed value")
+                ignored.append(
+                    f"{field.id}: export control takes a fact judgment "
+                    "({fact, yes_when}), never a typed value"
+                )
             else:
                 replaced = resolution.source
-                resolution = _override_resolution(field, override.value, override.source,
-                                                  resolution.tier, company)
+                resolution = _override_resolution(
+                    field, override.value, override.source, resolution.tier, company
+                )
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution, answers=answers))
@@ -537,37 +576,47 @@ def build_plan(
                 # gets the chance; leaving it blank stays a valid outcome.
                 draftable.append(_unmapped(field, resolution, answers=answers))
             else:
-                skipped.append(Skipped(
-                    id=field.id, label=field.label,
-                    tier=resolution.tier, reason=resolution.reason,
-                ))
+                skipped.append(
+                    Skipped(
+                        id=field.id,
+                        label=field.label,
+                        tier=resolution.tier,
+                        reason=resolution.reason,
+                    )
+                )
             continue
 
         if resolution.action == "defer":
             path, reason = find_artifact(out_dir, field.id)
             if path is None:
-                wanted = (field.id == "cover_letter"
-                          and answers.cover_letter == "when_offered")
+                wanted = field.id == "cover_letter" and answers.cover_letter == "when_offered"
                 if field.required or wanted:
                     if wanted and not field.required:
                         reason += " (cover_letter: when_offered)"
                     unmapped.append(_unmapped(field, resolution, reason, blocks=wanted))
                 else:
-                    skipped.append(Skipped(
-                        id=field.id, label=field.label, tier=resolution.tier,
-                        reason=reason,
-                    ))
+                    skipped.append(
+                        Skipped(
+                            id=field.id,
+                            label=field.label,
+                            tier=resolution.tier,
+                            reason=reason,
+                        )
+                    )
                 continue
-            files.append(FilePlan(
-                id=field.id, name=field.name, label=field.label,
-                required=field.required, path=path,
-            ))
+            files.append(
+                FilePlan(
+                    id=field.id,
+                    name=field.name,
+                    label=field.label,
+                    required=field.required,
+                    path=path,
+                )
+            )
             continue
 
         if resolution.action != "fill":
-            raise PlanError(
-                f"{field.id!r}: unknown resolution action {resolution.action!r}"
-            )
+            raise PlanError(f"{field.id!r}: unknown resolution action {resolution.action!r}")
 
         problem = _check_value(field, resolution.value)
         if problem is not None:
@@ -576,25 +625,27 @@ def build_plan(
             # "nothing could answer this".
             raise PlanError(f"{field.id!r}: {problem} (value={resolution.value!r})")
 
-        fields.append(FieldPlan(
-            id=field.id,
-            name=field.name,
-            label=field.label,
-            kind=field.kind,
-            section=field.section,
-            required=field.required,
-            multi=field.multi or field.kind in _MULTI_KINDS,
-            value=resolution.value,
-            tier=resolution.tier,
-            description=field.description,
-            options=tuple(o.label for o in field.options),
-            source=resolution.source,
-            reason=resolution.reason,
-            dom_path=field.dom_path,
-            dom_control=field.dom_control,
-            replaced=replaced,
-            alternates=resolution.alternates,
-        ))
+        fields.append(
+            FieldPlan(
+                id=field.id,
+                name=field.name,
+                label=field.label,
+                kind=field.kind,
+                section=field.section,
+                required=field.required,
+                multi=field.multi or field.kind in _MULTI_KINDS,
+                value=resolution.value,
+                tier=resolution.tier,
+                description=field.description,
+                options=tuple(o.label for o in field.options),
+                source=resolution.source,
+                reason=resolution.reason,
+                dom_path=field.dom_path,
+                dom_control=field.dom_control,
+                replaced=replaced,
+                alternates=resolution.alternates,
+            )
+        )
 
     on_form = {f.id for f in reconciled.fields}
     for field_id in overrides:
@@ -653,7 +704,8 @@ def _assert_accounted_for(reconciled: Reconciled, plan: Plan) -> None:
     answered = {f.id for f in plan.fields} | {f.id for f in plan.files}
     parked = {u.id for u in plan.unmapped}
     unresolved = [
-        f.id for f in reconciled.fields
+        f.id
+        for f in reconciled.fields
         if f.required and f.id not in answered and f.id not in parked
     ]
     if unresolved:

@@ -66,8 +66,13 @@ def tailor_dir(tmp_path):
     are (`<Name>_Resume.pdf`)."""
     out = tmp_path / "example_primary" / "2026-08-09_gasket-works_widget-engineer_a1b2c3d4"
     out.mkdir(parents=True)
-    for name in ("Alex_Example_Resume.pdf", "Alex_Example_Cover_Letter.pdf",
-                 "resume_plan.yaml", "jd_snapshot.md", "trace.md"):
+    for name in (
+        "Alex_Example_Resume.pdf",
+        "Alex_Example_Cover_Letter.pdf",
+        "resume_plan.yaml",
+        "jd_snapshot.md",
+        "trace.md",
+    ):
         (out / name).write_bytes(b"x")
     return out
 

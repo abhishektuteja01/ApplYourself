@@ -20,7 +20,9 @@ def pytest_terminal_summary(terminalreporter):
     if not REAL_CONFIG.is_file():
         terminalreporter.write_line(
             "WARNING: profile/verticals.yaml absent — test_real_config_drift.py "
-            "skipped; the live config is unchecked.", yellow=True)
+            "skipped; the live config is unchecked.",
+            yellow=True,
+        )
 
 
 @pytest.fixture(autouse=True)

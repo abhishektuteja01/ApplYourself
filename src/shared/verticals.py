@@ -40,9 +40,19 @@ _SCHEMA_VERSION = 1
 _TOP_KEYS = {"schema_version", "default_vertical", "verticals", "classifier_rules"}
 # salary_expectation is read raw by apply_cli, not modelled here.
 _LANE_KEYS = {
-    "display_name", "search_terms", "linkedin_terms", "abroad_terms", "drop_phrases",
-    "years", "skill_weights", "focus", "title_exclude_terms", "title_include_terms",
-    "title_strong_keep_terms", "resume", "salary_expectation",
+    "display_name",
+    "search_terms",
+    "linkedin_terms",
+    "abroad_terms",
+    "drop_phrases",
+    "years",
+    "skill_weights",
+    "focus",
+    "title_exclude_terms",
+    "title_include_terms",
+    "title_strong_keep_terms",
+    "resume",
+    "salary_expectation",
 }
 
 
@@ -50,10 +60,11 @@ _LANE_KEYS = {
 class LaneResume:
     """A lane's resume shape (verticals.yaml `resume:`). No ids: bullets say
     which lanes pick them by default, skills say which line they show on."""
-    sections: tuple[str, ...]          # a permutation of summary/work/projects/education/skills
-    bullets: tuple[int, int]           # total (min, max)
-    skill_lines: tuple[str, ...]       # line labels, in order
-    summary: str                       # the baseline summary
+
+    sections: tuple[str, ...]  # a permutation of summary/work/projects/education/skills
+    bullets: tuple[int, int]  # total (min, max)
+    skill_lines: tuple[str, ...]  # line labels, in order
+    summary: str  # the baseline summary
 
 
 _RESUME_SECTIONS = {"summary", "work", "projects", "education", "skills"}
@@ -69,15 +80,23 @@ def _parse_lane_resume(raw, path: Path, where: str) -> LaneResume:
     if sorted(sections) != sorted(_RESUME_SECTIONS):
         raise _fail(path, f"{where}.sections must list each of {sorted(_RESUME_SECTIONS)} once")
     bullets = _require(raw, "bullets", path, where)
-    if not (isinstance(bullets, list) and len(bullets) == 2
-            and all(type(x) is int for x in bullets) and 1 <= bullets[0] <= bullets[1]):
+    if not (
+        isinstance(bullets, list)
+        and len(bullets) == 2
+        and all(type(x) is int for x in bullets)
+        and 1 <= bullets[0] <= bullets[1]
+    ):
         raise _fail(path, f"{where}.bullets must be [min, max]")
     skill_lines = _str_list(_require(raw, "skill_lines", path, where), path, f"{where}.skill_lines")
     summary = _require(raw, "summary", path, where)
     if not isinstance(summary, str) or not summary.strip():
         raise _fail(path, f"{where}.summary must be a nonempty string")
-    return LaneResume(sections=sections, bullets=(bullets[0], bullets[1]),
-                      skill_lines=skill_lines, summary=" ".join(summary.split()))
+    return LaneResume(
+        sections=sections,
+        bullets=(bullets[0], bullets[1]),
+        skill_lines=skill_lines,
+        summary=" ".join(summary.split()),
+    )
 
 
 @dataclass(frozen=True)
@@ -85,6 +104,7 @@ class Focus:
     """A lane's focus (verticals.yaml `focus:`). The judge answers `question`
     yes or no; a yes lifts `domain` to at least `yes_min`, a no holds it at
     `no_max` or below."""
+
     question: str
     yes_min: int
     no_max: int
@@ -183,6 +203,7 @@ class CompoundRule:
     def __repr__(self) -> str:
         return f"CompoundRule({self.match_str!r}, require_any={self.require_any!r})"
 
+
 def _fail(path: Path, message: str) -> ValueError:
     return ValueError(f"{path}: {message}")
 
@@ -206,17 +227,21 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
     check_keys(raw, _LANE_KEYS, where, path)
-    search_terms = _str_list(_require(raw, "search_terms", path, where), path, f"{where}.search_terms")
+    search_terms = _str_list(
+        _require(raw, "search_terms", path, where), path, f"{where}.search_terms"
+    )
     if not search_terms:
         raise _fail(path, f"{where}.search_terms must be nonempty")
-    linkedin_terms = _str_list(_require(raw, "linkedin_terms", path, where), path, f"{where}.linkedin_terms")
+    linkedin_terms = _str_list(
+        _require(raw, "linkedin_terms", path, where), path, f"{where}.linkedin_terms"
+    )
     abroad_terms = _str_list(raw.get("abroad_terms", []), path, f"{where}.abroad_terms")
 
     drop_phrases = _str_list(raw.get("drop_phrases", []), path, f"{where}.drop_phrases")
     years = raw.get("years") or {}
     if not isinstance(years, dict) or not all(
-            type(k) is int and type(v) is int and k >= 0 and 0 <= v <= 20
-            for k, v in years.items()):
+        type(k) is int and type(v) is int and k >= 0 and 0 <= v <= 20 for k, v in years.items()
+    ):
         raise _fail(path, f"{where}.years must map whole years to a seniority cap 0-20")
     skill_weights = raw.get("skill_weights") or {}
     if not isinstance(skill_weights, dict):
@@ -229,8 +254,7 @@ def _parse_vertical(name: str, raw: dict, path: Path) -> Vertical:
     # Blank terms are rejected, not skipped: a blank compiles to a pattern
     # that matches every title, which silently empties a whole vertical.
     title_terms = {}
-    for key in ("title_exclude_terms", "title_include_terms",
-                "title_strong_keep_terms"):
+    for key in ("title_exclude_terms", "title_include_terms", "title_strong_keep_terms"):
         terms = raw.get(key, [])
         if not isinstance(terms, list) or not all(isinstance(t, str) for t in terms):
             raise _fail(path, f"{where}.{key} must be a list of strings")
@@ -284,9 +308,7 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
     raw_verticals = _require(data, "verticals", p, "top level")
     if not isinstance(raw_verticals, dict) or not raw_verticals:
         raise _fail(p, "verticals must be a nonempty mapping")
-    verticals = {
-        name: _parse_vertical(name, raw, p) for name, raw in raw_verticals.items()
-    }
+    verticals = {name: _parse_vertical(name, raw, p) for name, raw in raw_verticals.items()}
 
     default_vertical = _require(data, "default_vertical", p, "top level")
     if default_vertical not in verticals:
@@ -310,7 +332,9 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
             match_str = _require(pattern, "match", p, f"{where}.pattern")
             if not isinstance(match_str, str):
                 raise _fail(p, f"{where}.pattern.match must be a string")
-            require_any = _str_list(pattern.get("require_any", []), p, f"{where}.pattern.require_any")
+            require_any = _str_list(
+                pattern.get("require_any", []), p, f"{where}.pattern.require_any"
+            )
             if not require_any:
                 raise _fail(p, f"{where}.pattern.require_any must be nonempty")
             rules.append((vertical, CompoundRule(match_str, tuple(require_any))))
@@ -369,6 +393,7 @@ def main() -> int:
             print(f"  {n}")
         return 1
     from src import resume_model
+
     try:
         problems = resume_model.check_sources(resume_model.load_sources(), cfg)
     except (resume_model.SourceError, ValueError) as exc:

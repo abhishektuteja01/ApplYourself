@@ -15,6 +15,7 @@ or anything under `pipeline/`.
     uv run python scripts/audit_slugs.py --ats ashby --limit 50
     uv run python scripts/audit_slugs.py --resume        # continue today's run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -47,6 +48,7 @@ ACTIVE, STALE, EMPTY, DEAD, ERROR = "active", "stale", "empty", "dead", "error"
 # reads, so "newest posting" here means the same thing a kept row's
 # `posted_date` would. A payload of the wrong shape raises, and the caller
 # reports it as `error` rather than counting it as an empty board.
+
 
 def _newest(dates) -> date | None:
     real = [d for d in dates if d]
@@ -83,7 +85,9 @@ def workday_summary(payload) -> tuple[int, date | None]:
     items = job_items(payload, "jobPostings")
     total = payload.get("total")
     count = total if isinstance(total, int) and total >= len(items) else len(items)
-    return count, _newest(relative_posted_date(i.get("postedOn") or "", date.today()) for i in items)
+    return count, _newest(
+        relative_posted_date(i.get("postedOn") or "", date.today()) for i in items
+    )
 
 
 def eightfold_summary(payload) -> tuple[int, date | None]:
@@ -217,8 +221,9 @@ class Writer:
         self._fh.close()
 
 
-def audit_lane(ats: str, companies, pacing: float, stale_days: int, today: date,
-               writer: Writer, counts: dict) -> None:
+def audit_lane(
+    ats: str, companies, pacing: float, stale_days: int, today: date, writer: Writer, counts: dict
+) -> None:
     for n, company in enumerate(companies):
         if n:
             time.sleep(pacing)
@@ -226,8 +231,18 @@ def audit_lane(ats: str, companies, pacing: float, stale_days: int, today: date,
         if status is None:
             status = classify(count, newest, stale_days, today)
         counts[status] = counts.get(status, 0) + 1
-        writer.write([ats, company.slug, company.name, status, count,
-                      newest.isoformat() if newest else "", http, note])
+        writer.write(
+            [
+                ats,
+                company.slug,
+                company.name,
+                status,
+                count,
+                newest.isoformat() if newest else "",
+                http,
+                note,
+            ]
+        )
 
 
 def load_done(path) -> set[tuple[str, str]]:
@@ -238,19 +253,35 @@ def load_done(path) -> set[tuple[str, str]]:
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--ats", action="append", choices=sorted(SUMMARIZE),
-                   help="repeatable; default ashby/greenhouse/lever (workday is opt-in)")
-    p.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS,
-                   help=f"newest posting older than this is stale (default {DEFAULT_STALE_DAYS})")
-    p.add_argument("--pacing", type=float,
-                   help="seconds between fetches in one lane; default is discovery.yaml's")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--ats",
+        action="append",
+        choices=sorted(SUMMARIZE),
+        help="repeatable; default ashby/greenhouse/lever (workday is opt-in)",
+    )
+    p.add_argument(
+        "--stale-days",
+        type=int,
+        default=DEFAULT_STALE_DAYS,
+        help=f"newest posting older than this is stale (default {DEFAULT_STALE_DAYS})",
+    )
+    p.add_argument(
+        "--pacing",
+        type=float,
+        help="seconds between fetches in one lane; default is discovery.yaml's",
+    )
     p.add_argument("--limit", type=int, help="first N slugs per lane, for a smoke run")
-    p.add_argument("--resume", action="store_true",
-                   help="skip slugs already in today's output file")
-    p.add_argument("--include-retired", action="store_true",
-                   help="also probe slugs marked active=0 in the board lists")
+    p.add_argument(
+        "--resume", action="store_true", help="skip slugs already in today's output file"
+    )
+    p.add_argument(
+        "--include-retired",
+        action="store_true",
+        help="also probe slugs marked active=0 in the board lists",
+    )
     p.add_argument("--out", help="output CSV (default jobs/slug_audit_<date>.csv)")
     return p.parse_args(argv)
 
@@ -269,20 +300,28 @@ def main(argv=None) -> int:
 
     work = {}
     for ats in lanes:
-        companies = sorted(load_boards(ats, include_retired=args.include_retired),
-                           key=lambda c: c.slug)
+        companies = sorted(
+            load_boards(ats, include_retired=args.include_retired), key=lambda c: c.slug
+        )
         companies = [c for c in companies if (ats, c.slug) not in done]
         if args.limit:
-            companies = companies[:args.limit]
+            companies = companies[: args.limit]
         work[ats] = companies
 
-    pacings = {ats: (args.pacing if args.pacing is not None
-                     else max(pacing_floor(ats), cfg.sources[ats].pacing_seconds))
-               for ats in lanes}
+    pacings = {
+        ats: (
+            args.pacing
+            if args.pacing is not None
+            else max(pacing_floor(ats), cfg.sources[ats].pacing_seconds)
+        )
+        for ats in lanes
+    }
 
     for ats in lanes:
-        print(f"{ats:11} {len(work[ats]):6} slugs at {pacings[ats]:g}s "
-              f"(~{len(work[ats]) * pacings[ats] / 60:.0f} min)")
+        print(
+            f"{ats:11} {len(work[ats]):6} slugs at {pacings[ats]:g}s "
+            f"(~{len(work[ats]) * pacings[ats] / 60:.0f} min)"
+        )
     if done:
         print(f"resuming: {len(done)} already done")
     print(f"-> {out}\n")
@@ -291,9 +330,19 @@ def main(argv=None) -> int:
     counts = {ats: {} for ats in lanes}
     try:
         with ThreadPoolExecutor(max_workers=len(lanes)) as pool:
-            futures = {ats: pool.submit(audit_lane, ats, work[ats], pacings[ats],
-                                        args.stale_days, today, writer, counts[ats])
-                       for ats in lanes}
+            futures = {
+                ats: pool.submit(
+                    audit_lane,
+                    ats,
+                    work[ats],
+                    pacings[ats],
+                    args.stale_days,
+                    today,
+                    writer,
+                    counts[ats],
+                )
+                for ats in lanes
+            }
             for fut in futures.values():
                 fut.result()
     finally:
@@ -302,8 +351,10 @@ def main(argv=None) -> int:
     print(f"{'ats':11} {'active':>7} {'stale':>7} {'empty':>7} {'dead':>7} {'error':>7}")
     for ats in lanes:
         c = counts[ats]
-        print(f"{ats:11} " + " ".join(f"{c.get(k, 0):>7}"
-                                      for k in (ACTIVE, STALE, EMPTY, DEAD, ERROR)))
+        print(
+            f"{ats:11} "
+            + " ".join(f"{c.get(k, 0):>7}" for k in (ACTIVE, STALE, EMPTY, DEAD, ERROR))
+        )
     print(f"\nWrote {out}. Nothing else was modified.")
     return 0
 

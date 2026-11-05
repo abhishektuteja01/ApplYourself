@@ -7,6 +7,7 @@ so each tenant is searched once per lane (that lane's first search term).
 `total` cannot be trusted past page 0, so paging stops on a short page, a
 page with nothing that passes the gate, or `max_pages`.
 """
+
 from __future__ import annotations
 
 import random
@@ -43,12 +44,19 @@ def public_url(company: str, wd: str, site_id: str, path: str) -> str:
     return f"https://{company}.{wd}.myworkdayjobs.com/{site_id}{path}"
 
 
-def list_page(company: str, wd: str, site_id: str, offset: int, search_text: str = "",
-              deadline_ts: float | None = None) -> dict:
+def list_page(
+    company: str,
+    wd: str,
+    site_id: str,
+    offset: int,
+    search_text: str = "",
+    deadline_ts: float | None = None,
+) -> dict:
     payload = fetch_json_post(
         f"{_base(company, wd)}/{site_id}/jobs",
         {"appliedFacets": {}, "limit": LIST_LIMIT, "offset": offset, "searchText": search_text},
-        deadline_ts=deadline_ts)
+        deadline_ts=deadline_ts,
+    )
     if not isinstance(payload, dict):
         raise TypeError(f"expected a JSON object, got {type(payload).__name__}")
     if not isinstance(payload.get("jobPostings"), list):
@@ -72,11 +80,15 @@ class WorkdayLane(BoardLane):
             if not title or not path:
                 return None
             return make_posting(
-                source="workday", company=board.name, title=title,
+                source="workday",
+                company=board.name,
+                title=title,
                 url=public_url(company, wd, site_id, path),
                 location_raw=item.get("locationsText") or "",
                 posted_date=parse.relative_posted_date(item.get("postedOn"), crawl.today.date()),
-                found_by_term=term, _path=path)
+                found_by_term=term,
+                _path=path,
+            )
 
         def jittered_pause():
             pause()
@@ -86,21 +98,27 @@ class WorkdayLane(BoardLane):
 
     def detail(self, board: Board, posting: dict, crawl) -> dict | None:
         company, wd, site_id = parse_slug(board.slug)
-        detail = fetch_json(f"{_base(company, wd)}/{site_id}{posting['_path']}",
-                            deadline_ts=crawl.deadline_ts)
+        detail = fetch_json(
+            f"{_base(company, wd)}/{site_id}{posting['_path']}", deadline_ts=crawl.deadline_ts
+        )
         info = detail.get("jobPostingInfo") if isinstance(detail, dict) else None
         if not isinstance(info, dict):
             raise TypeError("expected a 'jobPostingInfo' object in the detail response")
-        return {**posting,
-                "title": info.get("title") or posting["title"],
-                "jd_text": parse.html_to_text(info.get("jobDescription") or ""),
-                "location_raw": info.get("location") or posting["location_raw"],
-                "posted_date": (parse.relative_posted_date(info.get("postedOn"), crawl.today.date())
-                                or posting["posted_date"])}
+        return {
+            **posting,
+            "title": info.get("title") or posting["title"],
+            "jd_text": parse.html_to_text(info.get("jobDescription") or ""),
+            "location_raw": info.get("location") or posting["location_raw"],
+            "posted_date": (
+                parse.relative_posted_date(info.get("postedOn"), crawl.today.date())
+                or posting["posted_date"]
+            ),
+        }
 
 
 def _jitter() -> None:
     """A little unevenness on top of the base pacing: Workday sits behind
     Cloudflare, and a metronome is a bot tell."""
     import time
+
     time.sleep(random.uniform(0.0, 0.25))

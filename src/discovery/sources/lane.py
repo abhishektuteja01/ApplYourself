@@ -4,6 +4,7 @@
 thread starts, `run(crawl, tally)` on its own thread, `done` after the final
 store flush.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

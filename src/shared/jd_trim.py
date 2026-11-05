@@ -1,4 +1,5 @@
 """Cut boilerplate sections out of a job description."""
+
 from __future__ import annotations
 
 import re
@@ -10,9 +11,15 @@ def _heading_line(line: str) -> bool:
     """A marked heading: `# X`, `**X**` or `X:`, at most eight words."""
     t = line.strip()
     words = t.strip("#*_ :").split()
-    return (0 < len(words) <= 8 and not t.startswith(_BULLET)
-            and (t.startswith("#") or (t.startswith("**") and t.rstrip(":").endswith("**"))
-                 or t.endswith(":")))
+    return (
+        0 < len(words) <= 8
+        and not t.startswith(_BULLET)
+        and (
+            t.startswith("#")
+            or (t.startswith("**") and t.rstrip(":").endswith("**"))
+            or t.endswith(":")
+        )
+    )
 
 
 def _blocks(text: str) -> list[tuple[bool, str]]:
@@ -24,9 +31,12 @@ def _blocks(text: str) -> list[tuple[bool, str]]:
         lines = par.strip().splitlines()
         if len(lines) == 1 and not _heading_line(lines[0]):
             t = lines[0].strip()
-            lone = (0 < len(t.split()) <= 8 and any(ch.isalpha() for ch in t)
-                    and not t.startswith(_BULLET)
-                    and not t.endswith((".", "!", "?", ",")))
+            lone = (
+                0 < len(t.split()) <= 8
+                and any(ch.isalpha() for ch in t)
+                and not t.startswith(_BULLET)
+                and not t.endswith((".", "!", "?", ","))
+            )
             out.append((lone, t))
             continue
         cur: list[str] = []

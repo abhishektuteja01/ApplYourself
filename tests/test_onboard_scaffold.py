@@ -4,6 +4,7 @@ Every test runs against a throwaway copy of the shipped templates with
 `onboard_scaffold.PROFILE` repointed at it. Nothing here may touch the real
 profile/ — it is a live install, and this CLI is a pile of cp example -> real.
 """
+
 from __future__ import annotations
 
 import builtins
@@ -55,11 +56,7 @@ def run(*argv: str) -> int:
 
 
 def _expected_default_targets(prof: Path) -> set[str]:
-    return {
-        scaffold._target_for(p).name
-        for p in prof.glob("*.example.*")
-        if p.name not in GATED
-    }
+    return {scaffold._target_for(p).name for p in prof.glob("*.example.*") if p.name not in GATED}
 
 
 class TestCopies:
@@ -68,7 +65,8 @@ class TestCopies:
         for name in _expected_default_targets(prof):
             assert (prof / name).is_file(), f"{name} not copied"
         assert (prof / "resume_template.docx").read_bytes() == (
-            prof / "resume_template.example.docx").read_bytes()
+            prof / "resume_template.example.docx"
+        ).read_bytes()
 
     def test_the_answers_file_lands_without_the_apply_flag(self, prof):
         """/onboarding fills it from the resume it has already parsed, so the
@@ -128,8 +126,9 @@ class TestSafetyContract:
             raise AssertionError("--dry-run must not spawn anything")
 
         monkeypatch.setattr(subprocess, "run", _boom)
-        assert run("--vertical", "my_lane", "--work-auth", "citizen",
-                   "--with-apply", "--dry-run") == 0
+        assert (
+            run("--vertical", "my_lane", "--work-auth", "citizen", "--with-apply", "--dry-run") == 0
+        )
         out = capsys.readouterr().out
         assert "would run: uv sync --group apply" in out
         assert "would run: uv run playwright install chrome" in out
@@ -200,8 +199,10 @@ class TestWorkAuth:
         data = yaml.safe_load((prof / "application_answers.yaml").read_text(encoding="utf-8"))
         return data["work_authorization"]["countries"]["United States"]
 
-    @pytest.mark.parametrize("status, authorized, requires", [
-        ("citizen", True, False), ("time_limited", True, True), ("needs_now", False, True)])
+    @pytest.mark.parametrize(
+        "status, authorized, requires",
+        [("citizen", True, False), ("time_limited", True, True), ("needs_now", False, True)],
+    )
     def test_sets_the_home_countrys_row(self, prof, status, authorized, requires):
         assert run("--vertical", "my_lane", "--work-auth", status) == 0
         row = self._row(prof)
@@ -209,6 +210,7 @@ class TestWorkAuth:
 
     def test_scoring_reads_it(self, prof):
         from src import score_filter as sf
+
         run("--vertical", "my_lane", "--work-auth", "citizen")
         cfg = sf.load_scoring(prof / "scoring.yaml", prof / "application_answers.yaml")
         assert cfg.sponsorship_need == "never"
@@ -289,6 +291,7 @@ class TestVerticalName:
 
     def test_the_pattern_is_the_loader_pattern(self):
         from src.shared import verticals as v
+
         assert scaffold.VERTICAL_NAME_RE.pattern == v._NAME_RE.pattern
 
 

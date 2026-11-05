@@ -5,6 +5,7 @@ Enrichment for `reconcile.py`: the served DOM decides what must be filled,
 this supplies clean labels, descriptions and select option lists, plus the
 GDPR consent boxes the served DOM never carries.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,14 +15,16 @@ from src.shared.http_client import fetch_json
 QUESTIONS_URL = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}?questions=true"
 
 # Open set: a type not listed here raises rather than being silently dropped.
-FIELD_TYPES = frozenset({
-    "input_text",
-    "input_file",
-    "input_hidden",
-    "textarea",
-    "multi_value_single_select",
-    "multi_value_multi_select",
-})
+FIELD_TYPES = frozenset(
+    {
+        "input_text",
+        "input_file",
+        "input_hidden",
+        "textarea",
+        "multi_value_single_select",
+        "multi_value_multi_select",
+    }
+)
 
 # Sources for the flat question list. `compliance` nests its questions inside
 # groups and is handled separately; `demographic_questions` is a different
@@ -35,13 +38,21 @@ _FLAT_SOURCES = ("questions", "location_questions")
 # (`{company}` is the payload's `company_name`). The retention box is left
 # out: it renders optional, and disabled until processing consent is given.
 _CONSENT_BOXES = (
-    ("demographic_data_consent_applies", "gdpr_demographic_data_consent_given", True,
-     "By checking this box, I consent to {company} collecting, storing, and "
-     "processing my responses to the demographic data surveys above."),
-    ("requires_processing_consent", "gdpr_processing_consent_given", True,
-     "By checking this box, I agree to allow {company} to store and process my "
-     "data for the purpose of considering my eligibility regarding my current "
-     "application for employment."),
+    (
+        "demographic_data_consent_applies",
+        "gdpr_demographic_data_consent_given",
+        True,
+        "By checking this box, I consent to {company} collecting, storing, and "
+        "processing my responses to the demographic data surveys above.",
+    ),
+    (
+        "requires_processing_consent",
+        "gdpr_processing_consent_given",
+        True,
+        "By checking this box, I agree to allow {company} to store and process my "
+        "data for the purpose of considering my eligibility regarding my current "
+        "application for employment.",
+    ),
 )
 
 
@@ -157,12 +168,14 @@ def _parse_demographic(raw) -> DemographicQuestion:
     for o in raw.get("answer_options") or []:
         if not isinstance(o, dict):
             raise SchemaError(f"answer_option is not an object: {o!r}")
-        options.append(DemographicOption(
-            id=o.get("id"),
-            label=str(o.get("label") or ""),
-            free_form=bool(o.get("free_form")),
-            decline_to_answer=bool(o.get("decline_to_answer")),
-        ))
+        options.append(
+            DemographicOption(
+                id=o.get("id"),
+                label=str(o.get("label") or ""),
+                free_form=bool(o.get("free_form")),
+                decline_to_answer=bool(o.get("decline_to_answer")),
+            )
+        )
     return DemographicQuestion(
         id=raw.get("id"),
         label=str(raw.get("label") or ""),
@@ -183,8 +196,9 @@ def _parse_consent(raw, company: str) -> tuple[ConsentBox, ...]:
             raise SchemaError(f"data_compliance entry is not an object: {group!r}")
         for flag, name, required, label in _CONSENT_BOXES:
             if group.get(flag) and name not in boxes:
-                boxes[name] = ConsentBox(name=name, label=label.format(company=company),
-                                         required=required)
+                boxes[name] = ConsentBox(
+                    name=name, label=label.format(company=company), required=required
+                )
     return tuple(boxes.values())
 
 
@@ -212,8 +226,7 @@ def parse_schema(payload) -> BoardSchema:
                 raise SchemaError(f"compliance group is not an object: {group!r}")
             gtype = str(group.get("type") or "unknown")
             questions.extend(
-                _parse_question(q, f"compliance:{gtype}")
-                for q in group.get("questions") or []
+                _parse_question(q, f"compliance:{gtype}") for q in group.get("questions") or []
             )
 
     demographic: list[DemographicQuestion] = []

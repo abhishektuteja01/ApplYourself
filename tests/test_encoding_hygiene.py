@@ -18,8 +18,7 @@ TEXT_IO_CALLS = {"read_text", "write_text", "open"}
 
 
 def _source_files():
-    return sorted(p for d in SCANNED_DIRS
-                  for p in (REPO_ROOT / d).rglob("*.py"))
+    return sorted(p for d in SCANNED_DIRS for p in (REPO_ROOT / d).rglob("*.py"))
 
 
 def _is_binary_open(node, name):
@@ -28,11 +27,14 @@ def _is_binary_open(node, name):
     treating it as a mode exempts every string that happens to contain "b"."""
     if name != "open":
         return False
-    candidates = list(node.args) + [kw.value for kw in node.keywords
-                                    if kw.arg == "mode"]
+    candidates = list(node.args) + [kw.value for kw in node.keywords if kw.arg == "mode"]
     for c in candidates:
-        if isinstance(c, ast.Constant) and isinstance(c.value, str) \
-                and c.value and set(c.value) <= set("rwaxbt+"):
+        if (
+            isinstance(c, ast.Constant)
+            and isinstance(c.value, str)
+            and c.value
+            and set(c.value) <= set("rwaxbt+")
+        ):
             return "b" in c.value
     return False
 
@@ -41,9 +43,12 @@ def _is_decoding_subprocess(node, name):
     """subprocess.run(..., text=True) without encoding= decodes via locale."""
     if name not in {"run", "check_output", "Popen"}:
         return False
-    return any(kw.arg in {"text", "universal_newlines"}
-               and isinstance(kw.value, ast.Constant) and kw.value.value
-               for kw in node.keywords)
+    return any(
+        kw.arg in {"text", "universal_newlines"}
+        and isinstance(kw.value, ast.Constant)
+        and kw.value.value
+        for kw in node.keywords
+    )
 
 
 def _unencoded_calls(path: Path):
@@ -54,8 +59,11 @@ def _unencoded_calls(path: Path):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else (
-            func.id if isinstance(func, ast.Name) else None)
+        name = (
+            func.attr
+            if isinstance(func, ast.Attribute)
+            else (func.id if isinstance(func, ast.Name) else None)
+        )
         if name in TEXT_IO_CALLS:
             if _is_binary_open(node, name):
                 continue
@@ -80,10 +88,10 @@ def test_the_scan_detects_a_bare_call(tmp_path):
     an open() mode, so any content containing "b" was silently exempted."""
     sample = tmp_path / "sample.py"
     sample.write_text(
-        'p.read_text()\n'
+        "p.read_text()\n"
         'p.write_text("brb")\n'
         'p.open("w")\n'
-        'subprocess.run(cmd, text=True)\n'
+        "subprocess.run(cmd, text=True)\n"
         'p.open("rb")\n'
         'p.read_text(encoding="utf-8")\n',
         encoding="utf-8",
@@ -91,13 +99,11 @@ def test_the_scan_detects_a_bare_call(tmp_path):
     assert [n for n, _ in _unencoded_calls(sample)] == [1, 2, 3, 4]
 
 
-@pytest.mark.parametrize("path", _source_files(),
-                         ids=lambda p: str(p.relative_to(REPO_ROOT)))
+@pytest.mark.parametrize("path", _source_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_every_text_io_call_names_utf8(path):
     offenders = _unencoded_calls(path)
     assert not offenders, (
         f"{path.relative_to(REPO_ROOT)} has text IO with no encoding=: "
         + ", ".join(f"line {n}: {call}()" for n, call in offenders)
-        + " — pass encoding=\"utf-8\"."
+        + ' — pass encoding="utf-8".'
     )
-

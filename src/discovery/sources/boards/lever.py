@@ -1,4 +1,5 @@
 """Lever: one call per board, JDs included."""
+
 from __future__ import annotations
 
 from src.discovery import parse
@@ -29,9 +30,17 @@ def posting_from(item: dict, company: str) -> dict | None:
         content = (section.get("content") or "").strip()
         if content:
             parts.append(f"<h3>{heading}</h3>\n{content}" if heading else content)
-    jd = parse.html_to_text("\n\n".join(parts)) if parts else parse.html_to_text(item.get("descriptionPlain"))
+    jd = (
+        parse.html_to_text("\n\n".join(parts))
+        if parts
+        else parse.html_to_text(item.get("descriptionPlain"))
+    )
     return make_posting(
-        source="lever", company=company, title=title, url=url, jd_text=jd,
+        source="lever",
+        company=company,
+        title=title,
+        url=url,
+        jd_text=jd,
         location_raw=categories.get("location") or "",
         posted_date=parse.ms_date(item.get("createdAt")),
         remote_flag=(item.get("workplaceType") or "").strip().lower() == "remote",
@@ -57,6 +66,8 @@ class LeverLane(BoardLane):
     name = "lever"
 
     def list_board(self, board: Board, crawl, pause) -> list[dict]:
-        payload = fetch_json(f"https://{api_host()}/v0/postings/{board.slug}?mode=json",
-                             deadline_ts=crawl.deadline_ts)
+        payload = fetch_json(
+            f"https://{api_host()}/v0/postings/{board.slug}?mode=json",
+            deadline_ts=crawl.deadline_ts,
+        )
         return postings_from(payload, board.name)

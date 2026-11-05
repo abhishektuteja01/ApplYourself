@@ -1,4 +1,5 @@
 """/score's start -> judge -> finish round trip (src/score_store.py, score_cli)."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -28,24 +29,49 @@ def env(tmp_path, monkeypatch):
     """A scratch jobs/ + pipeline/ + profile prose, wired into score_store."""
     (tmp_path / "rubric.md").write_text("# shared rubric\n", encoding="utf-8")
     monkeypatch.setattr(score_store, "SHARED_RUBRIC", tmp_path / "rubric.md")
-    return {"clean": tmp_path / "clean.parquet", "scored": tmp_path / "scored.parquet",
-            "staging": tmp_path / "staging", "pipeline": tmp_path / "pipeline",
-            "shortlist": tmp_path / "shortlist"}
+    return {
+        "clean": tmp_path / "clean.parquet",
+        "scored": tmp_path / "scored.parquet",
+        "staging": tmp_path / "staging",
+        "pipeline": tmp_path / "pipeline",
+        "shortlist": tmp_path / "shortlist",
+    }
 
 
 def _clean(env, rows):
-    base = {"source": "greenhouse", "company": "Acme", "title": "Widget Consultant",
-            "location": "Austin, TX", "posted_date": pd.Timestamp("2026-09-20"),
-            "url": "https://example.com/j", "jd_text": JD, "vertical": "example_primary",
-            "employment_type": "fulltime", "seniority_raw": "", "salary_min": float("nan"),
-            "salary_max": float("nan"), "salary_currency": ""}
+    base = {
+        "source": "greenhouse",
+        "company": "Acme",
+        "title": "Widget Consultant",
+        "location": "Austin, TX",
+        "posted_date": pd.Timestamp("2026-09-20"),
+        "url": "https://example.com/j",
+        "jd_text": JD,
+        "vertical": "example_primary",
+        "employment_type": "fulltime",
+        "seniority_raw": "",
+        "salary_min": float("nan"),
+        "salary_max": float("nan"),
+        "salary_currency": "",
+    }
     write_clean(env["clean"], *({**base, **r} for r in rows))
 
 
 def _answer(jid, **kw):
-    return {"job_id": jid, "title": 25, "skills": 25, "seniority": 15, "domain": 15,
-            "years": 0, "country": "United States", "sponsorship": ["silent"], "evidence": "",
-            "keywords_to_mirror": ["python", "widgets"], "reasoning": "solid fit", **kw}
+    return {
+        "job_id": jid,
+        "title": 25,
+        "skills": 25,
+        "seniority": 15,
+        "domain": 15,
+        "years": 0,
+        "country": "United States",
+        "sponsorship": ["silent"],
+        "evidence": "",
+        "keywords_to_mirror": ["python", "widgets"],
+        "reasoning": "solid fit",
+        **kw,
+    }
 
 
 def _write_answers(env, run_slices, answers_by_id):
@@ -59,8 +85,9 @@ def _start(env, scfg, **kw):
 
 
 def _finish(env, scfg):
-    return score_store.finish(env["clean"], env["scored"], env["staging"], env["pipeline"],
-                              scfg, RULE, now=NOW)
+    return score_store.finish(
+        env["clean"], env["scored"], env["staging"], env["pipeline"], scfg, RULE, now=NOW
+    )
 
 
 def _scored(env):
@@ -69,9 +96,14 @@ def _scored(env):
 
 class TestStart:
     def test_drops_go_straight_to_scored(self, env, scfg):
-        _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " Must be a U.S. citizen."},
-                     {"job_id": "bbbbbbbb", "vertical": ""},
-                     {"job_id": "cccccccc"}])
+        _clean(
+            env,
+            [
+                {"job_id": "aaaaaaaa", "jd_text": JD + " Must be a U.S. citizen."},
+                {"job_id": "bbbbbbbb", "vertical": ""},
+                {"job_id": "cccccccc"},
+            ],
+        )
         res = _start(env, scfg)
         assert res["dropped"] == {"ineligible": 1, "no-lane": 1}
         assert res["judge"] == 1
@@ -90,8 +122,11 @@ class TestStart:
         _clean(env, [{"job_id": f"{i:08x}", "company": f"Co{i}"} for i in range(23)])
         res = _start(env, scfg)
         run = score_store.load_run(env["staging"])
-        assert list(run["slices"]) == ["example_primary_001", "example_primary_002",
-                                       "example_primary_003"]
+        assert list(run["slices"]) == [
+            "example_primary_001",
+            "example_primary_002",
+            "example_primary_003",
+        ]
         assert [len(m["job_ids"]) for m in run["slices"].values()] == [10, 10, 3]
         assert run["model"] == "score-judge:sonnet"
         packet = (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
@@ -124,8 +159,9 @@ class TestStart:
     def test_already_scored_rows_skipped_unless_all(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                       {"aaaaaaaa": _answer("aaaaaaaa")})
+        _write_answers(
+            env, score_store.load_run(env["staging"])["slices"], {"aaaaaaaa": _answer("aaaaaaaa")}
+        )
         _finish(env, scfg)
         assert _start(env, scfg)["judge"] == 0
         assert _start(env, scfg, rescore=True)["judge"] == 1
@@ -136,10 +172,14 @@ class TestFinish:
         _clean(env, [{"job_id": "aaaaaaaa"}, {"job_id": "bbbbbbbb", "company": "Beta"}])
         _start(env, scfg)
         run = score_store.load_run(env["staging"])
-        _write_answers(env, run["slices"], {
-            "aaaaaaaa": _answer("aaaaaaaa"),
-            "bbbbbbbb": _answer("bbbbbbbb", title=10, skills=10, action="skip"),
-        })
+        _write_answers(
+            env,
+            run["slices"],
+            {
+                "aaaaaaaa": _answer("aaaaaaaa"),
+                "bbbbbbbb": _answer("bbbbbbbb", title=10, skills=10, action="skip"),
+            },
+        )
         res = _finish(env, scfg)
         assert res["merged"] == 2 and res["lines"] == [] and res["bad"] == {}
         s = _scored(env)
@@ -153,18 +193,35 @@ class TestFinish:
     def test_judge_can_only_lower_the_action(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                       {"aaaaaaaa": _answer("aaaaaaaa", title=5, skills=5, seniority=5,
-                                            domain=5, action="manual-review")})
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {
+                "aaaaaaaa": _answer(
+                    "aaaaaaaa", title=5, skills=5, seniority=5, domain=5, action="manual-review"
+                )
+            },
+        )
         _finish(env, scfg)
         assert _scored(env).loc["aaaaaaaa", "suggested_action"] == "skip"
 
     def test_caps_and_tags(self, env, scfg):
-        _clean(env, [{"job_id": "aaaaaaaa", "jd_text": "Short JD. 4+ years of experience.",
-                      "employment_type": "contract"}])
+        _clean(
+            env,
+            [
+                {
+                    "job_id": "aaaaaaaa",
+                    "jd_text": "Short JD. 4+ years of experience.",
+                    "employment_type": "contract",
+                }
+            ],
+        )
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                       {"aaaaaaaa": _answer("aaaaaaaa", seniority=20)})
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {"aaaaaaaa": _answer("aaaaaaaa", seniority=20)},
+        )
         _finish(env, scfg)
         row = _scored(env).loc["aaaaaaaa"]
         subs = json.loads(row["fit_subscores"])
@@ -172,30 +229,44 @@ class TestFinish:
         assert row["reasoning"].endswith("[vague JD] [contract role]")
 
     def test_ineligible_label_zeroes_and_skips(self, env, scfg):
-        _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " We cannot sponsor now or in the future."}])
+        _clean(
+            env,
+            [{"job_id": "aaaaaaaa", "jd_text": JD + " We cannot sponsor now or in the future."}],
+        )
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"], {
-            "aaaaaaaa": _answer("aaaaaaaa", sponsorship=["no_future_sponsorship"],
-                                evidence="cannot sponsor now or in the future")})
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {
+                "aaaaaaaa": _answer(
+                    "aaaaaaaa",
+                    sponsorship=["no_future_sponsorship"],
+                    evidence="cannot sponsor now or in the future",
+                )
+            },
+        )
         _finish(env, scfg)
         row = _scored(env).loc["aaaaaaaa"]
         assert row["fit_score"] == 0 and row["suggested_action"] == "skip"
 
-    @pytest.mark.parametrize("bad", [
-        {"title": True},
-        {"title": 31},
-        {"skills": "20"},
-        {"sponsorship": "maybe"},
-        {"sponsorship": "offers", "evidence": ""},
-        {"sponsorship": "offers", "evidence": "we love sponsoring"},
-        {"years": -1},
-        {"years": "5"},
-        {"country": None},
-        {"keywords_to_mirror": [1]},
-        {"reasoning": ""},
-        {"action": "tailor"},
-        {"job_id": "zzzzzzzz"},
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"title": True},
+            {"title": 31},
+            {"skills": "20"},
+            {"sponsorship": "maybe"},
+            {"sponsorship": "offers", "evidence": ""},
+            {"sponsorship": "offers", "evidence": "we love sponsoring"},
+            {"years": -1},
+            {"years": "5"},
+            {"country": None},
+            {"keywords_to_mirror": [1]},
+            {"reasoning": ""},
+            {"action": "tailor"},
+            {"job_id": "zzzzzzzz"},
+        ],
+    )
     def test_bad_answer_is_not_merged_and_is_owed_again(self, env, scfg, bad):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         _start(env, scfg)
@@ -221,11 +292,27 @@ class TestFinish:
         assert res["lines"] == [f"judge {env['staging'] / f'slice_{second}.md'}"]
 
     def test_evidence_with_ellipsis_checks_each_part(self, env, scfg):
-        _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " Visa sponsorship is available for this role."}])
+        _clean(
+            env,
+            [
+                {
+                    "job_id": "aaaaaaaa",
+                    "jd_text": JD + " Visa sponsorship is available for this role.",
+                }
+            ],
+        )
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"], {
-            "aaaaaaaa": _answer("aaaaaaaa", sponsorship=["offers"],
-                                evidence="Visa sponsorship ... for this role")})
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {
+                "aaaaaaaa": _answer(
+                    "aaaaaaaa",
+                    sponsorship=["offers"],
+                    evidence="Visa sponsorship ... for this role",
+                )
+            },
+        )
         assert _finish(env, scfg)["merged"] == 1
 
 
@@ -242,29 +329,39 @@ def test_extra_keywords_are_trimmed_not_rejected(env, scfg):
     _clean(env, [{"job_id": "aaaaaaaa"}])
     _start(env, scfg)
     kws = [f"k{i}" for i in range(scfg.keywords_max + 3)]
-    _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                   {"aaaaaaaa": _answer("aaaaaaaa", keywords_to_mirror=kws)})
+    _write_answers(
+        env,
+        score_store.load_run(env["staging"])["slices"],
+        {"aaaaaaaa": _answer("aaaaaaaa", keywords_to_mirror=kws)},
+    )
     assert _finish(env, scfg)["merged"] == 1
-    assert list(_scored(env).loc["aaaaaaaa", "keywords_to_mirror"]) == kws[:scfg.keywords_max]
+    assert list(_scored(env).loc["aaaaaaaa", "keywords_to_mirror"]) == kws[: scfg.keywords_max]
 
 
 class TestFocus:
     @pytest.fixture(autouse=True)
     def _focus_lane(self, cfg):
-        lane = dataclasses.replace(cfg.verticals["example_primary"],
-                                   focus=verticals.Focus("Is it for widget makers?", 18, 15))
-        verticals.set_config(dataclasses.replace(
-            cfg, verticals={**cfg.verticals, "example_primary": lane}))
+        lane = dataclasses.replace(
+            cfg.verticals["example_primary"],
+            focus=verticals.Focus("Is it for widget makers?", 18, 15),
+        )
+        verticals.set_config(
+            dataclasses.replace(cfg, verticals={**cfg.verticals, "example_primary": lane})
+        )
 
     def _one(self, env, scfg, **answer):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                       {"aaaaaaaa": _answer("aaaaaaaa", **answer)})
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {"aaaaaaaa": _answer("aaaaaaaa", **answer)},
+        )
         return _finish(env, scfg)
 
-    @pytest.mark.parametrize("focus, domain, want", [
-        (True, 10, 18), (True, 20, 20), (False, 19, 15), (False, 8, 8)])
+    @pytest.mark.parametrize(
+        "focus, domain, want", [(True, 10, 18), (True, 20, 20), (False, 19, 15), (False, 8, 8)]
+    )
     def test_focus_bands_domain(self, env, scfg, focus, domain, want):
         ev = "widget assembly tooling" if focus else ""
         assert self._one(env, scfg, focus=focus, focus_evidence=ev, domain=domain)["merged"] == 1
@@ -275,8 +372,9 @@ class TestFocus:
         res = self._one(env, scfg, **bad)
         assert res["merged"] == 0 and "focus must be true or false" in str(res["bad"])
 
-    @pytest.mark.parametrize("ev, err", [
-        ("", "must quote the JD"), ("we serve banks", "not a quote from the JD")])
+    @pytest.mark.parametrize(
+        "ev, err", [("", "must quote the JD"), ("we serve banks", "not a quote from the JD")]
+    )
     def test_focus_true_needs_a_jd_quote(self, env, scfg, ev, err):
         res = self._one(env, scfg, focus=True, focus_evidence=ev)
         assert res["merged"] == 0 and err in str(res["bad"])
@@ -294,9 +392,14 @@ class TestFocus:
 def test_lane_without_focus_ignores_it(env, scfg):
     _clean(env, [{"job_id": "aaaaaaaa"}])
     _start(env, scfg)
-    assert "## Focus" not in (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
-    _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                   {"aaaaaaaa": _answer("aaaaaaaa", domain=19)})
+    assert "## Focus" not in (env["staging"] / "packet_example_primary.md").read_text(
+        encoding="utf-8"
+    )
+    _write_answers(
+        env,
+        score_store.load_run(env["staging"])["slices"],
+        {"aaaaaaaa": _answer("aaaaaaaa", domain=19)},
+    )
     assert _finish(env, scfg)["merged"] == 1
     assert json.loads(_scored(env).loc["aaaaaaaa", "fit_subscores"])["domain"] == 19
 
@@ -315,25 +418,36 @@ def test_packet_states_the_languages(env, scfg):
     assert "Languages the candidate speaks: English, Hindi." in text
 
 
-@pytest.mark.parametrize("jd_tail, quote", [
-    ("an employment visa****at this time****for this role.",
-     "an employment visa at this time for this role"),
-    ("extension support\n.", "extension support."),
-    ("long-\nterm sponsorship offered", "long-term sponsorship offered"),
-])
+@pytest.mark.parametrize(
+    "jd_tail, quote",
+    [
+        (
+            "an employment visa****at this time****for this role.",
+            "an employment visa at this time for this role",
+        ),
+        ("extension support\n.", "extension support."),
+        ("long-\nterm sponsorship offered", "long-term sponsorship offered"),
+    ],
+)
 def test_quote_check_ignores_spacing_and_markdown(env, scfg, jd_tail, quote):
     _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " " + jd_tail}])
     _start(env, scfg)
-    _write_answers(env, score_store.load_run(env["staging"])["slices"], {
-        "aaaaaaaa": _answer("aaaaaaaa", sponsorship=["offers"], evidence=quote)})
+    _write_answers(
+        env,
+        score_store.load_run(env["staging"])["slices"],
+        {"aaaaaaaa": _answer("aaaaaaaa", sponsorship=["offers"], evidence=quote)},
+    )
     assert _finish(env, scfg)["merged"] == 1
 
 
 def test_quote_from_the_title_counts(env, scfg):
     _clean(env, [{"job_id": "aaaaaaaa", "title": "Widget Consultant - USC and GC's only"}])
     _start(env, scfg, job_ids=["aaaaaaaa"])
-    _write_answers(env, score_store.load_run(env["staging"])["slices"], {
-        "aaaaaaaa": _answer("aaaaaaaa", sponsorship=["status_bar"], evidence="USC and GC's only")})
+    _write_answers(
+        env,
+        score_store.load_run(env["staging"])["slices"],
+        {"aaaaaaaa": _answer("aaaaaaaa", sponsorship=["status_bar"], evidence="USC and GC's only")},
+    )
     assert _finish(env, scfg)["merged"] == 1
 
 
@@ -348,8 +462,11 @@ class TestFactsDriveTheRules:
     def _one(self, env, scfg, jd=JD, **answer):
         _clean(env, [{"job_id": "aaaaaaaa", "jd_text": jd}])
         _start(env, scfg)
-        _write_answers(env, score_store.load_run(env["staging"])["slices"],
-                       {"aaaaaaaa": _answer("aaaaaaaa", **answer)})
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {"aaaaaaaa": _answer("aaaaaaaa", **answer)},
+        )
         assert _finish(env, scfg)["merged"] == 1
         return _scored(env).loc["aaaaaaaa"]
 
@@ -371,17 +488,25 @@ class TestFactsDriveTheRules:
         assert self._one(env, scfg, country="Germany")["suggested_action"] == "skip"
 
     def test_plain_no_sponsorship_is_opt_ok_for_later(self, env, scfg):
-        row = self._one(env, scfg, jd=JD + " We do not sponsor visas.",
-                        sponsorship=["no_sponsorship"], evidence="we do not sponsor visas")
+        row = self._one(
+            env,
+            scfg,
+            jd=JD + " We do not sponsor visas.",
+            sponsorship=["no_sponsorship"],
+            evidence="we do not sponsor visas",
+        )
         assert row["sponsorship_label"] == "opt_ok" and row["suggested_action"] == "tailor"
 
 
 class TestPrune:
     def test_keeps_active_roles_only(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
-        rows = [score_store._row(j, "example_primary", score_store._zero(), "unknown", "",
-                                 "r", [], "skip", "m", NOW)
-                for j in ("aaaaaaaa", "bbbbbbbb", "cccccccc")]
+        rows = [
+            score_store._row(
+                j, "example_primary", score_store._zero(), "unknown", "", "r", [], "skip", "m", NOW
+            )
+            for j in ("aaaaaaaa", "bbbbbbbb", "cccccccc")
+        ]
         score_store.merge_rows(env["scored"], rows)
         for jid, state in (("bbbbbbbb", "saved"), ("cccccccc", "skip")):
             write_state(env["pipeline"], jid, state)
@@ -395,8 +520,9 @@ class TestCli:
         for name in ("clean", "scored", "staging", "shortlist"):
             monkeypatch.setattr(score_cli, name.upper(), env[name])
         # profile/scoring.yaml is personal and gitignored; tests use the template.
-        monkeypatch.setattr("src.score_filter.SCORING_PATH",
-                            SCORING_PATH.with_name("scoring.example.yaml"))
+        monkeypatch.setattr(
+            "src.score_filter.SCORING_PATH", SCORING_PATH.with_name("scoring.example.yaml")
+        )
         return env
 
     def test_start_then_finish(self, wired, capsys):
@@ -405,8 +531,11 @@ class TestCli:
         out = capsys.readouterr().out.splitlines()
         assert out[0] == "judge=1"
         assert out[1].startswith("judge ") and out[1].endswith("slice_example_primary_001.md")
-        _write_answers(wired, score_store.load_run(wired["staging"])["slices"],
-                       {"aaaaaaaa": _answer("aaaaaaaa")})
+        _write_answers(
+            wired,
+            score_store.load_run(wired["staging"])["slices"],
+            {"aaaaaaaa": _answer("aaaaaaaa")},
+        )
         assert score_cli.main(["finish"]) == 0
         line = capsys.readouterr().out.strip()
         assert line.startswith("merged=1 pruned=0 shortlist=") and line.endswith("keepers=1")

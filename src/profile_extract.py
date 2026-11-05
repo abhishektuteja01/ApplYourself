@@ -21,6 +21,7 @@ Not covered: text boxes (w:txbxContent), nested tables inside a cell, footnotes.
 A resume built entirely of text boxes extracts to little or nothing, which is
 why an empty result is reported as an error rather than returned silently.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,9 +44,7 @@ UNSUPPORTED = {
         "legacy .doc is not readable by python-docx. Open it in Word and save "
         "as .docx, or export to PDF."
     ),
-    ".pages": (
-        "Pages documents are not readable here. Export to .docx or PDF first."
-    ),
+    ".pages": ("Pages documents are not readable here. Export to .docx or PDF first."),
 }
 
 

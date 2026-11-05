@@ -14,6 +14,7 @@ which pile it is in:
 does, and writes the same run report, so the sheet moves the role to Submittable.
 Nothing here judges anything (R7): every answer already exists.
 """
+
 from __future__ import annotations
 
 import json
@@ -45,8 +46,11 @@ def classify(job_id: str) -> dict:
     except apply_cli.BUILD_ERRORS as exc:
         return {"job_id": job_id, "kind": "error", "detail": str(exc)}
     except Exception as exc:  # noqa: BLE001 - one bad role must not stop the pass
-        return {"job_id": job_id, "kind": "error",
-                "detail": f"unexpected {type(exc).__name__}: {exc}"}
+        return {
+            "job_id": job_id,
+            "kind": "error",
+            "detail": f"unexpected {type(exc).__name__}: {exc}",
+        }
     guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
     if plan.submittable and not guesses and not plan.draftable and not plan.ignored_overrides:
         return {"job_id": job_id, "kind": "ready", "detail": ""}
@@ -65,29 +69,49 @@ def _drift(manifest: Path) -> int:
 def _fill(job_id: str, headless: bool) -> dict:
     """Fill one ready role's form, no submit. The role becomes `tailored` first
     when only `saved`, as /apply's step 3 does when the board needs no letter."""
-    rc = track_cli.main([job_id, "tailored", "--if", "saved", "--note",
-                         "resume on file; no cover letter needed (apply triage)"])
+    rc = track_cli.main(
+        [
+            job_id,
+            "tailored",
+            "--if",
+            "saved",
+            "--note",
+            "resume on file; no cover letter needed (apply triage)",
+        ]
+    )
     if rc:
         return {"job_id": job_id, "kind": "error", "detail": f"track exited {rc}"}
     out_dir = apply_cli.resolve_out_dir(job_id)
     manifest = out_dir / "form_manifest.json"
-    outcome = apply_cli._run_role(job_id, submit=False, headless=headless,
-                                  manifest_path=manifest)
+    outcome = apply_cli._run_role(job_id, submit=False, headless=headless, manifest_path=manifest)
     row = {"job_id": job_id, "kind": "ready", "detail": "", "_outcome": outcome}
     if outcome.category != "ready":
         return {**row, "kind": "error", "detail": f"{outcome.category}: {outcome.detail}"}
     drift = _drift(manifest)
     if drift:
-        return {**row, "kind": "open",
-                "detail": {"guesses": 0, "asks": 0, "facts": 0,
-                           "form": f"{drift} field(s) the page disagrees with"}}
+        return {
+            **row,
+            "kind": "open",
+            "detail": {
+                "guesses": 0,
+                "asks": 0,
+                "facts": 0,
+                "form": f"{drift} field(s) the page disagrees with",
+            },
+        }
     return row
 
 
 def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
     started = datetime.now()
-    result: dict = {"at": started.isoformat(timespec="seconds"), "ready": [], "open": {},
-                    "expired": [], "manual": [], "errors": {}}
+    result: dict = {
+        "at": started.isoformat(timespec="seconds"),
+        "ready": [],
+        "open": {},
+        "expired": [],
+        "manual": [],
+        "errors": {},
+    }
     outcomes = []
     for job_id in job_ids:
         row = classify(job_id)
@@ -116,9 +140,11 @@ def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
 
 
 def render(result: dict) -> str:
-    return (f"ready {len(result['ready'])} · open {len(result['open'])} · "
-            f"expired {len(result['expired'])} · manual {len(result['manual'])} · "
-            f"errors {len(result['errors'])}")
+    return (
+        f"ready {len(result['ready'])} · open {len(result['open'])} · "
+        f"expired {len(result['expired'])} · manual {len(result['manual'])} · "
+        f"errors {len(result['errors'])}"
+    )
 
 
 def main(job_ids: list[str] | None, fill: bool, headless: bool, limit: int | None) -> int:

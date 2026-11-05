@@ -16,6 +16,7 @@ A proposals file (`jobs/synonyms_proposals.yaml`):
   declined: [{keyword: "...", reason: "..."}]
   unlock:   [{kind: bullet | skill, thing: "...", context: "...", via: "..."}]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -99,6 +100,7 @@ def _write_yaml(path: Path, data) -> None:
 
 # ---------------------------------------------------------------- keywords
 
+
 def keywords() -> dict:
     """The top keywords of the roles with no resume yet, minus every keyword
     already declined."""
@@ -122,22 +124,28 @@ def keywords() -> dict:
             if not kw or _norm(kw) in skip:
                 continue
             freq[_norm(kw)] += 1
-            seen.setdefault(_norm(kw), {"keyword": kw, "job_id": row.job_id,
-                                        "company": company.get(row.job_id, ""),
-                                        "fit": float(row.fit_score)})
+            seen.setdefault(
+                _norm(kw),
+                {
+                    "keyword": kw,
+                    "job_id": row.job_id,
+                    "company": company.get(row.job_id, ""),
+                    "fit": float(row.fit_score),
+                },
+            )
     top = [{**seen[k], "frequency": n} for k, n in freq.most_common(TOP_KEYWORDS)]
     return {"job_ids": ids, "keywords": top}
 
 
 # ------------------------------------------------------------------- apply
 
+
 def _block(lines: list[str], entry: str) -> tuple[int, int]:
     """[start, end) of an entry's lines, header included."""
     start = next((i for i, ln in enumerate(lines) if ln.strip() == f"## {entry}"), -1)
     if start < 0:
         raise SynonymsError(f"{entry} is not in the file")
-    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")),
-               len(lines))
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
     return start, end
 
 
@@ -147,8 +155,7 @@ def _add_phrases(text: str, entry: str, phrases: list[str]) -> str:
     for i in range(start + 1, end):
         if lines[i].startswith("allowable_synonyms:"):
             current = yaml.safe_load(lines[i].partition(":")[2].strip()) or []
-            lines[i] = "allowable_synonyms: " + json.dumps(
-                [*current, *phrases], ensure_ascii=False)
+            lines[i] = "allowable_synonyms: " + json.dumps([*current, *phrases], ensure_ascii=False)
             return "\n".join(lines)
     last = max(i for i in range(start, end) if lines[i].strip())
     lines.insert(last + 1, "allowable_synonyms: " + json.dumps(phrases, ensure_ascii=False))
@@ -189,7 +196,7 @@ def _save(path: Path, text: str, entries_after: dict) -> None:
 
 
 def _screen(item: dict, sources: dict[str, dict], batch: set) -> str:
-    """"" when the proposal may be added, else why not."""
+    """ "" when the proposal may be added, else why not."""
     target = str(item.get("target") or "")
     phrase = " ".join(str(item.get("phrase") or "").split())
     file_key = "bullets" if target.startswith("B-") else "skills"
@@ -200,8 +207,10 @@ def _screen(item: dict, sources: dict[str, dict], batch: set) -> str:
         return "empty phrase"
     if len(phrase.split()) > MAX_WORDS:
         return f"more than {MAX_WORDS} words"
-    own = [entry.get("canonical") if file_key == "bullets" else entry.get("name"),
-           *(entry.get("allowable_synonyms") or [])]
+    own = [
+        entry.get("canonical") if file_key == "bullets" else entry.get("name"),
+        *(entry.get("allowable_synonyms") or []),
+    ]
     if _norm(phrase) in {_norm(o) for o in own if o}:
         return "already there"
     if (target, _norm(phrase)) in batch:
@@ -218,8 +227,10 @@ def apply(proposals_path: Path | None = None) -> list[str]:
     out: list[str] = []
     today = _today()
 
-    sources = {"bullets": parse_entries(BULLETS.read_text(encoding="utf-8")),
-               "skills": parse_entries(SKILLS.read_text(encoding="utf-8"))}
+    sources = {
+        "bullets": parse_entries(BULLETS.read_text(encoding="utf-8")),
+        "skills": parse_entries(SKILLS.read_text(encoding="utf-8")),
+    }
     added: list[dict] = []
     if cfg["auto_add_synonyms"]:
         batch: set = set()
@@ -232,8 +243,15 @@ def apply(proposals_path: Path | None = None) -> list[str]:
             phrase = " ".join(str(item["phrase"]).split())
             batch.add((item["target"], _norm(phrase)))
             per_target.setdefault(item["target"], []).append(phrase)
-            added.append({"date": today, "at": _now(), "target": item["target"], "phrase": phrase,
-                          "keyword": str(item.get("keyword") or "")})
+            added.append(
+                {
+                    "date": today,
+                    "at": _now(),
+                    "target": item["target"],
+                    "phrase": phrase,
+                    "keyword": str(item.get("keyword") or ""),
+                }
+            )
         for file_key, file_path in (("bullets", BULLETS), ("skills", SKILLS)):
             text = file_path.read_text(encoding="utf-8")
             expect = {k: dict(v) for k, v in sources[file_key].items()}
@@ -243,7 +261,9 @@ def apply(proposals_path: Path | None = None) -> list[str]:
                     continue
                 text = _add_phrases(text, target, phrases)
                 expect[target]["allowable_synonyms"] = [
-                    *(expect[target].get("allowable_synonyms") or []), *phrases]
+                    *(expect[target].get("allowable_synonyms") or []),
+                    *phrases,
+                ]
                 touched = True
             if touched:
                 _save(file_path, text, expect)
@@ -262,8 +282,15 @@ def apply(proposals_path: Path | None = None) -> list[str]:
         kw = str(item.get("keyword") or "").strip()
         if kw and _norm(kw) not in known:
             known.add(_norm(kw))
-            declined.append({"keyword": kw, "reason": str(item.get("reason") or ""),
-                             "first_seen": today, "at": _now(), "approved": False})
+            declined.append(
+                {
+                    "keyword": kw,
+                    "reason": str(item.get("reason") or ""),
+                    "first_seen": today,
+                    "at": _now(),
+                    "approved": False,
+                }
+            )
             new_declined += 1
     if new_declined:
         _write_yaml(DECLINED, declined)
@@ -280,10 +307,16 @@ def apply(proposals_path: Path | None = None) -> list[str]:
             out.append("unlock queue full: the rest wait for the next night")
             break
         asked.add(key)
-        open_items.append({"id": f"U{today.replace('-', '')}-{len(open_items) + len(closed) + 1}",
-                           "kind": item["kind"], "thing": str(item["thing"]),
-                           "context": str(item.get("context") or ""),
-                           "via": str(item.get("via") or ""), "asked": today})
+        open_items.append(
+            {
+                "id": f"U{today.replace('-', '')}-{len(open_items) + len(closed) + 1}",
+                "kind": item["kind"],
+                "thing": str(item["thing"]),
+                "context": str(item.get("context") or ""),
+                "via": str(item.get("via") or ""),
+                "asked": today,
+            }
+        )
         queued += 1
     if queued:
         _write_yaml(OPEN, {"open": open_items, "closed": closed})
@@ -295,6 +328,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
 
 # -------------------------------------------------------- undo, approve, answer
 
+
 def undo(target: str, phrase: str) -> str:
     file_path = BULLETS if target.startswith("B-") else SKILLS
     text = file_path.read_text(encoding="utf-8")
@@ -303,7 +337,8 @@ def undo(target: str, phrase: str) -> str:
         return f"{target} has no {phrase!r}"
     expect = parse_entries(text)
     expect[target]["allowable_synonyms"] = [
-        p for p in expect[target]["allowable_synonyms"] if _norm(p) != _norm(phrase)]
+        p for p in expect[target]["allowable_synonyms"] if _norm(p) != _norm(phrase)
+    ]
     _save(file_path, new, expect)
     return f"removed {phrase!r} from {target}"
 
@@ -334,6 +369,7 @@ def answer(item_id: str, reply: str) -> str:
 
 # --------------------------------------------------------------------- cli
 
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="synonyms", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -360,7 +396,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "approve":
             print("\n".join(approve(args.keywords)))
         elif args.cmd == "added":
-            rows = [json.loads(x) for x in LOG.read_text(encoding="utf-8").splitlines()] if LOG.exists() else []
+            rows = (
+                [json.loads(x) for x in LOG.read_text(encoding="utf-8").splitlines()]
+                if LOG.exists()
+                else []
+            )
             print(sum(r["date"] == date.today().isoformat() for r in rows))
         else:
             print(answer(args.id, args.reply))

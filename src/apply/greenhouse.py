@@ -14,6 +14,7 @@ one that does not own the token.
 
 Network lives here; the parsing either side of it is pure and tested offline.
 """
+
 from __future__ import annotations
 
 import re
@@ -50,7 +51,7 @@ class PostingExpired(Exception):
 @dataclass(frozen=True)
 class Posting:
     token: str
-    url_slug: str | None    # from the URL, when it had one; cross-check only
+    url_slug: str | None  # from the URL, when it had one; cross-check only
 
     @property
     def form_url(self) -> str:
@@ -60,7 +61,7 @@ class Posting:
 @dataclass(frozen=True)
 class BoardForm:
     posting: Posting
-    slug: str               # recovered from the rendered form
+    slug: str  # recovered from the rendered form
     html: str
     scan: FormScan
     schema: BoardSchema
@@ -108,9 +109,7 @@ def slug_from_form(html: str, token: str) -> str:
             "slug from — the embed page shape has changed"
         )
     if match.group("token") != str(token):
-        raise CareersError(
-            f"form is for token {match.group('token')}, not {token}"
-        )
+        raise CareersError(f"form is for token {match.group('token')}, not {token}")
     return match.group("slug")
 
 
@@ -135,8 +134,7 @@ def load_board(url: str, timeout: int = 30) -> BoardForm:
         # Never seen live (0 of 22 sampled). Refused rather than trusting
         # either side: one of them names another board's posting.
         raise CareersError(
-            f"URL names board {posting.url_slug!r} but token {posting.token} "
-            f"resolves to {slug!r}"
+            f"URL names board {posting.url_slug!r} but token {posting.token} resolves to {slug!r}"
         )
     scan = scan_form(html)
     schema = fetch_questions(slug, posting.token, timeout=timeout)

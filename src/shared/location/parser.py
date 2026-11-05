@@ -1,4 +1,5 @@
 """Reads a free-text job location into country / state / city."""
+
 from __future__ import annotations
 
 import functools
@@ -73,6 +74,7 @@ class LocationParse:
     # no country is privileged here.
     candidate_countries: frozenset[str] = field(default_factory=frozenset)
 
+
 def _validate_country(text: str) -> str:
     return COUNTRY_NAMES.get(_fold(text), "")
 
@@ -126,7 +128,10 @@ def _validate_state(
         return sub.code.split("-", 1)[-1], owner, frozenset()
     if len(name_candidates) > 1:
         sub, ambiguous_pool = _disambiguate_subdivisions(
-            name_candidates, hint_countries, sibling_texts, use_conventional_tiebreak=False,
+            name_candidates,
+            hint_countries,
+            sibling_texts,
+            use_conventional_tiebreak=False,
         )
         if sub is not None:
             return sub.code.split("-", 1)[-1], CC_TO_COUNTRY.get(sub.country_code, ""), frozenset()
@@ -146,7 +151,10 @@ def _validate_state(
         return "", "", frozenset()
 
     sub, ambiguous_pool = _disambiguate_subdivisions(
-        candidates, hint_countries, sibling_texts, use_conventional_tiebreak=True,
+        candidates,
+        hint_countries,
+        sibling_texts,
+        use_conventional_tiebreak=True,
     )
     if sub is not None:
         return bare, CC_TO_COUNTRY.get(sub.country_code, ""), frozenset()
@@ -166,8 +174,7 @@ def _disambiguate_subdivisions(
     Returns (matched_subdivision_or_None, ambiguous_pool)."""
     if hint_countries:
         narrowed = [
-            s for s in candidates
-            if CC_TO_COUNTRY.get(s.country_code, "") in hint_countries
+            s for s in candidates if CC_TO_COUNTRY.get(s.country_code, "") in hint_countries
         ]
         if len(narrowed) == 1:
             return narrowed[0], frozenset()
@@ -214,7 +221,7 @@ def _city_lookup(text: str, country_hint: str = "") -> dict | None:
                 return _city_lookup(folded[: -len(suffix) - 1], country_hint)
         for prefix in _DISTRICT_PREFIXES:
             if folded.startswith(prefix) and folded != prefix.strip():
-                return _city_lookup(folded[len(prefix):], country_hint)
+                return _city_lookup(folded[len(prefix) :], country_hint)
         return None
 
     if not country_hint:
@@ -327,7 +334,7 @@ def _mine_segment_signals(segment: str):
             components = [(head, "city"), (tail, "state")]
 
     countries: set[str] = set()
-    states: set[tuple[str, str]] = set()   # (code, owning_country)
+    states: set[tuple[str, str]] = set()  # (code, owning_country)
     cities: set[tuple[str, str, str]] = set()  # (canonical_name, country, admin1)
     claimed: set[int] = set()
 
@@ -349,9 +356,14 @@ def _mine_segment_signals(segment: str):
         # instead of confidently picking one.
         also_country = _validate_country(text)
         if also_country:
-            siblings = tuple(t for j, (t, _) in enumerate(components) if j != i and j not in claimed)
+            siblings = tuple(
+                t for j, (t, _) in enumerate(components) if j != i and j not in claimed
+            )
             code, owner, _pool = _validate_state(
-                text, countries, allow_bare_code=False, sibling_texts=siblings,
+                text,
+                countries,
+                allow_bare_code=False,
+                sibling_texts=siblings,
             )
             if len(components) == 1:
                 if owner:
@@ -391,7 +403,10 @@ def _mine_segment_signals(segment: str):
         if not siblings and not countries and _city_lookup(text):
             continue
         code, owner, ambiguous_pool = _validate_state(
-            text, countries, allow_bare_code=len(components) > 1, sibling_texts=siblings,
+            text,
+            countries,
+            allow_bare_code=len(components) > 1,
+            sibling_texts=siblings,
         )
         if code and owner:
             states.add((code, owner))
@@ -434,7 +449,8 @@ def _mine_segment_signals(segment: str):
 # "Tel Aviv (Onsite)", "London Office", "New York, NY (HQ)".
 _PAREN_RE = re.compile(r"\([^)]*\)")
 _WORKPLACE_WORD_RE = re.compile(
-    r"\b(?:office|offices|hq|headquarters|on-?site|hybrid|in-office)\b", re.IGNORECASE)
+    r"\b(?:office|offices|hq|headquarters|on-?site|hybrid|in-office)\b", re.IGNORECASE
+)
 
 
 _SPACES_RE = re.compile(r"\s+")
@@ -460,7 +476,8 @@ def _strip_workplace_words(raw: str) -> str:
 _ALPHA3_TO_COUNTRY: dict[str, str] = {_c.alpha_3: _c.name for _c in pycountry.countries}
 _CODE_ALIASES_ALPHA2 = {"UK": "GB"}
 US_STATE_CODES = frozenset(
-    s.code.split("-", 1)[1] for s in pycountry.subdivisions.get(country_code="US"))
+    s.code.split("-", 1)[1] for s in pycountry.subdivisions.get(country_code="US")
+)
 _POSTAL_PART_RE = re.compile(r"^\d{4,6}$")
 _LEADING_ALPHA3_RE = re.compile(r"^([A-Z]{3})\s")
 # "TUN - ARIANA", "IND-Pune-Smartworks", "USA-CA San Jose": a leading code.
@@ -491,7 +508,7 @@ def _code_name(code: str) -> str:
 
 
 def _is_subdivision_of(text: str, country: str) -> bool:
-    """"MH" before "IN": a region code of that country."""
+    """ "MH" before "IN": a region code of that country."""
     cc = COUNTRY_TO_CC.get(country, "")
     return any(sub.country_code == cc for sub in SUBDIVISIONS_BY_CODE.get(text.strip().upper(), []))
 
@@ -512,7 +529,7 @@ def _spell_out_codes(seg: str) -> str:
     if len(trimmed) == 1 and (m := _LEADING_ALPHA3_RE.match(trimmed[0])):
         # "SGP Work-at-Home", "CHE ZURI 2".
         name = _ALPHA3_TO_COUNTRY.get(m.group(1), "")
-        return f"{trimmed[0][m.end():].strip()}, {_comma_free(name)}" if name else seg
+        return f"{trimmed[0][m.end() :].strip()}, {_comma_free(name)}" if name else seg
     if len(trimmed) == 1 and len(trimmed[0]) == 3 and trimmed[0].isupper():
         name = _ALPHA3_TO_COUNTRY.get(trimmed[0], "")
         return _comma_free(name) if name else seg
@@ -529,8 +546,9 @@ def _spell_out_codes(seg: str) -> str:
         city_there = in_country and _city_lookup(head[0], "United States") is None
         if not (_is_subdivision_of(head[-1], name) or city_there):
             return seg
-    elif not in_country and (len(head) == 1 or any(
-            (c := _city_country(p)) and c != name for p in head)):
+    elif not in_country and (
+        len(head) == 1 or any((c := _city_country(p)) and c != name for p in head)
+    ):
         # "Mumbai, MH" and "Gurugram, HR": a city elsewhere, so the code is
         # a region of that country, not Marshall Islands or Croatia.
         return seg
@@ -556,8 +574,10 @@ def _whole_subdivision(seg: str) -> tuple[str, str] | None:
         if len(owners) == 1:
             owner = CC_TO_COUNTRY.get(subs[0].country_code, "")
             city = _city_lookup(seg)
-            if city and (CC_TO_COUNTRY.get(city["countrycode"]) == owner
-                         or city.get("population", 0) >= _MIN_DOMINANT_CITY_POPULATION):
+            if city and (
+                CC_TO_COUNTRY.get(city["countrycode"]) == owner
+                or city.get("population", 0) >= _MIN_DOMINANT_CITY_POPULATION
+            ):
                 # "New York", "Iasi": a city of the same country reads as the
                 # city, as before; so does a major city ("Santiago").
                 return None
@@ -636,8 +656,11 @@ def parse_location(raw: str) -> LocationParse:
             # "Seoul, Korea": the last comma part names the country even when
             # libpostal does not tag it as one.
             c = {tail}
-            ci = ci or ({(hit["name"], tail, hit.get("admin1code", ""))}
-                        if (hit := _city_lookup(seg.rpartition(",")[0].strip(), tail)) else set())
+            ci = ci or (
+                {(hit["name"], tail, hit.get("admin1code", ""))}
+                if (hit := _city_lookup(seg.rpartition(",")[0].strip(), tail))
+                else set()
+            )
         if not (c or s or ci) and _AND_SPLIT_RE.search(seg):
             # Ordinary mining found nothing at all -- see _AND_SPLIT_RE's
             # comment for why "and"/"&" aren't in the main separator regex.
@@ -697,6 +720,7 @@ def parse_location(raw: str) -> LocationParse:
             return LocationParse(country, "", "", remote)
 
     return LocationParse(country, state, city, remote)
+
 
 def require_libpostal() -> None:
     """Raise the install hint now rather than hours into a run."""

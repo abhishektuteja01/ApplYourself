@@ -1,6 +1,7 @@
 """Tests for src/app_cli.py — `uv run app`, the plumbing of /tailor,
 /cover-letter and /company-answers. Sources are the committed example world
 (conftest), the verticals config is the fixture, Word is never called."""
+
 from __future__ import annotations
 
 import json
@@ -26,23 +27,46 @@ def repo(tmp_path, monkeypatch):
     monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
     monkeypatch.setattr(app_cli, "APPLICATIONS", tmp_path / "applications")
     (tmp_path / "profile").mkdir()
-    shutil.copy(paths.PROFILE / "resume_template.example.docx", tmp_path / "profile" / "resume_template.docx")
-    shutil.copy(paths.PROFILE / "cover_letter_template.example.docx",
-                tmp_path / "profile" / "cover_letter_template.docx")
-    monkeypatch.setattr(app_cli, "export_pdf",
-                        lambda docx, token: {"status": "ok", "path": "x", "pages": 1, "detail": ""})
+    shutil.copy(
+        paths.PROFILE / "resume_template.example.docx",
+        tmp_path / "profile" / "resume_template.docx",
+    )
+    shutil.copy(
+        paths.PROFILE / "cover_letter_template.example.docx",
+        tmp_path / "profile" / "cover_letter_template.docx",
+    )
+    monkeypatch.setattr(
+        app_cli,
+        "export_pdf",
+        lambda docx, token: {"status": "ok", "path": "x", "pages": 1, "detail": ""},
+    )
     _parquets(tmp_path)
     return tmp_path
 
 
 def _parquets(tmp_path, **over):
-    row = {"job_id": JOB, "company": "Acme Widgets", "title": "Widget Engineer",
-           "url": "https://example.com/j", "posted_date": pd.NaT, "jd_text": JD,
-           "vertical": "example_primary", "source": "greenhouse", "location": "Remote", **over}
+    row = {
+        "job_id": JOB,
+        "company": "Acme Widgets",
+        "title": "Widget Engineer",
+        "url": "https://example.com/j",
+        "posted_date": pd.NaT,
+        "jd_text": JD,
+        "vertical": "example_primary",
+        "source": "greenhouse",
+        "location": "Remote",
+        **over,
+    }
     write_clean(tmp_path / "clean.parquet", row)
-    scored_rows({"job_id": JOB, "vertical": row["vertical"], "fit_score": 80,
-                 "sponsorship_label": "unknown", "keywords_to_mirror": ["SQL", "Kubernetes"]}
-                ).to_parquet(tmp_path / "scored.parquet")
+    scored_rows(
+        {
+            "job_id": JOB,
+            "vertical": row["vertical"],
+            "fit_score": 80,
+            "sponsorship_label": "unknown",
+            "keywords_to_mirror": ["SQL", "Kubernetes"],
+        }
+    ).to_parquet(tmp_path / "scored.parquet")
 
 
 def _run(capsys, *argv):
@@ -69,16 +93,29 @@ def _built(repo, capsys):
 
 # ---------- new ----------
 
+
 def test_new_opens_a_folder_registers_the_role_and_snapshots_the_jd(repo, capsys):
     code, out = _run(capsys, "new", JOB, "--today", "2026-09-28")
     assert code == 0
-    assert out["work_dir"] == f"applications/example_primary/2026-09-28_acme-widgets_widget-engineer_{JOB}"
+    assert (
+        out["work_dir"]
+        == f"applications/example_primary/2026-09-28_acme-widgets_widget-engineer_{JOB}"
+    )
     assert out["keywords_to_mirror"] == ["SQL", "Kubernetes"]
-    head, _, body = (repo / out["work_dir"] / "jd_snapshot.md").read_text(encoding="utf-8")[4:].partition("\n---\n")
+    head, _, body = (
+        (repo / out["work_dir"] / "jd_snapshot.md")
+        .read_text(encoding="utf-8")[4:]
+        .partition("\n---\n")
+    )
     facts = yaml.safe_load(head)
     assert facts["keywords_to_mirror"] == ["SQL", "Kubernetes"] and facts["posted_date"] == ""
     assert JD in body
-    assert yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["state"] == "saved"
+    assert (
+        yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))[
+            "state"
+        ]
+        == "saved"
+    )
 
 
 def test_new_reuses_an_unfinished_folder_instead_of_piling_up_versions(repo, capsys):
@@ -88,11 +125,14 @@ def test_new_reuses_an_unfinished_folder_instead_of_piling_up_versions(repo, cap
 
 
 def test_new_reuses_a_built_but_unrecorded_folder(repo, capsys, monkeypatch):
-    monkeypatch.setattr(app_cli, "export_pdf",
-                        lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""})
+    monkeypatch.setattr(
+        app_cli,
+        "export_pdf",
+        lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""},
+    )
     _, first = _run(capsys, "new", JOB, "--today", "2026-09-28")
     _write(repo, first["work_dir"], "resume_plan.yaml", _baseline_plan())
-    assert _run(capsys, "build", "resume", JOB)[0] == 2     # 2 pages: docx left, not recorded
+    assert _run(capsys, "build", "resume", JOB)[0] == 2  # 2 pages: docx left, not recorded
     _, again = _run(capsys, "new", JOB, "--today", "2026-09-29")
     assert again["work_dir"] == first["work_dir"]
 
@@ -124,6 +164,7 @@ def test_new_without_scored_parquet_errors(repo, capsys):
 
 # ---------- build resume ----------
 
+
 def test_build_resume_writes_docx_trace_and_state(repo, capsys):
     rel = _built(repo, capsys)
     folder = repo / rel
@@ -133,7 +174,7 @@ def test_build_resume_writes_docx_trace_and_state(repo, capsys):
     assert "- Kubernetes: not landed" in trace
     state = yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))
     assert state["tailored_dirs"] == [rel.removeprefix("applications/")]
-    assert state["state"] == "saved"                     # building never transitions
+    assert state["state"] == "saved"  # building never transitions
 
 
 def test_build_resume_reports_problems_and_writes_nothing(repo, capsys):
@@ -151,47 +192,71 @@ def test_build_resume_reports_problems_and_writes_nothing(repo, capsys):
 
 
 def test_build_resume_over_one_page_is_a_problem(repo, capsys, monkeypatch):
-    monkeypatch.setattr(app_cli, "export_pdf",
-                        lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""})
+    monkeypatch.setattr(
+        app_cli,
+        "export_pdf",
+        lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""},
+    )
     _, out = _run(capsys, "new", JOB)
     _write(repo, out["work_dir"], "resume_plan.yaml", _baseline_plan())
     code, res = _run(capsys, "build", "resume", JOB)
     assert code == 2 and res["problems"][0]["code"] == "pages"
-    assert "tailored_dirs" not in yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8")) \
-        or not yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["tailored_dirs"]
+    assert (
+        "tailored_dirs"
+        not in yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))
+        or not yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))[
+            "tailored_dirs"
+        ]
+    )
 
 
 def test_build_resume_without_a_pdf_fails_closed_unless_no_pdf(repo, capsys, monkeypatch):
-    monkeypatch.setattr(app_cli, "export_pdf",
-                        lambda docx, token: {"status": "failed", "path": "", "pages": 0, "detail": "-1728"})
+    monkeypatch.setattr(
+        app_cli,
+        "export_pdf",
+        lambda docx, token: {"status": "failed", "path": "", "pages": 0, "detail": "-1728"},
+    )
     _, out = _run(capsys, "new", JOB)
     _write(repo, out["work_dir"], "resume_plan.yaml", _baseline_plan())
     code, res = _run(capsys, "build", "resume", JOB)
     assert code == 2 and res["problems"][0]["code"] == "pages"
-    assert not (yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8")) or {}) \
-        .get("tailored_dirs")
+    assert not (
+        yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8")) or {}
+    ).get("tailored_dirs")
     code, res = _run(capsys, "build", "resume", JOB, "--no-pdf")
     assert code == 0, res
 
 
 # ---------- dir ----------
 
+
 def test_dir_points_everything_at_the_built_folder(repo, capsys):
     rel = _built(repo, capsys)
     _, info = _run(capsys, "dir", JOB)
-    assert info["dir"] == rel and info["has_resume"] and not info["has_letter"] and not info["has_answers"]
-    _run(capsys, "new", JOB)                      # a newer unfinished folder
+    assert (
+        info["dir"] == rel
+        and info["has_resume"]
+        and not info["has_letter"]
+        and not info["has_answers"]
+    )
+    _run(capsys, "new", JOB)  # a newer unfinished folder
     _, info = _run(capsys, "dir", JOB)
     assert info["dir"] == rel and info["work_dir"] != rel
 
 
 # ---------- answers ----------
 
+
 def _answers(**over):
-    return {"researched_at": "2026-09-28", "sources": ["https://acme.example"], "uses": [],
-            "why_company": "Acme builds widget tooling for plants. Its teams publish their line data.",
-            "why_role": "The role builds assembly tooling in Python. It works across 4 plants.",
-            "what_interests_you_about_product": None, **over}
+    return {
+        "researched_at": "2026-09-28",
+        "sources": ["https://acme.example"],
+        "uses": [],
+        "why_company": "Acme builds widget tooling for plants. Its teams publish their line data.",
+        "why_role": "The role builds assembly tooling in Python. It works across 4 plants.",
+        "what_interests_you_about_product": None,
+        **over,
+    }
 
 
 def test_answers_accepts_null_for_no_research(repo, capsys):
@@ -201,13 +266,16 @@ def test_answers_accepts_null_for_no_research(repo, capsys):
     assert code == 0 and out["no_research"] == ["what_interests_you_about_product"]
 
 
-@pytest.mark.parametrize("over,code", [
-    ({"why_company": "One sentence only."}, "layout"),
-    ({"why_role": "The role pays well. It cut costs 40% in a year."}, "number"),
-    ({"why_company": "Acme is a robust team. It builds widgets."}, "lint"),
-    ({"extra": "x"}, "layout"),
-    ({"uses": ["B-NOPE-01"]}, "unknown_id"),
-])
+@pytest.mark.parametrize(
+    "over,code",
+    [
+        ({"why_company": "One sentence only."}, "layout"),
+        ({"why_role": "The role pays well. It cut costs 40% in a year."}, "number"),
+        ({"why_company": "Acme is a robust team. It builds widgets."}, "lint"),
+        ({"extra": "x"}, "layout"),
+        ({"uses": ["B-NOPE-01"]}, "unknown_id"),
+    ],
+)
 def test_answers_problems(repo, capsys, over, code):
     rel = _built(repo, capsys)
     _write(repo, rel, "company_answers.yaml", _answers(**over))
@@ -217,18 +285,31 @@ def test_answers_problems(repo, capsys, over, code):
 
 def test_answers_numbers_from_a_cited_bullet_pass(repo, capsys):
     rel = _built(repo, capsys)
-    _write(repo, rel, "company_answers.yaml", _answers(
-        uses=["B-SPR-01"], why_role="I scored 12,000 measurements before. This role does that daily."))
+    _write(
+        repo,
+        rel,
+        "company_answers.yaml",
+        _answers(
+            uses=["B-SPR-01"],
+            why_role="I scored 12,000 measurements before. This role does that daily.",
+        ),
+    )
     assert _run(capsys, "build", "answers", JOB)[0] == 0
 
 
 # ---------- letter ----------
 
+
 def _letter(**over):
-    return {"salutation": "Dear May Chen,", "uses": ["B-WID-01"],
-            "body": ["Acme builds the widget tooling I used across four plants.",
-                     "I owned the daily widget assembly throughput report for a national client."],
-            **over}
+    return {
+        "salutation": "Dear May Chen,",
+        "uses": ["B-WID-01"],
+        "body": [
+            "Acme builds the widget tooling I used across four plants.",
+            "I owned the daily widget assembly throughput report for a national client.",
+        ],
+        **over,
+    }
 
 
 def test_letter_renders_and_never_transitions(repo, capsys):
@@ -237,15 +318,23 @@ def test_letter_renders_and_never_transitions(repo, capsys):
     code, out = _run(capsys, "build", "letter", JOB)
     assert code == 0, out
     assert (repo / rel / "Alex_Example_Cover_Letter.docx").is_file()
-    assert yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))["state"] == "saved"
+    assert (
+        yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))[
+            "state"
+        ]
+        == "saved"
+    )
 
 
-@pytest.mark.parametrize("over,code", [
-    ({"body": "one string"}, "layout"),
-    ({"body": ["We share a love of widgets across 97 plants at Acme."]}, "number"),
-    ({"body": ["I love widgets and want this job."]}, "layout"),     # never names the company
-    ({"uses": []}, "layout"),
-])
+@pytest.mark.parametrize(
+    "over,code",
+    [
+        ({"body": "one string"}, "layout"),
+        ({"body": ["We share a love of widgets across 97 plants at Acme."]}, "number"),
+        ({"body": ["I love widgets and want this job."]}, "layout"),  # never names the company
+        ({"uses": []}, "layout"),
+    ],
+)
 def test_letter_problems(repo, capsys, over, code):
     rel = _built(repo, capsys)
     _write(repo, rel, "cover_letter.yaml", _letter(**over))
@@ -263,34 +352,59 @@ def _dupes(repo, monkeypatch, rows, states=(), sent=()):
     monkeypatch.setattr(app_cli, "MAYBE_DUPES", repo / "maybe_duplicates.jsonl")
     monkeypatch.setattr(app_cli, "SUBMITTED", repo / "submitted.jsonl")
     (repo / "maybe_duplicates.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
     for jid, state in states:
         (repo / "pipeline" / jid).mkdir(parents=True)
-        _write(repo, f"pipeline/{jid}", "state.yaml",
-               {"job_id": jid, "company": "Vouch Insurance", "title": "AI Engineer", "state": state})
+        _write(
+            repo,
+            f"pipeline/{jid}",
+            "state.yaml",
+            {"job_id": jid, "company": "Vouch Insurance", "title": "AI Engineer", "state": state},
+        )
     if sent:
         (repo / "submitted.jsonl").write_text(
-            "".join(json.dumps({"job_id": j, "status": "submitted"}) + "\n" for j in sent), encoding="utf-8")
+            "".join(json.dumps({"job_id": j, "status": "submitted"}) + "\n" for j in sent),
+            encoding="utf-8",
+        )
 
 
 def _maybe(a, b, score=99.4):
-    return {"pair": "|".join(sorted((a, b))), "job_id": a, "other": b, "company": "vouch",
-            "other_company": "vouch insurance", "title": "ai engineer", "jd_score": score,
-            "reason": "backfill_merge"}
+    return {
+        "pair": "|".join(sorted((a, b))),
+        "job_id": a,
+        "other": b,
+        "company": "vouch",
+        "other_company": "vouch insurance",
+        "title": "ai engineer",
+        "jd_score": score,
+        "reason": "backfill_merge",
+    }
 
 
 def test_dupes_names_a_partner_already_applied_or_submitted(repo, capsys, monkeypatch):
-    _dupes(repo, monkeypatch, [_maybe(JOB, "2add76fe"), _maybe("c0ffee00", JOB, 92)],
-           states=[("2add76fe", "applied")], sent=["c0ffee00"])
+    _dupes(
+        repo,
+        monkeypatch,
+        [_maybe(JOB, "2add76fe"), _maybe("c0ffee00", JOB, 92)],
+        states=[("2add76fe", "applied")],
+        sent=["c0ffee00"],
+    )
     before = sorted(p.relative_to(repo) for p in repo.rglob("*"))
     code, out = _run(capsys, "dupes", JOB)
     assert code == 0 and sorted(p.relative_to(repo) for p in repo.rglob("*")) == before
     assert [(d["job_id"], d["state"], d["submitted"]) for d in out["duplicates"]] == [
-        ("2add76fe", "applied", False), ("c0ffee00", "", True)]
+        ("2add76fe", "applied", False),
+        ("c0ffee00", "", True),
+    ]
     assert out["duplicates"][1]["company"] == "vouch"
 
 
 def test_dupes_stays_quiet_for_idle_partners_and_other_roles(repo, capsys, monkeypatch):
-    _dupes(repo, monkeypatch, [_maybe(JOB, "2add76fe"), _maybe("11111111", "22222222")],
-           states=[("2add76fe", "saved")])
+    _dupes(
+        repo,
+        monkeypatch,
+        [_maybe(JOB, "2add76fe"), _maybe("11111111", "22222222")],
+        states=[("2add76fe", "saved")],
+    )
     assert _run(capsys, "dupes", JOB) == (0, {"job_id": JOB, "duplicates": []})

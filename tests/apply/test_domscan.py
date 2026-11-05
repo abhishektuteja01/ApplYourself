@@ -22,6 +22,7 @@ def field(scan, field_id):
 
 # --- structure ---------------------------------------------------------------
 
+
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_every_board_yields_identity_files_and_one_submit(scan, name):
     s = scan(name)
@@ -40,6 +41,7 @@ def test_every_board_yields_identity_files_and_one_submit(scan, name):
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_kinds_are_all_known(scan, name):
     from src.apply.domscan import KINDS
+
     assert {f.kind for f in scan(name).fields} <= KINDS
 
 
@@ -66,26 +68,25 @@ def test_a_document_lxml_cannot_parse_is_a_domscan_error():
     — not a DomScanError, so it was not in `apply_cli.BUILD_ERRORS` and the
     whole walk died on it."""
     with pytest.raises(DomScanError, match="could not parse"):
-        scan_form('<?xml version="1.0" encoding="UTF-8"?>'
-                  '<html><body><form id="application-form"></form></body></html>')
+        scan_form(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<html><body><form id="application-form"></form></body></html>'
+        )
 
 
 def test_a_required_field_with_no_id_raises():
     """No id means no selector, so nothing can fill it — and an unfilled
     required field is a refused submit at best."""
     with pytest.raises(DomScanError, match="required text field has no id"):
-        scan_form('<form id="application-form">'
-                  '<input type="text" aria-required="true"/>'
-                  "</form>")
+        scan_form('<form id="application-form"><input type="text" aria-required="true"/></form>')
 
 
 def test_an_optional_field_with_no_id_is_dropped_quietly():
     """The same shape, not required: an unlabelled decoy is not worth failing
     a whole board on."""
-    s = scan_form('<form id="application-form">'
-                  '<input type="text"/>'
-                  '<input id="email" type="email"/>'
-                  "</form>")
+    s = scan_form(
+        '<form id="application-form"><input type="text"/><input id="email" type="email"/></form>'
+    )
     assert ids(s) == ["email"]
 
 
@@ -93,31 +94,28 @@ def test_a_file_input_with_no_group_wrapper_raises():
     """The role=group wrapper carries the file field's real label and required
     flag; without it the scan would report an unlabelled, optional resume."""
     with pytest.raises(DomScanError, match="no role=group wrapper"):
-        scan_form('<form id="application-form">'
-                  '<input id="resume" type="file"/>'
-                  "</form>")
+        scan_form('<form id="application-form"><input id="resume" type="file"/></form>')
 
 
 def test_two_submit_buttons_raise_rather_than_picking_one():
     """Which one posts the application is not guessable from the DOM, and
     guessing wrong clicks something else on a filled form."""
     with pytest.raises(DomScanError, match="expected one submit button, found 2"):
-        scan_form('<form id="application-form">'
-                  '<button type="submit">Save draft</button>'
-                  '<button type="submit">Submit application</button>'
-                  "</form>")
-
-
-def test_unknown_input_type_raises():
-    with pytest.raises(DomScanError, match="unknown input type"):
         scan_form(
             '<form id="application-form">'
-            '<input id="color_pick" type="color"/>'
+            '<button type="submit">Save draft</button>'
+            '<button type="submit">Submit application</button>'
             "</form>"
         )
 
 
+def test_unknown_input_type_raises():
+    with pytest.raises(DomScanError, match="unknown input type"):
+        scan_form('<form id="application-form"><input id="color_pick" type="color"/></form>')
+
+
 # --- the decoys --------------------------------------------------------------
+
 
 def test_aria_hidden_required_decoys_are_skipped(page, scan):
     """Greenhouse renders `remix-css-*-requiredInput` spans that carry a bare
@@ -146,6 +144,7 @@ def test_toggle_gated_text_twins_are_absent(scan):
 
 # --- labels ------------------------------------------------------------------
 
+
 def test_required_asterisk_is_stripped_from_the_label(scan):
     assert field(scan("form_minimal"), "first_name").label == "First Name"
 
@@ -167,6 +166,7 @@ def test_label_falls_back_to_aria_labelledby(scan):
 
 # --- widget kinds ------------------------------------------------------------
 
+
 def test_react_select_is_detected_by_role_not_tag(scan):
     """Not a native <select>; a tag-name scanner misses all of these."""
     s = scan("form_minimal")
@@ -177,7 +177,7 @@ def test_react_select_is_detected_by_role_not_tag(scan):
 
 def test_multi_react_select_flagged_from_the_value_container(scan):
     s = scan("form_demographic")
-    assert field(s, "4005807007").multi is True   # "mark all that apply"
+    assert field(s, "4005807007").multi is True  # "mark all that apply"
     assert field(s, "4005810007").multi is False  # "select one"
 
 
@@ -209,6 +209,7 @@ def test_free_text_kinds(scan):
 
 
 # --- sections ----------------------------------------------------------------
+
 
 def test_eeoc_block_is_tagged(scan):
     s = scan("form_minimal")
@@ -258,8 +259,13 @@ def test_employment_block_is_tagged(scan):
     get keyword-matched as if the employer had authored them."""
     s = scan("form_employment")
     expected = {
-        "company-name-0", "title-0", "start-date-month-0", "start-date-year-0",
-        "end-date-month-0", "end-date-year-0", "current-role-0",
+        "company-name-0",
+        "title-0",
+        "start-date-month-0",
+        "start-date-year-0",
+        "end-date-month-0",
+        "end-date-year-0",
+        "current-role-0",
     }
     got = {f.name for f in s.fields if f.section == "employment"}
     assert got == expected
@@ -310,7 +316,8 @@ def test_block_id_shapes_agree_with_their_containers(scan, name):
 
     shapes = dict(_BLOCK_ID_SHAPES)
     misfiled = [
-        (f.id, f.section) for f in scan(name).fields
+        (f.id, f.section)
+        for f in scan(name).fields
         if f.section in shapes and not shapes[f.section].match(f.id)
     ]
     assert misfiled == []
@@ -336,16 +343,13 @@ def test_employment_years_are_text_not_number(scan):
 
 # --- the reason this module exists -------------------------------------------
 
+
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_dom_only_fields_survive_that_the_api_never_declares(scan, name):
     """The regression this module prevents: building the plan from the question
     API alone silently drops these."""
     s = scan(name)
-    api_names = {
-        f.name
-        for q in parse_schema(load_fixture(name)).questions
-        for f in q.fields
-    }
+    api_names = {f.name for q in parse_schema(load_fixture(name)).questions for f in q.fields}
     assert "country" not in api_names
     assert field(s, "country").required is True
 

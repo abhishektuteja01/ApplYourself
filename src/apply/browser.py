@@ -19,6 +19,7 @@ and `answers.py` validates a great deal this module does not need.
 `playwright`/`patchright` are optional dependencies (`uv sync --group apply`),
 and this is the only module in `src/` that names a driver.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

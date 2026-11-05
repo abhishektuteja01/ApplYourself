@@ -20,6 +20,7 @@ the GDPR consent boxes are drawn client-side only, so they come from the API's
 
 Pure function over the two parsed halves: no browser, no network.
 """
+
 from __future__ import annotations
 
 import html
@@ -59,15 +60,15 @@ class MergedOption:
 
 @dataclass(frozen=True)
 class MergedField:
-    id: str                 # the selector, verbatim, "[]" included
-    name: str               # "[]" stripped — the API join key
+    id: str  # the selector, verbatim, "[]" included
+    name: str  # "[]" stripped — the API join key
     label: str
-    required: bool          # DOM
-    kind: str               # DOM
-    section: str            # DOM
-    multi: bool             # DOM
+    required: bool  # DOM
+    kind: str  # DOM
+    section: str  # DOM
+    multi: bool  # DOM
     options: tuple[MergedOption, ...] = ()
-    api_source: str | None = None   # question source, or DEMOGRAPHIC_SOURCE
+    api_source: str | None = None  # question source, or DEMOGRAPHIC_SOURCE
     api_type: str | None = None
     description: str = ""
     """Instructional text under the label, as plain text: Greenhouse's
@@ -213,19 +214,21 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
                 f"{dom.id!r}: DOM says multi={dom.multi}, API type is {api_type!r}"
             )
 
-        fields.append(MergedField(
-            id=dom.id,
-            name=dom.name,
-            label=_label(label),
-            required=dom.required,
-            kind=dom.kind,
-            section=dom.section,
-            multi=dom.multi,
-            options=options,
-            api_source=api_source,
-            api_type=api_type,
-            description=description,
-        ))
+        fields.append(
+            MergedField(
+                id=dom.id,
+                name=dom.name,
+                label=_label(label),
+                required=dom.required,
+                kind=dom.kind,
+                section=dom.section,
+                multi=dom.multi,
+                options=options,
+                api_source=api_source,
+                api_type=api_type,
+                description=description,
+            )
+        )
 
     scanned_names = {dom.name for dom in scan.fields}
     for box in schema.consent:
@@ -233,16 +236,18 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
         box_id = f"{box.name}_1"
         if box.name in scanned_names or box_id in seen_ids:
             continue
-        fields.append(MergedField(
-            id=box_id,
-            name=box.name,
-            label=box.label,
-            required=box.required,
-            kind="checkbox",
-            section="questions",
-            multi=False,
-            api_source=CONSENT_SOURCE,
-        ))
+        fields.append(
+            MergedField(
+                id=box_id,
+                name=box.name,
+                label=box.label,
+                required=box.required,
+                kind="checkbox",
+                section="questions",
+                multi=False,
+                api_source=CONSENT_SOURCE,
+            )
+        )
 
     # A question counts as reached when ANY of its fields matched a rendered
     # control: Resume/CV declares `resume` and `resume_text`, and satisfying

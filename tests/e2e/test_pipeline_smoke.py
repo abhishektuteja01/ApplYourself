@@ -3,6 +3,7 @@ clean.parquet -> score start / recorded judge answer / finish -> app new +
 build resume (docx only) -> track. No network, no LLM, no Word.
 
 The location allowlist is stubbed: the real one needs libpostal."""
+
 from __future__ import annotations
 
 import json
@@ -35,17 +36,35 @@ class _AllowAll:
 def _lane_postings() -> list[dict]:
     """Three postings: one kept, one the title gate drops, one the score filter drops."""
     gh = "https://job-boards.greenhouse.io/{}/jobs/{}"
-    common = {"source": "greenhouse", "vertical": "example_primary",
-              "location_raw": "Exampletown, ST", "employment_type": "fulltime",
-              "posted_date": TODAY - pd.Timedelta(days=2)}
+    common = {
+        "source": "greenhouse",
+        "vertical": "example_primary",
+        "location_raw": "Exampletown, ST",
+        "employment_type": "fulltime",
+        "posted_date": TODAY - pd.Timedelta(days=2),
+    }
     return [
-        S.make_posting(**common, company="Acme Widgets", title="Widget Operations Analyst",
-                       url=gh.format("acmewidgets", 1), jd_text=JD),
-        S.make_posting(**common, company="Acme Widgets", title="Senior Widget Analyst",
-                       url=gh.format("acmewidgets", 2), jd_text=JD),
-        S.make_posting(**common, company="Beta Gizmos", title="Gizmo Reconciliation Analyst",
-                       url=gh.format("betagizmos", 3),
-                       jd_text=JD + " You will migrate us off the legacy gizmo stack."),
+        S.make_posting(
+            **common,
+            company="Acme Widgets",
+            title="Widget Operations Analyst",
+            url=gh.format("acmewidgets", 1),
+            jd_text=JD,
+        ),
+        S.make_posting(
+            **common,
+            company="Acme Widgets",
+            title="Senior Widget Analyst",
+            url=gh.format("acmewidgets", 2),
+            jd_text=JD,
+        ),
+        S.make_posting(
+            **common,
+            company="Beta Gizmos",
+            title="Gizmo Reconciliation Analyst",
+            url=gh.format("betagizmos", 3),
+            jd_text=JD + " You will migrate us off the legacy gizmo stack.",
+        ),
     ]
 
 
@@ -57,17 +76,26 @@ def _app(capsys, *argv) -> dict:
 
 
 def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
-    clean, scored, staging = live_view.CLEAN, tmp_path / "jobs" / "scored.parquet", tmp_path / "staging"
+    clean, scored, staging = (
+        live_view.CLEAN,
+        tmp_path / "jobs" / "scored.parquet",
+        tmp_path / "staging",
+    )
     for mod in (app_cli, track_cli):
         monkeypatch.setattr(mod, "CLEAN", clean)
         monkeypatch.setattr(mod, "SCORED", scored)
     monkeypatch.setattr(track_cli, "STORE", S.STORE)
     monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
-    monkeypatch.setattr(app_cli, "export_pdf",
-                        lambda docx, token: {"status": "skipped", "path": "", "pages": 0, "detail": ""})
+    monkeypatch.setattr(
+        app_cli,
+        "export_pdf",
+        lambda docx, token: {"status": "skipped", "path": "", "pages": 0, "detail": ""},
+    )
     (tmp_path / "profile").mkdir()
-    shutil.copy(paths.PROFILE / "resume_template.example.docx",
-                tmp_path / "profile" / "resume_template.docx")
+    shutil.copy(
+        paths.PROFILE / "resume_template.example.docx",
+        tmp_path / "profile" / "resume_template.docx",
+    )
 
     # discovery: lane -> store -> live view
     batch = S.Batch()
@@ -75,9 +103,16 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
         batch.upsert(row)
     stats = S.flush(batch, TODAY, frozenset(), live_days=30)
     assert stats.inserted == 3
-    inp = live_view.ViewInputs(today=TODAY, state_index={}, scores={}, live_days=30,
-                               search_max_age_days=30, score_threshold=60,
-                               high_days=60, low_days=14)
+    inp = live_view.ViewInputs(
+        today=TODAY,
+        state_index={},
+        scores={},
+        live_days=30,
+        search_max_age_days=30,
+        score_threshold=60,
+        high_days=60,
+        low_days=14,
+    )
     view, funnel = live_view.build_view(S.load_store(), _AllowAll(), inp)
     live_view.write_view(view)
     assert funnel["after_title_gate"] == 2
@@ -91,8 +126,15 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
     assert started["dropped"] == {"phrase": 1} and started["judge"] == 1
     (name,) = score_store.load_run(staging)["slices"]
     shutil.copy(SESSIONS / "judge_answer.json", staging / f"out_{name}.json")
-    done = score_store.finish(clean, scored, staging, paths.PIPELINE, scfg,
-                              CountryRule(home=frozenset({"us"}), abroad={}), now=NOW)
+    done = score_store.finish(
+        clean,
+        scored,
+        staging,
+        paths.PIPELINE,
+        scfg,
+        CountryRule(home=frozenset({"us"}), abroad={}),
+        now=NOW,
+    )
     assert done["merged"] == 1 and done["bad"] == {}
     row = pd.read_parquet(scored).set_index("job_id").loc[KEPT]
     assert row["fit_score"] == 86 and row["suggested_action"] == "tailor"

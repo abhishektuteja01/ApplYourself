@@ -11,6 +11,7 @@ The subset is deliberately tiny. A selector this fake cannot parse is a
 selector that should not be in the driver: anything relying on Ashby's
 CSS-module hashes is out of bounds, since those change on every deploy.
 """
+
 from __future__ import annotations
 
 import re
@@ -29,8 +30,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # --- a very small CSS subset, resolved over lxml -----------------------------
 
 _SIMPLE = re.compile(
-    r'^(?P<tag>[a-z]+|\*)?'
-    r'(?P<attrs>(?:\[[^\]]+\])*)$'
+    r"^(?P<tag>[a-z]+|\*)?"
+    r"(?P<attrs>(?:\[[^\]]+\])*)$"
 )
 _ATTR = re.compile(r'\[(?P<name>[\w-]+)(?:(?P<op>[*]?=)"(?P<value>[^"]*)")?\]')
 
@@ -47,7 +48,7 @@ def _xpath_step(simple: str) -> str:
             predicates.append(f"@{name}")
         elif op == "=":
             predicates.append(f'@{name}="{value}"')
-        else:                                   # *= substring
+        else:  # *= substring
             predicates.append(f'contains(@{name},"{value}")')
     return tag + "".join(f"[{p}]" for p in predicates)
 
@@ -69,7 +70,7 @@ class MiniLocator:
         return len(self.nodes)
 
     def nth(self, i):
-        return MiniLocator(self.page, self.nodes[i:i + 1])
+        return MiniLocator(self.page, self.nodes[i : i + 1])
 
     @property
     def first(self):
@@ -93,9 +94,9 @@ class MiniLocator:
             raise AssertionError("input_value on nothing")
         node = self.nodes[0]
         if node.tag not in ("input", "textarea", "select"):
-            raise ValueError("not an input")           # what Playwright does
+            raise ValueError("not an input")  # what Playwright does
         if node.get("type") in ("checkbox", "radio") and node.get("value") is None:
-            return "on"      # the HTML default, and what Playwright returns
+            return "on"  # the HTML default, and what Playwright returns
         return node.get("value", "")
 
     # --- writes, recorded ---
@@ -192,16 +193,23 @@ class TestKindIsReadFromTheDom:
     radio group at a few options and as a combobox at many. The threshold is
     Ashby's, and undocumented, so the plan's kind is only a fallback."""
 
-    @pytest.mark.parametrize("field_id,planned,expected", [
-        (COUNTRY, "select", "react_select"),        # enumerated, rendered as a combobox
-        ("_systemfield_location", "combobox", "react_select"),  # server-backed
-        (RADIOS, "select", "radio_group"),          # same API type, few options
-        (CHECKS, "select", "checkbox_group"),
-        (YESNO, "yesno", "yesno"),
-        ("_systemfield_name", "text", "text"),
-        (CONSENT, "select", "checkbox"),  # single-option ValueSelect, rendered as a lone tick
-        (PHONE, "text", "text"),  # nested SMS-consent radios must not win over a text-planned field
-    ])
+    @pytest.mark.parametrize(
+        "field_id,planned,expected",
+        [
+            (COUNTRY, "select", "react_select"),  # enumerated, rendered as a combobox
+            ("_systemfield_location", "combobox", "react_select"),  # server-backed
+            (RADIOS, "select", "radio_group"),  # same API type, few options
+            (CHECKS, "select", "checkbox_group"),
+            (YESNO, "yesno", "yesno"),
+            ("_systemfield_name", "text", "text"),
+            (CONSENT, "select", "checkbox"),  # single-option ValueSelect, rendered as a lone tick
+            (
+                PHONE,
+                "text",
+                "text",
+            ),  # nested SMS-consent radios must not win over a text-planned field
+        ],
+    )
     def test_the_widget_on_the_page_wins(self, field_id, planned, expected):
         d, _ = driver()
         assert d.resolve_kind(field_id, planned) == expected
@@ -227,7 +235,7 @@ class TestCombobox:
         options = d.open_options(COUNTRY)
         assert options == ("United States", "Canada", "Ireland")
         clicked = [c for c in page.calls if c[0] == "click"]
-        assert len(clicked) == 1 and clicked[0][2] == ""      # the chevron, no text
+        assert len(clicked) == 1 and clicked[0][2] == ""  # the chevron, no text
 
     def test_options_come_from_the_document_level_listbox(self):
         """The panel is floated out of the field it belongs to, so scoping the
@@ -237,7 +245,7 @@ class TestCombobox:
 
     def test_an_option_is_matched_on_its_visible_text(self):
         d, page = driver()
-        assert d.click_option("canada") is True                # case-insensitive
+        assert d.click_option("canada") is True  # case-insensitive
         assert ("click", ":r4:", "Canada") in page.calls
 
     def test_an_absent_option_is_a_miss_not_a_wrong_click(self):
@@ -399,16 +407,33 @@ class TestYesNoThroughTheFillSequence:
     through to "type text into it"."""
 
     def _plan(self, **kw):
-        base = dict(id=YESNO, name=YESNO, label="A question", kind="yesno",
-                    section="questions", required=True, multi=False,
-                    value="No", tier="B0")
+        base = dict(
+            id=YESNO,
+            name=YESNO,
+            label="A question",
+            kind="yesno",
+            section="questions",
+            required=True,
+            multi=False,
+            value="No",
+            tier="B0",
+        )
         base.update(kw)
         return Plan(
-            job_id="a1b2c3d4", board="gasketworks", token="1",
+            job_id="a1b2c3d4",
+            board="gasketworks",
+            token="1",
             form_url="https://jobs.ashbyhq.com/gasketworks/0000/application",
-            company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
-            fields=(FieldPlan(**base),), files=(), unmapped=(), draftable=(),
-            skipped=(), submit_selector=None, submit_disabled=False,
+            company="Gasket Works",
+            title="Widget Engineer",
+            out_dir=Path("/tmp"),
+            fields=(FieldPlan(**base),),
+            files=(),
+            unmapped=(),
+            draftable=(),
+            skipped=(),
+            submit_selector=None,
+            submit_disabled=False,
         )
 
     def test_a_yesno_field_clicks_the_button_and_is_a_fill(self):
@@ -422,7 +447,7 @@ class TestYesNoThroughTheFillSequence:
         """Same discipline as a react-select: the widget is asserted after the
         write, so a click that landed nowhere cannot be reported as filled."""
         d, _ = driver()
-        result = fill_plan(self._plan(value="Yes"), d)   # fixture stays on "No"
+        result = fill_plan(self._plan(value="Yes"), d)  # fixture stays on "No"
         assert result.ok is False
         assert YESNO in result.failures[0]
 
@@ -469,19 +494,43 @@ class TestANumericFieldRefusesProse:
         """One failure, and the fields after it still get written."""
         d, _page = driver()
         p = Plan(
-            job_id="a1b2c3d4", board="gasketworks", token="1",
+            job_id="a1b2c3d4",
+            board="gasketworks",
+            token="1",
             form_url="https://jobs.ashbyhq.com/gasketworks/0000/application",
-            company="Gasket Works", title="Widget Engineer", out_dir=Path("/tmp"),
+            company="Gasket Works",
+            title="Widget Engineer",
+            out_dir=Path("/tmp"),
             fields=(
-                FieldPlan(id=NUMBER, name=NUMBER, label="Comp", kind="text",
-                          section="questions", required=True, multi=False,
-                          value="negotiable", tier="B"),
-                FieldPlan(id="_systemfield_name", name="_systemfield_name",
-                          label="Full Name", kind="text", section="basic",
-                          required=True, multi=False, value="Alex Example", tier="A"),
+                FieldPlan(
+                    id=NUMBER,
+                    name=NUMBER,
+                    label="Comp",
+                    kind="text",
+                    section="questions",
+                    required=True,
+                    multi=False,
+                    value="negotiable",
+                    tier="B",
+                ),
+                FieldPlan(
+                    id="_systemfield_name",
+                    name="_systemfield_name",
+                    label="Full Name",
+                    kind="text",
+                    section="basic",
+                    required=True,
+                    multi=False,
+                    value="Alex Example",
+                    tier="A",
+                ),
             ),
-            files=(), unmapped=(), draftable=(), skipped=(),
-            submit_selector=None, submit_disabled=False,
+            files=(),
+            unmapped=(),
+            draftable=(),
+            skipped=(),
+            submit_selector=None,
+            submit_disabled=False,
         )
         result = fill_plan(p, d)
         assert len(result.failures) == 1
@@ -498,5 +547,6 @@ class TestAshbyIsRegistered:
         manual-apply is the silent gap the shared flag exists to close."""
         from src.apply import detect
         from src.shared.job_boards import SUBMITTABLE_SOURCES
+
         assert frozenset(F._DRIVER_NAMES) == detect.SUBMITTABLE_ATS
         assert detect.SUBMITTABLE_ATS == SUBMITTABLE_SOURCES

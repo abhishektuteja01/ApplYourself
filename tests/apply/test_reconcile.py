@@ -26,6 +26,7 @@ from .conftest import FORM_FIXTURES, load_fixture, load_html
 def merged():
     def _merged(name):
         return reconcile(scan_form(load_html(name)), parse_schema(load_fixture(name)))
+
     return _merged
 
 
@@ -40,6 +41,7 @@ def dom_scan(name):
 
 
 # --- the regression this module exists to prevent ----------------------------
+
 
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_every_rendered_field_survives_the_merge(merged, name):
@@ -63,12 +65,22 @@ def test_the_2b_dom_only_census_survives_with_its_required_flags(merged, name):
     from the schema alone drops every one of them; several are required, so the
     submit would fail on a field the planner never knew existed."""
     census = {
-        "country", "hispanic_ethnicity",
-        "school--0", "degree--0", "discipline--0",
-        "start-year--0", "end-year--0", "start-month--0", "end-month--0",
-        "company-name-0", "title-0", "current-role-0_1",
-        "start-date-month-0", "start-date-year-0",
-        "end-date-month-0", "end-date-year-0",
+        "country",
+        "hispanic_ethnicity",
+        "school--0",
+        "degree--0",
+        "discipline--0",
+        "start-year--0",
+        "end-year--0",
+        "start-month--0",
+        "end-month--0",
+        "company-name-0",
+        "title-0",
+        "current-role-0_1",
+        "start-date-month-0",
+        "start-date-year-0",
+        "end-date-month-0",
+        "end-date-year-0",
     }
     rec, scan = merged(name), dom_scan(name)
     rendered = {f.id for f in scan.fields} & census
@@ -91,8 +103,15 @@ def test_required_comes_from_the_dom_verbatim(merged, name):
 
 def test_education_block_survives_with_its_required_flags(merged):
     rec = merged("form_education")
-    for field_id in ("school--0", "degree--0", "discipline--0",
-                     "start-month--0", "start-year--0", "end-month--0", "end-year--0"):
+    for field_id in (
+        "school--0",
+        "degree--0",
+        "discipline--0",
+        "start-month--0",
+        "start-year--0",
+        "end-month--0",
+        "end-year--0",
+    ):
         assert field(rec, field_id).dom_only
         assert field(rec, field_id).section == "education"
     # Required varies per board; form_demographic renders the same block required.
@@ -103,8 +122,13 @@ def test_employment_block_survives_with_its_required_flags(merged):
     rec = merged("form_employment")
     employment = rec.by_section("employment")
     assert {f.name for f in employment} == {
-        "company-name-0", "title-0", "start-date-month-0", "start-date-year-0",
-        "end-date-month-0", "end-date-year-0", "current-role-0",
+        "company-name-0",
+        "title-0",
+        "start-date-month-0",
+        "start-date-year-0",
+        "end-date-month-0",
+        "end-date-year-0",
+        "current-role-0",
     }
     assert all(f.dom_only for f in employment)
     assert sum(1 for f in employment if f.required) == 6
@@ -112,12 +136,13 @@ def test_employment_block_survives_with_its_required_flags(merged):
 
 # --- the joins ---------------------------------------------------------------
 
+
 def test_location_alias_joins_candidate_location(merged):
     """The API calls it `location`; the form renders `candidate-location`."""
     loc = field(merged("form_minimal"), "candidate-location")
     assert loc.api_source == "location_questions"
     assert loc.label == "Location"
-    assert loc.kind == "react_select"      # DOM wins: the API declares input_text
+    assert loc.kind == "react_select"  # DOM wins: the API declares input_text
     assert loc.api_type == "input_text"
 
 
@@ -180,16 +205,22 @@ def test_an_unrendered_demographic_question_is_reported(merged):
         dom_scan("form_minimal"),
         dataclasses.replace(
             parse_schema(load_fixture("form_minimal")),
-            demographic=(DemographicQuestion(
-                id=99, label="Ghost", required=False,
-                type="multi_value_single_select", options=(),
-            ),),
+            demographic=(
+                DemographicQuestion(
+                    id=99,
+                    label="Ghost",
+                    required=False,
+                    type="multi_value_single_select",
+                    options=(),
+                ),
+            ),
         ),
     )
     assert f"{DEMOGRAPHIC_SOURCE}:99" in rec.api_only
 
 
 # --- enrichment --------------------------------------------------------------
+
 
 def test_select_options_come_from_the_api(merged):
     """The DOM expresses a react-select's choices only as ARIA plumbing, so the
@@ -204,7 +235,7 @@ def test_checkbox_group_options_come_from_the_dom(merged):
     and this is the one widget that still has options when the join misses."""
     group = field(merged("form_multiselect"), "question_36638875002[]")
     assert group.kind == "checkbox_group"
-    assert group.name == "question_36638875002"      # "[]" stripped for the join
+    assert group.name == "question_36638875002"  # "[]" stripped for the join
     assert len(group.options) == 6
     assert all(o.label and o.value for o in group.options)
 
@@ -247,16 +278,21 @@ def test_employer_authored_questions_keep_their_section(merged):
 
 # --- ambiguity is an error ---------------------------------------------------
 
+
 def _schema(questions=(), demographic=()):
     return BoardSchema(
-        questions=tuple(questions), demographic=tuple(demographic),
-        company_name="Widget Co", title="Fitter",
+        questions=tuple(questions),
+        demographic=tuple(demographic),
+        company_name="Widget Co",
+        title="Fitter",
     )
 
 
 def _question(name, label="Q", source="questions", options=()):
     return Question(
-        label=label, required=False, source=source,
+        label=label,
+        required=False,
+        source=source,
         fields=(Field(name=name, type="multi_value_single_select", options=tuple(options)),),
     )
 
@@ -266,10 +302,17 @@ def _scan(*fields):
 
 
 def _dom(field_id, **kw):
-    return DomField(**{
-        "id": field_id, "name": field_id, "label": "L", "required": False,
-        "kind": "text", "section": "questions", **kw,
-    })
+    return DomField(
+        **{
+            "id": field_id,
+            "name": field_id,
+            "label": "L",
+            "required": False,
+            "kind": "text",
+            "section": "questions",
+            **kw,
+        }
+    )
 
 
 def test_duplicate_api_field_name_raises():
@@ -287,7 +330,10 @@ def test_duplicate_dom_id_raises():
 
 def test_duplicate_demographic_id_raises():
     ghost = DemographicQuestion(
-        id=7, label="G", required=False, type="multi_value_single_select",
+        id=7,
+        label="G",
+        required=False,
+        type="multi_value_single_select",
         options=(DemographicOption(id=1, label="x"),),
     )
     with pytest.raises(ReconcileError, match="duplicate demographic question id"):
@@ -302,7 +348,10 @@ def test_a_dom_field_with_no_match_anywhere_is_still_merged():
 
 def test_checkbox_group_keeps_dom_options_with_no_api_match():
     group = _dom(
-        "question_9[]", name="question_9", kind="checkbox_group", multi=True,
+        "question_9[]",
+        name="question_9",
+        kind="checkbox_group",
+        multi=True,
         options=(DomOption(value="1", label="Alpha"), DomOption(value="2", label="Beta")),
     )
     merged_field = reconcile(_scan(group), _schema()).by_id("question_9[]")
@@ -314,13 +363,17 @@ def test_checkbox_group_keeps_dom_options_with_no_api_match():
 
 def test_api_option_values_survive_for_selects():
     schema = _schema(questions=[_question("question_1", options=[Option(label="Yes", value=1)])])
-    merged_field = reconcile(_scan(_dom("question_1", kind="react_select")), schema).by_id("question_1")
+    merged_field = reconcile(_scan(_dom("question_1", kind="react_select")), schema).by_id(
+        "question_1"
+    )
     assert merged_field.options == (MergedOption(label="Yes", value=1),)
 
 
 def _multi_question(name):
     return Question(
-        label="Mark all that apply", required=True, source="questions",
+        label="Mark all that apply",
+        required=True,
+        source="questions",
         fields=(Field(name=name, type="multi_value_multi_select", options=(), multi=True),),
     )
 
@@ -352,6 +405,7 @@ def test_cardinality_is_unchecked_when_the_api_declared_nothing(merged):
 
 # --- unhappy paths -----------------------------------------------------------
 
+
 def test_a_form_with_no_fields_merges_to_nothing():
     rec = reconcile(_scan(), _schema())
     assert rec.fields == () and rec.api_only == ()
@@ -376,7 +430,11 @@ def test_a_demographic_question_with_no_id_cannot_join_and_is_reported():
     """It has nothing to pair a rendered field with, so it is reported rather
     than silently indexed under a `None` key."""
     ghost = DemographicQuestion(
-        id=None, label="G", required=False, type="multi_value_single_select", options=(),
+        id=None,
+        label="G",
+        required=False,
+        type="multi_value_single_select",
+        options=(),
     )
     rec = reconcile(_scan(), _schema(demographic=[ghost]))
     assert rec.api_only == (f"{DEMOGRAPHIC_SOURCE}:None",)
@@ -390,12 +448,23 @@ def test_an_empty_label_on_both_sides_stays_empty_rather_than_guessing():
 def test_the_bracket_suffix_never_reaches_the_api_join_key():
     """The id is the selector and keeps "[]"; the name is the join key and does
     not. Joining on the id would miss every multi-select."""
-    group = _dom("question_9[]", name="question_9", kind="checkbox_group", multi=True,
-                 options=(DomOption(value="1", label="Alpha"),))
-    schema = _schema(questions=[Question(
-        label="Pick", required=True, source="questions",
-        fields=(Field(name="question_9", type="multi_value_multi_select", multi=True),),
-    )])
+    group = _dom(
+        "question_9[]",
+        name="question_9",
+        kind="checkbox_group",
+        multi=True,
+        options=(DomOption(value="1", label="Alpha"),),
+    )
+    schema = _schema(
+        questions=[
+            Question(
+                label="Pick",
+                required=True,
+                source="questions",
+                fields=(Field(name="question_9", type="multi_value_multi_select", multi=True),),
+            )
+        ]
+    )
     merged_field = reconcile(_scan(group), schema).by_id("question_9[]")
     assert merged_field.api_source == "questions"
     assert merged_field.options == (MergedOption(label="Alpha", value="1"),)
@@ -405,14 +474,16 @@ def test_the_bracket_suffix_never_reaches_the_api_join_key():
 
 # Verbatim from a live posting whose runs failed with
 # "gdpr_demographic_data_consent_given is required and empty".
-ASANA_DATA_COMPLIANCE = [{
-    "type": "gdpr",
-    "requires_consent": False,
-    "requires_processing_consent": False,
-    "requires_retention_consent": False,
-    "retention_period": None,
-    "demographic_data_consent_applies": True,
-}]
+ASANA_DATA_COMPLIANCE = [
+    {
+        "type": "gdpr",
+        "requires_consent": False,
+        "requires_processing_consent": False,
+        "requires_retention_consent": False,
+        "retention_period": None,
+        "demographic_data_consent_applies": True,
+    }
+]
 
 
 def _with_compliance(name, data_compliance):
@@ -429,7 +500,11 @@ def test_the_gdpr_demographic_consent_box_is_planned_as_an_ordinary_question():
     box = field(rec, "gdpr_demographic_data_consent_given_1")
     assert box.name == "gdpr_demographic_data_consent_given"
     assert (box.kind, box.section, box.required, box.multi) == (
-        "checkbox", "questions", True, False)
+        "checkbox",
+        "questions",
+        True,
+        False,
+    )
     assert box.label == (
         "By checking this box, I consent to Bearing Energy collecting, storing, "
         "and processing my responses to the demographic data surveys above."
@@ -440,11 +515,19 @@ def test_the_gdpr_demographic_consent_box_is_planned_as_an_ordinary_question():
 
 
 def test_processing_consent_is_planned_too():
-    rec = _with_compliance("form_minimal", [{
-        "type": "gdpr", "requires_consent": True, "requires_processing_consent": True,
-        "requires_retention_consent": True, "retention_period": 366,
-        "demographic_data_consent_applies": False,
-    }])
+    rec = _with_compliance(
+        "form_minimal",
+        [
+            {
+                "type": "gdpr",
+                "requires_consent": True,
+                "requires_processing_consent": True,
+                "requires_retention_consent": True,
+                "retention_period": 366,
+                "demographic_data_consent_applies": False,
+            }
+        ],
+    )
     ids = [f.id for f in rec.fields]
     assert "gdpr_processing_consent_given_1" in ids
     assert "gdpr_demographic_data_consent_given_1" not in ids
@@ -453,9 +536,15 @@ def test_processing_consent_is_planned_too():
 
 
 def test_no_consent_flag_means_no_consent_box():
-    rec = _with_compliance("form_demographic", [{
-        "type": "gdpr", "demographic_data_consent_applies": False,
-    }])
+    rec = _with_compliance(
+        "form_demographic",
+        [
+            {
+                "type": "gdpr",
+                "demographic_data_consent_applies": False,
+            }
+        ],
+    )
     assert not any(f.id.startswith("gdpr_") for f in rec.fields)
 
 
@@ -464,8 +553,14 @@ def test_a_consent_box_the_dom_already_rendered_is_not_added_twice():
         _dom("gdpr_demographic_data_consent_given_1", kind="checkbox", required=True),
         name="gdpr_demographic_data_consent_given",
     )
-    schema = parse_schema({"questions": [], "company_name": "Widget Co", "title": "Fitter",
-                           "data_compliance": ASANA_DATA_COMPLIANCE})
+    schema = parse_schema(
+        {
+            "questions": [],
+            "company_name": "Widget Co",
+            "title": "Fitter",
+            "data_compliance": ASANA_DATA_COMPLIANCE,
+        }
+    )
     rec = reconcile(_scan(rendered), schema)
     assert [f.id for f in rec.fields] == ["gdpr_demographic_data_consent_given_1"]
     assert rec.fields[0].api_source is None
@@ -473,6 +568,7 @@ def test_a_consent_box_the_dom_already_rendered_is_not_added_twice():
 
 def test_a_non_list_data_compliance_raises():
     from src.apply.schema import SchemaError
+
     with pytest.raises(SchemaError, match="data_compliance is not a list"):
         parse_schema({"questions": [], "data_compliance": {"type": "gdpr"}})
 
@@ -482,16 +578,20 @@ def test_api_descriptions_are_carried_as_plain_text(merged):
     rec = merged("form_multiselect")
     disability = field(rec, "question_36638879002")
     assert disability.description.startswith(
-        "In alignment with our commitment to diversity and inclusion")
+        "In alignment with our commitment to diversity and inclusion"
+    )
     assert "<" not in disability.description
     assert field(rec, "first_name").description == ""
 
 
 def test_an_entity_escaped_description_is_unescaped_before_stripping():
-    schema = _schema(questions=[dataclasses.replace(
-        _question("question_1"),
-        description="&lt;p&gt;Please review the &lt;a href=&quot;x&quot;&gt;agreement&lt;/a&gt;.&lt;/p&gt;",
-    )])
+    schema = _schema(
+        questions=[
+            dataclasses.replace(
+                _question("question_1"),
+                description="&lt;p&gt;Please review the &lt;a href=&quot;x&quot;&gt;agreement&lt;/a&gt;.&lt;/p&gt;",
+            )
+        ]
+    )
     rec = reconcile(_scan(_dom("question_1")), schema)
     assert rec.by_id("question_1").description == "Please review the agreement."
-

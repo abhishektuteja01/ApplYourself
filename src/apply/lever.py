@@ -27,6 +27,7 @@ Two things Greenhouse never needed to handle:
 Pure functions over an HTML string for the scan and the page's company and
 title; network lives in `load_board`.
 """
+
 from __future__ import annotations
 
 import re
@@ -68,7 +69,7 @@ class LeverScanError(DomScanError):
 class Posting:
     slug: str
     posting_id: str
-    region: str = ""   # "eu" for jobs.eu.lever.co; the form lives on that host
+    region: str = ""  # "eu" for jobs.eu.lever.co; the form lives on that host
 
     @property
     def token(self) -> str:
@@ -98,6 +99,7 @@ class _Schema:
 class LeverBoard:
     """Same attribute shape as `greenhouse.BoardForm` — `plan_for_board` is
     duck-typed over it on purpose."""
+
     posting: Posting
     slug: str
     scan: _Scan
@@ -116,8 +118,11 @@ def parse_posting(url: str) -> Posting:
         if "lever.co" in (urlparse(text).hostname or ""):
             raise ApplyUrlError(f"Lever URL with no posting id: {text}")
         raise ApplyUrlError(f"not a Lever posting URL: {text}")
-    return Posting(slug=match.group("slug"), posting_id=match.group("posting_id"),
-                   region=(match.group("region") or "").lower())
+    return Posting(
+        slug=match.group("slug"),
+        posting_id=match.group("posting_id"),
+        region=(match.group("region") or "").lower(),
+    )
 
 
 def _text(el) -> str:
@@ -132,8 +137,7 @@ def _document(page_html: str):
     try:
         return lxml_html.fromstring(page_html)
     except (ParserError, ValueError) as exc:
-        raise LeverScanError(f"could not parse the document: "
-                             f"{type(exc).__name__}: {exc}") from exc
+        raise LeverScanError(f"could not parse the document: {type(exc).__name__}: {exc}") from exc
 
 
 def page_identity(page_html: str) -> tuple[str, str]:
@@ -148,8 +152,7 @@ def page_identity(page_html: str) -> tuple[str, str]:
 
     og = doc.xpath('//meta[@property="og:title"]/@content')
     titles = doc.xpath("//title")
-    heading = _WS.sub(" ", (og[0] if og else "") or
-                      (_text(titles[0]) if titles else "")).strip()
+    heading = _WS.sub(" ", (og[0] if og else "") or (_text(titles[0]) if titles else "")).strip()
 
     company = ""
     if heading and title and heading.endswith(_TITLE_SEPARATOR + title):
@@ -189,9 +192,11 @@ def _label_text(question_el) -> str:
 def _has_required_marker(question_el) -> bool:
     """Lever's asterisk `<span class="required">`, or a `required-field`
     wrapper on a card. Whole class tokens only."""
-    return bool(question_el.xpath(
-        f'.//span[{_class_token("required")}] | .//*[{_class_token("required-field")}]'
-    ))
+    return bool(
+        question_el.xpath(
+            f".//span[{_class_token('required')}] | .//*[{_class_token('required-field')}]"
+        )
+    )
 
 
 def _is_eeoc(question_el) -> bool:
@@ -211,11 +216,7 @@ STRUCTURED_PARTNER = "selectedLocation"
 
 
 def _has_structured_partner(question_el) -> bool:
-    return bool(
-        question_el.xpath(
-            f'.//input[@type="hidden" and @name="{STRUCTURED_PARTNER}"]'
-        )
-    )
+    return bool(question_el.xpath(f'.//input[@type="hidden" and @name="{STRUCTURED_PARTNER}"]'))
 
 
 def _select_options(select_el) -> tuple[MergedOption, ...]:
@@ -238,15 +239,19 @@ def _scan_question(question_el) -> MergedField | None:
         name = radios[0].get("name") or ""
         options = []
         for radio in radios:
-            spans = radio.xpath(
-                'following-sibling::span[contains(@class, "eeo-option-text")][1]'
-            )
+            spans = radio.xpath('following-sibling::span[contains(@class, "eeo-option-text")][1]')
             opt_label = _text(spans[0]) if spans else (radio.get("value") or "")
             options.append(MergedOption(label=opt_label, value=radio.get("value") or ""))
         required = required or any(r.get("required") is not None for r in radios)
         return MergedField(
-            id=name, name=name, label=label, required=required,
-            kind="radio_group", section=section, multi=False, options=tuple(options),
+            id=name,
+            name=name,
+            label=label,
+            required=required,
+            kind="radio_group",
+            section=section,
+            multi=False,
+            options=tuple(options),
         )
 
     # Checkboxes, before the generic branch — they group by shared name the
@@ -264,19 +269,28 @@ def _scan_question(question_el) -> MergedField | None:
             # checkbox itself `value="1"`, the standard HTML checked/unchecked
             # idiom, so a truthy `value` does not make it a group of one.
             return MergedField(
-                id=name, name=name, label=label, required=required,
-                kind="checkbox", section=section, multi=False, options=(),
+                id=name,
+                name=name,
+                label=label,
+                required=required,
+                kind="checkbox",
+                section=section,
+                multi=False,
+                options=(),
             )
         options = []
         for box in checkboxes:
-            spans = box.xpath(
-                'following-sibling::span[contains(@class, "eeo-option-text")][1]'
-            )
+            spans = box.xpath('following-sibling::span[contains(@class, "eeo-option-text")][1]')
             opt_label = _text(spans[0]) if spans else (box.get("value") or "")
             options.append(MergedOption(label=opt_label, value=box.get("value") or ""))
         return MergedField(
-            id=name, name=name, label=label, required=required,
-            kind="checkbox_group", section=section, multi=True,
+            id=name,
+            name=name,
+            label=label,
+            required=required,
+            kind="checkbox_group",
+            section=section,
+            multi=True,
             options=tuple(options),
         )
 
@@ -319,8 +333,14 @@ def _scan_question(question_el) -> MergedField | None:
             raise LeverScanError(f"unknown input type {raw!r} on name={name!r}")
 
     return MergedField(
-        id=name, name=name, label=label, required=required,
-        kind=kind, section=section, multi=False, options=options,
+        id=name,
+        name=name,
+        label=label,
+        required=required,
+        kind=kind,
+        section=section,
+        multi=False,
+        options=options,
     )
 
 

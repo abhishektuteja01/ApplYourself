@@ -19,6 +19,7 @@ validated by loading the whole bank first, and the previous file is kept in
 
 R7: the session decides what each label means; this module only records it.
 """
+
 from __future__ import annotations
 
 import copy
@@ -80,8 +81,7 @@ HISTORY_KEEP = 20
 def write(data: dict, path: Path | None = None) -> Path:
     """Validate, keep the old file in `.bank_history/`, then replace atomically."""
     if unattended():
-        raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an "
-                        "unattended run")
+        raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
     p = Path(path) if path is not None else DEFAULT_PATH
     A.answers_from(data, where=str(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
@@ -91,8 +91,9 @@ def write(data: dict, path: Path | None = None) -> Path:
         history = p.parent / ".bank_history"
         history.mkdir(exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
-        (history / f"{p.stem}.{stamp}.yaml").write_text(p.read_text(encoding="utf-8"),
-                                                          encoding="utf-8")
+        (history / f"{p.stem}.{stamp}.yaml").write_text(
+            p.read_text(encoding="utf-8"), encoding="utf-8"
+        )
         for old in sorted(history.glob(f"{p.stem}.[0-9][0-9][0-9][0-9]-*.yaml"))[:-HISTORY_KEEP]:
             old.unlink()
     os.replace(tmp, p)
@@ -155,8 +156,10 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
         label = lesson.label.strip()
         taken = next((k for k in judged if A.norm_label(k) == wording), None)
         if taken is not None and judged[taken] != lesson.fact:
-            return changes, (f"{label!r} is already judged {judged[taken]}; "
-                             f"undo it first (apply learn --undo-fact)")
+            return changes, (
+                f"{label!r} is already judged {judged[taken]}; "
+                f"undo it first (apply learn --undo-fact)"
+            )
         if taken is None:
             judged[label] = dict(lesson.fact)
             changes.append(f"fact wording: {label!r} -> {lesson.fact}")
@@ -167,8 +170,10 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
     qid = lesson.question
     if qid not in questions:
         if not _reusable(lesson.source):
-            return changes, (f"{qid}: an answer from {lesson.source or 'nowhere'} is about "
-                             f"one employer, so it stays with this role")
+            return changes, (
+                f"{qid}: an answer from {lesson.source or 'nowhere'} is about "
+                f"one employer, so it stays with this role"
+            )
         near = [q for q in questions if len(qid) >= _TYPO_PREFIX_MIN and q.startswith(qid)]
         if near:
             return changes, f"{qid}: did you mean {near[0]!r}?"
@@ -178,8 +183,10 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
         owner = _owner_of(questions, wording)
         if owner:
             return changes, f"{wording!r} already belongs to {owner}"
-        spec = {"answer": values[0] if len(values) == 1 else values,
-                "wordings": [lesson.label.strip()]}
+        spec = {
+            "answer": values[0] if len(values) == 1 else values,
+            "wordings": [lesson.label.strip()],
+        }
         if lesson.source:
             spec["source"] = lesson.source
         if lesson.job_id:
@@ -202,8 +209,10 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
                 if known_here:
                     # The board offered the bank's own answer and the user
                     # chose another: a different question, or a wrong answer.
-                    return changes, (f"{qid} answers {known_here[0]!r}, this form was "
-                                     f"answered {option!r}; give it its own question id")
+                    return changes, (
+                        f"{qid} answers {known_here[0]!r}, this form was "
+                        f"answered {option!r}; give it its own question id"
+                    )
                 candidates.append(option)
                 changes.append(f"option -> {qid}: {option!r}")
             spec["answer"] = candidates[0] if len(candidates) == 1 else candidates
@@ -217,7 +226,7 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
 
 
 def _still_answers(data: dict, lesson: Lesson) -> str:
-    """"" when the bank, with this lesson in, finds the lesson's question for
+    """ "" when the bank, with this lesson in, finds the lesson's question for
     its label; else why not."""
     if lesson.claim is not None or (not lesson.question and lesson.fact is None):
         return ""
@@ -226,8 +235,11 @@ def _still_answers(data: dict, lesson: Lesson) -> str:
     except A.AnswersError as exc:
         return f"the bank would not load: {exc}"
     if lesson.fact is not None:
-        return ("" if A.norm_label(lesson.label) in bank.fact_wordings
-                else f"{lesson.label.strip()!r} would not be found")
+        return (
+            ""
+            if A.norm_label(lesson.label) in bank.fact_wordings
+            else f"{lesson.label.strip()!r} would not be found"
+        )
     found = A.find_question(lesson.label, bank)
     if found is None or found[0].id != lesson.question:
         got = found[0].id if found else "nothing"
@@ -249,9 +261,13 @@ def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
             changes.append(f"not saved: {refusal}")
             continue
         questions = trial.get("questions") or {}
-        if (lesson.misfired and lesson.misfired != lesson.question  # noqa: SIM102
-                and lesson.misfired in questions and wording
-                and lesson.question in questions):
+        if (  # noqa: SIM102
+            lesson.misfired
+            and lesson.misfired != lesson.question
+            and lesson.misfired in questions
+            and wording
+            and lesson.question in questions
+        ):
             # Only once the right answer is saved: a "not" with nowhere else
             # for the label to go would just park it.
             if _add(questions[lesson.misfired], "not", wording):
@@ -292,8 +308,14 @@ def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:
     return changes
 
 
-def undo(qid: str = "", wording: str = "", keyword: str = "", claim: str = "",
-         fact: str = "", path: Path | None = None) -> str:
+def undo(
+    qid: str = "",
+    wording: str = "",
+    keyword: str = "",
+    claim: str = "",
+    fact: str = "",
+    path: Path | None = None,
+) -> str:
     """Take one thing back: a whole question, one wording or keyword of it, one
     claim, or one fact wording. A question left with no way to be found is
     removed whole."""
@@ -361,6 +383,8 @@ def review(path: Path | None = None, since_job: str = "") -> list[str]:
     for option, claim in (data.get("claims") or {}).items():
         lines.append(f"claim {option!r}: {claim}")
     for label, judged in (data.get("fact_wordings") or {}).items():
-        lines.append(f"fact wording {label!r}: Yes when {judged['fact']} is "
-                     f"{str(judged['yes_when']).lower()}")
+        lines.append(
+            f"fact wording {label!r}: Yes when {judged['fact']} is "
+            f"{str(judged['yes_when']).lower()}"
+        )
     return lines

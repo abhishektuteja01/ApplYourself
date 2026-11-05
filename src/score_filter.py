@@ -5,6 +5,7 @@ Pure functions, driven by profile/scoring.yaml (shared policy), the answer
 bank (sponsorship needs) and profile/verticals.yaml (per-lane `drop_phrases`
 and `years`). No LLM (R7). The judge reads facts; it never re-checks a rule.
 """
+
 from __future__ import annotations
 
 import re
@@ -22,7 +23,10 @@ from src.shared.config_keys import check_keys
 SCORING_PATH = paths.PROFILE / "scoring.yaml"
 _SCHEMA_VERSION = 1
 _SCORING_KEYS = {
-    "schema_version": None, "ineligible": None, "no_sponsorship": None, "languages": None,
+    "schema_version": None,
+    "ineligible": None,
+    "no_sponsorship": None,
+    "languages": None,
     "keywords_max": None,
     "jd_quality": {"min_words", "skills_cap"},
     "action": {"review_min", "tailor_min"},
@@ -34,8 +38,15 @@ _SCORING_KEYS = {
 SPONSORSHIP_NEEDS = ("never", "later", "now")
 # What a JD says about sponsorship, as the judge reports it. derive() turns it
 # into the stored label with sponsorship_label().
-SPONSORSHIP_FACTS = ("offers", "no_sponsorship", "no_future_sponsorship",
-                     "no_opt_support", "status_bar", "right_to_work", "silent")
+SPONSORSHIP_FACTS = (
+    "offers",
+    "no_sponsorship",
+    "no_future_sponsorship",
+    "no_opt_support",
+    "status_bar",
+    "right_to_work",
+    "silent",
+)
 
 
 @dataclass(frozen=True)
@@ -111,15 +122,21 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
     file), never from scoring.yaml."""
     path = path or SCORING_PATH
     if not path.exists():
-        raise FileNotFoundError(f"{path} not found — copy profile/scoring.example.yaml "
-                                "to profile/scoring.yaml (/onboarding does this)")
+        raise FileNotFoundError(
+            f"{path} not found — copy profile/scoring.example.yaml "
+            "to profile/scoring.yaml (/onboarding does this)"
+        )
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise ValueError(f"{path}: schema_version must be {_SCHEMA_VERSION}")
     if bank_path is None:
         from src.apply import answers as bank_module
-        bank_path = (bank_module.EXAMPLE_PATH if path.name.startswith("scoring.example")
-                     else bank_module.DEFAULT_PATH)
+
+        bank_path = (
+            bank_module.EXAMPLE_PATH
+            if path.name.startswith("scoring.example")
+            else bank_module.DEFAULT_PATH
+        )
     home_need, country_needs, default_need = sponsorship_needs(Path(bank_path))
     q, a = data.get("jd_quality") or {}, data.get("action") or {}
     t, s = data.get("trim_jd") or {}, data.get("shortlist") or {}
@@ -244,19 +261,24 @@ def years_required(jd_text: Any, degree: int | None = None) -> int:
     text = jd_text.lower().replace("\\", "").replace("**", "")
     cuts = [m.start() for m in (_PREFERRED_RE.search(text), _PREFERRED_INLINE_RE.search(text)) if m]
     if cuts:
-        text = text[:min(cuts)]
+        text = text[: min(cuts)]
     groups: list[list[tuple[int, int | None]]] = []
     end = 0
     for m in _YEARS_RE.finditer(text):
         n = int(m.group(1))
         if n >= _MAX_PLAUSIBLE_YEARS or not m.group(3):
             continue
-        before = text[max(0, m.start() - 25):m.start()]
+        before = text[max(0, m.start() - 25) : m.start()]
         if _COMPANY_AGE_RE.search(before) or "education" in before:
             continue
         path = (n, _path_degree(text, m.start(), end))
-        alt = (degree is not None and groups and path[1] is not None
-               and groups[-1][-1][1] is not None and re.search(r"\bor\b", text[end:m.start()]))
+        alt = (
+            degree is not None
+            and groups
+            and path[1] is not None
+            and groups[-1][-1][1] is not None
+            and re.search(r"\bor\b", text[end : m.start()])
+        )
         if alt:
             groups[-1].append(path)
         else:
@@ -304,6 +326,7 @@ def wrap(text: str, width: int = 100) -> str:
 # The drop decision
 # ---------------------------------------------------------------------
 
+
 def drop_reason(row: dict, cfg: ScoringConfig) -> tuple[str, str] | None:
     """(code, detail) if the row is dropped before judging, else None.
     Codes, in order: no-lane, ineligible, phrase, years."""
@@ -338,10 +361,12 @@ def seniority_cap(lane: verticals.Vertical, years: int) -> int | None:
 # Rules over the facts a judge reads
 # ---------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class CountryRule:
     """Where each lane may be scored. `home` countries allow every lane; a
     country in `abroad` allows only its listed lanes; any other is out."""
+
     home: frozenset[str]
     abroad: dict[str, frozenset[str]]
 
@@ -373,8 +398,9 @@ def sponsorship_label(facts: list[str], country: Any, cfg: ScoringConfig) -> str
     strictest outcome of any one statement. An offer of sponsorship cancels a
     right-to-work requirement."""
     facts = [f for f in facts if not (f == "right_to_work" and "offers" in facts)]
-    return max((_fact_label(f, country, cfg) for f in facts or ["silent"]),
-               key=_LABEL_RANK.__getitem__)
+    return max(
+        (_fact_label(f, country, cfg) for f in facts or ["silent"]), key=_LABEL_RANK.__getitem__
+    )
 
 
 def need_in(country: Any, cfg: ScoringConfig) -> str:
@@ -387,8 +413,7 @@ def need_in(country: Any, cfg: ScoringConfig) -> str:
         return cfg.sponsorship_need
     table = dict(cfg.country_needs)
     names = [canonical_place(c) or c.strip() for c in country.split(";")]
-    needs = [table.get(n, cfg.default_need) for n in names
-             if n and n.casefold() != "remote"]
+    needs = [table.get(n, cfg.default_need) for n in names if n and n.casefold() != "remote"]
     return min(needs, key=SPONSORSHIP_NEEDS.index) if needs else cfg.sponsorship_need
 
 
