@@ -121,16 +121,18 @@ pass afterwards, once you've seen real postings in the lane.
 <details>
 <summary><b>The vertical config schema</b></summary>
 
-Config lives in `profile/verticals.yaml` (gitignored user data), with a matching
-`profile/verticals/<name>/` directory holding `rubric.md` and `tailoring.md`.
-Each block's `resume:` key holds the lane's resume shape: section order, bullet
-budget, skill line labels and a baseline summary.
-`profile/verticals.example.yaml` documents every field, and
-`profile/verticals/example_*/` show the per-lane files.
+Config lives in `profile/verticals.yaml` (gitignored user data: `lanes:`,
+`defaults:` and `classifier_rules`), with a matching `profile/verticals/<name>/`
+directory holding the lane's `lane.yaml`, `rubric.md` and `tailoring.md`.
+Each `lane.yaml` sits over `defaults:`: a default list follows the lane's own,
+and any other key the lane sets replaces the default's. Its `resume:` key holds
+the lane's resume shape: section order, bullet budget, skill line labels and a
+baseline summary. `profile/verticals.example.yaml` and
+`profile/verticals/example_*/` show every field and the per-lane files.
 
 - Vertical names must match `^[a-z][a-z0-9_]*$`, because they become parquet
   values, `applications/<name>/` directories, and staging-file suffixes.
-- Mapping order under `verticals:` sets shortlist section order. First is primary.
+- `lanes:` order sets shortlist section order. First is primary.
 - `classifier_rules` order is the ambiguity policy: first match wins. One lane
   may own several rules at different priorities.
 - `drop_phrases` drops a row whose JD holds one (whole words). `years` maps
@@ -143,7 +145,7 @@ budget, skill line labels and a baseline summary.
 - Salary is not a lane key: it is `salary` on each country row of the answer bank
   (`{amount, currency, markup_pct, lanes}`), read only by `/apply`.
 
-`src/shared/verticals.py` is the single loader and it is **strict**: a vertical block
+`src/shared/verticals.py` is the single loader and it is **strict**: a lane
 missing any required key raises `ValueError`. Because `tests/conftest.py` injects
 config through an autouse fixture, one malformed block errors the entire test
 suite. `uv run verticals-check` fails loud if a rubric, tailoring file or
@@ -156,9 +158,9 @@ suite. `uv run verticals-check` fails loud if a rubric, tailoring file or
 <summary><b>Adding a lane by hand</b></summary>
 
 `/new-vertical` exists because copying `profile/verticals/example_primary/` is
-not enough on its own. You also need, in `profile/verticals.yaml`, the block key,
-its `display_name`, its `resume:` shape and the `vertical:` values in
-`classifier_rules`; and on the shared sources, the lane's `lanes:` budgets in
+not enough on its own. You also need a `lane.yaml` with its `display_name`,
+terms and `resume:` shape; in `profile/verticals.yaml`, the lane in `lanes:` and
+its `vertical:` values in `classifier_rules`; and on the shared sources, the lane's `lanes:` budgets in
 `resume.yaml`, `default_for` on its baseline bullets and `show` on its skills.
 `verticals-check` names whatever is missing.
 
@@ -211,7 +213,7 @@ Already set up and want a health check? `/onboarding audit` reports what's
 missing or invalid and changes nothing. Prefer to do it by hand?
 `uv run onboard-scaffold --vertical <lane> --work-auth <status>` does the
 mechanical half — every `profile/*.example.*` copied to its real name, the
-example lanes stripped out of `verticals.yaml`, your home country's
+example lanes taken out of `verticals.yaml`'s `lanes:` and rules, your home country's
 work-authorization row set in `application_answers.yaml` — and leaves the writing to you. It leaves `verticals.yaml`
 without a lane, so it won't load until `/new-vertical <lane>` writes one. See
 [What only you can supply](#what-only-you-can-supply).
@@ -331,7 +333,7 @@ in `.claude/commands/`, not in `src/`.
 | `/track <job_id> <state>` | Move a role through the state machine. The **only** writer of state. | `pipeline/<job_id>/state.yaml` |
 | `/standup` | Rebuild the whole-pipeline view. Read-only on state. | `pipeline.md` |
 | `/ingest <url> <vertical> [resume] [cover-letter]` | Single-URL fast path: ingest, score one row, tailor, letter. Stops before applying. | everything the chained commands write |
-| `/new-vertical <name>` | Quick-add a lane as pure config: the loader's minimum, one confirm-or-edit. | `profile/verticals.yaml` block + `profile/verticals/<name>/` |
+| `/new-vertical <name>` | Quick-add a lane as pure config: the loader's minimum, one confirm-or-edit. | `profile/verticals/<name>/` (`lane.yaml` and prose) + its `lanes:` entry and rule in `profile/verticals.yaml` |
 | `/tune-vertical <name>` | Deep tuning pass on a lane that already exists, against rows you've seen: search terms, `skill_weights`, the title gate, classifier collisions, drop rules, rubric tiers, the resume shape. | the same two, edited in place |
 | `/suggest-synonyms` | Three-track audit of your bullets and skills against real shortlist keywords. Proposes, never edits. | `profile/synonyms_draft_<date>.md` |
 | `/no_ai_slop` | Editor pass: sharpen a draft, or name its AI-slop patterns without rewriting. | nothing; returns the edit in conversation |
@@ -721,7 +723,7 @@ rather than skip**, hence the flag. `tests/test_optional_dependencies.py` is the
 one that covers the no-libpostal path, and it always runs.
 
 Tests run against a synthetic three-lane config in
-`tests/fixtures/verticals.yaml`, whose three lanes (`example_primary`,
+`tests/fixtures/verticals.yaml` and `tests/fixtures/verticals/<lane>/lane.yaml`, whose three lanes (`example_primary`,
 `example_secondary`, `example_tertiary`) come from a fictional
 widget/sprocket/cog world. Never your real one.
 `tests/test_real_config_drift.py` additionally checks your live

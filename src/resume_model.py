@@ -8,7 +8,7 @@ Every fact has one home, and each thing says where it appears:
                            keyed by the bullet prefix (`DEL` in `B-DEL-01`)
   profile/bullets.md       claims; `default_for: [lanes]` marks baseline picks
   profile/skills_master.md skills; `show: {lane: line label}` places a skill
-  verticals.yaml lane      `resume:` shape: section order, total bullet budget,
+  verticals/<lane>/lane.yaml `resume:` shape: section order, total bullet budget,
                            skill line labels, baseline summary
 
 `check_sources` validates every pointer between them (run by verticals-check),
@@ -312,7 +312,7 @@ def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
 
 def _source_texts(src: Sources, lanes: dict) -> list[tuple[str, str]]:
     out = [(str(b.get("canonical") or ""), f"bullets.md {bid}") for bid, b in src.bullets.items()]
-    out += [(v.resume.summary, f"verticals.yaml {n}.resume.summary") for n, v in lanes.items()]
+    out += [(v.resume.summary, f"verticals/{n}/lane.yaml resume.summary") for n, v in lanes.items()]
     out += [
         (str(c.get(k) or ""), f"resume.yaml contexts.{ctx}.{k}")
         for ctx, c in src.contexts.items()

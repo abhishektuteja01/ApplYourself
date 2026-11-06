@@ -2,7 +2,7 @@
 seniority cap, the country rule and the sponsorship label.
 
 Pure functions, driven by profile/scoring.yaml (shared policy), the answer
-bank (sponsorship needs) and profile/verticals.yaml (per-lane `drop_phrases`
+bank (sponsorship needs) and each lane's profile/verticals/<lane>/lane.yaml (`drop_phrases`
 and `years`). No LLM (R7). The judge reads facts; it never re-checks a rule.
 """
 

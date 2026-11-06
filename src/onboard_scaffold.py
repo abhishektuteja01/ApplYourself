@@ -23,10 +23,11 @@ and Playwright's Chrome. application_answers.yaml is always copied, so
 The verticals.yaml strip is line-based, not a parse-and-dump: `ruamel.yaml` is
 not a dependency and PyYAML would drop every comment in the file.
 
-After the strip, `verticals.yaml` no longer loads: it has no lanes and no
-classifier rules, and `default_vertical` names the lane the user has not
-written yet. `/new-vertical <name>` fills all three. That is the intended
-hand-off state, and the summary says so.
+After the strip, `verticals.yaml` no longer loads: `lanes:` is empty, there
+are no classifier rules, and `default_vertical` names the lane the user has not
+written yet. `/new-vertical <name>` fills all three and writes the lane's
+`profile/verticals/<name>/lane.yaml`. That is the intended hand-off state, and
+the summary says so.
 
 Run: `uv run onboard-scaffold --vertical <name> --work-auth <status>`.
 """
@@ -154,11 +155,11 @@ def example_lane_names(example_path: Path) -> list[str]:
     """The lanes the shipped template defines. Derived, never hardcoded: a
     vertical name in src/ would break the vertical-agnostic rule."""
     data = yaml.safe_load(example_path.read_text(encoding="utf-8"))
-    return list((data or {}).get("verticals") or {})
+    return list((data or {}).get("lanes") or [])
 
 
 def strip_example_lanes(text: str, lanes: list[str], default_vertical: str) -> str:
-    """Remove the example lane blocks and every classifier rule naming one,
+    """Empty `lanes:`, remove every classifier rule naming an example lane,
     and repoint default_vertical. Comments and key order survive."""
     lines = text.splitlines()
     drop: set[int] = set()
@@ -177,9 +178,7 @@ def strip_example_lanes(text: str, lanes: list[str], default_vertical: str) -> s
 
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if _indent(line) == 2 and stripped.rstrip(":") in lanes and stripped.endswith(":"):
-            drop.update(range(i, _block_span(lines, i, 2)))
-        elif stripped.startswith("- vertical:"):
+        if stripped.startswith("- vertical:"):
             named = stripped.split(":", 1)[1].strip()
             if named in lanes:
                 drop.update(range(i, _block_span(lines, i, _indent(line))))
@@ -195,13 +194,15 @@ def strip_example_lanes(text: str, lanes: list[str], default_vertical: str) -> s
         if line.startswith("default_vertical:"):
             out.append(f"default_vertical: {default_vertical}")
             continue
+        if line.startswith("lanes:"):
+            out.append(f"# /new-vertical {default_vertical} adds your lane here.")
+            out.append("lanes: []")
+            continue
         if not line.strip() and out and not out[-1].strip():
             continue  # the removed blocks leave runs of blank lines behind
         out.append(line)
         stripped = line.strip()
-        if stripped == "verticals:":
-            out.append(f"  # /new-vertical {default_vertical} writes your lane here.")
-        elif stripped == "classifier_rules:":
+        if stripped == "classifier_rules:":
             out.append(f"  # /new-vertical {default_vertical} writes your rules here.")
     return "\n".join(out) + "\n"
 
@@ -223,7 +224,7 @@ def reconcile_verticals(default_vertical: str, copied: bool, dry_run: bool, rep:
     lanes = example_lane_names(example)
     if dry_run:
         rep.done.append(
-            f"would strip from {_rel(target)}: lanes {', '.join(lanes)}, every "
+            f"would strip from {_rel(target)}: `lanes:` {', '.join(lanes)}, every "
             f"classifier rule naming one; set default_vertical: {default_vertical}"
         )
         return

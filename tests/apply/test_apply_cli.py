@@ -323,14 +323,10 @@ class TestSalaryFor:
             _salary_bank(germany={"amount": 1, "currency": "EUR", "markup_pct": 5})
 
     def test_the_old_lane_key_names_where_it_moved(self, tmp_path):
-        from src.shared.config_schema import VerticalsFile, validate
+        from src.shared.config_schema import Lane, validate
 
         with pytest.raises(ValueError, match=r"moved to application_answers\.yaml"):
-            validate(
-                VerticalsFile,
-                {"verticals": {"example_primary": {"salary_expectation": {"fallback": 1}}}},
-                "verticals.yaml",
-            )
+            validate(Lane, {"salary_expectation": {"fallback": 1}}, "lane.yaml")
 
 
 class TestPlanCommand:

@@ -3,6 +3,7 @@ paths:
   - "src/shared/verticals.py"
   - "src/resume_model.py"
   - "profile/verticals.yaml"
+  - "profile/verticals/*/lane.yaml"
   - "profile/resume.yaml"
   - "profile/verticals.example.yaml"
   - "tests/fixtures/**"
@@ -12,8 +13,14 @@ paths:
 
 A "vertical" is a job lane. `src/shared/verticals.py` is the single source of truth loader.
 
-- Config lives in `profile/verticals.yaml` (gitignored user data) with a matching
-  `profile/verticals/<name>/{rubric.md, tailoring.md}` dir per vertical.
+- Config lives in `profile/verticals.yaml` (gitignored user data: `lanes:` order,
+  `defaults:`, `classifier_rules`) and one `profile/verticals/<name>/` dir per
+  lane holding `lane.yaml` (its block), `rubric.md` and `tailoring.md`. The
+  loader merges each `lane.yaml` over `defaults:`: a default list follows the
+  lane's own, any other key the lane sets replaces the default's. A lane is
+  loaded only when `lanes:` lists it. `lane.yaml` sits in `verticals/` beside
+  whichever verticals file names it, so the example and the fixture carry their
+  own.
 - **One source per resume fact** (`src/resume_model.py`): `profile/resume.yaml`
   holds name, contact, education and each context's header plus per-lane
   `{min, max, order}`; `bullets.md` holds claims and `default_for`;
@@ -27,10 +34,11 @@ A "vertical" is a job lane. `src/shared/verticals.py` is the single source of tr
 - The loader is **strict**: every vertical block must have all current required
   keys or it raises `ValueError`. Because `tests/conftest.py` injects the config
   via an autouse fixture, a malformed block errors the *entire* test suite.
-- One fixture, `tests/fixtures/verticals.yaml`, serves the whole suite. A schema
+- One fixture, `tests/fixtures/verticals.yaml` plus
+  `tests/fixtures/verticals/<lane>/lane.yaml`, serves the whole suite. A schema
   change updates it in the same change.
 - Templates for onboarding a new vertical: `profile/verticals.example.yaml` and
-  `profile/verticals/example_*/` (three: primary, secondary, tertiary — the
+  `profile/verticals/example_*/{lane.yaml, rubric.md, tailoring.md}` (three: primary, secondary, tertiary — the
   fixtures' `default_vertical` is tertiary). Use `/new-vertical` to add a lane,
   `/tune-vertical` to sharpen one.
 

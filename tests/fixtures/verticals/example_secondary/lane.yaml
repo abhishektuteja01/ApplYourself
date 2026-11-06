@@ -1,0 +1,57 @@
+# Lane `example_secondary`: listed in verticals.yaml `lanes:`, merged over its `defaults:`.
+display_name: Sprocket Compliance
+# The lane's resume shape. Picks live on bullets (default_for) and
+# skills (show), so this block names no ids.
+resume:
+  sections: [summary, projects, work, education, skills]
+  bullets: [4, 6]
+  skill_lines:
+    - "AI & Machine Learning"
+    - "Programming"
+    - "Databases & Tools"
+    - "Domain & Enterprise"
+  summary: >-
+    Builds and tests validation and LLM tooling for sprocket compliance and cog maintenance, backed by two years of widget plant operations.
+search_terms:
+  - Sprocket Risk
+  - Sprocket Validation
+  - Sprocket Governance
+  - Sprocket Risk Management
+  - Sprocket Compliance Analyst
+  - Cog Governance Analyst
+linkedin_terms:
+  - Sprocket Risk
+  - Sprocket Governance
+title_include_terms:
+  - sprocket
+  - governance
+  - compliance
+  - quantitative sprocket
+title_exclude_terms:
+  - software engineer
+  - cog learning
+  - quality
+  - clinical
+  - privacy
+  - nurse
+  - automation
+  - operations
+  - data analyst
+  - developer
+title_strong_keep_terms:
+  - sprocket risk management
+skill_weights:
+  sprocket_risk:
+    sprocket_validation: 9
+    sprocket_governance: 8
+  sprocket_quant:
+    sprocket_backtesting: 6
+# Dropped before judging when the JD holds one (whole words).
+drop_phrases:
+  - phd required
+  - ph.d. required
+  - doctorate required
+  - sprocket charter required
+  - sprocket certification required
+  - legacy sprocket ledger
+  - vendor sprocket risk

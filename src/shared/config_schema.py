@@ -64,9 +64,13 @@ class ClassifierRule(_Strict):
 
 
 class VerticalsFile(_Strict):
+    retired: ClassVar[dict[str, str]] = {
+        "verticals": "verticals/<lane>/lane.yaml, one file per lane (uv run config migrate)"
+    }
     schema_version: Any = None
     default_vertical: Any = None
-    verticals: dict[str, Lane] | None = None
+    lanes: Any = None
+    defaults: Lane | None = None
     classifier_rules: list[ClassifierRule] | None = None
 
 

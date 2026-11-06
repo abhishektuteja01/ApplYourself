@@ -1,0 +1,56 @@
+# Lane `example_primary`: listed in verticals.yaml `lanes:`, merged over its `defaults:`.
+display_name: Widget Engineering
+# The lane's resume shape. Picks live on bullets (default_for) and
+# skills (show), so this block names no ids.
+resume:
+  sections: [summary, work, projects, education, skills]
+  bullets: [4, 6]
+  skill_lines:
+    - "Domain & Enterprise"
+    - "Programming"
+    - "AI & Machine Learning"
+    - "Databases & Tools"
+  summary: >-
+    Widget operations analyst who reconciles plant output, configures assembly lines and builds Python and SQL tooling for sprocket compliance data.
+# No term contains "Engineer" — "engineer" is a title exclude term here.
+search_terms:
+  - Widget Functional Consultant
+  - Widget Platform Analyst
+  - Widget Operations Analyst
+  - Gizmo Systems Consultant
+  - Gizmo Reconciliation Analyst
+linkedin_terms:
+  - Widget Functional Consultant
+  - Gizmo Systems Consultant
+title_include_terms:
+  - widget
+  - gizmo
+  - doohickey
+title_exclude_terms:
+  - senior
+  - principal
+  - lead
+  - head of
+  - clinical
+  - nurse
+  - rival doohickey
+  - manager
+  - director
+  - architect
+  - vice president
+  - buyer
+  - sourcing
+  - procurement
+  - engineer
+skill_weights:
+  widgets:
+    widget_assembly: 10
+    gizmo_calibration: 7
+  domain:
+    widget_supply_chain: 9
+# Dropped before judging when the JD holds one (whole words).
+drop_phrases:
+  - rival widget suite
+  - legacy gizmo stack
+  - widget payroll module
+  - solution architect

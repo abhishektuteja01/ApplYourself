@@ -25,15 +25,14 @@ REAL_PROFILE = REPO_ROOT / "profile"
 # than listed, so a new template is covered the day it lands.
 GATED = set(scaffold.OPTIONAL_TEMPLATES)
 
-# A lane block with every key the strict loader requires, plus the one
+# A lane.yaml with every key the strict loader requires, plus the one
 # classifier rule /new-vertical's quick mode writes.
 MINIMAL_LANE = """\
-verticals:
-  {name}:
-    display_name: My Lane
-    search_terms: [Some Title]
-    linkedin_terms: [Some Title]
-    years: {{3: 14, 4: 10}}
+display_name: My Lane
+search_terms: [Some Title]
+linkedin_terms: [Some Title]
+"""
+MINIMAL_RULE = """\
 classifier_rules:
   - vertical: {name}
     pattern: '.'
@@ -134,7 +133,7 @@ class TestSafetyContract:
         assert "would run: uv run playwright install chrome" in out
 
     def test_a_live_verticals_yaml_is_left_alone(self, prof, capsys):
-        live = "schema_version: 1\n# my real config\n"
+        live = "schema_version: 2\n# my real config\n"
         (prof / "verticals.yaml").write_text(live, encoding="utf-8")
         run("--vertical", "my_lane", "--work-auth", "citizen")
         assert (prof / "verticals.yaml").read_text(encoding="utf-8") == live
@@ -154,7 +153,7 @@ class TestVerticalsStrip:
 
     def test_the_kept_keys_are_kept(self, prof):
         data = yaml.safe_load(self._stripped(prof).read_text(encoding="utf-8"))
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == 2
         assert data["default_vertical"] == "my_lane"
 
     def test_the_only_thing_missing_is_the_lane_itself(self, prof):
@@ -164,12 +163,17 @@ class TestVerticalsStrip:
         path = self._stripped(prof)
         with pytest.raises(ValueError) as excinfo:
             load_verticals(path)
-        assert "verticals must be a nonempty mapping" in str(excinfo.value)
+        assert "lanes must be a nonempty list" in str(excinfo.value)
 
         text = path.read_text(encoding="utf-8")
-        assert "verticals:" in text and "classifier_rules:" in text
-        patched = text.replace("verticals:", "", 1).replace("classifier_rules:", "", 1)
-        path.write_text(patched + MINIMAL_LANE.format(name="my_lane"), encoding="utf-8")
+        assert "lanes: []" in text and "classifier_rules:" in text
+        patched = text.replace("lanes: []", "lanes: [my_lane]", 1).replace(
+            "classifier_rules:", "", 1
+        )
+        path.write_text(patched + MINIMAL_RULE.format(name="my_lane"), encoding="utf-8")
+        lane = path.parent / "verticals" / "my_lane" / "lane.yaml"
+        lane.parent.mkdir(parents=True)
+        lane.write_text(MINIMAL_LANE, encoding="utf-8")
 
         cfg = load_verticals(path)
         assert cfg.default_vertical == "my_lane"

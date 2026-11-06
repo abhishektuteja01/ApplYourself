@@ -1,0 +1,23 @@
+# Lane `example_tertiary`: listed in verticals.yaml `lanes:`, merged over its `defaults:`.
+display_name: Cog Engineering
+# The lane's resume shape. Picks live on bullets (default_for) and
+# skills (show), so this block names no ids.
+resume:
+  sections: [summary, work, projects, education, skills]
+  bullets: [4, 6]
+  skill_lines:
+    - "Programming"
+    - "AI & Machine Learning"
+    - "Databases & Tools"
+    - "Domain & Enterprise"
+  summary: >-
+    Builds LLM applications for cog maintenance teams, with Python and SQL tooling and two years of widget plant operations.
+search_terms:
+  - Cog Engineer
+  - Cog Platform Engineer
+linkedin_terms:
+  - Cog Engineer
+skill_weights:
+  cog_stack:
+    cog_agents: 9
+    cog_platform: 8

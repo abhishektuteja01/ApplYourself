@@ -1,5 +1,5 @@
 ---
-description: Quick-add a job-search vertical — drafts the profile/verticals.yaml lane block, a classifier rule, rubric.md, tailoring.md and the lane's resume shape (its resume: block plus the lane's picks on the existing sources), then asks an experience cap, a target level and a single confirm-or-edit. Splits into pass-a (scrape-ready lane block + rule) and pass-b (rubric, tailoring and resume shape) when a mode token is given. Config only, no code edits. Deep tuning is /tune-vertical.
+description: Quick-add a job-search vertical — drafts the lane's profile/verticals/<name>/lane.yaml, a classifier rule, rubric.md, tailoring.md and the lane's resume shape (its resume: block plus the lane's picks on the existing sources), then asks an experience cap, a target level and a single confirm-or-edit. Splits into pass-a (scrape-ready lane block + rule) and pass-b (rubric, tailoring and resume shape) when a mode token is given. Config only, no code edits. Deep tuning is /tune-vertical.
 model: opus
 effort: medium
 allowed-tools:
@@ -15,8 +15,10 @@ argument-hint: <vertical_snake_case_name> [pass-a|pass-b] [one-line description]
 
 # /new-vertical — add a lane (quick mode)
 
-Verticals are data-driven: `profile/verticals.yaml` (the lane block, including
-its `resume:` shape) + `profile/verticals/<name>/{rubric.md, tailoring.md}` +
+Verticals are data-driven: `profile/verticals.yaml` (`lanes:` order,
+`defaults:`, `classifier_rules`) + `profile/verticals/<name>/lane.yaml` (the lane
+block, including its `resume:` shape, merged over `defaults:`) +
+`profile/verticals/<name>/{rubric.md, tailoring.md}` +
 the lane's picks on the shared sources (`lanes:` in `profile/resume.yaml`,
 `default_for` in `profile/bullets.md`, `show` in `profile/skills_master.md`)
 are the whole registry. If you find yourself editing a `.py` file or another command
@@ -32,7 +34,7 @@ Optional second token in `$ARGUMENTS`, spelled exactly `pass-a` or `pass-b`.
 | token | writes | asks | verifies |
 |---|---|---|---|
 | *(none)* | all five artifacts, one pass | all three questions | full block |
-| `pass-a` | the `verticals.yaml` lane block + one `classifier_rules` entry + the marker | all three questions | loader + classifier only |
+| `pass-a` | the lane's `lane.yaml` + its `lanes:` entry + one `classifier_rules` entry + the marker | all three questions | loader + classifier only |
 | `pass-b` | `rubric.md`, `tailoring.md`, the resume shape; deletes the marker | nothing | full block |
 
 `load_verticals()` needs only the lane block, so `pass-a` is enough to start a
@@ -85,13 +87,14 @@ Step 3 draft as part of what gets confirmed.
 
 ```bash
 uv run verticals-check
-grep -n "^  <name>:" profile/verticals.yaml
+ls profile/verticals/<name>/lane.yaml 2>/dev/null
 ls -d profile/verticals/<name> 2>/dev/null
 ls profile/verticals/<name>/.pass_a_only 2>/dev/null
 uv run python -c "
 import yaml; d = yaml.safe_load(open('profile/verticals.yaml'))
 print('default_vertical:', d.get('default_vertical'))
-print('lanes:', list(d.get('verticals') or {}))
+print('lanes:', d.get('lanes'))
+print('defaults:', d.get('defaults'))
 print('rules:', len(d.get('classifier_rules') or []))"
 ```
 
@@ -108,7 +111,7 @@ authored it yet. Stop and send the user to `/onboarding step 2`. Both files pars
 fine as the example person, so drafting against them silently fills the lane's
 resume shape, rubric and skill lines with someone else's evidence.
 
-**The marker decides what a partial lane means.** A hit on the `grep` or the
+**The marker decides what a partial lane means.** A hit on the `lane.yaml` or the
 `ls -d` means a previous run got partway:
 
 | marker | mode | action |
@@ -124,13 +127,13 @@ That is the expected mid-state, not damage to repair.
 
 Two accepted starting states:
 
-- **Straight out of `onboard-scaffold`** — `verticals:` and `classifier_rules:`
+- **Straight out of `onboard-scaffold`** — `lanes: []` and `classifier_rules:`
   are empty, `default_vertical` is already
   the new lane name, so `verticals-check` fails. That failure is the expected
   input, not a problem to repair: adding the block plus one rule is exactly what
   makes the file load.
-- **A config that already loads** — append the lane at the end of the
-  `verticals:` mapping and its rule at the end of `classifier_rules`.
+- **A config that already loads** — append the lane at the end of `lanes:`
+  and its rule at the end of `classifier_rules`.
 
 `default_vertical`, three cases:
 
@@ -148,18 +151,20 @@ unrelated config.
 ## Step 2 — draft (no writes)
 
 Items 1-2 are `pass-a`'s; items 3-5 are `pass-b`'s; bare mode drafts all five.
-Items 1-4 write files; item 5 edits the lane block and three shared sources.
+Items 1-4 write files; item 5 edits the lane's `lane.yaml` and three shared sources.
 
 Read `profile/verticals.example.yaml` and, for items 3-5, `profile/bullets.md`,
 `profile/skills_master.md` and
 `profile/resume.yaml`, `profile/verticals/example_primary/{rubric.md,tailoring.md}`
-and example_primary's `resume:` block in `profile/verticals.example.yaml`.
+and the `resume:` block in `profile/verticals/example_primary/lane.yaml`.
 Draft from those plus the lane name and description. Ask nothing yet.
 
 In `pass-a`, `search_terms` and `linkedin_terms` come from the role titles in the
 description argument plus the lane name — bullets are not read.
 
-**1. The `verticals.yaml` block.** Exactly these keys, nothing else:
+**1. The lane's `lane.yaml`.** Exactly these keys, nothing else. A key in
+`verticals.yaml` `defaults:` sits under it: a list there follows the lane's own,
+any other key the lane sets replaces the default's.
 
 - `display_name` — shortlist section header text.
 - `search_terms` — 6-12 real job titles for the lane, spine first, adjacent
@@ -168,7 +173,8 @@ description argument plus the lane name — bullets are not read.
 - `years` — required years mapped to a seniority cap (0-20), largest key =
   Step 3's cap, lower caps for higher asks (cap 5 → `{3: 14, 4: 10, 5: 6}`).
   A JD asking more than the largest key is dropped before judging, or forced
-  to skip when the judge reads more.
+  to skip when the judge reads more. Leave it out when `defaults:` already
+  holds the same table.
   Omit `drop_phrases`.
 - `title_exclude_terms` — a short blocklist: the level words from Step 3's
   level answer, plus title words naming a different *function*.
@@ -251,9 +257,9 @@ are dropped at the title gate: tightening the list applies on the next
 
 ## Step 4 — apply
 
-Insert the block at the end of the `verticals:` mapping and append the rule at
-the end of `classifier_rules`, deleting the scaffold's two
-`# /new-vertical <name> writes your ... here.` placeholder comments as you go.
+Write the block to `profile/verticals/<name>/lane.yaml`, append `<name>` to
+`lanes:` and the rule to the end of `classifier_rules`, deleting the scaffold's
+two `# /new-vertical <name> ... here.` placeholder comments as you go.
 Touch `default_vertical` only in the case Step 1's table says to.
 
 Bare mode also writes items 3-5 here, then goes to Step 5b.

@@ -232,7 +232,9 @@ def _lane_resume(lane: verticals.Vertical) -> str:
     from src import resume_model
 
     if lane.resume is None:
-        raise ValueError(f"lane {lane.name} has no resume: block in profile/verticals.yaml")
+        raise ValueError(
+            f"lane {lane.name} has no resume: block in profile/verticals/{lane.name}/lane.yaml"
+        )
     return resume_model.baseline_markdown(lane.name)
 
 

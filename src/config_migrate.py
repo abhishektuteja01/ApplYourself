@@ -437,6 +437,154 @@ def _state(p: Profile) -> None:
         p.notes.append(f"{DE_AI} kept: it differs from data/defaults/{DE_AI} and replaces it")
 
 
+# Lane keys `defaults:` may take over when every lane holds the same value.
+LIFTABLE = ("years",)
+
+
+def _dedent(lines: list[str], n: int) -> list[str]:
+    return [ln[min(n, len(ln) - len(ln.lstrip(" "))) :] for ln in lines]
+
+
+def _lanes_text(text: str) -> tuple[int, int, list[tuple[str, list[str], list[str]]]] | None:
+    """(start, end, [(lane, lead comment lines, body lines)]) of the top-level
+    `verticals:` block in text's lines, or None when its shape is not the usual one."""
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, ln in enumerate(lines) if re.match(r"verticals\s*:\s*$", ln)), None)
+    if start is None:
+        return None
+    end = start + 1
+    while end < len(lines) and (
+        lines[end][:1] in (" ", "\t") or not lines[end].strip() or lines[end].startswith("#")
+    ):
+        end += 1
+    while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].startswith("#")):
+        end -= 1
+    keys = [i for i in range(start + 1, end) if re.match(r"  [a-z][a-z0-9_]*:\s*$", lines[i])]
+    if not keys:
+        return None
+    leads = []
+    for k in keys:
+        s = k
+        while s > start + 1 and lines[s - 1].lstrip().startswith("#") and lines[s - 1][:3] != "   ":
+            s -= 1
+        leads.append(s)
+    if any(ln.strip() for ln in lines[start + 1 : leads[0]]):
+        return None
+    out = []
+    for n, k in enumerate(keys):
+        stop = leads[n + 1] if n + 1 < len(keys) else end
+        body = lines[k + 1 : stop]
+        while body and not body[-1].strip():
+            body.pop()
+        if any(
+            ln.strip() and not ln.startswith("    ") and not ln.lstrip().startswith("#")
+            for ln in body
+        ):
+            return None
+        out.append(
+            (lines[k].strip().rstrip(":"), _dedent(lines[leads[n] : k], 2), _dedent(body, 4))
+        )
+    return start, end, out
+
+
+def _split_lanes(p: Profile) -> None:
+    """verticals.yaml schema 1 -> 2: each lane block to verticals/<lane>/lane.yaml,
+    `lanes:` keeps their order, and a LIFTABLE key every lane holds alike goes to
+    `defaults:`. Refused unless the loaded config stays exactly the same."""
+    import tempfile
+
+    from src.shared import verticals as V
+
+    data = p.data(VERTICALS)
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or "verticals" not in data:
+        return
+    text = p.text(VERTICALS) or ""
+    found = _lanes_text(text)
+    if found is None:
+        p.problems.append(f"{VERTICALS}: could not find each lane block; split it by hand")
+        return
+    start, end, blocks = found
+    raw = data["verticals"]
+    names = [name for name, _, _ in blocks]
+    if names != list(raw):
+        p.problems.append(f"{VERTICALS}: lanes read {names}, the file holds {list(raw)}")
+        return
+    lifted = {
+        key: raw[names[0]][key]
+        for key in LIFTABLE
+        if len(names) > 1
+        and all(key in raw[n] for n in names)
+        and all(raw[n][key] == raw[names[0]][key] for n in names)
+    }
+    lines = text.splitlines(keepends=True)
+    block = [
+        "# Shortlist order (first = primary). Each lane is verticals/<lane>/lane.yaml.\n",
+        f"lanes: [{', '.join(names)}]\n",
+    ]
+    if lifted:
+        block += [
+            "\n",
+            "# Under every lane's lane.yaml: a lane's list comes first, then the list here;\n",
+            "# any other key a lane sets replaces the one here.\n",
+            "defaults:\n",
+            *(
+                "  " + ln
+                for ln in yaml.safe_dump(
+                    lifted, default_flow_style=None, sort_keys=False, allow_unicode=True
+                ).splitlines(keepends=True)
+            ),
+        ]
+    tail = lines[end:]
+    while tail and not tail[0].strip():
+        tail.pop(0)
+    top = "".join(lines[:start] + block + (["\n"] if tail else []) + tail)
+    top = re.sub(r"(?m)^schema_version:\s*1\b", "schema_version: 2", top, count=1)
+    lane_texts = {}
+    for name, lead, body in blocks:
+        out = "".join(
+            [
+                f"# Lane `{name}`: listed in {VERTICALS} `lanes:`, merged over its `defaults:`.\n",
+                *lead,
+                *body,
+            ]
+        )
+        for key in lifted:
+            out = drop_top_key(out, key)
+        rel = f"verticals/{name}/lane.yaml"
+        if (p.root / rel).exists():
+            p.problems.append(f"{rel} already exists; merge it with {VERTICALS} by hand")
+            return
+        lane_texts[rel] = out
+    try:
+        old = V.build(data, {n: (raw[n], p.root / VERTICALS) for n in names}, p.root / VERTICALS)
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, body_text in {VERTICALS: top, **lane_texts}.items():
+                (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(tmp) / rel).write_text(body_text, encoding="utf-8")
+            new = V.load_verticals(Path(tmp) / VERTICALS)
+    except ValueError as exc:
+        p.problems.append(f"{VERTICALS}: does not load: {exc}")
+        return
+    if _shape(old) != _shape(new):
+        p.problems.append(f"{VERTICALS}: the split would change the loaded config; split by hand")
+        return
+    p.texts[VERTICALS] = top
+    p.texts.update(lane_texts)
+    p.notes.append(
+        f"{VERTICALS}: lanes {names} -> verticals/<lane>/lane.yaml"
+        + (f"; defaults: {sorted(lifted)}" if lifted else "")
+    )
+
+
+def _shape(cfg: Any) -> tuple:
+    """Everything a loaded config holds, comparable with ==."""
+    return (
+        cfg.default_vertical,
+        tuple((n, v) for n, v in cfg.verticals.items()),
+        tuple((v, repr(r)) for v, r in cfg.classifier_rules),
+    )
+
+
 STEPS: tuple[Callable[[Profile], None], ...] = (
     _languages,
     _abroad,
@@ -444,6 +592,7 @@ STEPS: tuple[Callable[[Profile], None], ...] = (
     _resume_facts,
     _settings,
     _state,
+    _split_lanes,
 )
 
 
@@ -467,8 +616,11 @@ def changed(p: Profile) -> dict[str, tuple[str, str]]:
 
 
 def diff(p: Profile) -> str:
+    """A unified diff per changed file; a new file is named with its size."""
     return "".join(
-        "".join(
+        f"+++ new file b/{name} ({new.count(chr(10))} lines)\n"
+        if not old and name not in p.renamed
+        else "".join(
             difflib.unified_diff(
                 old.splitlines(keepends=True),
                 new.splitlines(keepends=True),

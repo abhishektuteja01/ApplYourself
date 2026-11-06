@@ -210,3 +210,37 @@ def test_tool_state_moves_under_dot_state(tmp_path, capsys, edited):
     capsys.readouterr()
     assert _run(prof, apply=False) == 0
     assert "nothing to migrate" in capsys.readouterr().out
+
+
+def test_inline_lanes_split_into_lane_files_with_the_same_config(tmp_path, capsys):
+    from src.shared import verticals as V
+
+    example = paths.example("verticals.example.yaml")
+    top = yaml.safe_load(example.read_text(encoding="utf-8"))
+    lanes = {
+        n: V.merge_defaults(
+            top["defaults"], yaml.safe_load(V.lane_file(example, n).read_text(encoding="utf-8"))
+        )
+        for n in top["lanes"]
+    }
+    old = {
+        "schema_version": 1,
+        "default_vertical": top["default_vertical"],
+        "verticals": lanes,
+        "classifier_rules": top["classifier_rules"],
+    }
+    prof = tmp_path / "prof"
+    prof.mkdir()
+    v = prof / "verticals.yaml"
+    v.write_text(yaml.safe_dump(old, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(ValueError, match="config migrate"):
+        V.load_verticals(v)
+    before = V.build(old, {n: (raw, v) for n, raw in lanes.items()}, v)
+
+    assert _run(prof, apply=True) == 0
+    new = yaml.safe_load(v.read_text(encoding="utf-8"))
+    assert new["lanes"] == list(lanes) and new["defaults"] == {"years": top["defaults"]["years"]}
+    assert config_migrate._shape(V.load_verticals(v)) == config_migrate._shape(before)
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out

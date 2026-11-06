@@ -1,0 +1,41 @@
+# Lane `example_primary`: listed in verticals.yaml `lanes:`, merged over its `defaults:`.
+display_name: Widget Engineering
+# The lane's resume shape. Picks live on bullets (default_for) and
+# skills (show), so this block names no ids.
+resume:
+  sections: [summary, work, projects, education, skills]
+  bullets: [4, 6]
+  skill_lines:
+    - "Domain & Enterprise"
+    - "Programming"
+    - "AI & Machine Learning"
+    - "Databases & Tools"
+  summary: >-
+    Widget operations analyst who reconciles plant output, configures assembly lines and builds Python and SQL tooling for sprocket compliance data.
+search_terms:
+  # spine
+  - Widget Engineer
+  - Widget Platform Analyst
+  - Gizmo Systems Consultant
+  # adjacent
+  - Widget Operations Analyst
+# Reduced list for LinkedIn (429 mitigation); may equal search_terms.
+linkedin_terms:
+  - Widget Engineer
+  - Gizmo Systems Consultant
+# 0-10 integer weights; consumed by LLM judges for skills,
+# opaque to src/. Base every entry on attested experience only.
+skill_weights:
+  widgets:
+    widget_assembly: 10   # 2yr production experience
+    gizmo_calibration: 7  # secondary tooling
+  domain:
+    widget_supply_chain: 9
+# Dropped before judging when the JD holds one (whole words).
+drop_phrases: []
+# Optional. The judge answers the question yes/no; yes lifts the domain
+# axis to at least yes_min, no holds it at no_max or below.
+# focus:
+#   question: Does the company sell mainly to widget makers?
+#   yes_min: 18
+#   no_max: 17

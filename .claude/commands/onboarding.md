@@ -166,7 +166,7 @@ the resume.
    ```
 
    Copies every `profile/*.example.*` to its real name including the two Word
-   templates, strips the example lanes from `verticals.yaml`, sets your home
+   templates, empties `lanes:` and the example classifier rules in `verticals.yaml`, sets your home
    country's row in `application_answers.yaml`'s `work_authorization.countries`. Never overwrites — an existing file is skipped and
    listed. Read the report; `SKIPPED` and `FAILED` are the only parts that need
    you. `--with-apply` and `--with-optional` are step 5's menu, not this path.
@@ -178,7 +178,7 @@ the resume.
    No Microsoft Word on this Mac: tell them every `uv run app build` needs `--no-pdf`.
 
 4. Run **`/new-vertical <lane> pass-a "<their stated roles>"`** and let it drive.
-   Pass A writes only the `verticals.yaml` lane block and one classifier rule,
+   Pass A writes only the lane's `profile/verticals/<lane>/lane.yaml`, its `lanes:` entry and one classifier rule,
    and asks the experience cap and the target level — **questions 3 and 4** —
    plus the confirm-or-edit — **Question 5** — in one `AskUserQuestion`. Do not
    duplicate any of it here and do not pre-empt them.
@@ -338,7 +338,7 @@ print(f'{int(keep.sum())}/{len(d)} rows kept')
 print('DROPPED:'); print(d.loc[~keep, 'title'].value_counts().head(15).to_string())"
 ```
 
-Write the list into the lane block only if it keeps a clear majority of the rows
+Write the list into the lane's `lane.yaml` only if it keeps a clear majority of the rows
 already scraped. Otherwise leave `title_include_terms` absent and say in one
 line that the lane stays on the blocklist until `/tune-vertical`.
 `title_exclude_terms` belongs to `/new-vertical pass-a` — do not redraft it here.

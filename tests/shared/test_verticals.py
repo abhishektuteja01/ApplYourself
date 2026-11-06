@@ -16,13 +16,36 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_raw() -> dict:
-    return yaml.safe_load(FIXTURE_PATH.read_text(encoding="utf-8"))
+    """The fixture's top-level file, with each lane's lane.yaml under `verticals`."""
+    data = yaml.safe_load(FIXTURE_PATH.read_text(encoding="utf-8"))
+    data["verticals"] = {
+        n: yaml.safe_load(verticals.lane_file(FIXTURE_PATH, n).read_text(encoding="utf-8"))
+        for n in data["lanes"]
+    }
+    return data
+
+
+def _dump(data) -> str:
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
+def _write(folder: Path, data: dict) -> Path:
+    """data as _load_raw shapes it, written back as verticals.yaml plus lane files."""
+    top = dict(data)
+    lanes = top.pop("verticals")
+    top["lanes"] = list(lanes)
+    p = folder / "verticals.yaml"
+    folder.mkdir(parents=True, exist_ok=True)
+    p.write_text(_dump(top), encoding="utf-8")
+    for name, lane in lanes.items():
+        lf = verticals.lane_file(p, name)
+        lf.parent.mkdir(parents=True, exist_ok=True)
+        lf.write_text(_dump(lane), encoding="utf-8")
+    return p
 
 
 def _write_and_load(tmp_path: Path, data: dict) -> verticals.VerticalsConfig:
-    p = tmp_path / "verticals.yaml"
-    p.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    return verticals.load_verticals(p)
+    return verticals.load_verticals(_write(tmp_path, data))
 
 
 class TestFixtureHappyPath:
@@ -94,9 +117,33 @@ class TestValidation:
 
     def test_bad_schema_version(self, tmp_path):
         data = _load_raw()
-        data["schema_version"] = 2
+        data["schema_version"] = 3
         with pytest.raises(ValueError, match="schema_version"):
             _write_and_load(tmp_path, data)
+
+    def test_a_schema_1_file_says_where_the_lanes_moved(self, tmp_path):
+        p = tmp_path / "verticals.yaml"
+        p.write_text(_dump({"schema_version": 1, "verticals": {}}), encoding="utf-8")
+        with pytest.raises(
+            ValueError, match=r"moved to verticals/<lane>/lane\.yaml.*config migrate"
+        ):
+            verticals.load_verticals(p)
+
+    def test_a_listed_lane_with_no_file_is_named(self, tmp_path):
+        p = _write(tmp_path, _load_raw())
+        verticals.lane_file(p, "example_secondary").unlink()
+        with pytest.raises(ValueError, match="example_secondary has no"):
+            verticals.load_verticals(p)
+
+    def test_defaults_lists_follow_the_lane_and_other_keys_are_replaced(self, tmp_path):
+        data = _load_raw()
+        data["defaults"] = {"years": {5: 6}, "drop_phrases": ["shared phrase"]}
+        lane = data["verticals"]["example_primary"]
+        lane["years"] = {3: 12}
+        cfg = _write_and_load(tmp_path, data)
+        got = cfg.verticals["example_primary"]
+        assert got.years == {3: 12}
+        assert got.drop_phrases == (*lane["drop_phrases"], "shared phrase")
 
     def test_bad_default_vertical(self, tmp_path):
         data = _load_raw()
@@ -226,14 +273,10 @@ class TestMainCli:
         """Build a self-contained repo root from the fixture config, minus any
         prose files named in drop_prose."""
         monkeypatch.delitem(paths._overrides, "VERTICALS_DIR")
-        (tmp_path / "profile").mkdir()
-        (tmp_path / "profile" / "verticals.yaml").write_text(
-            FIXTURE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-        )
+        _write(tmp_path / "profile", _load_raw())
         cfg = verticals.load_verticals(FIXTURE_PATH)
         for name in cfg.verticals:
             d = tmp_path / "profile" / "verticals" / name
-            d.mkdir(parents=True)
             for fname in ("rubric.md", "tailoring.md"):
                 if (name, fname) not in drop_prose:
                     (d / fname).write_text("# prose", encoding="utf-8")
@@ -256,10 +299,10 @@ class TestMainCli:
     def test_malformed_config_reports_instead_of_raising(self, tmp_path, monkeypatch, capsys):
         self._setup(tmp_path, monkeypatch)
         data = yaml.safe_load((tmp_path / "profile" / "verticals.yaml").read_text(encoding="utf-8"))
-        data["schema_version"] = 2
+        data["schema_version"] = 3
         (tmp_path / "profile" / "verticals.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
         assert verticals.main() == 1
-        assert "schema_version must be 1" in capsys.readouterr().out
+        assert "schema_version must be 2" in capsys.readouterr().out
 
     def test_missing_rubric_is_named(self, tmp_path, monkeypatch, capsys):
         self._setup(tmp_path, monkeypatch, drop_prose={("example_primary", "rubric.md")})
@@ -299,10 +342,10 @@ class TestMainCli:
 
     def test_a_lane_without_a_resume_block_is_named(self, tmp_path, monkeypatch, capsys):
         self._setup(tmp_path, monkeypatch)
-        cfg_file = tmp_path / "profile" / "verticals.yaml"
-        data = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
-        del data["verticals"]["example_tertiary"]["resume"]
-        cfg_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+        lane_file = tmp_path / "profile" / "verticals" / "example_tertiary" / "lane.yaml"
+        data = yaml.safe_load(lane_file.read_text(encoding="utf-8"))
+        del data["resume"]
+        lane_file.write_text(yaml.safe_dump(data), encoding="utf-8")
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "no `resume:` block" in out and "example_tertiary" in out
