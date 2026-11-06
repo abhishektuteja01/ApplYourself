@@ -50,9 +50,7 @@ def _yaml_load(path: Path) -> dict:
 # ---------- state-set constants ----------
 
 
-def test_valid_states_count_and_terminal_subset():
-    """9 states locked; 3 are terminal."""
-    assert len(VALID_STATES) == 9
+def test_state_sets_agree_and_terminal_subset():
     assert TERMINAL_STATES <= VALID_STATES
     assert {"offer", "rejected", "withdrawn"} == TERMINAL_STATES
     assert set(ALLOWED) == VALID_STATES

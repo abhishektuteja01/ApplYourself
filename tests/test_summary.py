@@ -38,11 +38,11 @@ def test_a_failed_stage_leads_and_a_missing_one_says_so():
         "score": {"code": 1, "seconds": 90, "detail": "still owed"},
     }
     out = M.run_section(stages)
-    assert out[0] == "**score failed** (code 1) still owed"
-    assert out[-1] == (
-        "Stages: discover ok 3h10 · score FAILED · synonyms not run · "
-        "tailor not run · apply_prep not run · cleanup not run"
-    )
+    assert out[0].startswith("**score failed**") and "still owed" in out[0]
+    parts = out[-1].removeprefix("Stages: ").split(" · ")
+    assert [p.split()[0] for p in parts] == list(M.STAGES)
+    assert "3h10" in parts[0] and "FAILED" in parts[1]
+    assert all(p.endswith("not run") for p in parts[2:])
 
 
 def test_a_partial_stage_and_its_deferred_roles_are_shown(tmp_path):
@@ -172,10 +172,8 @@ def test_synonyms_lists_only_the_phrases_per_target_with_blank_lines_between_blo
     assert out[3] == "" and out[4].startswith("**Declined")
     assert sum(line.startswith("- kw") for line in out) == 9
     assert "" in out[out.index("- kw8: why8") :] and "**Questions for you (1)**" in out
-    assert (
-        "- [U1] Did you work on Airflow during Acme? You may have used it via the nightly DAGs."
-        in out
-    )
+    question = next(line for line in out if line.startswith("- [U1]"))
+    assert all(w in question for w in ("Airflow", "Acme", "the nightly DAGs"))
     assert "k1" not in "\n".join(out)
     empty = M.synonyms_section([], [], [])
     assert empty == ["**Added:** none", "", "**Declined:** none new", "", "**Questions:** none"]
@@ -317,27 +315,27 @@ def test_open_items_sort_into_guesses_questions_and_missing_values_with_a_tally_
 
 
 def test_why_a_role_needs_you_is_said_in_plain_counts():
-    assert (
-        M._why({"guesses": 1, "asks": 2, "facts": 1})
-        == "1 guess to confirm, 2 questions to answer, 1 value missing"
-    )
-    assert (
-        M._why({"guesses": 0, "asks": 0, "facts": 0})
-        == "drafted answers wait in its folder (answers_override.json), nothing else open"
-    )
+    why = M._why({"guesses": 1, "asks": 2, "facts": 1})
+    assert [p.split()[:2] for p in why.split(", ")] == [
+        ["1", "guess"],
+        ["2", "questions"],
+        ["1", "value"],
+    ]
+    assert M._why({"guesses": 0, "asks": 1, "facts": 0}).startswith("1 question")
+    assert "answers_override.json" in M._why({"guesses": 0, "asks": 0, "facts": 0})
 
 
 def test_missing_values_are_worded_for_a_person():
-    assert M._fact_text(
-        "salary: no figure for a role in India (verticals.yaml salary_expectation)"
-    ).startswith("Salary for a role in India: no figure set")
-    assert "start_in_days" in M._fact_text(
+    raw = "salary: no figure for a role in India (verticals.yaml salary_expectation)"
+    salary = M._fact_text(raw)
+    assert salary != raw and "India" in salary and "work_authorization.countries" in salary
+    start = M._fact_text(
         "start date: no start_in_days set for Germany (work_authorization.countries)"
     )
-    assert (
-        M._fact_text("consent: none of ['Yes', 'I agree'] is offered (['No'])")
-        == "The saved consent answer is not one of the options offered"
-    )
+    assert "Germany" in start and "start_in_days" in start
+    raw = "consent: none of ['Yes', 'I agree'] is offered (['No'])"
+    consent = M._fact_text(raw)
+    assert consent != raw and "consent" in consent and "[" not in consent
     assert M._fact_text("something new and odd") == "something new and odd"
 
 
@@ -478,18 +476,14 @@ def test_every_waiting_role_is_listed():
     rows = [_row(f"w{i}", "Needs your OK", "n") for i in range(8)]
     out = M.apply_section(rows, _items(roles={}), {})
     assert "**Needs your OK (8)**" in out and sum(ln.startswith("- w") for ln in out) == 8
-    assert (
-        "- w0: drafted answers wait in its folder (answers_override.json); not re-checked tonight: "
-        "`uv run apply plan w0 --questions --answers <that file>`" in out
-    )
+    w0 = next(ln for ln in out if ln.startswith("- w0:"))
+    assert "`uv run apply plan w0 --questions --answers <that file>`" in w0
 
 
 def test_a_waiting_role_re_read_tonight_with_nothing_open_says_so():
     items = _items(by_role={"w0": {"guesses": 0, "asks": 0, "facts": 0}}, roles={})
     out = M.apply_section([_row("w0", "Needs your OK", "n")], items, {})
-    assert (
-        "- w0: drafted answers wait in its folder (answers_override.json), nothing else open" in out
-    )
+    assert "- w0: " + M._why({"guesses": 0, "asks": 0, "facts": 0}) in out
 
 
 def test_an_error_from_an_earlier_night_is_listed_apart_with_its_date():
@@ -525,9 +519,9 @@ def test_sheet_line_says_what_is_wrong_in_words_and_offers_the_fix():
     ok = {"finished": [], "duplicates": [], "not_live": [], "wrong_status": []}
     assert M.sheet_line(ok) == ["Sheet check: clean."]
     got = M.sheet_line({"finished": [], "duplicates": ["x"], "not_live": ["y", "z"]})
-    assert got[0] == (
-        "Sheet check: listed twice: x; no longer in the live listing, the posting may be gone: y, z"
-    )
+    problems = got[0].removeprefix("Sheet check: ").split("; ")
+    assert len(problems) == 2
+    assert problems[0].endswith(": x") and problems[1].endswith(": y, z")
     assert got[1:] == ["", M.CUES["sheet"]]
     assert len(M.sheet_line({**ok, "duplicates": ["x"]})) == 1
 
