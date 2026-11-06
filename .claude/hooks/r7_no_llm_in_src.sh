@@ -12,7 +12,7 @@ ROOT="$(repo_root)"
 
 FILE="$(relative_to_repo "$(hook_field tool_input file_path)" "$ROOT")"
 case "$FILE" in
-  src/*.py|src/**/*.py) ;;
+  src/*.py) ;;  # case's * also matches /, so this covers every depth
   *) exit 0 ;;
 esac
 

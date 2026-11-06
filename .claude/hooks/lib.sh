@@ -13,7 +13,6 @@ read_hook_json() {
 
 # Pull one top-level-or-nested string field out of HOOK_JSON.
 #   hook_field tool_input file_path
-#   hook_field '' stop_hook_active
 hook_field() {
   local parent="$1" key="$2"
   if command -v python3 >/dev/null 2>&1; then
