@@ -77,6 +77,20 @@ def tailor_dir(tmp_path):
     return out
 
 
+def resolve_confirmed(field, answers):
+    """`resolve` as it answers once the user confirmed the suggested fact for
+    this exact wording: what the regex families' policy tests check."""
+    from dataclasses import replace
+
+    from src.apply.answers import norm_label, resolve
+
+    got = resolve(field, answers)
+    if not got.source.startswith("suggest:"):
+        return got
+    judged = {norm_label(field.label): {"fact": got.source.split(":", 1)[1], "yes_when": True}}
+    return resolve(field, replace(answers, fact_wordings={**answers.fact_wordings, **judged}))
+
+
 @pytest.fixture
 def answers():
     from src.apply.answers import load_answers

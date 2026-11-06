@@ -16,11 +16,12 @@ import pytest
 import yaml
 
 from src.apply import answers as A
-from src.apply.answers import AnswersError, Resolution, load_answers, resolve
+from src.apply.answers import AnswersError, Resolution, load_answers
 from src.apply.reconcile import MergedField, MergedOption
 from src.shared import paths
 
 from .conftest import FIXTURES
+from .conftest import resolve_confirmed as resolve
 
 CONFIG = FIXTURES / "application_answers.yaml"
 

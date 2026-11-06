@@ -1774,12 +1774,23 @@ def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> 
     return Resolution("fill", answered.value, "B0", source=source)
 
 
+# A yes/no family's label is only a suggestion: the fact it reads, Yes when true.
+# Confirmed in /apply, the wording becomes an exact `fact_wordings` entry.
+SUGGESTED_FACT = {
+    "plain": "authorized",
+    "proof": "authorized",
+    "qualified": "unrestricted",
+    "sponsorship": "requires_sponsorship",
+}
+
+
 def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolution:
     label = field.label or ""
     judged = answers.fact_wordings.get(_norm(label))
-    if judged is not None:
-        return resolve_fact_wording(field, answers, judged)
     options = tuple(o.label for o in field.options)
+    # A board whose options are sentences is answered by claims, whatever the wording.
+    if judged is not None and (not options or _offers_bare_yes_no(options)):
+        return resolve_fact_wording(field, answers, judged)
     category = classify_work_authorization(label, options)
     countries = _question_countries(label, answers)
     if UNKNOWN_COUNTRY in countries and category not in (
@@ -1861,7 +1872,13 @@ def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolut
 
     answered = _yes_no(field, value)
     if answered is not None:
-        return answered
+        fact = SUGGESTED_FACT[category]
+        return _park(
+            f"work authorization: new wording, confirm once. Suggested: Yes when {fact} "
+            f"is true (answers {answered.value!r} here)",
+            "B0",
+            source=f"suggest:{fact}",
+        )
     # No bare Yes/No for this polarity — the answer is split across sentences.
     return _resolve_by_claims(field, answers, asked, "the board offers no bare Yes/No.")
 

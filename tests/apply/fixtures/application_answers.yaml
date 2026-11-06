@@ -36,6 +36,19 @@ work_authorization:
       requires_sponsorship: true
       start_in_days: 14
 claims: {}
+fact_wordings:
+  Are you permanently authorized to work for any employer in the United States?:
+    fact: unrestricted
+    yes_when: true
+  If not, do you now or will you in the future need sponsorship for a work card, visa, or permanent resident status in the United States?:
+    fact: requires_sponsorship
+    yes_when: true
+  Are you legally authorized to work in the United States?:
+    fact: authorized
+    yes_when: true
+  Will you now or in the future require visa sponsorship?:
+    fact: requires_sponsorship
+    yes_when: true
 questions:
   linkedin:
     answer: https://linkedin.com/in/example

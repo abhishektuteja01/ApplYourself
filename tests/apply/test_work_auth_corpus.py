@@ -28,11 +28,11 @@ from src.apply.answers import (
     WORK_AUTH_CATEGORIES,
     CountryFacts,
     classify_work_authorization,
-    resolve,
 )
 from src.apply.reconcile import MergedField, MergedOption
 
 from .conftest import FIXTURES
+from .conftest import resolve_confirmed as resolve
 
 CORPUS = [
     json.loads(line)
@@ -573,3 +573,37 @@ class TestPlacesThatAreNotCountries:
             options=(MergedOption(value="Yes", label="Yes"), MergedOption(value="No", label="No")),
         )
         assert says(resolve(f, opt_holder).value, "Yes")
+
+
+class TestANewWordingIsOnlySuggested:
+    """The yes/no families never answer on their own: a wording the bank has
+    not judged parks once with the suggested fact, and a confirmed one is
+    answered by its exact wording only."""
+
+    LABEL = "Will you, now or later, need us to sponsor a visa for you?"
+
+    def test_it_parks_with_the_suggestion_and_an_optional_one_stays_blank(self, opt_holder):
+        from src.apply.answers import resolve as raw
+
+        row = {"label": self.LABEL, "required": True, "kind": "select", "multi": False}
+        r = raw(field_of({**row, "options": ["Yes", "No"]}), opt_holder)
+        assert r.parked and r.source == "suggest:requires_sponsorship"
+        assert "Yes when requires_sponsorship is true (answers 'Yes' here)" in r.reason
+        optional = raw(field_of({**row, "options": ["Yes", "No"], "required": False}), opt_holder)
+        assert optional.action == "skip" and optional.value is None
+
+    def test_a_confirmed_wording_answers_exactly_and_a_new_one_parks_again(self, tmp_path):
+        import shutil
+
+        from src.apply import bank
+        from src.apply.answers import load_answers
+        from src.apply.answers import resolve as raw
+
+        path = tmp_path / "bank.yaml"
+        shutil.copy(FIXTURES / "application_answers.yaml", path)
+        fact = {"fact": "requires_sponsorship", "yes_when": True}
+        bank.learn([bank.Lesson(label=self.LABEL, value="Yes", fact=fact)], path=path)
+        row = {"required": True, "kind": "select", "multi": False, "options": ["Yes", "No"]}
+        saved = load_answers(path)
+        assert raw(field_of({**row, "label": self.LABEL}), saved).value == "Yes"
+        assert raw(field_of({**row, "label": self.LABEL + " (H-1B)"}), saved).parked

@@ -68,7 +68,11 @@ where the hire works. A location nothing can read is `UNKNOWN_COUNTRY`, and
 every answer that depends on the job's country parks. No location, or
 "Remote", means the candidate's own country.
 A label in `fact_wordings` is answered from its fact before any other
-work-authorization rule. Otherwise export control answers only a "U.S. person"
+work-authorization rule, unless the board's options are sentences (claims pick
+those). A yes/no authorization, sponsorship or "unrestricted" label not in
+`fact_wordings` is never answered by its regex family: it parks once with
+`Suggested: Yes when <fact> is true` (source `suggest:<fact>`), and the
+confirmed `fact` entry becomes its exact `fact_wordings` entry. Otherwise export control answers only a "U.S. person"
 question, only from an explicit `us_person`; every other one parks until judged.
 
 ## Overrides: one gate
