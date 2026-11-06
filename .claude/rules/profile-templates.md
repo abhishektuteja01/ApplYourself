@@ -11,9 +11,9 @@ or shipped as a `.example` template beside it.
 `profile/` path can be referenced — command prose (all of `.claude/**/*.md`,
 including rules files), `src/` modules, scripts, hooks, CI config (see its
 `_source_groups()` for the current set) — so wiring in a new profile file fails the
-suite until it has a template. Excluded: committed defaults
-(`de_ai_rules.yaml`), the `example_*` lane dirs, and
-dotfiles (runtime state a command writes).
+suite until it has a template. Excluded: optional overrides of a
+`data/defaults/` file (`de_ai_rules.yaml`), the `example_*` lane dirs, and
+dotfiles and `profile/.state/` (runtime state a command writes).
 
 Template content lives in the fictional widget/gizmo/sprocket/cog world of the
 `example_*` lanes, and it must pass the same `check_sources` the real config

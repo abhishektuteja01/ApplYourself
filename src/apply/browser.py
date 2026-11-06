@@ -8,13 +8,12 @@ Split out so the second caller does not have to import `fill.py` to reach it —
 
 The driver is a config choice, not a constant: some boards score the browser
 before they will let a field work at all, and the stock driver is scored as
-automation on sight. `browser.driver` in `profile/application_answers.yaml`
+automation on sight. `browser.driver` in `profile/settings.yaml`
 picks between `patchright` (the fork that patches the CDP-side leaks) and
 `playwright` (stock). Both are in the `apply` group, so either name resolves.
 
-The YAML is read here directly rather than through `answers.py`: `ashby.py`
-constructs a browser during `apply plan` without ever loading an answer file,
-and `answers.py` validates a great deal this module does not need.
+The block is read here and its values checked here; `config_schema` checks
+the keys.
 
 `playwright`/`patchright` are optional dependencies (`uv sync --group apply`),
 and this is the only module in `src/` that names a driver.
@@ -39,7 +38,7 @@ STEALTH_DROP_DEFAULT_ARGS = ("--enable-automation",)
 
 
 class BrowserConfigError(Exception):
-    """`browser:` in the answer config names something this module cannot do."""
+    """`browser:` in profile/settings.yaml names something this module cannot do."""
 
 
 def load_browser_config(path=None) -> tuple[str, bool]:
@@ -49,13 +48,17 @@ def load_browser_config(path=None) -> tuple[str, bool]:
     no stealth is exactly the old behaviour, so a clone that never opted in
     keeps working.
     """
-    p = Path(path) if path is not None else paths.ANSWER_BANK
-    if not p.exists():
+    from src.shared.config_schema import load_settings, moved_hint
+
+    p = Path(path) if path is not None else paths.SETTINGS
+    if not p.exists() and moved_hint(p) is None:
         return DEFAULT_DRIVER, False
     try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        data = load_settings(p)
     except yaml.YAMLError as exc:
         raise BrowserConfigError(f"Malformed YAML in {p}: {exc}") from exc
+    except ValueError as exc:
+        raise BrowserConfigError(str(exc)) from exc
     block = data.get("browser") or {}
     if not isinstance(block, dict):
         raise BrowserConfigError(f"{p}: browser: must be a mapping")

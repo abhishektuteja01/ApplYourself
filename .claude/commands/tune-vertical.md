@@ -59,7 +59,9 @@ uv run verticals-check
 uv run config verticals <name>
 ```
 
-Read the lane's current block in `profile/verticals.yaml` and its
+Read the lane's `profile/verticals/<name>/lane.yaml`, the `defaults:` in
+`profile/verticals.yaml` that sit under it (a default list follows the lane's
+own; any other key the lane sets replaces the default), and its
 `rubric.md` in full. Then the rows — this is the evidence every later round
 argues from. `jobs/clean.parquet` holds the 14-day window;
 `jobs/scored.parquet` is the longer history.

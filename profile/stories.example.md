@@ -29,7 +29,7 @@
 #                        bullets.md, a synonym that widens the claim is a
 #                        fabrication with extra steps.
 #
-# Story prose must pass the banned-phrase list in profile/de_ai_rules.yaml.
+# Story prose must pass the banned-phrase list in de_ai_rules.yaml.
 #
 # Which story wins when several match a question is set per vertical, by
 # `C1 story priority` in profile/verticals/<name>/tailoring.md.

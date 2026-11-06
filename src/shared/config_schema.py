@@ -64,9 +64,13 @@ class ClassifierRule(_Strict):
 
 
 class VerticalsFile(_Strict):
+    retired: ClassVar[dict[str, str]] = {
+        "verticals": "verticals/<lane>/lane.yaml, one file per lane (uv run config migrate)"
+    }
     schema_version: Any = None
     default_vertical: Any = None
-    verticals: dict[str, Lane] | None = None
+    lanes: Any = None
+    defaults: Lane | None = None
     classifier_rules: list[ClassifierRule] | None = None
 
 
@@ -125,7 +129,7 @@ class ScoringFile(_Strict):
     cutoffs: Cutoffs
 
 
-# ---- automation.yaml ----
+# ---- settings.yaml ----
 
 
 class OutreachWordLimits(_Strict):
@@ -136,7 +140,12 @@ class OutreachWordLimits(_Strict):
     subject: int
 
 
-class Automation(_Strict):
+class Browser(_Strict):
+    driver: Any = None
+    stealth: Any = None
+
+
+class Settings(_Strict):
     retired: ClassVar[dict[str, str]] = {"score_threshold": "scoring.yaml cutoffs.sheet"}
     schema_version: int | None = None
     table_path: str | None = None
@@ -152,6 +161,7 @@ class Automation(_Strict):
     ghosted_after_days: int | None = None
     company_cooldown_days: int | None = None
     outreach_word_limits: OutreachWordLimits | None = None
+    browser: Browser | None = None
 
 
 # ---- contacts.yaml ----
@@ -191,7 +201,7 @@ class LintRule(_Strict):
 
 class DeAiRules(_Strict):
     retired: ClassVar[dict[str, str]] = {
-        "banned_phrases": "`rules:` (schema_version 2; see the committed profile/de_ai_rules.yaml)",
+        "banned_phrases": "`rules:` (schema_version 2; see data/defaults/de_ai_rules.yaml)",
         "outreach_only": "`rules:` entries with `scope: [outreach]`",
     }
     schema_version: Literal[2]
@@ -298,17 +308,29 @@ def validate[M: BaseModel](model: type[M], data: Any, path: Path | str) -> M:
     raise ValueError("\n".join(dict.fromkeys(lines)))
 
 
-def load_automation(path: Path) -> dict[str, Any]:
-    """profile/automation.yaml as a dict, every key checked."""
+def moved_hint(path: Path) -> ValueError | None:
+    """A "moved to" error when path is missing but the old automation.yaml is there."""
+    old = path.with_name("automation.yaml")
+    if path.is_file() or not old.is_file():
+        return None
+    return ValueError(f"{old} moved to {path}: run `uv run config migrate --dry-run`, then --apply")
+
+
+def load_settings(path: Path) -> dict[str, Any]:
+    """profile/settings.yaml as a dict, every key checked."""
+    if (exc := moved_hint(path)) is not None:
+        raise exc
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    validate(Automation, data, path)
+    validate(Settings, data, path)
     return data
 
 
-def automation_setting(key: str, default: Any) -> Any:
-    """One profile/automation.yaml value, or default when the file or key is absent."""
+def setting(key: str, default: Any) -> Any:
+    """One profile/settings.yaml value, or default when the file or key is absent."""
     from src.shared import paths
 
-    path = paths.PROFILE / "automation.yaml"
-    value = load_automation(path).get(key) if path.is_file() else None
+    path = paths.SETTINGS
+    if (exc := moved_hint(path)) is not None:
+        raise exc
+    value = load_settings(path).get(key) if path.is_file() else None
     return default if value is None else value

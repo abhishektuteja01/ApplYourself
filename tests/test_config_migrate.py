@@ -158,3 +158,89 @@ def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
         before.education,
         before.employment,
     )
+
+
+def test_automation_yaml_becomes_settings_with_the_bank_browser(tmp_path, capsys):
+    from src.apply.answers import AnswersError, load_answers
+    from src.apply.browser import load_browser_config
+    from src.shared.config_schema import load_settings
+
+    prof = _profile(tmp_path)
+    shutil.copyfile(paths.example("resume.example.yaml"), prof / "resume.yaml")
+    settings = paths.example("settings.example.yaml").read_text(encoding="utf-8")
+    old = settings[: settings.index("# Which browser")].rstrip("\n") + "\n"
+    (prof / "automation.yaml").write_text(old, encoding="utf-8")
+    b = prof / "application_answers.yaml"
+    bank = yaml.safe_load(b.read_text(encoding="utf-8"))
+    bank["browser"] = {"driver": "patchright", "stealth": True}
+    b.write_text(yaml.safe_dump(bank, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"automation\.yaml moved to .*settings\.yaml"):
+        load_settings(prof / "settings.yaml")
+    with pytest.raises(AnswersError, match=r"browser: moved to profile/settings\.yaml"):
+        load_answers(b)
+
+    assert _run(prof, apply=True) == 0
+    assert not (prof / "automation.yaml").exists()
+    assert load_browser_config(prof / "settings.yaml") == ("patchright", True)
+    load_answers(b)
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_tool_state_moves_under_dot_state(tmp_path, capsys, edited):
+    prof = _profile(tmp_path)
+    (prof / ".bank_history").mkdir()
+    (prof / ".bank_history" / "application_answers.2026-01-01.yaml").write_text(
+        "x", encoding="utf-8"
+    )
+    (prof / ".synonym_history").mkdir()
+    (prof / ".synonym_history" / "bullets.md.1").write_text("y", encoding="utf-8")
+    (prof / "synonyms_declined.yaml").write_text("[]\n", encoding="utf-8")
+    rules = paths.default("de_ai_rules.yaml").read_text(encoding="utf-8")
+    (prof / "de_ai_rules.yaml").write_text(rules + ("# mine\n" if edited else ""), encoding="utf-8")
+
+    assert _run(prof, apply=True) == 0
+    assert (prof / ".state" / "bank_history" / "application_answers.2026-01-01.yaml").is_file()
+    assert (prof / ".state" / "synonym_history" / "bullets.md.1").is_file()
+    assert (prof / ".state" / "synonyms_declined.yaml").is_file()
+    assert not (prof / ".bank_history").exists() and not (prof / "synonyms_declined.yaml").exists()
+    assert (prof / "de_ai_rules.yaml").exists() is edited
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out
+
+
+def test_inline_lanes_split_into_lane_files_with_the_same_config(tmp_path, capsys):
+    from src.shared import verticals as V
+
+    example = paths.example("verticals.example.yaml")
+    top = yaml.safe_load(example.read_text(encoding="utf-8"))
+    lanes = {
+        n: V.merge_defaults(
+            top["defaults"], yaml.safe_load(V.lane_file(example, n).read_text(encoding="utf-8"))
+        )
+        for n in top["lanes"]
+    }
+    old = {
+        "schema_version": 1,
+        "default_vertical": top["default_vertical"],
+        "verticals": lanes,
+        "classifier_rules": top["classifier_rules"],
+    }
+    prof = tmp_path / "prof"
+    prof.mkdir()
+    v = prof / "verticals.yaml"
+    v.write_text(yaml.safe_dump(old, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(ValueError, match="config migrate"):
+        V.load_verticals(v)
+    before = V.build(old, {n: (raw, v) for n, raw in lanes.items()}, v)
+
+    assert _run(prof, apply=True) == 0
+    new = yaml.safe_load(v.read_text(encoding="utf-8"))
+    assert new["lanes"] == list(lanes) and new["defaults"] == {"years": top["defaults"]["years"]}
+    assert config_migrate._shape(V.load_verticals(v)) == config_migrate._shape(before)
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out

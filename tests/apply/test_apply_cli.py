@@ -323,14 +323,10 @@ class TestSalaryFor:
             _salary_bank(germany={"amount": 1, "currency": "EUR", "markup_pct": 5})
 
     def test_the_old_lane_key_names_where_it_moved(self, tmp_path):
-        from src.shared.config_schema import VerticalsFile, validate
+        from src.shared.config_schema import Lane, validate
 
         with pytest.raises(ValueError, match=r"moved to application_answers\.yaml"):
-            validate(
-                VerticalsFile,
-                {"verticals": {"example_primary": {"salary_expectation": {"fallback": 1}}}},
-                "verticals.yaml",
-            )
+            validate(Lane, {"salary_expectation": {"fallback": 1}}, "lane.yaml")
 
 
 class TestPlanCommand:
@@ -1997,7 +1993,7 @@ class TestEachLessonMustHold:
 
         self._bank(tmp_path, monkeypatch)
         bank.learn([bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them")])
-        assert list((tmp_path / ".bank_history").glob("bank.*.yaml"))
+        assert list((tmp_path / ".state" / "bank_history").glob("bank.*.yaml"))
 
 
 def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):

@@ -1,4 +1,4 @@
-"""`browser:` in the answer config picks the driver and the stealth args.
+"""`browser:` in profile/settings.yaml picks the driver and the stealth args.
 
 Some boards score the browser before they will let a field work at all: a
 plain launch reports `navigator.webdriver: true`, and Lever locks its location
@@ -13,35 +13,33 @@ from src.apply import browser as B
 
 class TestLoadBrowserConfig:
     def _write(self, tmp_path, body):
-        p = tmp_path / "application_answers.yaml"
+        p = tmp_path / "settings.yaml"
         p.write_text(body, encoding="utf-8")
         return p
 
     def test_reads_the_driver_and_stealth_flag(self, tmp_path):
-        p = self._write(
-            tmp_path, "schema_version: 2\nbrowser:\n  driver: patchright\n  stealth: true\n"
-        )
+        p = self._write(tmp_path, "browser:\n  driver: patchright\n  stealth: true\n")
         assert B.load_browser_config(p) == ("patchright", True)
 
     def test_a_missing_file_falls_back_to_the_stock_driver(self, tmp_path):
         assert B.load_browser_config(tmp_path / "gone.yaml") == (B.DEFAULT_DRIVER, False)
 
     def test_a_config_with_no_browser_block_keeps_the_old_behaviour(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 2\nidentity:\n  first_name: A\n")
+        p = self._write(tmp_path, "retries: 1\n")
         assert B.load_browser_config(p) == (B.DEFAULT_DRIVER, False)
 
     def test_an_unknown_driver_is_refused_rather_than_silently_ignored(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 2\nbrowser:\n  driver: selenium\n")
+        p = self._write(tmp_path, "browser:\n  driver: selenium\n")
         with pytest.raises(B.BrowserConfigError, match=r"browser.driver"):
             B.load_browser_config(p)
 
     def test_a_non_mapping_browser_block_is_refused(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 2\nbrowser: patchright\n")
-        with pytest.raises(B.BrowserConfigError, match="must be a mapping"):
+        p = self._write(tmp_path, "browser: patchright\n")
+        with pytest.raises(B.BrowserConfigError, match="browser"):
             B.load_browser_config(p)
 
     def test_the_driver_name_is_case_and_space_insensitive(self, tmp_path):
-        p = self._write(tmp_path, "schema_version: 2\nbrowser:\n  driver: '  Patchright '\n")
+        p = self._write(tmp_path, "browser:\n  driver: '  Patchright '\n")
         assert B.load_browser_config(p)[0] == "patchright"
 
 
@@ -82,12 +80,3 @@ class TestLaunchArgs:
         B.launch(self.FakeP(chromium), stealth=True)
         assert chromium.kwargs["user_data_dir"].endswith(".apply_profile")
         assert chromium.kwargs["channel"] == "chrome"
-
-
-class TestAnswerConfigAcceptsTheBlock:
-    def test_browser_is_an_allowed_top_level_key(self):
-        """The answer loader refuses unknown top-level keys, so the real
-        config would fail to load without this."""
-        from src.apply.answers import TOP_LEVEL_KEYS
-
-        assert "browser" in TOP_LEVEL_KEYS

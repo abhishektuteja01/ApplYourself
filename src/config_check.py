@@ -30,10 +30,10 @@ def _discovery() -> None:
         raise ValueError("; ".join(problems))
 
 
-def _automation() -> None:
-    from src.shared.config_schema import load_automation
+def _settings() -> None:
+    from src.shared.config_schema import load_settings
 
-    load_automation(paths.PROFILE / "automation.yaml")
+    load_settings(paths.SETTINGS)
 
 
 def _contacts() -> None:
@@ -69,7 +69,7 @@ CHECKS: tuple[tuple[str, bool, Callable[[], None]], ...] = (
     ("verticals.yaml", True, _verticals),
     ("scoring.yaml", True, _scoring),
     ("discovery.yaml", False, _discovery),
-    ("automation.yaml", False, _automation),
+    ("settings.yaml", False, _settings),
     ("contacts.yaml", False, _contacts),
     ("application_answers.yaml", True, _answers),
     ("resume.yaml + bullets.md + skills_master.md", True, _resume_sources),
@@ -79,12 +79,13 @@ CHECKS: tuple[tuple[str, bool, Callable[[], None]], ...] = (
 
 def main(argv: list[str] | None = None) -> int:
     from src.apply.answers import AnswersError
+    from src.shared.config_schema import moved_hint
 
     errors = (OSError, ValueError, KeyError, TypeError, yaml.YAMLError, AnswersError)
     failed = 0
     for name, required, check in CHECKS:
         first = paths.PROFILE / name.split(" ")[0]
-        if not required and not first.exists():
+        if not required and not first.exists() and moved_hint(first) is None:
             print(f"skip   {name} (not found)")
             continue
         try:

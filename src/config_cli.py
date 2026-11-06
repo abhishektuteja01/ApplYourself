@@ -1,6 +1,6 @@
 """`config` — read-only views of profile/ config for command prose and scripts.
 
-  config get automation KEY    one value from profile/automation.yaml
+  config get settings KEY      one value from profile/settings.yaml
   config get discovery KEY     one resolved field of profile/discovery.yaml
   config verticals [LANE]      lanes and default; with LANE, its term and rule counts
   config classify TITLE ...    the lane each title classifies to
@@ -22,12 +22,12 @@ from src.shared import paths
 
 
 def _get(section: str, key: str) -> object:
-    if section == "automation":
-        from src.shared.config_schema import load_automation
+    if section == "settings":
+        from src.shared.config_schema import load_settings
 
-        data = load_automation(paths.PROFILE / "automation.yaml")
+        data = load_settings(paths.SETTINGS)
         if key not in data:
-            raise ValueError(f"automation.yaml has no `{key}`")
+            raise ValueError(f"settings.yaml has no `{key}`")
         return data[key]
     from src.discovery.config import load_config
 
@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("get")
-    g.add_argument("section", choices=("automation", "discovery"))
+    g.add_argument("section", choices=("settings", "discovery"))
     g.add_argument("key")
     v = sub.add_parser("verticals")
     v.add_argument("lane", nargs="?")

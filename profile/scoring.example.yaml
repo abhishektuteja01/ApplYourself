@@ -56,7 +56,7 @@ jd_quality:
 # Fit-score cutoffs, each at or above the one before. review and tailor set
 # suggested_action (the judge may only lower it); keep_long keeps a role in
 # the live view retention.high_days (discovery.yaml), else low_days; sheet
-# puts it on the night's status sheet (automation.yaml table_path).
+# puts it on the night's status sheet (settings.yaml table_path).
 cutoffs:
   review: 50
   tailor: 60

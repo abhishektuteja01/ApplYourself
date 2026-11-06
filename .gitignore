@@ -11,8 +11,9 @@
 
 # =============================================================================
 # profile/ — real experience, contacts, strategy, and the PII denylist itself.
-# Committed: the *.example.* templates, the two rule files, and the three
-# example_* vertical directories.
+# Committed: the *.example.* templates and the three example_* vertical
+# directories. profile/.state/ holds what the tools write (history, declined
+# synonyms); the shipped rule defaults live in data/defaults/.
 # =============================================================================
 profile/*
 !profile/*.example.yaml
@@ -23,7 +24,6 @@ profile/*
 # guarded by tests/test_example_templates.py, which fails if either one grows
 # text beyond its approved set or picks up an author in its core properties.
 !profile/*.example.docx
-!profile/de_ai_rules.yaml
 !profile/verticals/
 profile/verticals/*
 !profile/verticals/example_primary/

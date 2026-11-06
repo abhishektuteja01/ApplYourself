@@ -253,7 +253,7 @@ class DiscoveryConfig:
                 problems.append(f"abroad.lanes: {v!r} is not a vertical")
             elif not lanes[v].abroad_terms:
                 problems.append(
-                    f"abroad.lanes: {v!r} has no abroad_terms in profile/verticals.yaml"
+                    f"abroad.lanes: {v!r} has no abroad_terms in profile/verticals/{v}/lane.yaml"
                 )
         return problems
 

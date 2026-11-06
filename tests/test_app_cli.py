@@ -448,9 +448,9 @@ def test_lint_outreach_on_a_missing_draft_prints_one_line(repo, capsys):
 
 def _outreach(repo, capsys, limits=None, **over):
     rel = _built(repo, capsys)
-    auto = yaml.safe_load(paths.example("automation.example.yaml").read_text(encoding="utf-8"))
+    auto = yaml.safe_load(paths.example("settings.example.yaml").read_text(encoding="utf-8"))
     auto["outreach_word_limits"].update(limits or {})
-    (repo / "profile" / "automation.yaml").write_text(yaml.safe_dump(auto), encoding="utf-8")
+    (repo / "profile" / "settings.yaml").write_text(yaml.safe_dump(auto), encoding="utf-8")
     draft = {
         "channel": "recruiter",
         "medium": "email",

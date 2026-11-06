@@ -17,7 +17,7 @@ Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
   reads naturally.
 - **REPHRASE-LICENSE** — a reworded bullet may use only the words in that
   bullet's canonical text, its `allowable_synonyms`, and the stopwords in
-  `profile/de_ai_rules.yaml`.
+  `de_ai_rules.yaml`.
 - **SKILLS-SOURCE** — a Skills line lists only `skills_master.md` entries whose
   `show` names that line. A skill is shown by its `name` or one of its
   `allowable_synonyms`.
@@ -35,8 +35,8 @@ file may hold.
 | `license` | a reworded bullet uses a word outside REPHRASE-LICENSE |
 | `number` | a number with no source: on a resume, the cited bullets, a context header or the baseline summary; in a letter or answers, the JD, a context header or a `uses` bullet |
 | `skill` | a summary names a skill no cited bullet backs, or an alias that is not an allowable synonym |
-| `lint` | a banned phrase from a `level: block` rule in `profile/de_ai_rules.yaml`; a `level: warn` hit is listed under `warnings` and never fails the build. Company names, the recipient's name, skill names, context titles and orgs, URLs and dates are never flagged |
-| `length` | an outreach body or subject runs past its `outreach_word_limits` entry in `profile/automation.yaml` |
+| `lint` | a banned phrase from a `level: block` rule in `de_ai_rules.yaml`; a `level: warn` hit is listed under `warnings` and never fails the build. Company names, the recipient's name, skill names, context titles and orgs, URLs and dates are never flagged |
+| `length` | an outreach body or subject runs past its `outreach_word_limits` entry in `profile/settings.yaml` |
 | `pages` | the pdf runs past one page, or "page count unknown": no pdf was made. That one is not a plan problem: do not edit, stop and report it (`--no-pdf` passes without a page count, only when the user asks) |
 
 Mechanical fixes (dashes, smart quotes, ellipses, odd spaces) are applied

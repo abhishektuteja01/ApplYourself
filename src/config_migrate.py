@@ -3,7 +3,7 @@ current one. `--dry-run` prints the diff, `--apply` writes it. Idempotent: a
 migrated profile has nothing left to move.
 
 Text edits keep a YAML file's comments; the answer bank is rewritten through
-`bank.write`, which validates it and keeps the old file in `.bank_history/`.
+`bank.write`, which validates it and keeps the old file in `.state/bank_history/`.
 """
 
 from __future__ import annotations
@@ -23,6 +23,8 @@ SCORING = "scoring.yaml"
 DISCOVERY = "discovery.yaml"
 VERTICALS = "verticals.yaml"
 RESUME = "resume.yaml"
+SETTINGS = "settings.yaml"
+OLD_SETTINGS = "automation.yaml"
 
 
 @dataclass
@@ -33,10 +35,15 @@ class Profile:
     texts: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    renamed: dict[str, str] = field(default_factory=dict)
+    """new name -> old name: the new file's text starts from the old one's."""
+    moves: list[tuple[str, str]] = field(default_factory=list)
+    """(from, to), files or folders moved as they are, before any text is written."""
+    deletes: list[str] = field(default_factory=list)
 
     def text(self, name: str) -> str | None:
         if name not in self.texts:
-            p = self.root / name
+            p = self.root / self.renamed.get(name, name)
             if not p.is_file():
                 return None
             self.texts[name] = p.read_text(encoding="utf-8")
@@ -361,7 +368,232 @@ def _resume_facts(p: Profile) -> None:
     p.notes.append(f"{BANK}: schema_version 3; identity, education and employment read {RESUME}")
 
 
-STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad, _salary, _resume_facts)
+def _settings(p: Profile) -> None:
+    """automation.yaml -> settings.yaml, and the bank's `browser:` block into it."""
+    if (p.root / OLD_SETTINGS).is_file():
+        if (p.root / SETTINGS).is_file():
+            p.problems.append(
+                f"{OLD_SETTINGS} and {SETTINGS} both exist: move what {OLD_SETTINGS} "
+                f"still holds into {SETTINGS} by hand, then delete {OLD_SETTINGS}"
+            )
+            return
+        p.renamed[SETTINGS] = OLD_SETTINGS
+        p.texts[SETTINGS] = p.text(SETTINGS) or ""
+        p.notes.append(f"{OLD_SETTINGS} -> {SETTINGS}")
+    bank = p.data(BANK)
+    if not isinstance(bank, dict) or "browser" not in bank:
+        return
+    have = (p.data(SETTINGS) or {}).get("browser")
+    if have is not None and have != bank["browser"]:
+        p.problems.append(
+            f"{BANK} browser: {bank['browser']} differs from {SETTINGS} browser: {have}; "
+            f"keep one in {SETTINGS} and delete the other"
+        )
+        return
+    if have is None:
+        text = (p.text(SETTINGS) or "").rstrip("\n")
+        block = yaml.safe_dump({"browser": bank["browser"]}, sort_keys=False)
+        p.texts[SETTINGS] = (
+            (text + "\n\n" if text else "")
+            + "# Which browser drives the /apply form. patchright | playwright.\n"
+            + block
+        )
+    del bank["browser"]
+    p.set_bank(bank)
+    p.notes.append(f"{BANK} browser: -> {SETTINGS}")
+
+
+STATE = ".state"
+# What the tools write, (old place, place under .state/).
+STATE_MOVES = (
+    (".bank_history", "bank_history"),
+    (".synonym_history", "synonym_history"),
+    ("synonyms_declined.yaml", "synonyms_declined.yaml"),
+)
+DE_AI = "de_ai_rules.yaml"
+
+
+def _state(p: Profile) -> None:
+    """Tool-written files -> .state/; a de_ai_rules.yaml equal to the shipped
+    default goes (data/defaults/ holds it), a different one stays as the override."""
+    from src.shared import paths
+
+    for old, new in STATE_MOVES:
+        src, dst = p.root / old, p.root / STATE / new
+        if not src.exists():
+            continue
+        if dst.is_file():
+            p.problems.append(f"{old} and {STATE}/{new} both exist: keep one by hand")
+            continue
+        p.moves.append((old, f"{STATE}/{new}"))
+        p.notes.append(f"{old} -> {STATE}/{new}")
+    rules = p.text(DE_AI)
+    if rules is None:
+        return
+    if rules == paths.default(DE_AI).read_text(encoding="utf-8"):
+        p.deletes.append(DE_AI)
+        p.notes.append(f"{DE_AI} removed: the same as data/defaults/{DE_AI}")
+    else:
+        p.notes.append(f"{DE_AI} kept: it differs from data/defaults/{DE_AI} and replaces it")
+
+
+# Lane keys `defaults:` may take over when every lane holds the same value.
+LIFTABLE = ("years",)
+
+
+def _dedent(lines: list[str], n: int) -> list[str]:
+    return [ln[min(n, len(ln) - len(ln.lstrip(" "))) :] for ln in lines]
+
+
+def _lanes_text(text: str) -> tuple[int, int, list[tuple[str, list[str], list[str]]]] | None:
+    """(start, end, [(lane, lead comment lines, body lines)]) of the top-level
+    `verticals:` block in text's lines, or None when its shape is not the usual one."""
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, ln in enumerate(lines) if re.match(r"verticals\s*:\s*$", ln)), None)
+    if start is None:
+        return None
+    end = start + 1
+    while end < len(lines) and (
+        lines[end][:1] in (" ", "\t") or not lines[end].strip() or lines[end].startswith("#")
+    ):
+        end += 1
+    while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].startswith("#")):
+        end -= 1
+    keys = [i for i in range(start + 1, end) if re.match(r"  [a-z][a-z0-9_]*:\s*$", lines[i])]
+    if not keys:
+        return None
+    leads = []
+    for k in keys:
+        s = k
+        while s > start + 1 and lines[s - 1].lstrip().startswith("#") and lines[s - 1][:3] != "   ":
+            s -= 1
+        leads.append(s)
+    if any(ln.strip() for ln in lines[start + 1 : leads[0]]):
+        return None
+    out = []
+    for n, k in enumerate(keys):
+        stop = leads[n + 1] if n + 1 < len(keys) else end
+        body = lines[k + 1 : stop]
+        while body and not body[-1].strip():
+            body.pop()
+        if any(
+            ln.strip() and not ln.startswith("    ") and not ln.lstrip().startswith("#")
+            for ln in body
+        ):
+            return None
+        out.append(
+            (lines[k].strip().rstrip(":"), _dedent(lines[leads[n] : k], 2), _dedent(body, 4))
+        )
+    return start, end, out
+
+
+def _split_lanes(p: Profile) -> None:
+    """verticals.yaml schema 1 -> 2: each lane block to verticals/<lane>/lane.yaml,
+    `lanes:` keeps their order, and a LIFTABLE key every lane holds alike goes to
+    `defaults:`. Refused unless the loaded config stays exactly the same."""
+    import tempfile
+
+    from src.shared import verticals as V
+
+    data = p.data(VERTICALS)
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or "verticals" not in data:
+        return
+    text = p.text(VERTICALS) or ""
+    found = _lanes_text(text)
+    if found is None:
+        p.problems.append(f"{VERTICALS}: could not find each lane block; split it by hand")
+        return
+    start, end, blocks = found
+    raw = data["verticals"]
+    names = [name for name, _, _ in blocks]
+    if names != list(raw):
+        p.problems.append(f"{VERTICALS}: lanes read {names}, the file holds {list(raw)}")
+        return
+    lifted = {
+        key: raw[names[0]][key]
+        for key in LIFTABLE
+        if len(names) > 1
+        and all(key in raw[n] for n in names)
+        and all(raw[n][key] == raw[names[0]][key] for n in names)
+    }
+    lines = text.splitlines(keepends=True)
+    block = [
+        "# Shortlist order (first = primary). Each lane is verticals/<lane>/lane.yaml.\n",
+        f"lanes: [{', '.join(names)}]\n",
+    ]
+    if lifted:
+        block += [
+            "\n",
+            "# Under every lane's lane.yaml: a lane's list comes first, then the list here;\n",
+            "# any other key a lane sets replaces the one here.\n",
+            "defaults:\n",
+            *(
+                "  " + ln
+                for ln in yaml.safe_dump(
+                    lifted, default_flow_style=None, sort_keys=False, allow_unicode=True
+                ).splitlines(keepends=True)
+            ),
+        ]
+    tail = lines[end:]
+    while tail and not tail[0].strip():
+        tail.pop(0)
+    top = "".join(lines[:start] + block + (["\n"] if tail else []) + tail)
+    top = re.sub(r"(?m)^schema_version:\s*1\b", "schema_version: 2", top, count=1)
+    lane_texts = {}
+    for name, lead, body in blocks:
+        out = "".join(
+            [
+                f"# Lane `{name}`: listed in {VERTICALS} `lanes:`, merged over its `defaults:`.\n",
+                *lead,
+                *body,
+            ]
+        )
+        for key in lifted:
+            out = drop_top_key(out, key)
+        rel = f"verticals/{name}/lane.yaml"
+        if (p.root / rel).exists():
+            p.problems.append(f"{rel} already exists; merge it with {VERTICALS} by hand")
+            return
+        lane_texts[rel] = out
+    try:
+        old = V.build(data, {n: (raw[n], p.root / VERTICALS) for n in names}, p.root / VERTICALS)
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, body_text in {VERTICALS: top, **lane_texts}.items():
+                (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(tmp) / rel).write_text(body_text, encoding="utf-8")
+            new = V.load_verticals(Path(tmp) / VERTICALS)
+    except ValueError as exc:
+        p.problems.append(f"{VERTICALS}: does not load: {exc}")
+        return
+    if _shape(old) != _shape(new):
+        p.problems.append(f"{VERTICALS}: the split would change the loaded config; split by hand")
+        return
+    p.texts[VERTICALS] = top
+    p.texts.update(lane_texts)
+    p.notes.append(
+        f"{VERTICALS}: lanes {names} -> verticals/<lane>/lane.yaml"
+        + (f"; defaults: {sorted(lifted)}" if lifted else "")
+    )
+
+
+def _shape(cfg: Any) -> tuple:
+    """Everything a loaded config holds, comparable with ==."""
+    return (
+        cfg.default_vertical,
+        tuple((n, v) for n, v in cfg.verticals.items()),
+        tuple((v, repr(r)) for v, r in cfg.classifier_rules),
+    )
+
+
+STEPS: tuple[Callable[[Profile], None], ...] = (
+    _languages,
+    _abroad,
+    _salary,
+    _resume_facts,
+    _settings,
+    _state,
+    _split_lanes,
+)
 
 
 def plan(root: Path) -> Profile:
@@ -376,19 +608,23 @@ def changed(p: Profile) -> dict[str, tuple[str, str]]:
     """{file: (old text, new text)} for every file a step changed."""
     out = {}
     for name, new in p.texts.items():
-        old = (p.root / name).read_text(encoding="utf-8") if (p.root / name).is_file() else ""
-        if new != old:
+        src = p.root / p.renamed.get(name, name)
+        old = src.read_text(encoding="utf-8") if src.is_file() else ""
+        if new != old or name in p.renamed:
             out[name] = (old, new)
     return out
 
 
 def diff(p: Profile) -> str:
+    """A unified diff per changed file; a new file is named with its size."""
     return "".join(
-        "".join(
+        f"+++ new file b/{name} ({new.count(chr(10))} lines)\n"
+        if not old and name not in p.renamed
+        else "".join(
             difflib.unified_diff(
                 old.splitlines(keepends=True),
                 new.splitlines(keepends=True),
-                f"a/{name}",
+                f"a/{p.renamed.get(name, name)}",
                 f"b/{name}",
             )
         )
@@ -396,26 +632,46 @@ def diff(p: Profile) -> str:
     )
 
 
+def _move(src: Path, dst: Path) -> None:
+    """src onto dst; a folder's files join whatever dst already holds."""
+    if src.is_dir():
+        for child in sorted(src.iterdir()):
+            _move(child, dst / child.name)
+        src.rmdir()
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(src, dst)
+
+
 def write(p: Profile) -> list[str]:
-    """Write every changed file; the bank last, through bank.write."""
+    """Move, then write every changed file, the bank last through bank.write,
+    then delete."""
     from src.apply import bank as bank_writer
     from src.shared.parquet_io import locked
 
     done = []
+    for old, new in p.moves:
+        _move(p.root / old, p.root / new)
+        done.append(new)
     todo = changed(p)
     for name, (_, new) in sorted(todo.items()):
         if name == BANK:
             continue
         path = p.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(new, encoding="utf-8")
         os.replace(tmp, path)
         done.append(name)
+        if name in p.renamed:
+            (p.root / p.renamed[name]).unlink()
     if BANK in todo:
         path = p.root / BANK
         with locked(path):
             bank_writer.write(yaml.safe_load(todo[BANK][1]), path)
         done.append(BANK)
+    for name in p.deletes:
+        (p.root / name).unlink()
     return done
 
 
@@ -432,12 +688,12 @@ def main(args: Any) -> int:
     if p.problems:
         return 1
     todo = changed(p)
-    if not todo:
+    if not (todo or p.moves or p.deletes):
         print("nothing to migrate")
         return 0
     if BANK in todo and re.search(r"^\s*#", todo[BANK][0], re.MULTILINE):
         print(
-            f"note   {BANK} is rewritten without its comments; the old file stays in .bank_history/"
+            f"note   {BANK} is rewritten without its comments; the old file stays in .state/bank_history/"
         )
     if not args.apply:
         print(diff(p), end="")

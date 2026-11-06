@@ -43,7 +43,7 @@ applied or submitted; carry them to the report and keep going.
 - `profile/skills_master.md` — skills, aliases, and `show` (which line each sits
   on per lane)
 - `profile/resume.yaml` — each context's per-lane `{min, max}` bullet budget
-- the lane's `resume:` block in `profile/verticals.yaml` — section order, total
+- the lane's `resume:` block in `profile/verticals/<vertical>/lane.yaml` — section order, total
   bullet budget, skill lines, baseline summary
 - `profile/verticals/<vertical>/tailoring.md` — how this lane adapts to a JD
 

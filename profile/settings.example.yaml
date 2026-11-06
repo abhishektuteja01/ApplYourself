@@ -1,3 +1,5 @@
+# Machine settings: the night run, writing limits and the /apply browser.
+#
 # Overnight chain run by scripts/nightly_pipeline.sh. `uv run apply sheet` reads
 # table_path (its cutoff is scoring.yaml cutoffs.sheet); the stage scripts read
 # the keys further down.
@@ -31,3 +33,8 @@ outreach_word_limits:
   referral: 120
   alumni: 100
   subject: 8
+
+# Which browser drives the /apply form. patchright | playwright.
+browser:
+  driver: patchright
+  stealth: true

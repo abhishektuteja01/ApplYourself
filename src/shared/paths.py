@@ -35,7 +35,7 @@ _LAYOUT = {
     "RESUME": "profile/resume.yaml",
     "BULLETS": "profile/bullets.md",
     "SKILLS": "profile/skills_master.md",
-    "AUTOMATION": "profile/automation.yaml",
+    "SETTINGS": "profile/settings.yaml",
     "CONTACTS": "profile/contacts.yaml",
     "SCORING": "profile/scoring.yaml",
     "DE_AI_RULES": "profile/de_ai_rules.yaml",
@@ -43,8 +43,8 @@ _LAYOUT = {
     "DISCOVERY_CONFIG": "profile/discovery.yaml",
     "VERTICALS_CONFIG": "profile/verticals.yaml",
     "VERTICALS_DIR": "profile/verticals",
-    "SYNONYM_DECLINED": "profile/synonyms_declined.yaml",
-    "SYNONYM_HISTORY": "profile/.synonym_history",
+    "SYNONYM_DECLINED": "profile/.state/synonyms_declined.yaml",
+    "SYNONYM_HISTORY": "profile/.state/synonym_history",
     "APPLICATIONS": "applications",
     "APPLY_RUNS": "applications/apply_runs",
     "SHORTLIST": "shortlist",
@@ -77,7 +77,7 @@ PROFILE: Path
 RESUME: Path
 BULLETS: Path
 SKILLS: Path
-AUTOMATION: Path
+SETTINGS: Path
 CONTACTS: Path
 SCORING: Path
 DE_AI_RULES: Path
@@ -113,6 +113,11 @@ def use_root(path: Path) -> Path:
 def example(name: str) -> Path:
     """A committed `profile/` template. Shipped with the code, so it never moves."""
     return REPO_ROOT / "profile" / name
+
+
+def default(name: str) -> Path:
+    """A committed default under `data/defaults/`, used when profile/ has no copy."""
+    return REPO_ROOT / "data" / "defaults" / name
 
 
 if not TYPE_CHECKING:

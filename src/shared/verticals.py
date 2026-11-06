@@ -2,9 +2,11 @@
 definitions.
 
 Deterministic config loading only (no LLM calls in src/).
-`profile/verticals.yaml` is gitignored user data; a missing file FAILS LOUD
-with a pointer at the committed template — never a
-silent empty fallback, unlike lint rules.
+`profile/verticals.yaml` is gitignored user data: the lane order (`lanes:`),
+`defaults:` and `classifier_rules`. Each lane's block is
+`verticals/<lane>/lane.yaml` beside that file, merged over `defaults:`. A
+missing file FAILS LOUD with a pointer at the committed template — never a
+silent empty fallback.
 
 Consumers (discovery, cleaning, score_filter, score_store) must call
 `get_config()` inside function bodies — never at module level, never
@@ -28,10 +30,10 @@ from typing import Any, Protocol
 import yaml
 
 from src.shared import paths
-from src.shared.config_schema import VerticalsFile, validate
+from src.shared.config_schema import Lane, VerticalsFile, validate
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -257,6 +259,21 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
     )
 
 
+def lane_file(config: Path, name: str) -> Path:
+    """Where lane `name` of the verticals.yaml at `config` lives."""
+    return config.parent / "verticals" / name / "lane.yaml"
+
+
+def merge_defaults(defaults: dict[str, Any], lane: dict[str, Any]) -> dict[str, Any]:
+    """lane over defaults: a list is the lane's then the default's; any other
+    key the lane sets replaces the default's."""
+    out = dict(defaults)
+    for key, value in lane.items():
+        base = out.get(key)
+        out[key] = value + base if isinstance(base, list) and isinstance(value, list) else value
+    return out
+
+
 def load_verticals(path: Path | None = None) -> VerticalsConfig:
     """Parse and validate the vertical registry. Raises FileNotFoundError
     (with a pointer at the committed template) if the file is missing, and
@@ -272,14 +289,42 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
     data = yaml.safe_load(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise _fail(p, "top level must be a mapping")
+    if data.get("schema_version") == 1 and "verticals" in data:
+        raise _fail(
+            p,
+            "schema_version 1 holds every lane inline; each lane moved to "
+            "verticals/<lane>/lane.yaml beside this file. Run "
+            "`uv run config migrate --dry-run`, then --apply",
+        )
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise _fail(p, f"schema_version must be {_SCHEMA_VERSION}")
     validate(VerticalsFile, data, p)
 
-    raw_verticals = _require(data, "verticals", p, "top level")
-    if not isinstance(raw_verticals, dict) or not raw_verticals:
-        raise _fail(p, "verticals must be a nonempty mapping")
-    verticals = {name: _parse_vertical(name, raw, p) for name, raw in raw_verticals.items()}
+    names = _str_list(_require(data, "lanes", p, "top level"), p, "lanes")
+    if not names:
+        raise _fail(p, "lanes must be a nonempty list")
+    if len(set(names)) != len(names):
+        raise _fail(p, "lanes lists a lane twice")
+    defaults = data.get("defaults") or {}
+    lanes: dict[str, tuple[Any, Path]] = {}
+    for name in names:
+        if not _NAME_RE.match(name):
+            raise _fail(p, f"vertical name {name!r} must match ^[a-z][a-z0-9_]*$")
+        lp = lane_file(p, name)
+        if not lp.is_file():
+            raise _fail(p, f"lanes: {name} has no {lp}")
+        raw = yaml.safe_load(lp.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise _fail(lp, "top level must be a mapping")
+        validate(Lane, raw, lp)
+        lanes[name] = (merge_defaults(defaults, raw), lp)
+    return build(data, lanes, p)
+
+
+def build(data: dict[str, Any], lanes: dict[str, tuple[Any, Path]], p: Path) -> VerticalsConfig:
+    """The config from the top-level file's data and each lane's merged
+    block, with the file it came from."""
+    verticals = {name: _parse_vertical(name, raw, lp) for name, (raw, lp) in lanes.items()}
 
     default_vertical = _require(data, "default_vertical", p, "top level")
     if default_vertical not in verticals:
@@ -357,7 +402,7 @@ def main() -> int:
         return 1
     no_shape = [n for n, v in cfg.verticals.items() if v.resume is None]
     if no_shape:
-        print("ERROR: lane(s) with no `resume:` block in profile/verticals.yaml:")
+        print("ERROR: lane(s) with no `resume:` block in profile/verticals/<lane>/lane.yaml:")
         for n in no_shape:
             print(f"  {n}")
         return 1

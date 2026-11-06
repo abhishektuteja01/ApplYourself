@@ -7,7 +7,7 @@ with find_phrase_violations as the deterministic referee.
 Tier 1 (mechanical, auto-fix): em/en-dash, smart quotes, ellipsis, NBSP,
 zero-width.
 
-Tier 2 (phrase, flag-and-rewrite): the `rules:` table in profile/de_ai_rules.yaml.
+Tier 2 (phrase, flag-and-rewrite): the `rules:` table in de_ai_rules.yaml.
 NEVER auto-rewritten. A `block` violation fails the build and the caller rewrites
 the offending line until none is left; a `warn` one is reported only.
 
@@ -71,9 +71,12 @@ class LintConfigError(ValueError):
 
 
 def load_de_ai_rules(path: Path | None = None) -> dict:
-    """Load profile/de_ai_rules.yaml, every key checked. A missing or malformed
-    file raises LintConfigError."""
-    p = path or paths.DE_AI_RULES
+    """Load profile/de_ai_rules.yaml, else the shipped data/defaults/ one, every
+    key checked. A missing or malformed file raises LintConfigError."""
+    p = path or next(
+        (q for q in (paths.DE_AI_RULES, paths.default("de_ai_rules.yaml")) if q.is_file()),
+        paths.DE_AI_RULES,
+    )
     if not p.exists():
         raise LintConfigError(f"{p} is missing")
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
@@ -90,7 +93,7 @@ def _mech_rules(rules: dict | None) -> dict:
     m = rules.get("mechanical") or {}
     missing = [k for k in MECH_KEYS if k not in m]
     if missing:
-        raise LintConfigError(f"profile/de_ai_rules.yaml mechanical: missing keys {missing}")
+        raise LintConfigError(f"de_ai_rules.yaml mechanical: missing keys {missing}")
     return m
 
 

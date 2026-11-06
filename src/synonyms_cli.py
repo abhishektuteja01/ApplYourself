@@ -33,7 +33,7 @@ import yaml
 from src.resume_model import parse_entries
 from src.score_store import view
 from src.shared import clock, paths
-from src.shared.config_schema import load_automation
+from src.shared.config_schema import load_settings
 
 HISTORY_KEEP = 20
 MAX_WORDS = 8
@@ -46,12 +46,12 @@ class SynonymsError(ValueError):
 
 def _config() -> dict:
     try:
-        data = load_automation(paths.AUTOMATION)
+        data = load_settings(paths.SETTINGS)
     except ValueError as exc:
         raise SynonymsError(str(exc)) from exc
     for key in ("auto_add_synonyms", "unlock_max_open"):
         if key not in data:
-            raise SynonymsError(f"profile/automation.yaml has no `{key}`")
+            raise SynonymsError(f"profile/settings.yaml has no `{key}`")
     return data
 
 
@@ -74,6 +74,11 @@ def _new_job_ids() -> list[str]:
 
 
 def _read_yaml(path: Path, default):
+    old = paths.PROFILE / path.name
+    if path == paths.SYNONYM_DECLINED and old.is_file():
+        raise SynonymsError(
+            f"{old} moved to {path}: run `uv run config migrate --dry-run`, then --apply"
+        )
     if not path.is_file():
         return default
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
