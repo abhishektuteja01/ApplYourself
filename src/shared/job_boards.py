@@ -249,6 +249,26 @@ def board_slug(url: str) -> str:
     return hit.slug if hit else ""
 
 
+def key_of(ats: str, slug: str) -> str:
+    """A board's key, `ats|slug` with the slug lowercased: one board per
+    (ats, slug) whatever the case."""
+    return f"{ats}|{slug.lower()}"
+
+
+def board_key(url: str, *, tenant_only: bool = False) -> str:
+    """The key of the board a posting url belongs to, or "". A Workday key
+    carries the pod and site, as its boards.csv slug does; `tenant_only` gives
+    the store's `board` (`workday|tenant`)."""
+    hit = parse_posting_url(url)
+    if hit is None or not hit.slug:
+        return ""
+    if hit.source == "workday" and not tenant_only:
+        if not (hit.pod and hit.site_id):
+            return ""
+        return key_of(hit.source, f"{hit.slug}|{hit.pod}|{hit.site_id}")
+    return key_of(hit.source, hit.slug)
+
+
 def is_applyable(url: str) -> bool:
     """Whether this url leads to a board's own application form.
 

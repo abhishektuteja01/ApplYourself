@@ -1,7 +1,8 @@
 """The board lanes: which boards to check tonight, and the one loop that
 checks them.
 
-`data/universe/boards.csv` lists the boards as `ats,name,slug,active`. `jobs/boards.parquet` holds
+`data/universe/boards.csv` lists the boards as `ats,name,slug`, and
+`boards_retired.csv` the spellings retired from it. `jobs/boards.parquet` holds
 one row per board: when it was last checked, when it last had a job that
 passed the title gate, and last check's counts. A board is due when
 `every_days` have passed since its last check; due boards run oldest first.
@@ -23,12 +24,12 @@ from pathlib import Path
 import pandas as pd
 
 from src.discovery import parse
-from src.discovery.config import pacing_floor
+from src.discovery.config import pacing_for
 from src.discovery.sources.lane import Lane, LaneStats
-from src.shared import paths, title_gate
-from src.shared.http_client import CareersError
-from src.shared.job_boards import ATS_SOURCE_NAMES, parse_posting_url
-from src.shared.parquet_io import locked, write_parquet
+from src.shared import paths, schemas, title_gate
+from src.shared.http_client import CareersError, Pacer
+from src.shared.job_boards import ATS_SOURCE_NAMES, key_of
+from src.shared.parquet_io import locked, read_parquet, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -66,20 +67,7 @@ class Board:
 
     @property
     def key(self) -> str:
-        return f"{self.ats}|{self.slug.lower()}"
-
-
-def board_key_of(url: str) -> str:
-    """The `Board.key` of the board a posting url belongs to, or "". A Workday
-    key carries the pod and site, as its slug does."""
-    hit = parse_posting_url(url)
-    if hit is None or not hit.slug:
-        return ""
-    if hit.source == "workday":
-        return (
-            f"workday|{hit.slug}|{hit.pod}|{hit.site_id}".lower() if hit.pod and hit.site_id else ""
-        )
-    return f"{hit.source}|{hit.slug}".lower()
+        return key_of(self.ats, self.slug)
 
 
 # ---------------------------------------------------------------------
@@ -111,21 +99,28 @@ def load_boards(
 ) -> list[Board]:
     """Every live board, one per (ats, slug) whatever the slug's case.
 
-    `active=0` retires that exact spelling. A board listed in two cases stays
-    live while any spelling is; the first live spelling is the one used."""
+    `boards.csv` is the hand list; a spelling in `boards_retired.csv` (or a
+    row with `active=0`) is retired, and stays retired through a re-add. A
+    board listed in two cases stays live while any spelling is; the first
+    live spelling is the one used, and the last hand-list row the name."""
     boards_dir = Path(boards_dir or paths.UNIVERSE)
     spellings: dict[str, dict[str, bool]] = {}
     names: dict[str, str] = {}
-    for row in _read_csv(boards_dir / "boards.csv"):
+    listed = [(row, False) for row in _read_csv(boards_dir / "boards.csv")]
+    retired_rows = [(row, True) for row in _read_csv(boards_dir / "boards_retired.csv")]
+    for row, from_retired in listed + retired_rows:
         a = (row.get("ats") or "").strip().lower()
         name = (row.get("name") or "").strip()
         slug = (row.get("slug") or "").strip()
         if a not in ATS_SOURCE_NAMES or not name or not slug:
             continue
-        key = f"{a}|{slug.lower()}"
+        key = key_of(a, slug)
         retired = spellings.setdefault(key, {}).get(slug, False)
-        spellings[key][slug] = retired or (row.get("active") or "").strip() == "0"
-        names[key] = name
+        spellings[key][slug] = retired or from_retired or (row.get("active") or "").strip() == "0"
+        if from_retired:
+            names.setdefault(key, name)
+        else:
+            names[key] = name
     boards = []
     for key, spots in spellings.items():
         live = [s for s, retired in spots.items() if not retired]
@@ -140,7 +135,7 @@ def load_state(path: Path | None = None) -> pd.DataFrame:
     path = path or paths.BOARD_STATE
     if not Path(path).exists():
         return pd.DataFrame(columns=STATE_COLUMNS)
-    df = pd.read_parquet(path).reindex(columns=STATE_COLUMNS)
+    df = read_parquet(path, schemas.BOARD_STATE_SCHEMA_VERSION).reindex(columns=STATE_COLUMNS)
     for col in ("last_checked", "last_found"):
         df[col] = pd.to_datetime(df[col], errors="coerce")
     for col in ("listed", "passed", "new", "strikes"):
@@ -158,7 +153,7 @@ def due_boards(
     """Boards due tonight, never-checked and oldest-checked first."""
     today = pd.Timestamp(today).normalize()
     known = {
-        f"{a}|{str(s).lower()}": r
+        key_of(a, str(s)): r
         for a, s, r in zip(state["ats"], state["slug"], state.to_dict("records"))
     }
     due = []
@@ -194,9 +189,7 @@ def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | N
     today = pd.Timestamp(today).normalize()
     with locked(path):
         state = load_state(path)
-        index = {
-            f"{a}|{str(s).lower()}": i for i, (a, s) in enumerate(zip(state["ats"], state["slug"]))
-        }
+        index = {key_of(a, str(s)): i for i, (a, s) in enumerate(zip(state["ats"], state["slug"]))}
         new_rows = []
         for r in results:
             b = r.board
@@ -242,7 +235,7 @@ def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | N
             if r.passed:
                 state.at[i, "last_found"] = today
         state = state.sort_values(["ats", "slug"], kind="stable").reset_index(drop=True)
-        write_parquet(state[STATE_COLUMNS], path)
+        write_parquet(state[STATE_COLUMNS], path, schema_version=schemas.BOARD_STATE_SCHEMA_VERSION)
 
 
 # ---------------------------------------------------------------------
@@ -366,7 +359,7 @@ class BoardLane(Lane):
 
     def run(self, crawl: Crawl, tally=None) -> LaneStats:
         src = crawl.cfg.sources[self.name]
-        pacing = max(pacing_floor(self.name), src.pacing_seconds)
+        pause = Pacer(pacing_for(crawl.cfg, self.name)).wait
         state = load_state(crawl.board_state)
         boards = due_boards(
             load_boards(self.name, boards_dir=crawl.boards_dir),
@@ -383,13 +376,6 @@ class BoardLane(Lane):
         if due > len(boards):
             stats.notes.append(f"{due - len(boards)} due boards left to the feed")
         shape_errors = 0
-        first = [True]
-
-        def pause() -> None:
-            if not first[0]:
-                time.sleep(pacing)
-            first[0] = False
-
         for board in boards:
             if crawl.deadline_reached():
                 stats.truncated = True

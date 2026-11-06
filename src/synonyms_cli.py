@@ -26,14 +26,14 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-import pandas as pd
 import yaml
 
 from src.resume_model import parse_entries
 from src.score_store import view
-from src.shared import clock, paths
+from src.shared import clock, paths, schemas
 from src.shared.config_schema import load_settings
 from src.shared.files import atomic_write_text
+from src.shared.parquet_io import read_parquet
 
 HISTORY_KEEP = 20
 MAX_WORDS = 8
@@ -89,6 +89,23 @@ def _write_yaml(path: Path, data) -> None:
     atomic_write_text(path, yaml.safe_dump(data, sort_keys=False, allow_unicode=True), mkdir=True)
 
 
+def _open_state() -> dict:
+    state = _read_yaml(paths.SYNONYM_OPEN, {}) or {}
+    schemas.check(
+        state.get("schema_version"), schemas.SYNONYM_OPEN_SCHEMA_VERSION, paths.SYNONYM_OPEN
+    )
+    return state
+
+
+def _write_open(open_items: list, closed: list) -> None:
+    data = {
+        "schema_version": schemas.SYNONYM_OPEN_SCHEMA_VERSION,
+        "open": open_items,
+        "closed": closed,
+    }
+    _write_yaml(paths.SYNONYM_OPEN, data)
+
+
 # ---------------------------------------------------------------- keywords
 
 
@@ -103,7 +120,9 @@ def keywords() -> dict:
     scored = scored[scored["job_id"].isin(ids)]
     company = {}
     if paths.CLEAN.exists():
-        clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "company"])
+        clean = read_parquet(
+            paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id", "company"]
+        )
         company = dict(zip(clean["job_id"], clean["company"]))
     seen: dict[str, dict] = {}
     freq: Counter = Counter()
@@ -213,6 +232,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
     if not path.is_file():
         raise SynonymsError(f"{path.name} not found")
     data = _read_yaml(path, {}) or {}
+    schemas.check(data.get("schema_version"), schemas.SYNONYM_PROPOSALS_SCHEMA_VERSION, path)
     out: list[str] = []
     today = _today()
 
@@ -260,6 +280,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
             paths.SYNONYM_LOG.parent.mkdir(parents=True, exist_ok=True)
             with paths.SYNONYM_LOG.open("a", encoding="utf-8") as f:
                 for row in added:
+                    row = {"schema_version": schemas.SYNONYM_LOG_SCHEMA_VERSION, **row}
                     f.write(json.dumps(row, ensure_ascii=False) + "\n")
     else:
         out.append("auto_add_synonyms is off: nothing added")
@@ -284,7 +305,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
     if new_declined:
         _write_yaml(paths.SYNONYM_DECLINED, declined)
 
-    state = _read_yaml(paths.SYNONYM_OPEN, {}) or {}
+    state = _open_state()
     open_items, closed = state.get("open") or [], state.get("closed") or []
     asked = {(i["kind"], _norm(i["thing"])) for i in [*open_items, *closed]}
     queued = 0
@@ -308,7 +329,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
         )
         queued += 1
     if queued:
-        _write_yaml(paths.SYNONYM_OPEN, {"open": open_items, "closed": closed})
+        _write_open(open_items, closed)
 
     path.unlink()
     out.insert(0, f"added={len(added)} declined={new_declined} unlock={queued}")
@@ -345,14 +366,14 @@ def approve(words: list[str]) -> list[str]:
 
 
 def answer(item_id: str, reply: str) -> str:
-    state = _read_yaml(paths.SYNONYM_OPEN, {}) or {}
+    state = _open_state()
     open_items, closed = state.get("open") or [], state.get("closed") or []
     hit = next((i for i in open_items if i["id"] == item_id), None)
     if hit is None:
         return f"no open question {item_id}"
     open_items.remove(hit)
     closed.append({**hit, "answer": reply, "answered": _today()})
-    _write_yaml(paths.SYNONYM_OPEN, {"open": open_items, "closed": closed})
+    _write_open(open_items, closed)
     return f"{item_id}: {reply}"
 
 
@@ -377,7 +398,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     try:
         if args.cmd == "keywords":
-            print(json.dumps(keywords(), indent=2, ensure_ascii=False))
+            stamped = {"schema_version": schemas.SYNONYM_KEYWORDS_SCHEMA_VERSION, **keywords()}
+            print(json.dumps(stamped, indent=2, ensure_ascii=False))
         elif args.cmd == "apply":
             print("\n".join(apply(args.file)))
         elif args.cmd == "undo":
@@ -390,6 +412,10 @@ def main(argv: list[str] | None = None) -> int:
                 if paths.SYNONYM_LOG.exists()
                 else []
             )
+            for r in rows:
+                schemas.check(
+                    r.get("schema_version"), schemas.SYNONYM_LOG_SCHEMA_VERSION, paths.SYNONYM_LOG
+                )
             print(sum(r["date"] == clock.today().isoformat() for r in rows))
         else:
             print(answer(args.id, args.reply))

@@ -20,7 +20,7 @@ from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 
-from src.shared import clock
+from src.shared import clock, schemas
 from src.shared.parquet_io import locked
 
 log = logging.getLogger(__name__)
@@ -57,9 +57,13 @@ def records(path: Path) -> list[dict]:
         if not line.strip():
             continue
         try:
-            out.append(json.loads(line))
+            rec = json.loads(line)
         except json.JSONDecodeError:
             log.warning("%s:%d is not JSON; skipped", path, n)
+            continue
+        if isinstance(rec, dict):
+            schemas.check(rec.get("schema_version"), schemas.LEDGER_SCHEMA_VERSION, f"{path}:{n}")
+        out.append(rec)
     return out
 
 
@@ -184,6 +188,7 @@ def _write(
     at: str | None,
 ) -> None:
     rec = {
+        "schema_version": schemas.LEDGER_SCHEMA_VERSION,
         "at": at or clock.now().isoformat(timespec="seconds"),
         "job_id": job_id,
         "status": status,

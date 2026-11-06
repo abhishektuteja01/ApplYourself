@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import tempfile
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -26,15 +25,16 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src.discovery import parse
-from src.discovery.sources.boards.base import board_key_of, load_boards
+from src.discovery.config import pacing_for
+from src.discovery.sources.boards.base import load_boards
 from src.discovery.sources.feed import oracle
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 from src.shared import http_client, identity, title_gate
+from src.shared.countries import CC_TO_COUNTRY
 from src.shared.http_client import CareersError
-from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.shared.job_boards import ATS_SOURCE_NAMES, board_key
 from src.shared.location.parser import parse_location
-from src.shared.location.places import CC_TO_COUNTRY
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def posting_from(
     url = row.get("url") or ""
     own = row.get("company") or ""
     company = (
-        names.get(board_key_of(url))
+        names.get(board_key(url))
         or feed_names.get((row.get("ats_type"), own.strip().lower()))
         or own
     )
@@ -218,7 +218,7 @@ class StapplyLane(Lane):
             for url, ats in zip(
                 light.column("url").to_pylist(), light.column("ats_type").to_pylist()
             ):
-                if ats in _BOARD_ATS and (key := board_key_of(url or "")):
+                if ats in _BOARD_ATS and (key := board_key(url or "")):
                     covered.add(key)
             keep, verticals = [], []
             for t in titles:
@@ -250,7 +250,7 @@ class StapplyLane(Lane):
         if self.failure is not None:
             raise self.failure
         stats = self.stats
-        pages = _PageReader(max(1.0, crawl.cfg.sources[self.name].pacing_seconds), crawl, stats)
+        pages = _PageReader(pacing_for(crawl.cfg, self.name), crawl, stats)
         named = 0
         site_names: dict[str, str] = {}
         for posting in self.rows:
@@ -342,8 +342,8 @@ class _PageReader:
     after MAX_HOST_FAILURES reads and no success."""
 
     def __init__(self, pacing: float, crawl, stats: LaneStats):
-        self.pacing, self.crawl, self.stats = pacing, crawl, stats
-        self.last = 0.0
+        self.pacer = http_client.Pacer(pacing, since_last=True)
+        self.crawl, self.stats = crawl, stats
         self.failures: dict[str, int] = {}
         self.worked: set[str] = set()
 
@@ -355,10 +355,7 @@ class _PageReader:
             site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES
         ):
             return None
-        wait = self.last + self.pacing - time.time()
-        if wait > 0:
-            time.sleep(wait)
-        self.last = time.time()
+        self.pacer.wait()
         try:
             if as_json:
                 return http_client.fetch_json(url, deadline_ts=self.crawl.deadline_ts or None)

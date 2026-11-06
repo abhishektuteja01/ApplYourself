@@ -10,7 +10,6 @@ page with nothing that passes the gate, or `max_pages`.
 
 from __future__ import annotations
 
-import random
 import re
 
 from src.discovery import parse
@@ -20,6 +19,8 @@ from src.shared.http_client import fetch_json, fetch_json_post
 
 # Workday's server-side page-size ceiling: 21 fails, 20 succeeds.
 LIST_LIMIT = 20
+# Unevenness on top of the base pacing between pages: Workday sits behind Cloudflare.
+PAGE_JITTER_SECONDS = 0.25
 
 
 class WorkdaySlugError(ValueError):
@@ -90,11 +91,9 @@ class WorkdayLane(BoardLane):
                 _path=path,
             )
 
-        def jittered_pause():
-            pause()
-            _jitter()
-
-        return self.paged_search(crawl, jittered_pause, LIST_LIMIT, fetch_page, to_posting)
+        return self.paged_search(
+            crawl, lambda: pause(PAGE_JITTER_SECONDS), LIST_LIMIT, fetch_page, to_posting
+        )
 
     def detail(self, board: Board, posting: dict, crawl) -> dict | None:
         company, wd, site_id = parse_slug(board.slug)
@@ -114,11 +113,3 @@ class WorkdayLane(BoardLane):
                 or posting["posted_date"]
             ),
         }
-
-
-def _jitter() -> None:
-    """A little unevenness on top of the base pacing: Workday sits behind
-    Cloudflare, and a metronome is a bot tell."""
-    import time
-
-    time.sleep(random.uniform(0.0, 0.25))

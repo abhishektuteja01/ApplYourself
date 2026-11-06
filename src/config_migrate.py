@@ -177,7 +177,7 @@ def drop_flow_key(text: str, key: str) -> str:
 
 def _countries_of(bank: dict) -> tuple[str, list[str]] | None:
     """(home, every other country row) of a bank mapping, canonical names."""
-    from src.shared.location.places import canonical_country
+    from src.shared.countries import canonical_country
 
     try:
         home_raw = str(bank["identity"]["country"])
@@ -192,7 +192,7 @@ def _countries_of(bank: dict) -> tuple[str, list[str]] | None:
 def _abroad(p: Profile) -> None:
     """discovery.yaml `sources.*.abroad` -> one top-level `abroad: {lanes, sources}`,
     its countries the bank's; a `location_allowlist` equal to the bank's goes."""
-    from src.shared.location.places import canonical_country
+    from src.shared.countries import canonical_country
 
     disc = p.data(DISCOVERY)
     if not isinstance(disc, dict):
@@ -255,7 +255,7 @@ def _abroad(p: Profile) -> None:
 
 def _salary(p: Profile) -> None:
     """verticals.yaml `<lane>.salary_expectation` -> `salary` on the bank's country rows."""
-    from src.shared.location.places import canonical_country
+    from src.shared.countries import canonical_country
 
     vert = p.data(VERTICALS)
     lanes_all = (vert or {}).get("verticals") or {}

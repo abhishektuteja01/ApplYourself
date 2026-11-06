@@ -13,7 +13,7 @@ import re
 import statistics
 from pathlib import Path
 
-from src.shared import paths
+from src.shared import paths, schemas
 
 DEFAULT_WINDOW = 7
 # How far below its own median a lane has to fall before it is called out.
@@ -29,9 +29,13 @@ def load_reports(runs_dir: Path | None = None) -> list[dict]:
         if not _RUN_ID_RE.match(path.stem):
             continue
         try:
-            out.append(json.loads(path.read_text(encoding="utf-8")))
+            report = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             out.append({"run_id": path.stem, "lanes": {}, "view": {}, "unreadable": True})
+            continue
+        if isinstance(report, dict):
+            schemas.check(report.get("schema_version"), schemas.DISCOVERY_RUN_SCHEMA_VERSION, path)
+        out.append(report)
     return out
 
 
@@ -114,9 +118,13 @@ def board_summary(path: Path | None = None) -> dict:
     try:
         import pandas as pd
 
+        from src.shared.parquet_io import schema_version
+
+        version = schema_version(path)
         state = pd.read_parquet(path)
     except (ImportError, OSError, ValueError):
         return {}
+    schemas.check(version, schemas.BOARD_STATE_SCHEMA_VERSION, path)
     out = {}
     for ats, g in state.groupby("ats"):
         out[ats] = {

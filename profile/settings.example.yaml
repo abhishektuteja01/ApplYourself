@@ -4,6 +4,7 @@
 # table_path (its cutoff is scoring.yaml cutoffs.sheet); the stage scripts read
 # the keys further down.
 
+schema_version: 1
 table_path: top_scored_open.xlsx
 
 # Headless stage runner (scripts/nightly_pipeline.sh).

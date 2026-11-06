@@ -133,9 +133,10 @@ from src.apply.role_facts import (  # noqa: F401 - re-exported
 )
 from src.apply.schema import SchemaError
 from src.material import folders as app_folders
-from src.shared import clock, paths
+from src.shared import clock, paths, schemas
 from src.shared.http_client import CareersError
 from src.shared.identity import normalize_company
+from src.shared.parquet_io import read_parquet
 
 R = run_record.ReasonCode
 
@@ -174,7 +175,9 @@ def resolve_url(job_id: str, state: dict | None) -> str:
     candidates: list[tuple[str, str]] = []
     jd = ""
     if paths.CLEAN.exists():
-        clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "url", "jd_text"])
+        clean = read_parquet(
+            paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id", "url", "jd_text"]
+        )
         row = clean.loc[clean["job_id"] == job_id]
         if not row.empty:
             candidates.append(("clean.parquet", str(row.iloc[0]["url"] or "")))
@@ -402,7 +405,7 @@ def salary_for(
         return None
     home = (canonical_place(country) or country) == answers.home_country
     if home and salary.markup_pct is not None and paths.CLEAN.exists():
-        clean = pd.read_parquet(paths.CLEAN)
+        clean = read_parquet(paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION)
         if {"salary_min", "salary_currency"} <= set(clean.columns):
             row = clean.loc[clean["job_id"] == job_id]
             if not row.empty:
@@ -1377,6 +1380,7 @@ def _standing_guesses(job_id: str, answers_file: Path, data: dict) -> str:
     plan_file = answers_file.parent / "plan.json"
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
+        schemas.check(plan.get("schema_version"), schemas.PLAN_SCHEMA_VERSION, plan_file)
         if not job_id or plan.get("job_id") != job_id:
             raise ValueError(f"{plan_file} is not for job_id {job_id or '(none)'}")
         bank_now = load_answers()

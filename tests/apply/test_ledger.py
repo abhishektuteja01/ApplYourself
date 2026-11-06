@@ -94,3 +94,22 @@ def test_claim_rechecks_under_the_lock_and_appends_only_when_clear(tmp_path):
     assert "already sent" in ledger.claim(path, "aaaa1111", "clicking")
     assert ledger.claim(path, "bbbb2222", "clicking", held=lambda recs: "cooldown") == "cooldown"
     assert [r["job_id"] for r in ledger.records(path)] == ["aaaa1111"]
+
+
+def test_an_unstamped_old_line_still_counts_and_a_newer_line_is_refused(tmp_path):
+    import json
+
+    import pytest
+
+    from src.shared import schemas
+
+    path = tmp_path / "submitted.jsonl"
+    old = json.dumps({"job_id": "aaaa1111", "status": "accepted"}) + "\n"
+    path.write_text(old, encoding="utf-8")
+    ledger.append(path, "bbbb2222", "clicking")
+    assert ledger.sent_job_ids(path) == {"aaaa1111", "bbbb2222"}
+    newer = {"schema_version": schemas.LEDGER_SCHEMA_VERSION + 1, "job_id": "cccc3333"}
+    text = path.read_text(encoding="utf-8") + json.dumps(newer) + "\n"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="schema version"):
+        ledger.records(path)

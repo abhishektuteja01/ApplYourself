@@ -20,7 +20,7 @@ import yaml
 from src.apply import answers as A
 from src.apply import bank
 from src.apply.reconcile import MergedField, MergedOption
-from src.shared import paths
+from src.shared import paths, schemas
 from src.shared.files import atomic_write_text
 
 _PLAN_KEYS = ("fields", "unmapped", "draftable")
@@ -96,6 +96,7 @@ def review(bank_answers: A.Answers, out: Path | None = None) -> tuple[Path, list
             plan = json.loads(plan_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        schemas.check(plan.get("schema_version"), schemas.PLAN_SCHEMA_VERSION, plan_file)
         country = (plan.get("work_authorization") or {}).get("job_country") or A.UNKNOWN_COUNTRY
         scoped = replace(bank_answers, job_country=country)
         for key in _PLAN_KEYS:

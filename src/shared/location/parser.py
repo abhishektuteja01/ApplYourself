@@ -10,6 +10,7 @@ from typing import Any
 
 import pycountry
 
+from src.shared.countries import CC_TO_COUNTRY, COUNTRY_NAMES, COUNTRY_TO_CC
 from src.shared.location.places import (
     _CITY_NAME_ALIASES,
     _COMMONLY_ABBREVIATED_CC,
@@ -17,10 +18,7 @@ from src.shared.location.places import (
     _GENERIC_AREA_SUFFIXES,
     _MIN_LONE_CITY_POPULATION,
     _SHORT_CODE_MAX_LEN,
-    CC_TO_COUNTRY,
     CITIES_BY_NAME,
-    COUNTRY_NAMES,
-    COUNTRY_TO_CC,
     REGION_TOKEN_COUNTRIES,
     SUBDIVISIONS_BY_CODE,
     SUBDIVISIONS_BY_NAME,

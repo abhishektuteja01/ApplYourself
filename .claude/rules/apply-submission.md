@@ -69,7 +69,7 @@ education, employment) by DOM id; EEOC and demographic by section (your
 option, else the decline option); work authorization by label shape and country; then the bank,
 exact wording first and keyword second (`source` is `bank:<id>` or
 `bank:<id>~<keyword>`); else Tier C, which lists the closest bank questions. A
-question's country is the one its label names (discovery's country vocabulary,
+question's country is the one its label names (`src/shared/countries.py`,
 with US states and look-alikes masked), else the job's: discovery's location
 in `clean.parquet`, then `state.yaml`'s, then the title, then a JD phrase saying
 where the hire works. A location nothing can read is `UNKNOWN_COUNTRY`, and

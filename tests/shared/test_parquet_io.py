@@ -140,3 +140,16 @@ def test_a_waiter_on_a_removed_lock_file_does_not_share_the_lock(tmp_path):
     c_go.set()
     for t in (a, b, c):
         t.join(5)
+
+
+def test_the_store_is_stamped_and_one_from_newer_code_is_refused(tmp_path):
+    from src.discovery import store
+    from src.shared import schemas
+    from src.shared.parquet_io import schema_version
+
+    path = tmp_path / "jobs.parquet"
+    store.save_store(store.empty_store(), path)
+    assert schema_version(path) == schemas.STORE_SCHEMA_VERSION
+    write_parquet(store.empty_store(), path, schema_version=schemas.STORE_SCHEMA_VERSION + 1)
+    with pytest.raises(ValueError, match="schema version"):
+        store.load_store(path)

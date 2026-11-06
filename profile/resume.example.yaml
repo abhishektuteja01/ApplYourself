@@ -13,6 +13,7 @@
 #              (optional; lower first, ties keep file order). A lane not
 #              listed never shows the context.
 
+schema_version: 1
 name: Alex Example
 contact:
   - text: "Exampletown, ST"

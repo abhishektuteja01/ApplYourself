@@ -22,7 +22,7 @@ from pathlib import Path
 
 from src import apply_cli, track_cli
 from src.apply import sheet
-from src.shared import clock, paths
+from src.shared import clock, paths, schemas
 from src.shared.files import atomic_write_text
 
 
@@ -129,7 +129,8 @@ def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
         path = apply_cli.reserve_report_path(started)
         apply_cli.write_report(outcomes, started, path=path)
         result["report"] = str(path)
-    atomic_write_text(paths.APPLY_TRIAGE, json.dumps(result, indent=2), mkdir=True)
+    stamped = {"schema_version": schemas.APPLY_TRIAGE_SCHEMA_VERSION, **result}
+    atomic_write_text(paths.APPLY_TRIAGE, json.dumps(stamped, indent=2), mkdir=True)
     return result
 
 

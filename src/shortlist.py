@@ -21,7 +21,8 @@ from src import contacts
 from src.apply.detect import is_auto_submittable
 from src.score_filter import ScoringConfig
 from src.score_store import view
-from src.shared import verticals
+from src.shared import schemas, verticals
+from src.shared.parquet_io import read_parquet
 from src.state_io import load_state_index
 
 _JOB_ID_RE = re.compile(r"`([0-9a-f]{8})`")
@@ -41,7 +42,7 @@ def compute(
         scored = view(scored_path, cfg)
     if scored.empty:
         return {"pipeline": [], "lanes": {v: [] for v in names}}
-    clean = pd.read_parquet(clean_path).drop(
+    clean = read_parquet(clean_path, schemas.CLEAN_SCHEMA_VERSION).drop(
         columns=[c for c in scored.columns if c != "job_id"], errors="ignore"
     )
     df = scored.merge(clean, on="job_id", how="inner")
@@ -165,7 +166,7 @@ def write(
     scored = view(scored_path, cfg)
     result = compute(scored_path, clean_path, pipeline_dir, cfg, scored)
     n_scored = len(scored)
-    n_clean = len(pd.read_parquet(clean_path, columns=["job_id"]))
+    n_clean = len(read_parquet(clean_path, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id"]))
     md = render(
         result,
         cfg,

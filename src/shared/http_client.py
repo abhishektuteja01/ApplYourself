@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -103,6 +104,39 @@ def _notify(**event: Any) -> None:
         fn(event)
     except Exception:  # a broken trace must never fail a fetch
         log.warning("http_client observer failed", exc_info=True)
+
+
+class Pacer:
+    """The wait before each of one lane's requests: `seconds` plus up to
+    `jitter` more. The first wait is free unless `skip_first` is False; with
+    `since_last`, time spent since the last wait counts toward the next."""
+
+    def __init__(
+        self,
+        seconds: float,
+        jitter: float = 0.0,
+        *,
+        skip_first: bool = True,
+        since_last: bool = False,
+    ) -> None:
+        self.seconds, self.jitter = seconds, jitter
+        self.skip_first, self.since_last = skip_first, since_last
+        self._first = True
+        self._last = 0.0
+
+    def wait(self, jitter: float = 0.0) -> None:
+        """Sleep before the next request; `jitter` adds up to that much more."""
+        first, self._first = self._first, False
+        if self.since_last:
+            delay = self._last + self.seconds - time.time()
+            if delay > 0:
+                time.sleep(delay)
+            self._last = time.time()
+            return
+        if first and self.skip_first:
+            return
+        spread = self.jitter + jitter
+        time.sleep(self.seconds + (random.uniform(0.0, spread) if spread else 0.0))
 
 
 class CareersError(Exception):

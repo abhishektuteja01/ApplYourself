@@ -26,9 +26,10 @@ from src.discovery import store as S
 from src.discovery.config import load_config
 from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.score_filter import load_trim
-from src.shared import clock, paths, title_gate, verticals
+from src.shared import clock, paths, schemas, title_gate, verticals
 from src.shared import http_client as http
 from src.shared.job_boards import parse_posting_url
+from src.shared.parquet_io import read_parquet
 from src.state_io import load_state_index
 
 log = logging.getLogger(__name__)
@@ -158,7 +159,7 @@ def ingest(
 
     store = S.load_store(p.store)
     job_id = store.set_index("posting_key").at[row["posting_key"], "job_id"]
-    clean = pd.read_parquet(p.clean).set_index("job_id")
+    clean = read_parquet(p.clean, schemas.CLEAN_SCHEMA_VERSION).set_index("job_id")
     if job_id not in clean.index:
         raise IngestError(
             f"ERROR: row for {row['company']!r} / {row['title']!r} did not survive "

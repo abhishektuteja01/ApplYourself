@@ -1,16 +1,16 @@
-"""The places a form label can name: countries from discovery's vocabulary
-(pycountry's names plus aliases) and regions, with US states and look-alikes
+"""The places a form label can name: countries from the shared vocabulary
+(`src.shared.countries`) and regions, with US states and look-alikes
 masked, each spelled one way across the pipeline."""
 
 from __future__ import annotations
 
 import functools
 import re
-import unicodedata
 from itertools import pairwise
 
-# Countries a label can name come from discovery's vocabulary (pycountry's
-# names plus its aliases), so a place is spelled one way across the pipeline.
+from src.shared.countries import fold_accents as _fold_accents
+
+# Countries a label can name come from `src.shared.countries.label_names()`.
 # Regions have no country of their own: they answer from `default` unless the
 # bank gives them a row.
 REGIONS: dict[str, str] = {
@@ -30,82 +30,18 @@ _NOT_COUNTRIES = (
     "south america",
     "central america",
 )
-_SHORT_NAMES = {
-    "us": "United States",
-    "usa": "United States",
-    "u.s.": "United States",
-    "u.s.a.": "United States",
-    "uk": "United Kingdom",
-    "u.k.": "United Kingdom",
-    "uae": "United Arab Emirates",
-}
-_ALIASES = {
-    "england": "United Kingdom",
-    "scotland": "United Kingdom",
-    "wales": "United Kingdom",
-    "northern ireland": "United Kingdom",
-    "great britain": "United Kingdom",
-    "britain": "United Kingdom",
-    "united states of america": "United States",
-    "america": "United States",
-    "holland": "Netherlands",
-    "the netherlands": "Netherlands",
-    "turkiye": "Turkey",
-    "czech republic": "Czechia",
-    "south korea": "Korea, Republic of",
-    "korea": "Korea, Republic of",
-    "russia": "Russian Federation",
-    "vietnam": "Viet Nam",
-    "taiwan": "Taiwan, Province of China",
-    "iran": "Iran, Islamic Republic of",
-    "bolivia": "Bolivia, Plurinational State of",
-    "venezuela": "Venezuela, Bolivarian Republic of",
-    "tanzania": "Tanzania, United Republic of",
-    "moldova": "Moldova, Republic of",
-    "syria": "Syrian Arab Republic",
-    "laos": "Lao People's Democratic Republic",
-    "republic of ireland": "Ireland",
-}
-# Country names that are also ordinary words or US places in a form label.
-_NOT_A_COUNTRY_WORD = frozenset(
-    {
-        "jersey",
-        "georgia",
-        "chad",
-        "jordan",
-        "guinea",
-        "niger",
-        "turkey",
-        "man",
-        "norfolk island",
-        "christmas island",
-    }
-)
 _OR_BETWEEN = re.compile(r"\bor\b|/", re.IGNORECASE)
 #: The job's country when its location names a place nothing could read.
 UNKNOWN_COUNTRY = "(unknown)"
-
-
-def _fold_accents(text: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)
-    )
 
 
 @functools.lru_cache(maxsize=1)
 def _vocabulary() -> tuple[dict[str, str], tuple, re.Pattern, tuple]:
     import pycountry
 
-    names: dict[str, str] = {}
-    for c in pycountry.countries:
-        for attr in ("name", "common_name", "official_name"):
-            value = getattr(c, attr, "")
-            if value:
-                names[_fold_accents(value).casefold()] = c.name
-    names = {k: v for k, v in names.items() if k not in _NOT_A_COUNTRY_WORD}
-    names["turkey"] = "Turkey"  # the country name itself, once "Turkiye" is folded
-    names.update(_ALIASES)
-    names.update(_SHORT_NAMES)
+    from src.shared.countries import label_names
+
+    names = label_names()
     us_states = [s.name.casefold() for s in pycountry.subdivisions.get(country_code="US")]
     masked = sorted({*_NOT_COUNTRIES, *us_states}, key=len, reverse=True)
     codes = "|".join(

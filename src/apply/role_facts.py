@@ -7,14 +7,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pandas as pd
 import yaml
 
 from src.apply.answers import (
     UNKNOWN_COUNTRY,
     Answers,
 )
-from src.shared import paths
+from src.shared import paths, schemas
+from src.shared.parquet_io import read_parquet
 
 
 def job_country(state: dict | None, answers: Answers) -> str:
@@ -111,7 +111,7 @@ def _clean_value(job_id: str, column: str) -> str:
 
     if column not in pq.read_schema(paths.CLEAN).names:
         return ""
-    clean = pd.read_parquet(paths.CLEAN, columns=["job_id", column])
+    clean = read_parquet(paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id", column])
     row = clean.loc[clean["job_id"] == job_id]
     return "" if row.empty else str(row.iloc[0][column] or "")
 

@@ -12,6 +12,7 @@ from src.discovery import store as S
 from src.discovery.config import DiscoveryConfig
 from src.discovery.sources.boards import base as B
 from src.shared.http_client import CareersError
+from src.shared.job_boards import board_key
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build retrieval systems for clinical data and ship them to production daily. " * 5
@@ -47,6 +48,17 @@ def test_a_tombstone_outlives_a_readd(tmp_path):
     )
     assert B.load_boards(boards_dir=tmp_path) == []
     assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 1
+
+
+def test_the_retired_list_outlives_a_readd_and_keeps_the_hand_name(tmp_path):
+    (tmp_path / "boards.csv").write_text(
+        "ats,name,slug\nlever,Fliff,Fliff\nlever,Gone,gone\n", encoding="utf-8"
+    )
+    (tmp_path / "boards_retired.csv").write_text(
+        "ats,name,slug\nlever,fliff old,fliff\nlever,Gone,gone\n", encoding="utf-8"
+    )
+    assert [(b.name, b.slug) for b in B.load_boards(boards_dir=tmp_path)] == [("Fliff", "Fliff")]
+    assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 2
 
 
 def test_unknown_ats_and_blank_rows_are_skipped(tmp_path):
@@ -236,7 +248,9 @@ def test_a_board_the_feed_covered_is_not_crawled_and_stays_due(tmp_path, cfg):
         ("https://www.linkedin.com/jobs/view/1", ""),
     ],
 )
-def test_board_key_of_matches_the_board_list_key(url, key):
-    assert B.board_key_of(url) == key
+def test_board_key_matches_the_board_list_key(url, key):
+    assert board_key(url) == key
     if key.startswith("workday"):
         assert B.Board("workday", "Acme", "acme|wd5|External").key == key
+        # The store's board stays the tenant alone.
+        assert S.make_posting(url=url, title="t", company="c")["board"] == "workday|acme"

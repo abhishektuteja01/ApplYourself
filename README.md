@@ -502,6 +502,7 @@ jobs/scored.staging/            per-lane packets, judge slices and answer files
 jobs/raw/<run_id>.parquet       debug: every classified listing and its gate verdict
 jobs/runs/<run_id>.json + .md   the run report
 data/universe/boards.csv        the board list
+data/universe/boards_retired.csv  spellings retired from it
 shortlist/<date>.md             today's keepers, sectioned by lane
 applications/<vertical>/<dir>/  one directory per tailoring run
 applications/apply_runs/        submission run reports and evidence
@@ -715,7 +716,7 @@ lies to you differently.
 | `ashby.py` | Client-rendered, so it POSTs the `ApplicationForm` GraphQL query, plus one headless page load for the per-field description text that query never returns. |
 | `answers.py` | Resolves each field to a value from `application_answers.yaml`. Anything unresolvable parks the role, which blocks submit. |
 | `bank_schema.py` | Loads and validates `application_answers.yaml` into the facts and questions `answers.py` reads. |
-| `places.py` | The countries and regions a form label can name. |
+| `places.py` | The countries (from `src/shared/countries.py`) and regions a form label can name. |
 | `bank.py` | The answer bank: saves what each confirmed run teaches, and takes it back for `apply learn`. |
 | `wordings.py` | `apply wordings`: one review file of the new work-authorization wordings saved plans park on; the rows you mark yes are saved to the bank. |
 | `plan.py` | Form plus answers to an ordered fill plan. The whole contract with the browser. |
@@ -790,7 +791,7 @@ Three behaviors worth knowing:
 - It reads the git **index**, so it only sees tracked files. Run it *after*
   staging, and never put a real pattern in a committed file.
 
-`LICENSE`, the denylist template, `data/universe/boards.csv` and the two example
+`LICENSE`, the denylist template, `data/universe/boards.csv`, `boards_retired.csv` and the two example
 `.docx` are allowlisted in the script by **exact path, never by glob**. MIT
 attribution and vendored company names are supposed to be there. A new universe
 CSV isn't covered until it's added to that list by name.

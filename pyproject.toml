@@ -20,8 +20,8 @@ classifiers = [
     "Private :: Do Not Upload",
 ]
 dependencies = [
-    # Upper bound: src/discovery/sources/search.py calls LinkedIn._get_job_details, a private API.
-    "python-jobspy>=1.1.80,<1.2",
+    # Exact: src/discovery/sources/search.py uses jobspy names outside its public API.
+    "python-jobspy==1.1.82",
     "pandas>=2.2,<3",
     "pyarrow>=15.0",  # parquet engine for pandas; src/shared/parquet_io.py and the id table import it directly
     "openpyxl>=3.1",  # xlsx engine for pandas; src/apply/sheet.py imports it directly

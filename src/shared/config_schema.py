@@ -12,6 +12,8 @@ from typing import Annotated, Any, ClassVar, Literal, Union, get_args, get_origi
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from src.shared import schemas
+
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -327,6 +329,7 @@ def load_settings(path: Path) -> dict[str, Any]:
         raise exc
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     validate(Settings, data, path)
+    schemas.check(data.get("schema_version"), schemas.SETTINGS_SCHEMA_VERSION, path)
     return data
 
 
