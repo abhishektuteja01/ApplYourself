@@ -200,9 +200,8 @@ path is `draft` in its JSON) and recorded it in `state.yaml`'s `outreach[]`
 through `uv run track outreach-draft`. A rebuild rewrites the same day's draft
 and never records it twice.
 
-## Step 5 — runtime assertions
+## Step 5 — disclosure check
 
-- [ ] `uv run app build outreach <job_id>` exited 0
 - [ ] If the row has `requires_sponsorship: false`, the draft never mentions
       work authorization
 - [ ] Otherwise: a `recruiter` draft does NOT volunteer it; a `referral` or

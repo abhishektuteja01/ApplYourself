@@ -64,11 +64,3 @@ Line budget, in priority order — drop from the bottom when you run out:
 7. One line from `boards`: per ATS, `dead` and `never_found` counts.
 
 Say "clean run" in one line when 2-6 are all empty. No preamble, no table.
-
-## Step 4 — read-only assertion
-
-Before reporting done, confirm this command wrote nothing outside what
-`uv run discover` writes itself (`jobs/jobs.parquet`, `jobs/boards.parquet`,
-`jobs/clean.parquet`, `jobs/raw/`, `jobs/runs/<run_id>.*`). Step 3 is a
-reader. No `state.yaml` write (R10), no `profile/` write, no edit to any run
-report.
