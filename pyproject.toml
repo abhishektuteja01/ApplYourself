@@ -60,6 +60,7 @@ summary = "src.summary:main"
 night = "src.night:main"
 config = "src.config_cli:main"
 config-check = "src.config_check:main"
+pdf-broker = "src.pdf_broker:main"
 
 [dependency-groups]
 dev = [

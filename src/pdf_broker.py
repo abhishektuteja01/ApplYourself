@@ -103,7 +103,7 @@ def serve(queue: Path, parent: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m src.pdf_broker")
+    parser = argparse.ArgumentParser(prog="pdf-broker")
     parser.add_argument("queue", type=Path)
     parser.add_argument("--parent", type=int, required=True)
     args = parser.parse_args(argv)
