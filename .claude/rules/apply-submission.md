@@ -145,7 +145,9 @@ listing), the note saying why; the summary counts both. `apply resolve-urls
 --dry-run|--apply` is the only fetch: it looks the title up on the company's own
 Greenhouse, Lever or Ashby board from `boards.csv` and stores hit or miss. The
 title matches when normalized, or when exactly one posting differs only in words
-`dedupe.titles_differ` ignores; a miss stored under an older `apply_url.MATCHER`
+`dedupe.titles_differ(loose=True)` ignores (that also reads "artificial
+intelligence" as "ai" and drops a trailing "at <the role's company>"; discovery
+merges stay strict); a miss stored under an older `apply_url.MATCHER`
 is looked up again. The night never runs it.
 `uv run apply sheet` rewrites `profile/settings.yaml`'s `table_path` from it
 (under a lock, tmp file then rename); `--list STATUS` prints the queue at a status

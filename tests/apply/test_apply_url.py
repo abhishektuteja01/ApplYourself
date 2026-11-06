@@ -89,6 +89,24 @@ def test_a_loose_title_match_takes_only_one_posting_and_never_another_level():
     assert found([here, {**here, "url": GH + "2"}])["apply_url"] == ""
 
 
+def test_ai_spelled_out_and_an_own_company_tail_match_but_discovery_stays_strict():
+    from applyourself.discovery.dedupe import titles_differ
+
+    def found(postings, title="Artificial Intelligence Engineer at Acme Inc"):
+        rows = [{"job_id": "j", "company": "Acme", "title": title}]
+        board = apply_url.boards_by_company([Board("greenhouse", "Acme", "acme")])
+        return apply_url.find_on_boards(rows, board, fetch=lambda b: postings, pause=0)[0]["j"]
+
+    assert found([{"title": "AI Engineer", "url": GH}])["apply_url"] == GH
+    assert found([{"title": "AI Engineer II", "url": GH}])["apply_url"] == ""
+    assert found([{"title": "AI Engineer", "url": GH}], "AI Engineer at Globex")["apply_url"] == ""
+    a, b = (
+        {"title_normalized": "artificial intelligence engineer"},
+        {"title_normalized": "ai engineer"},
+    )
+    assert titles_differ(a, b) and not titles_differ(a, b, loose=True)
+
+
 def test_an_older_matchers_miss_is_looked_up_again_and_a_hit_never_is():
     assert apply_url.needs_lookup({"apply_url": "", "via": "greenhouse board acme"})
     assert not apply_url.needs_lookup({"apply_url": "", "matcher": apply_url.MATCHER})

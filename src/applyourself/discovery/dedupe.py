@@ -122,20 +122,38 @@ _TITLE_NOISE = frozenset(
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
 
-def _title_words(title_normalized: str) -> set[str]:
-    return {
-        _LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", title_normalized or "").split()
-    }
+_TITLE_PHRASES = {"artificial intelligence": "ai"}
+_TITLE_PHRASE_RE = re.compile(r"\b(" + "|".join(_TITLE_PHRASES) + r")\b")
+_AT_TAIL_RE = re.compile(r"\s+at\s+(.+)$")
 
 
-def titles_differ(new: dict, old: dict) -> bool:
+def _title_words(title_normalized: str, companies: frozenset[str] | None = None) -> set[str]:
+    x = title_normalized or ""
+    if companies is not None:
+        x = _TITLE_PHRASE_RE.sub(lambda m: _TITLE_PHRASES[m[1]], x)
+        tail = _AT_TAIL_RE.search(x)
+        if tail and identity.normalize_company(tail[1]) in companies:
+            x = x[: tail.start()]
+    return {_LEVEL_SYNONYMS.get(t, t) for t in _CO_OP_RE.sub("coop", x).split()}
+
+
+def titles_differ(new: dict, old: dict, loose: bool = False) -> bool:
     """Do the titles disagree on a word that names the role ("Applied AI
     Engineer, Codex" / "..., Enterprise")? Workplace words, one-letter
-    tokens and either row's location words do not count."""
+    tokens and either row's location words do not count. `loose` (the
+    apply-url lookup only) also reads `_TITLE_PHRASES` and drops a trailing
+    "at <either row's company>"."""
     where = set(
         _WORD_RE.findall(f"{new.get('location_raw', '')} {old.get('location_raw', '')}".lower())
     )
-    diff = _title_words(new["title_normalized"]) ^ _title_words(old["title_normalized"])
+    companies = (
+        frozenset(c for c in (new.get("company_normalized"), old.get("company_normalized")) if c)
+        if loose
+        else None
+    )
+    diff = _title_words(new["title_normalized"], companies) ^ _title_words(
+        old["title_normalized"], companies
+    )
     return any(len(t) > 1 and t not in _TITLE_NOISE and t not in where for t in diff)
 
 

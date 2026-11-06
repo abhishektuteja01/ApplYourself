@@ -31,7 +31,7 @@ SUBMITTABLE, MANUAL, NO_URL = "submittable", "manual", "no_url"
 STATUS = {MANUAL: "Manual apply", NO_URL: "No apply URL"}
 _LINK_RE = re.compile(r"https?://[^\s<>\"'()\[\]\\]+")
 _AGGREGATORS = ("linkedin", "indeed")  # job sites whose page is a listing, not a posting
-MATCHER = 2  # bump when the title match changes: older stored misses are looked up again
+MATCHER = 3  # bump when the title match changes: older stored misses are looked up again
 
 
 @dataclass(frozen=True)
@@ -133,15 +133,16 @@ def needs_lookup(stored: dict | None) -> bool:
     return not stored or (not stored.get("apply_url") and stored.get("matcher") != MATCHER)
 
 
-def _match(postings: list[dict], title: str) -> str:
+def _match(postings: list[dict], title: str, company: str = "") -> str:
     """The posting whose normalized title is the role's, else the one posting
-    whose title differs only in words `titles_differ` ignores; "" if none or several."""
+    whose title differs only in words `titles_differ(loose=True)` ignores; ""
+    if none or several."""
     from applyourself.discovery.dedupe import titles_differ
 
     exact = next((p["url"] for p in postings if normalize_title(p["title"]) == title), "")
     if exact:
         return exact
-    role = {"title_normalized": title}
+    role = {"title_normalized": title, "company_normalized": company}
     loose = [
         p["url"]
         for p in postings
@@ -151,6 +152,7 @@ def _match(postings: list[dict], title: str) -> str:
                 "title_normalized": normalize_title(p["title"]),
                 "location_raw": p.get("location_raw", ""),
             },
+            loose=True,
         )
     ]
     loose = list(dict.fromkeys(loose))
@@ -188,7 +190,7 @@ def find_on_boards(
             if postings is None:
                 continue
             tried.append(f"{b.ats} board {b.slug}")
-            hit = _match(postings, title)
+            hit = _match(postings, title, normalize_company(row["company"]))
             if hit:
                 out[row["job_id"]] = {"apply_url": hit, "via": tried[-1], "checked": today}
                 break
