@@ -32,7 +32,7 @@ run_judges() {  # run_judges "<judge lines>"
 OUT="$("$UV" run score start "$@" 2>&1)"; CODE=$?
 echo "$OUT"
 if [[ $CODE -ne 0 ]]; then stage_end "$CODE" "score start failed"; exit "$CODE"; fi
-DROPS="$(head -1 <<< "$OUT" | grep -oE 'dropped_[a-z-]+=[0-9]+' | tr '\n' ' ')"
+DROPS="$(head -1 <<< "$OUT" | grep -oE 'filtered_[a-z-]+=[0-9]+' | tr '\n' ' ')"
 if grep -q '^done ' <<< "$OUT"; then
   stage_end 0 "$(grep '^done ' <<< "$OUT") ${DROPS% }"; exit 0
 fi

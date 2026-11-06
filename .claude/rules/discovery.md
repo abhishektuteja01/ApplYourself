@@ -73,7 +73,8 @@ posted within `search_max_age_days` or undated. Then the title gate and the
 location allowlist, both re-applied at build time, then JD >= `MIN_JD_CHARS`.
 One row per `job_id`: an applyable url, then a resolved location, then the
 newest sighting, then the longest JD. Retention runs from the job's earliest
-`first_seen`: `high_days` at fit >= threshold or unscored, else `low_days`.
+`first_seen`: `high_days` at fit >= threshold or unscored, else `low_days`; an
+unscored row `score_filter.drop_reason` drops today gets `low_days`.
 Tracked roles skip the search-age cut and retention; `ACTIVE_STATES` roles are
 always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
 

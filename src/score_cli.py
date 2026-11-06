@@ -7,6 +7,8 @@ start [--all | --stale-only [--yes]] [--vertical V] [--job-id ID ...]
     flags and a run already open, prints only the judges still owed.
     --stale-only prints how many judged rows changed input and stages
     nothing; --yes stages them. A row with no input hash is never stale.
+    `dropped_<code>=n` counts every drop, `filtered_<code>=n` only those
+    the latest discovery run saw first (what the night summary shows).
 finish
     Merge every answered slice, prune, write the shortlist. Exit 1 with the
     `judge ...` lines still owed when a slice is missing or malformed.
@@ -28,6 +30,7 @@ from src.shared import clock, paths, verticals
 
 CLEAN = paths.CLEAN
 SCORED = paths.SCORED
+STORE = paths.STORE
 STAGING = paths.STAGING
 SHORTLIST = paths.SHORTLIST
 
@@ -64,11 +67,15 @@ def _cmd_start(args: argparse.Namespace) -> int:
             vertical=args.vertical,
             job_ids=args.job_id,
             pipeline_dir=paths.PIPELINE,
+            store_path=STORE,
         )
     except score_store.RunOpen as e:
         print(f"ERROR: {e}")
         return 1
-    dropped = " ".join(f"dropped_{k}={n}" for k, n in sorted(res["dropped"].items()))
+    dropped = " ".join(
+        [f"dropped_{k}={n}" for k, n in sorted(res["dropped"].items())]
+        + [f"filtered_{k}={n}" for k, n in sorted(res["first_dropped"].items())]
+    )
     if count_only:
         print(f"stale={res['judge']} {dropped}".strip())
         print("done nothing staged: add --yes to stage the stale rows for judging")

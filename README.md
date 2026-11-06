@@ -89,7 +89,8 @@ A run works like this:
    loses little and the next run finds the unchecked boards still due.
 5. **Build the view.** `clean.parquet` is every job seen within `live_days`,
    through the title gate and location allowlist, one row per `job_id`, kept for
-   60 days from first seen at fit >= 80 (or unscored), else 15. Roles you are
+   60 days from first seen at fit >= 80 (or unscored and not dropped by
+   `score start`'s rules), else 15. Roles you are
    actively tracking are always in.
 
 A stored posting never changes its `job_id`, so a role you have on file never

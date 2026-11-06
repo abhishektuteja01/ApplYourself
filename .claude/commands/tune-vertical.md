@@ -80,7 +80,7 @@ for lane, g in d[d.vertical != '<name>'].groupby(d.vertical.fillna('')):
     print('--', lane or '(out-of-lane)', len(g)); print(g.title.value_counts().head(15).to_string())"
 
 # The lane's judged scores. Drops are not stored: the last `/score` printed
-# them as dropped_<code>, and the night's summary.md lists them as Filtered.
+# them as dropped_<code>; the night's summary.md lists only first-time drops as Filtered.
 uv run python -c "
 import pandas as pd
 s = pd.read_parquet('jobs/scored.parquet'); s = s[s.vertical == '<name>']

@@ -16,7 +16,10 @@ Three steps, one owner per rule:
    `drop_phrases`, the lane's `years` table plus `years_margin`; the regex
    only pre-filters, the judge's years count in `derive`). A drop is never stored: it is
    checked again every run, and a stored score of a row it now drops is
-   deleted. The rest is staged in `jobs/scored.staging/` as one packet per
+   deleted. It prints `dropped_<code>` for every drop and `filtered_<code>`
+   for those the latest discovery run saw first (the night summary's
+   Filtered). Discovery's retention asks the same rule of an unscored row.
+   The rest is staged in `jobs/scored.staging/` as one packet per
    lane and slices of at most 10 roles, each row with its `judge_input_hash`
    (`input_hash` of the lane packet and the trimmed JD).
 2. `score-judge` agents (the only model step): four subscores, the facts

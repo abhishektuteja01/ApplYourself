@@ -354,6 +354,17 @@ def _save_run(staging: Path, run: dict[str, Any]) -> None:
     (staging / "run.json").write_text(json.dumps(run, indent=1), encoding="utf-8")
 
 
+def first_seen_last_run(store_path: Path | None, job_ids: set[str]) -> set[str] | None:
+    """The ids among `job_ids` the latest discovery run saw first: earliest
+    first_seen on or after the store's newest last_seen. None: no store."""
+    if store_path is None or not Path(store_path).exists():
+        return None
+    store = pd.read_parquet(store_path, columns=["job_id", "first_seen", "last_seen"])
+    latest = pd.to_datetime(store["last_seen"]).max()
+    first = pd.to_datetime(store["first_seen"]).groupby(store["job_id"]).min()
+    return {j for j in job_ids if j in first.index and first[j] >= latest}
+
+
 def start(
     clean_path: Path,
     scored_path: Path,
@@ -367,9 +378,12 @@ def start(
     job_ids: list[str] | None = None,
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
+    store_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Stage a run. Returns {"dropped": {code: n}, "judge": n, "lines": [...],
-    "resumed": bool}. A dropped row is not stored, and loses any score it had.
+    """Stage a run. Returns {"dropped": {code: n}, "first_dropped": {code: n},
+    "judge": n, "lines": [...], "resumed": bool}. A dropped row is not stored,
+    and loses any score it had. `first_dropped` counts only the drops the
+    latest discovery run saw first (all of them without `store_path`).
     `stale_only` takes only judged rows whose input hash changed; a row with
     no hash is never stale. `count_only` returns the counts and writes nothing.
     An open run is resumed when no selector is given, refused otherwise."""
@@ -379,6 +393,7 @@ def start(
             raise RunOpen("a /score run is still open: run `/score` to finish it first")
         return {
             "dropped": {},
+            "first_dropped": {},
             "judge": sum(len(m["job_ids"]) for m in run["slices"].values()),
             "lines": judge_lines(run, staging),
             "resumed": True,
@@ -412,6 +427,7 @@ def start(
     dropped: set[str] = set()
     keep: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
+    codes: dict[str, str] = {}
     packets: dict[str, str] = {}
     for row in cast(list[dict[str, Any]], clean.to_dict("records")):
         reason = drop_reason(row, cfg)
@@ -419,6 +435,7 @@ def start(
             reason = None  # a deliberate ingest always reaches a judge
         if reason:
             dropped.add(row["job_id"])
+            codes[row["job_id"]] = reason[0]
             counts[reason[0]] = counts.get(reason[0], 0) + 1
             continue
         row["_jd"] = trim_jd(row.get("jd_text"), cfg)
@@ -429,8 +446,19 @@ def start(
         if stale_only and row["_hash"] == hashes.get(row["job_id"]):
             continue
         keep.append(row)
+    fresh = first_seen_last_run(store_path, dropped)
+    first: dict[str, int] = {}
+    for jid, code in codes.items():
+        if fresh is None or jid in fresh:
+            first[code] = first.get(code, 0) + 1
     if count_only:
-        return {"dropped": counts, "judge": len(keep), "lines": [], "resumed": False}
+        return {
+            "dropped": counts,
+            "first_dropped": first,
+            "judge": len(keep),
+            "lines": [],
+            "resumed": False,
+        }
     remove_rows(scored_path, dropped)
 
     keep.sort(
@@ -441,7 +469,13 @@ def start(
         )
     )
     if not keep:
-        return {"dropped": counts, "judge": 0, "lines": [], "resumed": False}
+        return {
+            "dropped": counts,
+            "first_dropped": first,
+            "judge": 0,
+            "lines": [],
+            "resumed": False,
+        }
     staging.mkdir(parents=True, exist_ok=True)
     run = {"model": _judge_model(), "started": now.isoformat(), "slices": {}}
     for lane in vcfg.verticals.values():
@@ -474,6 +508,7 @@ def start(
     _save_run(staging, run)
     return {
         "dropped": counts,
+        "first_dropped": first,
         "judge": len(keep),
         "lines": judge_lines(run, staging),
         "resumed": False,

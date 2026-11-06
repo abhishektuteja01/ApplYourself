@@ -639,6 +639,24 @@ def test_view_retention_tiers():
     assert set(out["title"]) == {"AI Engineer", "Data Engineer"}
 
 
+def test_view_gives_an_unscored_row_the_filter_drops_low_retention(monkeypatch):
+    """Drops are not stored, so retention asks today's filter again."""
+    monkeypatch.setattr(live_view.title_gate, "title_passes", lambda *a: True)
+    rows = [
+        post(GH.format(1), title="AI Engineer", vertical="example_primary"),
+        post(GH.format(2), title="ML Engineer", vertical="example_primary",
+             jd=JD + " US citizens only."),
+    ]  # fmt: skip
+    store, _ = fold(S.empty_store(), *rows, today=at(30))
+    store["last_seen"] = TODAY
+    inp = live_view.ViewInputs(
+        today=TODAY, state_index={}, scores={}, live_days=14, search_max_age_days=14,
+        score_threshold=80, high_days=60, low_days=15, scoring=live_view.load_filter(),
+    )  # fmt: skip
+    out, _ = live_view.build_view(store, AllowAll(), inp)
+    assert list(out["title"]) == ["AI Engineer"]
+
+
 def test_view_brings_back_active_roles_and_tags_state():
     store, _ = fold(S.empty_store(), post(GH.format(1)), today=at(100))
     jid = store.at[0, "job_id"]

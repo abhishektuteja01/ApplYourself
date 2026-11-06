@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -18,6 +19,7 @@ from src.discovery import parse
 from src.discovery import store as store_mod
 from src.discovery.config import JOBSPY_SOURCES
 from src.discovery.store import coerce_store
+from src.score_filter import ScoringConfig, drop_reason, load_scoring
 from src.shared import paths, title_gate
 from src.shared.job_boards import is_applyable
 from src.shared.parquet_io import locked, write_parquet
@@ -60,6 +62,20 @@ class ViewInputs:
     score_threshold: float
     high_days: int
     low_days: int
+    # today's hard filter; an unscored row it drops gets low_days. None: no filter.
+    scoring: ScoringConfig | None = None
+
+
+def load_filter() -> ScoringConfig | None:
+    import yaml
+
+    from src.apply.answers import AnswersError
+
+    try:
+        return load_scoring()
+    except (OSError, ValueError, yaml.YAMLError, AnswersError) as e:
+        log.warning("retention without the score filter: %s", e)
+        return None
 
 
 def read_scores(scored_path: Path) -> dict[str, float]:
@@ -86,6 +102,7 @@ def inputs_from(cfg, today, state_index: dict, scored_path: Path) -> ViewInputs:
         score_threshold=cfg.retention_score_threshold,
         high_days=cfg.retention_high_days,
         low_days=cfg.retention_low_days,
+        scoring=load_filter(),
     )
 
 
@@ -146,11 +163,15 @@ def build_view(
     first_seen = df.groupby("job_id")["first_seen"].min()
     remembered = df.groupby("job_id")["last_score"].max()
     lifetimes = []
-    for jid in view["job_id"]:
+    for row in cast(list[dict[str, Any]], view.to_dict("records")):
+        jid = row["job_id"]
         score = inp.scores.get(jid)
         if score is None or pd.isna(score):
             score = remembered.get(jid)
-        high = score is None or pd.isna(score) or score >= inp.score_threshold
+        if score is None or pd.isna(score):
+            high = inp.scoring is None or drop_reason(row, inp.scoring) is None
+        else:
+            high = score >= inp.score_threshold
         lifetimes.append(inp.high_days if high else inp.low_days)
     expires = view["job_id"].map(first_seen) + pd.to_timedelta(lifetimes, unit="D")
     within = (today <= expires) | view["job_id"].isin(tracked) | (view["source"] == "manual")

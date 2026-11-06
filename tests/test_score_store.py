@@ -35,6 +35,7 @@ def env(tmp_path, monkeypatch):
         "staging": tmp_path / "staging",
         "pipeline": tmp_path / "pipeline",
         "shortlist": tmp_path / "shortlist",
+        "store": tmp_path / "jobs.parquet",
     }
 
 
@@ -107,6 +108,25 @@ class TestStart:
         res = _start(env, scfg, rescore=True)
         assert res["dropped"] == {"ineligible": 1} and res["judge"] == 0
         assert _scored(env).empty
+
+    def test_first_dropped_counts_only_the_latest_runs_new_jobs(self, env, scfg):
+        """The night summary must not re-count the same drops every night."""
+        _clean(env, [{"job_id": j, "vertical": ""} for j in ("aaaaaaaa", "bbbbbbbb")])
+        night, before = pd.Timestamp("2026-09-27"), pd.Timestamp("2026-09-20")
+        pd.DataFrame(
+            {
+                "job_id": ["aaaaaaaa", "bbbbbbbb", "bbbbbbbb"],
+                "first_seen": [before, before, night],
+                "last_seen": [night, night, night],
+            }
+        ).to_parquet(env["store"])
+        res = _start(env, scfg, store_path=env["store"])
+        assert res["dropped"] == {"no-lane": 2} and res["first_dropped"] == {}
+        _clean(env, [{"job_id": "cccccccc", "vertical": ""}])
+        pd.DataFrame(
+            {"job_id": ["cccccccc"], "first_seen": [night], "last_seen": [night]}
+        ).to_parquet(env["store"])
+        assert _start(env, scfg, store_path=env["store"])["first_dropped"] == {"no-lane": 1}
 
     def test_stale_only_counts_changed_inputs_and_never_legacy_rows(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}, {"job_id": "bbbbbbbb", "company": "Beta"}])
@@ -594,7 +614,7 @@ class TestView:
 class TestCli:
     @pytest.fixture
     def wired(self, env, monkeypatch):
-        for name in ("clean", "scored", "staging", "shortlist"):
+        for name in ("clean", "scored", "staging", "shortlist", "store"):
             monkeypatch.setattr(score_cli, name.upper(), env[name])
         # profile/scoring.yaml is personal and gitignored; tests use the template.
         monkeypatch.setattr(
