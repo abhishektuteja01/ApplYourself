@@ -81,7 +81,6 @@ interview/
 # Word's sandbox grant doesn't reliably persist across new per-job output dirs;
 # converting through one unchanging folder keeps a single one-time grant valid.
 .pdf_staging/
-.pdf_staging_word.lock
 
 # =============================================================================
 # Private working notes — live breakage tracker and backlog. They carry measured

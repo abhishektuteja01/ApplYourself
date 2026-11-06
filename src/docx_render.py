@@ -361,7 +361,7 @@ def pdf_sweep(jobs: Sequence[tuple[Path, str]]) -> list[PdfResult]:
     restarted = False
     # Word is one app: two conversions at once (parallel /tailor runs) collide with
     # -1728 "object does not exist", so they take turns.
-    with locked(paths.PDF_STAGING.parent / f"{paths.PDF_STAGING.name.lstrip('.')}_word"):
+    with locked(paths.PDF_STAGING / "word"):
         for docx_path, token in jobs:
             pdf_path = docx_path.with_suffix(".pdf")
             failed = _convert(docx_path, pdf_path, token)

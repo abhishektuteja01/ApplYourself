@@ -30,7 +30,6 @@ from src import lint
 from src.session_schema import ProblemCode
 from src.shared import paths, verticals
 
-SECTIONS = ("summary", "work", "projects", "education", "skills")
 BULLET_KEYS = ("canonical", "tags", "default_for", "evidence", "allowable_synonyms")
 SKILL_KEYS = ("name", "evidence", "allowable_synonyms", "show")
 SECTION_TITLES = {

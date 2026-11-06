@@ -698,7 +698,7 @@ def test_export_pdf_ok(monkeypatch, tmp_path):
     r = export_pdf(docx, "role1")
     assert r["status"] == "ok" and r["pages"] == 1
     assert (tmp_path / "A_Resume.pdf").is_file()
-    assert not list((tmp_path / "staging").iterdir())
+    assert [p.name for p in (tmp_path / "staging").iterdir()] == [".word.lock"]
 
 
 def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
@@ -713,7 +713,7 @@ def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
     r = export_pdf(docx, "role1")
     assert r["status"] == "failed" and "boom" in r["detail"]
     assert not (tmp_path / "A_Resume.pdf").exists()
-    assert not list((tmp_path / "staging").iterdir())
+    assert [p.name for p in (tmp_path / "staging").iterdir()] == [".word.lock"]
 
 
 def test_export_pdf_stages_under_a_plain_name(monkeypatch, tmp_path):
