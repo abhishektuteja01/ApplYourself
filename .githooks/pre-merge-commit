@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# A clean `git merge` skips pre-commit, so run the same checks on the merge result.
+exec "$(git rev-parse --show-toplevel)/.githooks/pre-commit" "$@"

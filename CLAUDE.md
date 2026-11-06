@@ -46,8 +46,8 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
   `.confirmed` file.
 - `.githooks/pre-commit` runs `ruff check`, `ruff format --check` and `mypy` when a
   `.py` file is staged, and `scripts/r7_scan.sh` plus the test suite when `src/`,
-  `tests/`, `scripts/`, `data/defaults/` or `profile/*.example.*` is staged. Enable
-  it once per clone: `git config core.hooksPath .githooks`. CI runs the same ruff,
+  `tests/`, `scripts/`, `data/defaults/` or `profile/*.example.*` is staged;
+  `pre-merge-commit` runs it on merges too. Enable it once per clone: `git config core.hooksPath .githooks`. CI runs the same ruff,
   R7 scan and shellcheck.
 - `.claude/commands/*.md` hold the real orchestration; read one before running its
   slash command. `.claude/shared/no_fab.md` defines `NO-FAB`, `NO-DRIFT`,

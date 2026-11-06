@@ -694,7 +694,8 @@ loads only when you open the code it governs: `src-boundary`, `state-machine`,
 The test suite runs from `.githooks/pre-commit` instead: any commit that stages
 `src/`, `tests/`, `scripts/`, `data/defaults/` or `profile/*.example.*` is
 blocked while the R7 scan or the suite is red, and any commit that stages a `.py`
-file is blocked on `ruff check`, `ruff format --check` and `mypy`. Enable it once per clone
+file is blocked on `ruff check`, `ruff format --check` and `mypy`.
+`.githooks/pre-merge-commit` runs the same checks on a merge. Enable it once per clone
 with `git config core.hooksPath .githooks`.
 
 </details>
