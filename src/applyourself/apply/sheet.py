@@ -4,8 +4,8 @@
 `queue()` is computed, never read back from the sheet: every role scored at or
 above scoring.yaml `cutoffs.sheet` (`score_store.view`) that is in the live view
 (`clean.parquet`), whose state is not past tailored or closed, and whose status
-is not Applied or Closed; a role the judge said skip only once it is tailored;
-highest score first, then job_id.
+is not Applied or Closed; a role a derived (not legacy) score says skip only
+once it has a resume folder or is past saved; highest score first, then job_id.
 Each row's `status`, `note` and `uv_run_command` come from the records that own
 the facts — `pipeline/<job_id>/state.yaml`, the submit ledger, the latest run
 record that names the role, and a role's waiting answers. Where a role is
@@ -38,7 +38,6 @@ from applyourself.shared.parquet_io import locked, read_parquet
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "screen", "interview", "offer"})
 _CLOSED = frozenset({"skip", "withdrawn", "rejected", state_io.GHOSTED})
-_UNWORKED = frozenset({"", "saved"})  # no state.yaml, or only the night's resume
 
 
 def latest_outcomes(runs_dir: Path) -> dict[str, tuple[str, str, str]]:
@@ -227,6 +226,12 @@ def _sheet_rows(table: Path) -> list[dict[str, str]]:
     return out
 
 
+def _untouched(state: dict | None) -> bool:
+    """No state.yaml, or `saved` with no resume folder yet."""
+    state = state or {}
+    return not state.get("state") or (state["state"] == "saved" and not state.get("tailored_dirs"))
+
+
 def _finished(status: str) -> bool:
     return status == "Applied" or status.startswith("Closed")
 
@@ -276,7 +281,7 @@ def queue(snap: Snapshot | None = None) -> list[dict[str, str]]:
     snap = snap or snapshot()
     if not paths.SCORED.exists():
         return []
-    scored = view(paths.SCORED)[["job_id", "fit_score", "suggested_action"]]
+    scored = view(paths.SCORED)[["job_id", "fit_score", "suggested_action", "basis"]]
     scored = scored[scored["fit_score"] >= float(load_cutoffs().sheet)]
     out = []
     for r in scored.sort_values(["fit_score", "job_id"], ascending=[False, True]).itertuples():
@@ -284,8 +289,12 @@ def queue(snap: Snapshot | None = None) -> list[dict[str, str]]:
         stored = str((snap.states.get(r.job_id) or {}).get("state") or "")
         if live is None or stored in _DONE | _CLOSED:
             continue
-        if r.suggested_action == "skip" and stored in _UNWORKED:
-            continue  # the judge said skip; a role already moved to tailored stays
+        if (
+            r.suggested_action == "skip"
+            and r.basis == "judged"
+            and _untouched(snap.states.get(r.job_id))
+        ):
+            continue  # a derived skip; a legacy score's skip, or a role with a resume, stays
         status, note, command = _row_status(r.job_id, snap)
         if _finished(status):
             continue

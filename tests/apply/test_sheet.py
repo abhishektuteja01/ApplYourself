@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import openpyxl
+import pandas as pd
 import yaml
 
 from applyourself.apply import ledger, sheet
@@ -21,7 +22,7 @@ def _world(tmp_path, monkeypatch):
     )
     scored_rows(
         *(
-            {"job_id": j, "fit_score": s, "suggested_action": "tailor"}
+            {"job_id": j, "fit_score": s}
             for j, s in (("aaaa1111", 90), ("bbbb2222", 85), ("cccc3333", 70))
         )
     ).to_parquet(tmp_path / "scored.parquet")
@@ -53,19 +54,24 @@ def test_add_appends_only_roles_above_the_threshold_and_not_sent(tmp_path, monke
     assert set(_rows(tmp_path)) == {"aaaa1111"}
 
 
-def test_a_judge_skip_keeps_a_new_role_out_but_not_one_already_tailored(tmp_path, monkeypatch):
+def test_a_derived_skip_keeps_a_new_role_out_but_not_a_legacy_one_or_one_with_a_resume(
+    tmp_path, monkeypatch
+):
     _world(tmp_path, monkeypatch)
-    scored_rows(
-        *(
-            {"job_id": j, "fit_score": 90, "suggested_action": "skip"}
-            for j in ("aaaa1111", "bbbb2222", "cccc3333")
-        )
-    ).to_parquet(tmp_path / "scored.parquet")
-    folder = "lane/2026-09-28_acme_eng_cccc3333"
+    scores = pd.DataFrame(
+        {
+            "job_id": ["aaaa1111", "bbbb2222", "cccc3333"],
+            "fit_score": [90.0, 90.0, 90.0],
+            "suggested_action": ["skip"] * 3,
+            "basis": ["judged", "judged", "legacy"],
+        }
+    )
+    monkeypatch.setattr(sheet, "view", lambda _path: scores)
+    folder = "lane/2026-09-28_acme_eng_bbbb2222"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
+    _state(tmp_path, "aaaa1111", "saved")
     _state(tmp_path, "bbbb2222", "saved", folder)
-    _state(tmp_path, "cccc3333", "tailored", folder)
-    assert [r["name"] for r in sheet.queue()] == ["cccc3333"]
+    assert [r["name"] for r in sheet.queue()] == ["bbbb2222", "cccc3333"]
 
 
 def test_status_follows_the_records(tmp_path, monkeypatch):
