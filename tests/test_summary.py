@@ -116,11 +116,10 @@ def test_scoring_counts_tonights_rows_and_flags_an_open_run():
         [
             (SINCE + timedelta(hours=8), "score-judge:sonnet", "tailor"),
             (SINCE + timedelta(hours=8), "score-judge:sonnet", "skip"),
-            (SINCE + timedelta(hours=8), "filter:years", "skip"),
             (SINCE - timedelta(days=1), "score-judge:sonnet", "tailor"),
         ]
     )
-    out = M.scoring_section(df, SINCE, "merged=2 pruned=0 keepers=75", 0, 0)
+    out = M.scoring_section(df, SINCE, "merged=2 pruned=0 keepers=75 dropped_years=1", 0, 0)
     assert out[0] == "2 judged: 1 tailor, 0 manual-review, 1 skip. Filtered: years 1. Keepers 75."
     assert out[1] == "Errors: none"
     bad = "\n".join(M.scoring_section(df, SINCE, "x", 3, 1))

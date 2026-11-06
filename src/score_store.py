@@ -15,6 +15,7 @@ Staging holds only:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime
@@ -58,6 +59,7 @@ SCORED_COLUMNS: list[str] = [
     "scored_by_model",
     "judge_answer",  # JSON: the judge's raw answer; empty on a legacy row
     "judge_facts",  # JSON: {years, words, contract} read from the JD at start
+    "judge_input_hash",  # input_hash() of what was judged; empty on a legacy row
 ]
 # What view() derives again from judge_answer under today's rules.
 DERIVED_COLUMNS = (
@@ -186,8 +188,6 @@ def _row(
     action: str,
     model: str,
     now: datetime,
-    answer: str = "",
-    facts: str = "",
 ) -> dict[str, Any]:
     return {
         "job_id": job_id,
@@ -201,8 +201,9 @@ def _row(
         "suggested_action": action,
         "scored_at": pd.Timestamp(now),
         "scored_by_model": model,
-        "judge_answer": answer,
-        "judge_facts": facts,
+        "judge_answer": "",
+        "judge_facts": "",
+        "judge_input_hash": "",
     }
 
 
@@ -210,20 +211,16 @@ def _zero() -> dict[str, Any]:
     return dict.fromkeys(AXIS_MAXIMA, 0)
 
 
-def drop_row(row: dict[str, Any], code: str, detail: str, now: datetime) -> dict[str, Any]:
-    ineligible = code == "ineligible"
-    return _row(
-        row["job_id"],
-        row.get("vertical") or "",
-        _zero(),
-        "ineligible" if ineligible else "unknown",
-        detail if ineligible else "",
-        f"Filtered ({code}): {detail}",
-        [],
-        "skip",
-        f"filter:{code}",
-        now,
-    )
+def remove_rows(scored_path: Path, job_ids: set[str]) -> int:
+    """Delete these job_ids' scores: a role today's hard rules drop has none."""
+    if not job_ids or not scored_path.exists():
+        return 0
+    with locked(scored_path):
+        scored = pd.read_parquet(scored_path)
+        mask = scored["job_id"].isin(job_ids)
+        if mask.any():
+            write_parquet(scored[~mask], scored_path)
+    return int(mask.sum())
 
 
 # ---------------------------------------------------------------------
@@ -247,7 +244,13 @@ def _lane_resume(lane: verticals.Vertical) -> str:
     return resume_model.baseline_markdown(lane.name)
 
 
-def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) -> None:
+def input_hash(packet: str, jd: str) -> str:
+    """What a judgment was made from: the lane's packet and the trimmed JD."""
+    return hashlib.sha1(f"{packet}\0{jd}".encode()).hexdigest()[:16]
+
+
+def packet_text(lane: verticals.Vertical, cfg: ScoringConfig) -> str:
+    """What every judge of the lane reads first."""
     parts = [
         f"# Scoring packet — lane {lane.name}\n",
         f"`keywords_to_mirror`: up to {cfg.keywords_max}.\n",
@@ -274,7 +277,7 @@ def write_packet(staging: Path, lane: verticals.Vertical, cfg: ScoringConfig) ->
             f"Then `domain` is set for you: true lifts it to at least {f.yes_min}, "
             f"false holds it at {f.no_max} or below.\n",
         )
-    (staging / f"packet_{lane.name}.md").write_text("\n".join(parts), encoding="utf-8")
+    return "\n".join(parts)
 
 
 def _slice_text(name: str, rows: list[dict[str, Any]], staging: Path) -> str:
@@ -356,17 +359,21 @@ def start(
     cfg: ScoringConfig,
     *,
     rescore: bool = False,
+    stale_only: bool = False,
+    count_only: bool = False,
     vertical: str | None = None,
     job_ids: list[str] | None = None,
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Stage a run. Returns {"dropped": {code: n}, "judge": n, "lines": [...],
-    "resumed": bool}.
+    "resumed": bool}. A dropped row is not stored, and loses any score it had.
+    `stale_only` takes only judged rows whose input hash changed; a row with
+    no hash is never stale. `count_only` returns the counts and writes nothing.
     An open run is resumed when no selector is given, refused otherwise."""
     run = load_run(staging)
     if run is not None:
-        if rescore or vertical or job_ids:
+        if rescore or stale_only or vertical or job_ids:
             raise RunOpen("a /score run is still open: run `/score` to finish it first")
         return {
             "dropped": {},
@@ -377,9 +384,17 @@ def start(
     now = now or clock.now()
     vcfg = verticals.get_config()
     clean = pd.read_parquet(clean_path)
-    if not rescore and not job_ids:
-        clean = clean[~clean["job_id"].isin(set(read_scored(scored_path)["job_id"]))]
-    if rescore and not job_ids and pipeline_dir is not None:
+    stored = read_scored(scored_path)
+    hashes = {
+        j: h
+        for j, h in zip(stored["job_id"], stored["judge_input_hash"])
+        if isinstance(h, str) and h
+    }
+    if stale_only:
+        clean = clean[clean["job_id"].isin(set(hashes))]
+    elif not rescore and not job_ids:
+        clean = clean[~clean["job_id"].isin(set(stored["job_id"]))]
+    if (rescore or stale_only) and not job_ids and pipeline_dir is not None:
         # Re-judging a role you have applied to, skipped or closed buys nothing.
         done = {
             j
@@ -392,19 +407,29 @@ def start(
     if job_ids:
         clean = clean[clean["job_id"].isin(job_ids)]
 
-    dropped, keep = [], []
+    dropped: set[str] = set()
+    keep: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
+    packets: dict[str, str] = {}
     for row in cast(list[dict[str, Any]], clean.to_dict("records")):
         reason = drop_reason(row, cfg)
         if job_ids and reason and reason[0] != "no-lane":
             reason = None  # a deliberate ingest always reaches a judge
         if reason:
-            dropped.append(drop_row(row, *reason, now))
+            dropped.add(row["job_id"])
             counts[reason[0]] = counts.get(reason[0], 0) + 1
             continue
         row["_jd"] = trim_jd(row.get("jd_text"), cfg)
+        lane = row["vertical"]
+        if lane not in packets:
+            packets[lane] = packet_text(vcfg.verticals[lane], cfg)
+        row["_hash"] = input_hash(packets[lane], row["_jd"])
+        if stale_only and row["_hash"] == hashes.get(row["job_id"]):
+            continue
         keep.append(row)
-    merge_rows(scored_path, dropped)
+    if count_only:
+        return {"dropped": counts, "judge": len(keep), "lines": [], "resumed": False}
+    remove_rows(scored_path, dropped)
 
     keep.sort(
         key=lambda r: (
@@ -421,7 +446,7 @@ def start(
         rows = [r for r in keep if r["vertical"] == lane.name]
         if not rows:
             continue
-        write_packet(staging, lane, cfg)
+        (staging / f"packet_{lane.name}.md").write_text(packets[lane.name], encoding="utf-8")
         for n, part in enumerate(_slices(rows), 1):
             name = f"{lane.name}_{n:03d}"
             text = _slice_text(name, part, staging)
@@ -435,6 +460,7 @@ def start(
                         "years": years_required(r.get("jd_text"), cfg.degree_rank),
                         "words": word_count(r.get("jd_text")),
                         "contract": "contract" in str(r.get("employment_type") or "").lower(),
+                        "hash": r["_hash"],
                         # everything the judge is shown, so a quote from the title or company counts
                         "jd": normalize(
                             f"{r.get('title') or ''}\n{r.get('company') or ''}\n{r['_jd']}"
@@ -644,6 +670,7 @@ def finish(
             row = derive(a, lane, facts, cfg, rule, run["model"], now)
             row["judge_answer"] = json.dumps(a)
             row["judge_facts"] = json.dumps({k: facts[k] for k in ("years", "words", "contract")})
+            row["judge_input_hash"] = facts.get("hash", "")
             rows.append(row)
         done.append(name)
     merged = merge_rows(scored_path, rows)

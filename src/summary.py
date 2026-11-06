@@ -253,11 +253,11 @@ def scoring_section(
     lines = []
     if scored is not None and len(scored):
         new = scored[pd.to_datetime(scored["scored_at"]) >= since]
-        model = new["scored_by_model"].astype(str)
-        judged = new[model.str.startswith("score-judge")]
+        judged = new[new["scored_by_model"].astype(str).str.startswith("score-judge")]
         actions = judged["suggested_action"].value_counts()
-        dropped = model[model.str.startswith("filter:")].str[len("filter:") :].value_counts()
-        if not len(judged) and not len(dropped):
+        # score start's own counts; a drop is never stored
+        dropped = dict(re.findall(r"\bdropped_(\S+)=(\d+)", detail))
+        if not len(judged) and not dropped:
             text = "Nothing new to score"
         else:
             text = f"{len(judged)} judged: " + ", ".join(

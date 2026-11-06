@@ -1,10 +1,12 @@
 """`uv run score`: the deterministic halves of /score (R7: no LLM calls).
 
-start [--all] [--vertical V] [--job-id ID ...]
-    Drop what the hard rules reject, stage the rest for the judges, print
-    one `judge <slice>...` line per judge to spawn. Prints `done` (after
-    writing the shortlist) when nothing needs a judge. With no flags and a
-    run already open, prints only the judges still owed.
+start [--all | --stale-only [--yes]] [--vertical V] [--job-id ID ...]
+    Drop what the hard rules reject (never stored), stage the rest for the
+    judges, print one `judge <slice>...` line per judge to spawn. Prints
+    `done` (after writing the shortlist) when nothing needs a judge. With no
+    flags and a run already open, prints only the judges still owed.
+    --stale-only prints how many judged rows changed input and stages
+    nothing; --yes stages them. A row with no input hash is never stale.
 finish
     Merge every answered slice, prune, write the shortlist. Exit 1 with the
     `judge ...` lines still owed when a slice is missing or malformed.
@@ -42,6 +44,10 @@ def _cmd_start(args: argparse.Namespace) -> int:
     if args.vertical and args.vertical not in verticals.get_config().names:
         print(f"ERROR: unknown vertical {args.vertical!r}")
         return 1
+    if args.stale_only and (args.all or args.job_id):
+        print("ERROR: --stale-only takes no --all or --job-id")
+        return 1
+    count_only = args.stale_only and not args.yes
     try:
         res = score_store.start(
             CLEAN,
@@ -49,6 +55,8 @@ def _cmd_start(args: argparse.Namespace) -> int:
             STAGING,
             cfg,
             rescore=args.all,
+            stale_only=args.stale_only,
+            count_only=count_only,
             vertical=args.vertical,
             job_ids=args.job_id,
             pipeline_dir=paths.PIPELINE,
@@ -57,6 +65,10 @@ def _cmd_start(args: argparse.Namespace) -> int:
         print(f"ERROR: {e}")
         return 1
     dropped = " ".join(f"dropped_{k}={n}" for k, n in sorted(res["dropped"].items()))
+    if count_only:
+        print(f"stale={res['judge']} {dropped}".strip())
+        print("done nothing staged: add --yes to stage the stale rows for judging")
+        return 0
     print(f"{'resumed' if res['resumed'] else 'judge'}={res['judge']} {dropped}".strip())
     if not res["lines"] and not res["resumed"]:
         print(f"done {_shortlist(cfg)}")
@@ -88,6 +100,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="re-judge every row not past saved/tailored, not just new ones",
     )
+    p.add_argument(
+        "--stale-only",
+        action="store_true",
+        help="only judged rows whose JD or packet changed; prints the count, stages with --yes",
+    )
+    p.add_argument("--yes", action="store_true", help="with --stale-only: stage the stale rows")
     p.add_argument("--vertical", metavar="V", help="only this lane")
     p.add_argument(
         "--job-id",

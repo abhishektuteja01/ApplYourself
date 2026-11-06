@@ -32,8 +32,9 @@ run_judges() {  # run_judges "<judge lines>"
 OUT="$("$UV" run score start "$@" 2>&1)"; CODE=$?
 echo "$OUT"
 if [[ $CODE -ne 0 ]]; then stage_end "$CODE" "score start failed"; exit "$CODE"; fi
+DROPS="$(head -1 <<< "$OUT" | grep -oE 'dropped_[a-z-]+=[0-9]+' | tr '\n' ' ')"
 if grep -q '^done ' <<< "$OUT"; then
-  stage_end 0 "$(grep '^done ' <<< "$OUT")"; exit 0
+  stage_end 0 "$(grep '^done ' <<< "$OUT") ${DROPS% }"; exit 0
 fi
 run_judges "$OUT"
 
@@ -41,7 +42,7 @@ attempt=0
 while :; do
   FIN="$("$UV" run score finish 2>&1)"; FCODE=$?
   echo "$FIN"
-  if [[ $FCODE -eq 0 ]]; then stage_end 0 "$(head -1 <<< "$FIN")"; exit 0; fi
+  if [[ $FCODE -eq 0 ]]; then stage_end 0 "$(head -1 <<< "$FIN") ${DROPS% }"; exit 0; fi
   attempt=$((attempt + 1))
   # A judge hit the usage limit: a retry now would hit it too.
   if quota_hit; then

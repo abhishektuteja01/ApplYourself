@@ -13,9 +13,11 @@ Three steps, one owner per rule:
 1. `score start` (Python): `score_filter.drop_reason` drops rows by the hard
    rules (no lane, `profile/scoring.yaml` `ineligible` plus its
    `no_sponsorship` phrases when the home need is `now`, the lane's
-   `drop_phrases`, the lane's `years` table) straight into `scored.parquet`
-   as `scored_by_model="filter:<code>"`. The rest is staged in
-   `jobs/scored.staging/` as one packet per lane and slices of at most 10 roles.
+   `drop_phrases`, the lane's `years` table). A drop is never stored: it is
+   checked again every run, and a stored score of a row it now drops is
+   deleted. The rest is staged in `jobs/scored.staging/` as one packet per
+   lane and slices of at most 10 roles, each row with its `judge_input_hash`
+   (`input_hash` of the lane packet and the trimmed JD).
 2. `score-judge` agents (the only model step): four subscores, the facts
    (years, country, the JD's sponsorship statements with literal JD quotes),
    keywords, a short reason, and an optional action that may only lower it.
@@ -34,8 +36,12 @@ field goes in `score_store.derive`.
 
 `/score --all [--vertical V]` re-judges instead of scoring only new rows,
 except roles whose state is past `shortlist.pipeline_states`; there is no
-separate rescore command. `--job-id` (for `/ingest`) skips every drop except
-no-lane.
+separate rescore command. `--stale-only` takes only judged rows whose hash
+changed and prints the count without staging; `--yes` stages them. A row with
+no hash (legacy) is never stale, and a plain `score start` re-judges nothing.
+`--job-id` (for `/ingest`) skips every drop except no-lane.
+`scripts/drop_filter_rows.py --dry-run|--apply` removes the old `filter:*`
+rows once; the next `/score` then re-checks those roles.
 
 Prune keeps every row still in `clean.parquet` or in an active
 `state.yaml`, and discovery's view always includes active roles, so a

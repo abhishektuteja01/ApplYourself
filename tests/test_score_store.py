@@ -95,23 +95,46 @@ def _scored(env):
 
 
 class TestStart:
-    def test_drops_go_straight_to_scored(self, env, scfg):
+    def test_drops_are_not_stored_and_drop_an_old_score(self, env, scfg):
+        _clean(env, [{"job_id": "aaaaaaaa"}, {"job_id": "bbbbbbbb", "vertical": ""}])
+        _start(env, scfg)
+        _write_answers(
+            env, score_store.load_run(env["staging"])["slices"], {"aaaaaaaa": _answer("aaaaaaaa")}
+        )
+        _finish(env, scfg)
+        assert list(_scored(env).index) == ["aaaaaaaa"]
+        _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " Must be a U.S. citizen."}])
+        res = _start(env, scfg, rescore=True)
+        assert res["dropped"] == {"ineligible": 1} and res["judge"] == 0
+        assert _scored(env).empty
+
+    def test_stale_only_counts_changed_inputs_and_never_legacy_rows(self, env, scfg):
+        _clean(env, [{"job_id": "aaaaaaaa"}, {"job_id": "bbbbbbbb", "company": "Beta"}])
+        _start(env, scfg)
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {j: _answer(j) for j in ("aaaaaaaa", "bbbbbbbb")},
+        )
+        _finish(env, scfg)
+        assert _start(env, scfg, stale_only=True, count_only=True)["judge"] == 0
+        legacy = pd.read_parquet(env["scored"])
+        legacy.loc[legacy["job_id"] == "bbbbbbbb", "judge_input_hash"] = None
+        legacy.to_parquet(env["scored"], index=False)
         _clean(
             env,
             [
-                {"job_id": "aaaaaaaa", "jd_text": JD + " Must be a U.S. citizen."},
-                {"job_id": "bbbbbbbb", "vertical": ""},
-                {"job_id": "cccccccc"},
+                {"job_id": "aaaaaaaa", "jd_text": JD + " Now with Rust."},
+                {"job_id": "bbbbbbbb", "company": "Beta", "jd_text": JD + " Now with Rust."},
             ],
         )
-        res = _start(env, scfg)
-        assert res["dropped"] == {"ineligible": 1, "no-lane": 1}
+        assert _start(env, scfg, stale_only=True, count_only=True)["judge"] == 1
+        assert not any(env["staging"].iterdir())
+        assert _start(env, scfg)["judge"] == 0  # a plain run re-judges nothing
+        res = _start(env, scfg, stale_only=True)
         assert res["judge"] == 1
-        s = _scored(env)
-        assert s.loc["aaaaaaaa", "sponsorship_label"] == "ineligible"
-        assert s.loc["aaaaaaaa", "scored_by_model"] == "filter:ineligible"
-        assert s.loc["bbbbbbbb", "suggested_action"] == "skip"
-        assert "cccccccc" not in s.index
+        (meta,) = score_store.load_run(env["staging"])["slices"].values()
+        assert meta["job_ids"] == ["aaaaaaaa"]
 
     def test_nothing_to_judge_stages_nothing(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa", "vertical": ""}])
