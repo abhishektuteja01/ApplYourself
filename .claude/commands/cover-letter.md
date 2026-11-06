@@ -45,6 +45,8 @@ ground "why this role" in the JD's work, not in the company.
 
 ## 4. Write `<dir>/cover_letter.yaml`
 
+`uv run app schema letter` prints every key the file may hold; this is an example.
+
 ```yaml
 salutation: "Dear Hiring Manager,"
 uses: [B-XXX-01, B-YYY-02]        # every bullet a sentence about you draws on

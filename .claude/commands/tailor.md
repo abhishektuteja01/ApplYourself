@@ -50,6 +50,7 @@ applied or submitted; carry them to the report and keep going.
 ## 3. Write `<work_dir>/resume_plan.yaml`
 
 Start from the lane's baseline and move toward the JD's `keywords_to_mirror`.
+`uv run app schema resume` prints every key the file may hold; this is an example.
 
 ```yaml
 summary:

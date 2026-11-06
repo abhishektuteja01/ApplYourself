@@ -46,6 +46,8 @@ show you looked, never its tagline:
 
 ## 3. Write `<dir>/company_answers.yaml`
 
+`uv run app schema answers` prints every key the file may hold; this is an example.
+
 ```yaml
 researched_at: YYYY-MM-DD
 sources: ["https://..."]          # the pages the answers rest on
