@@ -1490,9 +1490,24 @@ class TestApplyConfirm:
     """Only `apply confirm`'s stored hash confirms a file, and only while it matches."""
 
     @pytest.fixture(autouse=True)
-    def _no_clean(self, tmp_path, monkeypatch):
-        # confirm builds the role's plan to list its guesses; never from real data.
-        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+    def _offline(self, monkeypatch):
+        """confirm never reaches the board or opens a browser."""
+        from src.apply import browser
+        from src.shared import http_client
+
+        no = _raise(AssertionError("apply confirm went online"))
+        for target, name in (
+            (apply_cli, "build"),
+            (apply_cli, "load_board"),
+            (apply_cli.lever, "load_board"),
+            (ashby, "load_board"),
+            (ashby, "fetch_dom_enrichment"),
+            (http_client, "_get"),
+            (http_client, "_post"),
+            (browser, "require_playwright"),
+            (browser, "launch"),
+        ):
+            monkeypatch.setattr(target, name, no)
 
     def _file(self, tmp_path, data):
         path = tmp_path / "answers_override.json"
@@ -1518,33 +1533,28 @@ class TestApplyConfirm:
         assert not confirmation.sidecar(path).exists()
 
     def test_the_banks_standing_keyword_guesses_are_shown(self, tmp_path, monkeypatch, capsys):
-        """Confirming lets them through a submit, so the user must see them."""
-        from dataclasses import replace
-
-        from src.apply.plan import FieldPlan
-
-        guess = FieldPlan(
-            id="q",
-            name="q",
-            label="What's your LinkedIn?",
-            kind="text",
-            section="questions",
-            required=True,
-            multi=False,
-            value="https://x",
-            tier="B",
-            source="bank:linkedin~linkedin",
+        """Read offline from the saved plan.json; a field the file answers is not one."""
+        fields = [
+            {"id": "q", "label": "What's your LinkedIn?", "value": "https://x",
+             "source": "bank:linkedin~linkedin"},
+            {"id": "w", "label": "Your website", "value": "https://y",
+             "source": "bank:website~website"},
+        ]  # fmt: skip
+        (tmp_path / "plan.json").write_text(
+            json.dumps({"job_id": JOB_ID, "fields": fields}), encoding="utf-8"
         )
-        monkeypatch.setattr(
-            apply_cli,
-            "build",
-            lambda job_id, **kw: (replace(_fake_plan(job_id), fields=(guess,)), None),
-        )
-        path = self._file(tmp_path, {"job_id": JOB_ID})
+        path = self._file(tmp_path, {"job_id": JOB_ID, "w": {"value": "https://z"}})
         monkeypatch.setattr("sys.stdin.isatty", lambda: False)
         assert apply_cli.main(["confirm", str(path)]) == 1
         out = capsys.readouterr().out
         assert "What's your LinkedIn?" in out and "bank:linkedin~linkedin" in out
+        assert "(1):" in out and "bank:website~website" not in out
+
+    def test_no_saved_plan_says_so_in_one_line(self, tmp_path, monkeypatch, capsys):
+        path = self._file(tmp_path, {"job_id": JOB_ID})
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        assert apply_cli.main(["confirm", str(path)]) == 1
+        assert "can't be listed offline" in capsys.readouterr().out
 
 
 class TestARunLearnsWhatWasConfirmed:

@@ -17,7 +17,8 @@ run [--job-id X] [--answers F] [--manifest F] [--submit] [--yes] [--limit N]
                       applications/apply_runs/<timestamp>.md.
 confirm <answers-file>
                       show the answers and the bank's keyword guesses they
-                      leave standing, take a typed yes on a terminal, and
+                      leave standing (offline, from the saved plan.json),
+                      take a typed yes on a terminal, and
                       store their hash beside the file; run and the bank honour
                       the file only while it still matches.
 learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
@@ -60,6 +61,7 @@ from src.apply.answers import (
     UNKNOWN_COUNTRY,
     Answers,
     AnswersError,
+    find_question,
     load_answers,
 )
 
@@ -1758,20 +1760,30 @@ def confirm_submission(job_ids: list[str]) -> int:
     return 0
 
 
-def _standing_guesses(job_id: str, answers_file: Path) -> str:
+def _standing_guesses(job_id: str, answers_file: Path, data: dict) -> str:
     """The bank's keyword guesses this file leaves standing: confirming lets
-    them through a submit and saves each as a wording."""
-    if not job_id:
-        return "\nWARNING: no job_id in the file, so the bank's keyword guesses are not listed."
+    them through a submit and saves each as a wording. Offline: read from the
+    role's saved `plan.json` beside the file, re-checked against the bank."""
+    plan_file = answers_file.parent / "plan.json"
     try:
-        plan, _ = build(job_id, answers_path=answers_file)
-    except (*BUILD_ERRORS, PostingExpired, OSError) as exc:
-        return f"\nWARNING: could not list the bank's keyword guesses for {job_id}: {exc}"
-    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+        if not job_id or plan.get("job_id") != job_id:
+            raise ValueError(f"{plan_file} is not for job_id {job_id or '(none)'}")
+        bank_now = load_answers()
+    except (OSError, ValueError, AnswersError) as exc:
+        return f"\nWARNING: the bank's keyword guesses can't be listed offline ({exc})."
+    guesses = []
+    for f in plan.get("fields") or []:
+        if f.get("id") in data or "~" not in str(f.get("source") or ""):
+            continue
+        found = find_question(str(f.get("label") or ""), bank_now)
+        if found and "~" in found[1]:
+            guesses.append((f, found[1]))
     lines = [f"\nGuessed by keyword from the bank, also confirmed ({len(guesses)}):"]
-    for f in guesses:
-        lines.append(f'{f.id} — "{f.label}"')
-        lines.append(f"  {_value(f.value)}  [{f.source}]")
+    for f, source in guesses:
+        value = f.get("value")
+        lines.append(f'{f.get("id")} — "{f.get("label")}"')
+        lines.append(f"  {_value(tuple(value) if isinstance(value, list) else value)}  [{source}]")
     return "\n".join(lines)
 
 
@@ -1788,7 +1800,7 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
         print(f"ERROR: {args.answers_file}: not readable JSON ({exc})", file=sys.stderr)
         return 1
     print(confirmation.render(data))
-    print(_standing_guesses(str(data.get("job_id") or ""), Path(args.answers_file)))
+    print(_standing_guesses(str(data.get("job_id") or ""), Path(args.answers_file), data))
     print("\nConfirming saves these to the answer bank and lets them through a submit.")
     if not sys.stdin.isatty():
         print(
