@@ -355,7 +355,7 @@ class BoardLane(Lane):
                     if p is None or p["posting_key"] in out:
                         continue
                     out[p["posting_key"]] = p
-                    passing += title_gate.gate_reason(p["title"], self.name, crawl.vcfg)[1]
+                    passing += title_gate.lane_for(p["title"], "", self.name, crawl.vcfg).passes
                 if len(items) < page_size or not passing:
                     break
         return list(out.values())
@@ -423,12 +423,13 @@ class BoardLane(Lane):
 
     def _one(self, board, posting, crawl, stats, result, pause) -> None:
         stats.listed += 1
-        vertical, passes = title_gate.gate_reason(posting["title"], self.name, crawl.vcfg)
+        verdict = title_gate.lane_for(posting["title"], "", self.name, crawl.vcfg)
+        vertical = verdict.lane
         key = posting["posting_key"]
         if vertical:
             stats.classified += 1
-            crawl.record_listing(self.name, posting["title"], vertical, passes, key)
-        if not passes:
+            crawl.record_listing(self.name, posting["title"], vertical, verdict.passes, key)
+        if not verdict.passes:
             return
         posting["vertical"] = vertical
         stats.passed += 1

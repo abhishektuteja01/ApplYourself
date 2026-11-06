@@ -7,7 +7,7 @@ import pytest
 
 from applyourself.discovery import dedupe, live_view
 from applyourself.discovery import store as S
-from applyourself.shared import identity
+from applyourself.shared import identity, title_gate
 from applyourself.shared.location.allowlist import Allowed
 
 TODAY = pd.Timestamp("2026-09-27")
@@ -675,7 +675,7 @@ def test_view_retention_tiers():
 
 def test_view_gives_an_unscored_row_the_filter_drops_low_retention(monkeypatch):
     """Drops are not stored, so retention asks today's filter again."""
-    monkeypatch.setattr(live_view.title_gate, "title_passes", lambda *a: True)
+    monkeypatch.setattr(live_view.title_gate, "lane_for", lambda t, v, *a: title_gate.Verdict(v))
     rows = [
         post(GH.format(1), title="AI Engineer", vertical="example_primary"),
         post(GH.format(2), title="ML Engineer", vertical="example_primary",

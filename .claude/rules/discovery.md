@@ -24,8 +24,22 @@ paths:
 `jobs/runs/<run_id>.json` + `.md`. `clean.parquet` is the only discovery output
 anything downstream reads, apart from `jobs/maybe_duplicates.jsonl` (see the
 store), which only `summary` and `app dupes` read. `jobs/raw/` holds nightly debug shards (every
-classified listing plus its gate verdict), pruned after `raw_keep_days`; nothing
-in the pipeline reads them.
+classified listing plus its gate verdict; the feed's passes only), pruned
+after `raw_keep_days`; nothing in the pipeline reads them.
+
+## The title gate (`shared/title_gate.py`)
+
+One rule for every source, `lane_for(title, hint)`. A title fits lane L when
+one of L's `classifier_rules` matches it, or one of L's search, LinkedIn or
+abroad terms appears in it; terms match loosely (`shared/title_terms.py`:
+hyphens, spaces, plurals, word endings, `title_variants`, never from inside a
+word). A search row keeps its term's lane when the title fits it, else goes
+to the first classifier lane, else to the first lane one of whose terms it
+holds, else is dropped `no_lane`; board and feed rows have no hint. A title
+in a lane passes unless it holds a `title_exclude_terms` word (the global
+list in verticals.yaml `defaults:`, matched as written): `banned: <word>`.
+A manual add, and a stored row whose lane is no longer configured, always
+pass.
 
 ## The store (`store.py`, job_id matching in `dedupe.py`)
 
@@ -79,7 +93,8 @@ it, and retention reads it only for a job scored.parquet does not hold.
 
 A posting is in the view when seen within `live_days`, and (search lanes only)
 posted within `search_max_age_days` or undated. Then the title gate and the
-location allowlist, both re-applied at build time, then JD >= `MIN_JD_CHARS`.
+location allowlist, both re-applied at build time (a stored row whose title no
+longer fits its lane moves to the lane it fits now), then JD >= `MIN_JD_CHARS`.
 One row per `job_id`: an applyable url, then a resolved location, then the
 newest sighting, then the longest JD. Retention runs from the job's earliest
 `first_seen`: `high_days` at fit >= threshold or unscored, else `low_days`; an

@@ -3,9 +3,9 @@
   config get settings KEY      one value from profile/settings.yaml
   config get discovery KEY     one resolved field of profile/discovery.yaml
   config verticals [LANE]      lanes and default; with LANE, its term and rule counts
-  config classify TITLE ...    the lane each title classifies to
+  config classify TITLE ...    the lane each title goes to, and why the gate drops it
   config misclassified LANE    the lane's search terms that classify elsewhere
-  config reclassify            clean.parquet rows whose lane would change now
+  config reclassify            clean.parquet rows whose lane or gate verdict would change now
   config work-auth [COUNTRY]   the answer bank's work-authorization row
   config migrate --dry-run|--apply [--profile DIR]
                                move an older profile/ layout onto the current one
@@ -68,12 +68,18 @@ def _misclassified(lane: str) -> str:
 
 
 def _reclassify() -> list[str]:
+    import pandas as pd
+
     from applyourself.shared import schemas
     from applyourself.shared.parquet_io import read_parquet
-    from applyourself.shared.title_gate import classify_vertical_from_title as c
+    from applyourself.shared.title_gate import lane_for
 
     d = read_parquet(paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION)
-    now = d.title.map(c)
+    got = [
+        lane_for(t, v if isinstance(v, str) else "", s)
+        for t, v, s in zip(d.title, d.vertical, d.source, strict=True)
+    ]
+    now = pd.Series([g.lane if g.passes else f"({g.reason})" for g in got], index=d.index)
     moved = d[now != d.vertical.fillna("")]
     return [
         f"{len(moved)} rows would reclassify",
@@ -130,10 +136,14 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "verticals":
             print("\n".join(_verticals(args.lane)))
         elif args.cmd == "classify":
-            from applyourself.shared.title_gate import classify_vertical_from_title as c
+            from applyourself.shared.title_gate import lane_for
 
             for t in args.titles:
-                print(f"{t} -> {c(t) or '(none)'}")
+                got = lane_for(t)
+                print(
+                    f"{t} -> {got.lane or '(none)'}"
+                    + (f" ({got.reason})" if got.lane and got.reason else "")
+                )
         elif args.cmd == "misclassified":
             print(_misclassified(args.lane))
         elif args.cmd == "reclassify":

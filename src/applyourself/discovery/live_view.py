@@ -133,11 +133,15 @@ def build_view(
     df_live = df_live[fresh]
     funnel["after_search_age"] = len(df_live)
 
+    # A stored row keeps its lane while its title fits it, else moves to the
+    # lane it fits now.
     gate = [
-        title_gate.title_passes(t, v, s, vcfg)
+        title_gate.lane_for(t, v if isinstance(v, str) else "", s, vcfg)
         for t, v, s in zip(df_live["title"], df_live["vertical"], df_live["source"], strict=True)
     ]
-    df_live = df_live[pd.Series(gate, index=df_live.index, dtype=bool)]
+    df_live = df_live.assign(vertical=[g.lane for g in gate])[
+        pd.Series([g.passes for g in gate], index=df_live.index, dtype=bool)
+    ]
     funnel["after_title_gate"] = len(df_live)
 
     checks = [

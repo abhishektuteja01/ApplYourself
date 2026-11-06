@@ -207,7 +207,7 @@ class StapplyLane(Lane):
         names = board_names(crawl.boards_dir)
         pf = pq.ParquetFile(path)
         cols = [c for c in COLUMNS if c in pf.schema_arrow.names]
-        gate: dict[str, tuple[str, bool]] = {}
+        gate: dict[str, title_gate.Verdict] = {}
         covered: set[str] = set()
         for i in range(pf.metadata.num_row_groups):
             if crawl.deadline_reached():
@@ -225,11 +225,11 @@ class StapplyLane(Lane):
             for t in titles:
                 v = gate.get(t)
                 if v is None:
-                    v = gate[t] = title_gate.gate_reason(t or "", self.name, crawl.vcfg)
-                keep.append(v[1])
-                if v[1]:
-                    verticals.append(v[0])
-                if v[0]:
+                    v = gate[t] = title_gate.lane_for(t or "", "", self.name, crawl.vcfg)
+                keep.append(v.passes)
+                if v.passes:
+                    verticals.append(v.lane)
+                if v.lane:
                     self.stats.classified += 1
             if not any(keep):
                 continue

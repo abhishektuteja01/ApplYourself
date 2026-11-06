@@ -264,17 +264,14 @@ class SearchLane(Lane):
         key = posting["posting_key"]
         if not key or not posting["title"]:
             return
-        if not posting["vertical"]:
-            posting["vertical"] = title_gate.classify_vertical_from_title(posting["title"])
-            if not posting["vertical"]:
-                return
-        stats.classified += 1
-        passes = title_gate.title_passes(
-            posting["title"], posting["vertical"], self.name, crawl.vcfg
-        )
-        crawl.record_listing(self.name, posting["title"], posting["vertical"], passes, key)
-        if not passes:
+        # The search term's lane when the title fits it, else the classifier's.
+        verdict = title_gate.lane_for(posting["title"], posting["vertical"], self.name, crawl.vcfg)
+        stats.classified += bool(verdict.lane)
+        if verdict.lane or posting["vertical"]:
+            crawl.record_listing(self.name, posting["title"], verdict.lane, verdict.passes, key)
+        if not verdict.passes:
             return
+        posting["vertical"] = verdict.lane
         stats.passed += 1
         if key in crawl.known:
             stats.known += 1
