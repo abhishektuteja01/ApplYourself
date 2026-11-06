@@ -828,11 +828,23 @@ def iter_states(pipeline_dir: Path) -> Iterator[dict[str, Any]]:
 
     The one place the glob-and-skip-unreadable shape lives. Malformed files are
     skipped with a logged warning, not raised -- one bad file must not break
-    /standup, a discovery run, or a shortlist.
+    /standup, a discovery run, or a shortlist. A role in the log with no
+    state.yaml gets its cache written from the fold first.
     """
     if not pipeline_dir.exists():
         return
-    for state_file in sorted(pipeline_dir.glob("*/state.yaml")):
+    files = {p.parent.name: p for p in pipeline_dir.glob("*/state.yaml")}
+    try:
+        folded = fold(read_events(events_path_for(pipeline_dir)))
+    except ValueError as e:
+        log.warning("Skipping the event log: %s", e)
+        folded = {}
+    for job_id in sorted(files.keys() | folded.keys()):
+        state_file = files.get(job_id) or state_path_for(pipeline_dir, job_id)
+        if job_id not in files:
+            with locked(state_file):
+                if not state_file.exists():
+                    _write_state(state_file, folded[job_id])
         try:
             data = load_state(state_file)
         except ValueError as e:

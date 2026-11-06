@@ -406,6 +406,26 @@ def test_load_all_states_skips_empty_files(tmp_path):
     assert {s["job_id"] for s in load_all_states(pdir)} == {"aaaaaaaa"}
 
 
+def test_a_role_in_the_log_with_no_cache_is_listed_and_its_cache_written(tmp_path):
+    from src import state_io
+
+    pdir = tmp_path / "pipeline"
+    for jid in ("aaaaaaaa", "bbbbbbbb"):
+        transition(state_path_for(pdir, jid), "saved", initial_fields=_initial(job_id=jid))
+    log = state_io.events_path_for(pdir)
+    state_io.write_events(
+        log,
+        [
+            e
+            for jid in ("aaaaaaaa", "bbbbbbbb")
+            for e in state_io.events_from_record(load_state(state_path_for(pdir, jid)))
+        ],
+    )
+    state_path_for(pdir, "bbbbbbbb").unlink()
+    assert [s["job_id"] for s in load_all_states(pdir)] == ["aaaaaaaa", "bbbbbbbb"]
+    assert load_state(state_path_for(pdir, "bbbbbbbb"))["state"] == "saved"
+
+
 def test_load_all_states_empty_when_no_pipeline_dir(tmp_path):
     assert load_all_states(tmp_path / "nope") == []
 
