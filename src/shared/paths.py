@@ -51,6 +51,7 @@ _LAYOUT = {
     "INBOX": "inbox",
     "LOGS": "logs",
     "SUMMARY": "summary.md",
+    "PIPELINE_MD": "pipeline.md",
     "UNIVERSE": "data/universe",
     "PDF_STAGING": ".pdf_staging",
     "APPLY_BROWSER_DIR": ".apply_profile",
@@ -92,6 +93,7 @@ SHORTLIST: Path
 INBOX: Path
 LOGS: Path
 SUMMARY: Path
+PIPELINE_MD: Path
 UNIVERSE: Path
 PDF_STAGING: Path
 APPLY_BROWSER_DIR: Path

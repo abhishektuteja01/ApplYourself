@@ -18,6 +18,13 @@
                               sponsorship_label from score_store.view(), and
                               the active and closed state names, as JSON
                               (read-only)
+  standup [--digest] [--note-file F]
+                              write pipeline.md: the Active and Closed tables
+                              from the same join as `states`, with F's text
+                              under the title. --digest writes nothing and
+                              prints the counts, the roles touched since the
+                              last pipeline.md and the active roles older than
+                              ghosted_after_days (read-only on state.yaml)
   ensure <job_id>             create state.yaml at `saved` if absent; no-op if
                               present. Bootstrap only, never a transition --
                               `app new` calls it so a re-tailor cannot rewind
@@ -56,13 +63,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from src.apply import cooldown, ledger
-from src.shared import paths
+from src.shared import clock, paths
 from src.state_io import (
     ACTIVE_STATES,
     CLOSED_STATES,
@@ -326,6 +334,92 @@ def _cmd_states() -> int:
     return 0
 
 
+_STANDUP_HEAD = "| state | company | title | vertical | fit | spons | last_touch | dir | note |"
+
+
+def _cell(v: object) -> str:
+    return str(v).replace("|", r"\|").replace("\n", " ").strip()
+
+
+def _standup_row(s: dict[str, Any], score: dict[str, Any], shown: str) -> str:
+    title = str(s.get("title") or "")
+    title = title if len(title) <= 60 else title[:57] + "..."
+    fit = score.get("fit_score")
+    dirs = s.get("tailored_dirs") or []
+    history = s.get("state_history") or []
+    note = history[-1].get("note") if history and isinstance(history[-1], dict) else ""
+    cells = [
+        shown,
+        s.get("company") or "",
+        title,
+        s.get("vertical") or "?",
+        "?" if fit is None else fit,
+        score.get("sponsorship_label") or "?",
+        str(s.get("last_touch") or "")[:10],
+        f"`{dirs[-1]}`" if dirs else "",
+        note or "",
+    ]
+    return "| " + " | ".join(_cell(c) for c in cells) + " |"
+
+
+def _last_standup_date() -> str:
+    """The date in the current pipeline.md title, or "" when there is none."""
+    try:
+        first = paths.PIPELINE_MD.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, IndexError):
+        return ""
+    return first.rsplit(" ", 1)[-1] if first.startswith("# Pipeline") else ""
+
+
+def _cmd_standup(args: argparse.Namespace) -> int:
+    days = ghosted_after_days()
+    scores = _scores()
+    states = sorted(
+        load_all_states(paths.PIPELINE), key=lambda s: str(s.get("last_touch") or ""), reverse=True
+    )
+    shown = {id(s): shown_state(s, days=days) for s in states}
+    active = [s for s in states if shown[id(s)] in ACTIVE_STATES]
+    closed = [s for s in states if shown[id(s)] in CLOSED_STATES]
+
+    if args.digest:
+        since = _last_standup_date()
+        cutoff = (clock.today() - timedelta(days=days)).isoformat()
+        touched = [s for s in states if since and str(s.get("last_touch") or "")[:10] >= since]
+        stale = [s for s in active if str(s.get("last_touch") or "")[:10] < cutoff]
+        ghosted = sum(1 for s in states if shown[id(s)] == "ghosted")
+        print(f"active: {len(active)}  closed: {len(closed)}  ghosted: {ghosted}")
+        print(f"ghosted_after_days: {days}")
+        for label, rows in (
+            (f"touched since last standup ({since or 'none'})", touched),
+            (f"active, untouched for {days}+ days", stale),
+        ):
+            print(f"{label}: {len(rows)}")
+            for s in rows[:10]:
+                print(f"  {s.get('job_id')}  {shown[id(s)]}  {s.get('company')} | {s.get('title')}")
+            if len(rows) > 10:
+                print(f"  ...and {len(rows) - 10} more")
+        return 0
+
+    lines = [f"# Pipeline — {clock.today().isoformat()}", ""]
+    if args.note_file:
+        lines += [args.note_file.read_text(encoding="utf-8").strip(), ""]
+    if not states:
+        lines += [
+            "No roles tracked yet. Run `/track <job_id> saved` after reviewing today's shortlist.",
+            "",
+        ]
+    for name, rows in (("Active", active), ("Closed", closed)):
+        if rows:
+            lines += [f"## {name} ({len(rows)})", "", _STANDUP_HEAD, "|---" * 9 + "|"]
+            lines += [
+                _standup_row(s, scores.get(str(s.get("job_id")), {}), shown[id(s)]) for s in rows
+            ]
+            lines.append("")
+    paths.PIPELINE_MD.write_text("\n".join(lines), encoding="utf-8")
+    print(f"OK: pipeline.md regenerated; {len(active)} active, {len(closed)} closed")
+    return 0
+
+
 def _cmd_stamp_schema(args: argparse.Namespace) -> int:
     pipeline = args.pipeline or paths.PIPELINE
     files = sorted(pipeline.glob("*/state.yaml"))
@@ -515,6 +609,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if argv == ["states"]:
         return _cmd_states()
+
+    if argv and argv[0] == "standup":
+        parser = argparse.ArgumentParser(prog="track standup")
+        parser.add_argument("--digest", action="store_true")
+        parser.add_argument("--note-file", type=Path, default=None)
+        return _cmd_standup(parser.parse_args(argv[1:]))
 
     if argv and argv[0] == "ensure":
         parser = argparse.ArgumentParser(prog="track ensure")

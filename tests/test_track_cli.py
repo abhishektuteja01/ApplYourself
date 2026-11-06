@@ -451,3 +451,27 @@ def test_score_copies_are_joined_then_dropped_through_the_log(tmp_path, capsys):
     assert "fit_score" not in left and "sponsorship_label" not in left
     assert state_io.read_events(pipe / "events.jsonl")[-1]["kind"] == "fields_dropped"
     assert state_io.rebuild_states(pipe, apply=False) == []
+
+
+def test_standup_renders_the_tables_without_touching_state(tmp_path, monkeypatch):
+    """A stale `applied` lands in Closed as ghosted, the fit comes from
+    scored.parquet, a `|` in a cell is escaped, and no state.yaml changes."""
+    from tests.factories import scored_rows
+
+    monkeypatch.setattr(track_cli, "ghosted_after_days", lambda: 30)
+    pipe = tmp_path / "pipeline"
+    saved = write_state(pipe, "aaaaaaaa", "saved", title="Data | Analyst", tailored_dirs=["a", "b"])
+    write_state(pipe, "bbbbbbbb", "applied")
+    before = saved.read_text(encoding="utf-8")
+    scored_rows({"job_id": "aaaaaaaa", "fit_score": 88.0}).to_parquet(tmp_path / "scored.parquet")
+    note = tmp_path / "note.md"
+    note.write_text("Two roles.\n", encoding="utf-8")
+
+    assert track_cli.main(["standup", "--note-file", str(note)]) == 0
+    md = (tmp_path / "pipeline.md").read_text(encoding="utf-8").splitlines()
+    assert md[0].startswith("# Pipeline — ") and md[2] == "Two roles."
+    active, closed = md.index("## Active (1)"), md.index("## Closed (1)")
+    assert r"| saved | Acme | Data \| Analyst | ? | 88 |" in md[active + 4]
+    assert "`b`" in md[active + 4]
+    assert md[closed + 4].startswith("| ghosted | Acme |")
+    assert saved.read_text(encoding="utf-8") == before

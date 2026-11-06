@@ -1,5 +1,5 @@
 ---
-description: Regenerate pipeline.md from pipeline/*/state.yaml — Claude-rendered rollup with a short summary at the top, Active/Closed tables below. SOLE regenerator of pipeline.md. READ-ONLY on every state.yaml.
+description: Regenerate pipeline.md from pipeline/*/state.yaml — `uv run track standup` renders the Active/Closed tables, the session adds a short summary at the top. SOLE regenerator of pipeline.md. READ-ONLY on every state.yaml.
 model: sonnet
 effort: medium
 allowed-tools:
@@ -10,102 +10,43 @@ allowed-tools:
 
 # /standup — regenerate pipeline.md (read-only on state.yaml)
 
-`/standup` reads every `pipeline/<id>/state.yaml`,
-writes a single `pipeline.md` rollup, and MUST NOT mutate any state.yaml.
+`uv run track standup` writes `pipeline.md` (title, Active and Closed tables)
+from every `pipeline/<id>/state.yaml`, joined to `score_store.view()`. The
+session writes only the short note at the top. Nothing here writes a
+state.yaml.
 
-## Step 1 — load all states
+## Step 1 — read the digest
 
 ```bash
 # Every path below is repo-relative, and src/ resolves its own paths from
 # the repo root — so anchor the shell there too.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
-uv run track states > /tmp/standup_states.json
+uv run track standup --digest
 ```
 
-Read `/tmp/standup_states.json`. If there are zero states, write a
-`pipeline.md` that simply says "No roles tracked yet. Run `/track
-<job_id> saved` after reviewing today's shortlist." and stop.
+It writes nothing and prints the active / closed / ghosted counts,
+`ghosted_after_days`, the roles touched since the last `pipeline.md`, and the
+active roles untouched for `ghosted_after_days`+ days.
 
-## Step 2 — compute the ≤4-line summary
+## Step 2 — write the ≤4-line note
 
-Based on the loaded states, write a short prose summary (4 lines or
-fewer) covering:
-- **what changed since last standup**: roles whose `last_touch` is within
-  the last ~3 days
-- **what's going stale**: roles in a non-terminal state with
-  `last_touch` more than `ghosted_after_days` (Step 1's JSON) days ago
+From the digest only, write 4 lines or fewer covering:
+- **what changed since last standup**: the touched roles
+- **what's going stale**: the untouched active roles, and the ghosted count
 - **suggested next actions**: 1-2 concrete prompts, e.g. "3 roles show
-  `ghosted` (no response in `ghosted_after_days`): `/track ${jid} withdrawn`
-  or `/outreach ${jid} referral --to '...'` on the strongest pending fit"
+  `ghosted`: `/track <job_id> withdrawn` or `/outreach <job_id> referral
+  --to '...'` on the strongest pending fit"
 
-Keep it tight. No bullet padding, no "Here's the summary:" preamble --
-the reader knows what they're reading.
+No bullet padding, no "Here's the summary:" preamble. With zero roles, skip
+the note.
 
-## Step 3 — split into Active and Closed tables
+Run `mktemp`, Write the note to the path it prints, then:
 
-- **Active** / **Closed**: split on each row's `shown_state` against the
-  `active_states` and `closed_states` lists Step 1 already printed from
-  `src.state_io`. Do not restate the membership
-  here — one source of truth, and `state_io` is it. (Note `skip` is in
-  closed_states: closed-for-view, but not terminal.)
-
-For each row, compute the columns:
-- `state`           (`shown_state`: a stale `applied` shows as `ghosted`)
-- `company`
-- `title`           (truncate to ~60 chars if longer)
-- `vertical`        (a vertical name configured in `profile/verticals.yaml`,
-                     or `?` if empty/missing -- legacy rows predating the
-                     vertical column)
-- `fit`             (`fit_score` int, or `?` if null; `track states` joins it
-                     from scored.parquet)
-- `spons`           (sponsorship_label, joined the same way)
-- `last_touch`      (date only -- `YYYY-MM-DD` slice of the ISO timestamp)
-- `dir`             (**last** entry of `tailored_dirs[]`, or empty string --
-                     the newest version, matching /cover-letter and /outreach;
-                     a `_v2` re-tailor supersedes the earlier dir)
-- `note`            (the latest `state_history[].note`, or empty)
-
-Sort Active by `last_touch DESC` (most recent activity first). Sort
-Closed the same way.
-
-## Step 4 — render pipeline.md
-
-Write to `pipeline.md` at repo root:
-
-```markdown
-# Pipeline — <today YYYY-MM-DD>
-
-<the ≤4-line summary>
-
-## Active (N)
-
-| state | company | title | vertical | fit | spons | last_touch | dir | note |
-|---|---|---|---|---|---|---|---|---|
-| <state> | <company> | <title> | <vertical> | <fit> | <spons> | <YYYY-MM-DD> | `<dir>` | <note> |
-...
-
-## Closed (M)
-
-| state | company | title | vertical | fit | spons | last_touch | dir | note |
-|---|---|---|---|---|---|---|---|---|
-...
+```bash
+uv run track standup --note-file <that path>
 ```
 
-Omit a table if its section is empty (e.g. on day one when only `saved`
-rows exist, the Closed table doesn't render).
+## Step 3 — report
 
-Pipe characters inside any cell value must be escaped as `\|` so the
-table doesn't break.
-
-## Step 5 — read-only assertion
-
-Before reporting done, confirm you did NOT call any Bash command that
-writes to a `pipeline/<id>/state.yaml`. R10 forbids state mutation here.
-The only writes from this command are to `pipeline.md` and the
-`/tmp/standup_states.json` scratch file.
-
-## Step 6 — report
-
-Tell the user: "pipeline.md regenerated; <N> active, <M> closed". If any
-roles are flagged "going stale" in the summary, name them so the user
-can act.
+Relay the `OK:` line ("pipeline.md regenerated; <N> active, <M> closed") and
+name any roles flagged going stale so the user can act.
