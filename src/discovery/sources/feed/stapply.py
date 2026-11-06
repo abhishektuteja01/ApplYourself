@@ -26,13 +26,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src.discovery import parse
-from src.discovery.sources.boards.base import board_key_of, load_boards
+from src.discovery.sources.boards.base import load_boards
 from src.discovery.sources.feed import oracle
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 from src.shared import http_client, identity, title_gate
 from src.shared.http_client import CareersError
-from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.shared.job_boards import ATS_SOURCE_NAMES, board_key
 from src.shared.location.parser import parse_location
 from src.shared.location.places import CC_TO_COUNTRY
 
@@ -124,7 +124,7 @@ def posting_from(
     url = row.get("url") or ""
     own = row.get("company") or ""
     company = (
-        names.get(board_key_of(url))
+        names.get(board_key(url))
         or feed_names.get((row.get("ats_type"), own.strip().lower()))
         or own
     )
@@ -218,7 +218,7 @@ class StapplyLane(Lane):
             for url, ats in zip(
                 light.column("url").to_pylist(), light.column("ats_type").to_pylist()
             ):
-                if ats in _BOARD_ATS and (key := board_key_of(url or "")):
+                if ats in _BOARD_ATS and (key := board_key(url or "")):
                     covered.add(key)
             keep, verticals = [], []
             for t in titles:

@@ -27,7 +27,7 @@ from src.discovery.config import pacing_floor
 from src.discovery.sources.lane import Lane, LaneStats
 from src.shared import paths, title_gate
 from src.shared.http_client import CareersError
-from src.shared.job_boards import ATS_SOURCE_NAMES, parse_posting_url
+from src.shared.job_boards import ATS_SOURCE_NAMES, key_of
 from src.shared.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)
@@ -66,20 +66,7 @@ class Board:
 
     @property
     def key(self) -> str:
-        return f"{self.ats}|{self.slug.lower()}"
-
-
-def board_key_of(url: str) -> str:
-    """The `Board.key` of the board a posting url belongs to, or "". A Workday
-    key carries the pod and site, as its slug does."""
-    hit = parse_posting_url(url)
-    if hit is None or not hit.slug:
-        return ""
-    if hit.source == "workday":
-        return (
-            f"workday|{hit.slug}|{hit.pod}|{hit.site_id}".lower() if hit.pod and hit.site_id else ""
-        )
-    return f"{hit.source}|{hit.slug}".lower()
+        return key_of(self.ats, self.slug)
 
 
 # ---------------------------------------------------------------------
@@ -122,7 +109,7 @@ def load_boards(
         slug = (row.get("slug") or "").strip()
         if a not in ATS_SOURCE_NAMES or not name or not slug:
             continue
-        key = f"{a}|{slug.lower()}"
+        key = key_of(a, slug)
         retired = spellings.setdefault(key, {}).get(slug, False)
         spellings[key][slug] = retired or (row.get("active") or "").strip() == "0"
         names[key] = name
@@ -158,7 +145,7 @@ def due_boards(
     """Boards due tonight, never-checked and oldest-checked first."""
     today = pd.Timestamp(today).normalize()
     known = {
-        f"{a}|{str(s).lower()}": r
+        key_of(a, str(s)): r
         for a, s, r in zip(state["ats"], state["slug"], state.to_dict("records"))
     }
     due = []
@@ -194,9 +181,7 @@ def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | N
     today = pd.Timestamp(today).normalize()
     with locked(path):
         state = load_state(path)
-        index = {
-            f"{a}|{str(s).lower()}": i for i, (a, s) in enumerate(zip(state["ats"], state["slug"]))
-        }
+        index = {key_of(a, str(s)): i for i, (a, s) in enumerate(zip(state["ats"], state["slug"]))}
         new_rows = []
         for r in results:
             b = r.board
