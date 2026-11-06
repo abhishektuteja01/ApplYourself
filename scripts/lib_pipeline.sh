@@ -62,14 +62,15 @@ pdf_helper_up() {
   echo "pdf helper did not start: Word runs from each claude session"
 }
 
-# stage_end CODE [DETAIL [STATUS [DEFERRED]]]: the last line of the log, one
-# line in summary.txt. STATUS is ok / partial / fail (default: from CODE).
+# stage_end CODE [DETAIL [STATUS [DEFERRED]]]: the last line of the log, and the
+# stage's result for run.json (`night record`). STATUS is ok / partial / fail
+# (default: from CODE).
 stage_end() {
   local code="$1" detail="${2:-}" status="${3:-}" deferred="${4:-0}" secs=$((SECONDS - STAGE_T0))
   [[ -n "$status" ]] || { status=ok; [[ "$code" -eq 0 ]] || status=fail; }
-  local extra="status=$status"; [[ "$deferred" -gt 0 ]] && extra="$extra deferred=$deferred"
   echo "=== $STAGE end code=$code seconds=$secs $status $(now) ==="
-  echo "$STAGE code=$code seconds=$secs $extra $detail" >> "$RUN_DIR/summary.txt"
+  "$UV" run night record "$STAGE" "$code" "$status" "$deferred" "$detail" --run-dir "$RUN_DIR" \
+    || echo "night record $STAGE failed"
   if [[ "$code" -eq 0 ]]; then
     notify "Pipeline: $STAGE" "done ${detail}"
   else

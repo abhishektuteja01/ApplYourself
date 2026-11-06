@@ -18,8 +18,8 @@ IDS="${ONLY_IDS:-$("$UV" run apply sheet --list New | head -n "${STAGE_LIMIT:-10
 N=$(grep -c . <<< "$IDS")
 CAP="$(night_cap tailor_max_per_night)"
 echo "New roles: $N (one every ${STAGGER}s, at most $PAR at once, cap ${CAP/#0/none})"
+: > "$RUN_DIR/tailor_results.txt"   # a resumed night starts its roles afresh
 if [[ $N -gt 0 ]]; then
-  : > "$RUN_DIR/tailor_results.txt"
   PIDS=(); STARTED=0
   alive() {  # how many started roles are still running
     local n=0 p

@@ -280,7 +280,8 @@ prints the install block for you at the end. The script deletes discovery logs a
 older than `log_keep_days` in `profile/discovery.yaml`.
 
 The same script then scores, adds synonyms, tailors, fills forms without submitting
-and writes `summary.md`; a failed discover or score stops it.
+and writes `summary.md`; a failed discover or score stops it. `uv run night --resume`
+reruns the stages that did not finish ok; each night's `run.json` records them.
 
 </details>
 

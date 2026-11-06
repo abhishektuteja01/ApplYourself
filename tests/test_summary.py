@@ -62,6 +62,23 @@ def test_a_partial_stage_and_its_deferred_roles_are_shown(tmp_path):
     assert "tailor partial 1m" in out[1] and out[2].endswith(": tailor 56")
 
 
+def test_run_json_wins_over_the_old_text_files_and_lists_only_stages_that_ran(tmp_path):
+    (tmp_path / "summary.txt").write_text("discover code=1 seconds=5 stale\n", encoding="utf-8")
+    (tmp_path / "tailor_results.txt").write_text("zz ok\n", encoding="utf-8")
+    stages = {
+        "discover": {"status": "ok", "rc": 0, "seconds": 60, "detail": ""},
+        "score": {"status": "fail", "rc": 1, "seconds": 9, "detail": "usage limit hit"},
+        "tailor": {"status": "deferred", "rc": None, "detail": "not run: score failed"},
+        "cleanup": {"status": "skipped", "rc": None},
+    }
+    stages["tailor"]["items"] = {"a1": "ok", "b2": "fail"}
+    (tmp_path / "run.json").write_text(json.dumps({"stages": stages}), encoding="utf-8")
+    got = M.stage_lines(tmp_path)
+    assert set(got) == {"discover", "score"} and got["score"]["code"] == 1
+    assert got["discover"]["status"] == "ok" and got["discover"]["seconds"] == 60
+    assert M.tailor_lines(tmp_path) == ["a1 ok", "b2 fail"]
+
+
 def _report(run_id, new, lanes=None, clean=3000):
     return {
         "run_id": run_id,

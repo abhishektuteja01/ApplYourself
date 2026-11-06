@@ -57,6 +57,7 @@ discover-ids = "src.discovery.id_table:main"
 apply = "src.apply_cli:main"
 synonyms = "src.synonyms_cli:main"
 summary = "src.summary:main"
+night = "src.night:main"
 config = "src.config_cli:main"
 config-check = "src.config_check:main"
 

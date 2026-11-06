@@ -141,11 +141,28 @@ def _shown(items: list[str], limit: int = ERRORS_SHOWN) -> list[str]:
     return [*items[:limit], f"…and {extra} more"] if extra > 0 else items
 
 
+def _run_json(run_dir: Path | None) -> dict | None:
+    path = run_dir / "run.json" if run_dir else None
+    return json.loads(path.read_text(encoding="utf-8")) if path and path.is_file() else None
+
+
 def stage_lines(run_dir: Path | None) -> dict[str, dict]:
-    """{stage: {code, seconds, status, deferred, detail}} from the run folder's
-    summary.txt. A line with no status= takes it from its code."""
+    """{stage: {code, seconds, status, deferred, detail}} of the stages that ran, from
+    the run folder's run.json (src/night.py); a night from before it, from summary.txt,
+    where a line with no status= takes it from its code."""
     out: dict[str, dict] = {}
-    for line in _read_lines(run_dir / "summary.txt") if run_dir else []:
+    if (run := _run_json(run_dir)) is not None:
+        for name, st in run.get("stages", {}).items():
+            if st.get("rc") is not None and st.get("status") in ("ok", "partial", "fail"):
+                out[name] = {
+                    "code": st["rc"],
+                    "seconds": st.get("seconds", 0),
+                    "status": st["status"],
+                    "deferred": (st.get("counts") or {}).get("deferred", 0),
+                    "detail": st.get("detail", ""),
+                }
+        return out
+    for line in _read_lines(run_dir / "summary.txt") if run_dir else []:  # before run.json
         m = re.match(
             r"(\w+) code=(\d+) seconds=(\d+)(?: status=(\w+))?(?: deferred=(\d+))?\s*(.*)", line
         )
@@ -159,6 +176,14 @@ def stage_lines(run_dir: Path | None) -> dict[str, dict]:
                 "detail": m[6],
             }
     return out
+
+
+def tailor_lines(run_dir: Path | None) -> list[str]:
+    """`<job_id> ok|fail|deferred` per role tailor took, from run.json, else tailor_results.txt."""
+    if (run := _run_json(run_dir)) is not None:
+        items = run.get("stages", {}).get("tailor", {}).get("items") or {}
+        return [f"{j} {s}" for j, s in items.items()]
+    return _read_lines(run_dir / "tailor_results.txt") if run_dir else []
 
 
 # ------------------------------------------------------------------ sections
@@ -686,7 +711,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
     )
 
     snaps, unreadable = _snapshots(since)
-    tail = _read_lines(run_dir / "tailor_results.txt") if run_dir else []
+    tail = tailor_lines(run_dir)
     tried = [r.split()[0] for r in tail if r.strip() and not r.strip().endswith(" deferred")]
     live = set(clean["job_id"])
     failed = [r.split()[0] for r in tail if r.strip().endswith(" fail")]

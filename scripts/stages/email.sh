@@ -12,8 +12,17 @@ HTML="${MD%.md}.html"
 [[ -f "$MD" && -f "$HTML" ]] || { stage_end 1 "no summary to send"; exit 1; }
 
 DATE="$(head -1 "$MD" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)"
-FAILED="$(grep -cE '^\*\*[a-z_]+ failed\*\*' "$MD")"
-PARTIAL="$(grep -cE '^\*\*[a-z_]+ partial\*\*' "$MD")"
+read -r FAILED PARTIAL < <("$UV" run python - "$RUN_DIR/run.json" <<'PY'
+import json, sys
+try:
+    stages = json.load(open(sys.argv[1], encoding="utf-8"))["stages"].values()
+except (OSError, ValueError, KeyError):
+    stages = []
+s = [st.get("status") for st in stages if st.get("stage") != "email"]
+print(s.count("fail"), s.count("partial"))
+PY
+)
+: "${FAILED:=0}" "${PARTIAL:=0}"
 if [[ "$FAILED" -gt 0 ]]; then SUBJECT="Night summary $DATE: $FAILED stage(s) failed"
 elif [[ "$PARTIAL" -gt 0 ]]; then SUBJECT="Night summary $DATE: partial ($PARTIAL stage(s))"
 else SUBJECT="Night summary $DATE: ok"; fi
