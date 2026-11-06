@@ -119,8 +119,14 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 
 `uv run apply sheet [--add]` (`src/apply/sheet.py`) rebuilds every row's status,
 note and submit command in `profile/automation.yaml`'s `table_path` from
-`state.yaml`, the ledger, the newest run report naming the role, and answers
+`state.yaml`, the ledger, the newest run record naming the role, and answers
 waiting for confirmation. Nothing else writes those cells.
+
+`apply run` writes `apply_runs/<ts>.json` (`src/apply/run_record.py`: per role
+`category`, a `ReasonCode`, `fields_parked`, timestamps) and renders `<ts>.md`
+from it. The sheet and summary read the JSON. `src/apply/run_backfill.py` is the
+one markdown parser: a one-time `--dry-run|--apply` that writes JSON for old
+reports; until it runs, a report with no JSON is read through it.
 
 ## Ashby reads a JSON API
 

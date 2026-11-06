@@ -14,7 +14,8 @@ run [--job-id X] [--answers F] [--manifest F] [--submit] [--yes] [--limit N]
                       teach to the bank. --submit needs --limit or --job-id,
                       a typed confirmation unless --yes, and never clicks a
                       role already in the submit ledger. Writes
-                      applications/apply_runs/<timestamp>.md.
+                      applications/apply_runs/<timestamp>.json and the
+                      .md report rendered from it.
 confirm <answers-file>
                       show the answers and the bank's keyword guesses they
                       leave standing (offline, from the saved plan.json),
@@ -30,7 +31,7 @@ teach --question-id Q --label L --value V [--offered O ...] [--keyword K] [--mis
                       save one answer to the bank, for a question answered outside a run.
 sheet [--add | --list STATUS]
                       rebuild the status sheet's status/note/command from
-                      state.yaml, the ledger and the run reports; --add first
+                      state.yaml, the ledger and the run records; --add first
                       appends newly scored roles; --list prints the job_ids
                       at one status and writes nothing.
 """
@@ -53,7 +54,7 @@ import pandas as pd
 import yaml
 
 from src import app_cli, state_io, track_cli
-from src.apply import ashby, bank, confirmation, cooldown, greenhouse, ledger, lever
+from src.apply import ashby, bank, confirmation, cooldown, greenhouse, ledger, lever, run_record
 from src.apply.answers import (
     DEFAULT_PATH,
     EXAMPLE_PATH,
@@ -91,6 +92,8 @@ from src.apply.schema import SchemaError
 from src.shared import clock, paths
 from src.shared.http_client import CareersError
 from src.shared.identity import normalize_company
+
+R = run_record.ReasonCode
 
 CLEAN = paths.CLEAN
 APPLICATIONS = paths.APPLICATIONS
@@ -1092,6 +1095,12 @@ class RunOutcome:
     """Fields the answer bank answered on this form."""
     learned: tuple[str, ...] = ()
     """What this run saved to the bank, one line per change."""
+    reason: str = ""
+    """A `run_record.ReasonCode`: why the role ended in its category."""
+    at: str = dc_field(
+        default_factory=lambda: clock.now().isoformat(timespec="seconds"), compare=False
+    )
+    """When the role's outcome was reached."""
 
 
 def _track_applied(job_id: str, plan) -> tuple[int, str]:
@@ -1179,14 +1188,17 @@ def _run_role(
     try:
         plan, answers = build(job_id, answers_path=answers_path)
     except PostingExpired as exc:
-        return RunOutcome(job_id, category="expired", detail=str(exc))
+        return RunOutcome(job_id, category="expired", detail=str(exc), reason=R.POSTING_EXPIRED)
     except ManualApplyOnly as exc:
-        return RunOutcome(job_id, category="manual", detail=str(exc))
+        return RunOutcome(job_id, category="manual", detail=str(exc), reason=R.MANUAL_BOARD)
     except BUILD_ERRORS as exc:
-        return RunOutcome(job_id, category="failed", detail=str(exc))
+        return RunOutcome(job_id, category="failed", detail=str(exc), reason=R.BUILD_ERROR)
     except Exception as exc:  # noqa: BLE001 - see the docstring's "never raises"
         return RunOutcome(
-            job_id, category="failed", detail=f"unexpected {type(exc).__name__}: {exc}"
+            job_id,
+            category="failed",
+            detail=f"unexpected {type(exc).__name__}: {exc}",
+            reason=R.BUILD_ERROR,
         )
 
     if plan.ignored_overrides:
@@ -1196,6 +1208,7 @@ def _run_role(
             plan.title,
             "failed",
             detail="answers that cannot apply: " + "; ".join(plan.ignored_overrides),
+            reason=R.BAD_OVERRIDES,
         )
 
     learned: tuple[str, ...] = ()
@@ -1217,6 +1230,7 @@ def _run_role(
             plan.title,
             "parked",
             detail=f"{len(guesses)} keyword guess(es) not confirmed — run /apply {job_id}",
+            reason=R.UNCONFIRMED_GUESSES,
             unmapped=tuple(
                 {
                     "id": f.id,
@@ -1263,6 +1277,7 @@ def _attempt(
             "failed",
             detail=f"{plan.ats} renders a captcha and --headless leaves nobody to "
             f"solve it; re-run this role without --headless",
+            reason=R.CAPTCHA_HEADLESS,
         )
 
     if not has_driver(plan.ats):
@@ -1275,6 +1290,7 @@ def _attempt(
             "manual",
             detail=f"{plan.ats}: form scanned and planned, but no "
             f"browser driver exists yet — apply by hand",
+            reason=R.NO_DRIVER,
         )
 
     # `sink` holds the FillResult from before the browser opens, so a crash
@@ -1300,6 +1316,7 @@ def _attempt(
                 "skipped",
                 detail=f"already sent {sent.get('at', '')} ({sent.get('status', '')}) "
                 f"per {ledger.LEDGER_NAME}; delete that line to retry",
+                reason=R.ALREADY_SENT,
             )
 
     clicked: list[bool] = []
@@ -1316,10 +1333,12 @@ def _attempt(
         )
 
     held: list[str] = []
+    cooled: list[bool] = []
 
     def cooling(recs: list[dict]) -> str:
         others = (r for r in recs if r.get("job_id") != job_id)
         day = cooldown.until(plan.company, cooldown.ledger_applications(others))
+        cooled.append(bool(day))
         return f"{plan.company}: {cooldown.note(day)}" if day else ""
 
     def before_click() -> None:
@@ -1373,6 +1392,7 @@ def _attempt(
                     detail=f"SUBMITTED, then {type(exc).__name__}: {exc}, and "
                     f"track_cli exited {rc}{exc_note} — state.yaml still says "
                     f"tailored; fix by hand",
+                    reason=R.TRACK_FAILED,
                 )
             return RunOutcome(
                 job_id,
@@ -1381,13 +1401,19 @@ def _attempt(
                 "submitted_unconfirmed",
                 detail=f"SUBMITTED, then {type(exc).__name__}: {exc} — the click "
                 f"landed; verify by hand",
+                reason=R.CRASH_AFTER_CLICK,
             )
         if isinstance(exc, Exception):
             # A playwright timeout or driver error must not escape:
             # `run_queue` would abort mid-walk and every role already
             # submitted would lose its only record.
             return RunOutcome(
-                job_id, plan.company, plan.title, "failed", detail=f"{type(exc).__name__}: {exc}"
+                job_id,
+                plan.company,
+                plan.title,
+                "failed",
+                detail=f"{type(exc).__name__}: {exc}",
+                reason=R.BROWSER_ERROR,
             )
         raise
 
@@ -1398,7 +1424,14 @@ def _attempt(
             print(f"WARNING: could not write the manifest: {exc}", file=sys.stderr)
 
     if held and not clicked:
-        return RunOutcome(job_id, plan.company, plan.title, "skipped", detail=held[0])
+        return RunOutcome(
+            job_id,
+            plan.company,
+            plan.title,
+            "skipped",
+            detail=held[0],
+            reason=R.COOLDOWN if cooled else R.ALREADY_SENT,
+        )
 
     if clicked and not result.submitted and result.outcome not in ("rejected", "unsent"):
         # The board declined every click, or a captcha was never solved: it
@@ -1414,6 +1447,7 @@ def _attempt(
             detail=result.submit_error
             or "clicked; no submit request fired — verify on the board by hand",
             evidence=result.evidence,
+            reason=R.BOARD_REJECTED if result.outcome == "rejected" else R.NO_SUBMIT_REQUEST,
         )
 
     if result.submitted:
@@ -1429,10 +1463,16 @@ def _attempt(
                 "submitted_untracked",
                 detail=f"SUBMITTED but track_cli exited {rc}{exc_note} — state.yaml "
                 f"still says tailored; fix by hand",
+                reason=R.TRACK_FAILED,
             )
         if result.confirmed:
             return RunOutcome(
-                job_id, plan.company, plan.title, "submitted", evidence=result.evidence
+                job_id,
+                plan.company,
+                plan.title,
+                "submitted",
+                evidence=result.evidence,
+                reason=R.CONFIRMED,
             )
         return RunOutcome(
             job_id,
@@ -1442,6 +1482,7 @@ def _attempt(
             detail="clicked and transitioned to applied, but the board showed no "
             "confirmation this code recognises — verify by hand",
             evidence=result.evidence,
+            reason=R.NO_CONFIRMATION,
         )
 
     blocking = blocking_details(plan, result)
@@ -1453,16 +1494,29 @@ def _attempt(
             "parked",
             detail=f"{len(blocking)} required question(s) unresolved",
             unmapped=blocking,
+            reason=R.UNRESOLVED,
         )
     if result.failures:
         return RunOutcome(
-            job_id, plan.company, plan.title, "failed", detail="; ".join(result.failures)
+            job_id,
+            plan.company,
+            plan.title,
+            "failed",
+            detail="; ".join(result.failures),
+            reason=R.FILL_FAILED,
         )
     if result.submit_error:
         # Not a park (nothing is unmapped) and not a fill failure — the guard
         # refused for a form-shape reason instead (no submit button, or it
         # stayed disabled). Distinct enough from either to say so.
-        return RunOutcome(job_id, plan.company, plan.title, "failed", detail=result.submit_error)
+        return RunOutcome(
+            job_id,
+            plan.company,
+            plan.title,
+            "failed",
+            detail=result.submit_error,
+            reason=R.SUBMIT_GUARD,
+        )
 
     return RunOutcome(
         job_id,
@@ -1470,6 +1524,7 @@ def _attempt(
         plan.title,
         "ready",
         detail="every field resolved; rerun with --submit to click",
+        reason=R.READY,
     )
 
 
@@ -1532,7 +1587,14 @@ def run_queue(
         cool = cooldown.until(known, latest) if hold_company else None
         if submit and cool is not None:
             outcomes.append(
-                RunOutcome(job_id, known, "", "skipped", detail=f"{known}: {cooldown.note(cool)}")
+                RunOutcome(
+                    job_id,
+                    known,
+                    "",
+                    "skipped",
+                    detail=f"{known}: {cooldown.note(cool)}",
+                    reason=R.COOLDOWN,
+                )
             )
             if on_outcome is not None:
                 on_outcome(outcomes)
@@ -1545,6 +1607,7 @@ def run_queue(
                     "",
                     "skipped",
                     detail=f"{known}: already submitted to this company in this run",
+                    reason=R.COMPANY_CAP,
                 )
             )
             if on_outcome is not None:
@@ -1578,33 +1641,6 @@ def run_queue(
 # ------------------------------------------------------------------ report
 
 
-_CATEGORY_ORDER = (
-    "submitted_untracked",
-    "submitted",
-    "submitted_unconfirmed",
-    "rejected",
-    "unsent",
-    "parked",
-    "ready",
-    "manual",
-    "skipped",
-    "failed",
-    "expired",
-)
-_CATEGORY_TITLE = {
-    "submitted": "Submitted",
-    "submitted_unconfirmed": "Submitted (no confirmation seen — verify by hand)",
-    "submitted_untracked": "SUBMITTED BUT NOT TRACKED — fix state.yaml by hand",
-    "rejected": "Rejected by the board (not tracked — read its reason)",
-    "unsent": "Clicked, but no submit request fired (not tracked — verify by hand)",
-    "parked": "Parked",
-    "ready": "Ready (not submitted)",
-    "manual": "Manual-apply (no submit path for this board)",
-    "skipped": "Skipped (already sent, company cooldown, or one submission per company per run)",
-    "failed": "Failed",
-    "expired": "Expired postings",
-}
-
 # Categories where a click reached the board; the per-company cap counts them.
 _CLICKED = ("submitted", "submitted_unconfirmed", "submitted_untracked", "rejected", "unsent")
 
@@ -1613,89 +1649,13 @@ _CLICKED = ("submitted", "submitted_unconfirmed", "submitted_untracked", "reject
 _EXIT_NONZERO = ("failed", "submitted_untracked")
 
 
-def _park_kind(row: dict) -> str:
-    """Why a question parked, in the words that say what to do next."""
-    if row.get("source") == "export_control" or "export control" in row.get("reason", ""):
-        return "new question"
-    if "~" in row.get("source", ""):
-        return "guess to confirm"
-    if row.get("tier") == "C":
-        return "new question"
-    return "needs a fact"
-
-
-_TOTALS = re.compile(r"<!-- totals parked=(\d+) bank=(\d+) learned=(\d+) roles=(\d+) -->")
-
-
-def _totals(outcomes: list[RunOutcome]) -> tuple[int, int, int, int]:
-    parked = sum(1 for o in outcomes if o.category == "parked")
-    return (
-        parked,
-        sum(o.from_bank for o in outcomes),
-        sum(len(o.learned) for o in outcomes),
-        len(outcomes),
-    )
-
-
-def _trend(runs_dir: Path, limit: int = 10) -> list[str]:
-    """One line per recent run that parked or learned anything, oldest first."""
-    rows = []
-    for report in sorted(runs_dir.glob("*.md"))[-limit:]:
-        m = _TOTALS.search(report.read_text(encoding="utf-8", errors="replace"))
-        if m:
-            rows.append(
-                f"  {report.stem}: parked {m[1]} of {m[4]} · from bank {m[2]} · learned {m[3]}"
-            )
-    return rows
-
-
 def render_report(
     outcomes: list[RunOutcome], started_at: datetime, runs_dir: Path | None = None
 ) -> str:
-    lines = [
-        f"# apply run — {started_at.isoformat(timespec='seconds')}",
-        "",
-        f"{len(outcomes)} role(s) attempted.",
-        "",
-    ]
-    for category in _CATEGORY_ORDER:
-        rows = [o for o in outcomes if o.category == category]
-        if not rows:
-            continue
-        lines.append(f"## {_CATEGORY_TITLE[category]} ({len(rows)})")
-        lines.append("")
-        for o in rows:
-            who = f"{o.company} — {o.title}".strip(" —") or o.job_id
-            lines.append(f"- `{o.job_id}` {who}")
-            if o.detail:
-                lines.append(f"  - {o.detail}")
-            for row in o.unmapped:
-                lines.append(f"  - `{row['id']}` [{_park_kind(row)}] {row['label']}")
-                lines.append(f"    - {row['reason']}")
-                if row.get("options"):
-                    lines.append(f"    - offers: {', '.join(row['options'])}")
-                if row.get("description"):
-                    lines.append(f"    - note: {row['description']}")
-            if o.from_bank or o.learned:
-                lines.append(
-                    f"  - answered from the bank: {o.from_bank}; learned: {len(o.learned)}"
-                )
-            for change in o.learned:
-                lines.append(f"    - {change}")
-            if o.evidence:
-                lines.append(f"  - what the board showed after the click: `{o.evidence}`")
-        lines.append("")
-    parked, from_bank, learned, roles = _totals(outcomes)
-    lines.append(f"**parked {parked} · answered from bank {from_bank} · learned {learned} new**")
-    trend = _trend(runs_dir) if runs_dir is not None and runs_dir.is_dir() else []
-    if trend:
-        lines.append("")
-        lines.append("Recent runs:")
-        lines.extend(trend)
-    lines.append(
-        f"<!-- totals parked={parked} bank={from_bank} learned={learned} roles={roles} -->"
-    )
-    return "\n".join(lines)
+    """The markdown report, rendered from the run's JSON record."""
+    record = run_record.build(outcomes, started_at.isoformat(timespec="seconds"), None)
+    trend = run_record.trend(runs_dir) if runs_dir is not None else []
+    return run_record.render(record, trend)
 
 
 def write_report(
@@ -1704,13 +1664,21 @@ def write_report(
     out_dir: Path | None = None,
     path: Path | None = None,
 ) -> Path:
+    """Write the run's JSON record, then the markdown report rendered from it.
+    Returns the report's path; the record is beside it as `<stem>.json`."""
     if path is not None:
         out_dir = path.parent
     else:
         out_dir = out_dir if out_dir is not None else APPLY_RUNS
     out_dir.mkdir(parents=True, exist_ok=True)
     path = path or reserve_report_path(started_at, out_dir)
-    path.write_text(render_report(outcomes, started_at, runs_dir=out_dir), encoding="utf-8")
+    record = run_record.build(
+        outcomes,
+        started_at.isoformat(timespec="seconds"),
+        clock.now().isoformat(timespec="seconds"),
+    )
+    run_record.write(record, path.with_suffix(".json"))
+    path.write_text(run_record.render(record, run_record.trend(out_dir)), encoding="utf-8")
     return path
 
 
@@ -1755,7 +1723,7 @@ def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Pa
     stem = started_at.strftime("%Y-%m-%dT%H-%M-%S")
     path = out_dir / f"{stem}.md"
     n = 2
-    while path.exists():
+    while path.exists() or path.with_suffix(".json").exists():
         path = out_dir / f"{stem}.{n}.md"
         n += 1
     return path

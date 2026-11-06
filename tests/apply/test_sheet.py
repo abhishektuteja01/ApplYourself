@@ -213,3 +213,55 @@ def test_a_ledger_line_under_another_job_id_for_the_same_form_counts_as_sent(tmp
     )
     counts = sheet.refresh()
     assert "aaaa1111" not in _rows(tmp_path) and counts["Applied (removed)"] == 1
+
+
+def test_a_run_record_drives_the_sheet_and_renders_the_report(tmp_path, monkeypatch):
+    import json
+
+    from src.apply_cli import RunOutcome, datetime, write_report
+
+    _world(tmp_path, monkeypatch)
+    folder = "lane/2026-09-28_acme_eng_aaaa1111"
+    (paths.APPLICATIONS / folder).mkdir(parents=True)
+    _state(tmp_path, "aaaa1111", "tailored", folder)
+    row = {"id": "q1", "label": "Why us?", "tier": "C", "reason": "new", "source": ""}
+    md = write_report(
+        [RunOutcome("aaaa1111", "Acme", "Eng", "parked", unmapped=(row,), reason="unresolved")],
+        datetime(2026, 9, 28, 10),
+        out_dir=paths.APPLICATIONS / "apply_runs",
+    )
+    record = json.loads(md.with_suffix(".json").read_text(encoding="utf-8"))
+    (role,) = record["roles"]
+    assert role["reason"] == "unresolved" and role["fields_parked"][0]["kind"] == "new question"
+    assert "## Parked (1)" in md.read_text(encoding="utf-8")
+    md.unlink()  # the sheet reads the JSON, not the markdown
+    sheet.refresh(add=True)
+    assert _rows(tmp_path)["aaaa1111"]["note"] == "`q1` [new question] Why us?"
+
+
+def test_run_backfill_dry_run_writes_nothing_and_apply_keeps_the_sheet(tmp_path, monkeypatch):
+    from src.apply import run_backfill
+
+    _world(tmp_path, monkeypatch)
+    for job in ("aaaa1111", "bbbb2222"):
+        folder = f"lane/2026-09-28_acme_eng_{job}"
+        (paths.APPLICATIONS / folder).mkdir(parents=True)
+        _state(tmp_path, job, "tailored", folder)
+    sheet.refresh(add=True)
+    runs = paths.APPLICATIONS / "apply_runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    (runs / "2026-09-28T10-00-00.md").write_text(
+        "# apply run — 2026-09-28T10:00:00\n\n## Failed (1)\n\n- `aaaa1111` Acme — Eng\n"
+        "  - TimeoutError: boom\nCall log:\n  - waiting for locator\n\n"
+        "## Parked (1)\n\n- `bbbb2222` Acme — Eng\n  - `q1` [needs a fact] Salary?\n"
+        "    - salary: no figure\n",
+        encoding="utf-8",
+    )
+    (runs / "notes.md").write_text("not a report\n", encoding="utf-8")
+    before = sheet.statuses(sheet.latest_outcomes(runs))
+    assert run_backfill.main(["--dry-run", "--runs", str(runs)]) == 0
+    assert not list(runs.glob("*.json"))
+    assert run_backfill.main(["--apply", "--runs", str(runs)]) == 0
+    (runs / "2026-09-28T10-00-00.md").unlink()
+    assert sheet.statuses(sheet.latest_outcomes(runs)) == before
+    assert before["aaaa1111"][1] == "failed: TimeoutError: boom"

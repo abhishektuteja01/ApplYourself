@@ -390,8 +390,9 @@ The submit path is bounded, all in `src/apply_cli.py`:
   couldn't submit your application" is reported `rejected`, and a click that
   sent nothing is `unsent`; neither is marked `applied`.
 
-A run report lands at `applications/apply_runs/<timestamp>.md`, rewritten after
-each role so a crash still leaves the record. Boards that can't be submitted to
+A run record lands at `applications/apply_runs/<timestamp>.json`, with the
+`.md` report rendered from it, both rewritten after each role so a crash still
+leaves the record. Boards that can't be submitted to
 get their own `manual` category, not `failed`. After every click `/apply` saves
 evidence: `applications/apply_runs/evidence/<ts>_<job_id>.txt` and a full-page
 `.png`.

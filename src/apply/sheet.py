@@ -2,7 +2,7 @@
 
 Every `status`, `note` and `uv_run_command` cell is rebuilt from the records
 that own the facts — `pipeline/<job_id>/state.yaml`, the submit ledger, the
-latest run report that names the role, and a role's waiting answers — so the
+latest run record that names the role, and a role's waiting answers — so the
 sheet can never disagree with them. Nothing else writes those columns.
 
 `--add` appends roles newly scored at or above scoring.yaml `cutoffs.sheet` that are not
@@ -14,7 +14,6 @@ never brings it back); an Expired row stays, so it can be marked skip.
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 
@@ -24,7 +23,7 @@ import yaml
 
 from src import state_io
 from src.app_cli import built_folder
-from src.apply import confirmation, cooldown, detect, ledger
+from src.apply import confirmation, cooldown, detect, ledger, run_record
 from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths
@@ -33,39 +32,12 @@ from src.shared.config_schema import load_automation
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "screen", "interview", "offer"})
 _CLOSED = frozenset({"skip", "withdrawn", "rejected", state_io.GHOSTED})
-_ROLE_LINE = re.compile(r"^- `([0-9a-f]{8})`")
-_HEADINGS = (
-    ("SUBMITTED", "submitted"),
-    ("Submitted", "submitted"),
-    ("Rejected", "rejected"),
-    ("Clicked", "unsent"),
-    ("Parked", "parked"),
-    ("Ready", "ready"),
-    ("Manual", "manual"),
-    ("Skipped", "skipped"),
-    ("Failed", "failed"),
-    ("Expired", "expired"),
-)
 
 
 def latest_outcomes(runs_dir: Path) -> dict[str, tuple[str, str, str]]:
     """job_id -> (category, first detail line, report stem), from the newest
-    run report naming each role."""
-    out: dict[str, tuple[str, str, str]] = {}
-    for report in sorted(runs_dir.glob("*.md")):
-        category, job, detail = "", "", ""
-        for line in report.read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.startswith("## "):
-                category = next((c for h, c in _HEADINGS if line[3:].startswith(h)), "")
-                continue
-            m = _ROLE_LINE.match(line)
-            if m and category:
-                job, detail = m.group(1), ""
-                out[job] = (category, "", report.stem)
-            elif job and line.startswith("  - ") and not detail and job in out:
-                detail = line[4:].strip()
-                out[job] = (out[job][0], detail, report.stem)
-    return out
+    run record naming each role."""
+    return run_record.outcomes_from(run_record.records(runs_dir))
 
 
 def _waiting(state: dict, since: str) -> str:
@@ -88,7 +60,9 @@ def _waiting(state: dict, since: str) -> str:
     if not drafted:
         return ""
     if since:
-        report = paths.APPLICATIONS / "apply_runs" / f"{since}.md"
+        runs = paths.APPLICATIONS / "apply_runs"
+        report = runs / f"{since}.json"
+        report = report if report.is_file() else runs / f"{since}.md"
         if report.is_file() and report.stat().st_mtime >= stamp:
             return ""
     return str(path)
@@ -352,3 +326,16 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
         if _row_status(job_id, url, states, ledger_path, outcomes, latest)[0] != shown:
             out["wrong_status"].append(job_id)
     return out
+
+
+def statuses(outcomes: dict, automation: Path | None = None) -> dict[str, tuple[str, str, str]]:
+    """job_id -> (status, note, command) for every row on the sheet, from the
+    given run outcomes. A pure read; the run backfill compares two of these."""
+    runs = paths.APPLICATIONS / "apply_runs"
+    ledger_path = runs / ledger.LEDGER_NAME
+    states = state_io.load_state_index(paths.PIPELINE)
+    latest = cooldown.last_applications(ledger_path=ledger_path)
+    return {
+        row["name"]: _row_status(row["name"], row["url"], states, ledger_path, outcomes, latest)
+        for row in rows(automation)
+    }
