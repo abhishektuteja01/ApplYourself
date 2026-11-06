@@ -1,5 +1,6 @@
 """`config migrate`: an older profile layout moves onto the current one, once."""
 
+import copy
 import shutil
 from argparse import Namespace
 
@@ -221,8 +222,11 @@ def test_inline_lanes_split_into_lane_files_with_the_same_config(tmp_path, capsy
     example = paths.example("verticals.example.yaml")
     top = yaml.safe_load(example.read_text(encoding="utf-8"))
     lanes = {
-        n: V.merge_defaults(
-            top["defaults"], yaml.safe_load(V.lane_file(example, n).read_text(encoding="utf-8"))
+        n: copy.deepcopy(
+            V.merge_defaults(
+                top["defaults"],
+                yaml.safe_load(V.lane_file(example, n).read_text(encoding="utf-8")),
+            )
         )
         for n in top["lanes"]
     }
@@ -242,8 +246,45 @@ def test_inline_lanes_split_into_lane_files_with_the_same_config(tmp_path, capsy
 
     assert _run(prof, apply=True) == 0
     new = yaml.safe_load(v.read_text(encoding="utf-8"))
-    assert new["lanes"] == list(lanes) and new["defaults"] == {"years": top["defaults"]["years"]}
+    assert new["lanes"] == list(lanes) and new["defaults"] == top["defaults"]
     assert config_migrate._shape(V.load_verticals(v)) == config_migrate._shape(before)
     capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out
+
+
+def test_lane_title_lists_move_out_and_nothing_that_passed_drops(tmp_path, capsys):
+    from applyourself.shared import title_gate
+    from applyourself.shared import verticals as V
+    from tests.conftest import FIXTURE_PATH
+
+    prof = tmp_path / "prof"
+    prof.mkdir()
+    shutil.copyfile(FIXTURE_PATH, prof / "verticals.yaml")
+    shutil.copytree(FIXTURE_PATH.parent / "verticals", prof / "verticals")
+    old = V.load_verticals(prof / "verticals.yaml")
+    titles = [
+        "Widget Platform Analyst",
+        "Doohickey Analyst",
+        "Quantitative Sprocket Analyst",
+        "Sprocket Risk Management Operations",
+        "Flywheel Cog Engineer",
+    ]
+    passed = [
+        (t, n)
+        for t in titles
+        for n in old.names
+        if title_gate.lane_for(t, n, "linkedin", old).passes
+    ]
+
+    assert _run(prof, apply=True) == 0
+    capsys.readouterr()
+    new = V.load_verticals(prof / "verticals.yaml")
+    for lane in new.verticals.values():
+        assert not (lane.title_include_terms or lane.title_strong_keep_terms)
+    assert ("example_secondary", True) in {
+        (v, isinstance(r, V.TermsRule)) for v, r in new.classifier_rules
+    }
+    assert [p for p in passed if not title_gate.lane_for(*p, "linkedin", new).passes] == []
     assert _run(prof, apply=False) == 0
     assert "nothing to migrate" in capsys.readouterr().out

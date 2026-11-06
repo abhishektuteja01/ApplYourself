@@ -23,6 +23,13 @@ def test_gate_exempts_manual_and_unknown_lanes(cfg):
         ("Bakery Clerk", "example_tertiary", "", "no_lane"),
         # a search term spelled another way still fits
         ("Applied Cog-Ingenieure", "", "example_tertiary", ""),
+        # the defaults ban list drops in every lane
+        (
+            "Distinguished Cog Engineer",
+            "example_tertiary",
+            "example_tertiary",
+            "banned: distinguished",
+        ),
         # a legacy strong-keep term still beats a lane's own exclude term
         ("Sprocket Risk Management Operations", "example_secondary", "example_secondary", ""),
     ],

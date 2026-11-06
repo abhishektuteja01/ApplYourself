@@ -58,27 +58,16 @@ def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):
         assert v.resume is not None, f"{name} has no resume: block"
 
 
-def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
-    """An exclude term that also matches a search term drops every row that
-    term finds — invisible without a title-by-title read of the drop log."""
-    import re
+def test_title_gate_passes_the_lanes_own_search_terms(real_cfg):
+    """A ban word that also matches a search term drops every row that term
+    finds — invisible without a title-by-title read of the drop log."""
+    from applyourself.shared.title_gate import lane_for
 
     for vertical in real_cfg.verticals.values():
-        if not vertical.title_exclude_terms:
-            continue
-        exclude_rx = re.compile(
-            "|".join(rf"\b{re.escape(t)}\b" for t in vertical.title_exclude_terms),
-            re.IGNORECASE,
-        )
-        for term in vertical.search_terms:
-            if vertical.title_strong_keep_terms and re.search(
-                "|".join(rf"\b{re.escape(t)}\b" for t in vertical.title_strong_keep_terms),
-                term,
-                re.IGNORECASE,
-            ):
-                continue
-            assert not exclude_rx.search(term), (
-                f"{vertical.name}: a search term trips its own title_exclude_terms"
+        for term in vertical.search_terms + vertical.linkedin_terms + vertical.abroad_terms:
+            got = lane_for(term, vertical.name, "linkedin", real_cfg)
+            assert (got.lane, got.reason) == (vertical.name, ""), (
+                f"{vertical.name}: a search term does not pass its own lane ({got.reason})"
             )
 
 

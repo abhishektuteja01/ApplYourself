@@ -14,13 +14,21 @@ paths:
 A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single source of truth loader.
 
 - Config lives in `profile/verticals.yaml` (gitignored user data: `lanes:` order,
-  `defaults:`, `classifier_rules`) and one `profile/verticals/<name>/` dir per
+  `defaults:`, `classifier_rules`, `title_variants`) and one `profile/verticals/<name>/` dir per
   lane holding `lane.yaml` (its block), `rubric.md` and `tailoring.md`. The
   loader merges each `lane.yaml` over `defaults:`: a default list follows the
   lane's own, any other key the lane sets replaces the default's. A lane is
   loaded only when `lanes:` lists it. `lane.yaml` sits in `verticals/` beside
   whichever verticals file names it, so the example and the fixture carry their
   own.
+- A classifier rule is a `pattern` regex, a `{match, require_any}` pair or a
+  `terms` list; the last two match loosely with `title_variants`. The title
+  ban list is `defaults: title_exclude_terms`. A lane's own
+  `title_include_terms` / `title_strong_keep_terms` / `title_exclude_terms`
+  are still read (include and strong-keep count as fits, strong-keep beats a
+  ban); `uv run config migrate` moves them out: include and strong-keep into
+  one `terms` rule per lane, the exclude terms every lane shares into
+  `defaults:`.
 - **One source per resume fact** (`src/applyourself/resume_model.py`): `profile/resume.yaml`
   holds name, contact, education and each context's header plus per-lane
   `{min, max, order}`; `bullets.md` holds claims and `default_for`;

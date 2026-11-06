@@ -21,21 +21,6 @@ search_terms:
 linkedin_terms:
   - Cog Engineer
   - Cog Deployment Engineer
-title_include_terms:
-  - cog
-  - flywheel
-  - cog deployment
-title_exclude_terms:
-  - senior
-  - lead
-  - distinguished
-  - research scientist
-  - cog learning
-  - scientist
-  - manager
-title_strong_keep_terms:
-  - cog learning platform
-  - cog learning agents
 skill_weights:
   cog_stack:
     cog_agents: 9

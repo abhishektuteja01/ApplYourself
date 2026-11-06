@@ -53,16 +53,13 @@ Marker file: `profile/verticals/<name>/.pass_a_only`, written by `pass-a`,
 deleted by `pass-b`.
 
 **Out of scope here — this is `/tune-vertical`'s entire reason to exist. Do not
-ask about it:** `skill_weights`, `title_include_terms` /
-`title_strong_keep_terms`, classifier rule priority and
-collisions, `drop_phrases`, rubric tier boundaries.
+ask about it:** `skill_weights`, `title_variants`, the `defaults:` ban list,
+classifier rule priority and collisions, rubric tier boundaries.
 
-`title_exclude_terms` is in scope here — it drops only what it names, so a
-wrong entry costs those rows and not the lane. Keep it short: it runs on every
-listing, and a high-volume word guts the lane until it is removed.
-`title_include_terms` is never in scope: a nonempty one flips the lane to an
-allowlist enforced at that same point, so a blind list discards everything it
-failed to anticipate.
+A lane never gets its own `title_include_terms`, `title_exclude_terms` or
+`title_strong_keep_terms`: the title gate is lenient (a title passes when it
+fits the lane's rule or one of its search terms and holds no word of the one
+global ban list in `defaults:`), and level is the judge's call.
 
 ## Hard rules (binding)
 
@@ -178,27 +175,13 @@ any other key the lane sets replaces the default's.
 - `linkedin_terms` — the reduced set (429 mitigation), usually the spine only.
 - `years` — required years mapped to a seniority cap (0-20), largest key =
   Step 3's cap, lower caps for higher asks (cap 5 → `{3: 14, 4: 10, 5: 6}`).
-  A JD asking more than the largest key is dropped before judging, or forced
-  to skip when the judge reads more. Leave it out when `defaults:` already
-  holds the same table.
-  Omit `drop_phrases`.
-- `title_exclude_terms` — a short blocklist: the level words from Step 3's
-  level answer, plus title words naming a different *function*.
-  - Draft the level words from the level answer crossed with **this lane's own
-    title vocabulary** — the band words differ per lane, so read them off the
-    lane's real titles (`search_terms`, the description argument), never off a
-    fixed list.
-  - Exclude in **both directions**: a senior/lead answer excludes the bands
-    below it, an entry/mid answer excludes the bands above it.
-  - Matching is whole-word and case-insensitive. Keep the list short and
-    specific. A bare short word over-catches (`associate` also matches
-    "Associate Director"); prefer the longer phrase when it would.
-  - Tightening the list applies on the next `clean.parquet` rebuild; loosening
-    it brings rows back as their boards are next checked.
+  A JD the judge reads asking more than the largest key is forced to skip.
+  Leave it out when `defaults:` already holds the same table.
+- A `# Target level: <answer>` comment line right above `years` (or where it
+  would be): Step 3's level answer, which item 3 turns into the rubric's
+  seniority tiers.
 
-Omit `skill_weights`, `title_include_terms` and `title_strong_keep_terms`
-entirely. A nonempty `title_include_terms` turns the lane into an allowlist
-enforced at the title gate, which can empty the lane before anyone sees a row.
+Omit `skill_weights`, `drop_phrases` and the lane title lists entirely.
 
 **2. One `classifier_rules` entry**, appended last:
 
@@ -210,8 +193,9 @@ enforced at the title gate, which can empty the lane before anyone sees a row.
 **3. `profile/verticals/<name>/rubric.md`** — example_primary's shape: the
 four axes with maxima fixed in code (`score_store.AXIS_MAXIMA`: `title` 0-30,
 `skills` 0-30, `seniority` 0-20, `domain` 0-20). State the tiers against this lane's
-spine titles and the profile's real evidence. Standard bands are fine — the
-boundaries are `/tune-vertical`'s. With no `skill_weights` in the config, anchor
+spine titles and the profile's real evidence; the `seniority` tiers put the
+lane's `# Target level:` band on top and score titles above or below it down.
+Standard bands are fine — the boundaries are `/tune-vertical`'s. With no `skill_weights` in the config, anchor
 `skills` on how many of the profile's attested skills the JD demands.
 
 **4. `profile/verticals/<name>/tailoring.md`** — judgment only, in
@@ -237,21 +221,20 @@ bare mode only — three or four lines summarizing each artifact (rubric tiers,
 the tailoring framing, the resume shape's sections, budget, baseline picks and
 skill lines). Say in one line what
 you inferred and what you left for `/tune-vertical`. After the answers land,
-restate the locked decisions including the `years` table, the level answer and
-the level words it put in `title_exclude_terms`.
+restate the locked decisions including the `years` table and the level answer.
 
 Then one `AskUserQuestion` carrying all three questions, in this order — the
 confirm-or-edit stays last.
 
 "Skip jobs asking for more than how many years of experience?" — `3 years` /
 `5 years` / `8 years` / `12 years`. Say in one line that anything above the cap
-is dropped or skipped, and `/tune-vertical` can change it later.
+is skipped by the judge, and `/tune-vertical` can change it later.
 
 "What level are you targeting?" — `Entry / associate` / `Mid-level` /
-`Senior / staff` / `Lead / director and up`. The answer becomes level words in
-`title_exclude_terms`. Say in one line that titles matching the excluded bands
-are dropped at the title gate: tightening the list applies on the next
-`clean.parquet` rebuild, loosening it as the boards are next checked.
+`Senior / staff` / `Lead / director and up`. The answer becomes the lane's
+`# Target level:` line and the rubric's seniority tiers. Say in one line that
+no title is dropped for its level: the judge scores titles outside the band
+down.
 
 "Use this lane as drafted?":
 
@@ -313,16 +296,15 @@ it never saw the lane.
 
 ## Step 6a — report (`pass-a`)
 
-The lane block, the rule, the `years` table, the level answer,
-`title_exclude_terms`, and the marker
+The lane block, the rule, the `years` table, the level answer, and the marker
 path. State that the lane is scrape-ready but not yet scoreable: `uv run
 discover` can run now; scoring needs `pass-b`'s prose and resume shape. Name the single next
 step, `/new-vertical <name> pass-b`.
 
 ## Step 6b — report (bare mode and `pass-b`)
 
-Files written, the locked decisions (terms, rule, the `years` table, the level answer
-and its `title_exclude_terms` words, the resume shape),
+Files written, the locked decisions (terms, rule, the `years` table, the level answer,
+the resume shape),
 and:
 
 - `uv run discover` then `/score` — their call, it hits the network.

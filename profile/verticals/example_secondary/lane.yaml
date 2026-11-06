@@ -19,28 +19,6 @@ search_terms:
 linkedin_terms:
   - Sprocket Compliance Analyst
   - Sprocket Governance Analyst
-# OPTIONAL title include-gate (all three lists default to empty = gate
-# OFF, historical exclusion-only behavior). When title_include_terms is
-# nonempty, a non-manual row is kept iff its title matches the lane:
-#   strong_keep  OR  (matches an include term  AND NOT an exclude term)
-# All matching is word-boundary, case-insensitive; manual/URL rows exempt.
-# Use this when job boards fuzzy-match your search terms into hundreds of
-# distinct off-lane titles that a title_exclude_terms blocklist cannot
-# keep up with. Derive the lists from a full read of the vertical's title
-# pool.
-title_include_terms:
-  - sprocket compliance
-  - sprocket governance
-  - sprocket risk
-# title_exclude_terms kills in-lane leakage that passes the include-gate.
-title_exclude_terms:
-  - sprocket sales
-  - sprocket marketing
-  - sprocket director
-# strong_keep overrides every exclude — unambiguous in-lane signals that
-# must survive even if the title also trips an exclude term.
-title_strong_keep_terms:
-  - sprocket model risk
 skill_weights:
   sprocket_governance:
     sprocket_audit_tool: 8

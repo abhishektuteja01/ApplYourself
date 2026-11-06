@@ -56,8 +56,8 @@ and company boards on Greenhouse, Lever, Ashby, Workday and Eightfold, listed in
 `data/universe/boards.csv`. Each board is checked every `every_days`; a board
 that keeps answering 404 is marked dead and checked less often. Every posting
 gets a stable `job_id`. The output everything downstream reads is
-`jobs/clean.parquet`: recent postings that pass the lane's title gate and your
-location allowlist, one row per `job_id`.
+`jobs/clean.parquet`: recent postings whose title fits a lane and holds no
+ban word, inside your location allowlist, one row per `job_id`.
 
 - Slash command: `/discover` runs it and prints a short health digest.
 - CLIs: `uv run discover`, `uv run ingest-url <url>` (one posting),

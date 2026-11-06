@@ -92,25 +92,28 @@ only those.
 - **`search_terms` / `linkedin_terms`** — add the in-lane title families the
   evidence shows the current terms miss; drop terms whose rows the user rejects
   on sight. `linkedin_terms` stays the reduced set (429 mitigation).
-- **The title gate** — `title_include_terms`, `title_exclude_terms`,
-  `title_strong_keep_terms`. Optional to the loader, load-bearing in
-  `title_gate.title_passes`: a scraped row is kept iff
-  `strong_keep OR (include_ok AND NOT exclude)`. **An empty
-  `title_include_terms` leaves the include-gate OFF** — everything the
-  classifier matches is kept unless it trips an exclude. Turn the gate on only
-  when the observed title pool shows the spine is namable in a handful of terms
-  and the noise is too varied for a blocklist. Pair `title_strong_keep_terms`
-  with unambiguous in-lane titles that would otherwise trip an exclude.
+- **The title gate** (`title_gate.lane_for`) is lenient: a title passes when
+  it fits the lane (one of its `classifier_rules`, or one of its search terms,
+  matched loosely) and holds no word of the one global ban list,
+  verticals.yaml `defaults: title_exclude_terms`. A stray title reaching the
+  judge is fine; a lost real job is the failure. An in-lane title family the
+  lane misses goes in as a search term or a `terms` rule; a spelling the
+  boards use (another language, an abbreviation) goes in `title_variants`. Add
+  a ban word only for a title the user would never take, and check it first:
+  no job scored 70 or more may hold it. Level words (intern, senior, lead,
+  VP) stay with the judge. A lane's own `title_include_terms`,
+  `title_strong_keep_terms` and `title_exclude_terms` are retired: never add
+  them (`uv run config migrate` moves old ones out).
 
 One self-collision trap, enforced by the Round 4 drift test — check it
 while drafting:
 
-- no `title_exclude_terms` entry may word-match one of its own `search_terms`
-  unless a `title_strong_keep_terms` entry covers it.
+- no ban word may match one of the lane's own search terms.
 
 Ask the user to rule on ~8 concrete titles pulled from the evidence — in-lane
-keeps, off-lane kills, and the genuinely ambiguous ones. Derive the lists from
-their rulings.
+keeps, off-lane kills, and the genuinely ambiguous ones. Derive the changes from
+their rulings. The night's run report (`jobs/runs/<run>.md`, "Title gate
+drops") counts every drop per reason with sample titles.
 
 Verify:
 
@@ -214,7 +217,7 @@ lane's window, so it costs a full scoring pass — their call.
    present and is what covers this lane. It fails if any
    `search_terms`/`linkedin_terms` entry misclassifies, if
    the source check fails or a baseline resume does not build, or if a
-   `title_exclude_terms` entry kills one of its own search terms. Add structural assertions there if this
+   search term does not pass its own lane's title gate. Add structural assertions there if this
    round's changes need more — never a literal real term.
 
 3. Final audit:

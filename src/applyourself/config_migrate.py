@@ -71,7 +71,10 @@ def drop_top_key(text: str, key: str) -> str:
     if start is None:
         return text
     end = start + 1
-    while end < len(lines) and (lines[end][:1] in (" ", "\t") or not lines[end].strip()):
+    # A block list may sit at the key's own indent ("key:\n- a").
+    while end < len(lines) and (
+        lines[end][:1] in (" ", "\t") or lines[end].startswith("- ") or not lines[end].strip()
+    ):
         end += 1
     while end > start + 1 and not lines[end - 1].strip():
         end -= 1
@@ -587,6 +590,156 @@ def _shape(cfg: Any) -> tuple:
     )
 
 
+TITLE_LISTS = ("title_include_terms", "title_strong_keep_terms", "title_exclude_terms")
+
+
+def _block_end(lines: list[str], start: int) -> int:
+    """The line after the top-level block at `start`, less its trailing blanks and comments."""
+    end = start + 1
+    while end < len(lines) and (
+        lines[end][:1] in (" ", "\t", "#") or lines[end].startswith("- ") or not lines[end].strip()
+    ):
+        end += 1
+    while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].startswith("#")):
+        end -= 1
+    return end
+
+
+def _indented(data: Any, pad: str) -> list[str]:
+    text = yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return [pad + ln for ln in text.splitlines(keepends=True)]
+
+
+def _title_lists(p: Profile) -> None:
+    """Lane title lists -> verticals.yaml: a lane's include and strong-keep terms
+    become one `terms` classifier rule for it (appended last), the exclude terms
+    every lane shares join `defaults: title_exclude_terms`, and the lane lists go.
+    Refused unless every old include and strong-keep term still fits its lane."""
+    import tempfile
+
+    from applyourself.shared import title_gate
+    from applyourself.shared import verticals as V
+
+    data = p.data(VERTICALS)
+    if not isinstance(data, dict) or data.get("schema_version") != 2:
+        return
+    names = [n for n in data.get("lanes") or [] if isinstance(n, str)]
+    rels = {n: f"verticals/{n}/lane.yaml" for n in names}
+    raws = {n: p.data(rels[n]) for n in names}
+    raws = {n: r for n, r in raws.items() if isinstance(r, dict)}
+    if not any(raws[n].get(k) is not None for n in raws for k in TITLE_LISTS):
+        return
+    defaults = data.get("defaults") or {}
+    if not isinstance(defaults, dict) or not isinstance(data.get("classifier_rules"), list):
+        p.problems.append(f"{VERTICALS}: no `classifier_rules` list; move the title lists by hand")
+        return
+    have = [str(t).lower() for t in defaults.get("title_exclude_terms") or []]
+    keeps = {
+        n: list(
+            dict.fromkeys(
+                (r.get("title_include_terms") or []) + (r.get("title_strong_keep_terms") or [])
+            )
+        )
+        for n, r in raws.items()
+    }
+    excludes = [[str(t) for t in raws.get(n, {}).get("title_exclude_terms") or []] for n in names]
+    shared = [t for t in excludes[0] if all(t.lower() in {x.lower() for x in e} for e in excludes)]
+    shared = [t for t in dict.fromkeys(shared) if t.lower() not in have]
+
+    text = p.text(VERTICALS) or ""
+    lines = (text if text.endswith("\n") else text + "\n").splitlines(keepends=True)
+    rules_at = next(
+        (i for i, ln in enumerate(lines) if re.match(r"classifier_rules\s*:\s*$", ln)), None
+    )
+    if rules_at is None:
+        p.problems.append(f"{VERTICALS}: `classifier_rules:` is not a block list; move by hand")
+        return
+    end = _block_end(lines, rules_at)
+    item = next((ln for ln in lines[rules_at + 1 : end] if ln.lstrip().startswith("- ")), "  - ")
+    pad = item[: len(item) - len(item.lstrip())]
+    added = []
+    for n in names:
+        if keeps.get(n):
+            added += [
+                f"{pad}# {n}'s title_include_terms and title_strong_keep_terms, from {rels[n]}.\n",
+                *_indented([{"vertical": n, "terms": keeps[n]}], pad),
+            ]
+    lines[end:end] = added
+    if shared:
+        at = next((i for i, ln in enumerate(lines) if re.match(r"defaults\s*:", ln)), None)
+        block = [
+            "  # Every lane's title ban list: whole words, any case, as written.\n",
+            *_indented({"title_exclude_terms": shared}, "  "),
+        ]
+        if at is None:
+            lanes_at = next(i for i, ln in enumerate(lines) if re.match(r"lanes\s*:", ln))
+            lines[lanes_at + 1 : lanes_at + 1] = ["\n", "defaults:\n", *block]
+        elif "title_exclude_terms" in defaults:
+            d_end = _block_end(lines, at)
+            key_at = next(
+                (
+                    i
+                    for i in range(at, d_end)
+                    if re.match(r"\s+title_exclude_terms\s*:\s*$", lines[i])
+                ),
+                None,
+            )
+            items: list[int] = []
+            for i in range(key_at + 1 if key_at is not None else d_end, d_end):
+                if re.match(r"\s*- ", lines[i]):
+                    items.append(i)
+                elif lines[i].strip() and not lines[i].lstrip().startswith("#"):
+                    break
+            if key_at is None or not items:
+                p.problems.append(
+                    f"{VERTICALS}: defaults title_exclude_terms is not a block list; move by hand"
+                )
+                return
+            last = items[-1]
+            pad = lines[last][: len(lines[last]) - len(lines[last].lstrip())]
+            lines[last + 1 : last + 1] = [
+                pad + ln.lstrip() for ln in _indented(shared, "") if ln.strip()
+            ]
+        elif re.match(r"defaults\s*:\s*$", lines[at]):
+            d_end = _block_end(lines, at)
+            lines[d_end:d_end] = block
+        else:
+            p.problems.append(f"{VERTICALS}: `defaults:` is not a block mapping; move by hand")
+            return
+    top = "".join(lines)
+    lane_texts = {}
+    for n in raws:
+        out = p.text(rels[n]) or ""
+        for key in TITLE_LISTS:
+            out = drop_top_key(out, key)
+        lane_texts[rels[n]] = out
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel in (VERTICALS, *rels.values()):
+                body = top if rel == VERTICALS else lane_texts.get(rel, p.text(rel) or "")
+                (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(tmp) / rel).write_text(body, encoding="utf-8")
+            new = V.load_verticals(Path(tmp) / VERTICALS)
+    except ValueError as exc:
+        p.problems.append(f"{VERTICALS}: does not load after moving the title lists: {exc}")
+        return
+    lost = [f"{n}: {t!r}" for n, ts in keeps.items() for t in ts if not title_gate.fits(t, n, new)]
+    if lost:
+        p.problems.append(f"{VERTICALS}: these terms would no longer fit their lane: {lost}")
+        return
+    p.texts[VERTICALS] = top
+    p.texts.update(lane_texts)
+    dropped = {
+        n: len([t for t in e if t.lower() not in {x.lower() for x in shared}])
+        for n, e in zip(names, excludes, strict=True)
+    }
+    p.notes.append(
+        f"{VERTICALS}: include/strong-keep terms -> classifier_rules `terms` for "
+        f"{[n for n in names if keeps.get(n)]}; defaults title_exclude_terms {shared}; "
+        f"lane-only exclude terms dropped {dropped}"
+    )
+
+
 STEPS: tuple[Callable[[Profile], None], ...] = (
     _languages,
     _abroad,
@@ -595,6 +748,7 @@ STEPS: tuple[Callable[[Profile], None], ...] = (
     _settings,
     _state,
     _split_lanes,
+    _title_lists,
 )
 
 

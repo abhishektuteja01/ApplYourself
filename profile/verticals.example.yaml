@@ -7,8 +7,10 @@
 #   - `lanes:` order = shortlist section order; first = primary
 #   - `defaults:` sits under every lane.yaml (here the shared `years` table)
 #   - classifier_rules order = ambiguity policy (first match wins; one vertical
-#     may own several rules at different priorities)
-#   - drop_phrases (example_secondary) vs the default years only (example_primary)
+#     may own several rules at different priorities); a rule is a `pattern`
+#     regex, a `{match, require_any}` pair, or a `terms` list
+#   - a title fits a lane when one of its rules or search terms matches it;
+#     it passes unless it holds a `title_exclude_terms` ban word
 #   - a lane whose titles collide with both others, so its rule sits below
 #     theirs (example_tertiary)
 # Vertical names must match ^[a-z][a-z0-9_]*$ — they become parquet values,
@@ -24,6 +26,27 @@ lanes: [example_primary, example_secondary, example_tertiary]
 # any other key a lane sets replaces the one here.
 defaults:
   years: {3: 14, 4: 10}
+  # One title ban list for every lane: whole words, any case, matched as
+  # written. Keep it to titles you would never take; level words (intern,
+  # VP, senior, lead) are the judge's.
+  title_exclude_terms:
+    - director
+    - head of
+    - svp
+    - evp
+    - distinguished
+    - thesis
+    - working student
+    - registered nurse
+    - truck driver
+    - forklift operator
+
+# Words a title may spell either way. Every term a lane matches loosely (its
+# search terms, `terms` rules, `{match, require_any}` rules) reads them all,
+# so "Widget Engineer" also fits "Widget-Ingenieur".
+title_variants:
+  - [engineer, ingenieur, ingénieur]
+  - [developer, entwickler, ontwikkelaar]
 
 # Ordered — first match wins. example_primary owns two rules at different
 # priorities: a strong signal ABOVE example_secondary (unambiguous primary

@@ -202,10 +202,9 @@ the resume.
    plus the confirm-or-edit — **Question 5** — in one `AskUserQuestion`. Do not
    duplicate any of it here and do not pre-empt them.
 
-   The level answer becomes level words in the lane's `title_exclude_terms`:
-   the title gate drops titles holding any of them (whole words). Tightening
-   applies on the next `clean.parquet` rebuild; loosening brings rows back as
-   their boards are next checked.
+   The level answer becomes the lane's `# Target level:` line, which pass B
+   turns into the rubric's seniority tiers. No title is dropped for its
+   level; the title gate drops only the `defaults:` ban list.
 
    Pass A ends with the loader working and a marker at
    `profile/verticals/<lane>/.pass_a_only`. `verticals-check` fails until step 2
@@ -299,9 +298,8 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    `.pass_a_only` marker, and ends with `verticals-check` passing. It asks
    nothing. If the check does not pass, stop and report.
 
-   Skill weights, `title_include_terms`, rubric tier boundaries, classifier
-   collisions stay out of both passes. The include
-   gate is step 3's, tested against real titles; the rest is `/tune-vertical`'s.
+   Skill weights, rubric tier boundaries, classifier collisions stay out of
+   both passes; they are `/tune-vertical`'s.
 
 ## Step 3 — scoring starts (~3 min, 2 questions)
 
@@ -338,53 +336,29 @@ print(len(d), 'rows'); print(d.title.value_counts().head(20).to_string())"
 
 ### 3.2 The title gate
 
-Draft a candidate `title_include_terms` for the lane from those real titles, then
-**test it before writing it**. A nonempty `title_include_terms` flips the lane
-from blocklist to allowlist and the gate runs on every listing
-(`src/applyourself/shared/title_gate.py:lane_for`), so a list drafted blind
-empties the lane silently.
+Nothing to draft. A title reaches the lane when it fits the lane's classifier
+rule or one of its search terms (`src/applyourself/shared/title_gate.py:lane_for`),
+and the gate drops only the `defaults:` ban list. Leave the lane's title lists
+absent; strays are the judge's to score down.
+
+### 3.3 What the ban list drops
+
+Show what the gate dropped for this lane before 3.5 asks the user to confirm.
+The nightly debug shards keep every classified listing with its drop `reason`.
 
 ```bash
 uv run python -c "
-import re, pandas as pd
-LANE  = '<lane>'
-TERMS = ['<term one>', '<term two>']          # the candidate title_include_terms
-d = pd.read_parquet('jobs/clean.parquet')
-d = d[d.vertical == LANE]
-rx = re.compile('|'.join(r'\b' + re.escape(t) + r'\b' for t in TERMS), re.I)
-keep = d.title.fillna('').astype(str).str.contains(rx)
-print(f'{int(keep.sum())}/{len(d)} rows kept')
-print('DROPPED:'); print(d.loc[~keep, 'title'].value_counts().head(15).to_string())"
-```
-
-Write the list into the lane's `lane.yaml` only if it keeps a clear majority of the rows
-already scraped. Otherwise leave `title_include_terms` absent and say in one
-line that the lane stays on the blocklist until `/tune-vertical`.
-`title_exclude_terms` belongs to `/new-vertical pass-a` — do not redraft it here.
-
-### 3.3 What the level band drops
-
-Show the effect of the level words pass A put in the lane's `title_exclude_terms`
-before 3.5 asks the user to confirm them. The title gate already dropped those
-rows, so count them in the nightly debug shards, which keep every classified
-listing with its gate verdict.
-
-```bash
-uv run python -c "
-import glob, re, pandas as pd
-LANE  = '<lane>'
-TERMS = ['<term one>', '<term two>']          # the level words in title_exclude_terms
+import glob, pandas as pd
+LANE = '<lane>'
 d = pd.concat(pd.read_parquet(f) for f in glob.glob('jobs/raw/*.parquet'))
 d = d[d.vertical == LANE]
-rx = re.compile('|'.join(r'\b' + re.escape(t) + r'\b' for t in TERMS), re.I)
-hit = d.title.fillna('').astype(str).str.contains(rx)
-print(f'{int(hit.sum())}/{len(d)} rows dropped on level')
+hit = d.get('reason', pd.Series('', index=d.index)).fillna('').str.startswith('banned')
+print(f'{int(hit.sum())}/{len(d)} rows dropped by the ban list')
 print('DROPPED:'); print(d.loc[hit, 'title'].value_counts().head(15).to_string())"
 ```
 
-Tightening the band takes effect on the next `clean.parquet` rebuild. Loosening
-it brings rows back as their boards and searches are next checked: the store
-keeps only rows that passed the gate.
+A ban word removed brings rows back as their boards and searches are next
+checked: the store keeps only rows that passed the gate.
 
 ### 3.4 Start scoring, judges in the background
 
@@ -404,8 +378,9 @@ Never judge a slice yourself, and never read, edit or delete files in
   these right?"* The 3-5 genuinely ambiguous items from step 2.3, each with the
   reading you took. Nothing else goes in this list.
 - **Question 7** — *"I guessed anywhere in the US, every job board on, and up to
-  4 hours per nightly run. You capped jobs at N years, and I'm dropping titles
-  outside <band> — that's M of the rows scraped. Anything wrong?"*
+  4 hours per nightly run. You capped jobs at N years, the judge scores titles
+  outside <band> down, and the ban list dropped M of the rows scraped.
+  Anything wrong?"*
   Options: `Looks right` · `Narrow the locations` · `Turn a source off` ·
   `Change the level or years cap`.
 
@@ -417,8 +392,8 @@ Never judge a slice yourself, and never read, edit or delete files in
   (its work-authorization facts), which is also the hard geographic filter on
   `clean.parquet`. Country names only, not every spelling a board might use.
   `discovery.yaml`'s `location_allowlist.countries` only narrows it.
-- A new years cap is the lane's `years` table; a new level band is its level
-  words in `title_exclude_terms`.
+- A new years cap is the lane's `years` table; a new level band is its
+  `# Target level:` line and the rubric's seniority tiers.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
 
 Then wait on the judges and run `/score`'s step 3: `uv run score finish`; on

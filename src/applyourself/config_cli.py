@@ -51,9 +51,9 @@ def _verticals(lane: str | None) -> list[str]:
     rules = [i for i, (vt, _) in enumerate(c.classifier_rules) if vt == lane]
     return out + [
         f"search: {len(v.search_terms)} linkedin: {len(v.linkedin_terms)}",
-        f"title gate: include {len(v.title_include_terms)} exclude {len(v.title_exclude_terms)}"
+        f"title gate: ban {len(v.title_exclude_terms)} include {len(v.title_include_terms)}"
         f" strong_keep {len(v.title_strong_keep_terms)}",
-        f"drops: years {v.years} drop_phrases {len(v.drop_phrases)}",
+        f"years: {v.years}",
         f"rules for this lane: {rules} of {len(c.classifier_rules)}",
     ]
 
