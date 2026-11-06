@@ -14,6 +14,7 @@ import argparse
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from rapidfuzz import fuzz
@@ -362,7 +363,7 @@ class _Index:
             if self.belongs(row, jid):
                 return jid, "pair", {}
         # Ids that hold this pair but name another role: a maybe, never a join.
-        maybes = {
+        maybes: dict[str, dict[str, Any]] = {
             jid: {
                 "cand": {"job_id": jid, "company_normalized": row["company_normalized"]},
                 "score": 0.0,

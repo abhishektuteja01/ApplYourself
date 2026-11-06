@@ -709,8 +709,8 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
         return _fill(picked, "A")
     if field.kind == "react_select":
         candidates = _identity_candidates(field.id, value, answers, key)
-        picked = _resolve_choice(field, candidates, "A", f"identity.{key}")
-        return replace(picked, alternates=candidates) if picked.action == "fill" else picked
+        choice = _resolve_choice(field, candidates, "A", f"identity.{key}")
+        return replace(choice, alternates=candidates) if choice.action == "fill" else choice
     return _fill(value, "A")
 
 
@@ -979,7 +979,7 @@ def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> 
                 "B0",
                 source=source,
             )
-        value = answers.us_person == "yes"
+        value: bool | None = answers.us_person == "yes"
     else:
         if UNKNOWN_COUNTRY in _question_countries(field.label, answers):
             return _park(

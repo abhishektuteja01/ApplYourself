@@ -35,6 +35,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from src import lint, resume_model, session_schema
 from src.material.build import (
@@ -124,7 +125,7 @@ __all__ = [
 ]
 
 
-def _emit(obj: dict, code: int = 0) -> int:
+def _emit(obj: dict[str, Any], code: int = 0) -> int:
     print(json.dumps(obj, indent=2, ensure_ascii=False, default=str))
     return code
 

@@ -8,6 +8,7 @@ import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -49,7 +50,9 @@ def _pdf(docx: Path, token: str, no_pdf: bool) -> PdfResult:
     return export_pdf(docx, token)
 
 
-def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> tuple[dict, int]:
+def cmd_build_resume(
+    job_id: str, final: bool = False, no_pdf: bool = False
+) -> tuple[dict[str, Any], int]:
     info = role_info(job_id)
     if not info["work_dir"]:
         raise AppError(f"{job_id} has no folder — run `uv run app new {job_id}` first.")
@@ -110,15 +113,15 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
     }, 0
 
 
-def cmd_build_answers(job_id: str) -> tuple[dict, int]:
+def cmd_build_answers(job_id: str) -> tuple[dict[str, Any], int]:
     folder = built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / ANSWERS)
     if bad := session_schema.problems("answers", data):
         return {"ok": False, "problems": bad}, 2
     src = resume_model.load_sources()
-    problems: list[dict] = []
-    warnings: list[dict] = []
+    problems: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
     uses = [str(u) for u in data.get("uses") or []]
     keep = resume_model.keep_terms(src, str(facts.get("company", "")))
     for k in ANSWER_KEYS:
@@ -157,7 +160,7 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
 
 def cmd_build_letter(
     job_id: str, today: date | None = None, no_pdf: bool = False
-) -> tuple[dict, int]:
+) -> tuple[dict[str, Any], int]:
     folder = built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / LETTER_PLAN)
@@ -166,8 +169,8 @@ def cmd_build_letter(
     src = resume_model.load_sources()
     _, slug = _identity()
     company = str(facts.get("company", ""))
-    problems: list[dict] = []
-    warnings: list[dict] = []
+    problems: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
 
     body = data.get("body")
     if (
@@ -200,7 +203,7 @@ def cmd_build_letter(
             }
         )
 
-    def fix(t):
+    def fix(t: str) -> str:
         return lint.fix_mechanical(t.strip(), src.rules)[0]
 
     salutation = fix(salutation)
@@ -252,7 +255,7 @@ def cmd_build_letter(
     }, 0
 
 
-def cmd_build_outreach(job_id: str, now: datetime | None = None) -> tuple[dict, int]:
+def cmd_build_outreach(job_id: str, now: datetime | None = None) -> tuple[dict[str, Any], int]:
     folder = built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / OUTREACH)
@@ -267,8 +270,8 @@ def cmd_build_outreach(job_id: str, now: datetime | None = None) -> tuple[dict, 
     body = lint.fix_mechanical(str(data["body"]).strip(), src.rules)[0]
     uses = [str(u) for u in data.get("uses") or []]
     keep = resume_model.keep_terms(src, company, *([to] if to else []))
-    problems: list[dict] = []
-    warnings: list[dict] = []
+    problems: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
 
     def layout(where: str, detail: str) -> None:
         problems.append({"where": where, "code": ProblemCode.LAYOUT, "detail": detail})

@@ -140,6 +140,12 @@ module = [
     "src.score_filter",
     "src.score_store",
     "src.score_cli",
+    "src.lint",
+    "src.app_cli",
+    "src.material.*",
+    "src.apply.greenhouse",
+    "src.apply.reconcile",
+    "src.apply.report",
 ]
 # The `strict` flags one by one: `strict = true` here leaks to every module.
 disallow_any_generics = true
@@ -158,29 +164,12 @@ extra_checks = true
 # Not typed yet: drop a module from this list once it checks clean.
 [[tool.mypy.overrides]]
 module = [
-    "src.app_cli",
-    "src.material.*",
-    "src.apply.answers",
-    "src.apply.ashby",
     "src.apply.bank_schema",
-    "src.apply.browser",
-    "src.apply.drivers",
     "src.apply.fill",
-    "src.apply.greenhouse",
-    "src.apply.lever",
-    "src.apply.plan",
-    "src.apply.reconcile",
-    "src.apply.report",
     "src.apply.sheet",
     "src.apply_cli",
-    "src.discovery.dedupe",
     "src.discovery.sources.boards.base",
-    "src.discovery.sources.boards.workday",
-    "src.discovery.sources.feed.stapply",
-    "src.discovery.sources.search",
     "src.discovery.store",
-    "src.lint",
-    "src.resume_model",
     "src.summary",
     "src.synonyms_cli",
 ]

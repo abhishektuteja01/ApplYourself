@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.apply import (
     run_record,
@@ -15,10 +15,11 @@ from src.apply.plan import Plan
 from src.shared import clock, paths, schemas
 
 if TYPE_CHECKING:
+    from src.apply.fill import FillResult
     from src.apply_cli import RunOutcome
 
 
-def _value(value) -> str:
+def _value(value: object) -> str:
     if isinstance(value, bool):
         return "checked" if value else "unchecked"
     if isinstance(value, tuple):
@@ -26,7 +27,7 @@ def _value(value) -> str:
     return str(value)
 
 
-def as_dict(plan: Plan) -> dict:
+def as_dict(plan: Plan) -> dict[str, Any]:
     return {
         "schema_version": schemas.PLAN_SCHEMA_VERSION,
         "job_id": plan.job_id,
@@ -143,9 +144,9 @@ def render(plan: Plan) -> str:
 
     lines.append("")
     lines.append(f"ATTACH ({len(plan.files)})")
-    for f in plan.files:
-        flag = "*" if f.required else " "
-        lines.append(f"  {flag} {f.id:<28} {f.path.name}")
+    for fp in plan.files:
+        flag = "*" if fp.required else " "
+        lines.append(f"  {flag} {fp.id:<28} {fp.path.name}")
 
     lines.append("")
     lines.append(f"DRAFTABLE, optional and unmatched ({len(plan.draftable)})")
@@ -262,7 +263,7 @@ def render_questions(plan: Plan) -> str:
     return "\n".join(lines)
 
 
-def render_fill(result, plan: Plan) -> str:
+def render_fill(result: FillResult, plan: Plan) -> str:
     done = sum(1 for o in result.outcomes if o.action != "failed")
     lines = [f"\nFILLED {done} / {len(result.outcomes)} — {plan.form_url}"]
     for outcome in result.outcomes:
@@ -337,7 +338,7 @@ def write_report(
     return path
 
 
-def write_manifest(result, plan: Plan, path: Path) -> Path:
+def write_manifest(result: FillResult, plan: Plan, path: Path) -> Path:
     """The post-fill read-back, as JSON, at a path the caller named.
 
     Only ever written when `--manifest` asked for it, and only for a run that

@@ -78,14 +78,15 @@ def require_playwright(driver: str | None = None):
     try:
         if name == "patchright":
             from patchright.sync_api import sync_playwright
-        else:
-            from playwright.sync_api import sync_playwright
+
+            return sync_playwright
+        from playwright.sync_api import sync_playwright as stock_sync_playwright
     except ImportError as exc:
         raise SystemExit(
             f"ERROR: {name} not installed. Run `uv sync --group apply` "
             f"then `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome`."
         ) from exc
-    return sync_playwright
+    return stock_sync_playwright
 
 
 def launch(p, *, headless: bool = False, stealth: bool | None = None):

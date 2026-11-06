@@ -48,6 +48,13 @@ class SourceError(ValueError):
     """A profile source file is missing or malformed."""
 
 
+def _shape(lane: str) -> verticals.LaneResume:
+    shape = verticals.get_config().verticals[lane].resume
+    if shape is None:
+        raise SourceError(f"lane {lane} has no resume: block in profile/verticals/{lane}/lane.yaml")
+    return shape
+
+
 # =====================================================================
 # Loading
 # =====================================================================
@@ -160,7 +167,7 @@ def shown_skills(src: Sources, lane: str) -> dict[str, list[str]]:
 def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
     """Every problem in the sources, as one line each. Empty = clean."""
     problems: list[str] = []
-    lanes = {n: v for n, v in cfg.verticals.items() if v.resume is not None}
+    shapes = {n: v.resume for n, v in cfg.verticals.items() if v.resume is not None}
     lane_names = set(cfg.verticals)
     r = src.resume
 
@@ -245,7 +252,7 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
         for lane, label in show.items():
             if lane not in lane_names:
                 problems.append(f"skills_master.md {sid}.show: {lane!r} is not a configured lane")
-            elif lane in lanes and label not in lanes[lane].resume.skill_lines:
+            elif lane in shapes and label not in shapes[lane].skill_lines:
                 problems.append(
                     f"skills_master.md {sid}.show.{lane}: {label!r} is not one of "
                     f"that lane's skill_lines"
@@ -253,10 +260,10 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
         for ref in sorted(evidence_bullets(s) - set(src.bullets)):
             problems.append(f"skills_master.md {sid}.evidence: {ref} is not in bullets.md")
 
-    for lane, v in lanes.items():
-        problems += _check_lane(src, lane, v)
+    for lane, shape in shapes.items():
+        problems += _check_lane(src, lane, shape)
 
-    for text, where in _source_texts(src, lanes):
+    for text, where in _source_texts(src, shapes):
         for viol in lint.blocking(
             lint.find_phrase_violations(text, context="resume", rules=src.rules)
         ):
@@ -264,32 +271,33 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
     return problems
 
 
-def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
+def _check_lane(src: Sources, lane: str, shape: verticals.LaneResume) -> list[str]:
     problems = []
-    lo, hi = v.resume.bullets
-    shown = [c for c in src.contexts if lane_budget(src, c, lane) is not None]
-    mins = sum(lane_budget(src, c, lane)[0] for c in shown)
-    maxes = sum(lane_budget(src, c, lane)[1] for c in shown)
+    lo, hi = shape.bullets
+    budgets = {c: b for c in src.contexts if (b := lane_budget(src, c, lane)) is not None}
+    shown = list(budgets)
+    mins = sum(b[0] for b in budgets.values())
+    maxes = sum(b[1] for b in budgets.values())
     if mins > hi or maxes < lo:
         problems.append(
             f"lane {lane}: context budgets ({mins}-{maxes}) cannot meet "
-            f"resume.bullets {list(v.resume.bullets)}"
+            f"resume.bullets {list(shape.bullets)}"
         )
     defaults = [b for b, e in src.bullets.items() if lane in (e.get("default_for") or [])]
     if not lo <= len(defaults) <= hi:
         problems.append(
             f"lane {lane}: {len(defaults)} default_for bullets, outside "
-            f"resume.bullets {list(v.resume.bullets)}"
+            f"resume.bullets {list(shape.bullets)}"
         )
     for c in shown:
         n = sum(1 for b in defaults if src.context_of(b) == c)
-        cmin, cmax = lane_budget(src, c, lane)
+        cmin, cmax = budgets[c]
         if not cmin <= n <= cmax:
             problems.append(
                 f"lane {lane}: {n} default_for bullets in {c}, outside [{cmin}, {cmax}]"
             )
     lines = shown_skills(src, lane)
-    for label in v.resume.skill_lines:
+    for label in shape.skill_lines:
         if not lines.get(label):
             problems.append(f"lane {lane}: skill line {label!r} has no skill with that `show`")
     names = {sid: str(src.skills[sid]["name"]) for ids in lines.values() for sid in ids}
@@ -313,9 +321,9 @@ def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
     return problems
 
 
-def _source_texts(src: Sources, lanes: dict) -> list[tuple[str, str]]:
+def _source_texts(src: Sources, shapes: dict[str, verticals.LaneResume]) -> list[tuple[str, str]]:
     out = [(str(b.get("canonical") or ""), f"bullets.md {bid}") for bid, b in src.bullets.items()]
-    out += [(v.resume.summary, f"verticals/{n}/lane.yaml resume.summary") for n, v in lanes.items()]
+    out += [(s.summary, f"verticals/{n}/lane.yaml resume.summary") for n, s in shapes.items()]
     out += [
         (str(c.get(k) or ""), f"resume.yaml contexts.{ctx}.{k}")
         for ctx, c in src.contexts.items()
@@ -483,7 +491,7 @@ def baseline_plan(src: Sources, lane: str) -> dict:
     """The lane's default resume: baseline summary, default_for picks, every
     shown skill in file order."""
     return {
-        "summary": {"text": verticals.get_config().verticals[lane].resume.summary, "uses": []},
+        "summary": {"text": _shape(lane).summary, "uses": []},
         "entries": [
             {"id": b}
             for b in sorted(
@@ -517,8 +525,7 @@ def build(
     """Assemble resume markdown from a plan. Problems are collected, never
     raised; with `final`, a failing rewording falls back to its canonical text
     and a failing summary to the lane baseline, and the swap is recorded."""
-    v = verticals.get_config().verticals[lane]
-    shape = v.resume
+    shape = _shape(lane)
     problems: list[Problem] = []
     swapped: list[str] = []
     warnings: list[dict] = []
@@ -724,7 +731,7 @@ def context_text(src: Sources) -> str:
 
 def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines):
     r = src.resume
-    v = verticals.get_config().verticals[lane]
+    shape = _shape(lane)
     blocks: list[Block] = []
     trace: list[str] = []
 
@@ -743,7 +750,7 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
             ),
         )
     )
-    for section in v.resume.sections:
+    for section in shape.sections:
         add(_plain("section", SECTION_TITLES[section]))
         if section == "summary":
             add(

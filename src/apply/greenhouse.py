@@ -31,7 +31,7 @@ EMBED_URL = "https://boards.greenhouse.io/embed/job_app?token={token}"
 
 # Shared board table: host variants (.eu included), posting shape and query
 # keys live in one place. The slug is captured for cross-checking only.
-_GH = job_boards.get_source("greenhouse")
+_GH = job_boards.source("greenhouse")
 # The slug as it appears in the rendered form's action. `&` arrives escaped.
 _FORM_ACTION = re.compile(
     r'<form[^>]*\baction="/embed/job_app\?for=(?P<slug>[^&"]+)&(?:amp;)?token=(?P<token>\d+)"',

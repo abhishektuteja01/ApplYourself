@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import yaml
@@ -27,7 +28,7 @@ class AppError(Exception):
     """The command cannot run; the message says what to fix."""
 
 
-def _clean_value(v):
+def _clean_value(v: Any) -> Any:
     """Parquet values as plain YAML/JSON: arrays -> lists, NaN/NaT -> ""."""
     if hasattr(v, "tolist") and not isinstance(v, (str, bytes)):
         v = v.tolist()
@@ -76,11 +77,11 @@ def _version(p: Path) -> int:
     return int(m.group(1)) if m else 1
 
 
-def _state(job_id: str) -> dict:
+def _state(job_id: str) -> dict[str, Any]:
     return state_io.load_state(state_io.state_path_for(paths.PIPELINE, job_id)) or {}
 
 
-def _read_snapshot(folder: Path) -> tuple[dict, str]:
+def _read_snapshot(folder: Path) -> tuple[dict[str, Any], str]:
     text = (folder / SNAPSHOT).read_text(encoding="utf-8")
     if not text.startswith("---\n"):
         return {}, text
@@ -88,7 +89,7 @@ def _read_snapshot(folder: Path) -> tuple[dict, str]:
     return yaml.safe_load(head) or {}, body
 
 
-def _load_yaml(path: Path) -> dict:
+def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise AppError(f"{path.name} missing in {path.parent.name} — write it first.")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -104,7 +105,7 @@ def _identity() -> tuple[str, str]:
     return name, _file_slug(name)
 
 
-def built_folder(state: dict) -> Path | None:
+def built_folder(state: dict[str, Any]) -> Path | None:
     """The last folder a resume was built in (tailored_dirs[-1]), or None --
     also when `track cleanup` removed it, so nothing builds on a deleted folder,
     and when the entry points outside applications/."""
@@ -115,7 +116,7 @@ def built_folder(state: dict) -> Path | None:
     return None if state.get("cleaned") and not folder.is_dir() else folder
 
 
-def role_info(job_id: str) -> dict:
+def role_info(job_id: str) -> dict[str, Any]:
     """Where a role's material lives. `dir` is the last folder a resume was
     built in (tailored_dirs[-1]) — what letters, answers and /apply use.
     `work_dir` is the newest folder on disk — where the next resume builds."""
@@ -125,7 +126,7 @@ def role_info(job_id: str) -> dict:
     name, slug = _identity()
 
     def has(folder: Path | None, fname: str) -> bool:
-        return bool(folder) and (folder / fname).is_file()
+        return folder is not None and (folder / fname).is_file()
 
     return {
         "job_id": job_id,
@@ -151,7 +152,7 @@ def built_dir(job_id: str) -> Path:
     info = role_info(job_id)
     if not info["dir"]:
         raise AppError(f"{job_id} has no built resume yet — run /tailor {job_id} first.")
-    folder = paths.APPLICATIONS.parent / info["dir"]
+    folder: Path = paths.APPLICATIONS.parent / info["dir"]
     if not folder.is_dir():
         raise AppError(f"{info['dir']} is in state.yaml but not on disk.")
     return folder

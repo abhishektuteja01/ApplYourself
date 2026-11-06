@@ -308,7 +308,7 @@ class BrowserDriver:
         )
         if container.count() == 0:
             return ""
-        parts = []
+        parts: list[str] = []
         for selector in (SELECT_SINGLE_VALUE, SELECT_MULTI_VALUE):
             nodes = container.first.locator(selector)
             parts.extend(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
