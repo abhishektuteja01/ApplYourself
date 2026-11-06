@@ -29,7 +29,8 @@ dead_every_days: 14
 # Every source the loader accepts. every_days: days between checks of one
 # board. page_delay_* pace the pages of one jobspy query; pacing_seconds paces
 # queries, boards and feed page fetches. hours_old / results_wanted: the jobspy
-# search window and result cap. remote_queries: false drops the remote copy of each query.
+# search window and the results per query (default 100; LinkedIn at most 140).
+# remote_queries: false drops the remote copy of each query.
 sources:
   linkedin:      {enabled: true,  pacing_seconds: 3, page_delay_seconds: 3, page_delay_band_seconds: 4}
   # Optional, LinkedIn only: search within companies whose careers site no lane

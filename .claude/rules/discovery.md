@@ -180,7 +180,8 @@ overlap keeps it unresolved, no overlap drops it.
 
 `discovery.yaml` is `schema_version: 2`. Every key is checked; an unknown or
 removed key is reported by name with its replacement. `validate()` rejects
-`live_days <= max(every_days) + 1`.
+`live_days <= max(every_days) + 1` and a `results_wanted` (results per query,
+per jobspy source) above `MAX_RESULTS_WANTED`.
 
 ## The report
 

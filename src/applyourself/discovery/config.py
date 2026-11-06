@@ -91,6 +91,10 @@ _RETIRED_KEYS = {
 # countries; past this many, the query count outruns the deadline.
 MAX_SEARCH_LOCATIONS = 5
 
+# The most results one query can return. jobspy 1.1.82 reads LinkedIn 10 a page,
+# steps `start` by the results so far and stops at start=1000: 14 pages.
+MAX_RESULTS_WANTED = {"linkedin": 140}
+
 # The pacing floor config cannot go below, per source.
 DEFAULT_MIN_PACING_SECONDS = 1.0
 MIN_PACING_SECONDS = {"greenhouse": 0.5, "linkedin": 0.5, "indeed": 0.5, "workday": 0.5}
@@ -217,6 +221,13 @@ class DiscoveryConfig:
                     f"search_locations to the countries to query."
                 )
         problems += self._abroad_problems()
+        for name, most in MAX_RESULTS_WANTED.items():
+            src = self.sources.get(name)
+            if src is not None and src.results_wanted > most:
+                problems.append(
+                    f"sources.{name}.results_wanted ({src.results_wanted}) is above {most}, "
+                    f"the most one {name} query returns"
+                )
         board_every = [
             s.every_days for n, s in self.sources.items() if n in ATS_SOURCE_NAMES and s.enabled
         ]
@@ -478,6 +489,7 @@ def main() -> int:
     def line(name: str, s: SourceConfig) -> str:
         bits = [f"{s.pacing_seconds:g}s"]
         if name in JOBSPY_SOURCES:
+            bits.append(f"{s.results_wanted} results/query")
             if not s.remote_queries:
                 bits.append("no remote queries")
             if s.abroad_countries:

@@ -109,6 +109,18 @@ def test_every_value_is_read(tmp_path, monkeypatch):
     assert cfg.validate() == []
 
 
+def test_results_wanted_is_per_source_and_linkedin_stops_at_its_paging_limit(tmp_path):
+    cfg = load(tmp_path, {"sources": {"indeed": {"results_wanted": 1500}}})
+    assert (cfg.sources["linkedin"].results_wanted, cfg.sources["indeed"].results_wanted) == (
+        100,
+        1500,
+    )
+    assert cfg.validate() == []
+    assert load(tmp_path, {"sources": {"linkedin": {"results_wanted": 140}}}).validate() == []
+    cfg = load(tmp_path, {"sources": {"linkedin": {"results_wanted": 141}}})
+    assert any("sources.linkedin.results_wanted (141)" in p for p in cfg.validate())
+
+
 @pytest.mark.parametrize("data", [{}, {"search_max_age_days": None}])
 def test_search_max_age_days_absent_or_null_is_no_cut(tmp_path, data):
     assert load(tmp_path, data).search_max_age_days is None
