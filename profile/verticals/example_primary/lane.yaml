@@ -31,8 +31,6 @@ skill_weights:
     gizmo_calibration: 7  # secondary tooling
   domain:
     widget_supply_chain: 9
-# Dropped before judging when the JD holds one (whole words).
-drop_phrases: []
 # Optional. The judge answers the question yes/no; yes lifts the domain
 # axis to at least yes_min, no holds it at no_max or below.
 # focus:

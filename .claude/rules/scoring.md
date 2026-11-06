@@ -12,9 +12,11 @@ Three steps, one owner per rule:
 
 1. `score start` (Python): `score_filter.drop_reason` drops rows by the hard
    rules (no lane, `profile/scoring.yaml` `ineligible` plus its
-   `no_sponsorship` phrases when the home need is `now`, the lane's
-   `drop_phrases`, the lane's `years` table plus `years_margin`; the regex
-   only pre-filters, the judge's years count in `derive`). A drop is never stored: it is
+   `no_sponsorship` phrases when the home need is `now`). Years go to the
+   judge: its count, against the lane's `years` table, decides in `derive`;
+   the regex's count (`years_required`) only flags a gap. A lane's
+   `drop_phrases` and scoring.yaml's `years_margin` are still read but drop
+   nothing. A drop is never stored: it is
    checked again every run, and a stored score of a row it now drops is
    deleted. It prints `dropped_<code>` for every drop and `filtered_<code>`
    for those the latest discovery run saw first (the night summary's

@@ -229,14 +229,9 @@ class TestDropReason:
         row = self._row(title="Widget Consultant - US Citizens Only")
         assert sf.drop_reason(row, scfg)[0] == "ineligible"
 
-    def test_lane_phrase(self, cfg, scfg):
-        assert (
-            sf.drop_reason(self._row(jd_text="Uses the rival widget suite."), scfg)[0] == "phrase"
-        )
-
-    def test_years_above_lane_max(self, cfg, scfg):
-        assert sf.drop_reason(self._row(jd_text="5+ years of experience"), scfg)[0] == "years"
-        assert sf.drop_reason(self._row(jd_text="4+ years of experience"), scfg) is None
+    def test_lane_phrases_and_years_go_to_the_judge(self, cfg, scfg):
+        jd = "Uses the rival widget suite. 9+ years of experience."
+        assert sf.drop_reason(self._row(jd_text=jd), scfg) is None
 
 
 def test_seniority_cap(cfg):

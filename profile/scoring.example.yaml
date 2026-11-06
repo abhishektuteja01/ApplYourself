@@ -1,8 +1,8 @@
 # TEMPLATE — copy to profile/scoring.yaml and edit (/onboarding does both).
 #
 # Scoring policy for /score. Read by src/applyourself/score_filter.py, src/applyourself/score_store.py
-# and src/applyourself/shortlist.py. Per-lane rules (drop_phrases, years, skill_weights)
-# live in profile/verticals.yaml; how to judge a role lives in
+# and src/applyourself/shortlist.py. Per-lane rules (years, skill_weights)
+# live in profile/verticals/<lane>/lane.yaml; how to judge a role lives in
 # .claude/shared/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
 # Your sponsorship need in each country comes from
 # profile/application_answers.yaml's work_authorization.countries.
@@ -42,11 +42,6 @@ no_sponsorship:
 
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
-
-# The years regex drops a JD before judging only when it reads more than the
-# lane's largest `years` key plus this margin; otherwise the judge's reading
-# of the years decides. 0 when absent.
-years_margin: 0
 
 # A JD under min_words has its skills axis capped at skills_cap.
 jd_quality:

@@ -70,8 +70,8 @@ location allowlist, one row per `job_id`.
 
 ### 2. Scoring
 
-Drops what your hard rules reject (no lane, an ineligibility phrase, the lane's
-drop phrases, too many years), then parallel judge agents score the rest on
+Drops what your hard rules reject (no lane, an ineligibility phrase), then
+parallel judge agents score the rest on
 title, skills, seniority and domain. Python turns their facts into the
 sponsorship label, caps, total and action. The keeper list is
 `shortlist/<date>.md`: the top roles per lane. **Each lane ranks on its own**; a

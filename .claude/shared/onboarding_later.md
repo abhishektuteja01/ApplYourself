@@ -8,7 +8,7 @@ Read by `/onboarding` at step 5's hand-off. The contract still holds: never run
 Two lines at hand-off. None is an interview, none blocks the daily loop.
 
 - **`/tune-vertical <lane>`** — the deep pass on the lane: search terms, skill
-  weights, the title gate, classifier collisions, `drop_phrases`, rubric
+  weights, the title gate, classifier collisions, rubric
   tiers, the resume shape. Run it once a few days of shortlists exist. This
   is the fix when the shortlist stays thin or keeps surfacing the wrong titles.
 - **`/suggest-synonyms`** again — step 4 ran it once, against one day of

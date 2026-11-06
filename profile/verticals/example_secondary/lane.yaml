@@ -44,7 +44,3 @@ title_strong_keep_terms:
 skill_weights:
   sprocket_governance:
     sprocket_audit_tool: 8
-# Dropped before judging when the JD holds one (whole words).
-drop_phrases:
-  - sprocket certification required
-  - advanced sprocketry degree required

@@ -1,5 +1,5 @@
 ---
-description: Sharpen an existing lane against real postings: terms, title gate, classifier, drop phrases, rubric tiers, resume shape. Config only.
+description: Sharpen an existing lane against real postings: terms, title gate, classifier, rubric tiers, resume shape. Config only.
 model: opus
 effort: high
 disable-model-invocation: true
@@ -119,7 +119,7 @@ uv run config verticals <name>
 uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
-## Round 2 — classifier rules, collisions, drop rules
+## Round 2 — classifier rules, collisions, years
 
 **`classifier_rules`.** Ordered, first match wins, and position decides
 collisions (a build-lane rule must sit AFTER a risk lane's, so "AI Risk
@@ -140,15 +140,11 @@ other lanes' rules deliberately. Every row misfiled in Round 0's evidence is a
 rule-position bug — name the row, propose the move, have the user confirm the
 **ruling**, not the regex.
 
-**Drop rules** — from rows the filter should have dropped and didn't:
-
-- `years` — required years mapped to a seniority cap; a JD asking more than the
-  largest key is dropped before judging, or forced to skip when the judge reads
-  more. Change only against observed JDs.
-- `drop_phrases` — JD phrases (whole words, any case) that are a deterministic
-  kill for this profile.
-- Adjacent title families job boards fuzzy-match your search terms into go in
-  Round 1's `title_exclude_terms`.
+**`years`** — required years mapped to a seniority cap; a JD the judge reads
+asking more than the largest key is forced to skip. Change only against
+observed JDs. Nothing else drops a JD before judging but scoring.yaml's
+`ineligible` phrases: `drop_phrases` no longer drops, so put what the lane
+must avoid in its rubric.
 
 Verify:
 

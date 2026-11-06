@@ -112,10 +112,9 @@ class Vertical:
     resume: LaneResume | None = None
     # Optional. The terms a jobspy lane's `abroad` block queries per country.
     abroad_terms: tuple[str, ...] = ()
-    # /score's lane rules (src/applyourself/score_filter.py). A JD holding a drop phrase is
-    # dropped; `years` maps required years -> seniority cap, and a JD asking
-    # more than its largest key is dropped before judging, or forced to skip
-    # when the judge reads more.
+    # `years` maps required years -> seniority cap; a JD the judge reads
+    # asking more than its largest key is forced to skip. `drop_phrases` is
+    # still read but drops nothing.
     drop_phrases: tuple[str, ...] = ()
     years: dict[int, int] = field(default_factory=dict)
     # Judge-only: printed into the lane's scoring packet as-is.

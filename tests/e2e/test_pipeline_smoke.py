@@ -64,7 +64,7 @@ def _lane_postings() -> list[dict]:
             company="Beta Gizmos",
             title="Gizmo Reconciliation Analyst",
             url=gh.format("betagizmos", 3),
-            jd_text=JD + " You will migrate us off the legacy gizmo stack.",
+            jd_text=JD + " US citizens only.",
         ),
     ]
 
@@ -119,7 +119,7 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
     # score: filter drop, then the recorded judge answer
     scfg = load_scoring(paths.example("scoring.example.yaml"))
     started = score_store.start(clean, scored, staging, scfg, now=NOW)
-    assert started["dropped"] == {"phrase": 1} and started["judge"] == 1
+    assert started["dropped"] == {"ineligible": 1} and started["judge"] == 1
     (name,) = score_store.load_run(staging)["slices"]
     shutil.copy(SESSIONS / "judge_answer.json", staging / f"out_{name}.json")
     done = score_store.finish(
