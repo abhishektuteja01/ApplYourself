@@ -114,6 +114,7 @@ uv run night --resume                 # what that script runs: --resume reruns t
 ```
 
 - `discover` needs `uv sync --group discovery` (libpostal); `apply` needs `uv sync --group apply`.
+  A plain `uv sync` removes both groups; `uv sync --all-groups` keeps them.
 - `uv run app build` never writes `state:`.
 - `apply run` fills, and clicks only with `--submit`. `--submit` needs `--limit` (unless
   `--job-id`) and a typed confirmation unless `--yes`; it never clicks a role in

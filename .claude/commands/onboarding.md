@@ -113,6 +113,7 @@ another terminal while step 1's questions continue:
 ```bash
 uv sync
 uv run python -c "import postal.parser" >/dev/null 2>&1 || uv sync --group discovery
+git config core.hooksPath .githooks
 mkdir -p logs
 nohup uv run pytest tests -q --ignore=tests/discovery \
       --ignore=tests/test_real_config_drift.py > logs/onboarding_tests.log 2>&1 &
