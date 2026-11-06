@@ -588,9 +588,11 @@ it is checked again on every run. The codes it prints as `dropped_<code>`:
    `ineligible` (whole words; "U.S." reads as "us"). When you need
    sponsorship now at home, the `no_sponsorship` phrases drop too.
 3. **`phrase`**: the JD holds one of the lane's `drop_phrases`.
-4. **`years`**: the JD asks more years than the lane's largest `years` key.
-   The years regex reads the *lower* bound, so "3-6 years" counts as 3. When
-   the judge reads more years than the regex did, `score finish` forces a skip.
+4. **`years`**: the years regex reads more than the lane's largest `years`
+   key plus `scoring.yaml` `years_margin`. It reads the *lower* bound, so
+   "3-6 years" counts as 3. It is only a pre-filter: for a judged role, the
+   judge's years set the seniority cap or force a skip, and `score finish`
+   prints a `years_gap` line when the two differ by 3 or more.
 
 Degree requirements are deliberately left to the judge.
 

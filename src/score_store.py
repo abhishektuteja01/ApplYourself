@@ -75,6 +75,8 @@ VIEW_COLUMNS: list[str] = [c for c in SCORED_COLUMNS if not c.startswith("judge_
 AXIS_MAXIMA = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
 ACTION_RANK = {"skip": 0, "manual-review": 1, "tailor": 2}
 
+YEARS_GAP_LOG = 3  # regex and judge years this far apart are printed by finish
+
 SLICE_ROWS = 10
 SLICE_BYTES = 60_000
 JUDGE_SLICES = 5
@@ -579,7 +581,7 @@ def derive(
     reasoning = a["reasoning"].strip()
     label = sponsorship_label(a["sponsorship"], a["country"], cfg)
     forced_skip = False
-    years = max(facts["years"], a["years"])
+    years = a["years"]  # the regex only pre-filters; the judge's reading counts
     if lane.years and years > max(lane.years):
         reasoning += f" [{years}+ yrs]"
         forced_skip = True
@@ -638,7 +640,8 @@ def finish(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Merge every answered, valid slice. Returns {"merged", "pruned",
-    "bad": {slice: [errors]}, "lines": judge lines still owed}."""
+    "bad": {slice: [errors]}, "lines": judge lines still owed,
+    "years_gaps": [(job_id, regex years, judge years)] that differ by YEARS_GAP_LOG+}."""
     run = load_run(staging)
     if run is None:
         return {
@@ -646,10 +649,12 @@ def finish(
             "pruned": prune(scored_path, clean_path, pipeline_dir),
             "bad": {},
             "lines": [],
+            "years_gaps": [],
         }
     now = now or clock.now()
     lanes = verticals.get_config().verticals
     rows, bad, done = [], {}, []
+    gaps: list[tuple[str, int, int]] = []
     for name, meta in run["slices"].items():
         out = staging / f"out_{name}.json"
         if not out.exists():
@@ -672,6 +677,8 @@ def finish(
             row["judge_facts"] = json.dumps({k: facts[k] for k in ("years", "words", "contract")})
             row["judge_input_hash"] = facts.get("hash", "")
             rows.append(row)
+            if abs(facts["years"] - a["years"]) >= YEARS_GAP_LOG:
+                gaps.append((a["job_id"], facts["years"], a["years"]))
         done.append(name)
     merged = merge_rows(scored_path, rows)
     for name in done:
@@ -692,4 +699,5 @@ def finish(
         "pruned": prune(scored_path, clean_path, pipeline_dir),
         "bad": bad,
         "lines": judge_lines(run, staging) if run["slices"] else [],
+        "years_gaps": gaps,
     }

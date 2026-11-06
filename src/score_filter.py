@@ -68,6 +68,8 @@ class ScoringConfig:
     degree_rank: int | None = None
     """Your highest degree as a `degree_rank`, from the answer bank; None
     when it names none we know, so every years path counts."""
+    years_margin: int = 0
+    """Years the regex may read above a lane's maximum before it drops a JD."""
 
 
 def _phrases(data: dict[str, Any], key: str, path: Path) -> tuple[str, ...]:
@@ -154,6 +156,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         note=str(s.get("note") or ""),
         languages=_phrases(data, "languages", path),
         degree_rank=bank_degree_rank(Path(bank_path)),
+        years_margin=_int(data, "years_margin", "top level", path) if "years_margin" in data else 0,
     )
     return cfg
 
@@ -342,7 +345,7 @@ def drop_reason(row: dict[str, Any], cfg: ScoringConfig) -> tuple[str, str] | No
     if hit is not None:
         return "phrase", hit
     years = years_required(jd, cfg.degree_rank)
-    if lane.years and years > max(lane.years):
+    if lane.years and years > max(lane.years) + cfg.years_margin:
         return "years", f"{years}+ years required, lane allows {max(lane.years)}"
     return None
 

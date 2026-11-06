@@ -46,6 +46,11 @@ languages: [English]
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
 
+# The years regex drops a JD before judging only when it reads more than the
+# lane's largest `years` key plus this margin; otherwise the judge's reading
+# of the years decides. 0 when absent.
+years_margin: 0
+
 # A JD under min_words has its skills axis capped at skills_cap.
 jd_quality:
   min_words: 300

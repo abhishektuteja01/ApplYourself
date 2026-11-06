@@ -13,7 +13,8 @@ Three steps, one owner per rule:
 1. `score start` (Python): `score_filter.drop_reason` drops rows by the hard
    rules (no lane, `profile/scoring.yaml` `ineligible` plus its
    `no_sponsorship` phrases when the home need is `now`, the lane's
-   `drop_phrases`, the lane's `years` table). A drop is never stored: it is
+   `drop_phrases`, the lane's `years` table plus `years_margin`; the regex
+   only pre-filters, the judge's years count in `derive`). A drop is never stored: it is
    checked again every run, and a stored score of a row it now drops is
    deleted. The rest is staged in `jobs/scored.staging/` as one packet per
    lane and slices of at most 10 roles, each row with its `judge_input_hash`

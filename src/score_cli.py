@@ -82,6 +82,8 @@ def _cmd_finish(args: argparse.Namespace) -> int:
     rule = CountryRule.from_discovery(load_config())
     res = score_store.finish(CLEAN, SCORED, STAGING, paths.PIPELINE, cfg, rule)
     print(f"merged={res['merged']} pruned={res['pruned']} {_shortlist(cfg)}")
+    for job_id, regex, judge in res["years_gaps"]:
+        print(f"years_gap {job_id} regex={regex} judge={judge}")
     for name, errs in res["bad"].items():
         print(f"bad {name}: {'; '.join(errs[:3])}")
     for line in res["lines"]:

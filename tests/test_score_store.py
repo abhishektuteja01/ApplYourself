@@ -243,7 +243,7 @@ class TestFinish:
         _write_answers(
             env,
             score_store.load_run(env["staging"])["slices"],
-            {"aaaaaaaa": _answer("aaaaaaaa", seniority=20)},
+            {"aaaaaaaa": _answer("aaaaaaaa", seniority=20, years=4)},
         )
         _finish(env, scfg)
         row = _scored(env).loc["aaaaaaaa"]
@@ -499,6 +499,20 @@ class TestFactsDriveTheRules:
         )
         assert _finish(env, scfg)["merged"] == 1
         return _scored(env).loc["aaaaaaaa"]
+
+    def test_years_regex_is_a_prefilter_with_a_margin(self, env, scfg):
+        _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " 6+ years of experience."}])
+        assert _start(env, scfg)["dropped"] == {"years": 1}
+        loose = dataclasses.replace(scfg, years_margin=2)
+        assert _start(env, loose)["judge"] == 1
+        _write_answers(
+            env,
+            score_store.load_run(env["staging"])["slices"],
+            {"aaaaaaaa": _answer("aaaaaaaa", years=2)},
+        )
+        res = _finish(env, loose)
+        assert res["years_gaps"] == [("aaaaaaaa", 6, 2)]
+        assert _scored(env).loc["aaaaaaaa", "suggested_action"] == "tailor"
 
     def test_judge_years_above_lane_max_skip(self, env, scfg):
         row = self._one(env, scfg, years=8)

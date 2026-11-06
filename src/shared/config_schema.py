@@ -114,6 +114,7 @@ class ScoringFile(_Strict):
     no_sponsorship: Any = None
     languages: Any = None
     keywords_max: Any = None
+    years_margin: Any = None
     jd_quality: JdQuality | None = None
     trim_jd: TrimJd | None = None
     shortlist: Shortlist | None = None
