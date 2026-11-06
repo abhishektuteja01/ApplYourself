@@ -319,3 +319,30 @@ def test_if_guard_fires_only_from_the_named_state(tmp_path, capsys):
     assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
     assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "applied"
     assert "left unchanged" in capsys.readouterr().out
+
+
+def test_if_guard_checks_the_state_under_the_lock(tmp_path, monkeypatch, capsys):
+    """A writer that moves the role after the CLI's first read still wins."""
+    _write_clean(
+        tmp_path,
+        [
+            {
+                "job_id": "aaaaaaaa",
+                "company": "Acme",
+                "title": "Widget FN",
+                "source": "",
+                "url": "",
+                "location": "",
+                "vertical": "example_primary",
+            }
+        ],
+    )
+    track_cli.main(["aaaaaaaa", "saved"])
+    track_cli.main(["aaaaaaaa", "applied"])
+    state_file = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
+    stale = {**yaml.safe_load(state_file.read_text(encoding="utf-8")), "state": "saved"}
+    monkeypatch.setattr(track_cli, "load_state", lambda _p: stale)
+    capsys.readouterr()
+    assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
+    assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "applied"
+    assert "left unchanged" in capsys.readouterr().out

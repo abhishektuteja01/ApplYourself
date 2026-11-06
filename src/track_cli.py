@@ -43,6 +43,7 @@ from src.state_io import (
     ACTIVE_STATES,
     CLOSED_STATES,
     VALID_STATES,
+    NotInState,
     append_outreach_draft,
     ensure_state,
     load_all_states,
@@ -118,16 +119,17 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    if args.if_state is not None:
-        current = (existing or {}).get("state")
-        if current != args.if_state:
-            print(
-                f"OK: {job_id} is {current or 'untracked'}, not {args.if_state} -- left unchanged"
-            )
-            return 0
-    initial = None if existing is not None else _gather_initial_fields(job_id)
+    # --if never creates a role, so it needs no initial fields.
+    initial = (
+        None
+        if existing is not None or args.if_state is not None
+        else _gather_initial_fields(job_id)
+    )
     try:
-        data = transition(p, new_state, note=note, initial_fields=initial)
+        data = transition(p, new_state, note=note, initial_fields=initial, if_state=args.if_state)
+    except NotInState as e:
+        print(f"OK: {job_id} is {e.current or 'untracked'}, not {args.if_state} -- left unchanged")
+        return 0
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

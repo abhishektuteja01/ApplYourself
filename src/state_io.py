@@ -181,6 +181,14 @@ def _now_iso(now: datetime | None = None) -> str:
 # ---------------------------------------------------------------
 
 
+class NotInState(ValueError):
+    """transition(if_state=S) found the role in another state; nothing written."""
+
+    def __init__(self, current: str | None) -> None:
+        super().__init__(current)
+        self.current = current
+
+
 def transition(
     state_path: Path,
     new_state: str,
@@ -188,8 +196,12 @@ def transition(
     note: str | None = None,
     now: datetime | None = None,
     initial_fields: dict[str, Any] | None = None,
+    if_state: str | None = None,
 ) -> dict[str, Any]:
     """Transition the role at state_path to new_state.
+
+    if_state: move only when the role is in that state, checked under the
+    lock; otherwise raise NotInState and write nothing.
 
     If state.yaml does NOT exist (or is empty): creates it. Requires initial_fields to
     contain at minimum {job_id, company, title}; optional keys
@@ -209,15 +221,13 @@ def transition(
     if new_state not in VALID_STATES:
         raise ValueError(f"unknown state {new_state!r}; valid: {sorted(VALID_STATES)}")
     now_iso = _now_iso(now)
-    return _written(
-        state_path,
-        update(
-            state_path,
-            lambda existing: _transitioned(
-                state_path, existing, new_state, note, now_iso, initial_fields
-            ),
-        ),
-    )
+
+    def step(existing: State | None) -> State:
+        if if_state is not None and (existing or {}).get("state") != if_state:
+            raise NotInState((existing or {}).get("state"))
+        return _transitioned(state_path, existing, new_state, note, now_iso, initial_fields)
+
+    return _written(state_path, update(state_path, step))
 
 
 def _transitioned(
