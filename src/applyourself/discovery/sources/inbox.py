@@ -60,7 +60,7 @@ def parse_clip(path: Path) -> dict | None:
         salary_currency=meta.get("salary_currency") or "",
         employment_type=meta.get("employment_type") or "",
         seniority_raw=meta.get("seniority") or "",
-        vertical=meta.get("vertical") or title_gate.classify_vertical_from_title(title),
+        vertical=meta.get("vertical") or title_gate.lane_for(title).lane,
     )
 
 

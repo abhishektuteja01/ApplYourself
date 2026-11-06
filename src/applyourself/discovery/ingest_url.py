@@ -131,7 +131,7 @@ def ingest(
             f"Paste the JD into inbox/ as a manual clip instead."
         )
     vcfg = verticals.get_config()
-    lane = vertical or title_gate.classify_vertical_from_title(row["title"])
+    lane = vertical or title_gate.lane_for(row["title"]).lane
     if lane not in vcfg.verticals:
         names = sorted(vcfg.verticals)
         raise IngestError(
