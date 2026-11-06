@@ -29,8 +29,8 @@ states`, `/standup`, the status sheet and the night summary.
 
 History is `pipeline/events.jsonl`, one append-only line per change (`v, ts,
 job_id, kind, from, to, note, forced, data`; kinds `created`, `transition`,
-`tailored_dir`, `outreach_drafted`, `outreach_sent`, `cleaned`, and
-`imported` from the migration). Each `state.yaml` is a cache of its role's
+`tailored_dir`, `outreach_drafted`, `outreach_sent`, `cleaned`,
+`fields_dropped`, and `imported` from the migration). Each `state.yaml` is a cache of its role's
 fold (`state_io.apply_event`), rewritten under the role's lock right after
 the event is appended with fsync; readers keep reading `state.yaml`. A write
 to a role whose `state.yaml` is gone rebuilds it from the log first, and
@@ -39,6 +39,11 @@ Until `uv run track migrate-events --apply` creates the log, writes update
 `state.yaml` alone. The migration turns every `state_history` into events and
 restores the submit ledger's sent roles that have no `state.yaml`; `--dry-run`
 exits 1 if the fold differs from any file.
+
+A state.yaml holds no score: readers join `score_store.view()` on `job_id`
+(`track states` does). `uv run track drop-score-copies --dry-run|--apply`
+removes the old `fit_score` / `sponsorship_label` copies, one
+`fields_dropped` event per role.
 
 R10: `src/track_cli.py` is the only module that appends state events
 (`created`, `transition`, through `state_io.transition` or `ensure_state`);

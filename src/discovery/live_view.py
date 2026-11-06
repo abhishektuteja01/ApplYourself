@@ -161,6 +161,7 @@ def build_view(
     funnel["jobs"] = len(view)
 
     first_seen = df.groupby("job_id")["first_seen"].min()
+    # last_score: a frozen legacy copy, read only for a job scored.parquet no longer holds.
     remembered = df.groupby("job_id")["last_score"].max()
     lifetimes = []
     for row in cast(list[dict[str, Any]], view.to_dict("records")):
@@ -220,15 +221,15 @@ def write_view(view: pd.DataFrame, path: Path | None = None) -> None:
 
 
 def rebuild_view(cfg, p, today, state_index: dict) -> tuple[dict, dict]:
-    """Refresh remembered scores, forget long-gone postings, then write
-    clean.parquet. Returns (store stats, view funnel)."""
+    """Forget long-gone postings, then write clean.parquet. Returns (store
+    stats, view funnel)."""
     from src.shared.location.allowlist import Allowlist
 
     tracked = frozenset(state_index)
-    scores = read_scores(p.scored)
     with locked(p.store):
-        store = store_mod.remember_scores(store_mod.load_store(p.store), scores)
-        store, forgotten = store_mod.forget(store, today, cfg.forget_after_days, tracked)
+        store, forgotten = store_mod.forget(
+            store_mod.load_store(p.store), today, cfg.forget_after_days, tracked
+        )
         store_mod.save_store(store, p.store)
     inp = inputs_from(cfg, today, state_index, p.scored)
     view, funnel = build_view(store, Allowlist(cfg), inp)

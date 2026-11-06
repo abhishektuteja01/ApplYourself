@@ -147,9 +147,10 @@ _FIELD_DEFAULTS: dict[str, Any] = {
     "url": "",
     "location": "",
     "vertical": "",
-    "sponsorship_label": "unknown",
-    "fit_score": None,
 }
+
+# Old copies of the score; scored.parquet holds it. Kept only until `fields_dropped`.
+SCORE_COPIES = ("sponsorship_label", "fit_score")
 
 
 def update(
@@ -265,6 +266,7 @@ def apply_event(data: State | None, ev: Event) -> State:
         return {
             "job_id": ev["job_id"],
             **{k: payload.get(k, default) for k, default in _FIELD_DEFAULTS.items()},
+            **{k: payload[k] for k in SCORE_COPIES if k in payload},
             "state": to,
             "state_history": [{"state": to, "at": ts, "note": ev.get("note") or ""}],
             "applied_at": ts if to == "applied" else None,
@@ -303,6 +305,8 @@ def apply_event(data: State | None, ev: Event) -> State:
         data["cleaned"] = payload["cleaned"]
     elif kind == "imported":
         data.update(payload)
+    elif kind == "fields_dropped":
+        data = {k: v for k, v in data.items() if k not in payload["keys"]}
     else:
         raise ValueError(f"{ev['job_id']}: unknown event kind {kind!r}")
     return data
@@ -431,8 +435,7 @@ def transition(
 
     If state.yaml does NOT exist (or is empty): creates it. Requires initial_fields to
     contain at minimum {job_id, company, title}; optional keys
-    {source, url, location, vertical, sponsorship_label, fit_score}
-    populate the template fields. `vertical` is set once at
+    {source, url, location, vertical} populate the template fields. `vertical` is set once at
     creation and never reclassified on later transitions.
 
     If state.yaml exists:
@@ -665,6 +668,19 @@ def mark_cleaned(
     return _commit(state_path, mark)
 
 
+def drop_score_copies(state_path: Path, *, now: datetime | None = None) -> State | None:
+    """Remove the old SCORE_COPIES keys (track drop-score-copies); None for an
+    untracked role. Never a transition."""
+
+    def drop(data: dict[str, Any] | None) -> Event | None:
+        keys = [k for k in SCORE_COPIES if data is not None and k in data]
+        if data is None or not keys:
+            return None
+        return _event(data["job_id"], "fields_dropped", _now_iso(now), data={"keys": keys})
+
+    return _commit(state_path, drop)
+
+
 # ---------------------------------------------------------------
 # The migration and the rebuild (track migrate-events / rebuild-states)
 # ---------------------------------------------------------------
@@ -685,6 +701,7 @@ def events_from_record(record: State) -> list[Event]:
         history[0] if history else {"state": record.get("state"), "at": record.get("last_touch")}
     )
     fields = {k: record.get(k, d) for k, d in _FIELD_DEFAULTS.items()}
+    fields.update({k: record[k] for k in SCORE_COPIES if k in record})
     events = [
         _event(
             job_id,
@@ -709,7 +726,15 @@ def events_from_record(record: State) -> list[Event]:
             )
         )
         prev = e.get("state")
-    skip = {"schema_version", "job_id", "state", "state_history", "cover_letters", *_FIELD_DEFAULTS}
+    skip = {
+        "schema_version",
+        "job_id",
+        "state",
+        "state_history",
+        "cover_letters",
+        *_FIELD_DEFAULTS,
+        *SCORE_COPIES,
+    }
     side = {k: v for k, v in record.items() if k not in skip}
     events.append(
         _event(

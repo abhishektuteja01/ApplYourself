@@ -367,16 +367,6 @@ def append_maybe_duplicates(rows: list[dict], path: Path | None = None) -> list[
     return new
 
 
-def remember_scores(store: pd.DataFrame, scores: dict[str, float]) -> pd.DataFrame:
-    """Copy each job's current fit_score onto its postings. /score deletes the
-    score of a job that leaves the view, so the store is what remembers it,
-    and what keeps an expired low scorer from coming back to be judged again."""
-    fresh = store["job_id"].map(scores)
-    store = store.copy()
-    store["last_score"] = pd.to_numeric(fresh, errors="coerce").combine_first(store["last_score"])
-    return store
-
-
 def forget(
     store: pd.DataFrame, today: pd.Timestamp, forget_after_days: int, tracked: frozenset[str]
 ) -> tuple[pd.DataFrame, int]:

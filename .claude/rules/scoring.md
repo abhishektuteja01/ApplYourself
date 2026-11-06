@@ -27,7 +27,7 @@ Three steps, one owner per rule:
    keywords, a short reason, and an optional action that may only lower it.
 3. `score finish` (Python): checks each answer against its slice, derives the
    sponsorship label, caps, tags, total and action, merges (with the raw
-   answer in `judge_answer`), prunes, and writes the shortlist.
+   answer in `judge_answer`), and writes the shortlist.
 
 Every reader of scored.parquet goes through `score_store.view()`: it derives
 each judged row again from `judge_answer` under today's rules, keeps an older
@@ -47,9 +47,9 @@ no hash (legacy) is never stale, and a plain `score start` re-judges nothing.
 `scripts/drop_filter_rows.py --dry-run|--apply` removes the old `filter:*`
 rows once; the next `/score` then re-checks those roles.
 
-Prune keeps every row still in `clean.parquet` or in an active
-`state.yaml`, and discovery's view always includes active roles, so a
-tracked role never loses its score.
+scored.parquet is never pruned: a score outlives its role's place in the
+view, so a role that comes back is not judged again. Only a role today's hard
+rules drop loses its score.
 
 Note: `shortlist.py` imports `apply/detect.py`, which pulls the ATS parsers
 into the scoring path at import time.

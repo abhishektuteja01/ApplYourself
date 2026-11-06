@@ -418,3 +418,35 @@ def test_migrate_events_refuses_on_a_mismatch(tmp_path, capsys):
     assert track_cli.main(["migrate-events", "--apply"]) == 1
     assert "MISMATCH: bbbbbbbb  state" in capsys.readouterr().err
     assert not (pipe / "events.jsonl").exists()
+
+
+def test_score_copies_are_joined_then_dropped_through_the_log(tmp_path, capsys):
+    """An old state.yaml's fit_score copy is shown from scored.parquet, folds
+    the same after the migration, and drop-score-copies removes it by event."""
+    import json
+
+    from src import state_io
+    from tests.factories import scored_rows, state_record
+
+    pipe = tmp_path / "pipeline"
+    old = {**state_record("saved"), "sponsorship_label": "opt_ok", "fit_score": 60}
+    p = state_io.state_path_for(pipe, "aaaaaaaa")
+    p.parent.mkdir(parents=True)
+    p.write_text(yaml.safe_dump(old, sort_keys=False), encoding="utf-8")
+    scored_rows({"job_id": "aaaaaaaa", "fit_score": 88.0}).to_parquet(tmp_path / "scored.parquet")
+    assert track_cli.main(["migrate-events", "--apply"]) == 0
+    assert state_io.rebuild_states(pipe, apply=False) == []
+    capsys.readouterr()
+
+    assert track_cli.main(["states"]) == 0
+    (row,) = json.loads(capsys.readouterr().out)["states"]
+    assert row["fit_score"] == 88
+
+    assert track_cli.main(["drop-score-copies", "--dry-run"]) == 0
+    assert "would drop the score copies from 1 of 1" in capsys.readouterr().out
+    assert yaml.safe_load(p.read_text(encoding="utf-8"))["fit_score"] == 60
+    assert track_cli.main(["drop-score-copies", "--apply"]) == 0
+    left = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert "fit_score" not in left and "sponsorship_label" not in left
+    assert state_io.read_events(pipe / "events.jsonl")[-1]["kind"] == "fields_dropped"
+    assert state_io.rebuild_states(pipe, apply=False) == []

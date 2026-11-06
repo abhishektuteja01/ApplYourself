@@ -127,10 +127,8 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
     (name,) = score_store.load_run(staging)["slices"]
     shutil.copy(SESSIONS / "judge_answer.json", staging / f"out_{name}.json")
     done = score_store.finish(
-        clean,
         scored,
         staging,
-        paths.PIPELINE,
         scfg,
         CountryRule(home=frozenset({"us"}), abroad={}),
         now=NOW,

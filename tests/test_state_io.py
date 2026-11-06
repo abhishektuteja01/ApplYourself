@@ -112,7 +112,7 @@ def test_transition_creates_state_yaml_when_missing(tmp_path):
     assert data["outreach"] == []
     assert data["applied_at"] is None
     assert data["company"] == "Acme"
-    assert data["fit_score"] == 75
+    assert "fit_score" not in data and "sponsorship_label" not in data
     assert data["vertical"] == "example_primary"
 
 

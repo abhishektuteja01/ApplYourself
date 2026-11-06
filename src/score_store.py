@@ -43,7 +43,7 @@ from src.score_filter import (
 )
 from src.shared import clock, paths, verticals
 from src.shared.parquet_io import locked, write_parquet
-from src.state_io import ACTIVE_STATES, load_state_index
+from src.state_io import load_state_index
 
 SCORED_COLUMNS: list[str] = [
     "job_id",
@@ -161,22 +161,6 @@ def merge_rows(scored_path: Path, rows: list[dict[str, Any]]) -> int:
         out = pd.concat([old, new], ignore_index=True) if len(old) else new
         write_parquet(out.drop_duplicates("job_id", keep="last"), scored_path)
     return len(rows)
-
-
-def prune(scored_path: Path, clean_path: Path, pipeline_dir: Path) -> int:
-    """Drop scored rows neither in clean.parquet nor in an active state.yaml."""
-    if not scored_path.exists():
-        return 0
-    keep = set(pd.read_parquet(clean_path, columns=["job_id"])["job_id"])
-    keep |= {
-        j for j, d in load_state_index(pipeline_dir).items() if d.get("state") in ACTIVE_STATES
-    }
-    with locked(scored_path):
-        scored = pd.read_parquet(scored_path)
-        mask = scored["job_id"].isin(keep)
-        if (~mask).any():
-            write_parquet(scored[mask], scored_path)
-    return int((~mask).sum())
 
 
 def _row(
@@ -666,22 +650,19 @@ def derive(
 
 
 def finish(
-    clean_path: Path,
     scored_path: Path,
     staging: Path,
-    pipeline_dir: Path,
     cfg: ScoringConfig,
     rule: CountryRule,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Merge every answered, valid slice. Returns {"merged", "pruned",
+    """Merge every answered, valid slice. Returns {"merged",
     "bad": {slice: [errors]}, "lines": judge lines still owed,
     "years_gaps": [(job_id, regex years, judge years)] that differ by YEARS_GAP_LOG+}."""
     run = load_run(staging)
     if run is None:
         return {
             "merged": 0,
-            "pruned": prune(scored_path, clean_path, pipeline_dir),
             "bad": {},
             "lines": [],
             "years_gaps": [],
@@ -731,7 +712,6 @@ def finish(
             f.unlink()
     return {
         "merged": merged,
-        "pruned": prune(scored_path, clean_path, pipeline_dir),
         "bad": bad,
         "lines": judge_lines(run, staging) if run["slices"] else [],
         "years_gaps": gaps,

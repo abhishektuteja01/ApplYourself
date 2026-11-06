@@ -63,8 +63,8 @@ Writes go through `store.flush` / `live_view.write_view`, under `parquet_io.lock
 store is saved before board state, so a board is never marked checked while
 its postings are missing.
 
-`last_score` remembers a job's fit_score after `/score` prunes it; without it an
-expired low scorer comes back unscored and is judged again.
+`last_score` is a frozen legacy copy from when `/score` pruned: nothing writes
+it, and retention reads it only for a job scored.parquet does not hold.
 
 ## The live view (`live_view.py`)
 

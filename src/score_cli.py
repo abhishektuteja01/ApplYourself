@@ -10,7 +10,7 @@ start [--all | --stale-only [--yes]] [--vertical V] [--job-id ID ...]
     `dropped_<code>=n` counts every drop, `filtered_<code>=n` only those
     the latest discovery run saw first (what the night summary shows).
 finish
-    Merge every answered slice, prune, write the shortlist. Exit 1 with the
+    Merge every answered slice, write the shortlist. Exit 1 with the
     `judge ...` lines still owed when a slice is missing or malformed.
 show <job_id>
     One role's score as every reader sees it. Read-only. Exit 1 when the
@@ -91,8 +91,8 @@ def _cmd_start(args: argparse.Namespace) -> int:
 def _cmd_finish(args: argparse.Namespace) -> int:
     cfg = load_scoring()
     rule = CountryRule.from_discovery(load_config())
-    res = score_store.finish(CLEAN, SCORED, STAGING, paths.PIPELINE, cfg, rule)
-    print(f"merged={res['merged']} pruned={res['pruned']} {_shortlist(cfg)}")
+    res = score_store.finish(SCORED, STAGING, cfg, rule)
+    print(f"merged={res['merged']} {_shortlist(cfg)}")
     for job_id, regex, judge in res["years_gaps"]:
         print(f"years_gap {job_id} regex={regex} judge={judge}")
     for name, errs in res["bad"].items():
@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         help="only these rows (repeatable); skips every drop except no-lane (/ingest)",
     )
     p.set_defaults(func=_cmd_start)
-    sub.add_parser("finish", help="check, merge, prune, write the shortlist").set_defaults(
+    sub.add_parser("finish", help="check, merge, write the shortlist").set_defaults(
         func=_cmd_finish
     )
     p = sub.add_parser("show", help="one role's score, read-only")

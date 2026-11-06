@@ -56,8 +56,9 @@ For each row, compute the columns:
 - `vertical`        (a vertical name configured in `profile/verticals.yaml`,
                      or `?` if empty/missing -- legacy rows predating the
                      vertical column)
-- `fit`             (`fit_score` int, or `?` if null)
-- `spons`           (sponsorship_label)
+- `fit`             (`fit_score` int, or `?` if null; `track states` joins it
+                     from scored.parquet)
+- `spons`           (sponsorship_label, joined the same way)
 - `last_touch`      (date only -- `YYYY-MM-DD` slice of the ISO timestamp)
 - `dir`             (**last** entry of `tailored_dirs[]`, or empty string --
                      the newest version, matching /cover-letter and /outreach;

@@ -86,9 +86,7 @@ def _start(env, scfg, **kw):
 
 
 def _finish(env, scfg):
-    return score_store.finish(
-        env["clean"], env["scored"], env["staging"], env["pipeline"], scfg, RULE, now=NOW
-    )
+    return score_store.finish(env["scored"], env["staging"], scfg, RULE, now=NOW)
 
 
 def _scored(env):
@@ -562,8 +560,8 @@ class TestFactsDriveTheRules:
         assert row["sponsorship_label"] == "opt_ok" and row["suggested_action"] == "tailor"
 
 
-class TestPrune:
-    def test_keeps_active_roles_only(self, env, scfg):
+class TestNeverPrune:
+    def test_finish_keeps_scores_of_roles_that_left_the_view(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         rows = [
             score_store._row(
@@ -572,10 +570,9 @@ class TestPrune:
             for j in ("aaaaaaaa", "bbbbbbbb", "cccccccc")
         ]
         score_store.merge_rows(env["scored"], rows)
-        for jid, state in (("bbbbbbbb", "saved"), ("cccccccc", "skip")):
-            write_state(env["pipeline"], jid, state)
-        assert score_store.prune(env["scored"], env["clean"], env["pipeline"]) == 1
-        assert set(_scored(env).index) == {"aaaaaaaa", "bbbbbbbb"}
+        write_state(env["pipeline"], "cccccccc", "skip")
+        _finish(env, scfg)
+        assert set(_scored(env).index) == {"aaaaaaaa", "bbbbbbbb", "cccccccc"}
 
 
 class TestView:
@@ -635,7 +632,7 @@ class TestCli:
         )
         assert score_cli.main(["finish"]) == 0
         line = capsys.readouterr().out.strip()
-        assert line.startswith("merged=1 pruned=0 shortlist=") and line.endswith("keepers=1")
+        assert line.startswith("merged=1 shortlist=") and line.endswith("keepers=1")
         assert score_cli.main(["show", "aaaaaaaa"]) == 0
         out = capsys.readouterr().out.splitlines()
         assert out[0] == "fit_score=80 action=tailor sponsorship=unknown basis=judged"

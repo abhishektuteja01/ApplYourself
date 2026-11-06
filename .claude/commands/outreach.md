@@ -83,9 +83,8 @@ Parse `$ARGUMENTS` for:
   transport instead; it is not a reason and does not shape the lead-in.
 
 Read:
-- `pipeline/${JOB_ID}/state.yaml` (company, title, sponsorship_label,
-  fit_score, existing outreach[])
-- `uv run score show ${JOB_ID}` (reasoning, keywords) and the
+- `pipeline/${JOB_ID}/state.yaml` (company, title, existing outreach[])
+- `uv run score show ${JOB_ID}` (fit_score, sponsorship, reasoning, keywords) and the
   `jobs/clean.parquet` row (full JD body)
 - `<dir>/trace.md`, where `<dir>` is what `uv run app dir <job_id>` prints (so
   the outreach knows which bullets your resume leads with). An empty `dir`

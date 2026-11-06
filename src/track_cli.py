@@ -3,7 +3,7 @@
   <job_id> <state> [--note "..."] [--if S] [--force]
                               move a role along state_io.ALLOWED,
                               creating pipeline/<job_id>/state.yaml from
-                              clean/scored parquet on first transition.
+                              clean.parquet (else the store) on first transition.
                               --if S: only when the role is currently in
                               state S; otherwise a no-op, exit 0.
                               --force --note "why": a move ALLOWED does not list
@@ -14,8 +14,10 @@
                               flip the latest matching draft outreach[]
                               entry to sent
   states                      every state.yaml, with its shown_state (an old
-                              `applied` shows `ghosted`) and the active and
-                              closed state names, as JSON (read-only)
+                              `applied` shows `ghosted`), its fit_score and
+                              sponsorship_label from score_store.view(), and
+                              the active and closed state names, as JSON
+                              (read-only)
   ensure <job_id>             create state.yaml at `saved` if absent; no-op if
                               present. Bootstrap only, never a transition --
                               `app new` calls it so a re-tailor cannot rewind
@@ -23,6 +25,11 @@
   stamp-schema --dry-run|--apply [--pipeline DIR]
                               add schema_version to every state.yaml that
                               lacks it and drop the dead cover_letters key;
+                              --dry-run only counts. Never a transition.
+  drop-score-copies --dry-run|--apply [--pipeline DIR]
+                              remove the old fit_score / sponsorship_label
+                              copies from every state.yaml (a fields_dropped
+                              event each); scored.parquet holds the score.
                               --dry-run only counts. Never a transition.
   cleanup [--dry-run|--apply] [--pipeline DIR]
                               delete the folders of skip / withdrawn / rejected
@@ -59,9 +66,11 @@ from src.shared import paths
 from src.state_io import (
     ACTIVE_STATES,
     CLOSED_STATES,
+    SCORE_COPIES,
     VALID_STATES,
     NotInState,
     append_outreach_draft,
+    drop_score_copies,
     ensure_state,
     ghosted_after_days,
     load_all_states,
@@ -118,13 +127,6 @@ def _gather_initial_fields(job_id: str) -> dict[str, Any]:
         "location": str(row.get("location", "")),
         "vertical": str(row.get("vertical", "")),
     }
-    if SCORED.exists():
-        scored = pd.read_parquet(SCORED).set_index("job_id")
-        if job_id in scored.index:
-            srow = scored.loc[job_id]
-            initial["sponsorship_label"] = str(srow.get("sponsorship_label", "unknown"))
-            fs = srow.get("fit_score")
-            initial["fit_score"] = int(fs) if pd.notna(fs) else None
     return initial
 
 
@@ -278,6 +280,22 @@ def _cmd_outreach_draft(args: argparse.Namespace) -> int:
     return 0
 
 
+def _scores() -> dict[str, dict[str, Any]]:
+    """{job_id: {sponsorship_label, fit_score}} from score_store.view()."""
+    if not SCORED.exists():
+        return {}
+    from src.score_store import view
+
+    v = view(SCORED)
+    return {
+        str(r["job_id"]): {
+            "sponsorship_label": str(r["sponsorship_label"] or "unknown"),
+            "fit_score": int(r["fit_score"]) if pd.notna(r["fit_score"]) else None,
+        }
+        for r in v[["job_id", *SCORE_COPIES]].to_dict("records")
+    }
+
+
 def _cmd_states() -> int:
     def jsonable(d: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -286,9 +304,14 @@ def _cmd_states() -> int:
         }
 
     days = ghosted_after_days()
+    scores = _scores()
     out = {
         "states": [
-            {**jsonable(s), "shown_state": shown_state(s, days=days)}
+            {
+                **{k: v for k, v in jsonable(s).items() if k not in SCORE_COPIES},
+                **scores.get(str(s.get("job_id")), dict.fromkeys(SCORE_COPIES)),
+                "shown_state": shown_state(s, days=days),
+            }
             for s in load_all_states(paths.PIPELINE)
         ],
         "ghosted_after_days": days,
@@ -317,6 +340,27 @@ def _cmd_stamp_schema(args: argparse.Namespace) -> int:
         else:
             todo += 1
     verb = "stamped" if args.apply else "would stamp"
+    print(f"OK: {verb} {todo} of {len(files)} state.yaml files  ({errors} unreadable)")
+    return 1 if errors else 0
+
+
+def _cmd_drop_score_copies(args: argparse.Namespace) -> int:
+    pipeline = args.pipeline or paths.PIPELINE
+    files = sorted(pipeline.glob("*/state.yaml"))
+    todo = errors = 0
+    for p in files:
+        try:
+            data = load_state(p)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            errors += 1
+            continue
+        if data is None or not any(k in data for k in SCORE_COPIES):
+            continue
+        todo += 1
+        if args.apply:
+            drop_score_copies(p)
+    verb = "dropped the score copies from" if args.apply else "would drop the score copies from"
     print(f"OK: {verb} {todo} of {len(files)} state.yaml files  ({errors} unreadable)")
     return 1 if errors else 0
 
@@ -356,7 +400,6 @@ def _backfill_fields(
     base = ["job_id", "company", "title", "source", "url", "vertical"]
     clean = rows(CLEAN, [*base, "location"])
     store = rows(STORE, [*base, "location_raw", "last_seen"])
-    scored = rows(SCORED, ["job_id", "sponsorship_label", "fit_score"])
     out = {}
     for job_id in job_ids:
         line = lines[job_id]
@@ -369,10 +412,6 @@ def _backfill_fields(
             "location": str(row.get("location") or row.get("location_raw") or ""),
             "vertical": str(row.get("vertical") or ""),
         }
-        if job_id in scored:
-            fields["sponsorship_label"] = str(scored[job_id].get("sponsorship_label") or "unknown")
-            fs = scored[job_id].get("fit_score")
-            fields["fit_score"] = int(fs) if pd.notna(fs) else None
         out[job_id] = fields
     return out
 
@@ -479,13 +518,15 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv[1:])
         return _cmd_ensure(args)
 
-    if argv and argv[0] == "stamp-schema":
-        parser = argparse.ArgumentParser(prog="track stamp-schema")
+    if argv and argv[0] in ("stamp-schema", "drop-score-copies"):
+        parser = argparse.ArgumentParser(prog=f"track {argv[0]}")
         mode = parser.add_mutually_exclusive_group(required=True)
         mode.add_argument("--dry-run", action="store_true")
         mode.add_argument("--apply", action="store_true")
         parser.add_argument("--pipeline", type=Path, default=None)
         args = parser.parse_args(argv[1:])
+        if argv[0] == "drop-score-copies":
+            return _cmd_drop_score_copies(args)
         return _cmd_stamp_schema(args)
 
     if argv and argv[0] == "cleanup":
