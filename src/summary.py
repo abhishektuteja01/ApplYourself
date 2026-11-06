@@ -56,6 +56,11 @@ CUES = {
         "sheet --list Submittable`; the sheet's column holds it). Only with the user's typed OK; one submit "
         "per company per run."
     ),
+    "apply_paths": (
+        "→ Manual / No apply URL: apply by hand (`uv run apply sheet --list 'Manual apply'`). "
+        "`uv run apply resolve-urls --dry-run` lists roles whose company has a board /apply drives; "
+        "`--apply` looks the title up there (network, only with the user's OK)."
+    ),
     "apply_expired": "→ Expired: `uv run track <id> skip`.",
     "apply_failed": "→ Failed: `uv run apply plan <id> --questions` shows what the form needs now.",
     "apply_unsent": "→ Unsent: the click fired no submit request or the board refused it; check the board by hand.",
@@ -553,6 +558,28 @@ def _answers(items: dict) -> list[str]:
     return lines
 
 
+def _apply_paths(rows: list[dict]) -> list[str]:
+    """Submittable / manual / no-URL counts over the roles with a resume, and
+    the commonest reasons, when any role cannot be submitted."""
+    manual, no_url = (
+        [r for r in rows if r["status"] == s] for s in ("Manual apply", "No apply URL")
+    )
+    if not manual and not no_url:
+        return []
+    can = [r for r in rows if r["status"] not in ("New", "Cleaned", "Manual apply", "No apply URL")]
+    why: dict[str, int] = {}
+    for r in manual + no_url:
+        why[r["note"]] = why.get(r["note"], 0) + 1
+    top = sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    return [
+        "",
+        f"Apply paths: {len(can)} can submit, {len(manual)} manual, {len(no_url)} no URL",
+        *[f"- {n}: {note}" for note, n in top],
+        "",
+        CUES["apply_paths"],
+    ]
+
+
 def _report_time(stem: str) -> datetime | None:
     try:
         return datetime.strptime(stem, "%Y-%m-%dT%H-%M-%S")  # noqa: DTZ007 - report stamps are local time
@@ -578,6 +605,7 @@ def apply_section(
     lines = ["Ready to submit: " + (", ".join(ready) if ready else "none")]
     if ready:
         lines += ["", CUES["ready"]]
+    lines += _apply_paths(rows)
 
     errors: dict[str, tuple[str, str]] = {}  # job -> (kind, why)
     errors.update({r["name"]: ("unsent", r["note"] or r["status"]) for r in of("Unsent")})

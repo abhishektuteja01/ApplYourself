@@ -26,6 +26,7 @@ _LAYOUT = {
     "JOBS_RAW": "jobs/raw",
     "JOBS_RUNS": "jobs/runs",
     "APPLY_TRIAGE": "jobs/apply_triage.json",
+    "APPLY_URLS": "jobs/apply_urls.json",
     "SYNONYM_PROPOSALS": "jobs/synonyms_proposals.yaml",
     "SYNONYM_LOG": "jobs/synonyms_log.jsonl",
     "SYNONYM_OPEN": "jobs/synonyms_open.yaml",
@@ -66,6 +67,7 @@ STAGING: Path
 JOBS_RAW: Path
 JOBS_RUNS: Path
 APPLY_TRIAGE: Path
+APPLY_URLS: Path
 SYNONYM_PROPOSALS: Path
 SYNONYM_LOG: Path
 SYNONYM_OPEN: Path

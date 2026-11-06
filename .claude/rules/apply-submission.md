@@ -122,6 +122,15 @@ every role scored at or above scoring.yaml `cutoffs.sheet` (`score_store.view`)
 that is in `clean.parquet`, whose state is not past `tailored` or closed, and
 whose status is not Applied or Closed; highest score first, then job_id. Each status, note and submit command comes from `state.yaml`, the ledger,
 the newest run record naming the role, and answers waiting for confirmation.
+Where a role is applied through is `apply_url.resolve()`, read by the sheet and
+`resolve_url` alike, with no network call: the `apply_url` stored in
+`jobs/apply_urls.json`, the clean.parquet and state.yaml urls, then a board link
+in the JD. A role with none ends `Manual apply` (a real posting on a board
+`/apply` cannot drive, or a careers page) or `No apply URL` (a LinkedIn or Indeed
+listing), the note saying why; the summary counts both. `apply resolve-urls
+--dry-run|--apply` is the only fetch: it looks the title up on the company's own
+Greenhouse, Lever or Ashby board from `boards.csv` and stores hit or miss. The
+night never runs it.
 `uv run apply sheet` rewrites `profile/automation.yaml`'s `table_path` from it
 (under a lock, tmp file then rename); `--list STATUS` prints the queue at a status
 (the night stages and triage read this); `--compare` prints how the xlsx differs

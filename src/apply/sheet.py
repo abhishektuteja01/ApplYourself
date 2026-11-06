@@ -7,7 +7,8 @@ above scoring.yaml `cutoffs.sheet` (`score_store.view`) that is in the live view
 is not Applied or Closed; highest score first, then job_id.
 Each row's `status`, `note` and `uv_run_command` come from the records that own
 the facts — `pipeline/<job_id>/state.yaml`, the submit ledger, the latest run
-record that names the role, and a role's waiting answers. `apply sheet --list`,
+record that names the role, and a role's waiting answers. Where a role is
+applied through, and why not, is `apply_url.resolve()`. `apply sheet --list`,
 triage and the night stages read `job_ids()`; `refresh()` rewrites the xlsx
 from `queue()` atomically, so the file is a view and nothing reads it as input.
 """
@@ -26,7 +27,7 @@ import yaml
 
 from src import state_io
 from src.app_cli import built_folder
-from src.apply import confirmation, cooldown, detect, ledger, run_record
+from src.apply import apply_url, confirmation, cooldown, ledger, run_record
 from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths
@@ -80,10 +81,12 @@ def status_for(
     outcome: tuple[str, str, str] | None,
     cool: date | None = None,
     days: int | None = None,
+    route: apply_url.Resolved | None = None,
 ) -> tuple[str, str, str]:
     """(status, note, uv_run_command) for one row. `cool`: the day the
     company cooldown ends, which shows in place of Submittable. `days`:
-    ghosted_after_days, read once by the caller."""
+    ghosted_after_days, read once by the caller. `route`: why an
+    unsubmittable role is Manual apply or No apply URL."""
     state = state or {}
     current = state_io.shown_state(state, days=days) if state else ""
     verdict = ledger.verdict_of(sent)
@@ -107,6 +110,8 @@ def status_for(
     if not state.get("tailored_dirs"):
         return "New", "", ""
     if not submittable:
+        if route is not None and route.status:
+            return route.status, route.reason, ""
         return "Manual apply", "no submit path for this board", ""
     waiting = _waiting(state, outcome[2] if outcome else "")
     if waiting:
@@ -141,6 +146,8 @@ class Snapshot:
     latest: dict
     live: dict[str, dict]
     ghost_days: int
+    jd_links: dict[str, str]
+    stored_urls: dict[str, dict]
     cool_days: int
 
 
@@ -148,11 +155,18 @@ def snapshot(outcomes: dict | None = None) -> Snapshot:
     runs = paths.APPLICATIONS / "apply_runs"
     ledger_path = runs / ledger.LEDGER_NAME
     live: dict[str, dict] = {}
+    links: dict[str, str] = {}
     if paths.CLEAN.exists():
         clean = pd.read_parquet(
-            paths.CLEAN, columns=["job_id", "company", "title", "source", "url"]
-        )
-        live = {str(r["job_id"]): r for r in clean.drop_duplicates("job_id").to_dict("records")}
+            paths.CLEAN, columns=["job_id", "company", "title", "source", "url", "jd_text"]
+        ).drop_duplicates("job_id")
+        links = {
+            str(j): link
+            for j, jd in zip(clean["job_id"], clean["jd_text"])
+            if (link := apply_url.jd_link(jd))
+        }
+        clean = clean.drop(columns=["jd_text"])
+        live = {str(r["job_id"]): r for r in clean.to_dict("records")}
     return Snapshot(
         states=state_io.load_state_index(paths.PIPELINE),
         ledger_path=ledger_path,
@@ -161,6 +175,8 @@ def snapshot(outcomes: dict | None = None) -> Snapshot:
         live=live,
         ghost_days=state_io.ghosted_after_days(),
         cool_days=cooldown.cooldown_days(),
+        jd_links=links,
+        stored_urls=apply_url.load(),
     )
 
 
@@ -216,20 +232,28 @@ def _form_url(state: dict | None) -> str:
         return ""
 
 
-def _row_status(job_id: str, snap: Snapshot) -> tuple[str, str, str]:
-    """A posting is submittable when its live-view or state.yaml URL is one
-    `apply run` can fill, the same two places `resolve_url` looks."""
+def route(job_id: str, snap: Snapshot) -> apply_url.Resolved:
+    """Where the role is applied through, from the same records
+    `resolve_url` reads: the stored apply_url, the live-view and state.yaml
+    URLs, then a board link in the JD."""
     state = snap.states.get(job_id)
     urls = ((snap.live.get(job_id) or {}).get("url"), (state or {}).get("url"))
+    return apply_url.resolve(urls, snap.jd_links.get(job_id, ""), snap.stored_urls.get(job_id))
+
+
+def _row_status(job_id: str, snap: Snapshot) -> tuple[str, str, str]:
+    state = snap.states.get(job_id)
     company = str((state or {}).get("company") or "")
+    path = route(job_id, snap)
     return status_for(
         job_id,
-        any(detect.is_auto_submittable(str(u or "")) for u in urls),
+        path.kind == apply_url.SUBMITTABLE,
         state,
         ledger.prior(snap.ledger_path, job_id, _form_url(state)),
         snap.outcomes.get(job_id),
         cooldown.until(company, snap.latest, days=snap.cool_days),
         days=snap.ghost_days,
+        route=path,
     )
 
 

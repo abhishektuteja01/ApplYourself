@@ -772,3 +772,17 @@ def test_a_score_usage_limit_gets_its_own_fix_line(tmp_path, monkeypatch):
     assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
     text = paths.SUMMARY.read_text(encoding="utf-8")
     assert M.CUES["score_limit"] in text and "stage exited 1" not in text
+
+
+def test_apply_section_counts_the_roles_it_cannot_submit():
+    rows = [
+        _row("a1", "Resume ready"),
+        _row("b2", "Manual apply", "workday posting; /apply has no driver for it"),
+        _row("c3", "No apply URL", "linkedin listing; the employer's posting is unknown"),
+        _row("d4", "No apply URL", "linkedin listing; the employer's posting is unknown"),
+    ]
+    out = M.apply_section(rows, _items(), {})
+    assert "Apply paths: 1 can submit, 1 manual, 2 no URL" in out
+    assert out.index("- 2: linkedin listing; the employer's posting is unknown") < out.index(
+        "- 1: workday posting; /apply has no driver for it"
+    )

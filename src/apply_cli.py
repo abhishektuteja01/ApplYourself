@@ -34,6 +34,11 @@ sheet [--add | --list STATUS]
                       state.yaml, the ledger and the run records; --add first
                       appends newly scored roles; --list prints the job_ids
                       at one status and writes nothing.
+resolve-urls (--dry-run | --apply) [--limit N]
+                      for Manual apply / No apply URL roles whose company has a
+                      Greenhouse, Lever or Ashby board in boards.csv, look for
+                      the title there. --dry-run lists them with no network
+                      call; --apply fetches and stores jobs/apply_urls.json.
 """
 
 from __future__ import annotations
@@ -54,7 +59,17 @@ import pandas as pd
 import yaml
 
 from src import app_cli, state_io, track_cli
-from src.apply import ashby, bank, confirmation, cooldown, greenhouse, ledger, lever, run_record
+from src.apply import (
+    apply_url,
+    ashby,
+    bank,
+    confirmation,
+    cooldown,
+    greenhouse,
+    ledger,
+    lever,
+    run_record,
+)
 from src.apply.answers import (
     EXAMPLE_NAME,
     FACT_WORDING_FACTS,
@@ -74,7 +89,7 @@ from src.apply.answers import (
 from src.apply.detect import (
     SUBMITTABLE_ATS,
     detect_ats,
-    is_auto_submittable,
+    is_auto_submittable,  # noqa: F401 - re-exported
 )
 from src.apply.domscan import DomScanError
 from src.apply.fill import (
@@ -121,21 +136,19 @@ class ManualApplyOnly(ApplyCliError):
 
 
 def resolve_url(job_id: str, state: dict | None) -> str:
-    """The posting URL to apply through.
-
-    clean.parquet and state.yaml disagree often enough to matter — dedupe now
-    prefers an applyable url, so clean is usually the better one, but a role can
-    also drop out of the 14-day window entirely, and one live role has an
-    Avature url in state and a LinkedIn one in clean. So: take whichever of the
-    two is a posting this module can parse, clean first, and report both when
-    neither is.
+    """The posting URL to apply through: `apply_url.resolve` over the stored
+    apply_url, clean.parquet's url, state.yaml's url and a board link in the
+    JD, so the sheet and the run agree. ManualApplyOnly names why when none
+    is a board /apply submits to.
     """
     candidates: list[tuple[str, str]] = []
+    jd = ""
     if paths.CLEAN.exists():
-        clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "url"])
+        clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "url", "jd_text"])
         row = clean.loc[clean["job_id"] == job_id]
         if not row.empty:
             candidates.append(("clean.parquet", str(row.iloc[0]["url"] or "")))
+            jd = str(row.iloc[0]["jd_text"] or "")
     if state:
         candidates.append(("state.yaml", str(state.get("url") or "")))
 
@@ -143,16 +156,14 @@ def resolve_url(job_id: str, state: dict | None) -> str:
         raise ApplyCliError(
             f"{job_id} is in neither clean.parquet nor pipeline/{job_id}/state.yaml"
         )
-    for _, url in candidates:
-        # submittable, not merely recognized: Workday parses cleanly and is
-        # still manual-apply.
-        if is_auto_submittable(url):
-            return url
+    found = apply_url.resolve([u for _, u in candidates], jd, apply_url.load().get(job_id))
+    if found.kind == apply_url.SUBMITTABLE:
+        return found.url
 
     seen = "; ".join(f"{where}: {url or '(empty)'}" for where, url in candidates)
     raise ManualApplyOnly(
         f"{job_id} has no Greenhouse, Lever or Ashby posting URL to apply through "
-        f"({seen}). Not one of the boards /apply submits to — apply by hand."
+        f"({seen}; {found.reason}). Not one of the boards /apply submits to — apply by hand."
     )
 
 
@@ -874,6 +885,38 @@ def _cmd_sheet(args: argparse.Namespace) -> int:
         return 1
     print(" · ".join(f"{status} {n}" for status, n in sorted(counts.items())))
     return 0
+
+
+def _cmd_resolve_urls(args: argparse.Namespace) -> int:
+    """The opt-in network step of the apply-URL resolver; nothing else fetches."""
+    from src.apply import sheet
+    from src.discovery.sources.boards.base import load_boards
+
+    stored = apply_url.load()
+    by_company = apply_url.boards_by_company(load_boards())
+    todo = [
+        r
+        for r in sheet.queue()
+        if r["status"] in apply_url.STATUS.values()
+        and r["name"] not in stored
+        and normalize_company(r["company"]) in by_company
+    ][: args.limit]
+    for r in todo:
+        boards = by_company[normalize_company(r["company"])]
+        print(f"{r['name']}  {r['company']} — {r['title']}  -> {', '.join(b.key for b in boards)}")
+    if args.dry_run or not todo:
+        print(
+            f"{len(todo)} role(s) to look up{' (dry run, no network call)' if args.dry_run else ''}"
+        )
+        return 0
+    rows = [{"job_id": r["name"], "company": r["company"], "title": r["title"]} for r in todo]
+    found, errors = apply_url.find_on_boards(rows, by_company)
+    apply_url.save(found)
+    for e in errors:
+        print(f"ERROR: {e}", file=sys.stderr)
+    hits = sum(1 for v in found.values() if v["apply_url"])
+    print(f"found {hits} of {len(todo)}; stored {len(found)} in {paths.APPLY_URLS}")
+    return 1 if errors else 0
 
 
 def _sheet_compare(got: dict[str, list[str]]) -> int:
@@ -2067,6 +2110,17 @@ def main(argv: list[str] | None = None) -> int:
         help="print how the sheet as it stands differs from the queue; writes nothing",
     )
     sh.set_defaults(func=_cmd_sheet)
+
+    ru = sub.add_parser(
+        "resolve-urls", help="look for Manual apply / No apply URL roles on the company's own board"
+    )
+    mode = ru.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="list the lookups; no network call")
+    mode.add_argument(
+        "--apply", action="store_true", help="fetch the boards and store what matches"
+    )
+    ru.add_argument("--limit", type=int, default=None)
+    ru.set_defaults(func=_cmd_resolve_urls)
 
     lrn = sub.add_parser("learn", help="review or undo what the answer bank holds")
     lrn.add_argument("--job", default=None, help="only questions this job taught")

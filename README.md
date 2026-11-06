@@ -32,7 +32,9 @@ the default fills and stops, and only `apply run --submit` presses submit. It
 lists the roles first and asks you to type a confirmation, unless `--yes` is
 passed. Submission works on **Greenhouse, Lever and Ashby only**. Workday,
 LinkedIn, Indeed and company careers pages are always manual-apply. They get
-discovered and scored like anything else, and never submitted to.
+discovered and scored like anything else, and never submitted to. For an
+aggregator listing the queue uses a board link in the JD, or one that
+`apply resolve-urls --apply` (opt-in, network) found on the company's own board.
 
 > **Two things to know before you use `--submit`.**
 >
@@ -694,6 +696,7 @@ lies to you differently.
 | `plan.py` | Form plus answers to an ordered fill plan. The whole contract with the browser. |
 | `fill.py` | Executes the plan and makes the one guarded submit click. Config always wins; a react-select that didn't stick is a failure, not a warning. |
 | `ledger.py` | `submitted.jsonl`, the submit ledger: one line per click, read before any click. |
+| `apply_url.py` | Where a role is applied through: submittable, manual or no URL, with the reason, from stored data; `apply resolve-urls` is its one network step. |
 | `sheet.py` | The work queue, computed from the records that own each fact, and the overnight status sheet that renders it. |
 | `browser.py` | The only module that names Playwright's driver, and it defers the import into a function so a clone without `--group apply` still works. |
 
