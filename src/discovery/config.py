@@ -440,12 +440,15 @@ def _countries(cfg: DiscoveryConfig, p: Path, allow: dict) -> DiscoveryConfig:
 
 
 def _keep_long(cfg: DiscoveryConfig) -> DiscoveryConfig:
-    """Retention's score cutoff is scoring.yaml `cutoffs.keep_long`. With no
-    scoring.yaml nothing is scored yet, so the default stands."""
+    """Retention's score cutoff is scoring.yaml `cutoffs.keep_long`, and only that."""
     from src import score_filter
 
-    if paths.SCORING.exists():
-        cfg.retention_score_threshold = float(score_filter.load_cutoffs().keep_long)
+    if not paths.SCORING.exists():
+        raise FileNotFoundError(
+            f"{paths.SCORING} not found (retention reads cutoffs.keep_long) — copy "
+            "profile/scoring.example.yaml to profile/scoring.yaml (/onboarding does this)"
+        )
+    cfg.retention_score_threshold = float(score_filter.load_cutoffs().keep_long)
     return cfg
 
 

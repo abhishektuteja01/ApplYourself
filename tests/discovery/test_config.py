@@ -230,3 +230,9 @@ def test_linkedin_companies_are_read(tmp_path):
         {"sources": {"linkedin": {"companies": {"terms": ["widget"], "ids": {"Acme": 123}}}}},
     ).sources["linkedin"]
     assert (li.company_terms, li.company_ids) == (["widget"], {"Acme": 123})
+
+
+def test_no_scoring_yaml_fails_naming_it_instead_of_a_default_cutoff(tmp_path, monkeypatch):
+    monkeypatch.setitem(paths._overrides, "SCORING", tmp_path / "scoring.yaml")
+    with pytest.raises(FileNotFoundError, match=r"scoring\.yaml not found"):
+        C.load_config(tmp_path / "nope.yaml")
