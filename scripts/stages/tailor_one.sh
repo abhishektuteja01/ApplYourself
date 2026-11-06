@@ -28,7 +28,7 @@ sys.exit(0 if ok else 1)
 PY
 }
 
-RETRIES="$(cfg retries)" || exit 2
+RETRIES="$(cfg retries)" || { echo "$ID fail" >> "$RUN_DIR/tailor_results.txt"; exit 2; }
 if [[ "$DRY_RUN" == 1 ]]; then
   run_claude "$ID" "$TOOLS" "/tailor $ID"
   echo "[dry-run] check build + PDF; docx without PDF: uv run app build resume $ID, else /tailor; retry up to $RETRIES"
