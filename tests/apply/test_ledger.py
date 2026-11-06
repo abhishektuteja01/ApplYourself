@@ -84,3 +84,12 @@ def test_lever_eu_and_global_hosts_are_one_posting(tmp_path):
     path = tmp_path / "submitted.jsonl"
     ledger.append(path, "aaaa1111", "accepted", form_url="https://jobs.eu.lever.co/acme/123")
     assert ledger.prior(path, "bbbb2222", "https://jobs.lever.co/acme/123")
+
+
+def test_claim_rechecks_under_the_lock_and_appends_only_when_clear(tmp_path):
+    path = tmp_path / "submitted.jsonl"
+    assert ledger.claim(path, "aaaa1111", "clicking", company="Acme") == ""
+    # A second run that passed its early check finds the first run's line.
+    assert "already sent" in ledger.claim(path, "aaaa1111", "clicking")
+    assert ledger.claim(path, "bbbb2222", "clicking", held=lambda recs: "cooldown") == "cooldown"
+    assert [r["job_id"] for r in ledger.records(path)] == ["aaaa1111"]

@@ -110,7 +110,8 @@ uv run pytest tests -q                # must be fully green after any src/ or fi
 - `apply run` fills, and clicks only with `--submit`. `--submit` needs `--limit` (unless
   `--job-id`) and a typed confirmation unless `--yes`; it never clicks a role in
   `apply_runs/submitted.jsonl` unless its latest line is `refused`. `--rate` floors at 30s,
-  one submit per company per run.
+  one submit per company per run, and none to a company applied to within
+  `company_cooldown_days` (`--job-id` bypasses it).
 
 The user-facing workflow is the slash commands in `.claude/commands/*.md`. The judge is a
 subagent, not a command: `.claude/agents/score-judge.md`, spawned by `/score` and `/ingest`,

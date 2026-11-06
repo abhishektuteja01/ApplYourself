@@ -53,7 +53,7 @@ import pandas as pd
 import yaml
 
 from src import app_cli, state_io, track_cli
-from src.apply import ashby, bank, confirmation, greenhouse, ledger, lever
+from src.apply import ashby, bank, confirmation, cooldown, greenhouse, ledger, lever
 from src.apply.answers import (
     DEFAULT_PATH,
     EXAMPLE_PATH,
@@ -77,7 +77,13 @@ from src.apply.detect import (
     is_auto_submittable,
 )
 from src.apply.domscan import DomScanError
-from src.apply.fill import _require_playwright, blocking_details, has_driver, run_one
+from src.apply.fill import (
+    SubmitGuardError,
+    _require_playwright,
+    blocking_details,
+    has_driver,
+    run_one,
+)
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
 from src.apply.plan import Override, Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
@@ -1158,9 +1164,13 @@ def _run_role(
     headless: bool,
     answers_path: Path | None = None,
     manifest_path: Path | None = None,
+    hold_company: bool = False,
 ) -> RunOutcome:
     """One role, start to finish. Never raises — every failure mode comes back
     as a category on the outcome, so one bad role cannot stop the queue.
+
+    `hold_company`: re-check the company cooldown against the ledger under its
+    lock, right before the click (a batch run; `--job-id` bypasses it).
 
     `answers_path` is the session's confirmed answers for a single-role run.
     What they teach is saved to the answer bank before the browser opens, so it
@@ -1219,14 +1229,27 @@ def _run_role(
             ),
         )
     outcome = _attempt(
-        job_id, plan, answers, submit=submit, headless=headless, manifest_path=manifest_path
+        job_id,
+        plan,
+        answers,
+        submit=submit,
+        headless=headless,
+        manifest_path=manifest_path,
+        hold_company=hold_company,
     )
     from_bank = sum(1 for f in plan.fields if f.source.startswith("bank:"))
     return replace(outcome, from_bank=from_bank, learned=learned)
 
 
 def _attempt(
-    job_id: str, plan: Plan, answers, *, submit: bool, headless: bool, manifest_path: Path | None
+    job_id: str,
+    plan: Plan,
+    answers,
+    *,
+    submit: bool,
+    headless: bool,
+    manifest_path: Path | None,
+    hold_company: bool = False,
 ) -> RunOutcome:
     """The browser half of `_run_role`: fill, and click only when asked."""
     if submit and headless and plan.requires_captcha:
@@ -1292,9 +1315,31 @@ def _attempt(
             detail=detail,
         )
 
+    held: list[str] = []
+
+    def cooling(recs: list[dict]) -> str:
+        others = (r for r in recs if r.get("job_id") != job_id)
+        day = cooldown.until(plan.company, cooldown.ledger_applications(others))
+        return f"{plan.company}: {cooldown.note(day)}" if day else ""
+
     def before_click() -> None:
+        if not clicked:
+            # The "already sent" re-check and the append share one lock.
+            why = ledger.claim(
+                ledger_path(),
+                job_id,
+                "clicking",
+                form_url=plan.form_url,
+                company=plan.company,
+                title=plan.title,
+                held=cooling if hold_company else None,
+            )
+            if why:
+                held.append(why)
+                raise SubmitGuardError(why)
+        else:
+            mark("clicking")
         clicked.append(True)
-        mark("clicking")
 
     sink: list = []
     try:
@@ -1351,6 +1396,9 @@ def _attempt(
             write_manifest(result, plan, Path(manifest_path))
         except OSError as exc:
             print(f"WARNING: could not write the manifest: {exc}", file=sys.stderr)
+
+    if held and not clicked:
+        return RunOutcome(job_id, plan.company, plan.title, "skipped", detail=held[0])
 
     if clicked and not result.submitted and result.outcome not in ("rejected", "unsent"):
         # The board declined every click, or a captcha was never solved: it
@@ -1447,6 +1495,7 @@ def run_queue(
     on_outcome=None,
     collect_into: list | None = None,
     companies: dict[str, str] | None = None,
+    hold_company: bool = False,
 ) -> list[RunOutcome]:
     """Walk the queue, sleeping `rate + U(0, jitter)` seconds before each
     attempted role after the first.
@@ -1455,6 +1504,10 @@ def run_queue(
     run: once a company's application goes out, every later role at that
     company is reported `skipped` and never opens a browser. Only applies when
     `submit` is set — a fill-and-stop walk sends nothing.
+
+    `hold_company` (a batch run): a role whose company had an application
+    within `company_cooldown_days` is `skipped` with "cooldown until <date>";
+    a fill-and-stop walk still fills it and says so on its `ready` line.
 
     `companies` maps job_id to the company name the cap keys off; it defaults
     to reading state.yaml. `sleeper`/`jitter_fn` are injectable so tests never
@@ -1469,12 +1522,21 @@ def run_queue(
     """
     outcomes = [] if collect_into is None else collect_into
     if companies is None:
-        companies = queue_companies(job_ids) if submit else {}
+        companies = queue_companies(job_ids) if submit or hold_company else {}
+    latest = cooldown.last_applications(ledger_path=ledger_path()) if hold_company else {}
     submitted_per_company: dict[str, int] = {}
     attempted = 0
     for job_id in job_ids:
         known = companies.get(job_id, "")
         key = normalize_company(known)
+        cool = cooldown.until(known, latest) if hold_company else None
+        if submit and cool is not None:
+            outcomes.append(
+                RunOutcome(job_id, known, "", "skipped", detail=f"{known}: {cooldown.note(cool)}")
+            )
+            if on_outcome is not None:
+                on_outcome(outcomes)
+            continue
         if submit and key and submitted_per_company.get(key, 0) >= MAX_SUBMISSIONS_PER_COMPANY:
             outcomes.append(
                 RunOutcome(
@@ -1498,7 +1560,10 @@ def run_queue(
             headless=headless,
             answers_path=answers_path,
             manifest_path=manifest_path,
+            hold_company=hold_company,
         )
+        if cool is not None and outcome.category == "ready":
+            outcome = replace(outcome, detail=cooldown.note(cool))
         outcomes.append(outcome)
         if outcome.category in _CLICKED:
             # Count both names: the plan's is what actually went out, the
@@ -1535,7 +1600,7 @@ _CATEGORY_TITLE = {
     "parked": "Parked",
     "ready": "Ready (not submitted)",
     "manual": "Manual-apply (no submit path for this board)",
-    "skipped": "Skipped (already sent, or one submission per company per run)",
+    "skipped": "Skipped (already sent, company cooldown, or one submission per company per run)",
     "failed": "Failed",
     "expired": "Expired postings",
 }
@@ -1697,16 +1762,20 @@ def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Pa
 
 
 def submission_preview(
-    job_ids: list[str], pipeline_dir: Path | None = None
+    job_ids: list[str], pipeline_dir: Path | None = None, hold_company: bool = False
 ) -> list[tuple[str, str, str, str]]:
     """One `(job_id, company, title, board)` row per role `--submit` would
     actually apply to, in queue order.
 
-    `MAX_SUBMISSIONS_PER_COMPANY` is applied here the same way `run_queue`
-    applies it, so what the confirmation prompt shows is what the walk does.
+    `MAX_SUBMISSIONS_PER_COMPANY` and, with `hold_company`, the company
+    cooldown are applied here the same way `run_queue` applies them, so what
+    the confirmation prompt shows is what the walk does.
     Reads state.yaml and clean.parquet only — no network, no browser.
     """
     idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else paths.PIPELINE)
+    latest = (
+        cooldown.last_applications(pipeline_dir, ledger_path=ledger_path()) if hold_company else {}
+    )
     rows: list[tuple[str, str, str, str]] = []
     counted: dict[str, int] = {}
     for job_id in job_ids:
@@ -1714,6 +1783,8 @@ def submission_preview(
         company = str(state.get("company") or "")
         key = normalize_company(company)
         if key and counted.get(key, 0) >= MAX_SUBMISSIONS_PER_COMPANY:
+            continue
+        if cooldown.until(company, latest) is not None:
             continue
         if key:
             counted[key] = counted.get(key, 0) + 1
@@ -1730,14 +1801,14 @@ def submission_preview(
 _CONFIRM_YES = ("y", "yes")
 
 
-def confirm_submission(job_ids: list[str]) -> int:
+def confirm_submission(job_ids: list[str], hold_company: bool = False) -> int:
     """Print the roles `--submit` will apply to, then require a typed yes.
 
     Returns 0 to proceed and 1 to abort. Called before a browser opens and
     before any state is written, so an abort sends nothing. A non-tty stdin
     fails closed: nobody can answer, so it refuses rather than proceeding.
     """
-    rows = submission_preview(job_ids)
+    rows = submission_preview(job_ids, hold_company=hold_company)
     print(f"About to SUBMIT {len(rows)} real application(s):")
     for job_id, company, title, board in rows:
         who = f"{company} — {title}".strip(" —") or "(unknown role)"
@@ -1878,7 +1949,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 0
 
     if args.submit and not args.yes:
-        rc = confirm_submission(queue)
+        rc = confirm_submission(queue, hold_company=not args.job_id)
         if rc:
             return rc
 
@@ -1907,6 +1978,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             manifest_path=args.manifest,
             collect_into=outcomes,
             on_outcome=lambda done: write_report(done, started, path=path),
+            hold_company=not args.job_id,
         )
     finally:
         write_report(outcomes, started, path=path)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import openpyxl
@@ -23,7 +24,7 @@ import yaml
 
 from src import state_io
 from src.app_cli import built_folder
-from src.apply import confirmation, detect, ledger
+from src.apply import confirmation, cooldown, detect, ledger
 from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths
@@ -99,8 +100,10 @@ def status_for(
     state: dict | None,
     sent: dict | None,
     outcome: tuple[str, str, str] | None,
+    cool: date | None = None,
 ) -> tuple[str, str, str]:
-    """(status, note, uv_run_command) for one row."""
+    """(status, note, uv_run_command) for one row. `cool`: the day the
+    company cooldown ends, which shows in place of Submittable."""
     state = state or {}
     current = state_io.shown_state(state) if state else ""
     verdict = ledger.verdict_of(sent)
@@ -131,8 +134,8 @@ def status_for(
             folder = built_folder(state)
             answers = folder / "answers_override.json"
             return (
-                "Submittable",
-                "",
+                "Cooldown" if cool else "Submittable",
+                cooldown.note(cool) if cool else "",
                 f"uv run apply run --job-id {job_id} --answers {answers} "
                 f"--manifest {folder / 'form_manifest.submit.json'} --submit",
             )
@@ -242,16 +245,23 @@ def _form_url(state: dict | None) -> str:
 
 
 def _row_status(
-    job_id: str, url: str, states: dict, ledger_path: Path, outcomes: dict
+    job_id: str,
+    url: str,
+    states: dict,
+    ledger_path: Path,
+    outcomes: dict,
+    latest: dict | None = None,
 ) -> tuple[str, str, str]:
     submittable = detect.is_auto_submittable(url) or _submittable(job_id)
     state = states.get(job_id)
+    company = str((state or {}).get("company") or "")
     return status_for(
         job_id,
         submittable,
         state,
         ledger.prior(ledger_path, job_id, _form_url(state)),
         outcomes.get(job_id),
+        cooldown.until(company, latest or {}),
     )
 
 
@@ -266,6 +276,7 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
     states = state_io.load_state_index(paths.PIPELINE)
     sent_ids = ledger.sent_job_ids(ledger_path)
     outcomes = latest_outcomes(runs)
+    latest = cooldown.last_applications(ledger_path=ledger_path)
 
     wb, ws, col = _load(table)
     present = {str(ws.cell(row=r, column=col["name"]).value) for r in range(2, ws.max_row + 1)}
@@ -281,7 +292,7 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
         if not job_id:
             continue
         url = str(ws.cell(row=r, column=col["url"]).value or "")
-        status, note, command = _row_status(job_id, url, states, ledger_path, outcomes)
+        status, note, command = _row_status(job_id, url, states, ledger_path, outcomes, latest)
         ws.cell(row=r, column=col["status"], value=status)
         ws.cell(row=r, column=col["note"], value=note)
         ws.cell(row=r, column=col["uv_run_command"], value=command)
@@ -314,6 +325,7 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     ledger_path = runs / ledger.LEDGER_NAME
     states = state_io.load_state_index(paths.PIPELINE)
     outcomes = latest_outcomes(runs)
+    latest = cooldown.last_applications(ledger_path=ledger_path)
     _, ws, col = _load(table)
     live = (
         set(pd.read_parquet(paths.CLEAN, columns=["job_id"])["job_id"])
@@ -334,6 +346,6 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
             out["not_live"].append(job_id)
         url = str(ws.cell(row=r, column=col["url"]).value or "")
         shown = str(ws.cell(row=r, column=col["status"]).value or "")
-        if _row_status(job_id, url, states, ledger_path, outcomes)[0] != shown:
+        if _row_status(job_id, url, states, ledger_path, outcomes, latest)[0] != shown:
             out["wrong_status"].append(job_id)
     return out

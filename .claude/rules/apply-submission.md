@@ -85,6 +85,14 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 - `--submit` is off by default and needs `--limit`, unless `--job-id` names one
   role. It asks for a typed confirmation unless `--yes`; a non-tty stdin without
   `--yes` is refused. `--rate` is floored at 30s. One submission per company per run.
+- The company cooldown (`company_cooldown_days` in `profile/automation.yaml`,
+  `src/apply/cooldown.py`): a batch `--submit` skips a role whose company
+  (`normalize_company`) had an application within it, "cooldown until <date>".
+  Every application counts: any `applied` entry in a state_history and every
+  ledger line that may have reached a board. `--job-id` bypasses it; the sheet
+  shows `Cooldown` instead of `Submittable`; a hand `track <id> applied` only
+  warns. The "already sent" and cooldown re-check right before the click and
+  its `clicking` line share the ledger's lock (`ledger.claim`).
 - `applications/apply_runs/submitted.jsonl` records what was sent. A line is
   written right before every click, and a role whose latest line is anything but
   `refused` is never clicked again, whatever its `state.yaml` says. `track

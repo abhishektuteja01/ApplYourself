@@ -138,6 +138,7 @@ class Automation(_Strict):
     tailor_max_per_night: int | None = None
     apply_prep_max_per_night: int | None = None
     ghosted_after_days: int | None = None
+    company_cooldown_days: int | None = None
 
 
 # ---- contacts.yaml ----

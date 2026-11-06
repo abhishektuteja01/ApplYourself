@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 
 from src.shared import clock
+from src.shared.parquet_io import locked
 
 log = logging.getLogger(__name__)
 
@@ -84,12 +86,17 @@ def verdict_of(rec: dict | None) -> Verdict:
 
 def verdict(path: Path, job_id: str, form_url: str = "") -> tuple[Verdict, dict | None]:
     """(verdict, latest line) for this role, matched on job_id or on the form URL."""
+    hit = _latest(records(path), job_id, form_url)
+    return verdict_of(hit), hit
+
+
+def _latest(recs: list[dict], job_id: str, form_url: str) -> dict | None:
     key = url_key(form_url)
     hit = None
-    for rec in records(path):
+    for rec in recs:
         if rec.get("job_id") == job_id or (key and url_key(rec.get("form_url", "")) == key):
             hit = rec
-    return verdict_of(hit), hit
+    return hit
 
 
 def prior(path: Path, job_id: str, form_url: str = "") -> dict | None:
@@ -128,6 +135,49 @@ def append(
     at: str | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    with locked(path):
+        _write(path, job_id, status, form_url, company, title, detail, at)
+
+
+def claim(
+    path: Path,
+    job_id: str,
+    status: str,
+    *,
+    form_url: str = "",
+    company: str = "",
+    title: str = "",
+    held: Callable[[list[dict]], str] | None = None,
+) -> str:
+    """Append under the ledger's lock unless the role is already sent or
+    `held(lines)` gives a reason, so two runs cannot both pass the check before
+    either appends. Returns the reason, or "" once appended."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with locked(path):
+        recs = records(path)
+        rec = _latest(recs, job_id, form_url)
+        if rec is not None and verdict_of(rec) is not Verdict.NOT_SENT:
+            return (
+                f"already sent {rec.get('at', '')} ({rec.get('status', '')}) "
+                f"per {LEDGER_NAME}; delete that line to retry"
+            )
+        why = held(recs) if held is not None else ""
+        if why:
+            return why
+        _write(path, job_id, status, form_url, company, title, "", None)
+    return ""
+
+
+def _write(
+    path: Path,
+    job_id: str,
+    status: str,
+    form_url: str,
+    company: str,
+    title: str,
+    detail: str,
+    at: str | None,
+) -> None:
     rec = {
         "at": at or clock.now().isoformat(timespec="seconds"),
         "job_id": job_id,

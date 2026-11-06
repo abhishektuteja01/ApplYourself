@@ -1389,6 +1389,18 @@ class TestOneSubmissionPerCompanyPerRun:
         assert opened == ["a1", "a2"]
         assert [o.category for o in out] == ["failed", "failed"]
 
+    def test_a_batch_run_holds_back_a_company_inside_its_cooldown(self, monkeypatch):
+        # Another role at the company went out an hour ago; --job-id (no hold) still sends.
+        opened = self._stub(monkeypatch, {"a1": "Bushing Group"})
+        ledger.append(
+            apply_cli.ledger_path(), "zz000001", "accepted", company="Bushing Group, Inc."
+        )
+        kw = {"submit": True, "sleeper": lambda s: None, "companies": {"a1": "Bushing Group"}}
+        held = apply_cli.run_queue(["a1"], hold_company=True, **kw)
+        assert held[0].category == "skipped" and "cooldown until" in held[0].detail
+        assert opened == []
+        assert apply_cli.run_queue(["a1"], **kw)[0].category == "submitted"
+
     def test_a_fill_and_stop_walk_is_not_capped(self, monkeypatch):
         # Nothing is sent without --submit, so there is nothing to cap.
         opened = self._stub(monkeypatch, {"a1": "Bushing Group", "a2": "Bushing Group"})

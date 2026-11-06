@@ -39,7 +39,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.apply import ledger
+from src.apply import cooldown, ledger
 from src.shared import paths
 from src.state_io import (
     ACTIVE_STATES,
@@ -147,10 +147,26 @@ def _cmd_transition(args: argparse.Namespace) -> int:
         f"history_len={len(data['state_history'])}"
     )
     print(f"     file: {p}")
+    if new_state == "applied":
+        _warn_cooldown(job_id, data.get("company"))
     action = NEXT_ACTION.get(new_state)
     if action:
         print(f"     next: {action.format(job_id=job_id, ghosted_days=ghosted_after_days())}")
     return 0
+
+
+def _warn_cooldown(job_id: str, company: object) -> None:
+    """A hand-tracked `applied` inside the company cooldown is said, never blocked."""
+    company = str(company or "")
+    ledger_file = paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME
+    day = cooldown.until(
+        company, cooldown.last_applications(ledger_path=ledger_file, exclude=job_id)
+    )
+    if day is not None:
+        print(
+            f"WARNING: {company} had another application recently: {cooldown.note(day)}",
+            file=sys.stderr,
+        )
 
 
 def _sent_before(job_id: str) -> dict[str, Any] | None:
