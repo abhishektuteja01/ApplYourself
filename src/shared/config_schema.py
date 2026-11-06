@@ -286,9 +286,13 @@ def validate[M: BaseModel](model: type[M], data: Any, path: Path | str) -> M:
     except ValidationError as exc:
         errors = exc.errors()
     extra = [e for e in errors if e["type"] == "extra_forbidden"]
+    # A union's other member fails where an unknown key sits; that error is noise.
+    beside = {_where(model, tuple(e["loc"])[:-1]) for e in extra}
     lines = []
-    for e in extra or errors:
+    for e in errors:
         loc = tuple(e["loc"])
+        if e["type"] != "extra_forbidden" and _where(model, loc) in beside:
+            continue
         if e["type"] == "extra_forbidden":
             owner = _model_at(model, loc)
             key = str(loc[-1])
