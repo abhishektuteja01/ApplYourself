@@ -21,7 +21,7 @@ def _world(tmp_path, monkeypatch):
     )
     scored_rows(
         *(
-            {"job_id": j, "fit_score": s}
+            {"job_id": j, "fit_score": s, "suggested_action": "tailor"}
             for j, s in (("aaaa1111", 90), ("bbbb2222", 85), ("cccc3333", 70))
         )
     ).to_parquet(tmp_path / "scored.parquet")
@@ -51,6 +51,21 @@ def test_add_appends_only_roles_above_the_threshold_and_not_sent(tmp_path, monke
     ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "bbbb2222", "accepted")
     sheet.refresh(add=True)
     assert set(_rows(tmp_path)) == {"aaaa1111"}
+
+
+def test_a_judge_skip_keeps_a_new_role_out_but_not_one_already_tailored(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    scored_rows(
+        *(
+            {"job_id": j, "fit_score": 90, "suggested_action": "skip"}
+            for j in ("aaaa1111", "bbbb2222", "cccc3333")
+        )
+    ).to_parquet(tmp_path / "scored.parquet")
+    folder = "lane/2026-09-28_acme_eng_cccc3333"
+    (paths.APPLICATIONS / folder).mkdir(parents=True)
+    _state(tmp_path, "bbbb2222", "saved", folder)
+    _state(tmp_path, "cccc3333", "tailored", folder)
+    assert [r["name"] for r in sheet.queue()] == ["cccc3333"]
 
 
 def test_status_follows_the_records(tmp_path, monkeypatch):
