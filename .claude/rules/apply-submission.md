@@ -114,7 +114,9 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
   the bank's keyword guesses the file leaves standing, offline from the role's
   saved `plan.json`), whose
   stored hash must match the file's current content. `.claude/hooks/confirmed_guard.sh`
-  blocks a session from writing a `.confirmed` file.
+  blocks a session from writing a `.confirmed` file, by pattern (a soft guard).
+  `.claude/hooks/submit_ask.sh` asks before any Bash command naming `apply` and
+  `--submit`, however it is spelled.
 - Without a confirmed answers file, `apply run --submit` parks a role whose plan
   holds a keyword guess. With `--submit`, one browser fills, reads the form back,
   and clicks only when every filled field holds what was planned (`form_check`).
