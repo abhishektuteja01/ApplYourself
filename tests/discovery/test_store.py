@@ -691,6 +691,15 @@ def test_view_gives_an_unscored_row_the_filter_drops_low_retention(monkeypatch):
     assert list(out["title"]) == ["AI Engineer"]
 
 
+def test_view_moves_a_row_to_the_lane_it_fits_but_a_tracked_role_keeps_its_own():
+    row = post(GH.format(1), title="Widget Platform Analyst", vertical="example_tertiary")
+    store, _ = fold(S.empty_store(), row, today=at(1))
+    jid = store.at[0, "job_id"]
+    assert list(view(store)[0]["vertical"]) == ["example_primary"]
+    tracked, _ = view(store, state_index={jid: {"job_id": jid, "state": "saved"}})
+    assert list(tracked["vertical"]) == ["example_tertiary"]
+
+
 def test_view_brings_back_active_roles_and_tags_state():
     store, _ = fold(S.empty_store(), post(GH.format(1)), today=at(100))
     jid = store.at[0, "job_id"]

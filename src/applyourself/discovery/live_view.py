@@ -134,10 +134,18 @@ def build_view(
     funnel["after_search_age"] = len(df_live)
 
     # A stored row keeps its lane while its title fits it, else moves to the
-    # lane it fits now.
+    # lane it fits now. A tracked role keeps its lane, like a manual add.
     gate = [
-        title_gate.lane_for(t, v if isinstance(v, str) else "", s, vcfg)
-        for t, v, s in zip(df_live["title"], df_live["vertical"], df_live["source"], strict=True)
+        title_gate.lane_for(
+            t, v if isinstance(v, str) else "", "manual" if j in tracked else s, vcfg
+        )
+        for t, v, s, j in zip(
+            df_live["title"],
+            df_live["vertical"],
+            df_live["source"],
+            df_live["job_id"],
+            strict=True,
+        )
     ]
     df_live = df_live.assign(vertical=[g.lane for g in gate])[
         pd.Series([g.passes for g in gate], index=df_live.index, dtype=bool)
