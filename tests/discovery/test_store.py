@@ -698,6 +698,10 @@ def test_view_moves_a_row_to_the_lane_it_fits_but_a_tracked_role_keeps_its_own()
     assert list(view(store)[0]["vertical"]) == ["example_primary"]
     tracked, _ = view(store, state_index={jid: {"job_id": jid, "state": "saved"}})
     assert list(tracked["vertical"]) == ["example_tertiary"]
+    # ...only while that lane is configured; a blank one goes through the gate
+    store["vertical"] = ""
+    blank, _ = view(store, state_index={jid: {"job_id": jid, "state": "saved"}})
+    assert list(blank["vertical"]) == ["example_primary"]
 
 
 def test_view_brings_back_active_roles_and_tags_state():

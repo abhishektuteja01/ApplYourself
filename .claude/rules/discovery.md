@@ -33,8 +33,8 @@ One rule for every source, `lane_for(title, hint)`. Titles and terms are NFC;
 terms match loosely (`shared/title_terms.py`: hyphens, spaces, plurals, word
 endings, `title_variants`, never from inside a Latin word). A search row
 keeps its term's lane when the title fits it: one of the lane's rules (a
-`{match, require_any}` rule needs only its match term here, the search being
-the context), one of its search, LinkedIn or abroad terms, or a legacy
+`{match, require_any}` rule marked `search_is_context` needs only its match
+term here), one of its search, LinkedIn or abroad terms, or a legacy
 include / strong-keep term. Otherwise, and for board and feed rows, it goes to
 the first classifier lane, else to the first lane one of whose search terms
 it holds, else is dropped `no_lane`. A title in a lane passes unless it holds
@@ -42,8 +42,9 @@ a `title_exclude_terms` word (the global list in verticals.yaml `defaults:`,
 matched as written): `banned: <word>`; a `keep: true` rule or a legacy
 strong-keep term of that lane beats the ban. Each lane counts its drops per
 reason with a few sample titles (`LaneStats.drops`, `drop_samples`), and the
-run report lists them. A manual add, a tracked role in the view, and a stored
-row whose lane is no longer configured always pass in the lane they have.
+run report lists them. A manual add, a tracked role in the view whose lane is
+configured, and a stored row whose lane is no longer configured always pass in
+the lane they have.
 
 ## The store (`store.py`, job_id matching in `dedupe.py`)
 

@@ -20,7 +20,7 @@ from applyourself.discovery import store as store_mod
 from applyourself.discovery.config import JOBSPY_SOURCES
 from applyourself.discovery.store import coerce_store
 from applyourself.score_filter import ScoringConfig, drop_reason, load_scoring
-from applyourself.shared import paths, schemas, title_gate
+from applyourself.shared import paths, schemas, title_gate, verticals
 from applyourself.shared.job_boards import is_applyable
 from applyourself.shared.parquet_io import locked, write_parquet
 from applyourself.state_io import ACTIVE_STATES
@@ -134,10 +134,15 @@ def build_view(
     funnel["after_search_age"] = len(df_live)
 
     # A stored row keeps its lane while its title fits it, else moves to the
-    # lane it fits now. A tracked role keeps its lane, like a manual add.
+    # lane it fits now. A tracked role in a configured lane keeps it, like a
+    # manual add.
+    lanes = (vcfg or verticals.get_config()).verticals
     gate = [
         title_gate.lane_for(
-            t, v if isinstance(v, str) else "", "manual" if j in tracked else s, vcfg
+            t,
+            v if isinstance(v, str) else "",
+            "manual" if j in tracked and v in lanes else s,
+            vcfg,
         )
         for t, v, s, j in zip(
             df_live["title"],
