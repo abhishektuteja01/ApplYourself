@@ -4,7 +4,7 @@
   config get discovery KEY     one resolved field of profile/discovery.yaml
   config verticals [LANE]      lanes and default; with LANE, its term and rule counts
   config classify TITLE ...    the lane each title goes to, and why the gate drops it
-  config misclassified LANE    the lane's search terms that classify elsewhere
+  config misclassified LANE    the lane's search terms a board title would put elsewhere
   config reclassify            clean.parquet rows whose lane or gate verdict would change now
   config work-auth [COUNTRY]   the answer bank's work-authorization row
   config migrate --dry-run|--apply [--profile DIR]
@@ -59,11 +59,12 @@ def _verticals(lane: str | None) -> list[str]:
 
 
 def _misclassified(lane: str) -> str:
-    from applyourself.shared.title_gate import classify_vertical_from_title as c
+    from applyourself.shared.title_gate import lane_for
     from applyourself.shared.verticals import get_config
 
     v = get_config().verticals[lane]
-    bad = [t for t in v.search_terms + v.linkedin_terms if c(t) != lane]
+    terms = dict.fromkeys(v.search_terms + v.linkedin_terms + v.abroad_terms)
+    bad = [t for t in terms if lane_for(t, "", "greenhouse").lane != lane]
     return f"MISCLASSIFIED: {bad or 'none'}"
 
 

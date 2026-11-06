@@ -35,16 +35,16 @@ def test_real_config_loads_under_the_strict_loader(real_cfg):
     assert real_cfg.default_vertical in real_cfg.verticals
 
 
-def test_every_search_term_classifies_into_its_own_lane(real_cfg):
-    """discovery tags a row by the search term that found it; normalize.py
-    falls back to the title classifier. When they disagree, a manual clip and
-    a scraped row for the same title land in different rubrics."""
-    from applyourself.shared.title_gate import classify_vertical_from_title
+def test_every_search_term_routes_a_board_title_to_its_own_lane(real_cfg):
+    """A search row keeps its term's lane; a board row or a manual clip with
+    the same title goes where lane_for puts it. When they disagree, the same
+    title lands in different rubrics."""
+    from applyourself.shared.title_gate import lane_for
 
     for vertical in real_cfg.verticals.values():
-        for term in vertical.search_terms + vertical.linkedin_terms:
-            got = classify_vertical_from_title(term)
-            assert got == vertical.name, f"{vertical.name} search term classifies as {got!r}"
+        for term in vertical.search_terms + vertical.linkedin_terms + vertical.abroad_terms:
+            got = lane_for(term, "", "greenhouse", real_cfg).lane
+            assert got == vertical.name, f"{vertical.name} search term routes to {got!r}"
 
 
 def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):

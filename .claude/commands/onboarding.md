@@ -343,18 +343,17 @@ absent; strays are the judge's to score down.
 
 ### 3.3 What the ban list drops
 
-Show what the gate dropped for this lane before 3.5 asks the user to confirm.
-The nightly debug shards keep every classified listing with its drop `reason`.
+Show what the gate dropped before 3.5 asks the user to confirm. The latest
+run report counts every drop per reason, with sample titles, for each source.
 
 ```bash
 uv run python -c "
-import glob, pandas as pd
-LANE = '<lane>'
-d = pd.concat(pd.read_parquet(f) for f in glob.glob('jobs/raw/*.parquet'))
-d = d[d.vertical == LANE]
-hit = d.get('reason', pd.Series('', index=d.index)).fillna('').str.startswith('banned')
-print(f'{int(hit.sum())}/{len(d)} rows dropped by the ban list')
-print('DROPPED:'); print(d.loc[hit, 'title'].value_counts().head(15).to_string())"
+import glob, json
+r = json.load(open(sorted(glob.glob('jobs/runs/*.json'))[-1]))
+for src, lane in r['lanes'].items():
+    for why, n in sorted((lane.get('drops') or {}).items(), key=lambda kv: -kv[1]):
+        if why.startswith('banned'):
+            print(src, why, n, lane.get('drop_samples', {}).get(why, []))"
 ```
 
 A ban word removed brings rows back as their boards and searches are next

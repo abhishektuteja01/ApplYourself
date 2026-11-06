@@ -132,12 +132,17 @@ loader:
 
 - `pattern: '<regex>'` — compiled IGNORECASE. `'\b(?:a|b|c)\b'` for a keyword
   family; a plain literal (`"AI Engineer"`) when the phrase is unambiguous.
-- `pattern: {match: <str>, require_any: [<str>, ...]}` — the match term must
-  appear AND at least one `require_any` entry must too, each matched loosely
-  (case, hyphens, spaces, plurals, word endings, `title_variants`; never from
-  inside a word, so "ML Engineer" misses "HTML Engineer"). Use it when a
-  title word is ambiguous alone.
-- `terms: [<str>, ...]` — any one term, matched loosely the same way.
+- `pattern: {match: <str or list>, require_any: [<str>, ...]}` — a match term
+  must appear AND, elsewhere in the title, one `require_any` entry too, each
+  matched loosely (case, hyphens, spaces, plurals, word endings,
+  `title_variants`; never from inside a word, so "ML Engineer" misses "HTML
+  Engineer"; a short last require word runs on, "LLM" finds "LLMOps"). On a
+  title a search for this lane found, the match term alone is enough. Use it
+  for a word that is ambiguous alone ("agent", a two-letter module code).
+- `terms: [<str>, ...]` — any one term, matched loosely the same way; with
+  `keep: true` a title it matches passes even when it holds a ban word. Keep
+  single words out of `terms`: they pull every title holding them into the
+  lane.
 
 This is where a `/new-vertical` catch-all `'.'` usually gets replaced: once a
 second lane exists, or once the out-of-lane pool in Round 0 shows real noise
@@ -149,8 +154,9 @@ rule-position bug — name the row, propose the move, have the user confirm the
 **`years`** — required years mapped to a seniority cap; a JD the judge reads
 asking more than the largest key is forced to skip. Change only against
 observed JDs. Nothing else drops a JD before judging but scoring.yaml's
-`ineligible` phrases: `drop_phrases` no longer drops, so put what the lane
-must avoid in its rubric.
+`ineligible` phrases, plus its `no_sponsorship` phrases when your home need is
+"now": `drop_phrases` no longer drops, so put what the lane must avoid in its
+rubric.
 
 Verify:
 
@@ -161,8 +167,9 @@ uv run config misclassified <name>
 uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
-Every `search_terms` and `linkedin_terms` entry must classify to this lane, and
-the spot-check list must include the collision titles that have to keep their
+Every `search_terms`, `linkedin_terms` and `abroad_terms` entry must route to
+this lane as a board title (`config misclassified`), and the spot-check list
+must include the collision titles that have to keep their
 current vertical. Fix pattern or priority (with confirmation) until clean.
 
 Then replay the change over the rows already on disk, so the user sees what

@@ -290,8 +290,11 @@ uv run verticals-check
 uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
-Every search and LinkedIn term must classify to this lane; widen the rule until
-clean, re-showing the changed rule before each write. A skipped drift test means
+Every search, LinkedIn and abroad term must route to this lane as a board title
+(`config misclassified` lists the ones that do not: a board title goes to the
+first classifier rule that matches it, then to the first lane one of whose
+search terms it holds); widen the rule until clean, re-showing the changed rule
+before each write. A skipped drift test means
 it never saw the lane.
 
 ## Step 6a — report (`pass-a`)
