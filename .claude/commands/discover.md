@@ -1,9 +1,15 @@
 ---
-description: Run the nightly scrape and read the run report back — preflight, scrape, then a ≤10-line health digest of tonight's run against its own 7-day history. READ-ONLY on every report; writes nothing outside jobs/.
+description: Run the scrape, then a 10-line health digest of the run against its 7-day history. Writes nothing outside jobs/.
 model: sonnet
 effort: medium
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run discovery-check*)
+  - Bash(uv run discover)
+  - Bash(uv run discover --*)
+  - Bash(uv run discover-digest*)
   - Read
 ---
 

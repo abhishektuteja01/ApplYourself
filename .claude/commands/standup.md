@@ -1,9 +1,13 @@
 ---
-description: Regenerate pipeline.md from pipeline/*/state.yaml — `uv run track standup` renders the Active/Closed tables, the session adds a short summary at the top. SOLE regenerator of pipeline.md. READ-ONLY on every state.yaml.
+description: Regenerate pipeline.md from every state.yaml (`uv run track standup`) with a short note on top. Read-only on state.yaml.
 model: sonnet
 effort: medium
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run track standup*)
+  - Bash(mktemp*)
   - Read
   - Write
 ---

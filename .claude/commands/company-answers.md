@@ -1,5 +1,5 @@
 ---
-description: Research a company and write company_answers.yaml (why_company / why_role / what_interests_you_about_product) into a job_id's built folder. Reuses an existing file unless --refresh. /apply and /cover-letter both call it.
+description: Research a company and write company_answers.yaml (why company, why role, product) into a job_id's folder. Reuses the file unless --refresh.
 model: opus
 effort: medium
 allowed-tools:

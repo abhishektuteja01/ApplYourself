@@ -1,5 +1,5 @@
 ---
-description: Edit drafts into sharper, more human writing while preserving the writer's personal voice, or detect AI-slop patterns without rewriting. Use when the user wants a draft clearer, more direct, more opinionated, or less AI-sounding, or asks whether writing reads as AI.
+description: Edit a draft into sharper, more human writing in the writer's own voice, or flag AI-slop patterns without rewriting.
 ---
 
 # No AI slop

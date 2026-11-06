@@ -1,9 +1,16 @@
 ---
-description: Deep tuning pass on a vertical that already exists — run it after your first shortlist, against postings you have actually seen. Sharpens search terms, skill_weights, the title gate, classifier rules and collisions, drop phrases, rubric tier boundaries and the lane's resume shape (skill lines, baseline picks, budgets). Config only, no code edits. Use /new-vertical to create a lane, this to sharpen one.
+description: Sharpen an existing lane against real postings: terms, title gate, classifier, drop phrases, rubric tiers, resume shape. Config only.
 model: opus
 effort: high
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run verticals-check*)
+  - Bash(uv run config *)
+  - Bash(uv run python -c *)
+  - Bash(uv run pytest tests *)
+  - Bash(grep *)
   - Read
   - Write
   - Edit

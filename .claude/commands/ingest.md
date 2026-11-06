@@ -1,9 +1,18 @@
 ---
-description: One command from a job URL to finished application material — ingest, clean, score, register, tailor, cover letter. Applying stays manual.
+description: One job URL to finished material: ingest, score, tailor, cover letter. Applying stays manual.
 model: sonnet
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(test *)
+  - Bash(pgrep *)
+  - Bash(uv run verticals-check*)
+  - Bash(uv run ingest-url *)
+  - Bash(uv run score *)
+  - Bash(uv run discover --*)
+  - Bash(uv run app dir *)
+  - Bash(uv run track *)
   - Read
   - WebFetch
   - Agent

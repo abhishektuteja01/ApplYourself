@@ -1,9 +1,15 @@
 ---
-description: Mock interviewer that drills you on your own resume. Pass a job_id for a role-specific loop against that role's JD and tailored resume, or a vertical name for a JD-independent pass over profile/bullets.md. Depth-ladder questioning — pushes deeper until an answer thins out, then pivots to a new area, like a real interviewer. Persists a cross-session gap report that every later session reads first, and proposes profile edits for undocumented work it surfaces. Never writes to bullets.md, skills_master.md or state.yaml.
+description: Mock interviewer that drills you on your own resume claims, for a job_id or a lane. Keeps a gap report; never writes profile/ or state.yaml.
 model: opus
 effort: high
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run config verticals*)
+  - Bash(uv run app dir *)
+  - Bash(sed -n *)
+  - Bash(ls *)
   - Read
   - Write
   - Glob

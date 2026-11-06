@@ -1,5 +1,5 @@
 ---
-description: Tailor a one-page resume for a job_id. The session chooses bullets, rewordings, summary and skill order in resume_plan.yaml; `uv run app build resume` assembles, checks, renders and records it.
+description: Tailor a one-page resume for a job_id: the session picks bullets, wording, summary and skills; `uv run app build resume` builds it.
 model: opus
 effort: medium
 allowed-tools:

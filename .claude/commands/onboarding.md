@@ -2,8 +2,27 @@
 description: Set up your own copy of the pipeline in about 21 minutes — eight questions instead of 33 decisions, real scored jobs on screen by minute 17. Resumable: re-run to continue where you left off. Also runs as a setup audit on an existing install.
 model: opus
 effort: high
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(echo *)
+  - Bash(cat *)
+  - Bash(test *)
+  - Bash(tail *)
+  - Bash(mkdir -p *)
+  - Bash(uv --version)
+  - Bash(uv sync*)
+  - Bash(git config core.hooksPath .githooks)
+  - Bash(uv run python -c *)
+  - Bash(uv run verticals-check*)
+  - Bash(uv run onboard-scaffold *)
+  - Bash(uv run profile-extract *)
+  - Bash(uv run discover-digest*)
+  - Bash(uv run ingest-url *)
+  - Bash(uv run score *)
+  - Bash(nohup uv run pytest tests *)
+  - Bash(nohup uv run discover *)
   - Read
   - Write
   - Edit

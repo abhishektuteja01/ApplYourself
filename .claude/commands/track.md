@@ -1,9 +1,10 @@
 ---
-description: Sole writer of state transitions. Transitions a role along the allowed moves (state_io.ALLOWED), OR flips a sent outreach. Creates pipeline/<job_id>/state.yaml if missing; any other move needs --force --note.
+description: Sole writer of state transitions: move a role along the allowed moves, or flip a sent outreach. Other moves need --force --note.
 model: sonnet
 effort: low
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(uv run track *)
 argument-hint: <job_id> <state> [--note "..."] [--force]  |  outreach-sent <job_id> --channel <c> --to "<n>"
 ---
 

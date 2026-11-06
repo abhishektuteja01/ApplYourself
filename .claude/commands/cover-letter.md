@@ -1,5 +1,5 @@
 ---
-description: Write a one-page cover letter for a job_id into its built folder. The session writes cover_letter.yaml from the bullets on that resume; `uv run app build letter` checks and renders it into the user's template. Moves the role saved -> tailored.
+description: Write a one-page cover letter for a job_id from the bullets on its resume; `uv run app build letter` checks and renders it. Moves saved -> tailored.
 model: opus
 effort: medium
 allowed-tools:

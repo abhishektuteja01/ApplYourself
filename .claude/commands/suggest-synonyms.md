@@ -1,5 +1,5 @@
 ---
-description: Three-track synonym/skills audit. Track 1 — gap-fill allowable_synonyms from shortlist JD keywords (profile/bullets.md). Track 2 — memory unlock prompts for adjacent tools/concepts the user likely touched but hasn't documented, across every context in bullets.md (each employment and each project). Track 3 — same gap-fill + memory-unlock pattern applied to profile/skills_master.md. Never writes to bullets.md or skills_master.md itself: `uv run synonyms apply` does. `--auto` is the unattended nightly form.
+description: Propose synonyms, skill aliases and memory-unlock questions for bullets.md and skills_master.md from shortlist keywords. --auto is the nightly form.
 argument-hint: "[--auto]"
 model: sonnet
 effort: medium

@@ -1,9 +1,17 @@
 ---
-description: Generate an outreach draft (recruiter / referral / alumni) for a specific job_id. Per-channel work-authorization disclosure; `uv run app build outreach` checks the length per channel and lints with the outreach-scope rules. HARD-REFUSES if profile/voice_samples.md is missing or empty.
+description: Draft a recruiter, referral or alumni message for a job_id in your voice, with per-channel work-auth disclosure. Never sends.
 model: sonnet
 effort: medium
+disable-model-invocation: true
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(test *)
+  - Bash(cat *)
+  - Bash(echo *)
+  - Bash(uv run config work-auth*)
+  - Bash(uv run score show *)
+  - Bash(uv run app *)
   - Read
   - Write
 argument-hint: <job_id> <channel> [--to "..."] [--via "..."]

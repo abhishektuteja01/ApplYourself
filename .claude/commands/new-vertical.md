@@ -1,9 +1,19 @@
 ---
-description: Quick-add a job-search vertical — drafts the lane's profile/verticals/<name>/lane.yaml, a classifier rule, rubric.md, tailoring.md and the lane's resume shape (its resume: block plus the lane's picks on the existing sources), then asks an experience cap, a target level and a single confirm-or-edit. Splits into pass-a (scrape-ready lane block + rule) and pass-b (rubric, tailoring and resume shape) when a mode token is given. Config only, no code edits. Deep tuning is /tune-vertical.
+description: Add a job-search lane: lane.yaml, classifier rule, rubric, tailoring and resume shape. pass-a / pass-b split it in two. Config only.
 model: opus
 effort: medium
 allowed-tools:
-  - Bash
+  - Bash(cd *)
+  - Bash(git rev-parse *)
+  - Bash(uv run verticals-check*)
+  - Bash(uv run config *)
+  - Bash(uv run python -c *)
+  - Bash(uv run pytest tests/test_real_config_drift.py *)
+  - Bash(ls *)
+  - Bash(cmp *)
+  - Bash(echo *)
+  - Bash(mkdir -p profile/verticals/*)
+  - Bash(rm -f profile/verticals/*)
   - Read
   - Write
   - Edit

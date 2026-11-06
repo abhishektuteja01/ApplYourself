@@ -1,10 +1,10 @@
 ---
-description: Score new jobs and write today's shortlist. --all re-judges every role not past saved/tailored; --stale-only counts judged roles whose JD or packet changed (--yes judges them); --vertical V limits to one lane.
+description: Score new jobs and write today's shortlist. --all re-judges; --stale-only counts changed rows (--yes judges them); --vertical V limits to one lane.
 model: sonnet
 effort: low
 argument-hint: "[--all | --stale-only [--yes]] [--vertical <name>]"
 allowed-tools:
-  - Bash
+  - Bash(uv run score *)
   - Agent
 ---
 
