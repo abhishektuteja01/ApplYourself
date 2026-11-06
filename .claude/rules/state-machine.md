@@ -34,7 +34,7 @@ job_id, kind, from, to, note, forced, data`; kinds `created`, `transition`,
 fold (`state_io.apply_event`), rewritten under the role's lock right after
 the event is appended with fsync; readers keep reading `state.yaml`. A write
 to a role whose `state.yaml` is gone rebuilds it from the log first, as does listing roles (`state_io.iter_states`), and
-`uv run track rebuild-states --dry-run|--apply` remakes any that drifted.
+`uv run track rebuild-states --dry-run|--apply` remakes any that drifted. `uv run doctor` (read-only) lists where role folders, state.yaml, the log, the submit ledger and the jobs store disagree.
 Until `uv run track migrate-events --apply` creates the log, writes update
 `state.yaml` alone. The migration turns every `state_history` into events and
 restores the submit ledger's sent roles that have no `state.yaml`; `--dry-run`

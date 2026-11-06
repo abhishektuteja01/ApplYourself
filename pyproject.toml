@@ -61,6 +61,7 @@ night = "src.night:main"
 config = "src.config_cli:main"
 config-check = "src.config_check:main"
 pdf-broker = "src.pdf_broker:main"
+doctor = "src.doctor:main"
 
 [dependency-groups]
 dev = [
