@@ -648,8 +648,11 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     ]
     fit: dict[str, float] = {}
     if queue and paths.SCORED.exists():
-        scored = view(paths.SCORED).dropna(subset=["fit_score"])
-        fit = dict(zip(scored["job_id"], scored["fit_score"], strict=True))
+        try:
+            scored = view(paths.SCORED).dropna(subset=["fit_score"])
+            fit = dict(zip(scored["job_id"], scored["fit_score"], strict=True))
+        except Exception as exc:  # noqa: BLE001 - a scoring config error must not stop a run
+            print(f"WARNING: no fit scores ({exc}); queue in job_id order", file=sys.stderr)
     return sorted(queue, key=lambda j: (j not in fit, -fit.get(j, 0.0), j))
 
 
@@ -1508,6 +1511,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
+    held = 0
     if args.job_id:
         queue = eligible_queue()
         if args.job_id not in queue:
@@ -1525,10 +1529,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
         # Boards with no submit path are dropped before --limit counts, so a
         # limit of 5 means five roles that can actually be filled.
         queue = [j for j in eligible_queue() if _auto_submittable(j)]
+        held = len(queue)
+        if args.submit:
+            # The company cap and cooldown first, so --limit counts roles that can go out.
+            can_send = {row[0] for row in submission_preview(queue, hold_company=True)}
+            queue = [j for j in queue if j in can_send]
+            held -= len(queue)
         if args.limit is not None:
             queue = queue[: args.limit]
 
     if not queue:
+        if held:
+            print(f"Nothing to submit: {held} role(s) held by one-per-company or the cooldown.")
+            return 0
         print("Nothing eligible: no role at state=tailored with its built folder on disk.")
         return 0
 

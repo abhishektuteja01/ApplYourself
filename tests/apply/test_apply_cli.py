@@ -714,6 +714,38 @@ class TestEligibleQueue:
             "bbbb2222",
         ]
 
+    def test_a_scoring_error_falls_back_to_job_id_order(self, repo, monkeypatch, capsys):
+        for job_id in ("zzzz9999", "aaaa1111"):
+            repo.write_state(job_id=job_id)
+        paths.SCORED.parent.mkdir(parents=True, exist_ok=True)
+        factories.scored_rows({"job_id": "zzzz9999", "fit_score": 92}).to_parquet(paths.SCORED)
+
+        def broken(_path):
+            raise ValueError("bad scoring.yaml")
+
+        monkeypatch.setattr(apply_cli, "view", broken)
+        assert apply_cli.eligible_queue(repo.pipeline) == ["aaaa1111", "zzzz9999"]
+        assert "bad scoring.yaml" in capsys.readouterr().err
+
+    def test_submit_limit_counts_only_roles_the_company_rule_lets_through(self, repo, monkeypatch):
+        for job_id in ("aaaa1111", "bbbb2222"):
+            repo.write_state(job_id=job_id)  # one company
+        factories.write_state(
+            repo.pipeline,
+            "cccc3333",
+            "tailored",
+            company="Other Co",
+            title="Widget Engineer",
+            url=GH_URL,
+            tailored_dirs=[repo.tailored],
+        )
+        monkeypatch.delenv("APPLY_UNATTENDED", raising=False)
+        monkeypatch.setattr(apply_cli, "_auto_submittable", lambda job_id: True)
+        walked = []
+        monkeypatch.setattr(apply_cli, "run_queue", lambda queue, **kw: walked.extend(queue) or [])
+        assert apply_cli.main(["run", "--submit", "--yes", "--limit", "2", "--rate", "30s"]) == 0
+        assert walked == ["aaaa1111", "cccc3333"]
+
 
 class TestParseDuration:
     @pytest.mark.parametrize(
