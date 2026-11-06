@@ -5,8 +5,8 @@ from __future__ import annotations
 import openpyxl
 import yaml
 
-from src.apply import ledger, sheet
-from src.shared import paths
+from applyourself.apply import ledger, sheet
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
 
 GH = "https://job-boards.greenhouse.io/acme/jobs/1"
@@ -99,7 +99,7 @@ def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
-    from src.apply import confirmation
+    from applyourself.apply import confirmation
 
     data = {"job_id": "aaaa1111", "q": {"value": "x"}}
     answers = paths.APPLICATIONS / folder / "answers_override.json"
@@ -111,7 +111,7 @@ def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
 
 
 def test_job_ids_are_computed_without_the_sheet_file(tmp_path, monkeypatch, capsys):
-    from src import apply_cli
+    from applyourself import apply_cli
 
     _world(tmp_path, monkeypatch)
     assert sheet.job_ids("New") == ["aaaa1111", "bbbb2222"]
@@ -205,7 +205,7 @@ def test_a_ledger_line_under_another_job_id_for_the_same_form_counts_as_sent(tmp
 def test_a_run_record_drives_the_sheet_and_renders_the_report(tmp_path, monkeypatch):
     import json
 
-    from src.apply_cli import RunOutcome, datetime, write_report
+    from applyourself.apply_cli import RunOutcome, datetime, write_report
 
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
@@ -227,7 +227,7 @@ def test_a_run_record_drives_the_sheet_and_renders_the_report(tmp_path, monkeypa
 
 
 def test_run_backfill_dry_run_writes_nothing_and_apply_keeps_the_sheet(tmp_path, monkeypatch):
-    from src.apply import run_backfill
+    from applyourself.apply import run_backfill
 
     _world(tmp_path, monkeypatch)
     for job in ("aaaa1111", "bbbb2222"):
@@ -257,7 +257,7 @@ def test_run_backfill_dry_run_writes_nothing_and_apply_keeps_the_sheet(tmp_path,
 def test_compare_names_rows_the_queue_does_not_hold_and_refresh_drops_them(
     tmp_path, monkeypatch, capsys
 ):
-    from src import apply_cli
+    from applyourself import apply_cli
 
     _world(tmp_path, monkeypatch)
     sheet.refresh()
@@ -276,7 +276,7 @@ def test_compare_names_rows_the_queue_does_not_hold_and_refresh_drops_them(
 
 
 def test_a_refresh_reads_settings_and_the_ledger_once(tmp_path, monkeypatch):
-    from src.shared import config_schema
+    from applyourself.shared import config_schema
 
     _world(tmp_path, monkeypatch)
     ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "cccc3333", "accepted")

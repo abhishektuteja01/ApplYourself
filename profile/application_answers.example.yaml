@@ -1,7 +1,7 @@
 # TEMPLATE — copy to profile/application_answers.yaml and replace every value.
 #
 # The answer bank: everything /apply puts on an application form. Read by
-# src/apply/answers.py. DO NOT COMMIT YOUR COPY (profile/* is gitignored).
+# src/applyourself/apply/answers.py. DO NOT COMMIT YOUR COPY (profile/* is gitignored).
 #
 # You write `identity` through `work_authorization` — facts only you can state
 # (what resume.yaml already says is read from it).

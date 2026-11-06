@@ -3,7 +3,7 @@ every test from the real pipeline/, jobs/, applications/ and profile/."""
 
 import ast
 
-from src.shared import paths
+from applyourself.shared import paths
 
 READ_IN_PLACE = {"SCORING", "VERTICALS_DIR"}
 

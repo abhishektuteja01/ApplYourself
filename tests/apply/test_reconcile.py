@@ -2,14 +2,14 @@ import dataclasses
 
 import pytest
 
-from src.apply.domscan import DomField, DomOption, FormScan, scan_form
-from src.apply.reconcile import (
+from applyourself.apply.domscan import DomField, DomOption, FormScan, scan_form
+from applyourself.apply.reconcile import (
     DEMOGRAPHIC_SOURCE,
     MergedOption,
     ReconcileError,
     reconcile,
 )
-from src.apply.schema import (
+from applyourself.apply.schema import (
     BoardSchema,
     DemographicOption,
     DemographicQuestion,
@@ -567,7 +567,7 @@ def test_a_consent_box_the_dom_already_rendered_is_not_added_twice():
 
 
 def test_a_non_list_data_compliance_raises():
-    from src.apply.schema import SchemaError
+    from applyourself.apply.schema import SchemaError
 
     with pytest.raises(SchemaError, match="data_compliance is not a list"):
         parse_schema({"questions": [], "data_compliance": {"type": "gdpr"}})

@@ -14,13 +14,13 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import app_cli, score_store, track_cli
-from src.discovery import live_view
-from src.discovery import store as S
-from src.material import build as material_build
-from src.score_filter import CountryRule, load_scoring
-from src.shared import paths
-from src.shared.location.allowlist import Allowed
+from applyourself import app_cli, score_store, track_cli
+from applyourself.discovery import live_view
+from applyourself.discovery import store as S
+from applyourself.material import build as material_build
+from applyourself.score_filter import CountryRule, load_scoring
+from applyourself.shared import paths
+from applyourself.shared.location.allowlist import Allowed
 
 SESSIONS = Path(__file__).resolve().parent.parent / "fixtures" / "sessions"
 JD = (SESSIONS / "jd.txt").read_text(encoding="utf-8")

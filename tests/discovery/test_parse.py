@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from src.discovery import parse
+from applyourself.discovery import parse
 
 # ---------- html and dates ----------
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from src.shared import paths, verticals
+from applyourself.shared import paths, verticals
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_CONFIG = REPO_ROOT / "profile" / "verticals.yaml"
@@ -39,7 +39,7 @@ def test_every_search_term_classifies_into_its_own_lane(real_cfg):
     """discovery tags a row by the search term that found it; normalize.py
     falls back to the title classifier. When they disagree, a manual clip and
     a scraped row for the same title land in different rubrics."""
-    from src.shared.title_gate import classify_vertical_from_title
+    from applyourself.shared.title_gate import classify_vertical_from_title
 
     for vertical in real_cfg.verticals.values():
         for term in vertical.search_terms + vertical.linkedin_terms:
@@ -85,7 +85,7 @@ def test_title_gate_terms_do_not_exclude_the_lanes_own_search_terms(real_cfg):
 def test_real_resume_sources_check_clean_and_every_baseline_builds(real_cfg, monkeypatch):
     """The same source check `verticals-check` runs, plus every lane's baseline
     resume (what /score's judge reads) assembling without a problem."""
-    from src import resume_model
+    from applyourself import resume_model
 
     profile = REPO_ROOT / "profile"
     for attr, name in (

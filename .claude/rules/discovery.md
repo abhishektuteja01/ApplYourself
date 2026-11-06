@@ -1,11 +1,11 @@
 ---
 paths:
-  - "src/discovery/**"
-  - "src/shared/http_client.py"
-  - "src/shared/job_boards.py"
-  - "src/shared/identity.py"
-  - "src/shared/title_gate.py"
-  - "src/shared/location/**"
+  - "src/applyourself/discovery/**"
+  - "src/applyourself/shared/http_client.py"
+  - "src/applyourself/shared/job_boards.py"
+  - "src/applyourself/shared/identity.py"
+  - "src/applyourself/shared/title_gate.py"
+  - "src/applyourself/shared/location/**"
   - "scripts/audit_slugs.py"
   - "tests/discovery/**"
   - "tests/shared/test_identity.py"
@@ -15,7 +15,7 @@ paths:
   - "data/universe/**"
 ---
 
-# Discovery invariants (`src/discovery/`)
+# Discovery invariants (`src/applyourself/discovery/`)
 
 ## The flow
 

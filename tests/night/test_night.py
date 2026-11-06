@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from src import night as M
+from applyourself import night as M
 
 FAKE = '#!/bin/bash\necho "$(basename "$0" .sh)" >> "$RUN_DIR/../ran.txt"\nexit {rc}\n'
 
@@ -80,7 +80,7 @@ def test_run_json_is_replaced_whole_or_not_at_all(tmp_path, monkeypatch):
     path = tmp_path / "run.json"
     M.write_json(path, {"stages": {"score": {"status": "ok"}}})
 
-    from src.shared import files
+    from applyourself.shared import files
 
     def broken(fd):
         raise OSError("disk full")  # the temp file holds the new text, not yet renamed
@@ -93,7 +93,7 @@ def test_run_json_is_replaced_whole_or_not_at_all(tmp_path, monkeypatch):
 
 
 def test_a_run_json_from_newer_code_is_refused(tmp_path):
-    from src.shared import schemas
+    from applyourself.shared import schemas
 
     (tmp_path / "run.json").write_text(
         json.dumps({"schema_version": schemas.NIGHT_RUN_SCHEMA_VERSION + 1, "stages": {}}),
@@ -127,7 +127,7 @@ def test_run_claude_logs_every_calls_cost_even_a_retry_that_reuses_the_result_fi
     import subprocess
     import sys
 
-    from src.shared import paths
+    from applyourself.shared import paths
 
     fake = tmp_path / "bin"
     fake.mkdir()

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.shared import identity
-from src.shared.job_boards import ATS_SOURCE_NAMES, board_slug, is_applyable
+from applyourself.shared import identity
+from applyourself.shared.job_boards import ATS_SOURCE_NAMES, board_slug, is_applyable
 
 GOLDEN = [
     ("Anthropic", "Applied AI Engineer", "anthropic", "applied ai engineer", "1163cbe5"),

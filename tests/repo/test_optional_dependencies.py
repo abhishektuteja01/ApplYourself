@@ -19,20 +19,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Every module that transitively pulled in postal before the import was made
 # lazy: location itself and every discovery module around it.
 DISCOVERY_MODULES = [
-    "src.shared.location.places",
-    "src.shared.location.parser",
-    "src.shared.location.allowlist",
-    "src.shared.identity",
-    "src.shared.title_gate",
-    "src.discovery.parse",
-    "src.discovery.store",
-    "src.discovery.dedupe",
-    "src.discovery.live_view",
-    "src.discovery.run",
-    "src.discovery.ingest_url",
-    "src.discovery.sources.boards.base",
-    "src.discovery.sources.inbox",
-    "src.discovery.sources.boards.workday",
+    "applyourself.shared.location.places",
+    "applyourself.shared.location.parser",
+    "applyourself.shared.location.allowlist",
+    "applyourself.shared.identity",
+    "applyourself.shared.title_gate",
+    "applyourself.discovery.parse",
+    "applyourself.discovery.store",
+    "applyourself.discovery.dedupe",
+    "applyourself.discovery.live_view",
+    "applyourself.discovery.run",
+    "applyourself.discovery.ingest_url",
+    "applyourself.discovery.sources.boards.base",
+    "applyourself.discovery.sources.inbox",
+    "applyourself.discovery.sources.boards.workday",
 ]
 
 
@@ -67,7 +67,7 @@ def test_parse_location_without_postal_raises_an_actionable_error(tmp_path):
     proc = _run_without_postal(
         tmp_path,
         (
-            "from src.shared.location.parser import parse_location\n"
+            "from applyourself.shared.location.parser import parse_location\n"
             "try:\n"
             "    parse_location('Austin, TX')\n"
             "except RuntimeError as exc:\n"

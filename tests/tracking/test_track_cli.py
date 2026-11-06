@@ -1,4 +1,4 @@
-"""Tests for src/track_cli.py — the terminal entry point for /track.
+"""Tests for src/applyourself/track_cli.py — the terminal entry point for /track.
 state_io transition/mark_outreach_sent logic is covered by test_state_io.py;
 these tests cover only the CLI's own plumbing: dispatch, parquet-backed
 initial_fields lookup, and error exit codes."""
@@ -11,8 +11,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import track_cli
-from src.shared import paths
+from applyourself import track_cli
+from applyourself.shared import paths
 from tests.factories import write_clean, write_state
 
 
@@ -357,7 +357,7 @@ def _real_shaped_pipeline(tmp_path) -> Path:
     with a sent, a rejected and a clicking role that have no state.yaml."""
     import json
 
-    from src import state_io
+    from applyourself import state_io
 
     pipe = tmp_path / "pipeline"
     p = state_io.state_path_for(pipe, "aaaaaaaa")
@@ -382,7 +382,7 @@ def _real_shaped_pipeline(tmp_path) -> Path:
 
 
 def test_migrate_events_dry_run_checks_the_fold_and_writes_nothing(tmp_path, capsys):
-    from src import state_io
+    from applyourself import state_io
 
     pipe = _real_shaped_pipeline(tmp_path)
     before = sorted(str(f) for f in pipe.rglob("*"))
@@ -426,7 +426,7 @@ def test_score_copies_are_joined_then_dropped_through_the_log(tmp_path, capsys):
     the same after the migration, and drop-score-copies removes it by event."""
     import json
 
-    from src import state_io
+    from applyourself import state_io
     from tests.factories import scored_rows, state_record
 
     pipe = tmp_path / "pipeline"

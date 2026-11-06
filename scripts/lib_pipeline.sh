@@ -44,7 +44,7 @@ stage_start() {
   notify "Pipeline: $STAGE" "started"
 }
 
-# pdf_helper_up: start `uv run pdf-broker` (src/pdf_broker.py) for this stage, so
+# pdf_helper_up: start `uv run pdf-broker` (src/applyourself/pdf_broker.py) for this stage, so
 # Word conversions run under this bash, not under a headless claude (a new app to
 # macOS on every update). Stops when the stage exits. No helper: conversions run in-process.
 pdf_helper_up() {

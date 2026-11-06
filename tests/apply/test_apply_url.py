@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from src.apply import apply_url, sheet
-from src.discovery.sources.boards.base import Board
-from src.shared import paths
+from applyourself.apply import apply_url, sheet
+from applyourself.discovery.sources.boards.base import Board
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
 
 LI = "https://www.linkedin.com/jobs/view/4486872788"
@@ -31,7 +31,7 @@ def test_a_board_link_in_the_jd_or_a_stored_lookup_makes_it_submittable():
 def test_the_queue_shows_the_route_and_a_stored_url_reaches_resolve_url(tmp_path):
     import yaml
 
-    from src import apply_cli
+    from applyourself import apply_cli
 
     (tmp_path / "profile").mkdir()
     paths.JOBS.mkdir(exist_ok=True)

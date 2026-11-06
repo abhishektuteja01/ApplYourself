@@ -8,11 +8,11 @@ import time
 import pandas as pd
 import pytest
 
-from src.discovery import store as S
-from src.discovery.config import DiscoveryConfig
-from src.discovery.sources.boards import base as B
-from src.shared.http_client import CareersError
-from src.shared.job_boards import board_key
+from applyourself.discovery import store as S
+from applyourself.discovery.config import DiscoveryConfig
+from applyourself.discovery.sources.boards import base as B
+from applyourself.shared.http_client import CareersError
+from applyourself.shared.job_boards import board_key
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build retrieval systems for clinical data and ship them to production daily. " * 5

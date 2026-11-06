@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.apply.lever import (
+from applyourself.apply.lever import (
     ApplyUrlError,
     LeverScanError,
     PostingExpired,
@@ -21,7 +21,7 @@ from src.apply.lever import (
     parse_posting,
     scan_lever_form,
 )
-from src.apply.plan import build_plan, plan_for_board
+from applyourself.apply.plan import build_plan, plan_for_board
 
 from .conftest import load_html
 
@@ -239,13 +239,15 @@ class TestPageIdentity:
 
 class TestFetchForm:
     def test_a_404_is_an_ordinary_expiry(self):
-        from src.shared.http_client import CareersError
+        from applyourself.shared.http_client import CareersError
 
         posting = parse_posting(
             "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
         )
         with (
-            patch("src.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)),
+            patch(
+                "applyourself.apply.lever.fetch_text", side_effect=CareersError("gone", status=404)
+            ),
             pytest.raises(PostingExpired),
         ):
             fetch_form(posting)
@@ -254,7 +256,7 @@ class TestFetchForm:
 class TestLoadBoard:
     def test_submit_selector_and_captcha_flag(self):
         html = load_html("form_lever_full")
-        with patch("src.apply.lever.fetch_text", return_value=html):
+        with patch("applyourself.apply.lever.fetch_text", return_value=html):
             board = load_board(
                 "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
             )
@@ -265,7 +267,7 @@ class TestLoadBoard:
 
     def test_company_and_title_come_from_the_page(self):
         html = _LIVE_HEAD + load_html("form_lever_minimal") + "</body></html>"
-        with patch("src.apply.lever.fetch_text", return_value=html):
+        with patch("applyourself.apply.lever.fetch_text", return_value=html):
             board = load_board(
                 "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
             )
@@ -285,14 +287,14 @@ class TestLoadBoard:
             1,
         )
         with (
-            patch("src.apply.lever.fetch_text", return_value=html),
+            patch("applyourself.apply.lever.fetch_text", return_value=html),
             pytest.raises(LeverScanError, match="expected one submit button, found 2"),
         ):
             load_board("https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001")
 
     def test_plan_for_board_carries_ats_and_captcha_through(self, answers, tailor_dir):
         html = load_html("form_lever_minimal")
-        with patch("src.apply.lever.fetch_text", return_value=html):
+        with patch("applyourself.apply.lever.fetch_text", return_value=html):
             board = load_board(
                 "https://jobs.lever.co/widgetco/00000001-0000-0000-0000-000000000001"
             )

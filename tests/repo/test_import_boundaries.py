@@ -6,19 +6,19 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[2] / "src"
+SRC = Path(__file__).resolve().parents[2] / "src" / "applyourself"
 
 # Top-level modules that belong to a stage with a package or siblings.
 _STAGE_OF = {
-    "src.app_cli": "src.material",
-    "src.apply_cli": "src.apply",
-    "src.score_cli": "src.score",
-    "src.score_store": "src.score",
-    "src.score_filter": "src.score",
-    "src.shortlist": "src.score",
-    "src.track_cli": "src.track",
-    "src.state_io": "src.track",
-    "src.cleanup": "src.track",
+    "applyourself.app_cli": "applyourself.material",
+    "applyourself.apply_cli": "applyourself.apply",
+    "applyourself.score_cli": "applyourself.score",
+    "applyourself.score_store": "applyourself.score",
+    "applyourself.score_filter": "applyourself.score",
+    "applyourself.shortlist": "applyourself.score",
+    "applyourself.track_cli": "applyourself.track",
+    "applyourself.state_io": "applyourself.track",
+    "applyourself.cleanup": "applyourself.track",
 }
 
 
@@ -46,7 +46,7 @@ def _offences(text: str, module: str) -> list[str]:
     aliases: dict[str, str] = {}
     out = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("src"):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("applyourself"):
             for a in node.names:
                 full = f"{node.module}.{a.name}"
                 if _is_module(full):
@@ -55,7 +55,7 @@ def _offences(text: str, module: str) -> list[str]:
                     out.append(f"{module}:{node.lineno} imports {full}")
         elif isinstance(node, ast.Import):
             for a in node.names:
-                if a.name.startswith("src") and a.asname:
+                if a.name.startswith("applyourself") and a.asname:
                     aliases[a.asname] = a.name
     for node in ast.walk(tree):
         if (
@@ -70,9 +70,15 @@ def _offences(text: str, module: str) -> list[str]:
 
 
 def test_the_check_sees_both_kinds_of_reach_and_allows_its_own_stage():
-    text = "from src.apply import sheet\nsheet._rows()\nfrom src.app_cli import _slug\n"
-    assert len(_offences(text, "src.summary")) == 2
-    assert _offences("from src.material import folders\nfolders._slug('x')\n", "src.app_cli") == []
+    text = "from applyourself.apply import sheet\nsheet._rows()\nfrom applyourself.app_cli import _slug\n"
+    assert len(_offences(text, "applyourself.summary")) == 2
+    assert (
+        _offences(
+            "from applyourself.material import folders\nfolders._slug('x')\n",
+            "applyourself.app_cli",
+        )
+        == []
+    )
 
 
 def test_no_stage_reaches_another_stages_private_names():

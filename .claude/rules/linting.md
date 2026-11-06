@@ -1,13 +1,13 @@
 ---
 paths:
-  - "src/lint.py"
-  - "src/app_cli.py"
-  - "src/material/**"
+  - "src/applyourself/lint.py"
+  - "src/applyourself/app_cli.py"
+  - "src/applyourself/material/**"
   - "data/defaults/de_ai_rules.yaml"
   - "profile/de_ai_rules.yaml"
 ---
 
-# Linting (`src/lint.py`)
+# Linting (`src/applyourself/lint.py`)
 
 Two tiers: Tier 1 mechanical fixes (dashes, smart quotes, ellipsis, odd spaces)
 auto-applied, with every replacement value read from `de_ai_rules.yaml`

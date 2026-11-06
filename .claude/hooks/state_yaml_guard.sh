@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # R10 gate: /track is the sole writer of state transitions, and it writes
-# through src/state_io.py via Bash -- never through the Edit/Write tools. So an
+# through src/applyourself/state_io.py via Bash -- never through the Edit/Write tools. So an
 # Edit or Write aimed at a state.yaml or at pipeline/events.jsonl is a rule
 # break by construction.
 set -uo pipefail
@@ -19,7 +19,7 @@ case "$FILE" in
       echo "  uv run track <job_id> <state> [--note \"...\"]"
       echo
       echo "Side lists (tailored_dirs[], outreach[]) are"
-      echo "appended through src/state_io.py helpers, also via Bash."
+      echo "appended through src/applyourself/state_io.py helpers, also via Bash."
       echo "pipeline/events.jsonl is append-only, written by state_io alone."
     } >&2
     exit 2

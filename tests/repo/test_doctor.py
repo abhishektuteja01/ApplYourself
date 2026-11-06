@@ -6,8 +6,8 @@ import json
 
 import pandas as pd
 
-from src import doctor
-from src.shared import paths
+from applyourself import doctor
+from applyourself.shared import paths
 from tests.factories import write_state
 
 

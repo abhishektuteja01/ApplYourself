@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from src import app_cli, score_store
-from src.material import build as material_build
-from src.score_filter import load_scoring
-from src.shared import paths
+from applyourself import app_cli, score_store
+from applyourself.material import build as material_build
+from applyourself.score_filter import load_scoring
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean
 
 SESSIONS = Path(__file__).resolve().parents[1] / "fixtures" / "sessions"

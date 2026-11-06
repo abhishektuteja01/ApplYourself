@@ -1,7 +1,7 @@
 import pytest
 
-from src.apply.domscan import DomScanError, scan_form
-from src.apply.schema import parse_schema
+from applyourself.apply.domscan import DomScanError, scan_form
+from applyourself.apply.schema import parse_schema
 
 from .conftest import FORM_FIXTURES, load_fixture
 
@@ -40,7 +40,7 @@ def test_every_board_yields_identity_files_and_one_submit(scan, name):
 
 @pytest.mark.parametrize("name", FORM_FIXTURES)
 def test_kinds_are_all_known(scan, name):
-    from src.apply.domscan import KINDS
+    from applyourself.apply.domscan import KINDS
 
     assert {f.kind for f in scan(name).fields} <= KINDS
 
@@ -312,7 +312,7 @@ def test_block_id_shapes_agree_with_their_containers(scan, name):
     rule, and nothing raises. So: every field the scan filed under one of the
     four blocks must also carry that block's id shape.
     """
-    from src.apply.domscan import _BLOCK_ID_SHAPES
+    from applyourself.apply.domscan import _BLOCK_ID_SHAPES
 
     shapes = dict(_BLOCK_ID_SHAPES)
     misfiled = [
@@ -328,7 +328,7 @@ def test_the_captured_boards_between_them_exercise_every_block(scan):
     Greenhouse-owned block at all (form_multiselect renders none). Across the
     five captures, all four blocks have to be hit, or the check is asserting
     nothing anywhere."""
-    from src.apply.domscan import _BLOCK_ID_SHAPES
+    from applyourself.apply.domscan import _BLOCK_ID_SHAPES
 
     seen = {f.section for name in FORM_FIXTURES for f in scan(name).fields}
     assert {block for block, _ in _BLOCK_ID_SHAPES} <= seen

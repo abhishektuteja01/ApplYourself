@@ -6,8 +6,8 @@ import shutil
 import pytest
 import yaml
 
-from src import apply_cli
-from src.shared import paths
+from applyourself import apply_cli
+from applyourself.shared import paths
 
 from .conftest import FIXTURES
 

@@ -1,7 +1,7 @@
 import pytest
 
-from src.apply import schema
-from src.shared.http_client import CareersError
+from applyourself.apply import schema
+from applyourself.shared.http_client import CareersError
 from tests.apply.conftest import load_fixture
 
 

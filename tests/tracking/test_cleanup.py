@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src import app_cli, state_io, track_cli
-from src.apply import sheet
-from src.shared import paths
+from applyourself import app_cli, state_io, track_cli
+from applyourself.apply import sheet
+from applyourself.shared import paths
 
 OLD = datetime(2026, 1, 1, 9, 0, 0)
 

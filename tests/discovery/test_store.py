@@ -5,10 +5,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.discovery import dedupe, live_view
-from src.discovery import store as S
-from src.shared import identity
-from src.shared.location.allowlist import Allowed
+from applyourself.discovery import dedupe, live_view
+from applyourself.discovery import store as S
+from applyourself.shared import identity
+from applyourself.shared.location.allowlist import Allowed
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build retrieval pipelines for a clinical trials platform and ship them. " * 10
@@ -389,7 +389,7 @@ def test_merged_stats_keep_each_pair_once():
 
 
 def test_the_backfill_finds_two_stored_ids_of_one_role():
-    from src.discovery.dedupe import find_pairs
+    from applyourself.discovery.dedupe import find_pairs
 
     rows = [
         {

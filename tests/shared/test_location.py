@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("postal.parser")
 
-from src.shared.location.parser import parse_location
+from applyourself.shared.location.parser import parse_location
 
 
 # A place is "positively non-US" (and thus dropped by the United-States
@@ -810,7 +810,7 @@ def test_a_primed_cache_entry_does_not_survive_into_the_next_test():
 
 
 def test_monkeypatched_country_table_is_honoured(monkeypatch):
-    from src.shared import countries
+    from applyourself.shared import countries
 
     monkeypatch.setitem(countries.COUNTRY_NAMES, "germany", "Zzyzxland")
     assert parse_location("Germany").country == "Zzyzxland"
@@ -922,7 +922,7 @@ def test_ambiguous_strings_are_not_region_tokens(raw):
 
 class _Cfg:
     def __init__(self, countries, abroad=None):
-        from src.discovery.config import LocationAllowlist
+        from applyourself.discovery.config import LocationAllowlist
 
         self.location_allowlist = LocationAllowlist(countries)
         self._abroad = abroad or {}
@@ -949,14 +949,14 @@ class _Cfg:
     ],
 )
 def test_allowlist_check(raw, keep, shown):
-    from src.shared.location.allowlist import Allowlist
+    from applyourself.shared.location.allowlist import Allowlist
 
     got = Allowlist(_Cfg(["United States", "India"])).check(raw)
     assert (got.keep, got.location) == (keep, shown)
 
 
 def test_an_abroad_country_keeps_only_its_lanes():
-    from src.shared.location.allowlist import Allowlist
+    from applyourself.shared.location.allowlist import Allowlist
 
     al = Allowlist(_Cfg(["United States", "India"], abroad={"india": {"lane_a"}}))
     assert al.check("Bengaluru", "lane_a").keep
@@ -980,8 +980,8 @@ def test_an_abroad_country_keeps_only_its_lanes():
     ],
 )
 def test_residency_countries(title, expected):
-    from src.shared.location.allowlist import residency_countries
-    from src.shared.location.places import REGION_TOKEN_COUNTRIES
+    from applyourself.shared.location.allowlist import residency_countries
+    from applyourself.shared.location.places import REGION_TOKEN_COUNTRIES
 
     if expected == "europe":
         expected = set(REGION_TOKEN_COUNTRIES["europe"])
@@ -989,7 +989,7 @@ def test_residency_countries(title, expected):
 
 
 def test_a_title_limited_to_disallowed_countries_is_dropped():
-    from src.shared.location.allowlist import Allowlist
+    from applyourself.shared.location.allowlist import Allowlist
 
     al = Allowlist(_Cfg(["United States", "India"]))
     assert not al.check("Remote", "", "AI Engineer Backend (Remote - ES/UK only)").keep

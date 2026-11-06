@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from src.discovery import config as C
-from src.shared import paths
+from applyourself.discovery import config as C
+from applyourself.shared import paths
 
 
 def load(tmp_path, data):
@@ -159,7 +159,7 @@ def test_a_wide_allowlist_needs_explicit_search_locations(tmp_path):
 def abroad_lane(cfg):
     from dataclasses import replace
 
-    from src.shared import verticals
+    from applyourself.shared import verticals
 
     name = cfg.default_vertical
     lanes = {**cfg.verticals, name: replace(cfg.verticals[name], abroad_terms=("Widget Analyst",))}

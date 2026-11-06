@@ -6,8 +6,8 @@ from argparse import Namespace
 import pytest
 import yaml
 
-from src import config_migrate, score_filter
-from src.shared import paths
+from applyourself import config_migrate, score_filter
+from applyourself.shared import paths
 
 
 def _profile(tmp_path):
@@ -69,7 +69,7 @@ def test_languages_that_disagree_with_the_bank_stop(tmp_path, capsys):
 
 
 def test_source_abroad_blocks_become_one_top_level_block(tmp_path, cfg, monkeypatch, capsys):
-    from src.discovery.config import load_config
+    from applyourself.discovery.config import load_config
 
     prof = _profile(tmp_path)
     b = prof / "application_answers.yaml"
@@ -105,8 +105,8 @@ def test_source_abroad_blocks_become_one_top_level_block(tmp_path, cfg, monkeypa
 
 
 def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
-    from src import apply_cli
-    from src.apply.answers import load_answers
+    from applyourself import apply_cli
+    from applyourself.apply.answers import load_answers
 
     prof = _profile(tmp_path)
     v = prof / "verticals.yaml"
@@ -134,7 +134,7 @@ def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
 
 
 def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
-    from src.apply.answers import load_answers
+    from applyourself.apply.answers import load_answers
 
     prof = _profile(tmp_path)
     shutil.copyfile(paths.example("resume.example.yaml"), prof / "resume.yaml")
@@ -161,9 +161,9 @@ def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
 
 
 def test_automation_yaml_becomes_settings_with_the_bank_browser(tmp_path, capsys):
-    from src.apply.answers import AnswersError, load_answers
-    from src.apply.browser import load_browser_config
-    from src.shared.config_schema import load_settings
+    from applyourself.apply.answers import AnswersError, load_answers
+    from applyourself.apply.browser import load_browser_config
+    from applyourself.shared.config_schema import load_settings
 
     prof = _profile(tmp_path)
     shutil.copyfile(paths.example("resume.example.yaml"), prof / "resume.yaml")
@@ -213,7 +213,7 @@ def test_tool_state_moves_under_dot_state(tmp_path, capsys, edited):
 
 
 def test_inline_lanes_split_into_lane_files_with_the_same_config(tmp_path, capsys):
-    from src.shared import verticals as V
+    from applyourself.shared import verticals as V
 
     example = paths.example("verticals.example.yaml")
     top = yaml.safe_load(example.read_text(encoding="utf-8"))

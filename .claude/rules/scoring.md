@@ -1,9 +1,9 @@
 ---
 paths:
-  - "src/score_cli.py"
-  - "src/score_filter.py"
-  - "src/score_store.py"
-  - "src/shortlist.py"
+  - "src/applyourself/score_cli.py"
+  - "src/applyourself/score_filter.py"
+  - "src/applyourself/score_store.py"
+  - "src/applyourself/shortlist.py"
 ---
 
 # Scoring architecture (`/score`)

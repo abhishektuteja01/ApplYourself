@@ -9,7 +9,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from src.shared.parquet_io import write_parquet
+from applyourself.shared.parquet_io import write_parquet
 
 
 def test_writes_the_frame_and_creates_the_parent(tmp_path):
@@ -97,8 +97,8 @@ def test_the_written_file_keeps_the_usual_mode(tmp_path):
 
 
 def test_a_scored_file_from_newer_code_is_refused_and_an_unstamped_one_reads(tmp_path):
-    from src import score_store
-    from src.shared import schemas
+    from applyourself import score_store
+    from applyourself.shared import schemas
 
     path = tmp_path / "scored.parquet"
     write_parquet(pd.DataFrame({"job_id": ["a"]}), path)
@@ -114,7 +114,7 @@ def test_a_waiter_on_a_removed_lock_file_does_not_share_the_lock(tmp_path):
     lock on a fresh file, so C still waits for B."""
     import time
 
-    from src.shared.parquet_io import locked
+    from applyourself.shared.parquet_io import locked
 
     path = tmp_path / "state.yaml"
     a_in, a_go, b_in, b_go, c_in, c_go = (threading.Event() for _ in range(6))
@@ -143,9 +143,9 @@ def test_a_waiter_on_a_removed_lock_file_does_not_share_the_lock(tmp_path):
 
 
 def test_the_store_is_stamped_and_one_from_newer_code_is_refused(tmp_path):
-    from src.discovery import store
-    from src.shared import schemas
-    from src.shared.parquet_io import schema_version
+    from applyourself.discovery import store
+    from applyourself.shared import schemas
+    from applyourself.shared.parquet_io import schema_version
 
     path = tmp_path / "jobs.parquet"
     store.save_store(store.empty_store(), path)

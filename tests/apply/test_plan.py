@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from src.apply import plan as P
-from src.apply.answers import Resolution
-from src.apply.greenhouse import BoardForm, Posting
-from src.apply.plan import (
+from applyourself.apply import plan as P
+from applyourself.apply.answers import Resolution
+from applyourself.apply.greenhouse import BoardForm, Posting
+from applyourself.apply.plan import (
     FieldPlan,
     Override,
     Plan,
@@ -25,7 +25,7 @@ from src.apply.plan import (
     find_artifact,
     plan_for_board,
 )
-from src.apply.reconcile import MergedField, MergedOption, Reconciled
+from applyourself.apply.reconcile import MergedField, MergedOption, Reconciled
 
 from .conftest import FORM_FIXTURES, load_fixture
 
@@ -372,7 +372,7 @@ class TestEmploymentSwitch:
     def _answers(self, tmp_path, **employment):
         import yaml
 
-        from src.apply.answers import load_answers
+        from applyourself.apply.answers import load_answers
 
         from .conftest import FIXTURES
 
@@ -465,7 +465,7 @@ class TestEmploymentSwitch:
         assert [f.id for f in plan.fields] == ["school--0"]
 
     def test_an_unknown_flag_is_still_rejected(self, tmp_path):
-        from src.apply.answers import AnswersError
+        from applyourself.apply.answers import AnswersError
 
         with pytest.raises(AnswersError, match="unknown keys"):
             self._answers(tmp_path, only_when_requried=True)  # typo on purpose
@@ -783,7 +783,7 @@ class TestPassThrough:
         assert (plan.submit_selector, plan.submit_disabled) == ("#s", True)
 
     def test_plan_for_board_carries_the_board_identifiers(self, merged, answers, tailor_dir, scan):
-        from src.apply.schema import parse_schema
+        from applyourself.apply.schema import parse_schema
 
         name = "form_education"
         board = BoardForm(
@@ -820,7 +820,7 @@ class TestDraftedTextIsLinted:
         assert "—" not in plan.fields[0].value
 
     def test_a_banned_phrase_parks_naming_it(self, answers, tailor_dir):
-        from src.lint import load_de_ai_rules
+        from applyourself.lint import load_de_ai_rules
 
         banned = next(
             p

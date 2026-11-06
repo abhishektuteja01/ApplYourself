@@ -1,4 +1,4 @@
-"""Tests for src/state_io.py — deterministic state.yaml plumbing."""
+"""Tests for src/applyourself/state_io.py — deterministic state.yaml plumbing."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.state_io import (
+from applyourself.state_io import (
     ACTIVE_STATES,
     ALLOWED,
     CLOSED_STATES,
@@ -405,7 +405,7 @@ def test_load_all_states_skips_empty_files(tmp_path):
 
 
 def test_a_role_in_the_log_with_no_cache_is_listed_and_its_cache_written(tmp_path):
-    from src import state_io
+    from applyourself import state_io
 
     pdir = tmp_path / "pipeline"
     for jid in ("aaaaaaaa", "bbbbbbbb"):
@@ -496,7 +496,7 @@ def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
     """A second writer waits for the first instead of writing over it."""
     import threading
 
-    from src.state_io import update
+    from applyourself.state_io import update
 
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, "saved", initial_fields=_initial())
@@ -564,12 +564,14 @@ def _r10_offenders(source: str) -> list[int]:
     modules: set[str] = set()
     funcs: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "src":
+        if isinstance(node, ast.ImportFrom) and node.module == "applyourself":
             modules.update(a.asname or a.name for a in node.names if a.name == "state_io")
-        elif isinstance(node, ast.ImportFrom) and node.module == "src.state_io":
+        elif isinstance(node, ast.ImportFrom) and node.module == "applyourself.state_io":
             funcs.update(a.asname or a.name for a in node.names if a.name in _STATE_WRITERS)
         elif isinstance(node, ast.Import):
-            modules.update(a.asname or a.name for a in node.names if a.name == "src.state_io")
+            modules.update(
+                a.asname or a.name for a in node.names if a.name == "applyourself.state_io"
+            )
     if not (modules or funcs):
         return []
     hits = []
@@ -594,11 +596,11 @@ def _r10_offenders(source: str) -> list[int]:
 
 
 def test_only_track_cli_changes_state():
-    root = Path(__file__).resolve().parents[2] / "src"
+    root = Path(__file__).resolve().parents[2] / "src" / "applyourself"
     allowed = {root / "state_io.py", root / "track_cli.py"}
-    assert _r10_offenders("from src import state_io\nstate_io.transition(p, 'applied')\n")
-    assert _r10_offenders("from src.state_io import ensure_state as e\ne(p)\n")
-    assert _r10_offenders("from src import state_io\nstate_io._append_event(log, ev)\n")
+    assert _r10_offenders("from applyourself import state_io\nstate_io.transition(p, 'applied')\n")
+    assert _r10_offenders("from applyourself.state_io import ensure_state as e\ne(p)\n")
+    assert _r10_offenders("from applyourself import state_io\nstate_io._append_event(log, ev)\n")
     offenders = [
         f"{path.relative_to(root.parent)}:{line}"
         for path in sorted(root.rglob("*.py"))

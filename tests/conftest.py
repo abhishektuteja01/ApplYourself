@@ -1,6 +1,6 @@
 """Shared fixtures. Tests never read the gitignored profile/verticals.yaml —
 the committed tests/fixtures/verticals.yaml (three synthetic verticals:
-example_primary/secondary/tertiary) is injected into the src.shared.verticals
+example_primary/secondary/tertiary) is injected into the applyourself.shared.verticals
 singleton for every test. Coverage of the real config lives in
 tests/repo/test_real_config_drift.py, which skips when that file is absent."""
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.shared import verticals
+from applyourself.shared import verticals
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
@@ -60,7 +60,7 @@ def _isolate_root(tmp_path, tmp_path_factory, monkeypatch):
     `monkeypatch.setitem(paths._overrides, NAME, path)`, never setattr on paths."""
     import shutil
 
-    from src.shared import paths
+    from applyourself.shared import paths
 
     for name in set(vars(paths)) & set(paths._LAYOUT):
         delattr(paths, name)
@@ -101,7 +101,7 @@ def _no_git_hook_env(monkeypatch):
 def clear_location_cache():
     """parse_location is lru_cached, so a test that patches COUNTRY_NAMES /
     CITIES_BY_NAME would otherwise see (or leak) another test's entries."""
-    from src.shared.location.parser import parse_location
+    from applyourself.shared.location.parser import parse_location
 
     parse_location.cache_clear()
     yield

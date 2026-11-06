@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from src.shared.files import atomic_write_text
+from applyourself.shared.files import atomic_write_text
 
 
 def test_a_failed_write_keeps_the_old_file_and_no_temp(tmp_path):

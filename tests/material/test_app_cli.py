@@ -1,4 +1,4 @@
-"""Tests for src/app_cli.py — `uv run app`, the plumbing of /tailor,
+"""Tests for src/applyourself/app_cli.py — `uv run app`, the plumbing of /tailor,
 /cover-letter and /company-answers. Sources are the committed example world
 (conftest), the verticals config is the fixture, Word is never called."""
 
@@ -12,10 +12,10 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import app_cli
-from src.material import build as material_build
-from src.session_schema import ProblemCode
-from src.shared import paths
+from applyourself import app_cli
+from applyourself.material import build as material_build
+from applyourself.session_schema import ProblemCode
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
 
 JOB = "a1b2c3d4"

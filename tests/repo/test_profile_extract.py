@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from docx import Document
 
-from src.profile_extract import extract, extract_docx, main
+from applyourself.profile_extract import extract, extract_docx, main
 
 
 def _docx(tmp_path, build) -> Path:

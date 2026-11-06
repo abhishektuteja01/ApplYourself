@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.shared.config_schema import ClassifierRule, Settings, validate
+from applyourself.shared.config_schema import ClassifierRule, Settings, validate
 
 
 def test_a_type_error_is_listed_beside_an_unknown_key():

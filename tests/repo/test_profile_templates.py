@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.shared.verticals import load_verticals
+from applyourself.shared.verticals import load_verticals
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROFILE = REPO_ROOT / "profile"
@@ -260,7 +260,7 @@ class TestExampleConfigsAreValid:
     def test_application_answers_example_loads_through_the_real_loader(self):
         """`load_answers` is the strict validator /apply hits: existence says
         nothing about whether the template is a valid bank."""
-        from src.apply.answers import load_answers
+        from applyourself.apply.answers import load_answers
 
         loaded = load_answers(PROFILE / "application_answers.example.yaml")
         assert "default" in loaded.countries and loaded.questions
@@ -298,19 +298,19 @@ class TestExampleSourcesResolve:
 
     @pytest.fixture
     def example_cfg(self):
-        from src.shared import verticals
+        from applyourself.shared import verticals
 
         cfg = load_verticals(PROFILE / "verticals.example.yaml")
         verticals.set_config(cfg)
         return cfg
 
     def test_example_sources_check_clean(self, example_cfg):
-        from src import resume_model
+        from applyourself import resume_model
 
         assert resume_model.check_sources(resume_model.load_sources(), example_cfg) == []
 
     def test_every_example_lane_baseline_builds(self, example_cfg):
-        from src import resume_model
+        from applyourself import resume_model
 
         src = resume_model.load_sources()
         for lane in example_cfg.names:
@@ -334,7 +334,7 @@ class TestExampleEntrySchemas:
 
     @staticmethod
     def _entries(name: str) -> dict[str, dict]:
-        from src.resume_model import parse_entries
+        from applyourself.resume_model import parse_entries
 
         return parse_entries((PROFILE / name).read_text(encoding="utf-8"))
 
@@ -346,7 +346,7 @@ class TestExampleEntrySchemas:
         ],
     )
     def test_entries_use_exactly_the_loader_keys(self, name, keys_attr):
-        from src import resume_model
+        from applyourself import resume_model
 
         keys = set(getattr(resume_model, keys_attr))
         entries = self._entries(name)
@@ -447,6 +447,6 @@ class TestStoriesTemplate:
     def test_stories_is_optional_in_the_scaffolder(self):
         """A new user should not have to write behavioral stories before their
         first scored job."""
-        from src.onboard_scaffold import OPTIONAL_TEMPLATES
+        from applyourself.onboard_scaffold import OPTIONAL_TEMPLATES
 
         assert "stories.example.md" in OPTIONAL_TEMPLATES

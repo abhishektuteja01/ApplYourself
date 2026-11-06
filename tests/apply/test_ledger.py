@@ -1,6 +1,6 @@
 """The submit ledger: what went out, independent of state.yaml."""
 
-from src.apply import ledger
+from applyourself.apply import ledger
 
 
 def test_prior_matches_on_job_id_or_form_url(tmp_path):
@@ -26,8 +26,8 @@ def test_a_missing_ledger_is_empty(tmp_path):
 
 
 def test_registration_refuses_a_role_the_ledger_says_was_sent(tmp_path, monkeypatch, capsys):
-    from src import track_cli
-    from src.shared import paths
+    from applyourself import track_cli
+    from applyourself.shared import paths
 
     ledger.append(
         paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME,
@@ -43,8 +43,8 @@ def test_registration_refuses_a_role_the_ledger_says_was_sent(tmp_path, monkeypa
 def test_a_rejected_submit_blocks_registration_as_prior_does(tmp_path, capsys):
     """The board has a rejected application: registering it fresh at `saved`
     would hide that, so ensure follows ledger.prior."""
-    from src import track_cli
-    from src.shared import paths
+    from applyourself import track_cli
+    from applyourself.shared import paths
 
     path = paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME
     ledger.append(path, "bbbb2222", "rejected", detail="duplicate")
@@ -63,7 +63,7 @@ def test_a_refused_click_lets_the_role_be_tried_again(tmp_path):
 
 
 def test_every_reader_takes_one_verdict_for_a_rejected_or_unfinished_click(tmp_path):
-    from src.apply import sheet
+    from applyourself.apply import sheet
 
     path = tmp_path / "submitted.jsonl"
     ledger.append(path, "aaaa1111", "clicking")
@@ -101,7 +101,7 @@ def test_an_unstamped_old_line_still_counts_and_a_newer_line_is_refused(tmp_path
 
     import pytest
 
-    from src.shared import schemas
+    from applyourself.shared import schemas
 
     path = tmp_path / "submitted.jsonl"
     old = json.dumps({"job_id": "aaaa1111", "status": "accepted"}) + "\n"

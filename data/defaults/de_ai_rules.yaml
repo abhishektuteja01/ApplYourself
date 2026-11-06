@@ -1,4 +1,4 @@
-# Read by src/lint.py: `uv run app build` (resume, letter, answers),
+# Read by src/applyourself/lint.py: `uv run app build` (resume, letter, answers),
 # `verticals-check` (the sources, once), /apply and /outreach.
 #
 # Mechanical violations are auto-fixed. Banned phrases are FLAGGED and Claude

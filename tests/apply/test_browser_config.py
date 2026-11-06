@@ -8,7 +8,7 @@ preference, so it lives in config and `src/` only reads it.
 
 import pytest
 
-from src.apply import browser as B
+from applyourself.apply import browser as B
 
 
 class TestLoadBrowserConfig:

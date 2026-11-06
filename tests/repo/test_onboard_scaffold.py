@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src import onboard_scaffold as scaffold
-from src.shared import paths
-from src.shared.verticals import load_verticals
+from applyourself import onboard_scaffold as scaffold
+from applyourself.shared import paths
+from applyourself.shared.verticals import load_verticals
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_PROFILE = REPO_ROOT / "profile"
@@ -213,7 +213,7 @@ class TestWorkAuth:
         assert (row["authorized"], row["requires_sponsorship"]) == (authorized, requires)
 
     def test_scoring_reads_it(self, prof):
-        from src import score_filter as sf
+        from applyourself import score_filter as sf
 
         run("--vertical", "my_lane", "--work-auth", "citizen")
         cfg = sf.load_scoring(prof / "scoring.yaml", prof / "application_answers.yaml")
@@ -294,7 +294,7 @@ class TestVerticalName:
         assert run("--vertical", name, "--work-auth", "citizen") == 0
 
     def test_the_pattern_is_the_loader_pattern(self):
-        from src.shared import verticals as v
+        from applyourself.shared import verticals as v
 
         assert scaffold.VERTICAL_NAME_RE.pattern == v._NAME_RE.pattern
 

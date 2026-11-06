@@ -21,9 +21,9 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "src"))
 
-from src.shared.config_schema import Cutoffs, validate  # noqa: E402
+from applyourself.shared.config_schema import Cutoffs, validate  # noqa: E402
 
 
 def _block_end(lines: list[str], start: int) -> int:

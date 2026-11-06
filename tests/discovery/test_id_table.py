@@ -6,9 +6,9 @@ import json
 
 import pandas as pd
 
-from src.discovery import id_table
-from src.discovery import store as S
-from src.shared.parquet_io import write_parquet
+from applyourself.discovery import id_table
+from applyourself.discovery import store as S
+from applyourself.shared.parquet_io import write_parquet
 
 TODAY = pd.Timestamp("2026-09-27")
 

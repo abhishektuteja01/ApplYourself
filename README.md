@@ -145,7 +145,7 @@ baseline summary. `profile/verticals.example.yaml` and
 - Salary is not a lane key: it is `salary` on each country row of the answer bank
   (`{amount, currency, markup_pct, lanes}`), read only by `/apply`.
 
-`src/shared/verticals.py` is the single loader and it is **strict**: a lane
+`src/applyourself/shared/verticals.py` is the single loader and it is **strict**: a lane
 missing any required key raises `ValueError`. Because `tests/conftest.py` injects
 config through an autouse fixture, one malformed block errors the entire test
 suite. `uv run verticals-check` fails loud if a rubric, tailoring file or
@@ -385,7 +385,7 @@ once and says which are active, empty, stale or dead into
 | `resolve-urls (--dry-run \| --apply) [--limit N]` | For Manual apply / No apply URL roles whose company has a Greenhouse, Lever or Ashby board in `boards.csv`, look for the title there. `--dry-run` makes no network call; `--apply` stores `jobs/apply_urls.json`. |
 | `sheet [--add \| --list STATUS] [--compare]` | Rewrite the overnight status sheet (`profile/settings.yaml` `table_path`) from the work queue: every role scored at or above `scoring.yaml` `cutoffs.sheet`, live and not finished, with its status from state, the submit ledger and run records. `--list` prints the queue at one status; `--compare` shows how the xlsx differs. Both write nothing. |
 
-The submit path is bounded, all in `src/apply_cli.py`:
+The submit path is bounded, all in `src/applyourself/apply_cli.py`:
 
 - `--submit` is off by default and is the only thing that presses submit.
 - `apply run --submit` requires an explicit `--limit`, unless `--job-id` names
@@ -489,7 +489,7 @@ by which point the blob is public and reachable by SHA forever.
 <details>
 <summary><b>Where files land: the data layout</b></summary>
 
-`src/shared/paths.py` is the single source of truth, resolved from the file rather than
+`src/applyourself/shared/paths.py` is the single source of truth, resolved from the file rather than
 the CWD, so a path means the same thing whichever entry point you came in
 through.
 
@@ -549,7 +549,7 @@ No client is ever constructed.
 </details>
 
 <details>
-<summary><b>R10: <code>src/track_cli.py</code> is the only writer of state</b></summary>
+<summary><b>R10: <code>src/applyourself/track_cli.py</code> is the only writer of state</b></summary>
 
 Nine states:
 
@@ -653,7 +653,7 @@ bullets, a rubric, `scoring.yaml`, or on a model upgrade.
 <details>
 <summary><b>Linting: two tiers, and a rewrite loop</b></summary>
 
-`src/lint.py` runs two tiers over every generated document.
+`src/applyourself/lint.py` runs two tiers over every generated document.
 
 **Tier 1: mechanical.** Dashes, smart quotes, ellipses, non-breaking spaces,
 zero-width characters. Auto-fixed everywhere, silently.
@@ -701,7 +701,7 @@ with `git config core.hooksPath .githooks`.
 </details>
 
 <details>
-<summary><b>Reading <code>src/apply/</code></b></summary>
+<summary><b>Reading <code>src/applyourself/apply/</code></b></summary>
 
 The submission stage is the most layered part of the repo, because every ATS
 lies to you differently.
@@ -717,7 +717,7 @@ lies to you differently.
 | `ashby.py` | Client-rendered, so it POSTs the `ApplicationForm` GraphQL query, plus one headless page load for the per-field description text that query never returns. |
 | `answers.py` | Resolves each field to a value from `application_answers.yaml`. Anything unresolvable parks the role, which blocks submit. |
 | `bank_schema.py` | Loads and validates `application_answers.yaml` into the facts and questions `answers.py` reads. |
-| `places.py` | The countries (from `src/shared/countries.py`) and regions a form label can name. |
+| `places.py` | The countries (from `src/applyourself/shared/countries.py`) and regions a form label can name. |
 | `bank.py` | The answer bank: saves what each confirmed run teaches, and takes it back for `apply learn`. |
 | `wordings.py` | `apply wordings`: one review file of the new work-authorization wordings saved plans park on; the rows you mark yes are saved to the bank. |
 | `plan.py` | Form plus answers to an ordered fill plan. The whole contract with the browser. |

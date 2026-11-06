@@ -27,7 +27,7 @@ which writes a small YAML of choices and calls the `src/` helpers via Bash. A
 corollary: `src/` is vertical-agnostic and company-agnostic.
 
 **R10 — one writer for state.** `pipeline/events.jsonl` is the append-only
-history and each `state.yaml` is a cache of its fold. `src/track_cli.py` is the
+history and each `state.yaml` is a cache of its fold. `src/applyourself/track_cli.py` is the
 only module that appends state events (`created`, `transition`); `/track`,
 `app_cli`, `apply_cli` and `apply/triage` all go through `track_cli.main`.
 Everything else appends side-list events only.
@@ -59,13 +59,13 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 
 | # | Stage | Command | Deterministic plumbing |
 |---|-------|---------|------------------------|
-| 1 | Discovery | `/discover` | `src/discovery/` — `run.py` checks due boards and searches (`sources/`) into the jobs store (`store.py`, ids in `dedupe.py`), rebuilds `clean.parquet` (`live_view.py`); `digest.py` reads the report back |
+| 1 | Discovery | `/discover` | `src/applyourself/discovery/` — `run.py` checks due boards and searches (`sources/`) into the jobs store (`store.py`, ids in `dedupe.py`), rebuilds `clean.parquet` (`live_view.py`); `digest.py` reads the report back |
 | 2 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
 | 3 | Application material | `/tailor`, `/cover-letter`, `/company-answers`, `/outreach` | `app_cli.py`, `material/` (folders, new, checks, build), `resume_model.py`, `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
 | 4 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
-| 5 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
+| 5 | Submission | `/apply` | `src/applyourself/apply/`, `apply_cli.py` |
 
-`src/shared/` holds what several stages use: paths, verticals, job identity, the
+`src/applyourself/shared/` holds what several stages use: paths, verticals, job identity, the
 title gate, locations, the job-board registry and the HTTP client.
 
 - `jobs/clean.parquet` is the **only** discovery output anything downstream reads:
@@ -75,7 +75,7 @@ title gate, locations, the job-board registry and the HTTP client.
 - Application material lands in `applications/<vertical>/<dir>/`, the only state
   the material commands share: `uv run app dir <id>` resolves it from
   `tailored_dirs[-1]`, and "has a letter / answers" means the file is there.
-- Each resume is built by `src/resume_model.py` from one source per fact
+- Each resume is built by `src/applyourself/resume_model.py` from one source per fact
   (`resume.yaml`, `bullets.md`, `skills_master.md`, the lane's `resume:` block);
   detail in `verticals-config`.
 - `saved -> tailored` is `uv run track <id> tailored --if saved`, fired by
@@ -123,7 +123,7 @@ uv run night --resume                 # what that script runs: --resume reruns t
   `uv sync --group apply`. A plain `uv sync` removes both groups;
   `uv sync --all-groups` keeps them.
 - The core `uv sync` needs no C toolchain. `postal` (libpostal) is imported lazily
-  in `src/shared/location/parser.py`: discovery imports without it, and address
+  in `src/applyourself/shared/location/parser.py`: discovery imports without it, and address
   parsing raises a message telling you to install it. Only
   `tests/discovery/test_stapply.py` needs it; `tests/shared/test_location.py` skips
   itself.

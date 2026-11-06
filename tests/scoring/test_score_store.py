@@ -1,4 +1,4 @@
-"""/score's start -> judge -> finish round trip (src/score_store.py, score_cli)."""
+"""/score's start -> judge -> finish round trip (src/applyourself/score_store.py, score_cli)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from src import score_cli, score_store
-from src.score_filter import CountryRule, load_scoring
-from src.shared import paths, verticals
+from applyourself import score_cli, score_store
+from applyourself.score_filter import CountryRule, load_scoring
+from applyourself.shared import paths, verticals
 from tests.factories import scored_rows, write_clean, write_state
 
 NOW = datetime(2026, 9, 27, 12, 0)

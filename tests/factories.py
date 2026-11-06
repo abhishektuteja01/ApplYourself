@@ -9,10 +9,10 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import score_store, state_io
-from src.discovery.live_view import CLEAN_COLUMNS
-from src.score_store import SCORED_COLUMNS
-from src.shared import identity
+from applyourself import score_store, state_io
+from applyourself.discovery.live_view import CLEAN_COLUMNS
+from applyourself.score_store import SCORED_COLUMNS
+from applyourself.shared import identity
 
 _NOW = datetime(2026, 9, 27, 12, 0)
 _NUMERIC = {"salary_min", "salary_max"}

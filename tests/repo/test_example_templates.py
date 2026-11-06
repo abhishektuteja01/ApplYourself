@@ -29,13 +29,13 @@ from pathlib import Path
 import pytest
 from docx import Document
 
-from src.docx_cover_letter import (
+from applyourself.docx_cover_letter import (
     COVER_LETTER_OPTIONAL_PLACEHOLDERS,
     COVER_LETTER_REQUIRED_PLACEHOLDERS,
     list_cover_letter_placeholders,
     render_cover_letter,
 )
-from src.docx_render import (
+from applyourself.docx_render import (
     REQUIRED_CHARACTER_STYLE,
     REQUIRED_STYLES,
     render_resume,
@@ -264,7 +264,7 @@ class TestResumeTemplateContract:
     def test_renders_a_real_resume(self, tmp_path):
         """The example_primary baseline resume, built from the example sources
         a new clone actually has."""
-        from src import resume_model
+        from applyourself import resume_model
 
         src = resume_model.load_sources()
         built = resume_model.build(
@@ -284,7 +284,7 @@ class TestResumeTemplateContract:
         out = tmp_path / "resume.docx"
         # Deliberately shares no string with APPROVED_RESUME_TEXT, or the input
         # itself would trip the assertion below.
-        from src import resume_model
+        from applyourself import resume_model
 
         blocks = [
             resume_model.Block("name", (resume_model.Run("Real Name"),), "**Real Name**"),

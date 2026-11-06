@@ -20,20 +20,20 @@ classifiers = [
     "Private :: Do Not Upload",
 ]
 dependencies = [
-    # Exact: src/discovery/sources/search.py uses jobspy names outside its public API.
+    # Exact: src/applyourself/discovery/sources/search.py uses jobspy names outside its public API.
     "python-jobspy==1.1.82",
     "pandas>=2.2,<3",
-    "pyarrow>=15.0",  # parquet engine for pandas; src/shared/parquet_io.py and the id table import it directly
-    "openpyxl>=3.1",  # xlsx engine for pandas; src/apply/sheet.py imports it directly
+    "pyarrow>=15.0",  # parquet engine for pandas; src/applyourself/shared/parquet_io.py and the id table import it directly
+    "openpyxl>=3.1",  # xlsx engine for pandas; src/applyourself/apply/sheet.py imports it directly
     "rapidfuzz>=3.6",
     "python-docx>=1.1",
-    "lxml>=5.0",  # src/apply HTML parsing; XML surgery in scripts/scrub_example_templates.py
+    "lxml>=5.0",  # src/applyourself/apply HTML parsing; XML surgery in scripts/scrub_example_templates.py
     "pyyaml>=6.0",
     "requests>=2.32",
     "geonamescache>=3.0.1",
     "pycountry>=24.0",
     "pypdf>=6.19.0",
-    "pydantic>=2.11",  # src/shared/config_schema.py, src/session_schema.py
+    "pydantic>=2.11",  # src/applyourself/shared/config_schema.py, src/applyourself/session_schema.py
 ]
 
 [project.urls]
@@ -42,26 +42,26 @@ Repository = "https://github.com/abhishektuteja01/ApplYourself"
 Issues = "https://github.com/abhishektuteja01/ApplYourself/issues"
 
 [project.scripts]
-ingest-url = "src.discovery.ingest_url:main"
-score = "src.score_cli:main"
-track = "src.track_cli:main"
-app = "src.app_cli:main"
-profile-extract = "src.profile_extract:main"
-onboard-scaffold = "src.onboard_scaffold:main"
-discover = "src.discovery.run:main"
-verticals-check = "src.shared.verticals:main"
-discovery-check = "src.discovery.config:main"
-discover-digest = "src.discovery.digest:main"
-discover-dupes = "src.discovery.dedupe:main"
-discover-ids = "src.discovery.id_table:main"
-apply = "src.apply_cli:main"
-synonyms = "src.synonyms_cli:main"
-summary = "src.summary:main"
-night = "src.night:main"
-config = "src.config_cli:main"
-config-check = "src.config_check:main"
-pdf-broker = "src.pdf_broker:main"
-doctor = "src.doctor:main"
+ingest-url = "applyourself.discovery.ingest_url:main"
+score = "applyourself.score_cli:main"
+track = "applyourself.track_cli:main"
+app = "applyourself.app_cli:main"
+profile-extract = "applyourself.profile_extract:main"
+onboard-scaffold = "applyourself.onboard_scaffold:main"
+discover = "applyourself.discovery.run:main"
+verticals-check = "applyourself.shared.verticals:main"
+discovery-check = "applyourself.discovery.config:main"
+discover-digest = "applyourself.discovery.digest:main"
+discover-dupes = "applyourself.discovery.dedupe:main"
+discover-ids = "applyourself.discovery.id_table:main"
+apply = "applyourself.apply_cli:main"
+synonyms = "applyourself.synonyms_cli:main"
+summary = "applyourself.summary:main"
+night = "applyourself.night:main"
+config = "applyourself.config_cli:main"
+config-check = "applyourself.config_check:main"
+pdf-broker = "applyourself.pdf_broker:main"
+doctor = "applyourself.doctor:main"
 
 [dependency-groups]
 dev = [
@@ -94,7 +94,7 @@ apply = [
 #     packages it. Needs autoconf/automake/libtool/pkgconf plus a compiler, and
 #     `make` downloads ~2GB of model data into --datadir. Export
 #     LIBPOSTAL_PREFIX (and LD_LIBRARY_PATH) if you used a non-default --prefix.
-# src/shared/location/parser.py imports it lazily, at the one call site, so a clone
+# src/applyourself/shared/location/parser.py imports it lazily, at the one call site, so a clone
 # without it can still import discovery — the failure is a clear message when
 # address parsing is actually reached.
 discovery = [
@@ -106,7 +106,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/applyourself"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -134,18 +134,18 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "src.shared.*",
-    "src.state_io",
-    "src.track_cli",
-    "src.score_filter",
-    "src.score_store",
-    "src.score_cli",
-    "src.lint",
-    "src.app_cli",
-    "src.material.*",
-    "src.apply.greenhouse",
-    "src.apply.reconcile",
-    "src.apply.report",
+    "applyourself.shared.*",
+    "applyourself.state_io",
+    "applyourself.track_cli",
+    "applyourself.score_filter",
+    "applyourself.score_store",
+    "applyourself.score_cli",
+    "applyourself.lint",
+    "applyourself.app_cli",
+    "applyourself.material.*",
+    "applyourself.apply.greenhouse",
+    "applyourself.apply.reconcile",
+    "applyourself.apply.report",
 ]
 # The `strict` flags one by one: `strict = true` here leaks to every module.
 disallow_any_generics = true
@@ -164,13 +164,13 @@ extra_checks = true
 # Not typed yet: drop a module from this list once it checks clean.
 [[tool.mypy.overrides]]
 module = [
-    "src.apply.bank_schema",
-    "src.apply.fill",
-    "src.apply.sheet",
-    "src.apply_cli",
-    "src.discovery.sources.boards.base",
-    "src.discovery.store",
-    "src.summary",
-    "src.synonyms_cli",
+    "applyourself.apply.bank_schema",
+    "applyourself.apply.fill",
+    "applyourself.apply.sheet",
+    "applyourself.apply_cli",
+    "applyourself.discovery.sources.boards.base",
+    "applyourself.discovery.store",
+    "applyourself.summary",
+    "applyourself.synonyms_cli",
 ]
 ignore_errors = true

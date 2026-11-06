@@ -8,9 +8,9 @@ import json
 import pytest
 import yaml
 
-from src import synonyms_cli as S
-from src.resume_model import parse_entries
-from src.shared import paths
+from applyourself import synonyms_cli as S
+from applyourself.resume_model import parse_entries
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean
 
 BULLETS = """# header comment

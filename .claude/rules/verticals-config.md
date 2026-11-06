@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/shared/verticals.py"
-  - "src/resume_model.py"
+  - "src/applyourself/shared/verticals.py"
+  - "src/applyourself/resume_model.py"
   - "profile/verticals.yaml"
   - "profile/verticals/*/lane.yaml"
   - "profile/resume.yaml"
@@ -11,7 +11,7 @@ paths:
 
 # Verticals: the config spine
 
-A "vertical" is a job lane. `src/shared/verticals.py` is the single source of truth loader.
+A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single source of truth loader.
 
 - Config lives in `profile/verticals.yaml` (gitignored user data: `lanes:` order,
   `defaults:`, `classifier_rules`) and one `profile/verticals/<name>/` dir per
@@ -21,7 +21,7 @@ A "vertical" is a job lane. `src/shared/verticals.py` is the single source of tr
   loaded only when `lanes:` lists it. `lane.yaml` sits in `verticals/` beside
   whichever verticals file names it, so the example and the fixture carry their
   own.
-- **One source per resume fact** (`src/resume_model.py`): `profile/resume.yaml`
+- **One source per resume fact** (`src/applyourself/resume_model.py`): `profile/resume.yaml`
   holds name, contact, education and each context's header plus per-lane
   `{min, max, order}`; `bullets.md` holds claims and `default_for`;
   `skills_master.md` holds skills and `show`; a lane's `resume:` block holds only

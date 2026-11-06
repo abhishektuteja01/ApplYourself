@@ -32,7 +32,7 @@ test injection via `set_config()` always wins. The one instance-capture to watch
 `discovery/run.py`'s `main`, which hands one config to `sources.boards.base.Crawl`
 for the run's lifetime.
 
-Canonical paths live in `src/shared/paths.py`. Read `paths.X` inside
+Canonical paths live in `src/applyourself/shared/paths.py`. Read `paths.X` inside
 a function body, never copy it into a module-level name or a default argument: data
 paths resolve from `paths.root()` at call time. `tests/conftest.py` points that root
 at `tmp_path` for every test; a test that needs one path elsewhere uses

@@ -1,5 +1,5 @@
 #!/bin/bash
-# The whole night, started by the LaunchAgent: `uv run night` (src/night.py) runs
+# The whole night, started by the LaunchAgent: `uv run night` (src/applyourself/night.py) runs
 #   discover -> score -> synonyms -> tailor -> apply_prep -> cleanup -> summary -> email
 # and records each stage in logs/pipeline_<stamp>/run.json. Arguments pass through
 # (--resume, --only STAGE, --dry-run); so do DRY_RUN, STAGE_LIMIT, SKIP_STAGES and

@@ -30,9 +30,9 @@ def _run(tool_input: dict) -> int:
         f"sed -i '' s/a/b/ {F}",
         f"python3 -c \"open('{F}', 'w').write('h')\"",
         f"uv run python -c \"from pathlib import Path; Path('{F}').write_text('h')\"",
-        "uv run python -c 'from src.apply import confirmation; confirmation.record(p, d)'",
+        "uv run python -c 'from applyourself.apply import confirmation; confirmation.record(p, d)'",
         "uv run python -c 'p.with_name(p.name + SIDECAR_SUFFIX).write_text(h)'",
-        "uv run python -c 'from src.apply.confirmation import digest; print(digest(d))'",
+        "uv run python -c 'from applyourself.apply.confirmation import digest; print(digest(d))'",
         "python3 -c 'import hashlib, json; hashlib.sha256(json.dumps(d, sort_keys=True))'",
     ],
 )
@@ -68,7 +68,7 @@ SUBMIT_ASK = HOOK.parent / "submit_ask.sh"
     [
         ("uv run apply run --job-id x --submit", True),
         ("uv run --with rich apply run --limit 1 --submit --yes", True),
-        ("uv run python -m src.apply_cli run --submit", True),
+        ("uv run python -m applyourself.apply_cli run --submit", True),
         ("uv run apply run --job-id x", False),
         ("uv run apply plan x --json", False),
         ("git commit -m 'no --submit-ish flag here'", False),

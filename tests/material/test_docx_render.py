@@ -1,4 +1,4 @@
-"""Tests for src/docx_render.py — ATS-clean docx generation.
+"""Tests for src/applyourself/docx_render.py — ATS-clean docx generation.
 
 Uses a programmatic fixture template at test setup so tests don't depend on
 the user's hand-authored template (which is part of slice 3 / onboarding)."""
@@ -11,18 +11,18 @@ import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 
-from src.docx_cover_letter import (
+from applyourself.docx_cover_letter import (
     list_cover_letter_placeholders,
     render_cover_letter,
 )
-from src.docx_render import (
+from applyourself.docx_render import (
     REQUIRED_STYLES,
     TemplateError,
     TemplateMissingError,
     render_resume,
 )
-from src.resume_model import Block, Run, inline_runs
-from src.shared import paths
+from applyourself.resume_model import Block, Run, inline_runs
+from applyourself.shared import paths
 
 
 def _name(text):
@@ -262,7 +262,7 @@ def test_render_emits_hyperlink_with_hyperlink_char_style(tmp_path):
 
 def test_validate_template_requires_hyperlink_character_style(tmp_path):
     """Template missing the Hyperlink character style fails loud."""
-    from src.docx_render import _validate_template
+    from applyourself.docx_render import _validate_template
 
     # Default python-docx Document() has Hyperlink. Delete it then validate.
     template = _make_template(tmp_path / "tmpl.docx")
@@ -667,7 +667,7 @@ def test_cover_letter_rejects_malformed_content(tmp_path, over):
 
 
 def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
-    from src import docx_render
+    from applyourself import docx_render
 
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render.sys, "platform", "darwin")
@@ -690,7 +690,7 @@ def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
 
 
 def test_export_pdf_ok(monkeypatch, tmp_path):
-    from src.docx_render import export_pdf
+    from applyourself.docx_render import export_pdf
 
     _fake_word(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
@@ -704,7 +704,7 @@ def test_export_pdf_ok(monkeypatch, tmp_path):
 def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
     """A failed re-run used to leave the previous pdf beside the new docx, and
     a leftover staging pdf passed the non-empty check."""
-    from src.docx_render import export_pdf
+    from applyourself.docx_render import export_pdf
 
     _fake_word(monkeypatch, tmp_path, returncode=1)
     docx = tmp_path / "A_Resume.docx"
@@ -717,7 +717,7 @@ def test_export_pdf_failure_never_leaves_a_stale_pdf(monkeypatch, tmp_path):
 
 
 def test_export_pdf_stages_under_a_plain_name(monkeypatch, tmp_path):
-    from src.docx_render import export_pdf
+    from applyourself.docx_render import export_pdf
 
     calls = _fake_word(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
@@ -733,7 +733,7 @@ def test_a_failed_conversion_restarts_word_once_and_retries(monkeypatch, tmp_pat
     """Word stuck in a bad state failed every role of a night with -1728."""
     import subprocess
 
-    from src import docx_render
+    from applyourself import docx_render
 
     _fake_word(monkeypatch, tmp_path)
     outcomes = iter([1, 0, 0, 1])  # convert fails, restart, retry ok; next role fails
@@ -759,7 +759,7 @@ def test_a_failed_conversion_restarts_word_once_and_retries(monkeypatch, tmp_pat
 
 
 def test_export_pdf_skipped_without_word(monkeypatch, tmp_path):
-    from src import docx_render
+    from applyourself import docx_render
 
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path / "missing.app")
     docx = tmp_path / "A_Resume.docx"
@@ -774,7 +774,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
     import threading
     import time
 
-    from src import docx_render
+    from applyourself import docx_render
 
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setitem(paths._overrides, "PDF_STAGING", tmp_path / "staging")
@@ -810,7 +810,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
 def test_the_word_script_closes_an_open_namesake_first_and_always_closes_its_own(
     monkeypatch, tmp_path
 ):
-    from src.docx_render import export_pdf
+    from applyourself.docx_render import export_pdf
 
     calls = _fake_word(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
@@ -830,7 +830,7 @@ def _helper(monkeypatch, tmp_path):
     import os
     import threading
 
-    from src import pdf_broker
+    from applyourself import pdf_broker
 
     _fake_word(monkeypatch, tmp_path)
     monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
@@ -846,7 +846,7 @@ def _helper(monkeypatch, tmp_path):
 
 
 def test_export_pdf_goes_through_the_helper_when_one_is_up(monkeypatch, tmp_path):
-    from src import docx_render
+    from applyourself import docx_render
 
     queue, stop, t = _helper(monkeypatch, tmp_path)
     docx = tmp_path / "A_Resume.docx"
@@ -860,7 +860,7 @@ def test_export_pdf_goes_through_the_helper_when_one_is_up(monkeypatch, tmp_path
 
 
 def test_a_helper_that_is_gone_fails_fast_and_leaves_no_stale_pdf(monkeypatch, tmp_path):
-    from src import docx_render
+    from applyourself import docx_render
 
     queue = tmp_path / "q"
     queue.mkdir()
@@ -878,7 +878,7 @@ def test_a_helper_that_is_gone_fails_fast_and_leaves_no_stale_pdf(monkeypatch, t
 def test_a_helper_that_never_answers_times_out_and_withdraws(monkeypatch, tmp_path):
     import os
 
-    from src import pdf_broker
+    from applyourself import pdf_broker
 
     monkeypatch.setattr(pdf_broker, "POLL_SECONDS", 0.01)
     queue = tmp_path / "q"
@@ -892,7 +892,7 @@ def test_a_helper_that_never_answers_times_out_and_withdraws(monkeypatch, tmp_pa
 
 
 def test_a_bad_request_gets_a_failed_result_and_the_helper_goes_on(monkeypatch, tmp_path):
-    from src import docx_render
+    from applyourself import docx_render
 
     queue, stop, t = _helper(monkeypatch, tmp_path)
     (queue / "bad.req").write_text("not json", encoding="utf-8")

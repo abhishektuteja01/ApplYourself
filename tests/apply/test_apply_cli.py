@@ -19,14 +19,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src import apply_cli
-from src.apply import ashby, confirmation, ledger
-from src.apply.answers import AnswersError
-from src.apply.greenhouse import BoardForm, Posting, PostingExpired
-from src.apply.plan import PlanError
-from src.apply.schema import parse_schema
-from src.material import folders as material_folders
-from src.shared import paths
+from applyourself import apply_cli
+from applyourself.apply import ashby, confirmation, ledger
+from applyourself.apply.answers import AnswersError
+from applyourself.apply.greenhouse import BoardForm, Posting, PostingExpired
+from applyourself.apply.plan import PlanError
+from applyourself.apply.schema import parse_schema
+from applyourself.material import folders as material_folders
+from applyourself.shared import paths
 from tests import factories
 
 from .conftest import FIXTURES, load_fixture, load_html
@@ -80,8 +80,8 @@ def stub_board(monkeypatch):
     def fake_load_board(url, timeout=30):
         calls.append(url)
         name = "form_education"
-        from src.apply.domscan import scan_form
-        from src.apply.reconcile import reconcile
+        from applyourself.apply.domscan import scan_form
+        from applyourself.apply.reconcile import reconcile
 
         scan = scan_form(load_html(name))
         schema = parse_schema(load_fixture(name))
@@ -101,7 +101,7 @@ def stub_board(monkeypatch):
 @pytest.fixture(autouse=True)
 def stub_answers(monkeypatch):
     """The synthetic widget-world config, never the user's real one."""
-    from src.apply.answers import load_answers
+    from applyourself.apply.answers import load_answers
 
     loaded = load_answers(FIXTURES / "application_answers.yaml")
     monkeypatch.setattr(apply_cli, "load_answers", lambda *a, **k: loaded)
@@ -151,7 +151,7 @@ class TestBuildDispatchesToLever:
         from .conftest import load_html
 
         monkeypatch.setattr(
-            "src.apply.lever.fetch_text", lambda *a, **k: load_html("form_lever_minimal")
+            "applyourself.apply.lever.fetch_text", lambda *a, **k: load_html("form_lever_minimal")
         )
 
         plan, _ = apply_cli.build(JOB_ID)
@@ -165,11 +165,11 @@ class TestBuildDispatchesToAshby:
         from .conftest import load_api
 
         monkeypatch.setattr(
-            "src.apply.ashby.fetch_json_post", lambda *a, **k: load_api("api_ashby_form")
+            "applyourself.apply.ashby.fetch_json_post", lambda *a, **k: load_api("api_ashby_form")
         )
         # Otherwise `load_board` would open a real headless browser to read
         # DOM-only descriptions — no network in this test module.
-        monkeypatch.setattr("src.apply.ashby.fetch_dom_enrichment", lambda *a, **k: {})
+        monkeypatch.setattr("applyourself.apply.ashby.fetch_dom_enrichment", lambda *a, **k: {})
 
     def test_an_ashby_url_builds_an_ashby_plan(self, repo, monkeypatch, tailor_dir):
         repo.write_clean(**{JOB_ID: ASHBY_URL})
@@ -200,7 +200,8 @@ class TestBuildDispatchesToAshby:
         self._stub_api(monkeypatch)
         opened = []
         monkeypatch.setattr(
-            "src.apply_cli.run_one", lambda plan, *a, **k: opened.append(plan.ats) or _fake_result()
+            "applyourself.apply_cli.run_one",
+            lambda plan, *a, **k: opened.append(plan.ats) or _fake_result(),
         )
 
         outcome = apply_cli._run_role(JOB_ID, submit=False, headless=False)
@@ -268,7 +269,7 @@ class TestResolveOutDir:
 
 def _salary_bank(us=None, germany=None):
     """The example bank, with `salary` on its United States and Germany rows."""
-    from src.apply.answers import answers_from
+    from applyourself.apply.answers import answers_from
 
     data = yaml.safe_load(
         paths.example("application_answers.example.yaml").read_text(encoding="utf-8")
@@ -324,7 +325,7 @@ class TestSalaryFor:
             _salary_bank(germany={"amount": 1, "currency": "EUR", "markup_pct": 5})
 
     def test_the_old_lane_key_names_where_it_moved(self, tmp_path):
-        from src.shared.config_schema import Lane, validate
+        from applyourself.shared.config_schema import Lane, validate
 
         with pytest.raises(ValueError, match=r"moved to application_answers\.yaml"):
             validate(Lane, {"salary_expectation": {"fallback": 1}}, "lane.yaml")
@@ -444,8 +445,8 @@ class TestPlanCommand:
         repo.write_clean(**{JOB_ID: GH_URL})
         repo.write_state()
         name = "form_minimal"
-        from src.apply.domscan import scan_form
-        from src.apply.reconcile import reconcile
+        from applyourself.apply.domscan import scan_form
+        from applyourself.apply.reconcile import reconcile
 
         scan = scan_form(load_html(name))
         schema = parse_schema(load_fixture(name))
@@ -574,7 +575,7 @@ def _fake_plan(
     ats="greenhouse",
     requires_captcha=False,
 ):
-    from src.apply.plan import Plan
+    from applyourself.apply.plan import Plan
 
     return Plan(
         job_id=job_id,
@@ -599,7 +600,7 @@ def _fake_plan(
 def _fake_result(
     *, submitted=False, failures=(), recovered=(), submit_error="", confirmed=False, manifest=None
 ):
-    from src.apply.fill import FillResult
+    from applyourself.apply.fill import FillResult
 
     return FillResult(
         form_url=GH_URL,
@@ -809,7 +810,7 @@ class TestRunQueue:
 
 class TestRunReport:
     def test_render_groups_by_category(self):
-        from src.apply_cli import RunOutcome
+        from applyourself.apply_cli import RunOutcome
 
         outcomes = [
             RunOutcome("a1", "A Co", "Eng", "submitted"),
@@ -846,7 +847,7 @@ class TestRunReport:
         assert "boom" in text
 
     def test_write_report_creates_a_dated_file(self, tmp_path):
-        from src.apply_cli import RunOutcome
+        from applyourself.apply_cli import RunOutcome
 
         out_dir = tmp_path / "apply_runs"
         path = apply_cli.write_report(
@@ -1195,7 +1196,7 @@ class TestACrashAfterTheClickStillRecordsTheSubmission:
 
 
 def _unmapped(field_id="why_us"):
-    from src.apply.plan import Unmapped
+    from applyourself.apply.plan import Unmapped
 
     return Unmapped(
         id=field_id,
@@ -1445,7 +1446,7 @@ class TestOneSubmissionPerCompanyPerRun:
         assert opened == ["a1"]
 
     def test_the_report_gives_skipped_its_own_section(self):
-        from src.apply_cli import RunOutcome
+        from applyourself.apply_cli import RunOutcome
 
         text = apply_cli.render_report(
             [
@@ -1505,8 +1506,8 @@ class TestApplyConfirm:
     @pytest.fixture(autouse=True)
     def _offline(self, monkeypatch):
         """confirm never reaches the board or opens a browser."""
-        from src.apply import browser
-        from src.shared import http_client
+        from applyourself.apply import browser
+        from applyourself.shared import http_client
 
         no = _raise(AssertionError("apply confirm went online"))
         for target, name in (
@@ -1588,7 +1589,7 @@ class TestARunLearnsWhatWasConfirmed:
         return replace(_fake_plan(JOB_ID), fields=tuple(fields))
 
     def _field(self, fid, label, value, source="", options=(), replaced=""):
-        from src.apply.plan import FieldPlan
+        from applyourself.apply.plan import FieldPlan
 
         return FieldPlan(
             id=fid,
@@ -1757,13 +1758,13 @@ class TestTheSubmitLedger:
         r.outcome = "accepted"
         self._stub(monkeypatch, r)
         apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None)
-        from src.apply import ledger
+        from applyourself.apply import ledger
 
         statuses = [x["status"] for x in ledger.records(apply_cli.ledger_path())]
         assert statuses == ["clicking", "accepted"]
 
     def test_a_role_in_the_ledger_is_skipped_without_opening_a_browser(self, monkeypatch):
-        from src.apply import ledger
+        from applyourself.apply import ledger
 
         ledger.append(apply_cli.ledger_path(), JOB_ID, "accepted", form_url=GH_URL)
         calls = self._stub(monkeypatch, _fake_result())
@@ -1793,7 +1794,7 @@ class TestTheSubmitLedger:
         assert tracked == []
 
     def test_the_queue_leaves_out_sent_roles(self, repo):
-        from src.apply import ledger
+        from applyourself.apply import ledger
 
         repo.write_state()
         assert apply_cli.eligible_queue() == [JOB_ID]
@@ -1802,7 +1803,7 @@ class TestTheSubmitLedger:
 
 
 def test_tests_never_touch_the_real_applications_folder():
-    from src.shared import paths
+    from applyourself.shared import paths
 
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
     assert paths.APPLY_RUNS.parent != paths.REPO_ROOT / "applications"
@@ -1818,8 +1819,8 @@ class TestKeywordsGeneralize:
         return path
 
     def test_a_keyword_lets_the_next_wording_be_guessed(self, tmp_path, monkeypatch):
-        from src.apply import bank
-        from src.apply.answers import find_question, load_answers
+        from applyourself.apply import bank
+        from applyourself.apply.answers import find_question, load_answers
 
         path = self._bank(tmp_path, monkeypatch)
         bank.learn(
@@ -1837,7 +1838,7 @@ class TestKeywordsGeneralize:
         assert found and found[0].id == "project_proud" and "~" in found[1]
 
     def test_a_keyword_that_shadows_another_question_is_refused_alone(self, tmp_path, monkeypatch):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         path = self._bank(tmp_path, monkeypatch)
         changes = bank.learn(
@@ -1858,7 +1859,7 @@ class TestKeywordsGeneralize:
 def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
     import shutil
 
-    from src.apply import bank
+    from applyourself.apply import bank
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -1898,7 +1899,7 @@ class TestEachLessonMustHold:
         return path
 
     def test_a_different_answer_under_the_same_id_is_refused(self, tmp_path, monkeypatch):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         path = self._bank(tmp_path, monkeypatch)
         changes = bank.learn(
@@ -1918,7 +1919,7 @@ class TestEachLessonMustHold:
     def test_a_new_spelling_is_learned_when_the_board_offered_none_of_the_bank_s(
         self, tmp_path, monkeypatch
     ):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         path = self._bank(tmp_path, monkeypatch)
         bank.learn(
@@ -1935,7 +1936,7 @@ class TestEachLessonMustHold:
         assert q["answer"] == ["They/Them", "they / them"]
 
     def test_a_one_employer_answer_never_becomes_a_question(self, tmp_path, monkeypatch):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         path = self._bank(tmp_path, monkeypatch)
         changes = bank.learn(
@@ -1952,7 +1953,7 @@ class TestEachLessonMustHold:
         assert "excites_role" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
     def test_one_bad_lesson_does_not_lose_the_rest(self, tmp_path, monkeypatch):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         path = self._bank(tmp_path, monkeypatch)
         changes = bank.learn(
@@ -1971,7 +1972,7 @@ class TestEachLessonMustHold:
         assert any(c.startswith("not saved") for c in changes)
 
     def test_undo_of_the_last_wording_removes_the_question(self, tmp_path, monkeypatch):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         path = self._bank(tmp_path, monkeypatch)
         bank.learn(
@@ -1989,7 +1990,7 @@ class TestEachLessonMustHold:
         assert "why_widgets" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
 
     def test_every_write_keeps_a_history(self, tmp_path, monkeypatch):
-        from src.apply import bank
+        from applyourself.apply import bank
 
         self._bank(tmp_path, monkeypatch)
         bank.learn([bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them")])
@@ -2007,8 +2008,8 @@ def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
 
 
 def test_an_optional_export_control_question_takes_no_override(answers, tailor_dir):
-    from src.apply.plan import Override, build_plan
-    from src.apply.reconcile import MergedField, MergedOption, Reconciled
+    from applyourself.apply.plan import Override, build_plan
+    from applyourself.apply.reconcile import MergedField, MergedOption, Reconciled
 
     f = MergedField(
         id="q",
@@ -2078,7 +2079,7 @@ class TestTheJobsCountry:
         assert apply_cli.job_country({"job_id": "", "location": location}, answers) == country
 
     def test_a_location_nothing_reads_is_unknown(self, answers):
-        from src.apply.answers import UNKNOWN_COUNTRY
+        from applyourself.apply.answers import UNKNOWN_COUNTRY
 
         assert (
             apply_cli.job_country({"job_id": "", "location": "HLT-Hong Leong Tower"}, answers)
@@ -2090,7 +2091,7 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
     import shutil
     from dataclasses import replace
 
-    from src.apply.plan import FieldPlan
+    from applyourself.apply.plan import FieldPlan
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -2126,7 +2127,7 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
 def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monkeypatch):
     import shutil
 
-    from src.apply import bank
+    from applyourself.apply import bank
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -2151,9 +2152,9 @@ class TestAConfirmedFactJudgmentIsLearned:
     def test_it_is_saved_answered_next_time_and_undone(self, tmp_path, monkeypatch):
         import shutil
 
-        from src.apply import bank
-        from src.apply.answers import load_answers, resolve
-        from src.apply.reconcile import MergedField, MergedOption
+        from applyourself.apply import bank
+        from applyourself.apply.answers import load_answers, resolve
+        from applyourself.apply.reconcile import MergedField, MergedOption
 
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
@@ -2213,7 +2214,7 @@ class TestAConfirmedFactJudgmentIsLearned:
 def test_teach_saves_one_answer_and_a_keyword_finds_the_next_wording(tmp_path, capsys):
     import shutil
 
-    from src.apply.answers import find_question, load_answers
+    from applyourself.apply.answers import find_question, load_answers
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)

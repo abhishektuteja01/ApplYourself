@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.apply import ashby
-from src.apply.ashby import (
+from applyourself.apply import ashby
+from applyourself.apply.ashby import (
     ApplyUrlError,
     AshbyScanError,
     PostingExpired,
@@ -24,7 +24,7 @@ from src.apply.ashby import (
     load_board,
     parse_posting,
 )
-from src.apply.plan import build_plan, plan_for_board
+from applyourself.apply.plan import build_plan, plan_for_board
 
 from .conftest import load_api
 
@@ -89,10 +89,10 @@ class TestLoadBoard:
     def _board(self, payload=None):
         with (
             patch(
-                "src.apply.ashby.fetch_json_post",
+                "applyourself.apply.ashby.fetch_json_post",
                 return_value=payload or load_api("api_ashby_form"),
             ),
-            patch("src.apply.ashby.fetch_dom_enrichment", return_value={}),
+            patch("applyourself.apply.ashby.fetch_dom_enrichment", return_value={}),
         ):
             return load_board(ASHBY_URL)
 
@@ -132,8 +132,8 @@ class TestLoadBoard:
             return load_api("api_ashby_form")
 
         with (
-            patch("src.apply.ashby.fetch_json_post", side_effect=capture),
-            patch("src.apply.ashby.fetch_dom_enrichment", return_value={}),
+            patch("applyourself.apply.ashby.fetch_json_post", side_effect=capture),
+            patch("applyourself.apply.ashby.fetch_dom_enrichment", return_value={}),
         ):
             load_board(
                 "https://jobs.ashbyhq.com/Gasket%20Works/00000001-0000-0000-0000-000000000001"
@@ -210,7 +210,9 @@ class TestDomEnrichment:
             "fetch_dom_enrichment",
             lambda url, timeout=30: {"_systemfield_name": "Legal name as on ID."},
         )
-        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+        with patch(
+            "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
+        ):
             board = load_board(ASHBY_URL)
         by_id = {f.id: f for f in board.reconciled.fields}
         assert by_id["_systemfield_name"].description == "Legal name as on ID."
@@ -226,7 +228,9 @@ class TestDomEnrichment:
             "fetch_dom_enrichment",
             lambda url, timeout=30: {"_systemfield_resume": "PDF only, 5MB max."},
         )
-        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+        with patch(
+            "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
+        ):
             board = load_board(ASHBY_URL)
         by_id = {f.id: f for f in board.reconciled.fields}
         assert by_id["resume"].name == "_systemfield_resume"
@@ -237,7 +241,9 @@ class TestDomEnrichment:
             raise RuntimeError("chrome not installed")
 
         monkeypatch.setattr(ashby, "fetch_dom_enrichment", boom)
-        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+        with patch(
+            "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
+        ):
             board = load_board(ASHBY_URL)
         assert all(f.description == "" for f in board.reconciled.fields)
 
@@ -249,7 +255,9 @@ class TestDomEnrichment:
             raise SystemExit("ERROR: playwright not installed...")
 
         monkeypatch.setattr(ashby, "fetch_dom_enrichment", boom)
-        with patch("src.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")):
+        with patch(
+            "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
+        ):
             board = load_board(ASHBY_URL)
         assert all(f.description == "" for f in board.reconciled.fields)
 

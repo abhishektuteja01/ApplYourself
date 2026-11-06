@@ -6,8 +6,8 @@ import json
 import os
 from datetime import datetime, timedelta
 
-from src import summary as M
-from src.shared import paths
+from applyourself import summary as M
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
 
 SINCE = datetime(2026, 9, 28, 15, 45)

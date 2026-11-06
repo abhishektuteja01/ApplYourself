@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 from lxml import html as lxml_html
 
-from src.apply import fill as F
-from src.apply.fill import FillError, fill_plan
-from src.apply.plan import FieldPlan, Plan
+from applyourself.apply import fill as F
+from applyourself.apply.fill import FillError, fill_plan
+from applyourself.apply.plan import FieldPlan, Plan
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -545,8 +545,8 @@ class TestAshbyIsRegistered:
     def test_the_shortlist_and_the_queue_agree(self):
         """A role the shortlist calls auto-submittable and the queue calls
         manual-apply is the silent gap the shared flag exists to close."""
-        from src.apply import detect
-        from src.shared.job_boards import SUBMITTABLE_SOURCES
+        from applyourself.apply import detect
+        from applyourself.shared.job_boards import SUBMITTABLE_SOURCES
 
         assert frozenset(F._DRIVER_NAMES) == detect.SUBMITTABLE_ATS
         assert detect.SUBMITTABLE_ATS == SUBMITTABLE_SOURCES

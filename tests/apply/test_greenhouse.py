@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.apply import greenhouse as G
-from src.apply.greenhouse import (
+from applyourself.apply import greenhouse as G
+from applyourself.apply.greenhouse import (
     ApplyUrlError,
     PostingExpired,
     fetch_form,
@@ -23,8 +23,8 @@ from src.apply.greenhouse import (
     parse_posting,
     slug_from_form,
 )
-from src.apply.schema import parse_schema
-from src.shared.http_client import CareersError
+from applyourself.apply.schema import parse_schema
+from applyourself.shared.http_client import CareersError
 
 from .conftest import FORM_FIXTURES, load_fixture, load_html
 
@@ -117,8 +117,8 @@ class TestParsePosting:
     def test_query_keys_come_from_the_shared_registry(self):
         """Adding a key to the registry without teaching the parser -- or the
         reverse -- is the drift the registry exists to prevent."""
-        from src.apply import greenhouse
-        from src.shared import job_boards
+        from applyourself.apply import greenhouse
+        from applyourself.shared import job_boards
 
         gh = job_boards.get_source("greenhouse")
         assert greenhouse._GH is gh
@@ -140,7 +140,7 @@ class TestParsePosting:
     def test_a_path_token_must_end_at_a_boundary(self):
         """The path pattern had no end anchor, so `/jobs/12abc` parsed as 12:
         a guessed token for some other posting."""
-        from src.shared import job_boards
+        from applyourself.shared import job_boards
 
         with pytest.raises(ApplyUrlError, match="no job token"):
             parse_posting("https://job-boards.greenhouse.io/someco/jobs/12abc")
@@ -154,7 +154,7 @@ class TestParsePosting:
 
     def test_parsing_is_the_registrys(self):
         """One parser for detection and apply: they agree on every shape."""
-        from src.shared import job_boards
+        from applyourself.shared import job_boards
 
         for url in (
             "https://job-boards.greenhouse.io/asteralabs/jobs/4719162005",
@@ -167,7 +167,7 @@ class TestParsePosting:
 
     @pytest.mark.parametrize("region", ["eu", "anz"])
     def test_a_regional_board_host_is_greenhouse(self, region):
-        from src.shared import job_boards
+        from applyourself.shared import job_boards
 
         url = f"https://job-boards.{region}.greenhouse.io/futuresecureai/jobs/4001528201"
         hit = job_boards.parse_posting_url(url)

@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/state_io.py"
-  - "src/track_cli.py"
+  - "src/applyourself/state_io.py"
+  - "src/applyourself/track_cli.py"
   - "pipeline/**"
 ---
 
@@ -45,7 +45,7 @@ A state.yaml holds no score: readers join `score_store.view()` on `job_id`
 removes the old `fit_score` / `sponsorship_label` copies, one
 `fields_dropped` event per role.
 
-R10: `src/track_cli.py` is the only module that appends state events
+R10: `src/applyourself/track_cli.py` is the only module that appends state events
 (`created`, `transition`, through `state_io.transition` or `ensure_state`);
 `/track`, `app_cli`, `apply_cli` and `apply/triage` call `track_cli.main`, and
 `tests/tracking/test_state_io.py` fails on any other caller. `/tailor` (through
@@ -54,7 +54,7 @@ only append side-list events (`tailored_dirs[]`, `outreach[]`). Whether a role h
 answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
 
-`uv run track cleanup [--apply]` (`src/cleanup.py`, the night's cleanup stage)
+`uv run track cleanup [--apply]` (`src/applyourself/cleanup.py`, the night's cleanup stage)
 deletes the folders of `skip` and never-applied `withdrawn` roles, and of
 `rejected`, applied-then-`withdrawn` and `ghosted` roles after writing one
 `applications/_archive/<lane>/<folder>.md`: the resume text, then a `## Job

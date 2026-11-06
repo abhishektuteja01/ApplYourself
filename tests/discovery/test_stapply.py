@@ -11,10 +11,10 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import pytest
 
-from src.discovery import store as S
-from src.discovery.config import DiscoveryConfig
-from src.discovery.sources.boards import base as B
-from src.discovery.sources.feed import oracle, stapply
+from applyourself.discovery import store as S
+from applyourself.discovery.config import DiscoveryConfig
+from applyourself.discovery.sources.boards import base as B
+from applyourself.discovery.sources.feed import oracle, stapply
 
 TODAY = pd.Timestamp("2026-10-23")
 JD = "Build and ship retrieval systems for clinical trial data. " * 6

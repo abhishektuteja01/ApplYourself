@@ -8,8 +8,8 @@ both replaced.
 import pytest
 import requests
 
-from src.shared import http_client as http
-from src.shared.http_client import CareersError, fetch_json
+from applyourself.shared import http_client as http
+from applyourself.shared.http_client import CareersError, fetch_json
 
 
 class FakeResponse:

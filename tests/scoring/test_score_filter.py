@@ -1,11 +1,11 @@
-"""The hard rules /score applies before any judge (src/score_filter.py)."""
+"""The hard rules /score applies before any judge (src/applyourself/score_filter.py)."""
 
 from __future__ import annotations
 
 import pytest
 
-from src import score_filter as sf
-from src.shared import paths
+from applyourself import score_filter as sf
+from applyourself.shared import paths
 
 REAL_SCORING = paths.example("scoring.example.yaml")
 EXAMPLE_BANK = paths.example("application_answers.example.yaml")
@@ -337,7 +337,7 @@ class TestCountryAllowed:
         assert sf.country_allowed(country, lane, self.RULE) is ok
 
     def test_from_discovery(self):
-        from src.discovery.config import DiscoveryConfig, LocationAllowlist, SourceConfig
+        from applyourself.discovery.config import DiscoveryConfig, LocationAllowlist, SourceConfig
 
         d = DiscoveryConfig(
             location_allowlist=LocationAllowlist(countries=["United States", "Germany"]),

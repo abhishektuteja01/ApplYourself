@@ -24,12 +24,12 @@ from dataclasses import replace as dc_replace
 
 import pytest
 
-from src.apply.answers import (
+from applyourself.apply.answers import (
     WORK_AUTH_CATEGORIES,
     CountryFacts,
     classify_work_authorization,
 )
-from src.apply.reconcile import MergedField, MergedOption
+from applyourself.apply.reconcile import MergedField, MergedOption
 
 from .conftest import FIXTURES
 from .conftest import resolve_confirmed as resolve
@@ -111,7 +111,7 @@ def offers(row, word: str) -> bool:
 
 
 def names_only_the_us(row) -> bool:
-    from src.apply.answers import places_named
+    from applyourself.apply.answers import places_named
 
     return places_named(row["label"]) in ([], ["United States"])
 
@@ -273,7 +273,7 @@ class TestTheAnswerableFamilies:
     @pytest.mark.parametrize("row", AUTHORIZED, ids=ids(AUTHORIZED))
     def test_authorization_follows_the_named_country(self, row, opt_holder):
         r = resolve(field_of(row), opt_holder)
-        from src.apply.answers import places_named
+        from applyourself.apply.answers import places_named
 
         either = " or " in row["label"] and "United States" in places_named(row["label"])
         assert r.action == "fill"
@@ -441,7 +441,7 @@ class TestCountries:
 
 
 def test_an_unreadable_job_country_parks_instead_of_guessing_home(opt_holder):
-    from src.apply.answers import UNKNOWN_COUNTRY
+    from applyourself.apply.answers import UNKNOWN_COUNTRY
 
     f = MergedField(
         id="q",
@@ -479,7 +479,7 @@ class TestPlaceNames:
         ],
     )
     def test_what_a_label_names(self, label, expected):
-        from src.apply.answers import places_named
+        from applyourself.apply.answers import places_named
 
         assert places_named(label) == expected
 
@@ -510,7 +510,7 @@ class TestPlaceNames:
     def test_a_bank_row_must_name_a_real_place(self, tmp_path):
         import yaml
 
-        from src.apply.answers import AnswersError, load_answers
+        from applyourself.apply.answers import AnswersError, load_answers
 
         data = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(encoding="utf-8"))
         data["work_authorization"]["countries"]["Narnia"] = {
@@ -556,7 +556,7 @@ class TestPlacesThatAreNotCountries:
         ],
     )
     def test_accents_capitals_and_slashes(self, label, expected):
-        from src.apply.answers import places_named
+        from applyourself.apply.answers import places_named
 
         assert places_named(label) == expected
 
@@ -583,7 +583,7 @@ class TestANewWordingIsOnlySuggested:
     LABEL = "Will you, now or later, need us to sponsor a visa for you?"
 
     def test_it_parks_with_the_suggestion_and_an_optional_one_stays_blank(self, opt_holder):
-        from src.apply.answers import resolve as raw
+        from applyourself.apply.answers import resolve as raw
 
         row = {"label": self.LABEL, "required": True, "kind": "select", "multi": False}
         r = raw(field_of({**row, "options": ["Yes", "No"]}), opt_holder)
@@ -595,9 +595,9 @@ class TestANewWordingIsOnlySuggested:
     def test_a_confirmed_wording_answers_exactly_and_a_new_one_parks_again(self, tmp_path):
         import shutil
 
-        from src.apply import bank
-        from src.apply.answers import load_answers
-        from src.apply.answers import resolve as raw
+        from applyourself.apply import bank
+        from applyourself.apply.answers import load_answers
+        from applyourself.apply.answers import resolve as raw
 
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)

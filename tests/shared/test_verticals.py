@@ -1,4 +1,4 @@
-"""src/shared/verticals.py loader tests: fixture happy path, verbatim carry-through
+"""src/applyourself/shared/verticals.py loader tests: fixture happy path, verbatim carry-through
 of the stamps and reasoning texts that land in scored.parquet, validation
 failures, and the committed example template. Runs against the synthetic
 tests/fixtures/verticals.yaml; the real config is covered by
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.shared import paths, verticals
+from applyourself.shared import paths, verticals
 from tests.conftest import FIXTURE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

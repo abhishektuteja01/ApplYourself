@@ -26,14 +26,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from src.discovery.config import load_config, pacing_for
-from src.discovery.parse import iso_date, ms_date, relative_posted_date
-from src.discovery.sources.boards import ashby, greenhouse, lever
-from src.discovery.sources.boards import eightfold as ef
-from src.discovery.sources.boards import workday as wd
-from src.discovery.sources.boards.base import job_items, load_boards
-from src.shared import clock, paths
-from src.shared.http_client import CareersError, fetch_json
+from applyourself.discovery.config import load_config, pacing_for
+from applyourself.discovery.parse import iso_date, ms_date, relative_posted_date
+from applyourself.discovery.sources.boards import ashby, greenhouse, lever
+from applyourself.discovery.sources.boards import eightfold as ef
+from applyourself.discovery.sources.boards import workday as wd
+from applyourself.discovery.sources.boards.base import job_items, load_boards
+from applyourself.shared import clock, paths
+from applyourself.shared.http_client import CareersError, fetch_json
 
 DEFAULT_ATS = ("ashby", "greenhouse", "lever")
 DEFAULT_STALE_DAYS = 90
@@ -43,7 +43,7 @@ ACTIVE, STALE, EMPTY, DEAD, ERROR = "active", "stale", "empty", "dead", "error"
 
 
 # --- payload -> (count, newest posting date). Pure; one per ATS. ------------
-# Each reads the same date field its lane in src/discovery/sources/
+# Each reads the same date field its lane in src/applyourself/discovery/sources/
 # reads, so "newest posting" here means the same thing a kept row's
 # `posted_date` would. A payload of the wrong shape raises, and the caller
 # reports it as `error` rather than counting it as an empty board.

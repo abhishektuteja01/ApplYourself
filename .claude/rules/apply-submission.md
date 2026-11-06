@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/apply/**"
-  - "src/apply_cli.py"
+  - "src/applyourself/apply/**"
+  - "src/applyourself/apply_cli.py"
 ---
 
 # Submission (`/apply`)
@@ -17,7 +17,7 @@ report lists them under `manual`, not `failed`.
 `profile/application_answers.yaml` (schema 3) is the whole bank:
 
 - **facts the user states**: `identity`, `education`, `employment` (every key
-  left out is read from `profile/resume.yaml` by `src/apply/resume_facts.py`:
+  left out is read from `profile/resume.yaml` by `src/applyourself/apply/resume_facts.py`:
   name, mailto:/tel: contact, the first plain contact line, `education[0]`, the
   work context that ended last; employment only when the bank has the block),
   `demographics.answers` (topic -> spellings: `gender`, `race`,
@@ -40,7 +40,7 @@ report lists them under `manual`, not `failed`.
   `{role_file: ...}` (the role's `company_answers.yaml`). `wordings` are exact
   labels, `keywords` substring guesses, `not` labels a keyword must never answer.
 
-`src/apply/bank.py` is its only writer. `apply run --answers <file>` calls it with
+`src/applyourself/apply/bank.py` is its only writer. `apply run --answers <file>` calls it with
 what the user confirmed in `/apply`: a label mapped to a question joins its
 `wordings`, an unchallenged keyword guess becomes an exact wording, a corrected
 guess joins that question's `not`, a board's option spelling joins the candidates
@@ -53,7 +53,7 @@ something about the user (`B-`/`S-`/`SKILL-`, `option`, `user`), never the JD or
 a company. Facts are never written by it. Every write keeps the previous file in
 `profile/.state/bank_history/` (last 20). `apply learn` reviews and undoes (a question,
 one wording or keyword, one claim, one fact wording). `apply wordings --review`
-(`src/apply/wordings.py`) lists the `suggest:<fact>` wordings in saved `plan.json`
+(`src/applyourself/apply/wordings.py`) lists the `suggest:<fact>` wordings in saved `plan.json`
 files that `fact_wordings` lacks, each with a `decision` for the user; `--save`
 learns the yes rows as exact `fact_wordings`, on a typed yes at a terminal only.
 
@@ -69,7 +69,7 @@ education, employment) by DOM id; EEOC and demographic by section (your
 option, else the decline option); work authorization by label shape and country; then the bank,
 exact wording first and keyword second (`source` is `bank:<id>` or
 `bank:<id>~<keyword>`); else Tier C, which lists the closest bank questions. A
-question's country is the one its label names (`src/shared/countries.py`,
+question's country is the one its label names (`src/applyourself/shared/countries.py`,
 with US states and look-alikes masked), else the job's: discovery's location
 in `clean.parquet`, then `state.yaml`'s, then the title, then a JD phrase saying
 where the hire works. A location nothing can read is `UNKNOWN_COUNTRY`, and
@@ -98,7 +98,7 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
   role. It asks for a typed confirmation unless `--yes`; a non-tty stdin without
   `--yes` is refused. `--rate` is floored at 30s. One submission per company per run.
 - The company cooldown (`company_cooldown_days` in `profile/settings.yaml`,
-  `src/apply/cooldown.py`): a batch `--submit` skips a role whose company
+  `src/applyourself/apply/cooldown.py`): a batch `--submit` skips a role whose company
   (`normalize_company`) had an application within it, "cooldown until <date>".
   Every application counts: any `applied` entry in a state_history and every
   ledger line that may have reached a board. `--job-id` bypasses it; the sheet
@@ -151,9 +151,9 @@ night never runs it.
 from the queue. `--add` is accepted and does nothing extra. Bank writes
 (`learn`, `undo`) hold the bank's lock across the read-modify-write.
 
-`apply run` writes `apply_runs/<ts>.json` (`src/apply/run_record.py`: per role
+`apply run` writes `apply_runs/<ts>.json` (`src/applyourself/apply/run_record.py`: per role
 `category`, a `ReasonCode`, `fields_parked`, timestamps) and renders `<ts>.md`
-from it. The sheet and summary read the JSON. `src/apply/run_backfill.py` is the
+from it. The sheet and summary read the JSON. `src/applyourself/apply/run_backfill.py` is the
 one markdown parser: a one-time `--dry-run|--apply` that writes JSON for old
 reports; until it runs, a report with no JSON is read through it.
 

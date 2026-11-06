@@ -15,10 +15,10 @@ from dataclasses import replace as dc_replace
 import pytest
 import yaml
 
-from src.apply import answers as A
-from src.apply.answers import AnswersError, Resolution, load_answers
-from src.apply.reconcile import MergedField, MergedOption
-from src.shared import paths
+from applyourself.apply import answers as A
+from applyourself.apply.answers import AnswersError, Resolution, load_answers
+from applyourself.apply.reconcile import MergedField, MergedOption
+from applyourself.shared import paths
 
 from .conftest import FIXTURES
 from .conftest import resolve_confirmed as resolve
@@ -572,7 +572,7 @@ class TestIdentity:
     def test_the_fallback_is_keyed_on_the_dom_id_not_the_label(self, answers):
         """`identity.country` also feeds Greenhouse's phone dial-code widget,
         which is not a country question."""
-        from src.apply.answers import _identity_candidates
+        from applyourself.apply.answers import _identity_candidates
 
         assert len(_identity_candidates("_systemfield_location", "x", answers)) == 2
         assert _identity_candidates("email", "x", answers) == ("x",)
@@ -581,7 +581,7 @@ class TestIdentity:
         """They map to the same config key but carry no option list at plan
         time, so widening the fallback to the key would only change behaviour
         at fill time, on the highest-volume lane, on no evidence."""
-        from src.apply.answers import _identity_candidates
+        from applyourself.apply.answers import _identity_candidates
 
         for field_id in ("candidate-location", "location"):
             assert _identity_candidates(field_id, "x", answers) == ("x",)
@@ -1042,7 +1042,7 @@ class TestTheShippedTemplate:
 def _yes_no_field(label: str, *, required: bool = True):
     """A required Yes/No select — the shape every work-authorization question
     in the fixtures actually has."""
-    from src.apply.domscan import DomOption
+    from applyourself.apply.domscan import DomOption
 
     return MergedField(
         id="q",
@@ -1298,7 +1298,7 @@ class TestLocationAlternates:
         return load_answers(path)
 
     def _field(self, field_id, options):
-        from src.apply.reconcile import MergedField, MergedOption
+        from applyourself.apply.reconcile import MergedField, MergedOption
 
         return MergedField(
             id=field_id,
@@ -1312,7 +1312,7 @@ class TestLocationAlternates:
         )
 
     def test_an_alternate_answers_a_board_that_words_it_differently(self, tmp_path):
-        from src.apply.answers import resolve
+        from applyourself.apply.answers import resolve
 
         a = self._answers(tmp_path, [self.ALTERNATE])
         r = resolve(self._field("location", (self.ALTERNATE,)), a)
@@ -1321,7 +1321,7 @@ class TestLocationAlternates:
     def test_a_blind_chooser_carries_the_listed_spellings(self, tmp_path):
         """With no option list the first spelling is picked; the others travel
         with it so the read-back accepts whichever one the board settles on."""
-        from src.apply.answers import resolve
+        from applyourself.apply.answers import resolve
 
         a = self._answers(tmp_path, [self.ALTERNATE])
         r = resolve(self._field("location", ()), a)
@@ -1329,7 +1329,7 @@ class TestLocationAlternates:
         assert r.alternates == (self.LOCATION, self.ALTERNATE)
 
     def test_the_primary_location_still_wins_where_it_is_offered(self, tmp_path):
-        from src.apply.answers import resolve
+        from applyourself.apply.answers import resolve
 
         a = self._answers(tmp_path, [self.ALTERNATE])
         r = resolve(self._field("candidate-location", (self.LOCATION, self.ALTERNATE)), a)
@@ -1340,7 +1340,7 @@ class TestLocationAlternates:
     def test_a_board_offering_neither_parks_rather_than_guessing(self, tmp_path):
         """A measured board offered five same-named cities in five countries.
         A near-miss here sends the application out naming the wrong one."""
-        from src.apply.answers import resolve
+        from applyourself.apply.answers import resolve
 
         a = self._answers(tmp_path, [self.ALTERNATE])
         r = resolve(
@@ -1352,7 +1352,7 @@ class TestLocationAlternates:
         assert r.action == "park"
 
     def test_the_key_is_optional(self, tmp_path):
-        from src.apply.answers import resolve
+        from applyourself.apply.answers import resolve
 
         a = self._answers(tmp_path)
         assert a.identity.get("location_alternates") is None
@@ -1360,7 +1360,7 @@ class TestLocationAlternates:
         assert r.action == "fill"
 
     def test_alternates_do_not_leak_into_other_identity_fields(self, tmp_path):
-        from src.apply.answers import _identity_candidates
+        from applyourself.apply.answers import _identity_candidates
 
         a = self._answers(tmp_path, [self.ALTERNATE])
         assert _identity_candidates("email", a.identity["email"], a, "email") == (
@@ -1368,13 +1368,13 @@ class TestLocationAlternates:
         )
 
     def test_a_non_list_is_refused(self, tmp_path):
-        from src.apply.answers import AnswersError
+        from applyourself.apply.answers import AnswersError
 
         with pytest.raises(AnswersError, match="location_alternates"):
             self._answers(tmp_path, self.ALTERNATE)
 
     def test_an_empty_string_entry_is_refused(self, tmp_path):
-        from src.apply.answers import AnswersError
+        from applyourself.apply.answers import AnswersError
 
         with pytest.raises(AnswersError, match="location_alternates"):
             self._answers(tmp_path, [""])
@@ -1403,7 +1403,7 @@ class TestSelfIdSignature:
     def test_the_date_is_today_in_the_boards_format(self, tmp_path, monkeypatch):
         from datetime import date as _date
 
-        import src.apply.answers as A
+        import applyourself.apply.answers as A
 
         monkeypatch.setattr(A, "_today", lambda: _date(2026, 8, 19))
         a = load_answers(write_config(tmp_path))

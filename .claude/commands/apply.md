@@ -20,7 +20,7 @@ argument-hint: <job_id> [--submit] [--letter]
 
 # /apply — answer the new questions, confirm, fill, learn
 
-`src/apply/` does everything that is a lookup: it reads the form, answers every
+`src/applyourself/apply/` does everything that is a lookup: it reads the form, answers every
 question the bank (`profile/application_answers.yaml`) already knows, lints
 drafted text, fills the browser and guards the click. This session does the one
 thing that is judgment: deciding what a question the bank has not seen means.

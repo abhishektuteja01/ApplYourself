@@ -30,7 +30,7 @@ S='[^;|&]*'          # the rest of one command, up to the next separator
 END="(['\"]|[[:space:]]|\$|[;|&)])"
 has() { printf '%s' "$CMD" | grep -Eq -- "$1"; }
 
-if has "confirmation\.(record|digest)|from[[:space:]]+src\.apply\.confirmation[[:space:]]+import${S}\b(record|digest)\b"; then
+if has "confirmation\.(record|digest)|from[[:space:]]+applyourself\.apply\.confirmation[[:space:]]+import${S}\b(record|digest)\b"; then
   block "this command calls the confirmation writer."
 fi
 

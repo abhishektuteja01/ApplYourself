@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from src import apply_cli, track_cli
-from src.apply import triage
-from src.apply.greenhouse import PostingExpired
-from src.apply.plan import FieldPlan, Plan, Unmapped
-from src.shared import paths
+from applyourself import apply_cli, track_cli
+from applyourself.apply import triage
+from applyourself.apply.greenhouse import PostingExpired
+from applyourself.apply.plan import FieldPlan, Plan, Unmapped
+from applyourself.shared import paths
 
 
 def _field(fid="q1", source="bank:phone", value="+1"):
@@ -191,7 +191,7 @@ def test_a_track_failure_stops_that_role_only(world, monkeypatch):
 def test_main_takes_the_resume_ready_roles_from_the_sheet_and_honours_limit(
     world, monkeypatch, capsys
 ):
-    from src.apply import sheet
+    from applyourself.apply import sheet
 
     monkeypatch.setattr(
         sheet, "job_ids", lambda status: ["a", "b", "c"] if status == "Resume ready" else []

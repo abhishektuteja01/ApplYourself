@@ -1,4 +1,4 @@
-"""Tests for src/resume_model.py — source checks and resume assembly.
+"""Tests for src/applyourself/resume_model.py — source checks and resume assembly.
 
 Everything runs against the committed example world (profile/*.example.*),
 copied into tmp_path when a test needs to break it."""
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from src import resume_model
-from src.shared import paths, verticals
+from applyourself import resume_model
+from applyourself.shared import paths, verticals
 
 PROFILE = paths.PROFILE
 

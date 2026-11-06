@@ -1,7 +1,7 @@
 # TEMPLATE — copy to profile/scoring.yaml and edit (/onboarding does both).
 #
-# Scoring policy for /score. Read by src/score_filter.py, src/score_store.py
-# and src/shortlist.py. Per-lane rules (drop_phrases, years, skill_weights)
+# Scoring policy for /score. Read by src/applyourself/score_filter.py, src/applyourself/score_store.py
+# and src/applyourself/shortlist.py. Per-lane rules (drop_phrases, years, skill_weights)
 # live in profile/verticals.yaml; how to judge a role lives in
 # .claude/shared/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
 # Your sponsorship need in each country comes from

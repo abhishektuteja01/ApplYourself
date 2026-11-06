@@ -60,6 +60,6 @@ def test_every_script_is_valid_bash(script):
 
 
 def test_the_example_settings_config_passes_the_key_check():
-    from src.shared.config_schema import load_settings
+    from applyourself.shared.config_schema import load_settings
 
     load_settings(REPO_ROOT / "profile" / "settings.example.yaml")

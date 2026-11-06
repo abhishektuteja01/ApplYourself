@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from src.apply import fill as F
-from src.apply.fill import FillError, FillResult, fill_plan
-from src.apply.plan import FieldPlan, FilePlan, Plan
-from src.shared import paths
+from applyourself.apply import fill as F
+from applyourself.apply.fill import FillError, FillResult, fill_plan
+from applyourself.apply.plan import FieldPlan, FilePlan, Plan
+from applyourself.shared import paths
 
 from .conftest import FakePage, FakeResponse, Group
 
@@ -485,7 +485,7 @@ class TestParkedProbe:
     read — and that list exists nowhere else."""
 
     def _parked(self, **kw):
-        from src.apply.plan import Unmapped
+        from applyourself.apply.plan import Unmapped
 
         base = dict(
             id="hispanic_ethnicity",
@@ -547,7 +547,7 @@ class TestRecovery:
     """
 
     def _parked(self, **kw):
-        from src.apply.plan import Unmapped
+        from applyourself.apply.plan import Unmapped
 
         base = dict(
             id="hispanic_ethnicity",
@@ -1097,8 +1097,8 @@ class TestTheDriverSetAndTheShortlistAgree:
         `detect.SUBMITTABLE_ATS`; `apply run` refuses it from
         `fill._DRIVER_NAMES`. If those drift, the shortlist promises a
         submission the queue will not make — or hides one it would."""
-        from src.apply.detect import SUBMITTABLE_ATS
-        from src.shared.job_boards import SUBMITTABLE_SOURCES
+        from applyourself.apply.detect import SUBMITTABLE_ATS
+        from applyourself.shared.job_boards import SUBMITTABLE_SOURCES
 
         assert set(F._DRIVER_NAMES) == set(SUBMITTABLE_ATS)
         # both derive from the one board table; pin that too
@@ -2137,7 +2137,7 @@ class TestFormManifest:
     """
 
     def _plan_with_parks(self):
-        from src.apply.plan import Unmapped
+        from applyourself.apply.plan import Unmapped
 
         return replace(
             plan(fields=[field(id="q1", value="Yes", kind="yesno")]),

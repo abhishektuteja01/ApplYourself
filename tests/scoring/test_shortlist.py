@@ -1,5 +1,5 @@
 """The shortlist is a pure read with two parts: In pipeline, then one section
-per lane (src/shortlist.py)."""
+per lane (src/applyourself/shortlist.py)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import score_store, shortlist
-from src.score_filter import load_scoring
-from src.shared import paths
+from applyourself import score_store, shortlist
+from applyourself.score_filter import load_scoring
+from applyourself.shared import paths
 from tests.factories import write_clean, write_state
 
 NOW = datetime(2026, 9, 27)

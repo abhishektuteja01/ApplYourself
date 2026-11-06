@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from src.apply import fill as F
-from src.apply.fill import FillResult, SubmitGuardError, run_one, submit
-from src.apply.plan import Plan, Unmapped
-from src.shared import paths
+from applyourself.apply import fill as F
+from applyourself.apply.fill import FillResult, SubmitGuardError, run_one, submit
+from applyourself.apply.plan import Plan, Unmapped
+from applyourself.shared import paths
 
 from .conftest import FakePage, FakeResponse
 
@@ -355,7 +355,7 @@ class TestStaticSubmitSelectorBoundary:
         other than the guard itself and the one driver method it calls — that
         is what makes `submit()` the single path to a real click.
 
-        Scans every module under `src/apply/` plus `src/apply_cli.py`, not just
+        Scans every module under `src/applyourself/apply/` plus `src/applyourself/apply_cli.py`, not just
         `fill.py`: the guard was written when `fill.py` was the only driver,
         and `lever.py`/`ashby.py` were never examined.
 
@@ -377,8 +377,8 @@ class TestStaticSubmitSelectorBoundary:
         activating = {"click", "press", "dblclick", "tap", "check", "submit"}
 
         offenders = []
-        targets = sorted((REPO_ROOT / "src" / "apply").rglob("*.py"))
-        targets.append(REPO_ROOT / "src" / "apply_cli.py")
+        targets = sorted((REPO_ROOT / "src" / "applyourself" / "apply").rglob("*.py"))
+        targets.append(REPO_ROOT / "src" / "applyourself" / "apply_cli.py")
         for path in targets:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source)

@@ -104,7 +104,7 @@ def page():
 
 @pytest.fixture
 def scan():
-    from src.apply.domscan import scan_form
+    from applyourself.apply.domscan import scan_form
 
     def _scan(name: str):
         return scan_form(load_html(name))
@@ -115,9 +115,9 @@ def scan():
 @pytest.fixture
 def merged():
     """A board's DOM and API halves, reconciled — what answers.py resolves."""
-    from src.apply.domscan import scan_form
-    from src.apply.reconcile import reconcile
-    from src.apply.schema import parse_schema
+    from applyourself.apply.domscan import scan_form
+    from applyourself.apply.reconcile import reconcile
+    from applyourself.apply.schema import parse_schema
 
     def _merged(name: str):
         return reconcile(scan_form(load_html(name)), parse_schema(load_fixture(name)))
@@ -147,7 +147,7 @@ def resolve_confirmed(field, answers):
     this exact wording: what the regex families' policy tests check."""
     from dataclasses import replace
 
-    from src.apply.answers import norm_label, resolve
+    from applyourself.apply.answers import norm_label, resolve
 
     got = resolve(field, answers)
     if not got.source.startswith("suggest:"):
@@ -158,6 +158,6 @@ def resolve_confirmed(field, answers):
 
 @pytest.fixture
 def answers():
-    from src.apply.answers import load_answers
+    from applyourself.apply.answers import load_answers
 
     return load_answers(FIXTURES / "application_answers.yaml")

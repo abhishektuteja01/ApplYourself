@@ -8,15 +8,15 @@ import json
 import pandas as pd
 import pytest
 
-from src.discovery import digest, ingest_url, live_view
-from src.discovery import run as R
-from src.discovery import store as S
-from src.discovery.config import DiscoveryConfig
-from src.discovery.sources import inbox as I
-from src.discovery.sources import search as Q
-from src.discovery.sources.boards import base as B
-from src.discovery.sources.lane import Lane
-from src.shared.location.allowlist import Allowed
+from applyourself.discovery import digest, ingest_url, live_view
+from applyourself.discovery import run as R
+from applyourself.discovery import store as S
+from applyourself.discovery.config import DiscoveryConfig
+from applyourself.discovery.sources import inbox as I
+from applyourself.discovery.sources import search as Q
+from applyourself.discovery.sources.boards import base as B
+from applyourself.discovery.sources.lane import Lane
+from applyourself.shared.location.allowlist import Allowed
 
 TODAY = pd.Timestamp("2026-09-27")
 JD = "Build and ship widget reconciliation systems for finance teams every day. " * 5
@@ -250,7 +250,7 @@ class AllowAll:
 
 @pytest.fixture
 def wired(monkeypatch, tmp_path):
-    from src.shared.location import allowlist, parser
+    from applyourself.shared.location import allowlist, parser
 
     monkeypatch.setattr(parser, "require_libpostal", lambda: None)
     monkeypatch.setattr(allowlist, "Allowlist", AllowAll)
@@ -403,7 +403,7 @@ def test_ingest_a_generic_url_needs_company_and_title():
 
 
 def test_ingest_saves_and_returns_the_id(monkeypatch, tmp_path, cfg):
-    from src.shared.location import allowlist
+    from applyourself.shared.location import allowlist
 
     monkeypatch.setattr(allowlist, "Allowlist", AllowAll)
     monkeypatch.setattr(ingest_url, "load_config", lambda: DiscoveryConfig())
@@ -430,7 +430,7 @@ def test_ingest_saves_and_returns_the_id(monkeypatch, tmp_path, cfg):
 
 
 def test_ingest_reads_a_pages_job_posting_block_first(monkeypatch):
-    from src.discovery import ingest_url
+    from applyourself.discovery import ingest_url
 
     page = (
         "<nav>Jobs Companies Log in</nav><script type='application/ld+json'>"
@@ -463,7 +463,7 @@ def test_linkedin_sends_the_recorded_requests(monkeypatch, cfg):
     import requests
     from requests.adapters import HTTPAdapter
 
-    from src.shared import http_client as http
+    from applyourself.shared import http_client as http
 
     sent, waits = [], []
     pages = iter([_CARD.format(id=41), ""])

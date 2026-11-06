@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.shared import title_gate
+from applyourself.shared import title_gate
 
 # ---------- title gate ----------
 

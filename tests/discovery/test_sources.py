@@ -6,11 +6,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.discovery import store as S
-from src.discovery.config import DiscoveryConfig
-from src.discovery.sources.boards import ashby, eightfold, greenhouse, lever, workday
-from src.discovery.sources.boards import base as B
-from src.shared.http_client import CareersError
+from applyourself.discovery import store as S
+from applyourself.discovery.config import DiscoveryConfig
+from applyourself.discovery.sources.boards import ashby, eightfold, greenhouse, lever, workday
+from applyourself.discovery.sources.boards import base as B
+from applyourself.shared.http_client import CareersError
 
 TODAY = pd.Timestamp("2026-09-27")
 HTML = "<p>" + "Build and ship retrieval systems for clinical trial data. " * 6 + "</p>"
@@ -108,7 +108,7 @@ def test_an_hourly_salary_is_stored_yearly():
 
 
 def test_a_search_row_with_no_remote_value_is_not_remote():
-    from src.discovery.sources.search import posting_from
+    from applyourself.discovery.sources.search import posting_from
 
     row = posting_from(
         {

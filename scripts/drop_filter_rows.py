@@ -17,10 +17,10 @@ from pathlib import Path
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "src"))
 
-from src.shared import paths, schemas  # noqa: E402
-from src.shared.parquet_io import locked, schema_version, write_parquet  # noqa: E402
+from applyourself.shared import paths, schemas  # noqa: E402
+from applyourself.shared.parquet_io import locked, schema_version, write_parquet  # noqa: E402
 
 
 def _filter_mask(df: pd.DataFrame) -> pd.Series:

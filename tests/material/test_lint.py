@@ -1,10 +1,10 @@
-"""Tests for src/lint.py — deterministic two-tier linter."""
+"""Tests for src/applyourself/lint.py — deterministic two-tier linter."""
 
 from __future__ import annotations
 
 import pytest
 
-from src.lint import (
+from applyourself.lint import (
     LintConfigError,
     blocking,
     find_phrase_violations,
@@ -271,7 +271,7 @@ def test_fix_mechanical_hyphen_variants_and_invisibles():
 
 
 def test_fix_mechanical_missing_mechanical_key_fails_loud():
-    from src.lint import LintConfigError
+    from applyourself.lint import LintConfigError
 
     rules = _rules()
     del rules["mechanical"]["hyphen"]

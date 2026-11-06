@@ -1,10 +1,10 @@
-"""Referral lookup by company (src/contacts.py)."""
+"""Referral lookup by company (src/applyourself/contacts.py)."""
 
 from __future__ import annotations
 
 import yaml
 
-from src import contacts
+from applyourself import contacts
 
 
 def _write(path, entries):
