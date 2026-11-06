@@ -1,6 +1,6 @@
 """Strip identity and Word cruft from the two committed example templates.
 
-    uv run python scripts/scrub_example_templates.py [--check]
+    uv run python scripts/dev/scrub_example_templates.py [--check]
 
 The templates are hand-authored in Word, so every save stamps the editor's name
 into docProps/core.xml and their company into docProps/app.xml. These two files
@@ -165,7 +165,7 @@ def main() -> int:
     if args.check and dirty:
         names = ", ".join(str(p.relative_to(paths.REPO_ROOT)) for p in dirty)
         print(
-            f"needs scrubbing: {names}\nrun: uv run python scripts/scrub_example_templates.py",
+            f"needs scrubbing: {names}\nrun: uv run python scripts/dev/scrub_example_templates.py",
             file=sys.stderr,
         )
         return 1

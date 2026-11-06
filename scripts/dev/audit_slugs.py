@@ -11,9 +11,9 @@ This walks every slug once and says which it is. It writes a single CSV and
 prints a summary; it does not touch jobs/boards.parquet, `data/universe/boards*.csv`,
 or anything under `pipeline/`.
 
-    uv run python scripts/audit_slugs.py --stale-days 90
-    uv run python scripts/audit_slugs.py --ats ashby --limit 50
-    uv run python scripts/audit_slugs.py --resume        # continue today's run
+    uv run python scripts/dev/audit_slugs.py --stale-days 90
+    uv run python scripts/dev/audit_slugs.py --ats ashby --limit 50
+    uv run python scripts/dev/audit_slugs.py --resume        # continue today's run
 """
 
 from __future__ import annotations

@@ -41,7 +41,7 @@ eightfold. It also carries bulk slug lists added after the seed clone.
 had a job that passed the title gate, and last check's counts. Three 404s in a
 row mark a board `dead`, re-checked every `dead_every_days`. A 404 on its own
 never justifies retiring it: it conflates a never-real slug, a renamed board, a
-platform move and a casing artifact. `scripts/audit_slugs.py` reports which is
+platform move and a casing artifact. `scripts/dev/audit_slugs.py` reports which is
 which; moving a row to `boards_retired.csv` is a hand edit.
 
 ## Refresh procedure

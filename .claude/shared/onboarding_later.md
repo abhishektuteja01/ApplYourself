@@ -34,7 +34,7 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   keep the `Hyperlink` character style, no tables or images. The cover letter is
   preserved instead of rebuilt: every paragraph that is not a `{{TOKEN}}` ships
   verbatim. Style the copies, never the tracked `.example.docx`;
-  `uv run python scripts/scrub_example_templates.py` strips a re-save's metadata.
+  `uv run python scripts/dev/scrub_example_templates.py` strips a re-save's metadata.
 - **A second lane** — `/new-vertical <name>` again, with no mode token: both
   passes run at once, because the bullets already exist.
 
@@ -64,7 +64,7 @@ launchctl print gui/$(id -u)/$LABEL | head -20
 `mkdir -p logs` is not optional — `launchd` will not create the directory for
 `StandardOutPath`, and the job then fails to spawn with no log to say why.
 Replacing an existing agent (including one that still runs
-`nightly_discovery.sh`, which is discovery only): `launchctl bootout
+`nightly_discovery.sh`, a script that no longer exists): `launchctl bootout
 gui/$(id -u)/$LABEL` first; copying the plist alone changes nothing. After the
 first night, read `summary.md` and the newest `logs/pipeline_<timestamp>/`.
 Four ways an empty morning happens: asleep at 20:00 with no wake scheduled (a

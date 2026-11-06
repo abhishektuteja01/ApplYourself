@@ -34,7 +34,7 @@ example="profile/pii_denylist.example.txt"
 #                      tests/repo/test_example_templates.py: it unzips both, asserts
 #                      their text is confined to an approved set, and asserts
 #                      empty core properties. They are hand-authored in Word;
-#                      run scripts/scrub_example_templates.py after any save,
+#                      run scripts/dev/scrub_example_templates.py after any save,
 #                      which strips the name Word stamps into the metadata.
 #   docs/media/main.gif — README demo recording, reviewed frame by frame for
 #                      contact details before tracking. Allowlisted BY NAME,

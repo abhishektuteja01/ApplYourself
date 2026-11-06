@@ -1,4 +1,4 @@
-"""scripts/audit_slugs.py: the four payload summarizers and the status call.
+"""scripts/dev/audit_slugs.py: the four payload summarizers and the status call.
 
 The script's value is entirely in telling `empty` and `stale` apart from
 `active` -- the two states the nightly run cannot see. Everything else it does
@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "audit_slugs.py"
+SCRIPT = REPO_ROOT / "scripts" / "dev" / "audit_slugs.py"
 
 
 def _load():

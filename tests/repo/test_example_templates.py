@@ -13,7 +13,7 @@ that protection instead:
     stop and exactly what the allowlist would let through.
 
 The templates are hand-authored in Word, not generated. Run
-scripts/scrub_example_templates.py after any Word edit; these tests verify it
+scripts/dev/scrub_example_templates.py after any Word edit; these tests verify it
 was run.
 """
 
@@ -44,7 +44,7 @@ from applyourself.docx_render import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RESUME_TEMPLATE = REPO_ROOT / "profile" / "resume_template.example.docx"
 COVER_TEMPLATE = REPO_ROOT / "profile" / "cover_letter_template.example.docx"
-SCRUBBER = REPO_ROOT / "scripts" / "scrub_example_templates.py"
+SCRUBBER = REPO_ROOT / "scripts" / "dev" / "scrub_example_templates.py"
 
 # Hardcoded on purpose: an independent statement of what these files are allowed
 # to contain. Every string is a generic stand-in the user replaces in their own
@@ -355,7 +355,7 @@ class TestCoverLetterTemplateContract:
         with zipfile.ZipFile(COVER_TEMPLATE) as zf:
             xml = zf.read("word/document.xml").decode("utf-8")
         assert "<w:sdt>" not in xml and "<w:sdt " not in xml, (
-            "content control in document.xml; run scripts/scrub_example_templates.py"
+            "content control in document.xml; run scripts/dev/scrub_example_templates.py"
         )
         assert "dataBinding" not in xml
 
@@ -464,7 +464,7 @@ class TestNoPIILeak:
             assert not value.strip(), (
                 f"{path.name} core property {field!r} is {value!r}. Word stamps "
                 f"this on re-save; run "
-                f"scripts/scrub_example_templates.py."
+                f"scripts/dev/scrub_example_templates.py."
             )
 
     @pytest.mark.parametrize(
@@ -489,7 +489,7 @@ class TestNoPIILeak:
         assert not [n for n in names if n.startswith("word/media/")], f"{path.name} embeds media"
         assert "docProps/thumbnail.jpeg" not in names, (
             f"{path.name} carries an embedded thumbnail image; run "
-            f"scripts/scrub_example_templates.py, which strips it"
+            f"scripts/dev/scrub_example_templates.py, which strips it"
         )
 
     @pytest.mark.parametrize(
@@ -518,7 +518,7 @@ class TestScrubberStaysInSync:
         shutil.copy(path, copy)
         assert not module.scrub(copy), (
             f"{path.name} still needs scrubbing; run "
-            f"uv run python scripts/scrub_example_templates.py"
+            f"uv run python scripts/dev/scrub_example_templates.py"
         )
 
     def test_scrubber_covers_every_app_property_the_guard_asserts(self):

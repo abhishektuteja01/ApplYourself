@@ -1,4 +1,4 @@
-"""scripts/drop_filter_rows.py: the one-time removal of stored filter drops."""
+"""scripts/dev/drop_filter_rows.py: the one-time removal of stored filter drops."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pandas as pd
 
 from tests.factories import scored_rows
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "drop_filter_rows.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "dev" / "drop_filter_rows.py"
 
 
 def _load():

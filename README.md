@@ -305,7 +305,7 @@ live in `profile/discovery.yaml`:
 - **Dead boards.** Three 404s in a row mark a board `dead`, re-checked every
   `dead_every_days`. That only sees boards that stopped answering — a board
   serving 200 with no postings looks healthy, which is what
-  `scripts/audit_slugs.py` and the digest's `never_found` count measure.
+  `scripts/dev/audit_slugs.py` and the digest's `never_found` count measure.
 
 `uv run discovery-check` prints the config these resolve to before you run
 anything, and `discover` runs it as preflight.
@@ -365,8 +365,8 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 
 Plus three scripts: `./scripts/pii_scan.sh` (the
 [PII gate](#before-you-push-the-pii-gate)),
-`uv run python scripts/scrub_example_templates.py` (strips Word metadata from
-the two tracked `.docx`), and `scripts/audit_slugs.py`, which walks every board
+`uv run python scripts/dev/scrub_example_templates.py` (strips Word metadata from
+the two tracked `.docx`), and `scripts/dev/audit_slugs.py`, which walks every board
 once and says which are active, empty, stale or dead into
 `jobs/slug_audit_<date>.csv`. It writes nothing but that CSV.
 
@@ -478,7 +478,7 @@ They're hand-authored in Word, and every save stamps the editor's name into the
 metadata, so run this after any edit:
 
 ```bash
-uv run python scripts/scrub_example_templates.py    # --check exits 1 if needed
+uv run python scripts/dev/scrub_example_templates.py    # --check exits 1 if needed
 ```
 
 The pre-push hook runs their test suite too, because CI runs *after* the push,

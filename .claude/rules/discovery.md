@@ -6,7 +6,7 @@ paths:
   - "src/applyourself/shared/identity.py"
   - "src/applyourself/shared/title_gate.py"
   - "src/applyourself/shared/location/**"
-  - "scripts/audit_slugs.py"
+  - "scripts/dev/audit_slugs.py"
   - "tests/discovery/**"
   - "tests/shared/test_identity.py"
   - "tests/shared/test_location.py"

@@ -44,7 +44,7 @@ separate rescore command. `--stale-only` takes only judged rows whose hash
 changed and prints the count without staging; `--yes` stages them. A row with
 no hash (legacy) is never stale, and a plain `score start` re-judges nothing.
 `--job-id` (for `/ingest`) skips every drop except no-lane.
-`scripts/drop_filter_rows.py --dry-run|--apply` removes the old `filter:*`
+`scripts/dev/drop_filter_rows.py --dry-run|--apply` removes the old `filter:*`
 rows once; the next `/score` then re-checks those roles.
 
 scored.parquet is never pruned: a score outlives its role's place in the

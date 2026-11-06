@@ -5,7 +5,7 @@ After this, the next `/score` re-checks those roles under today's rules and
 judges the ones that now pass. --dry-run prints the counts by code; --apply
 writes, under the store's lock.
 
-  uv run python scripts/drop_filter_rows.py --dry-run [--scored PATH]
+  uv run python scripts/dev/drop_filter_rows.py --dry-run [--scored PATH]
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from applyourself.shared import paths, schemas  # noqa: E402

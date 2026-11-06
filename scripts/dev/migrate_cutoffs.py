@@ -7,7 +7,7 @@
 Rewrites only those lines, so comments stay. --dry-run prints the diff;
 --apply writes. The numbers are carried over as they are.
 
-  uv run python scripts/migrate_cutoffs.py --dry-run [--profile DIR]
+  uv run python scripts/dev/migrate_cutoffs.py --dry-run [--profile DIR]
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from applyourself.shared.config_schema import Cutoffs, validate  # noqa: E402

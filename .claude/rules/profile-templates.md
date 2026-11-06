@@ -24,7 +24,7 @@ does, with every example lane's baseline resume building clean
 `pii_scan.sh` (never by glob) with `tests/repo/test_example_templates.py` standing in
 for the text scan the gate skips. They are hand-authored in Word; every save stamps
 the editor's name into the document metadata, so run
-`scripts/scrub_example_templates.py` afterwards. `--check` exits 1 if either file
+`scripts/dev/scrub_example_templates.py` afterwards. `--check` exits 1 if either file
 still needs it.
 
 `uv run onboard-scaffold` copies each template to its real name, skipping any file
