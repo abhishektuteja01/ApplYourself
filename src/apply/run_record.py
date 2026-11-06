@@ -18,13 +18,13 @@ role has `reason: unknown` and `at: null`.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from src.shared import schemas
+from src.shared.files import atomic_write_text
 
 SCHEMA = schemas.APPLY_RUN_SCHEMA_VERSION
 
@@ -208,10 +208,7 @@ def render(record: dict, trend: list[str]) -> str:
 
 def write(record: dict, path: Path) -> Path:
     """Write atomically, so a reader never sees half a run."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_text(path, json.dumps(record, indent=2, ensure_ascii=False), mkdir=True)
     return path
 
 

@@ -18,6 +18,8 @@ from typing import Any
 
 import yaml
 
+from src.shared.files import atomic_write_text
+
 BANK = "application_answers.yaml"
 SCORING = "scoring.yaml"
 DISCOVERY = "discovery.yaml"
@@ -658,10 +660,7 @@ def write(p: Profile) -> list[str]:
         if name == BANK:
             continue
         path = p.root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(new, encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write_text(path, new, mkdir=True)
         done.append(name)
         if name in p.renamed:
             (p.root / p.renamed[name]).unlink()

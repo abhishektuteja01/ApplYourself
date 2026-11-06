@@ -12,7 +12,6 @@ R7: the owner decides; this module only lists and reads back.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from src.apply import answers as A
 from src.apply import bank
 from src.apply.reconcile import MergedField, MergedOption
 from src.shared import paths
+from src.shared.files import atomic_write_text
 
 _PLAN_KEYS = ("fields", "unmapped", "draftable")
 
@@ -139,10 +139,7 @@ def review(bank_answers: A.Answers, out: Path | None = None) -> tuple[Path, list
     text = HEADER + yaml.safe_dump(
         {"wordings": rows}, sort_keys=False, allow_unicode=True, width=100
     )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(out.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, out)
+    atomic_write_text(out, text, mkdir=True)
     return out, rows
 
 

@@ -19,6 +19,7 @@ from pathlib import Path
 
 from src import docx_render
 from src.docx_render import PdfResult
+from src.shared.files import atomic_write_text
 
 ENV = "PDF_BROKER_DIR"
 PID_FILE = "broker.pid"
@@ -27,9 +28,7 @@ POLL_SECONDS = 0.2
 
 
 def _write(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_text(path, text)
 
 
 def _alive(pid: int) -> bool:

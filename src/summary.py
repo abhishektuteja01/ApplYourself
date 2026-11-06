@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import os
 import re
 import sys
 from datetime import datetime
@@ -28,6 +27,7 @@ from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
 from src.score_store import view
 from src.shared import clock, paths
+from src.shared.files import atomic_write_text
 
 # One short "what to do" line per section, written only into summary.md (the
 # session's copy) and only when the section has something to act on.
@@ -932,9 +932,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     out = args.out or paths.SUMMARY
     for path, content in ((out, text), (out.with_suffix(".html"), to_html(text))):
-        tmp = path.with_name(f".{path.name}.tmp")
-        tmp.write_text(content, encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write_text(path, content)
     print(f"wrote {out} and {out.with_suffix('.html').name}")
     return 0
 

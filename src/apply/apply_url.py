@@ -15,7 +15,6 @@ Deterministic and LLM-free (R7).
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from collections.abc import Callable, Iterable
@@ -23,6 +22,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from src.shared import clock, paths
+from src.shared.files import atomic_write_text
 from src.shared.identity import normalize_company, normalize_title
 from src.shared.job_boards import SUBMITTABLE_SOURCES, detect_source
 from src.shared.parquet_io import locked
@@ -171,6 +171,4 @@ def save(entries: dict[str, dict], path=None) -> None:
     path = path or paths.APPLY_URLS
     with locked(path):
         data = {**load(path), **entries}
-        tmp = path.with_name(f".{path.name}.tmp")
-        tmp.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write_text(path, json.dumps(data, indent=1, sort_keys=True) + "\n")

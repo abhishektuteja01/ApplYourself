@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import sys
 from collections import Counter
@@ -34,6 +33,7 @@ from src.resume_model import parse_entries
 from src.score_store import view
 from src.shared import clock, paths
 from src.shared.config_schema import load_settings
+from src.shared.files import atomic_write_text
 
 HISTORY_KEEP = 20
 MAX_WORDS = 8
@@ -86,10 +86,7 @@ def _read_yaml(path: Path, default):
 
 
 def _write_yaml(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_text(path, yaml.safe_dump(data, sort_keys=False, allow_unicode=True), mkdir=True)
 
 
 # ---------------------------------------------------------------- keywords
@@ -184,9 +181,7 @@ def _save(path: Path, text: str, entries_after: dict) -> None:
     if parse_entries(text) != entries_after:
         raise SynonymsError(f"{path.name}: the edit did not round-trip; nothing written")
     _backup(path)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_text(path, text)
 
 
 def _screen(item: dict, sources: dict[str, dict], batch: set) -> str:

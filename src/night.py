@@ -35,6 +35,7 @@ from pathlib import Path
 import yaml
 
 from src.shared import clock, config_schema, paths, schemas
+from src.shared.files import atomic_write_text
 
 STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 STOPS = ("discover", "score")
@@ -46,12 +47,7 @@ LOCKED = 75
 
 
 def write_json(path: Path, data: dict) -> None:
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    atomic_write_text(path, json.dumps(data, indent=2))
 
 
 def load(run_dir: Path) -> dict | None:

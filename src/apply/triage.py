@@ -18,12 +18,12 @@ Nothing here judges anything (R7): every answer already exists.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from src import apply_cli, track_cli
 from src.apply import sheet
 from src.shared import clock, paths
+from src.shared.files import atomic_write_text
 
 
 def _open_detail(plan, guesses) -> dict:
@@ -129,10 +129,7 @@ def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
         path = apply_cli.reserve_report_path(started)
         apply_cli.write_report(outcomes, started, path=path)
         result["report"] = str(path)
-    tmp = paths.APPLY_TRIAGE.with_name(f".{paths.APPLY_TRIAGE.name}.tmp")
-    paths.APPLY_TRIAGE.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    os.replace(tmp, paths.APPLY_TRIAGE)
+    atomic_write_text(paths.APPLY_TRIAGE, json.dumps(result, indent=2), mkdir=True)
     return result
 
 

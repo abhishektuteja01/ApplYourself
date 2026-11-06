@@ -80,14 +80,16 @@ def test_run_json_is_replaced_whole_or_not_at_all(tmp_path, monkeypatch):
     path = tmp_path / "run.json"
     M.write_json(path, {"stages": {"score": {"status": "ok"}}})
 
-    def broken(*a, **k):
-        a[1].write('{"stages": ')
-        raise OSError("disk full")
+    from src.shared import files
 
-    monkeypatch.setattr(M.json, "dump", broken)
+    def broken(fd):
+        raise OSError("disk full")  # the temp file holds the new text, not yet renamed
+
+    monkeypatch.setattr(files.os, "fsync", broken)
     with pytest.raises(OSError):
         M.write_json(path, {"stages": {}})
     assert json.loads(path.read_text(encoding="utf-8"))["stages"]["score"]["status"] == "ok"
+    assert [p.name for p in tmp_path.iterdir()] == ["run.json"]
 
 
 def test_a_run_json_from_newer_code_is_refused(tmp_path):

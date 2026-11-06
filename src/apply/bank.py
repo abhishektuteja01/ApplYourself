@@ -31,6 +31,7 @@ import yaml
 
 from src.apply import answers as A
 from src.shared import clock, paths
+from src.shared.files import atomic_write_text
 from src.shared.parquet_io import locked
 
 # Set to 1 by the night run: no bank write and no submit without a person there.
@@ -84,8 +85,6 @@ def write(data: dict, path: Path | None = None) -> Path:
     p = Path(path) if path is not None else paths.ANSWER_BANK
     A.answers_from(data, where=str(p), resume_path=A.resume_for(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
     if p.exists():
         history = p.parent / ".state" / "bank_history"
         history.mkdir(parents=True, exist_ok=True)
@@ -95,7 +94,7 @@ def write(data: dict, path: Path | None = None) -> Path:
         )
         for old in sorted(history.glob(f"{p.stem}.[0-9][0-9][0-9][0-9]-*.yaml"))[:-HISTORY_KEEP]:
             old.unlink()
-    os.replace(tmp, p)
+    atomic_write_text(p, text)
     return p
 
 
