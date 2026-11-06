@@ -610,15 +610,86 @@ def _indented(data: Any, pad: str) -> list[str]:
     return [pad + ln for ln in text.splitlines(keepends=True)]
 
 
+def _migrated_rules(
+    names: list[str], keeps: dict[str, list[str]], strong: dict[str, set[str]], variants: Any
+) -> list[dict]:
+    """The classifier rules a lane's include and strong-keep terms become,
+    most specific first: multi-word terms by word count, longest first (a
+    strong-keep term in a `keep: true` rule); then, per lane, its single
+    words, which pick the lane only beside another of its words. A
+    title_variants group counts as one word."""
+    from applyourself.shared.title_terms import word_count
+
+    words = {n: {t: word_count(t, variants) for t in keeps.get(n, [])} for n in names}
+    out: list[dict] = []
+    for k in sorted({c for w in words.values() for c in w.values() if c > 1}, reverse=True):
+        for n in names:
+            for keep in (True, False):
+                terms = [t for t, c in words[n].items() if c == k and (t in strong[n]) == keep]
+                if terms:
+                    out.append({"vertical": n, "terms": terms, **({"keep": True} if keep else {})})
+    for n in names:
+        kept = [t for t, c in words[n].items() if c == 1 and t in strong[n]]
+        if kept:
+            out.append({"vertical": n, "terms": kept, "keep": True})
+        single = [t for t, c in words[n].items() if c == 1 and t not in strong[n]]
+        if single and len(words[n]) > 1:
+            out.append({"vertical": n, "pattern": {"match": single, "require_any": list(words[n])}})
+        elif single:
+            out.append({"vertical": n, "terms": single})
+    return out
+
+
+def _replay_titles(jobs: Path) -> list[tuple[str, str, str]]:
+    """(title, hint, source) of every row in jobs/clean.parquet and jobs/raw/,
+    each once: the titles the gate saw lately."""
+    import pandas as pd
+
+    from applyourself.discovery.config import JOBSPY_SOURCES
+
+    seen: dict[tuple[str, str, str], None] = {}
+    files = [jobs / "clean.parquet", *sorted((jobs / "raw").glob("*.parquet"))]
+    for f in files:
+        if not f.is_file():
+            continue
+        d = pd.read_parquet(f, columns=["source", "title", "vertical"])
+        raw = f.parent.name == "raw"
+        for src, t, v in zip(d["source"], d["title"], d["vertical"], strict=True):
+            if not isinstance(t, str):
+                continue
+            hint = v if isinstance(v, str) and (not raw or src in JOBSPY_SOURCES) else ""
+            seen[(t, hint, str(src))] = None
+    return list(seen)
+
+
+def _replay(old: Any, new: Any, rows: list[tuple[str, str, str]]) -> list[str]:
+    """Each title that passes the old config and drops, or changes lane, under the new."""
+    from applyourself.shared.title_gate import lane_for
+
+    bad = []
+    for t, hint, src in rows:
+        a = lane_for(t, hint, src, old)
+        if not a.passes:
+            continue
+        b = lane_for(t, hint, src, new)
+        if not b.passes or b.lane != a.lane:
+            bad.append(
+                f"{t!r} ({src}, {hint or 'no hint'}): {a.lane} -> {b.lane or '-'} {b.reason}"
+            )
+    return bad
+
+
 def _title_lists(p: Profile) -> None:
     """Lane title lists -> verticals.yaml: a lane's include and strong-keep terms
-    become one `terms` classifier rule for it (appended last), the exclude terms
-    every lane shares join `defaults: title_exclude_terms`, and the lane lists go.
-    Refused unless every old include and strong-keep term still fits its lane."""
+    become classifier rules (appended last, most specific first; strong-keep
+    ones `keep: true`), the exclude terms every lane shares join `defaults:
+    title_exclude_terms`, and the lane lists go. Refused when any title in
+    jobs/clean.parquet or jobs/raw/ that passes today would drop or change lane."""
     import tempfile
 
-    from applyourself.shared import title_gate
+    from applyourself.shared import title_terms
     from applyourself.shared import verticals as V
+    from applyourself.shared.title_gate import lane_for
 
     data = p.data(VERTICALS)
     if not isinstance(data, dict) or data.get("schema_version") != 2:
@@ -634,6 +705,9 @@ def _title_lists(p: Profile) -> None:
         p.problems.append(f"{VERTICALS}: no `classifier_rules` list; move the title lists by hand")
         return
     have = [str(t).lower() for t in defaults.get("title_exclude_terms") or []]
+    strong = {
+        n: {str(t) for t in raws.get(n, {}).get("title_strong_keep_terms") or []} for n in names
+    }
     keeps = {
         n: list(
             dict.fromkeys(
@@ -643,8 +717,24 @@ def _title_lists(p: Profile) -> None:
         for n, r in raws.items()
     }
     excludes = [[str(t) for t in raws.get(n, {}).get("title_exclude_terms") or []] for n in names]
-    shared = [t for t in excludes[0] if all(t.lower() in {x.lower() for x in e} for e in excludes)]
-    shared = [t for t in dict.fromkeys(shared) if t.lower() not in have]
+    variants = tuple(tuple(g) for g in data.get("title_variants") or [] if isinstance(g, list))
+    rows = _replay_titles(p.root.parent / "jobs")
+    strong_rx = title_terms.compile_terms(tuple(t for ts in strong.values() for t in ts), variants)
+    kept_titles = [
+        t for t, _, _ in rows if strong_rx and strong_rx.search(title_terms.normalize(t))
+    ]
+    # A ban every lane shares moves to defaults, unless a title some lane's
+    # strong-keep term keeps holds it; a defaults list already there is the
+    # one ban list, so nothing joins it.
+    shared = [
+        t
+        for t in dict.fromkeys(excludes[0] if excludes and not have else [])
+        if all(t.lower() in {x.lower() for x in e} for e in excludes)
+        and not any(
+            title_terms.first_exact((t,), k)
+            for k in [*(t for ts in strong.values() for t in ts), *kept_titles]
+        )
+    ]
 
     text = p.text(VERTICALS) or ""
     lines = (text if text.endswith("\n") else text + "\n").splitlines(keepends=True)
@@ -657,14 +747,13 @@ def _title_lists(p: Profile) -> None:
     end = _block_end(lines, rules_at)
     item = next((ln for ln in lines[rules_at + 1 : end] if ln.lstrip().startswith("- ")), "  - ")
     pad = item[: len(item) - len(item.lstrip())]
-    added = []
-    for n in names:
-        if keeps.get(n):
-            added += [
-                f"{pad}# {n}'s title_include_terms and title_strong_keep_terms, from {rels[n]}.\n",
-                *_indented([{"vertical": n, "terms": keeps[n]}], pad),
-            ]
-    lines[end:end] = added
+    rules = _migrated_rules(names, keeps, strong, variants)
+    if rules:
+        lines[end:end] = [
+            f"{pad}# The lanes' old title_include_terms and title_strong_keep_terms, most\n",
+            f"{pad}# specific first; a single word needs another of its lane's words.\n",
+            *_indented(rules, pad),
+        ]
     if shared:
         at = next((i for i, ln in enumerate(lines) if re.match(r"defaults\s*:", ln)), None)
         block = [
@@ -673,7 +762,8 @@ def _title_lists(p: Profile) -> None:
         ]
         if at is None:
             lanes_at = next(i for i, ln in enumerate(lines) if re.match(r"lanes\s*:", ln))
-            lines[lanes_at + 1 : lanes_at + 1] = ["\n", "defaults:\n", *block]
+            after = _block_end(lines, lanes_at)
+            lines[after:after] = ["\n", "defaults:\n", *block]
         elif "title_exclude_terms" in defaults:
             d_end = _block_end(lines, at)
             key_at = next(
@@ -713,19 +803,27 @@ def _title_lists(p: Profile) -> None:
         for key in TITLE_LISTS:
             out = drop_top_key(out, key)
         lane_texts[rels[n]] = out
-    try:
+
+    def load(texts: dict[str, str]) -> Any:
         with tempfile.TemporaryDirectory() as tmp:
-            for rel in (VERTICALS, *rels.values()):
-                body = top if rel == VERTICALS else lane_texts.get(rel, p.text(rel) or "")
+            for rel, body in texts.items():
                 (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
                 (Path(tmp) / rel).write_text(body, encoding="utf-8")
-            new = V.load_verticals(Path(tmp) / VERTICALS)
+            return V.load_verticals(Path(tmp) / VERTICALS)
+
+    before = {rel: p.text(rel) or "" for rel in (VERTICALS, *rels.values())}
+    try:
+        old = load(before)
+        new = load({**before, VERTICALS: top, **lane_texts})
     except ValueError as exc:
         p.problems.append(f"{VERTICALS}: does not load after moving the title lists: {exc}")
         return
-    lost = [f"{n}: {t!r}" for n, ts in keeps.items() for t in ts if not title_gate.fits(t, n, new)]
-    if lost:
-        p.problems.append(f"{VERTICALS}: these terms would no longer fit their lane: {lost}")
+    bad = _replay(old, new, rows)
+    if bad:
+        p.problems.append(
+            f"{VERTICALS}: moving the title lists would drop or move {len(bad)} title(s) "
+            "that pass today; move them by hand:\n         " + "\n         ".join(bad[:50])
+        )
         return
     p.texts[VERTICALS] = top
     p.texts.update(lane_texts)
@@ -733,10 +831,24 @@ def _title_lists(p: Profile) -> None:
         n: len([t for t in e if t.lower() not in {x.lower() for x in shared}])
         for n, e in zip(names, excludes, strict=True)
     }
+    elsewhere = [
+        f"{n}: {t!r} -> {lane_for(t, '', 'greenhouse', new).lane or '-'}"
+        for n in names
+        for t in keeps.get(n, [])
+        if title_terms.word_count(t, variants) > 1 and lane_for(t, "", "greenhouse", new).lane != n
+    ]
     p.notes.append(
-        f"{VERTICALS}: include/strong-keep terms -> classifier_rules `terms` for "
-        f"{[n for n in names if keeps.get(n)]}; defaults title_exclude_terms {shared}; "
-        f"lane-only exclude terms dropped {dropped}"
+        f"{VERTICALS}: include/strong-keep terms -> classifier_rules for "
+        f"{[n for n in names if keeps.get(n)]}; "
+        + (f"defaults title_exclude_terms + {shared}; " if shared else "")
+        + f"lane-only exclude terms dropped {dropped}; replayed {len(rows)} titles, none drop "
+        "or change lane"
+        + (
+            "; a board title holding one of these terms goes where an earlier rule "
+            f"puts it: {elsewhere}"
+            if elsewhere
+            else ""
+        )
     )
 
 

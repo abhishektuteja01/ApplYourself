@@ -288,3 +288,78 @@ def test_lane_title_lists_move_out_and_nothing_that_passed_drops(tmp_path, capsy
     assert [p for p in passed if not title_gate.lane_for(*p, "linkedin", new).passes] == []
     assert _run(prof, apply=False) == 0
     assert "nothing to migrate" in capsys.readouterr().out
+
+
+TWO_LANES = """schema_version: 2
+default_vertical: alpha
+lanes:
+  - alpha
+  - beta
+classifier_rules:
+  - vertical: alpha
+    pattern: '\\\\bwidget\\\\b'
+  - vertical: beta
+    pattern: '\\\\bgizmo\\\\b'
+"""
+LANE = """display_name: {name}
+search_terms: [{search}]
+linkedin_terms: [{search}]
+title_include_terms: {include}
+title_exclude_terms: [thesis, sales]
+title_strong_keep_terms: {strong}
+"""
+
+
+def _two_lanes(tmp_path, raw_titles=()):
+    """A block-list `lanes:` and no `defaults:`; a ban both lanes share that a
+    strong-keep title holds (sales) and one it does not (thesis); a single word
+    in one lane (agent) beside a longer term in the other (agent risk)."""
+    import pandas as pd
+
+    prof = tmp_path / "profile"
+    for name, search, include, strong in (
+        ("alpha", "Data Platform", "[agent]", "[sales widget]"),
+        ("beta", "Gizmo Analyst", "[agent risk, data platform risk]", "[]"),
+    ):
+        lane = prof / "verticals" / name / "lane.yaml"
+        lane.parent.mkdir(parents=True)
+        lane.write_text(
+            LANE.format(name=name, search=search, include=include, strong=strong),
+            encoding="utf-8",
+        )
+    (prof / "verticals.yaml").write_text(TWO_LANES, encoding="utf-8")
+    raw = tmp_path / "jobs" / "raw"
+    raw.mkdir(parents=True)
+    rows = [{"source": "greenhouse", "title": t, "vertical": "alpha", "passed": True,
+             "posting_key": t} for t in ("Sales Widget Lead", *raw_titles)]  # fmt: skip
+    pd.DataFrame(rows).to_parquet(raw / "2026-11-04_2100.parquet")
+    return prof
+
+
+def test_title_lists_migration_keeps_strong_keep_and_routes_specific_first(tmp_path, capsys):
+    from applyourself.shared import title_gate
+    from applyourself.shared import verticals as V
+
+    prof = _two_lanes(tmp_path)
+    assert _run(prof, apply=True) == 0, capsys.readouterr().out
+    new = V.load_verticals(prof / "verticals.yaml")
+    ban = new.verticals["beta"].title_exclude_terms
+    assert "thesis" in ban and "sales" not in ban  # a strong-keep title holds "sales"
+    assert title_gate.lane_for("Thesis: Sales Widget", "", "greenhouse", new).passes
+    route = {t: title_gate.lane_for(t, "", "greenhouse", new).lane for t in (
+        "Agent Risk Analyst", "Insurance Agent", "Data Platform Risk Lead")}  # fmt: skip
+    assert route == {
+        "Agent Risk Analyst": "beta",
+        "Insurance Agent": "",
+        "Data Platform Risk Lead": "beta",
+    }
+    assert title_gate.lane_for("Agent Ops", "alpha", "linkedin", new).lane == "alpha"
+
+
+def test_title_lists_migration_refuses_when_a_title_would_change_lane(tmp_path, capsys):
+    prof = _two_lanes(tmp_path, raw_titles=("Data Platform Risk Lead",))
+    before = (prof / "verticals.yaml").read_text(encoding="utf-8")
+    assert _run(prof, apply=True) == 1
+    out = capsys.readouterr().out
+    assert "would drop or move 1 title" in out and "alpha -> beta" in out
+    assert (prof / "verticals.yaml").read_text(encoding="utf-8") == before

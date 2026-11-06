@@ -21,14 +21,20 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   loaded only when `lanes:` lists it. `lane.yaml` sits in `verticals/` beside
   whichever verticals file names it, so the example and the fixture carry their
   own.
-- A classifier rule is a `pattern` regex, a `{match, require_any}` pair or a
-  `terms` list; the last two match loosely with `title_variants`. The title
-  ban list is `defaults: title_exclude_terms`. A lane's own
-  `title_include_terms` / `title_strong_keep_terms` / `title_exclude_terms`
-  are still read (include and strong-keep count as fits, strong-keep beats a
-  ban); `uv run config migrate` moves them out: include and strong-keep into
-  one `terms` rule per lane, the exclude terms every lane shares into
-  `defaults:`.
+- A classifier rule is a `pattern` regex, a `{match, require_any}` pair (match
+  a term or a list) or a `terms` list (`keep: true` beats a ban); the last two
+  match loosely with `title_variants`. The title ban list is `defaults:
+  title_exclude_terms`. A lane's own `title_include_terms` /
+  `title_strong_keep_terms` / `title_exclude_terms` are still read (include
+  and strong-keep count as fits for the lane's own search rows, strong-keep
+  beats a ban). `uv run config migrate` moves them out: multi-word terms into
+  `terms` rules, most words first (strong-keep ones `keep: true`), each lane's
+  single words into one `{match, require_any}` rule needing another of its
+  words; the exclude terms every lane shares into `defaults:` (none when
+  `defaults:` already has a list, none that a strong-keep title holds). It
+  replays jobs/clean.parquet and jobs/raw/ beside the profile and refuses on
+  any title that would drop or change lane. Add `title_variants` before
+  migrating: a variants group counts as one word.
 - **One source per resume fact** (`src/applyourself/resume_model.py`): `profile/resume.yaml`
   holds name, contact, education and each context's header plus per-lane
   `{min, max, order}`; `bullets.md` holds claims and `default_for`;
