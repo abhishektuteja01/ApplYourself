@@ -341,12 +341,14 @@ _PROSE_KINDS = frozenset({"text", "textarea"})
 def _linted(text: str, company: str) -> tuple[str, str]:
     """`(text with mechanical fixes, problem)`. A banned phrase is a problem:
     the field parks naming it, and the session rewrites that sentence."""
-    from src.lint import find_phrase_violations, fix_mechanical, load_de_ai_rules
+    from src.lint import blocking, find_phrase_violations, fix_mechanical, load_de_ai_rules
 
     rules = load_de_ai_rules()
     fixed, _ = fix_mechanical(text, rules)
-    found = find_phrase_violations(
-        fixed, context="resume", rules=rules, keep=[company] if company else []
+    found = blocking(
+        find_phrase_violations(
+            fixed, context="resume", rules=rules, keep=[company] if company else []
+        )
     )
     if found:
         phrases = sorted({v["phrase"] for v in found})

@@ -358,6 +358,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
         "docx": docx.name,
         "pdf": pdf,
         "swapped": built.swapped,
+        "warnings": built.warnings,
     }, 0
 
 
@@ -367,9 +368,16 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
 
 
 def _prose_problems(
-    src, where: str, text: str, uses: list[str], grounds: str, keep: list[str]
+    src,
+    where: str,
+    text: str,
+    uses: list[str],
+    grounds: str,
+    keep: list[str],
+    warnings: list[dict],
 ) -> list[dict]:
-    """Numbers must come from a cited bullet or the JD; lint with keep-terms."""
+    """Numbers must come from a cited bullet or the JD; lint with keep-terms.
+    `warn` lint hits go to `warnings`, never to the problems."""
     out = [
         {"where": where, "code": ProblemCode.UNKNOWN_ID, "detail": f"{u} is not in bullets.md"}
         for u in uses
@@ -386,13 +394,15 @@ def _prose_problems(
         }
         for n in resume_model.ungrounded_numbers(text, allowed)
     ]
+    found = lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+    warnings += [resume_model.lint_warning(where, v) for v in found if v["level"] == "warn"]
     out += [
         {
             "where": where,
             "code": ProblemCode.LINT,
             "detail": f"banned phrase {v['phrase']!r} ({v['category']})",
         }
-        for v in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+        for v in lint.blocking(found)
     ]
     return out
 
@@ -409,6 +419,7 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
         return {"ok": False, "problems": bad}, 2
     src = resume_model.load_sources()
     problems: list[dict] = []
+    warnings: list[dict] = []
     uses = [str(u) for u in data.get("uses") or []]
     keep = resume_model.keep_terms(src, str(facts.get("company", "")))
     for k in ANSWER_KEYS:
@@ -430,7 +441,7 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
                     "detail": f"{_sentences(v)} sentences; write 2-4",
                 }
             )
-        problems += _prose_problems(src, k, v, uses, jd, keep)
+        problems += _prose_problems(src, k, v, uses, jd, keep, warnings)
     if problems:
         return {"ok": False, "problems": problems}, 2
     _atomic_write(
@@ -441,6 +452,7 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
         "dir": str(folder.relative_to(paths.APPLICATIONS.parent)),
         "answered": [k for k in ANSWER_KEYS if data.get(k)],
         "no_research": [k for k in ANSWER_KEYS if not data.get(k)],
+        "warnings": warnings,
     }, 0
 
 
@@ -465,6 +477,7 @@ def cmd_build_letter(
     _, slug = _identity()
     company = str(facts.get("company", ""))
     problems: list[dict] = []
+    warnings: list[dict] = []
 
     body = data.get("body")
     if (
@@ -502,9 +515,9 @@ def cmd_build_letter(
 
     salutation = fix(salutation)
     body = [fix(p) for p in body]
-    problems += _prose_problems(src, "salutation", salutation, [], "", keep)
+    problems += _prose_problems(src, "salutation", salutation, [], "", keep, warnings)
     for i, p in enumerate(body):
-        problems += _prose_problems(src, f"body[{i}]", p, uses, jd, keep)
+        problems += _prose_problems(src, f"body[{i}]", p, uses, jd, keep, warnings)
     if company and not _names_company(company, " ".join(body)):
         problems.append(
             {"where": "body", "code": ProblemCode.LAYOUT, "detail": f"never names {company!r}"}
@@ -545,6 +558,7 @@ def cmd_build_letter(
         "docx": docx.name,
         "pdf": pdf,
         "words": words,
+        "warnings": warnings,
     }, 0
 
 
@@ -593,11 +607,11 @@ def cmd_lint_outreach(draft: str, company: str, recipient: str | None) -> dict:
     fixed, subs = lint.fix_mechanical(path.read_text(encoding="utf-8"), src.rules)
     path.write_text(fixed, encoding="utf-8")
     keep = resume_model.keep_terms(src, company, *([recipient] if recipient else []))
+    found = lint.find_phrase_violations(fixed, context="outreach", rules=src.rules, keep=keep)
     return {
         "mech_subs": len(subs),
-        "violations": lint.find_phrase_violations(
-            fixed, context="outreach", rules=src.rules, keep=keep
-        ),
+        "violations": lint.blocking(found),
+        "warnings": [v for v in found if v["level"] == "warn"],
     }
 
 

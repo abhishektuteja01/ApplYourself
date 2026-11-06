@@ -6,6 +6,7 @@ import pytest
 
 from src.lint import (
     LintConfigError,
+    blocking,
     find_phrase_violations,
     fix_mechanical,
     load_de_ai_rules,
@@ -28,25 +29,42 @@ def _rules(**overrides) -> dict:
             "nbsp": " ",
             "zero_width": "",
         },
-        "banned_phrases": {
-            "soft_verbs": ["leveraged", "spearheaded", "orchestrated"],
-            "stock_adjectives": ["robust", "seamless"],
-            "stock_nouns": ["synergy"],
-            "stock_verbs": ["delve", "deep dive"],
-            "filler_starters": ["Notably,", "Furthermore,"],
-            "resume_cliches": ["responsible for", "team player"],
-            "hedges_when_softening_own_work": ["potentially", "may"],
-            "no_emoji": True,
-            "no_exclamation": True,
-        },
-        "outreach_only": [
-            "I hope this message finds you well",
-            "I wanted to reach out",
-            "<greeting>!",
+        "rules": [
+            _rule("soft_verbs", ["leveraged", "spearheaded", "orchestrated"]),
+            _rule("stock_adjectives", ["robust", "seamless"]),
+            _rule("stock_nouns", ["synergy"]),
+            _rule("stock_verbs", ["delve", "deep dive"]),
+            _rule("filler_starters", ["Notably,", "Furthermore,"], match="sentence_start"),
+            _rule("resume_cliches", ["responsible for", "team player"]),
+            _rule("hedges_when_softening_own_work", ["potentially", "may"], unless_before="number"),
+            _rule(
+                "outreach_only",
+                ["I hope this message finds you well", "I wanted to reach out"],
+                scope=["outreach"],
+            ),
+            _rule(
+                "outreach_only",
+                [r"\b(?:hi|hello|hey|dear|greetings)[^.!?\n]*!"],
+                match="regex",
+                scope=["outreach"],
+            ),
         ],
+        "no_emoji": True,
+        "no_exclamation": True,
     }
     base.update(overrides)
     return base
+
+
+def _rule(label, phrases, match="word", scope=("resume", "outreach"), level="block", **extra):
+    return {
+        "label": label,
+        "phrases": phrases,
+        "match": match,
+        "scope": list(scope),
+        "level": level,
+        **extra,
+    }
 
 
 # ===========================================================
@@ -191,6 +209,19 @@ def test_load_de_ai_rules_missing_file_fails_loud(tmp_path):
         load_de_ai_rules(tmp_path / "absent.yaml")
 
 
+def test_a_schema_1_rules_file_names_where_its_keys_moved(tmp_path):
+    old = tmp_path / "de_ai_rules.yaml"
+    old.write_text("mechanical: {}\nbanned_phrases:\n  soft_verbs: [leveraged]\n", encoding="utf-8")
+    with pytest.raises(LintConfigError, match="'banned_phrases' \\(moved to `rules:`"):
+        load_de_ai_rules(old)
+
+
+def test_a_warn_rule_is_reported_but_never_blocks():
+    rules = _rules(rules=[_rule("soft_verbs", ["drove"], level="warn")])
+    found = find_phrase_violations("I drove the rollout.", context="resume", rules=rules)
+    assert [v["level"] for v in found] == ["warn"] and blocking(found) == []
+
+
 # ===========================================================
 # One dash rule, protected text, sentence starts
 # ===========================================================
@@ -277,9 +308,7 @@ def test_month_may_is_not_a_hedge(text):
 
 
 def test_keep_terms_are_not_scanned():
-    rules = _rules(
-        banned_phrases={"stock_adjectives": ["myriad"], "hedges_when_softening_own_work": ["may"]}
-    )
+    rules = _rules(rules=[_rule("stock_adjectives", ["myriad"]), _rule("hedges", ["may"])])
     v = find_phrase_violations(
         "Dear May Chen, Myriad Genetics builds tests.",
         context="resume",
@@ -296,7 +325,7 @@ def test_exclamation_inside_url_or_email_is_not_flagged():
 
 
 def test_hedge_before_a_number_is_precision_not_doubt():
-    rules = _rules(banned_phrases={"hedges_when_softening_own_work": ["approximately"]})
+    rules = _rules(rules=[_rule("hedges", ["approximately"], unless_before="number")])
     assert (
         find_phrase_violations("Cut cost approximately 40%.", context="resume", rules=rules) == []
     )

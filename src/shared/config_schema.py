@@ -164,6 +164,31 @@ class ContactsFile(_Strict):
     contacts: list[Contact] | None = None
 
 
+# ---- de_ai_rules.yaml ----
+
+
+class LintRule(_Strict):
+    label: str
+    phrases: list[str] = Field(min_length=1)
+    match: Literal["word", "sentence_start", "regex"]
+    scope: list[Literal["resume", "outreach"]] = Field(min_length=1)
+    level: Literal["block", "warn"]
+    unless_before: Literal["number"] | None = None
+
+
+class DeAiRules(_Strict):
+    retired: ClassVar[dict[str, str]] = {
+        "banned_phrases": "`rules:` (schema_version 2; see the committed profile/de_ai_rules.yaml)",
+        "outreach_only": "`rules:` entries with `scope: [outreach]`",
+    }
+    schema_version: Literal[2]
+    mechanical: dict[str, str]
+    rules: list[LintRule]
+    no_emoji: bool = False
+    no_exclamation: bool = False
+    stopwords: str = ""
+
+
 # ---- validation ----
 
 

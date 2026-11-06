@@ -7,9 +7,9 @@ with find_phrase_violations as the deterministic referee.
 Tier 1 (mechanical, auto-fix): em/en-dash, smart quotes, ellipsis, NBSP,
 zero-width.
 
-Tier 2 (phrase, flag-and-rewrite): banned phrases per profile/de_ai_rules.yaml.
-NEVER auto-rewritten. The caller rewrites the offending line until the linter
-returns empty.
+Tier 2 (phrase, flag-and-rewrite): the `rules:` table in profile/de_ai_rules.yaml.
+NEVER auto-rewritten. A `block` violation fails the build and the caller rewrites
+the offending line until none is left; a `warn` one is reported only.
 
 Sources (bullets.md, skills_master.md, resume.yaml) are linted once at the
 source by `verticals-check`; builds lint only the text a session wrote.
@@ -24,7 +24,7 @@ from typing import Literal, TypedDict
 
 import yaml
 
-from src.shared import paths
+from src.shared import config_schema, paths
 
 
 class Substitution(TypedDict):
@@ -35,11 +35,15 @@ class Substitution(TypedDict):
     category: str
 
 
+Level = Literal["block", "warn"]
+
+
 class Violation(TypedDict):
     line: int
     column: int
     phrase: str
     category: str
+    level: Level
 
 
 # The keys de_ai_rules.yaml `mechanical:` must define. The file is the only
@@ -67,11 +71,17 @@ class LintConfigError(ValueError):
 
 
 def load_de_ai_rules(path: Path | None = None) -> dict:
-    """Load profile/de_ai_rules.yaml. A missing file raises LintConfigError."""
+    """Load profile/de_ai_rules.yaml, every key checked. A missing or malformed
+    file raises LintConfigError."""
     p = path or paths.DE_AI_RULES
     if not p.exists():
         raise LintConfigError(f"{p} is missing")
-    return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    try:
+        config_schema.validate(config_schema.DeAiRules, data, p)
+    except ValueError as exc:
+        raise LintConfigError(str(exc)) from exc
+    return data
 
 
 def _mech_rules(rules: dict | None) -> dict:
@@ -227,12 +237,6 @@ def _is_emoji(ch: str) -> bool:
     return any(lo <= cp <= hi for lo, hi in _EMOJI_RANGES)
 
 
-def _strip_category_tag(phrase: str) -> str:
-    """Remove parenthetical tags like '(soft)' or '(non-literal)' from
-    a phrase entry — these are author notes, not part of the literal match."""
-    return re.sub(r"\s*\(.*?\)\s*", "", phrase).strip()
-
-
 # Text that is never prose: link targets, URLs, emails, and a month name used
 # as a date ("May 2022", "May – Jul 2024", "Jan – May", "May, 2026", "May '26").
 _PROTECTED = (
@@ -278,66 +282,39 @@ def find_phrase_violations(
     rules: dict | None = None,
     keep: Iterable[str] = (),
 ) -> list[Violation]:
-    """Scan text for banned phrases; return one Violation per occurrence.
+    """Scan text against every rule whose `scope` holds `context`; one Violation
+    per occurrence, carrying the rule's `label` as category and its `level`.
 
     Link targets, URLs, emails, month names used as dates, and every `keep`
     term (company, recipient, skill names and aliases, context titles and
-    orgs — proper nouns the writer can't reword) are never scanned. `outreach_only` phrases apply only to
-    context='outreach'."""
+    orgs: proper nouns the writer can't reword) are never scanned."""
     if rules is None:
         rules = load_de_ai_rules()
     keep = tuple(keep)
-
-    banned = rules.get("banned_phrases", {}) or {}
-    no_emoji = bool(banned.get("no_emoji", False))
-    no_exclamation = bool(banned.get("no_exclamation", False))
-
-    # Phrase categories: every banned_phrases sub-list (skip the no_emoji /
-    # no_exclamation booleans).
-    phrase_cats: dict[str, list[str]] = {k: v for k, v in banned.items() if isinstance(v, list)}
-    if context == "outreach":
-        outreach_only = rules.get("outreach_only", []) or []
-        if outreach_only:
-            phrase_cats["outreach_only"] = list(outreach_only)
+    active = [r for r in rules.get("rules") or [] if context in r["scope"]]
 
     violations: list[Violation] = []
+
+    def hit(lineno: int, col: int, phrase: str, category: str, level: Level) -> None:
+        violations.append(
+            Violation(line=lineno, column=col + 1, phrase=phrase, category=category, level=level)
+        )
+
     for lineno, line in enumerate(text.split("\n"), start=1):
         lower = _mask(line, keep)
         starts = sorted({m.end() for m in _SENTENCE_START.finditer(lower)})
 
-        for category, phrases in phrase_cats.items():
-            for raw_phrase in phrases:
-                phrase = _strip_category_tag(raw_phrase)
-                if not phrase:
+        for rule in active:
+            label, level, how = rule["label"], rule["level"], rule["match"]
+            for phrase in rule["phrases"]:
+                if how == "regex":
+                    for m in re.finditer(phrase, lower):
+                        hit(lineno, m.start(), line[m.start() : m.end()], label, level)
                     continue
-                # Special: the "<greeting>!" pseudo-pattern for outreach
-                if phrase == "<greeting>!":
-                    for m in re.finditer(
-                        r"\b(?:hi|hello|hey|dear|greetings)[^.!?\n]*!",
-                        lower,
-                    ):
-                        violations.append(
-                            Violation(
-                                line=lineno,
-                                column=m.start() + 1,
-                                phrase=line[m.start() : m.end()],
-                                category=category,
-                            )
-                        )
-                    continue
-                # filler_starters are sentence-openers: checked at the start of
-                # every sentence, never mid-sentence (the job board "Indeed,").
-                if category == "filler_starters":
+                if how == "sentence_start":
                     for pos in starts:
                         if lower.startswith(phrase.lower(), pos):
-                            violations.append(
-                                Violation(
-                                    line=lineno,
-                                    column=pos + 1,
-                                    phrase=phrase,
-                                    category=category,
-                                )
-                            )
+                            hit(lineno, pos, phrase, label, level)
                     continue
                 pat = re.escape(phrase.lower())
                 # Word-boundary only when phrase starts AND ends with a word char.
@@ -346,42 +323,25 @@ def find_phrase_violations(
                 if phrase[0].isalnum() and phrase[-1].isalnum():
                     pat = r"\b" + pat + r"\b"
                 for m in re.finditer(pat, lower):
-                    # A hedge before a number states precision, not doubt:
-                    # "approximately 40%" is the bullet's own claim.
-                    if category == "hedges_when_softening_own_work" and _NUMBER_AHEAD.match(
+                    # "approximately 40%" states precision, not doubt.
+                    if rule.get("unless_before") == "number" and _NUMBER_AHEAD.match(
                         lower, m.end()
                     ):
                         continue
-                    violations.append(
-                        Violation(
-                            line=lineno,
-                            column=m.start() + 1,
-                            phrase=phrase,
-                            category=category,
-                        )
-                    )
+                    hit(lineno, m.start(), phrase, label, level)
 
-        if no_emoji:
+        if rules.get("no_emoji"):
             for i, ch in enumerate(lower):
                 if _is_emoji(ch):
-                    violations.append(
-                        Violation(
-                            line=lineno,
-                            column=i + 1,
-                            phrase=ch,
-                            category="emoji",
-                        )
-                    )
-        if no_exclamation:
+                    hit(lineno, i, ch, "emoji", "block")
+        if rules.get("no_exclamation"):
             for i, ch in enumerate(lower):
                 if ch == "!":
-                    violations.append(
-                        Violation(
-                            line=lineno,
-                            column=i + 1,
-                            phrase="!",
-                            category="exclamation",
-                        )
-                    )
+                    hit(lineno, i, "!", "exclamation", "block")
 
     return violations
+
+
+def blocking(violations: Iterable[Violation]) -> list[Violation]:
+    """The violations that fail a build; the rest are warnings."""
+    return [v for v in violations if v["level"] == "block"]

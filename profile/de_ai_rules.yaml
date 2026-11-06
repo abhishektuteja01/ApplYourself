@@ -4,6 +4,8 @@
 # Mechanical violations are auto-fixed. Banned phrases are FLAGGED and Claude
 # rewrites the offending line; linter re-runs until clean.
 
+schema_version: 2
+
 mechanical:
   em_dash: ", "
   en_dash_in_range: "-"
@@ -15,175 +17,230 @@ mechanical:
   nbsp: " "
   zero_width: ""
 
-banned_phrases:
-  soft_verbs:
-    - leveraged
-    - spearheaded
-    - orchestrated
-    - championed
-    - "drove (soft)"
-    - "enabled (soft)"
-    - "facilitated (soft)"
-    - unlocked
-    - unleashed
-    - harnessed
-    - fostered
-    - bolstered
-    - garnered
-    - galvanized
-    - catalyzed
-    - cultivated
-    - pioneered
-    - streamlined
-    - "streamline (soft)"
-    - "foster (soft)"
-    - fostering
-    - "excels (non-literal)"
-  stock_adjectives:
-    - robust
-    - seamless
-    - cutting-edge
-    - best-in-class
-    - world-class
-    - innovative
-    - transformative
-    - holistic
-    - comprehensive
-    - "scalable (non-literal)"
-    - dynamic
-    - synergistic
-    - passionate
-    - results-driven
-    - detail-oriented
-    - self-starter
-    - go-getter
-    - pivotal
-    - "crucial (non-literal)"
-    - "vital (non-literal)"
-    - unparalleled
-    - unwavering
-    - multifaceted
-    - meticulous
-    - exceptional
-    - exemplary
-    - "state-of-the-art"
-    - "next-level"
-    - "top-notch"
-    - "game-changing"
-    - groundbreaking
-    - "ever-evolving"
-    - visionary
-    - cohesive
-    - proactive
-    - results-oriented
-    - vibrant
-    - intricate
-  stock_nouns:
-    - synergy
-    - "ecosystem (non-literal)"
-    - paradigm
-    - tapestry
-    - myriad
-    - plethora
-    - realm
-    - "landscape (figurative)"
-    - nuance
-    - cornerstone
-    - keystone
-    - "testament to"
-    - "paradigm shift"
-    - "game changer"
-    - "thought leader"
-    - "value-add"
-    - "low-hanging fruit"
-  stock_verbs:
-    - delve
-    - dive deep
-    - deep dive
-    - embark
-    - endeavor
-    - "navigate the complexities"
-    - "it's worth noting"
-    - "underscore (soft)"
-    - underscores
-    - underpin
-    - seamlessly
-    - "move the needle"
-    - "circle back"
-    - boasts
-    - boast
-    - boasting
-  stock_openers:
-    - "I am writing to express my interest in"
-    - "I am excited to apply for"
-    - "I am thrilled to apply for"
-    - "To Whom It May Concern"
-    - "Dear Sir/Madam"
-    - "Dear Sir or Madam"
-  filler_starters:
-    - "Notably,"
-    - "Importantly,"
-    - "Crucially,"
-    - "Furthermore,"
-    - "Moreover,"
-    - "Additionally,"
-    - "Specifically,"
-    - "Indeed,"
-    - "In conclusion,"
-    - "It is important to note"
-    - "In today's fast-paced"
-    - "When it comes to"
-    - "At the end of the day,"
-    - "That being said,"
-    - "On the other hand,"
-    - "In essence,"
-    - "Overall,"
-    - "All in all,"
-    - "Last but not least,"
-    - "In summary,"
-    - "At its core,"
-    - "It's important to remember"
-  resume_cliches:
-    - "responsible for"
-    - "helped with"
-    - "worked on (no metric)"
-    - "team player"
-    - "proven track record"
-    - "proven ability"
-    - "wealth of experience"
-    - "deep expertise"
-  hedges_when_softening_own_work:
-    - may
-    - might
-    - could
-    - potentially
-    - approximately
-    - roughly
-    - arguably
-    - "to some extent"
-  no_emoji: true
-  no_exclamation: true
+# Banned phrasing, one entry per rule. `label` names it in reports.
+#   match: word (whole words, or a plain substring when the phrase starts or
+#          ends in punctuation) | sentence_start | regex (on the lowercased line)
+#   scope: resume (resumes, letters, answers, /apply text) and/or outreach
+#   level: block (the build fails until rewritten) | warn (reported only)
+#   unless_before: number (optional: skip a match followed by a number)
+rules:
+  - label: soft_verbs
+    match: word
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - leveraged
+      - spearheaded
+      - orchestrated
+      - championed
+      - unlocked
+      - unleashed
+      - harnessed
+      - fostered
+      - bolstered
+      - garnered
+      - galvanized
+      - catalyzed
+      - cultivated
+      - pioneered
+      - streamlined
+      - fostering
+      - excels  # non-literal
+  - label: soft_verbs
+    match: word
+    scope: [resume, outreach]
+    level: warn
+    phrases:
+      - drove
+      - enabled
+      - facilitated
+      - streamline
+      - foster
+  - label: stock_adjectives
+    match: word
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - robust
+      - seamless
+      - cutting-edge
+      - best-in-class
+      - world-class
+      - innovative
+      - transformative
+      - holistic
+      - comprehensive
+      - scalable  # non-literal
+      - dynamic
+      - synergistic
+      - passionate
+      - results-driven
+      - detail-oriented
+      - self-starter
+      - go-getter
+      - pivotal
+      - crucial  # non-literal
+      - vital  # non-literal
+      - unparalleled
+      - unwavering
+      - multifaceted
+      - meticulous
+      - exceptional
+      - exemplary
+      - "state-of-the-art"
+      - "next-level"
+      - "top-notch"
+      - "game-changing"
+      - groundbreaking
+      - "ever-evolving"
+      - visionary
+      - cohesive
+      - proactive
+      - results-oriented
+      - vibrant
+      - intricate
+  - label: stock_nouns
+    match: word
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - synergy
+      - ecosystem  # non-literal
+      - paradigm
+      - tapestry
+      - myriad
+      - plethora
+      - realm
+      - landscape  # figurative
+      - nuance
+      - cornerstone
+      - keystone
+      - "testament to"
+      - "paradigm shift"
+      - "game changer"
+      - "thought leader"
+      - "value-add"
+      - "low-hanging fruit"
+  - label: stock_verbs
+    match: word
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - delve
+      - dive deep
+      - deep dive
+      - embark
+      - endeavor
+      - "navigate the complexities"
+      - "it's worth noting"
+      - underscores
+      - underpin
+      - seamlessly
+      - "move the needle"
+      - "circle back"
+      - boasts
+      - boast
+      - boasting
+  - label: stock_verbs
+    match: word
+    scope: [resume, outreach]
+    level: warn
+    phrases:
+      - underscore
+  - label: stock_openers
+    match: word
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - "I am writing to express my interest in"
+      - "I am excited to apply for"
+      - "I am thrilled to apply for"
+      - "To Whom It May Concern"
+      - "Dear Sir/Madam"
+      - "Dear Sir or Madam"
+  - label: filler_starters
+    match: sentence_start
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - "Notably,"
+      - "Importantly,"
+      - "Crucially,"
+      - "Furthermore,"
+      - "Moreover,"
+      - "Additionally,"
+      - "Specifically,"
+      - "Indeed,"
+      - "In conclusion,"
+      - "It is important to note"
+      - "In today's fast-paced"
+      - "When it comes to"
+      - "At the end of the day,"
+      - "That being said,"
+      - "On the other hand,"
+      - "In essence,"
+      - "Overall,"
+      - "All in all,"
+      - "Last but not least,"
+      - "In summary,"
+      - "At its core,"
+      - "It's important to remember"
+  - label: resume_cliches
+    match: word
+    scope: [resume, outreach]
+    level: block
+    phrases:
+      - "responsible for"
+      - "helped with"
+      - "worked on"  # no metric
+      - "team player"
+      - "proven track record"
+      - "proven ability"
+      - "wealth of experience"
+      - "deep expertise"
+  - label: hedges_when_softening_own_work
+    match: word
+    scope: [resume, outreach]
+    level: block
+    unless_before: number
+    phrases:
+      - may
+      - might
+      - could
+      - potentially
+      - approximately
+      - roughly
+      - arguably
+      - "to some extent"
+  - label: outreach_only
+    match: word
+    scope: [outreach]
+    level: block
+    phrases:
+      - "I hope this message finds you well"
+      - "I came across your profile"
+      - "I was impressed by your work on"
+      - "Your background caught my eye"
+      - "I wanted to reach out"
+      - "I'm reaching out because"
+      - "Here's the kicker"
+      - "Here's the thing"
+      - "But here's the thing"
+      - "The best part?"
+      - "Here's the part most people miss"
+      - "Here's the breakdown"
+      - "Here's the key takeaway"
+      - "You're not alone"
+      - "You're not imagining it"
+  - label: outreach_only
+    match: regex
+    scope: [outreach]
+    level: block
+    phrases:
+      - '\b(?:hi|hello|hey|dear|greetings)[^.!?\n]*!'  # a greeting line ending in an exclamation mark
 
-outreach_only:
-  # Additionally banned in outreach drafts only.
-  - "I hope this message finds you well"
-  - "I came across your profile"
-  - "I was impressed by your work on"
-  - "Your background caught my eye"
-  - "I wanted to reach out"
-  - "I'm reaching out because"
-  - "<greeting>!"  # any greeting line ending in an exclamation mark
-  # Punchy blog / LinkedIn hooks and unsolicited-validation tells
-  - "Here's the kicker"
-  - "Here's the thing"
-  - "But here's the thing"
-  - "The best part?"
-  - "Here's the part most people miss"
-  - "Here's the breakdown"
-  - "Here's the key takeaway"
-  - "You're not alone"
-  - "You're not imagining it"
-
+no_emoji: true
+no_exclamation: true
 
 # Function words a rewording may add freely. Every other word in a reworded
 # bullet must come from that bullet's canonical text or allowable_synonyms.

@@ -99,7 +99,7 @@ Read:
   the opening; never quoted into the draft).
 - `profile/voice_samples.md` -- the voice baseline (NOT templates; fresh
   generation in the user's voice)
-- `profile/de_ai_rules.yaml` -- both `banned_phrases` and `outreach_only`
+- `profile/de_ai_rules.yaml` -- every `rules:` entry whose `scope` holds `outreach`
 - the work-authorization row for the job's country, which sets the disclosure:
 
   ```bash
@@ -196,16 +196,15 @@ collapse non-alphanumerics to `-`, strip leading/trailing `-`. If no
 ```bash
 # Substitute the literal path of the draft written in Step 3 — bash
 # variables do not persist between Bash calls. Drop --recipient if none.
-# Fixes mechanical slips in the draft in place, then enforces banned_phrases +
-# outreach_only + no_emoji + no_exclamation.
+# Fixes mechanical slips in the draft in place, then lists the outreach-scope
+# rule hits: `violations` (level block) and `warnings` (level warn).
 uv run app lint outreach "pipeline/<job_id>/outreach/<date>_<channel>_<recipient-slug>.md" \
     --company "<company>" --recipient "<recipient name>"
 ```
 
 If any violation:
 - Rewrite the offending line using a phrasing that is (a) in the user's
-  voice per `voice_samples.md` and (b) not in any banned list, AND not
-  in `outreach_only`.
+  voice per `voice_samples.md` and (b) not matched by any rule.
 - Re-save and re-lint per the fix loop in `.claude/shared/no_fab.md` (read it:
   it holds the attempt cap).
 - If still failing after 5: refuse with the specific line + the phrase

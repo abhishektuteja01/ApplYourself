@@ -824,9 +824,9 @@ class TestDraftedTextIsLinted:
 
         banned = next(
             p
-            for v in load_de_ai_rules()["banned_phrases"].values()
-            if isinstance(v, list)
-            for p in v
+            for r in load_de_ai_rules()["rules"]
+            if r["level"] == "block" and r["match"] == "word" and "resume" in r["scope"]
+            for p in r["phrases"]
             if p.isalpha()
         )
         plan = build_plan(

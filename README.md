@@ -635,8 +635,10 @@ bullets, a rubric, `scoring.yaml`, or on a model upgrade.
 **Tier 1: mechanical.** Dashes, smart quotes, ellipses, non-breaking spaces,
 zero-width characters. Auto-fixed everywhere, silently.
 
-**Tier 2: banned phrases** from `profile/de_ai_rules.yaml`. Flagged only, never
-auto-fixed. The command session loops the model to rewrite until the linter comes
+**Tier 2: banned phrases** from the `rules:` table in `profile/de_ai_rules.yaml`.
+Each rule sets how it matches (`word`, `sentence_start`, `regex`), where it
+applies (`resume`, `outreach`) and its `level`: `block` fails the build, `warn`
+is only reported. Flagged only, never auto-fixed. The command session loops the model to rewrite until the linter comes
 back empty, with a hard cap of **5 attempts**. After that a resume falls back to
 its canonical bullets (`--final`) and prose drops the failing sentence. A failed
 build writes nothing, and no command deletes a file it did not write.

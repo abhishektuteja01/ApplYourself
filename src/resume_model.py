@@ -253,7 +253,9 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
         problems += _check_lane(src, lane, v)
 
     for text, where in _source_texts(src, lanes):
-        for viol in lint.find_phrase_violations(text, context="resume", rules=src.rules):
+        for viol in lint.blocking(
+            lint.find_phrase_violations(text, context="resume", rules=src.rules)
+        ):
             problems.append(f"{where}: banned phrase {viol['phrase']!r} ({viol['category']})")
     return problems
 
@@ -403,6 +405,7 @@ class Built:
     trace: list[str] = field(default_factory=list)
     problems: list[Problem] = field(default_factory=list)
     swapped: list[str] = field(default_factory=list)  # --final fallbacks taken
+    warnings: list[dict] = field(default_factory=list)  # `warn` lint hits; never block
 
 
 def baseline_plan(src: Sources, lane: str) -> dict:
@@ -447,15 +450,18 @@ def build(
     shape = v.resume
     problems: list[Problem] = []
     swapped: list[str] = []
+    warnings: list[dict] = []
     keep = keep_terms(src, company)
 
     def fix(t):
         return lint.fix_mechanical(t, src.rules)[0]
 
     def lint_problems(text: str, where: str) -> list[Problem]:
+        found = lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+        warnings.extend(lint_warning(where, x) for x in found if x["level"] == "warn")
         return [
             Problem(where, ProblemCode.LINT, f"banned phrase {x['phrase']!r} ({x['category']})")
-            for x in lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+            for x in lint.blocking(found)
         ]
 
     # --- summary
@@ -625,7 +631,15 @@ def build(
     # --- markdown + trace
     md, trace = _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines)
     trace += _keyword_trace(md, keywords)
-    return Built(markdown=md, trace=trace, problems=problems, swapped=swapped)
+    return Built(markdown=md, trace=trace, problems=problems, swapped=swapped, warnings=warnings)
+
+
+def lint_warning(where: str, v: lint.Violation) -> dict:
+    return {
+        "where": where,
+        "code": ProblemCode.LINT,
+        "detail": f"soft phrase {v['phrase']!r} ({v['category']})",
+    }
 
 
 def context_text(src: Sources) -> str:
