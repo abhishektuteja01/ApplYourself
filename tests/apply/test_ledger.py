@@ -40,17 +40,18 @@ def test_registration_refuses_a_role_the_ledger_says_was_sent(tmp_path, monkeypa
     assert not (tmp_path / "pipeline" / "aaaa1111").exists()
 
 
-def test_a_rejected_submit_does_not_block_registration(tmp_path, monkeypatch):
+def test_a_rejected_submit_blocks_registration_as_prior_does(tmp_path, capsys):
+    """The board has a rejected application: registering it fresh at `saved`
+    would hide that, so ensure follows ledger.prior."""
     from src import track_cli
     from src.shared import paths
 
-    monkeypatch.setattr(
-        track_cli,
-        "_gather_initial_fields",
-        lambda job_id: {"job_id": job_id, "company": "Acme", "title": "Engineer"},
-    )
-    ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "bbbb2222", "rejected")
-    assert track_cli.main(["ensure", "bbbb2222"]) == 0
+    path = paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME
+    ledger.append(path, "bbbb2222", "rejected", detail="duplicate")
+    assert ledger.prior(path, "bbbb2222") is not None
+    assert track_cli.main(["ensure", "bbbb2222"]) == 1
+    assert "uv run track bbbb2222 rejected" in capsys.readouterr().err
+    assert not (tmp_path / "pipeline" / "bbbb2222").exists()
 
 
 def test_a_refused_click_lets_the_role_be_tried_again(tmp_path):
