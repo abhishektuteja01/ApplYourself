@@ -121,6 +121,9 @@ def status_for(
         return "Applied", f"{current or 'sent'} {str(when)[:10]}".strip(), ""
     if current in _CLOSED:
         return f"Closed: {current}", "", ""
+    if state.get("cleaned") and built_folder(state) is None:
+        when = state["cleaned"].get("date", "")
+        return "Cleaned", f"folder cleaned {when}; /tailor {job_id} builds a new one", ""
     if not state.get("tailored_dirs"):
         return "New", "", ""
     if not submittable:

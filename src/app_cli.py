@@ -160,9 +160,13 @@ def _identity() -> tuple[str, str]:
 
 
 def built_folder(state: dict) -> Path | None:
-    """The last folder a resume was built in (tailored_dirs[-1]), or None."""
+    """The last folder a resume was built in (tailored_dirs[-1]), or None --
+    also when `track cleanup` removed it, so nothing builds on a deleted folder."""
     dirs = state.get("tailored_dirs") or []
-    return APPLICATIONS / dirs[-1] if dirs else None
+    if not dirs:
+        return None
+    folder = APPLICATIONS / dirs[-1]
+    return None if state.get("cleaned") and not folder.is_dir() else folder
 
 
 def role_info(job_id: str) -> dict:

@@ -42,7 +42,7 @@ def test_a_failed_stage_leads_and_a_missing_one_says_so():
     assert out[0] == "**score failed** (code 1) still owed"
     assert out[-1] == (
         "Stages: discover ok 3h10 · score FAILED · synonyms not run · "
-        "tailor not run · apply_prep not run"
+        "tailor not run · apply_prep not run · cleanup not run"
     )
 
 

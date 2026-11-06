@@ -101,7 +101,7 @@ Every CLI is a `pyproject` `[project.scripts]` entry run with `uv run`; each has
 ```bash
 uv run pytest tests -q                # must be fully green after any src/ or fixture change
 ./scripts/nightly_pipeline.sh         # the whole night: discover, score, synonyms, tailor, apply_prep,
-                                      # summary. DRY_RUN=1 prints only; STAGE_LIMIT=N caps tailor/apply_prep
+                                      # cleanup, summary. DRY_RUN=1 prints only; STAGE_LIMIT=N caps tailor/apply_prep
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 ```
 

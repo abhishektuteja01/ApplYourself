@@ -35,6 +35,15 @@ R10: `src/track_cli.py` is the only module that calls `state_io.transition` or
 answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
 
+`uv run track cleanup [--apply]` (`src/cleanup.py`, the night's cleanup stage)
+deletes the folders of `skip` and never-applied `withdrawn` roles, and of
+`rejected`, applied-then-`withdrawn` and `ghosted` roles after copying the
+resume to `applications/_archive/<lane>/<folder>.md`. It records `cleaned:
+{date, archived}` through `state_io.update` and never changes `state:`. A
+cleaned role's missing folder makes `app_cli.built_folder` None (so `app dir`
+gives an empty `dir`) and the sheet shows it `Cleaned`, so neither night stage
+rebuilds it; a fresh `/tailor` makes a new folder.
+
 `.claude/hooks/state_yaml_guard.sh` blocks the Edit/Write tools from targeting a
 `state.yaml` at all, since every legitimate write goes through Bash.
 

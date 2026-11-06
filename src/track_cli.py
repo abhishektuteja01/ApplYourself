@@ -24,6 +24,11 @@
                               add schema_version to every state.yaml that
                               lacks it and drop the dead cover_letters key;
                               --dry-run only counts. Never a transition.
+  cleanup [--dry-run|--apply] [--pipeline DIR]
+                              delete the folders of skip / withdrawn / rejected
+                              / ghosted roles, archiving the resume of those
+                              that were applied (src/cleanup.py). Read-only
+                              unless --apply. Never a transition.
 
 Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
 `uv run track ensure <job_id>`.
@@ -57,6 +62,7 @@ from src.state_io import (
     stamp_schema,
     state_path_for,
     transition,
+    update,
 )
 
 CLEAN = paths.CLEAN
@@ -304,6 +310,24 @@ def _cmd_stamp_schema(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+def _cmd_cleanup(args: argparse.Namespace) -> int:
+    from src import cleanup
+
+    pipeline = args.pipeline or paths.PIPELINE
+    actions = cleanup.plan(pipeline)
+
+    def record(job_id: str, cleaned: dict[str, Any]) -> None:
+        def mark(data: dict[str, Any] | None) -> dict[str, Any] | None:
+            return None if data is None else {**data, "cleaned": cleaned}
+
+        update(state_path_for(pipeline, job_id), mark)
+
+    if args.apply:
+        cleanup.apply(actions, record)
+    print(f"OK: {cleanup.render(actions, args.apply)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
@@ -324,6 +348,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--pipeline", type=Path, default=None)
         args = parser.parse_args(argv[1:])
         return _cmd_stamp_schema(args)
+
+    if argv and argv[0] == "cleanup":
+        parser = argparse.ArgumentParser(prog="track cleanup")
+        mode = parser.add_mutually_exclusive_group()
+        mode.add_argument("--dry-run", action="store_true")
+        mode.add_argument("--apply", action="store_true")
+        parser.add_argument("--pipeline", type=Path, default=None)
+        args = parser.parse_args(argv[1:])
+        return _cmd_cleanup(args)
 
     if argv and argv[0] == "outreach-sent":
         parser = argparse.ArgumentParser(prog="track outreach-sent")

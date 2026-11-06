@@ -1,8 +1,8 @@
 #!/bin/bash
 # The whole night, one stage after the next, started by the LaunchAgent:
-#   discover -> score -> synonyms -> tailor -> apply_prep -> summary
+#   discover -> score -> synonyms -> tailor -> apply_prep -> cleanup -> summary
 # A failed discover or score stops the chain (everything after reads their
-# output); a failed synonyms, tailor or apply_prep is recorded and the chain goes
+# output); a failed synonyms, tailor, apply_prep or cleanup is recorded and the chain goes
 # on. The summary always runs and says what failed. Nothing here submits.
 #
 #   DRY_RUN=1        print what would run, call nothing
@@ -35,7 +35,7 @@ if command -v caffeinate >/dev/null 2>&1 && [[ "$DRY_RUN" != 1 ]]; then
 fi
 
 STOPPED=""
-for stage in discover score synonyms tailor apply_prep; do
+for stage in discover score synonyms tailor apply_prep cleanup; do
   if [[ " ${SKIP_STAGES:-} " == *" $stage "* ]]; then
     echo "=== $stage skipped ===" | tee -a "$RUN_DIR/pipeline.log"
     continue

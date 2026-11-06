@@ -88,7 +88,7 @@ CUES = {
 }
 CUES = {name: "**FIX:** " + text.removeprefix("→ ") for name, text in CUES.items()}
 
-STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep")
+STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 ERRORS_SHOWN = 5
 LABEL_CHARS = 110
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}_\d{6}")
@@ -749,6 +749,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
             sheet.latest_outcomes(APPLICATIONS / "apply_runs"),
             since,
         ),
+        *([f"Cleanup: {stages['cleanup']['detail']}"] if stages.get("cleanup") else []),
         "",
         *sheet_line(sheet.check()),
     ]
