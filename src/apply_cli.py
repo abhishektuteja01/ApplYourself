@@ -49,6 +49,7 @@ resolve-urls (--dry-run | --apply) [--limit N]
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import random
 import re
@@ -136,6 +137,7 @@ from src.material import folders as app_folders
 from src.shared import clock, paths, schemas
 from src.shared.http_client import CareersError
 from src.shared.identity import normalize_company
+from src.shared.logs import setup_logging
 from src.shared.parquet_io import read_parquet
 
 R = run_record.ReasonCode
@@ -1030,10 +1032,8 @@ def _attempt(
         # The manifest is read before the click, so a crash after it still has
         # one worth keeping — it is the only record of what the form held.
         if manifest_path is not None and landed is not None and landed.manifest:
-            try:
+            with contextlib.suppress(OSError):
                 write_manifest(landed, plan, Path(manifest_path))
-            except OSError:
-                pass
         if landed is not None and landed.submitted:
             mark("ambiguous", f"{type(exc).__name__} after the click")
             rc, exc_note = _track_applied(job_id, plan)
@@ -1584,6 +1584,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
         prog="apply",

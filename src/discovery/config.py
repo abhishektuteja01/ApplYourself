@@ -15,6 +15,7 @@ import yaml
 
 from src.shared import paths, verticals
 from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.shared.logs import setup_logging
 
 log = logging.getLogger(__name__)
 
@@ -454,6 +455,7 @@ def _keep_long(cfg: DiscoveryConfig) -> DiscoveryConfig:
 
 def main() -> int:
     """`discovery-check`: what discovery.yaml resolves to, and every problem."""
+    setup_logging()
     try:
         cfg = load_config()
     except (FileNotFoundError, ValueError) as exc:

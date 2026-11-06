@@ -14,6 +14,7 @@ import statistics
 from pathlib import Path
 
 from src.shared import paths, schemas
+from src.shared.logs import setup_logging
 
 DEFAULT_WINDOW = 7
 # How far below its own median a lane has to fall before it is called out.
@@ -136,6 +137,7 @@ def board_summary(path: Path | None = None) -> dict:
 
 
 def main(argv=None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(prog="discover-digest")
     parser.add_argument("--runs-dir", type=Path, default=None)
     parser.add_argument("--window", type=int, default=DEFAULT_WINDOW)

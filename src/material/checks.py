@@ -5,15 +5,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from src import lint, resume_model
+from src.docx_render import PdfResult
 from src.material.folders import AppError
 from src.session_schema import ProblemCode
 from src.shared import config_schema
 
 
-def _pdf_unknown(where: str, pdf: dict) -> dict:
+def _pdf_unknown(where: str, pdf: PdfResult) -> dict[str, Any]:
     return {
         "where": where,
         "code": ProblemCode.PAGES,
@@ -23,15 +24,15 @@ def _pdf_unknown(where: str, pdf: dict) -> dict:
 
 
 def _prose_problems(
-    src,
+    src: resume_model.Sources,
     where: str,
     text: str,
     uses: list[str],
     grounds: str,
     keep: list[str],
-    warnings: list[dict],
+    warnings: list[dict[str, Any]],
     context: Literal["resume", "outreach"] = "resume",
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Numbers must come from a cited bullet or the JD; lint with keep-terms.
     `warn` lint hits go to `warnings`, never to the problems."""
     out = [
@@ -76,8 +77,8 @@ def _names_company(company: str, text: str) -> bool:
     )
 
 
-def _outreach_limits() -> dict:
-    limits = config_schema.setting("outreach_word_limits", None)
+def _outreach_limits() -> dict[str, Any]:
+    limits: dict[str, Any] | None = config_schema.setting("outreach_word_limits", None)
     if not limits:
         raise AppError(
             "profile/settings.yaml has no outreach_word_limits; copy that block "
@@ -86,7 +87,7 @@ def _outreach_limits() -> dict:
     return limits
 
 
-def cmd_lint_outreach(draft: str, company: str, recipient: str | None) -> dict:
+def cmd_lint_outreach(draft: str, company: str, recipient: str | None) -> dict[str, Any]:
     path = Path(draft)
     src = resume_model.load_sources()
     fixed, subs = lint.fix_mechanical(path.read_text(encoding="utf-8"), src.rules)

@@ -177,7 +177,7 @@ def ms_date(value) -> date | None:
         return None
 
 
-def relative_posted_date(text: str, today: date) -> date | None:
+def relative_posted_date(text: object, today: date) -> date | None:
     """Workday's `postedOn` is relative text ("Posted 3 Days Ago")."""
     if not isinstance(text, str) or not text.strip():
         return None

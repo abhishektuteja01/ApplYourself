@@ -120,11 +120,12 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "BLE", "RUF", "DTZ"]
 # RUF001-003: dashes and smart quotes are on purpose. The rest would force
-# behavior-changing (B905, UP042) or noisy (E501, RUF005, SIM105, SIM108, SIM905) rewrites.
-ignore = ["E501", "RUF001", "RUF002", "RUF003", "B905", "UP042", "RUF005", "SIM105", "SIM108", "SIM905"]
+# behavior-changing (UP042: StrEnum changes str()) or noisy (E501, RUF005, SIM905) rewrites.
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "UP042", "RUF005", "SIM905"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["RUF012", "DTZ"]  # fake classes hold fixture lists; fixtures pin naive local times
+# Fake classes hold fixture lists; fixtures pin naive local times; zips over fixture rows.
+"tests/**" = ["RUF012", "DTZ", "B905"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -139,6 +140,12 @@ module = [
     "src.score_filter",
     "src.score_store",
     "src.score_cli",
+    "src.lint",
+    "src.app_cli",
+    "src.material.*",
+    "src.apply.greenhouse",
+    "src.apply.reconcile",
+    "src.apply.report",
 ]
 # The `strict` flags one by one: `strict = true` here leaks to every module.
 disallow_any_generics = true
@@ -157,29 +164,12 @@ extra_checks = true
 # Not typed yet: drop a module from this list once it checks clean.
 [[tool.mypy.overrides]]
 module = [
-    "src.app_cli",
-    "src.material.*",
-    "src.apply.answers",
-    "src.apply.ashby",
     "src.apply.bank_schema",
-    "src.apply.browser",
-    "src.apply.drivers",
     "src.apply.fill",
-    "src.apply.greenhouse",
-    "src.apply.lever",
-    "src.apply.plan",
-    "src.apply.reconcile",
-    "src.apply.report",
     "src.apply.sheet",
     "src.apply_cli",
-    "src.discovery.dedupe",
     "src.discovery.sources.boards.base",
-    "src.discovery.sources.boards.workday",
-    "src.discovery.sources.feed.stapply",
-    "src.discovery.sources.search",
     "src.discovery.store",
-    "src.lint",
-    "src.resume_model",
     "src.summary",
     "src.synonyms_cli",
 ]

@@ -402,7 +402,7 @@ def start(
     stored = read_scored(scored_path)
     hashes = {
         j: h
-        for j, h in zip(stored["job_id"], stored["judge_input_hash"])
+        for j, h in zip(stored["job_id"], stored["judge_input_hash"], strict=True)
         if isinstance(h, str) and h
     }
     if stale_only:

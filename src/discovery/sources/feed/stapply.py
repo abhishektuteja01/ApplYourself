@@ -18,6 +18,7 @@ import logging
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import pandas as pd
@@ -87,13 +88,13 @@ def board_names(boards_dir=None) -> dict[str, str]:
     return {b.key: b.name for b in load_boards(boards_dir=boards_dir)}
 
 
-def company_names(companies: pd.DataFrame) -> dict[tuple[str, str], str]:
+def company_names(companies: pd.DataFrame) -> dict[tuple[Any, str], str]:
     """{(ats, slug or site host): name} from the feed's own company list. A
     row's `company` is often that slug ("whatfix101") or host
     ("jobs.danaher.com"); the list has the name ("Whatfix", "Danaher")."""
-    out: dict[tuple[str, str], str] = {}
+    out: dict[tuple[Any, str], str] = {}
     for ats, name, slug, url in zip(
-        companies["ats"], companies["name"], companies["slug"], companies["url"]
+        companies["ats"], companies["name"], companies["slug"], companies["url"], strict=True
     ):
         if not isinstance(name, str) or not name.strip():
             continue
@@ -118,7 +119,7 @@ def located(location, country_iso) -> str:
 
 
 def posting_from(
-    row: dict, vertical: str, names: dict[str, str], feed_names: dict[tuple[str, str], str]
+    row: dict, vertical: str, names: dict[str, str], feed_names: dict[tuple[Any, str], str]
 ) -> dict:
     """Our board's name first, then the feed list's, then the row's own."""
     url = row.get("url") or ""
@@ -216,7 +217,7 @@ class StapplyLane(Lane):
             titles = light.column("title").to_pylist()
             self.stats.listed += len(titles)
             for url, ats in zip(
-                light.column("url").to_pylist(), light.column("ats_type").to_pylist()
+                light.column("url").to_pylist(), light.column("ats_type").to_pylist(), strict=True
             ):
                 if ats in _BOARD_ATS and (key := board_key(url or "")):
                     covered.add(key)
@@ -233,7 +234,7 @@ class StapplyLane(Lane):
             if not any(keep):
                 continue
             full = pf.read_row_group(i, columns=cols).filter(pa.array(keep)).to_pylist()
-            for row, vertical in zip(full, verticals):
+            for row, vertical in zip(full, verticals, strict=True):
                 posting = posting_from(row, vertical, names, feed_names or {})
                 crawl.record_listing(
                     self.name, posting["title"], vertical, True, posting["posting_key"]

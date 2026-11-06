@@ -31,6 +31,7 @@ import yaml
 
 from src.shared import paths
 from src.shared.config_schema import Lane, VerticalsFile, validate
+from src.shared.logs import setup_logging
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SCHEMA_VERSION = 2
@@ -384,6 +385,7 @@ def set_config(cfg: VerticalsConfig | None) -> None:
 
 
 def main() -> int:
+    setup_logging()
     try:
         cfg = load_verticals()
     except (FileNotFoundError, ValueError) as exc:

@@ -127,7 +127,7 @@ def build_queries(name: str, src, vcfg, locations) -> list[tuple]:
     `companies` block; the last two remote=False only. A company query has no
     lane of its own: its rows are classified by title."""
     remote_flags = (False, True) if src.remote_queries else (False,)
-    queries = [
+    queries: list[tuple[str, str, str, bool, list[int] | None]] = [
         (v.name, term, location, is_remote, None)
         for v in vcfg.verticals.values()
         for term in (v.linkedin_terms if name == "linkedin" else v.search_terms)

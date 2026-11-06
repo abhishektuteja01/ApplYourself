@@ -278,7 +278,7 @@ def find_artifact(out_dir: Path, artifact_id: str) -> tuple[Path | None, str]:
 # ------------------------------------------------------------------ values
 
 
-def _check_value(field: MergedField, value) -> str | tuple[str, ...] | bool | None:
+def _check_value(field: MergedField, value: object) -> str | None:
     """Reject a value that does not fit the widget. Returns an error string, or
     None when the value is usable.
 
@@ -621,7 +621,7 @@ def build_plan(
             raise PlanError(f"{field.id!r}: unknown resolution action {resolution.action!r}")
 
         problem = _check_value(field, resolution.value)
-        if problem is not None:
+        if problem is not None or resolution.value is None:
             # answers.py produced something the widget cannot take. Not a park:
             # parking would hide a resolver bug behind a plausible-looking
             # "nothing could answer this".

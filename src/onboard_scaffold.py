@@ -46,6 +46,7 @@ from pathlib import Path
 import yaml
 
 from src.shared import paths
+from src.shared.logs import setup_logging
 
 # Gated out of the default path — see the module docstring.
 OPTIONAL_TEMPLATES = (
@@ -358,6 +359,7 @@ def _print_report(rep: Report, dry_run: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="onboard-scaffold",
         description=__doc__,

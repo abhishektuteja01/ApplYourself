@@ -23,6 +23,7 @@ Pure function over the two parsed halves: no browser, no network.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import re
 from dataclasses import dataclass
@@ -31,7 +32,7 @@ from lxml import html as lxml_html
 from lxml.etree import ParserError
 
 from src.apply.domscan import FormScan
-from src.apply.schema import BoardSchema
+from src.apply.schema import BoardSchema, DemographicQuestion, Field, Question
 
 # The only name mismatch observed. Keyed on the DOM id.
 DOM_TO_API_ALIASES = {"candidate-location": "location"}
@@ -122,18 +123,16 @@ def _plain_text(markup: str | None) -> str:
     text = html.unescape(markup or "").strip()
     if not text:
         return ""
-    try:
+    with contextlib.suppress(ParserError, ValueError):
         # Joined with spaces so two paragraphs do not run together.
         text = " ".join(lxml_html.fragment_fromstring(text, create_parent="div").itertext())
-    except (ParserError, ValueError):
-        pass
     return _SPACE_BEFORE_PUNCT.sub(r"\1", _label(text))
 
 
-def _index_api(schema: BoardSchema):
+def _index_api(schema: BoardSchema) -> dict[str, tuple[int, Question, Field]]:
     """field name -> (question index, question, field). Raises on a duplicate:
     last-wins would silently enrich a select with another question's options."""
-    index = {}
+    index: dict[str, tuple[int, Question, Field]] = {}
     for qi, q in enumerate(schema.questions):
         for field in q.fields:
             if field.name in index:
@@ -142,8 +141,8 @@ def _index_api(schema: BoardSchema):
     return index
 
 
-def _index_demographic(schema: BoardSchema):
-    index = {}
+def _index_demographic(schema: BoardSchema) -> dict[str, DemographicQuestion]:
+    index: dict[str, DemographicQuestion] = {}
     for question in schema.demographic:
         if question.id is None:
             continue
@@ -169,15 +168,16 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
             raise ReconcileError(f"duplicate DOM field id {dom.id!r}")
         seen_ids.add(dom.id)
 
-        label, options, api_source, api_type = dom.label, (), None, None
+        label, api_source, api_type = dom.label, None, None
+        options: tuple[MergedOption, ...] = ()
         description = ""
 
         if dom.section == "demographic":
-            question = demo_index.get(dom.id)
-            if question is not None:
+            demo = demo_index.get(dom.id)
+            if demo is not None:
                 joined_demographic.add(dom.id)
-                label = question.label or dom.label
-                api_source, api_type = DEMOGRAPHIC_SOURCE, question.type
+                label = demo.label or dom.label
+                api_source, api_type = DEMOGRAPHIC_SOURCE, demo.type
                 options = tuple(
                     MergedOption(
                         label=o.label,
@@ -185,7 +185,7 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
                         free_form=o.free_form,
                         decline_to_answer=o.decline_to_answer,
                     )
-                    for o in question.options
+                    for o in demo.options
                 )
         else:
             hit = api_index.get(DOM_TO_API_ALIASES.get(dom.id, dom.name))

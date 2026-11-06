@@ -126,7 +126,9 @@ def fill_dedupe_keys(df: pd.DataFrame) -> None:
     if blank.any():
         df.loc[blank, "dedupe_key"] = [
             identity.dedupe_key(c, t)
-            for c, t in zip(df.loc[blank, "company_normalized"], df.loc[blank, "title_normalized"])
+            for c, t in zip(
+                df.loc[blank, "company_normalized"], df.loc[blank, "title_normalized"], strict=True
+            )
         ]
 
 

@@ -150,7 +150,7 @@ _EDUCATION_CONTROLS = {
 # Greenhouse makes all three selects. Typed text alone clears on blur.
 _EDUCATION_KINDS = {"schoolName": "react_select"}
 
-_URL = job_boards.get_source("ashby").posting_url_re
+_URL = job_boards.source("ashby").posting_url_re
 
 _QUESTION_DESCRIPTION_CLASS = "ashby-application-form-question-description"
 _SUBMIT_CLASS = "ashby-application-form-submit-button"
@@ -357,6 +357,7 @@ def _api_field(entry: dict, file_aliases: dict[str, str]) -> list[MergedField]:
 
     field_id = file_aliases.get(path, path) if kind == "file" else path
 
+    options: tuple[MergedOption, ...]
     if kind == "yesno":
         options = (MergedOption(label="Yes", value="yes"), MergedOption(label="No", value="no"))
     else:

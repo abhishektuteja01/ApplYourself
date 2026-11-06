@@ -289,3 +289,8 @@ def is_applyable(url: str) -> bool:
 
 def get_source(name: str) -> AtsSource | None:
     return _BY_NAME.get(name)
+
+
+def source(name: str) -> AtsSource:
+    """A board the code drives by name; KeyError when it is not registered."""
+    return _BY_NAME[name]

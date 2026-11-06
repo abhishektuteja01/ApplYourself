@@ -14,6 +14,7 @@ import argparse
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from rapidfuzz import fuzz
@@ -22,6 +23,7 @@ from rapidfuzz.utils import default_process
 from src.discovery import parse
 from src.score_filter import load_trim
 from src.shared import clock, identity, jd_trim, paths
+from src.shared.logs import setup_logging
 from src.state_io import load_state_index
 
 TITLE_MIN = 90
@@ -361,7 +363,7 @@ class _Index:
             if self.belongs(row, jid):
                 return jid, "pair", {}
         # Ids that hold this pair but name another role: a maybe, never a join.
-        maybes = {
+        maybes: dict[str, dict[str, Any]] = {
             jid: {
                 "cand": {"job_id": jid, "company_normalized": row["company_normalized"]},
                 "score": 0.0,
@@ -491,6 +493,7 @@ def _line(r: dict, states: dict) -> str:
 
 
 def main(argv=None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="discover-dupes",
         description="List stored job_ids that look like one role and record them in "

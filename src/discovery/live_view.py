@@ -87,7 +87,7 @@ def read_scores(scored_path: Path) -> dict[str, float]:
     except (OSError, ValueError, KeyError) as e:
         log.warning("could not read %s: %s", scored_path, e)
         return {}
-    return dict(zip(scored["job_id"], scored["fit_score"]))
+    return dict(zip(scored["job_id"], scored["fit_score"], strict=True))
 
 
 def inputs_from(cfg, today, state_index: dict, scored_path: Path) -> ViewInputs:
@@ -135,14 +135,16 @@ def build_view(
 
     gate = [
         title_gate.title_passes(t, v, s, vcfg)
-        for t, v, s in zip(df_live["title"], df_live["vertical"], df_live["source"])
+        for t, v, s in zip(df_live["title"], df_live["vertical"], df_live["source"], strict=True)
     ]
     df_live = df_live[pd.Series(gate, index=df_live.index, dtype=bool)]
     funnel["after_title_gate"] = len(df_live)
 
     checks = [
         allowlist.check(raw, v, t)
-        for raw, v, t in zip(df_live["location_raw"], df_live["vertical"], df_live["title"])
+        for raw, v, t in zip(
+            df_live["location_raw"], df_live["vertical"], df_live["title"], strict=True
+        )
     ]
     keep = pd.Series([c.keep for c in checks], index=df_live.index, dtype=bool)
     df_live = df_live.assign(

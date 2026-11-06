@@ -31,7 +31,7 @@ jobs:
       - run: uv run ruff format --check src tests scripts
       - run: uv run mypy
       - run: ./scripts/r7_scan.sh
-      - run: uvx --from shellcheck-py==0.11.0.1 shellcheck --severity=warning scripts/*.sh scripts/stages/*.sh
+      - run: uvx --from shellcheck-py==0.11.0.1 shellcheck --severity=warning scripts/*.sh scripts/stages/*.sh .githooks/* .claude/hooks/*.sh
 
   test:
     runs-on: ubuntu-latest

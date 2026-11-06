@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
+from typing import Any
 
 import pandas as pd
 import yaml
@@ -27,7 +28,7 @@ from src.material.folders import (
 from src.shared import clock, paths, verticals
 
 
-def _load_row(job_id: str) -> dict:
+def _load_row(job_id: str) -> dict[str, Any]:
     if not paths.CLEAN.exists():
         raise AppError("jobs/clean.parquet missing — run discovery first.")
     if not paths.SCORED.exists():
@@ -40,10 +41,12 @@ def _load_row(job_id: str) -> dict:
         raise AppError(f"job_id {job_id} not in clean.parquet")
     if s.empty:
         raise AppError(f"job_id {job_id} not in scored.parquet — run /score first")
-    return {k: _clean_value(v) for k, v in {**c.iloc[0].to_dict(), **s.iloc[0].to_dict()}.items()}
+    return {
+        str(k): _clean_value(v) for k, v in {**c.iloc[0].to_dict(), **s.iloc[0].to_dict()}.items()
+    }
 
 
-def cmd_new(job_id: str, today: str | None = None) -> dict:
+def cmd_new(job_id: str, today: str | None = None) -> dict[str, Any]:
     today = today or clock.today().isoformat()
     if not (paths.PROFILE / "resume_template.docx").is_file():
         raise AppError("profile/resume_template.docx missing.")
@@ -109,13 +112,13 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
 _IDLE_STATES = frozenset({"", "saved", "skip"})
 
 
-def cmd_dupes(job_id: str) -> dict:
+def cmd_dupes(job_id: str) -> dict[str, Any]:
     """Other job_ids recorded in maybe_duplicates.jsonl with this one whose
     role is tailored or further, or was submitted. Read-only; a warning for
     the session to show, never a stop."""
     submitted = paths.APPLY_RUNS / ledger.LEDGER_NAME
     sent = ledger.sent_job_ids(submitted) if submitted.exists() else set()
-    found: dict[str, dict] = {}
+    found: dict[str, dict[str, Any]] = {}
     for rec in load_maybe_duplicates(paths.MAYBE_DUPES):
         ids = str(rec["pair"]).split("|")
         if job_id not in ids or len(ids) != 2:

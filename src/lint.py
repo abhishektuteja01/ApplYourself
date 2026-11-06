@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 import yaml
 
@@ -70,7 +70,7 @@ class LintConfigError(ValueError):
 # =====================================================================
 
 
-def load_de_ai_rules(path: Path | None = None) -> dict:
+def load_de_ai_rules(path: Path | None = None) -> dict[str, Any]:
     """Load profile/de_ai_rules.yaml, else the shipped data/defaults/ one, every
     key checked. A missing or malformed file raises LintConfigError."""
     p = path or next(
@@ -87,7 +87,7 @@ def load_de_ai_rules(path: Path | None = None) -> dict:
     return data
 
 
-def _mech_rules(rules: dict | None) -> dict:
+def _mech_rules(rules: dict[str, Any] | None) -> dict[str, Any]:
     if rules is None:
         rules = load_de_ai_rules()
     m = rules.get("mechanical") or {}
@@ -135,7 +135,7 @@ def _dash_is_range(line: str, i: int) -> bool:
         return False
     if _OPEN_ENDED_RANGE.match(line[i + 1 :]):
         return True
-    return bool(right) and _is_range_end(re.split(r"[–—―]", right.group(1))[0])
+    return right is not None and _is_range_end(re.split(r"[–—―]", right.group(1))[0])
 
 
 def _dash_is_minus(line: str, i: int) -> bool:
@@ -161,7 +161,9 @@ _CHAR_SUBSTITUTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def fix_mechanical(text: str, rules: dict | None = None) -> tuple[str, list[Substitution]]:
+def fix_mechanical(
+    text: str, rules: dict[str, Any] | None = None
+) -> tuple[str, list[Substitution]]:
     """Apply mechanical substitutions; return (fixed_text, subs).
 
     One dash rule for en and em dashes: a dash joining two dates, numbers or
@@ -270,10 +272,10 @@ def _mask(line: str, keep: tuple[str, ...]) -> str:
         term = term.strip()
         if not term:
             continue
-        pat = re.escape(term)
+        rx = re.escape(term)
         if term[0].isalnum() and term[-1].isalnum():
-            pat = rf"\b{pat}\b"
-        for m in re.finditer(pat, line, re.IGNORECASE):
+            rx = rf"\b{rx}\b"
+        for m in re.finditer(rx, line, re.IGNORECASE):
             blank(m.start(), m.end())
     return "".join(chars)
 
@@ -282,7 +284,7 @@ def find_phrase_violations(
     text: str,
     *,
     context: Literal["resume", "outreach"],
-    rules: dict | None = None,
+    rules: dict[str, Any] | None = None,
     keep: Iterable[str] = (),
 ) -> list[Violation]:
     """Scan text against every rule whose `scope` holds `context`; one Violation

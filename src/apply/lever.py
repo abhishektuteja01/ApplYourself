@@ -46,7 +46,7 @@ from src.shared.http_client import CareersError, fetch_text
 FORM_ID = "application-form"
 
 # Shared board table: host variants and posting shape live in one place.
-_URL = job_boards.get_source("lever").posting_url_re
+_URL = job_boards.source("lever").posting_url_re
 
 _INPUT_TEXT_TYPES = {"text", "email", "tel", "url", "search"}
 _WS = re.compile(r"\s+")
@@ -307,13 +307,13 @@ def _scan_question(question_el) -> MergedField | None:
 
     tag = control.tag
     if tag == "select":
-        kind, options = "select", _select_options(control)
+        kind, opts = "select", _select_options(control)
     elif tag == "textarea":
-        kind, options = "textarea", ()
+        kind, opts = "textarea", ()
     else:
         raw = (control.get("type") or "text").lower()
         if raw == "file":
-            kind, options = "file", ()
+            kind, opts = "file", ()
         elif raw in _INPUT_TEXT_TYPES:
             # The location question looks like a text input and is not one: it
             # is a search box over a place taxonomy, and the board posts the
@@ -326,9 +326,9 @@ def _scan_question(question_el) -> MergedField | None:
             # Detected by the hidden partner rather than by the field's name,
             # so a board that renames the visible input still resolves.
             if _has_structured_partner(question_el):
-                kind, options = "react_select", ()
+                kind, opts = "react_select", ()
             else:
-                kind, options = "text", ()
+                kind, opts = "text", ()
         else:
             raise LeverScanError(f"unknown input type {raw!r} on name={name!r}")
 
@@ -340,7 +340,7 @@ def _scan_question(question_el) -> MergedField | None:
         kind=kind,
         section=section,
         multi=False,
-        options=options,
+        options=opts,
     )
 
 

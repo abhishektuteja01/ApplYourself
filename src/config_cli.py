@@ -19,6 +19,7 @@ import argparse
 import sys
 
 from src.shared import paths
+from src.shared.logs import setup_logging
 
 
 def _get(section: str, key: str) -> object:
@@ -93,6 +94,7 @@ def _work_auth(country: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     ap = argparse.ArgumentParser(
         prog="config", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
