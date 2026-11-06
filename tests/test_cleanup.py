@@ -11,7 +11,7 @@ from src.shared import paths
 OLD = datetime(2026, 1, 1, 9, 0, 0)
 
 
-def _role(job_id: str, moves: list[str], *, files=("resume.md",), now=None) -> str:
+def _role(job_id: str, moves: list[str], *, files=("resume.md", "jd_snapshot.md"), now=None) -> str:
     p = state_io.state_path_for(paths.PIPELINE, job_id)
     first, *rest = moves
     init = {"job_id": job_id, "company": "Acme", "title": "Engineer"}
@@ -60,6 +60,8 @@ def test_cleanup_deletes_done_folders_archives_applied_ones_and_never_moves_stat
     assert states["aaaa0001"]["cleaned"]["archived"] is None
     assert states["aaaa0003"]["cleaned"]["archived"].endswith(rejected.split("/")[1] + ".md")
     assert "cleaned" not in states["aaaa0005"]
+    text = (archive / f"{rejected.split('/')[1]}.md").read_text(encoding="utf-8")
+    assert text == "aaaa0003 resume.md\n\n## Job description\n\naaaa0003 jd_snapshot.md\n"
 
 
 def test_a_cleaned_role_brought_back_is_not_rebuilt_on_its_own():

@@ -2,8 +2,9 @@
 
 - `skip`, and `withdrawn` that never reached `applied`: the folders go.
 - `rejected`, `withdrawn` after `applied`, and `ghosted` (state_io.shown_state):
-  the built folder's resume goes to `applications/_archive/<lane>/<folder>.md`
-  (its `resume.md`, else the text of its `*_Resume.docx`), then the folders go.
+  one file, `applications/_archive/<lane>/<folder>.md`, keeps the built
+  folder's resume (its `resume.md`, else the text of its `*_Resume.docx`) and,
+  under `## Job description`, its `jd_snapshot.md`; then the folders go.
 
 Each cleaned role gets a `cleaned: {date, archived}` side field, written by
 track_cli through `state_io.update`; `state:` never changes (R10). A cleaned role's recorded
@@ -32,6 +33,7 @@ class Action:
     state: str
     folders: list[Path]
     archive_from: Path | None = None
+    archive_jd: Path | None = None
     archive_to: Path | None = None
     bytes: int = field(default=0)
 
@@ -95,7 +97,9 @@ def plan(pipeline_dir: Path | None = None) -> list[Action]:
             built = app_cli.built_folder(data)
             source_dir = built if built is not None and built in folders else folders[-1]
             action.archive_from = _resume_source(source_dir)
-            if action.archive_from is not None:
+            jd = source_dir / app_cli.SNAPSHOT
+            action.archive_jd = jd if jd.is_file() else None
+            if action.archive_from is not None or action.archive_jd is not None:
                 lane = source_dir.parent.name
                 action.archive_to = app_cli.APPLICATIONS / ARCHIVE / lane / f"{source_dir.name}.md"
         actions.append(action)
@@ -109,13 +113,20 @@ def _docx_text(path: Path) -> str:
 
 
 def _archive(action: Action) -> str | None:
-    if action.archive_from is None or action.archive_to is None:
+    if action.archive_to is None:
         return None
+    text = ""
+    if action.archive_from is not None:
+        text = (
+            action.archive_from.read_text(encoding="utf-8")
+            if action.archive_from.suffix == ".md"
+            else _docx_text(action.archive_from)
+        )
+    if action.archive_jd is not None:
+        jd = action.archive_jd.read_text(encoding="utf-8")
+        text = f"{text.rstrip()}\n\n## Job description\n\n{jd}".lstrip()
     action.archive_to.parent.mkdir(parents=True, exist_ok=True)
-    if action.archive_from.suffix == ".md":
-        shutil.copyfile(action.archive_from, action.archive_to)
-    else:
-        action.archive_to.write_text(_docx_text(action.archive_from), encoding="utf-8")
+    action.archive_to.write_text(text, encoding="utf-8")
     return str(action.archive_to.relative_to(app_cli.APPLICATIONS.parent))
 
 

@@ -37,8 +37,9 @@ read-only and is the sole regenerator of `pipeline.md`.
 
 `uv run track cleanup [--apply]` (`src/cleanup.py`, the night's cleanup stage)
 deletes the folders of `skip` and never-applied `withdrawn` roles, and of
-`rejected`, applied-then-`withdrawn` and `ghosted` roles after copying the
-resume to `applications/_archive/<lane>/<folder>.md`. It records `cleaned:
+`rejected`, applied-then-`withdrawn` and `ghosted` roles after writing one
+`applications/_archive/<lane>/<folder>.md`: the resume text, then a `## Job
+description` section from `jd_snapshot.md` when the folder has one. It records `cleaned:
 {date, archived}` through `state_io.update` and never changes `state:`. A
 cleaned role's missing folder makes `app_cli.built_folder` None (so `app dir`
 gives an empty `dir`) and the sheet shows it `Cleaned`, so neither night stage

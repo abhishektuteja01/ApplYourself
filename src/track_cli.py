@@ -26,7 +26,7 @@
                               --dry-run only counts. Never a transition.
   cleanup [--dry-run|--apply] [--pipeline DIR]
                               delete the folders of skip / withdrawn / rejected
-                              / ghosted roles, archiving the resume of those
+                              / ghosted roles, archiving the resume and JD of those
                               that were applied (src/cleanup.py). Read-only
                               unless --apply. Never a transition.
 

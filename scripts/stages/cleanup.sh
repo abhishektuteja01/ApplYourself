@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cleanup stage: `track cleanup --apply` deletes the application folders of
-# skip / withdrawn / rejected / ghosted roles, archiving the resume of those that
+# skip / withdrawn / rejected / ghosted roles, archiving the resume and JD of those that
 # were applied. DRY_RUN=1 runs it with --dry-run (counts only).
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
