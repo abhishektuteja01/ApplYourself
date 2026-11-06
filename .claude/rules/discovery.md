@@ -96,8 +96,9 @@ it, and retention reads it only for a job scored.parquet does not hold.
 
 ## The live view (`live_view.py`)
 
-A posting is in the view when seen within `live_days`, and (search lanes only)
-posted within `search_max_age_days` or undated. Then the title gate and the
+A posting is in the view when seen within `live_days`, and (search lanes only,
+when `search_max_age_days` is set; absent is no cut) posted within it or
+undated. Then the title gate and the
 location allowlist, both re-applied at build time (a stored row whose title no
 longer fits its lane moves to the lane it fits now), then JD >= `MIN_JD_CHARS`.
 One row per `job_id`: an applyable url, then a resolved location, then the

@@ -11,10 +11,10 @@ deadline_hours: 4
 # country the answer bank lists, on these jobspy sources. Abroad, the view
 # keeps only these lanes.
 # abroad: {lanes: [example_primary], sources: [linkedin, indeed]}
-# The live view (clean.parquet): a job stays while seen within live_days; a
-# LinkedIn/Indeed row also needs a posted date within search_max_age_days.
+# The live view (clean.parquet): a job stays while seen within live_days.
+# Optional: search_max_age_days: N also drops a LinkedIn/Indeed row posted
+# more than N days ago. Absent = no posted-age cut.
 live_days: 14
-search_max_age_days: 14
 # How long a job stays in the view from first seen: high_days at fit >=
 # scoring.yaml cutoffs.keep_long (or unscored), else low_days.
 retention: {high_days: 60, low_days: 15}

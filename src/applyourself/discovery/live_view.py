@@ -57,7 +57,7 @@ class ViewInputs:
     state_index: dict
     scores: dict[str, float]
     live_days: int
-    search_max_age_days: int
+    search_max_age_days: int | None
     score_threshold: float
     high_days: int
     low_days: int
@@ -121,16 +121,18 @@ def build_view(
     df_live = df[live]
     funnel["live"] = len(df_live)
 
-    # Only search rows are cut on age; a board listing is its own liveness
-    # signal. A search row with no posted date is kept: retention bounds it.
-    posted = df_live["posted_date"]
-    fresh = (
-        ~df_live["source"].isin(JOBSPY_SOURCES)
-        | posted.isna()
-        | (posted >= today - pd.Timedelta(days=inp.search_max_age_days))
-        | df_live["job_id"].isin(tracked)
-    )
-    df_live = df_live[fresh]
+    # Only search rows are cut on age, and only with `search_max_age_days`
+    # set; a board listing is its own liveness signal. A search row with no
+    # posted date is kept: retention bounds it.
+    if inp.search_max_age_days is not None:
+        posted = df_live["posted_date"]
+        fresh = (
+            ~df_live["source"].isin(JOBSPY_SOURCES)
+            | posted.isna()
+            | (posted >= today - pd.Timedelta(days=inp.search_max_age_days))
+            | df_live["job_id"].isin(tracked)
+        )
+        df_live = df_live[fresh]
     funnel["after_search_age"] = len(df_live)
 
     # A stored row keeps its lane while its title fits it, else moves to the

@@ -170,9 +170,10 @@ class DiscoveryConfig:
     search_locations: list[str] = field(default_factory=list)
     sources: dict[str, SourceConfig] = field(default_factory=_default_sources)
     # The live view: seen within `live_days`; a search row also posted within
-    # `search_max_age_days`. Retention counts from first_seen, by score tier.
+    # `search_max_age_days` when set (None: no posted-age cut). Retention
+    # counts from first_seen, by score tier.
     live_days: int = 14
-    search_max_age_days: int = 14
+    search_max_age_days: int | None = None
     retention_score_threshold: float = 80.0
     retention_high_days: int = 60
     retention_low_days: int = 15
@@ -380,9 +381,10 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         cfg.search_locations = [str(s).strip() for s in raw if str(s).strip()]
 
     cfg.deadline_hours = float(data.get("deadline_hours", cfg.deadline_hours))
+    if data.get("search_max_age_days") is not None:
+        cfg.search_max_age_days = _int(data["search_max_age_days"], f"{p}: search_max_age_days", 1)
     for key in (
         "live_days",
-        "search_max_age_days",
         "forget_after_days",
         "raw_keep_days",
         "log_keep_days",
@@ -492,9 +494,13 @@ def main() -> int:
 
     enabled = [(n, s) for n, s in cfg.sources.items() if s.enabled]
     print("sources:   " + (", ".join(line(n, s) for n, s in enabled) or "(none enabled)"))
+    age = (
+        "no posted-age cut"
+        if cfg.search_max_age_days is None
+        else f"search rows posted within {cfg.search_max_age_days}d"
+    )
     print(
-        f"live view: seen within {cfg.live_days}d; search rows posted within "
-        f"{cfg.search_max_age_days}d; keep {cfg.retention_high_days}d at fit >= "
+        f"live view: seen within {cfg.live_days}d; {age}; keep {cfg.retention_high_days}d at fit >= "
         f"{cfg.retention_score_threshold:g}, else {cfg.retention_low_days}d"
     )
     print(f"deadline_hours: {cfg.deadline_hours:g}")

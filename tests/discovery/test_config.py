@@ -109,6 +109,11 @@ def test_every_value_is_read(tmp_path, monkeypatch):
     assert cfg.validate() == []
 
 
+@pytest.mark.parametrize("data", [{}, {"search_max_age_days": None}])
+def test_search_max_age_days_absent_or_null_is_no_cut(tmp_path, data):
+    assert load(tmp_path, data).search_max_age_days is None
+
+
 @pytest.mark.parametrize(
     "data",
     [

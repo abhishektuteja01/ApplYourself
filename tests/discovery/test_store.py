@@ -603,13 +603,13 @@ class AllowAll:
         return Allowed(True, raw or "", bool(raw))
 
 
-def view(store, state_index=None, scores=None, today=TODAY):
+def view(store, state_index=None, scores=None, today=TODAY, search_max_age_days=14):
     inp = live_view.ViewInputs(
         today=today,
         state_index=state_index or {},
         scores=scores or {},
         live_days=14,
-        search_max_age_days=14,
+        search_max_age_days=search_max_age_days,
         score_threshold=80,
         high_days=60,
         low_days=15,
@@ -651,6 +651,10 @@ def test_view_cuts_old_search_rows_but_not_board_rows():
     )
     out, _ = view(store)
     assert list(out["source"]) == ["greenhouse"]
+    # No search_max_age_days: no posted-age cut, only last_seen and retention.
+    uncut, funnel = view(store, search_max_age_days=None)
+    assert sorted(uncut["source"]) == ["greenhouse", "linkedin"]
+    assert funnel["after_search_age"] == funnel["live"]
 
 
 def test_view_applies_the_location_allowlist():
