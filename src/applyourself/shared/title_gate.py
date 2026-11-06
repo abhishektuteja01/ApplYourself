@@ -35,48 +35,60 @@ def classify_vertical_from_title(
     if not isinstance(title, str) or not title:
         return ""
     vcfg = vcfg or verticals.get_config()
+    title = title_terms.nfc(title)
     for vertical, rule in vcfg.classifier_rules:
         if rule.matches(title):
             return vertical
     return ""
 
 
-def _lane_terms(lane: verticals.Vertical) -> tuple[str, ...]:
-    # The include and strong-keep lists still count as fits while a config
-    # carries them (`config migrate` moves them into classifier_rules).
-    return (
-        lane.search_terms
-        + lane.linkedin_terms
-        + lane.abroad_terms
-        + lane.title_include_terms
-        + lane.title_strong_keep_terms
-    )
+def _search_terms(lane: verticals.Vertical) -> tuple[str, ...]:
+    return lane.search_terms + lane.linkedin_terms + lane.abroad_terms
 
 
 def fits(title: str, lane: str, vcfg: verticals.VerticalsConfig | None = None) -> bool:
-    """Whether `title` fits `lane`: one of its rules, or one of its terms."""
+    """Whether `title`, found by a search for `lane`, fits it: one of its
+    rules (the search is a `{match, require_any}` rule's context), one of its
+    search terms, or a legacy include / strong-keep term (`config migrate`
+    moves those into classifier_rules)."""
     vcfg = vcfg or verticals.get_config()
     v = vcfg.verticals.get(lane)
     if v is None or not isinstance(title, str) or not title:
         return False
-    if any(name == lane and rule.matches(title) for name, rule in vcfg.classifier_rules):
+    title = title_terms.nfc(title)
+    if any(name == lane and rule.matches(title, True) for name, rule in vcfg.classifier_rules):
         return True
-    rx = title_terms.compile_terms(_lane_terms(v), vcfg.title_variants)
+    terms = _search_terms(v) + v.title_include_terms + v.title_strong_keep_terms
+    rx = title_terms.compile_terms(terms, vcfg.title_variants)
     return bool(rx and rx.search(title_terms.normalize(title)))
 
 
 def _first_fit(title: str, vcfg: verticals.VerticalsConfig) -> str:
     """The classifier's lane, else the first lane (config order) one of whose
-    terms the title holds, else ""."""
+    search terms the title holds, else ""."""
     lane = classify_vertical_from_title(title, vcfg)
     if lane:
         return lane
     text = title_terms.normalize(title)
     for name, v in vcfg.verticals.items():
-        rx = title_terms.compile_terms(_lane_terms(v), vcfg.title_variants)
+        rx = title_terms.compile_terms(_search_terms(v), vcfg.title_variants)
         if rx and rx.search(text):
             return name
     return ""
+
+
+def _kept(title: str, lane: str, vcfg: verticals.VerticalsConfig) -> bool:
+    """Whether a lane's keep term (a `keep: true` rule, or a legacy
+    strong-keep term) is in the title: it beats a ban word."""
+    if any(
+        name == lane and getattr(rule, "keep", False) and rule.matches(title)
+        for name, rule in vcfg.classifier_rules
+    ):
+        return True
+    strong = title_terms.compile_terms(
+        vcfg.verticals[lane].title_strong_keep_terms, vcfg.title_variants
+    )
+    return bool(strong and strong.search(title_terms.normalize(title)))
 
 
 def lane_for(
@@ -90,7 +102,7 @@ def lane_for(
     title goes where `_first_fit` puts it. A manual add, and a row whose lane
     is no longer configured, always pass in the lane they came with."""
     vcfg = vcfg or verticals.get_config()
-    title = title if isinstance(title, str) else ""
+    title = title_terms.nfc(title) if isinstance(title, str) else ""
     if source == "manual" or (hint and hint not in vcfg.verticals):
         return Verdict(hint)
     if not title.strip():
@@ -98,9 +110,7 @@ def lane_for(
     lane = hint if hint and fits(title, hint, vcfg) else _first_fit(title, vcfg)
     if not lane:
         return Verdict("", NO_LANE)
-    v = vcfg.verticals[lane]
-    strong = title_terms.compile_terms(v.title_strong_keep_terms, vcfg.title_variants)
-    if strong and strong.search(title_terms.normalize(title)):
+    if _kept(title, lane, vcfg):
         return Verdict(lane)
-    hit = title_terms.first_exact(v.title_exclude_terms, title)
+    hit = title_terms.first_exact(vcfg.verticals[lane].title_exclude_terms, title)
     return Verdict(lane, f"{BANNED}: {hit.lower()}" if hit else "")

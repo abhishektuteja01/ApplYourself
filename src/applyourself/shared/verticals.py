@@ -141,10 +141,11 @@ class VerticalsConfig:
 
 
 class ClassifierRule(Protocol):
-    """What the title classifier needs from a rule. Both kinds answer the same
-    question, so neither has to imitate the other's return type."""
+    """What the title classifier needs from a rule. Every kind answers the
+    same question, so none has to imitate another's return type. `hinted`:
+    the title came from a search for this rule's lane."""
 
-    def matches(self, title: str) -> bool: ...
+    def matches(self, title: str, hinted: bool = False) -> bool: ...
 
 
 class RegexRule:
@@ -153,7 +154,7 @@ class RegexRule:
     def __init__(self, pattern: re.Pattern[str]):
         self.pattern = pattern
 
-    def matches(self, title: str) -> bool:
+    def matches(self, title: str, hinted: bool = False) -> bool:
         return self.pattern.search(title) is not None
 
     def __repr__(self) -> str:
@@ -161,38 +162,55 @@ class RegexRule:
 
 
 class CompoundRule:
-    """A `pattern: {match, require_any}` block: the match term must appear,
-    and so must at least one of require_any, each matched loosely
-    (`title_terms`): "Co-Pilot", "co pilot" and "copilots" all read alike."""
+    """A `pattern: {match, require_any}` block: a match term (one, or any of
+    a list) must appear, and so must one of require_any somewhere else in the
+    title, each matched loosely (`title_terms`; a short last require word may
+    run on, "LLM" in "LLMOps"). On a title a search for this lane found, the
+    search is the context: the match term alone is enough."""
 
-    def __init__(self, match_str: str, require_any: tuple[str, ...], variants: Variants = ()):
-        self.match_str = match_str
+    def __init__(
+        self,
+        match_str: str | tuple[str, ...],
+        require_any: tuple[str, ...],
+        variants: Variants = (),
+    ):
+        self.match = (match_str,) if isinstance(match_str, str) else tuple(match_str)
         self.require_any = require_any
         self.variants = variants
 
-    def matches(self, title: str) -> bool:
+    def matches(self, title: str, hinted: bool = False) -> bool:
         text = title_terms.normalize(title)
-        must = title_terms.compile_terms((self.match_str,), self.variants)
-        anyof = title_terms.compile_terms(self.require_any, self.variants)
-        return bool(must and must.search(text) and anyof and anyof.search(text))
+        must = title_terms.compile_terms(self.match, self.variants)
+        spans = [m.span() for m in must.finditer(text)] if must else []
+        if not spans or hinted:
+            return bool(spans)
+        anyof = title_terms.compile_terms(self.require_any, self.variants, open_end=True)
+        if anyof is None:
+            return False
+        return any(
+            all(m.end() <= a or m.start() >= b for a, b in spans) for m in anyof.finditer(text)
+        )
 
     def __repr__(self) -> str:
-        return f"CompoundRule({self.match_str!r}, require_any={list(self.require_any)!r})"
+        match = self.match[0] if len(self.match) == 1 else list(self.match)
+        return f"CompoundRule({match!r}, require_any={list(self.require_any)!r})"
 
 
 class TermsRule:
-    """A `terms: [...]` rule: any one term, matched loosely (`title_terms`)."""
+    """A `terms: [...]` rule: any one term, matched loosely (`title_terms`).
+    With `keep: true` a title it matches passes even when it holds a ban word."""
 
-    def __init__(self, terms: tuple[str, ...], variants: Variants = ()):
+    def __init__(self, terms: tuple[str, ...], variants: Variants = (), keep: bool = False):
         self.terms = terms
         self.variants = variants
+        self.keep = keep
 
-    def matches(self, title: str) -> bool:
+    def matches(self, title: str, hinted: bool = False) -> bool:
         rx = title_terms.compile_terms(self.terms, self.variants)
         return bool(rx and rx.search(title_terms.normalize(title)))
 
     def __repr__(self) -> str:
-        return f"TermsRule({list(self.terms)!r})"
+        return f"TermsRule({list(self.terms)!r}{', keep=True' if self.keep else ''})"
 
 
 def _fail(path: Path, message: str) -> ValueError:
@@ -362,13 +380,24 @@ def build(data: dict[str, Any], lanes: dict[str, tuple[Any, Path]], p: Path) -> 
             terms = _str_list(rule["terms"], p, f"{where}.terms")
             if not terms or any(not t.strip() for t in terms):
                 raise _fail(p, f"{where}.terms must be a nonempty list of nonblank terms")
-            rules.append((vertical, TermsRule(terms, variants)))
+            keep = rule.get("keep", False)
+            if type(keep) is not bool:
+                raise _fail(p, f"{where}.keep must be true or false")
+            rules.append((vertical, TermsRule(terms, variants, keep)))
             continue
+        if "keep" in rule:
+            raise _fail(p, f"{where}.keep goes only on a `terms` rule")
         pattern = rule["pattern"]
         if isinstance(pattern, dict):
             match_str = _require(pattern, "match", p, f"{where}.pattern")
-            if not isinstance(match_str, str) or not match_str.strip():
-                raise _fail(p, f"{where}.pattern.match must be a nonblank string")
+            if isinstance(match_str, list):
+                match_str = _str_list(match_str, p, f"{where}.pattern.match")
+            if not match_str or (
+                any(not m.strip() for m in match_str)
+                if isinstance(match_str, tuple)
+                else not isinstance(match_str, str) or not match_str.strip()
+            ):
+                raise _fail(p, f"{where}.pattern.match must be a nonblank string or list")
             require_any = _str_list(
                 pattern.get("require_any", []), p, f"{where}.pattern.require_any"
             )
