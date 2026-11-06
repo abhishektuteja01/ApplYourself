@@ -22,6 +22,7 @@ BANK = "application_answers.yaml"
 SCORING = "scoring.yaml"
 DISCOVERY = "discovery.yaml"
 VERTICALS = "verticals.yaml"
+RESUME = "resume.yaml"
 
 
 @dataclass
@@ -320,7 +321,47 @@ def _salary(p: Profile) -> None:
     p.texts[VERTICALS] = text
 
 
-STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad, _salary)
+def _resume_facts(p: Profile) -> None:
+    """Bank schema 2 -> 3: identity, education and employment keys that equal what
+    resume.yaml gives are dropped (read from it now); any that differ stay, listed."""
+    from src.apply import resume_facts
+
+    bank = p.data(BANK)
+    if not isinstance(bank, dict) or bank.get("schema_version") != 2:
+        return
+    resume = p.data(RESUME)
+    if not isinstance(resume, dict):
+        p.problems.append(f"{RESUME}: needed to move the bank to schema 3")
+        return
+    for key, facts in (
+        ("identity", resume_facts.identity),
+        ("education", resume_facts.education),
+        ("employment", resume_facts.employment),
+    ):
+        block = bank.get(key)
+        if not isinstance(block, dict):
+            continue
+        derived = facts(resume)
+        for k in list(block):
+            if k not in derived:
+                continue
+            same = (
+                block[k] == derived[k]
+                if isinstance(derived[k], bool)
+                else not isinstance(block[k], bool) and str(block[k]) == str(derived[k])
+            )
+            if same:
+                del block[k]
+            else:
+                p.notes.append(
+                    f"{BANK}: {key}.{k} kept: {block[k]!r} (resume.yaml gives {derived[k]!r})"
+                )
+    bank["schema_version"] = 3
+    p.set_bank(bank)
+    p.notes.append(f"{BANK}: schema_version 3; identity, education and employment read {RESUME}")
+
+
+STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad, _salary, _resume_facts)
 
 
 def plan(root: Path) -> Profile:

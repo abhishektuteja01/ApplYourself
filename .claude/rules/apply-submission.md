@@ -14,9 +14,12 @@ report lists them under `manual`, not `failed`.
 
 ## One answer bank, one writer
 
-`profile/application_answers.yaml` (schema 2) is the whole bank:
+`profile/application_answers.yaml` (schema 3) is the whole bank:
 
-- **facts the user states**: `identity`, `education`, `employment`,
+- **facts the user states**: `identity`, `education`, `employment` (every key
+  left out is read from `profile/resume.yaml` by `src/apply/resume_facts.py`:
+  name, mailto:/tel: contact, the first plain contact line, `education[0]`, the
+  work context that ended last; employment only when the bank has the block),
   `demographics.answers` (topic -> spellings: `gender`, `race`,
   `hispanic_ethnicity`, `veteran_status`, `disability_status`), and `work_authorization` (`us_person`, `nationalities`, and a
   per-country table of `authorized`, `requires_sponsorship`, `unrestricted`,

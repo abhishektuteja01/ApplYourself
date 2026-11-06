@@ -172,11 +172,27 @@ class TestLoad:
             load_answers(write_config(tmp_path, schema_version=1))
 
     @pytest.mark.parametrize("key", A.IDENTITY_KEYS)
-    def test_every_identity_key_is_required(self, tmp_path, answers, key):
+    def test_every_identity_key_is_required(self, tmp_path, answers, key, monkeypatch):
+        monkeypatch.setitem(paths._overrides, "RESUME", tmp_path / "no_resume.yaml")
         identity = dict(answers.identity)
         del identity[key]
         with pytest.raises(AnswersError, match=f"identity.{key}"):
             load_answers(write_config(tmp_path, identity=identity))
+
+    def test_a_key_the_bank_leaves_out_comes_from_the_resume(self, tmp_path, answers):
+        """The example resume: `Alex Example`, a mailto: link, Widget Corp Jan 2023 - Jun 2025."""
+        identity = {k: v for k, v in answers.identity.items() if k not in ("first_name", "email")}
+        got = load_answers(
+            write_config(tmp_path, identity=identity, employment={"title": "Cog Fitter"})
+        )
+        assert (got.identity["first_name"], got.identity["email"]) == ("Alex", "alex@example.com")
+        assert got.employment["company_name"] == "Widget Corp"
+        assert got.employment["title"] == "Cog Fitter"
+        assert got.employment["end_month"] == "June" and got.employment["current_role"] is False
+
+    def test_a_schema_2_bank_names_the_migration(self, tmp_path):
+        with pytest.raises(AnswersError, match="config migrate"):
+            load_answers(write_config(tmp_path, schema_version=2))
 
     def test_an_empty_identity_value_is_not_a_value(self, tmp_path, answers):
         identity = dict(answers.identity, phone="   ")
@@ -188,7 +204,8 @@ class TestLoad:
         with pytest.raises(AnswersError, match="unknown keys"):
             load_answers(write_config(tmp_path, identity=identity))
 
-    def test_education_months_are_optional(self, tmp_path, answers):
+    def test_education_months_are_optional(self, tmp_path, answers, monkeypatch):
+        monkeypatch.setitem(paths._overrides, "RESUME", tmp_path / "no_resume.yaml")
         education = {
             k: v for k, v in answers.education.items() if k not in ("start_month", "end_month")
         }
@@ -622,7 +639,10 @@ class TestEducationAndEmployment:
         assert school.required and not school.options
         assert resolve(school, answers).action == "fill"
 
-    def test_an_unset_optional_education_field_is_skipped(self, tmp_path, merged, answers):
+    def test_an_unset_optional_education_field_is_skipped(
+        self, tmp_path, merged, answers, monkeypatch
+    ):
+        monkeypatch.setitem(paths._overrides, "RESUME", tmp_path / "no_resume.yaml")
         education = {k: v for k, v in answers.education.items() if k != "start_month"}
         thin = load_answers(write_config(tmp_path, education=education))
         assert resolve(merged("form_education").by_id("start-month--0"), thin).action == "skip"

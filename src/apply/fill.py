@@ -7,7 +7,7 @@ refuses to paper over a widget that did not take the value. Two rules shape it:
 writes into fields already on the page. So the order is: attach first, re-read
 every field, then overwrite from the plan regardless of what is sitting there.
 Nothing parsed is trusted and nothing parsed is left in place — what goes out
-has to be reproducible from `application_answers.yaml` alone.
+has to be reproducible from `application_answers.yaml` (and the resume.yaml facts it reads) alone.
 
 **A react-select that did not stick is a failure, not a filled field.** It
 accepts a typed string matching no option and ends up empty; required, that

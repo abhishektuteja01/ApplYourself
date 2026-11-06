@@ -1,5 +1,5 @@
 # Synthetic answer bank for tests. Widget world, no real person.
-schema_version: 2
+schema_version: 3
 identity:
   first_name: Alex
   last_name: Example

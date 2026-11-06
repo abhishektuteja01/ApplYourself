@@ -266,8 +266,10 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
 
 4. `profile/application_answers.yaml`, which the scaffold always copies:
    **fill it, never interview for it.** `identity`, `education` and `employment`
-   from the resume just parsed, with `location` and `country` as canonical place
-   names; `work_authorization.countries` from step 1's question 2 (your home
+   read every key they leave out from `resume.yaml`, so set only what the resume
+   lacks or a form words differently: `identity.country` (and `location`) as
+   canonical place names, a phone with its country code, a board-style `degree`
+   ("Master's Degree"); `work_authorization.countries` from step 1's question 2 (your home
    country's row as in the table above, `default` for everywhere else, a
    citizen's row for each nationality); `claims`, `questions` and `fact_wordings`
    as shipped — they grow with each confirmed `/apply`. Show the filled file once. A field the resume cannot

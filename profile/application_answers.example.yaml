@@ -3,24 +3,27 @@
 # The answer bank: everything /apply puts on an application form. Read by
 # src/apply/answers.py. DO NOT COMMIT YOUR COPY (profile/* is gitignored).
 #
-# You write `identity` through `work_authorization` — facts only you can state.
+# You write `identity` through `work_authorization` — facts only you can state
+# (what resume.yaml already says is read from it).
 # `claims`, `fact_wordings` and `questions` grow on their own: every /apply run
 # you confirm saves what it learned here (a new wording, a board's option
 # spelling, a new answer), so the same question is never asked twice. Review or undo with
 # `uv run apply learn` and `uv run apply learn --undo <id>`.
 
-schema_version: 2
+schema_version: 3
 
 # Which browser drives the form. patchright | playwright.
 browser:
   driver: patchright
   stealth: true
 
+# identity, education and employment read profile/resume.yaml for every key
+# left out here: first/last/preferred name from `name`, email and phone from the
+# mailto:/tel: contact links, location from the first plain contact line;
+# school (detail up to the first comma), degree, discipline (after " in ") and
+# dates from education[0]; company, title and dates from the work context that
+# ended last. Set a key here only where a form needs other wording.
 identity:
-  first_name: "Alex"
-  last_name: "Example"
-  preferred_name: "Alex"
-  email: "alex@example.com"
   phone: "+1 555 0100"
   location: "Exampletown, Example State, United States"
   # Optional: the same place as other boards spell it. Exact matches only.
@@ -28,26 +31,16 @@ identity:
   country: "United States"
 
 education:
-  school: "Example University"
   # Optional: the same school as other boards spell it. Exact matches only.
   # school_alternates: ["Example University - Exampletown, ES"]
   degree: "Master's Degree"
   discipline: "Widget Engineering"
-  start_year: 2019
   end_year: 2021
-  start_month: "September"
   end_month: "May"
 
 # Optional. only_when_required: fill it only where a board requires it.
 employment:
   only_when_required: true
-  company_name: "Widget Corp"
-  title: "Widget Operations Analyst"
-  start_month: "January"
-  start_year: 2023
-  end_month: "June"
-  end_year: 2025
-  current_role: false
 
 # Optional. Your answer per EEOC topic, every spelling boards use, best first.
 # A topic you leave out, or a board offering none of your spellings, gets the

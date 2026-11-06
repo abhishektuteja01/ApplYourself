@@ -37,7 +37,7 @@ from src.shared import clock, paths
 
 EXAMPLE_NAME = "application_answers.example.yaml"
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 IDENTITY_KEYS = (
     "first_name",
@@ -986,6 +986,12 @@ def _parse_block(
     block = data.get(key)
     if not isinstance(block, dict):
         raise AnswersError(f"{key}: missing, or not a mapping")
+    missing = [k for k in required if block.get(k) is None]
+    if missing:
+        raise AnswersError(
+            f"{key}.{missing[0]}: not set, here or in resume.yaml (which sets it when "
+            "it can read it: name, contact, education[0], the latest work context)"
+        )
     out = {}
     for field_key in required:
         out[field_key] = _require_str(block.get(field_key), f"{key}.{field_key}")
@@ -1379,6 +1385,34 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
     return tuple(questions)
 
 
+def resume_for(bank_path: Path) -> Path:
+    """The resume.yaml beside this bank (resume.example.yaml beside the example), else paths.RESUME."""
+    name = "resume.example.yaml" if ".example." in bank_path.name else "resume.yaml"
+    sibling = bank_path.parent / name
+    return sibling if sibling.is_file() else paths.RESUME
+
+
+def with_resume(data: dict, resume: dict) -> dict:
+    """data with every identity, education and employment key it leaves out
+    filled from resume.yaml. Employment only when the bank has the block."""
+    from src.apply import resume_facts
+
+    out = dict(data)
+    for key, facts in (
+        ("identity", resume_facts.identity),
+        ("education", resume_facts.education),
+        ("employment", resume_facts.employment),
+    ):
+        block = data.get(key)
+        if key == "employment" and key not in data:
+            continue
+        if block is None:
+            block = {}
+        if isinstance(block, dict):
+            out[key] = {**facts(resume), **block}
+    return out
+
+
 def load_answers(path: Path | None = None) -> Answers:
     """Load and validate the answer bank. Fails loud on anything ambiguous: a
     wrong answer here is sent under the user's name."""
@@ -1389,14 +1423,24 @@ def load_answers(path: Path | None = None) -> Answers:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise AnswersError(f"Malformed YAML in {p}: {exc}") from exc
-    return answers_from(data, where=str(p))
+    return answers_from(data, where=str(p), resume_path=resume_for(p))
 
 
-def answers_from(data, where: str = "answer bank") -> Answers:
+def answers_from(data, where: str = "answer bank", resume_path: Path | None = None) -> Answers:
+    """The bank `data` as Answers; identity, education and employment keys it
+    leaves out come from resume.yaml (`resume_path`, default paths.RESUME)."""
+    from src.apply import resume_facts
+
     if not isinstance(data, dict):
         raise AnswersError(f"{where}: top level must be a mapping")
+    if data.get("schema_version") == 2:
+        raise AnswersError(
+            f"{where}: schema_version 2: identity, education and employment now come from "
+            "resume.yaml (schema 3). Run `uv run config migrate --dry-run`, then --apply"
+        )
     if data.get("schema_version") != SCHEMA_VERSION:
         raise AnswersError(f"{where}: schema_version must be {SCHEMA_VERSION}")
+    data = with_resume(data, resume_facts.read(resume_path or paths.RESUME))
     unknown_top = set(data) - set(TOP_LEVEL_KEYS)
     if unknown_top:
         raise AnswersError(

@@ -131,3 +131,30 @@ def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
     assert bank.facts_for("United States").salary.lanes == ("widgets",)
     assert apply_cli.salary_for("x", "widgets", "United States", bank) == 110000.0
     assert apply_cli.salary_for("x", "gizmos", "United States", bank) is None
+
+
+def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
+    from src.apply.answers import load_answers
+
+    prof = _profile(tmp_path)
+    shutil.copyfile(paths.example("resume.example.yaml"), prof / "resume.yaml")
+    b = prof / "application_answers.yaml"
+    before = load_answers(b)
+    bank = yaml.safe_load(b.read_text(encoding="utf-8"))
+    bank["schema_version"] = 2
+    bank["identity"] = dict(before.identity)
+    bank["education"] = dict(before.education, start_year=2019)
+    bank["employment"] = {**before.employment, "start_year": 2023}
+    b.write_text(yaml.safe_dump(bank, sort_keys=False), encoding="utf-8")
+
+    assert _run(prof, apply=True) == 0
+    assert "identity.location kept" in capsys.readouterr().out
+    after = yaml.safe_load(b.read_text(encoding="utf-8"))
+    assert after["schema_version"] == 3 and "first_name" not in after["identity"]
+    assert after["employment"] == {"only_when_required": True}
+    got = load_answers(b)
+    assert (got.identity, got.education, got.employment) == (
+        before.identity,
+        before.education,
+        before.employment,
+    )

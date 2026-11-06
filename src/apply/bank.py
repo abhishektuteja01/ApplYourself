@@ -82,7 +82,7 @@ def write(data: dict, path: Path | None = None) -> Path:
     if unattended():
         raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
     p = Path(path) if path is not None else paths.ANSWER_BANK
-    A.answers_from(data, where=str(p))
+    A.answers_from(data, where=str(p), resume_path=A.resume_for(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
