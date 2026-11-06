@@ -136,12 +136,12 @@ class LocationAllowlist:
     countries: list[str] = field(default_factory=list)
 
     def effective_countries(self) -> set[str]:
-        from src.shared.location.places import canonical_country
+        from src.shared.countries import canonical_country
 
         return {canonical_country(c) or c for c in self.countries}
 
     def unresolved(self) -> list[str]:
-        from src.shared.location.places import canonical_country
+        from src.shared.countries import canonical_country
 
         return [
             f"location_allowlist.countries: {c!r} is not a country name"
@@ -226,7 +226,7 @@ class DiscoveryConfig:
         return problems
 
     def _abroad_problems(self) -> list[str]:
-        from src.shared.location.places import canonical_country
+        from src.shared.countries import canonical_country
 
         problems: list[str] = []
         if not (self.abroad_sources or self.abroad_lanes_listed):
@@ -405,7 +405,7 @@ def bank_countries(discovery_path: Path) -> tuple[str, list[str]] | None:
     """(home, every other country the answer bank lists), or None with no bank.
     The example discovery file reads the example bank."""
     from src.apply.answers import EXAMPLE_NAME, AnswersError, load_answers
-    from src.shared.location.places import canonical_country
+    from src.shared.countries import canonical_country
 
     bank = (
         paths.example(EXAMPLE_NAME)

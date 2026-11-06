@@ -6,13 +6,9 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from src.shared.countries import CC_TO_COUNTRY, canonical_country
 from src.shared.location.parser import _SEPARATOR_RE, parse_location
-from src.shared.location.places import (
-    CC_TO_COUNTRY,
-    REGION_TOKEN_COUNTRIES,
-    _fold,
-    canonical_country,
-)
+from src.shared.location.places import REGION_TOKEN_COUNTRIES, _fold
 
 if TYPE_CHECKING:
     from src.discovery.config import DiscoveryConfig

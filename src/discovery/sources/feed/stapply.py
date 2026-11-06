@@ -31,10 +31,10 @@ from src.discovery.sources.feed import oracle
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 from src.shared import http_client, identity, title_gate
+from src.shared.countries import CC_TO_COUNTRY
 from src.shared.http_client import CareersError
 from src.shared.job_boards import ATS_SOURCE_NAMES, board_key
 from src.shared.location.parser import parse_location
-from src.shared.location.places import CC_TO_COUNTRY
 
 log = logging.getLogger(__name__)
 

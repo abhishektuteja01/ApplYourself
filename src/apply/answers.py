@@ -84,11 +84,8 @@ from src.apply.bank_schema import (  # noqa: F401 - re-exported
     with_resume,
 )
 from src.apply.places import (  # noqa: F401 - re-exported
-    _ALIASES,
-    _NOT_A_COUNTRY_WORD,
     _NOT_COUNTRIES,
     _OR_BETWEEN,
-    _SHORT_NAMES,
     REGIONS,
     UNKNOWN_COUNTRY,
     _either_place,

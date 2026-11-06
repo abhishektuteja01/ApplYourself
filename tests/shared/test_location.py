@@ -810,9 +810,9 @@ def test_a_primed_cache_entry_does_not_survive_into_the_next_test():
 
 
 def test_monkeypatched_country_table_is_honoured(monkeypatch):
-    from src.shared.location import places
+    from src.shared import countries
 
-    monkeypatch.setitem(places.COUNTRY_NAMES, "germany", "Zzyzxland")
+    monkeypatch.setitem(countries.COUNTRY_NAMES, "germany", "Zzyzxland")
     assert parse_location("Germany").country == "Zzyzxland"
 
 

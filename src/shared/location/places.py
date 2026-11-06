@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import gettext
 import re
-import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
 import geonamescache
 import pycountry
+
+from src.shared.countries import CC_TO_COUNTRY, fold_accents
 
 
 def _fold(s: str) -> str:
@@ -17,108 +18,12 @@ def _fold(s: str) -> str:
     ASCII forms match accented canonical spellings (e.g. "Iasi" ->
     "Iaşi", "Karnataka" -> "Karnātaka") regardless of stray whitespace a
     pre-split segment can leave on a libpostal component."""
-    return (
-        "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
-        .lower()
-        .strip()
-    )
+    return fold_accents(s).lower().strip()
 
 
 gc = geonamescache.GeonamesCache()
 _ALL_CITIES = gc.get_cities()
 _GC_COUNTRIES = gc.get_countries()  # only used for continentcode, below
-
-# ---------------------------------------------------------------------
-# Countries — worldwide, from pycountry (ISO 3166-1).
-# ---------------------------------------------------------------------
-
-COUNTRY_NAMES: dict[str, str] = {}
-for _c in pycountry.countries:
-    COUNTRY_NAMES[_fold(_c.name)] = _c.name
-    if hasattr(_c, "common_name"):
-        COUNTRY_NAMES[_fold(_c.common_name)] = _c.name
-    if hasattr(_c, "official_name"):
-        COUNTRY_NAMES[_fold(_c.official_name)] = _c.name
-
-# Native-language country names ("Deutschland", "Espana", "Brasil") come
-# from pycountry's own bundled iso-codes gettext catalogs -- the same
-# upstream project pycountry's English names are sourced from -- rather
-# than a hand-typed alias per language. Limited to major job-market
-# locales (not all ~160 iso-codes ships) to keep import cost bounded;
-# missing a rare locale just means that one native name stays unresolved,
-# same as any other unmapped input, not a crash.
-_MAJOR_LOCALES = (
-    "de",
-    "fr",
-    "es",
-    "nl",
-    "it",
-    "pt",
-    "pl",
-    "tr",
-    "ru",
-    "zh",
-    "ja",
-    "ko",
-    "ar",
-    "sv",
-    "da",
-    "fi",
-    "cs",
-    "ro",
-    "hu",
-    "el",
-    "he",
-    "th",
-    "vi",
-    "id",
-    "uk",
-)
-for _lang in _MAJOR_LOCALES:
-    try:
-        _cat = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=[_lang])
-    except FileNotFoundError:
-        continue
-    for _c in pycountry.countries:
-        _native = _cat.gettext(_c.name)
-        if _native != _c.name:
-            COUNTRY_NAMES.setdefault(_fold(_native), _c.name)
-
-# Colloquial aliases pycountry's own name/common_name/official_name strings
-# don't cover. A fuzzy-matching fallback (pycountry.countries.search_fuzzy)
-# was tried and rejected: it also matches unrelated common words to a
-# country by edit-distance coincidence ("North"/"South"/"East"/"West" ->
-# Cameroon, "Central" -> Botswana, "Metro" -> France) -- exactly the kind
-# of false-positive collision this rewrite replaced the old keyword matcher
-# to avoid. Add names here only when confirmed missing from pycountry's own
-# fields (see COUNTRY_NAMES construction above).
-COUNTRY_NAMES.update(
-    {
-        "usa": "United States",
-        "us": "United States",
-        "u.s.": "United States",
-        "u.s.a.": "United States",
-        "united states of america": "United States",
-        "uk": "United Kingdom",
-        "u.k.": "United Kingdom",
-        "uae": "United Arab Emirates",
-        "u.a.e.": "United Arab Emirates",
-        "ksa": "Saudi Arabia",
-        "drc": "Congo, The Democratic Republic of the",
-        "dr congo": "Congo, The Democratic Republic of the",
-        "democratic republic of congo": "Congo, The Democratic Republic of the",
-        "ivory coast": "Côte d'Ivoire",
-        "burma": "Myanmar",
-        "korea": "Korea, Republic of",
-        "south korea": "Korea, Republic of",
-        "holland": "Netherlands",
-        "russia": "Russian Federation",
-        "macedonia": "North Macedonia",
-    }
-)
-
-CC_TO_COUNTRY: dict[str, str] = {_c.alpha_2: _c.name for _c in pycountry.countries}
-COUNTRY_TO_CC: dict[str, str] = {name: cc for cc, name in CC_TO_COUNTRY.items()}
 
 # ---------------------------------------------------------------------
 # Subdivisions (states/provinces/regions) — worldwide, from pycountry
@@ -137,7 +42,7 @@ for _s in pycountry.subdivisions:
 
 # pycountry's own subdivision.name is often the local-language ISO name
 # ("Noord-Brabant", "Bayern") rather than the English form job postings
-# use. Same iso-codes gettext catalog mechanism as COUNTRY_NAMES above,
+# use. Same iso-codes gettext catalog mechanism as countries.COUNTRY_NAMES,
 # translated into English, added as an extra lookup key when it differs.
 # Coverage is genuinely partial -- iso-codes' own English catalog doesn't
 # translate every subdivision (confirmed: "Bayern" -> "Bavaria" exists,
@@ -293,7 +198,7 @@ for _lst in CITIES_BY_NAME.values():
 # can derive these) -- same documented pattern as _PRE_PARSE_EXPANSIONS
 # below, not a growing pile of one-offs: add here only when a name is
 # confirmed missing and isn't covered by _normalize_saint or the
-# COUNTRY_NAMES/SUBDIVISIONS_BY_NAME locale-translation mechanisms above.
+# COUNTRY_NAMES/SUBDIVISIONS_BY_NAME locale-translation mechanisms.
 _CITY_NAME_ALIASES = {
     "new york": "new york city",
     "nyc": "new york city",
@@ -329,8 +234,3 @@ _GENERIC_AREA_SUFFIXES = (
 # can't reintroduce the collision this rewrite fixes (an incidental common
 # word like "Central" is only ever stripped here, never tested on its own).
 _DISTRICT_PREFIXES = ("central ", "north ", "south ", "east ", "west ", "greater ")
-
-
-def canonical_country(name: str) -> str | None:
-    """The canonical name for a country as the parser returns it, or None."""
-    return COUNTRY_NAMES.get(_fold(name or ""))
