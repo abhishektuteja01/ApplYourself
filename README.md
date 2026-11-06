@@ -428,9 +428,10 @@ experience. Filling them in is the work.
 
 Also in `profile/`, but rules rather than personal data:
 
-- `de_ai_rules.yaml` ships as a committed default: the banned phrasing, the
-  mechanical replacements, and the stopwords a reworded bullet may add. Your
-  sources are linted against it once, by `verticals-check`.
+- `de_ai_rules.yaml` ships as a committed default in `data/defaults/`: the
+  banned phrasing, the mechanical replacements, and the stopwords a reworded
+  bullet may add. A copy in `profile/` replaces it whole. Your sources are
+  linted against it once, by `verticals-check`.
 - `scoring.yaml`, copied from `scoring.example.yaml`, holds the scoring policy:
   the `ineligible` drop list, the action thresholds and the shortlist size. Your
   sponsorship need per country comes from `application_answers.yaml`'s
@@ -446,7 +447,9 @@ sponsorship label.
 
 The `profile/` files you fill in are **gitignored user data**. Nothing you write
 into them is ever committed. What *is* tracked there is only scaffolding: the
-`.example.*` templates, the `example_*` lane directories, and `de_ai_rules.yaml`.
+`.example.*` templates and the `example_*` lane directories. What the tools
+write for themselves (answer-bank and synonym history, declined synonyms) sits in
+`profile/.state/`.
 
 <details>
 <summary><b>The two Word templates, and why they have their own guard</b></summary>
@@ -641,7 +644,7 @@ bullets, a rubric, `scoring.yaml`, or on a model upgrade.
 **Tier 1: mechanical.** Dashes, smart quotes, ellipses, non-breaking spaces,
 zero-width characters. Auto-fixed everywhere, silently.
 
-**Tier 2: banned phrases** from the `rules:` table in `profile/de_ai_rules.yaml`.
+**Tier 2: banned phrases** from the `rules:` table in `de_ai_rules.yaml`.
 Each rule sets how it matches (`word`, `sentence_start`, `regex`), where it
 applies (`resume`, `outreach`) and its `level`: `block` fails the build, `warn`
 is only reported. Flagged only, never auto-fixed. The command session loops the model to rewrite until the linter comes

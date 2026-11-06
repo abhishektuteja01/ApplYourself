@@ -189,6 +189,7 @@ def test_keywords_count_only_roles_without_a_resume_and_skip_declined(world, mon
             for j, c in (("a1", "Acme"), ("b2", "Beta"), ("c3", "Gamma"))
         ),
     )
+    paths.SYNONYM_DECLINED.parent.mkdir(parents=True, exist_ok=True)
     paths.SYNONYM_DECLINED.write_text(
         yaml.safe_dump(
             [{"keyword": "kubernetes", "reason": "", "first_seen": "2026-09-01", "approved": False}]

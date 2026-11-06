@@ -3,7 +3,7 @@ current one. `--dry-run` prints the diff, `--apply` writes it. Idempotent: a
 migrated profile has nothing left to move.
 
 Text edits keep a YAML file's comments; the answer bank is rewritten through
-`bank.write`, which validates it and keeps the old file in `.bank_history/`.
+`bank.write`, which validates it and keeps the old file in `.state/bank_history/`.
 """
 
 from __future__ import annotations
@@ -37,6 +37,9 @@ class Profile:
     problems: list[str] = field(default_factory=list)
     renamed: dict[str, str] = field(default_factory=dict)
     """new name -> old name: the new file's text starts from the old one's."""
+    moves: list[tuple[str, str]] = field(default_factory=list)
+    """(from, to), files or folders moved as they are, before any text is written."""
+    deletes: list[str] = field(default_factory=list)
 
     def text(self, name: str) -> str | None:
         if name not in self.texts:
@@ -400,12 +403,47 @@ def _settings(p: Profile) -> None:
     p.notes.append(f"{BANK} browser: -> {SETTINGS}")
 
 
+STATE = ".state"
+# What the tools write, (old place, place under .state/).
+STATE_MOVES = (
+    (".bank_history", "bank_history"),
+    (".synonym_history", "synonym_history"),
+    ("synonyms_declined.yaml", "synonyms_declined.yaml"),
+)
+DE_AI = "de_ai_rules.yaml"
+
+
+def _state(p: Profile) -> None:
+    """Tool-written files -> .state/; a de_ai_rules.yaml equal to the shipped
+    default goes (data/defaults/ holds it), a different one stays as the override."""
+    from src.shared import paths
+
+    for old, new in STATE_MOVES:
+        src, dst = p.root / old, p.root / STATE / new
+        if not src.exists():
+            continue
+        if dst.is_file():
+            p.problems.append(f"{old} and {STATE}/{new} both exist: keep one by hand")
+            continue
+        p.moves.append((old, f"{STATE}/{new}"))
+        p.notes.append(f"{old} -> {STATE}/{new}")
+    rules = p.text(DE_AI)
+    if rules is None:
+        return
+    if rules == paths.default(DE_AI).read_text(encoding="utf-8"):
+        p.deletes.append(DE_AI)
+        p.notes.append(f"{DE_AI} removed: the same as data/defaults/{DE_AI}")
+    else:
+        p.notes.append(f"{DE_AI} kept: it differs from data/defaults/{DE_AI} and replaces it")
+
+
 STEPS: tuple[Callable[[Profile], None], ...] = (
     _languages,
     _abroad,
     _salary,
     _resume_facts,
     _settings,
+    _state,
 )
 
 
@@ -442,17 +480,33 @@ def diff(p: Profile) -> str:
     )
 
 
+def _move(src: Path, dst: Path) -> None:
+    """src onto dst; a folder's files join whatever dst already holds."""
+    if src.is_dir():
+        for child in sorted(src.iterdir()):
+            _move(child, dst / child.name)
+        src.rmdir()
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(src, dst)
+
+
 def write(p: Profile) -> list[str]:
-    """Write every changed file; the bank last, through bank.write."""
+    """Move, then write every changed file, the bank last through bank.write,
+    then delete."""
     from src.apply import bank as bank_writer
     from src.shared.parquet_io import locked
 
     done = []
+    for old, new in p.moves:
+        _move(p.root / old, p.root / new)
+        done.append(new)
     todo = changed(p)
     for name, (_, new) in sorted(todo.items()):
         if name == BANK:
             continue
         path = p.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(new, encoding="utf-8")
         os.replace(tmp, path)
@@ -464,6 +518,8 @@ def write(p: Profile) -> list[str]:
         with locked(path):
             bank_writer.write(yaml.safe_load(todo[BANK][1]), path)
         done.append(BANK)
+    for name in p.deletes:
+        (p.root / name).unlink()
     return done
 
 
@@ -480,12 +536,12 @@ def main(args: Any) -> int:
     if p.problems:
         return 1
     todo = changed(p)
-    if not todo:
+    if not (todo or p.moves or p.deletes):
         print("nothing to migrate")
         return 0
     if BANK in todo and re.search(r"^\s*#", todo[BANK][0], re.MULTILINE):
         print(
-            f"note   {BANK} is rewritten without its comments; the old file stays in .bank_history/"
+            f"note   {BANK} is rewritten without its comments; the old file stays in .state/bank_history/"
         )
     if not args.apply:
         print(diff(p), end="")

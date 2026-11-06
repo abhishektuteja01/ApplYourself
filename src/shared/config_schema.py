@@ -197,7 +197,7 @@ class LintRule(_Strict):
 
 class DeAiRules(_Strict):
     retired: ClassVar[dict[str, str]] = {
-        "banned_phrases": "`rules:` (schema_version 2; see the committed profile/de_ai_rules.yaml)",
+        "banned_phrases": "`rules:` (schema_version 2; see data/defaults/de_ai_rules.yaml)",
         "outreach_only": "`rules:` entries with `scope: [outreach]`",
     }
     schema_version: Literal[2]

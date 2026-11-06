@@ -51,7 +51,7 @@ bank still loads and still finds that lesson's question for its label; a refused
 lesson is named and the rest stand. A new question's answer must come from
 something about the user (`B-`/`S-`/`SKILL-`, `option`, `user`), never the JD or
 a company. Facts are never written by it. Every write keeps the previous file in
-`profile/.bank_history/` (last 20). `apply learn` reviews and undoes (a question,
+`profile/.state/bank_history/` (last 20). `apply learn` reviews and undoes (a question,
 one wording or keyword, one claim, one fact wording).
 
 Scoring reads the same table: `score_filter` derives never / later / now per

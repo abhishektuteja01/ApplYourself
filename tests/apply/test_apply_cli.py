@@ -1997,7 +1997,7 @@ class TestEachLessonMustHold:
 
         self._bank(tmp_path, monkeypatch)
         bank.learn([bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them")])
-        assert list((tmp_path / ".bank_history").glob("bank.*.yaml"))
+        assert list((tmp_path / ".state" / "bank_history").glob("bank.*.yaml"))
 
 
 def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):

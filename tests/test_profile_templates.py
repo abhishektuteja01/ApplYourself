@@ -28,8 +28,8 @@ _PATH_RE = re.compile(r"profile/[A-Za-z0-9_./<>*-]+")
 # profile/*, profile/synonyms_draft_YYYY-MM-DD.md.
 _PLACEHOLDER_MARKERS = ("<", ">", "*", "YYYY", "MM", "DD")
 
-# Committed defaults: real files, not templates, because they are rules rather
-# than personal data. A new clone gets working copies and tunes them in place.
+# Optional overrides of a committed default under data/defaults/: rules rather
+# than personal data, so a new clone needs no copy.
 COMMITTED_DEFAULTS = {
     "profile/de_ai_rules.yaml",
 }
@@ -167,7 +167,7 @@ class TestTemplateCoverage:
                 continue
             if "/verticals/example_" in rel_path:
                 continue  # committed example lane files
-            if Path(rel_path).name.startswith("."):
+            if any(part.startswith(".") for part in Path(rel_path).parts):
                 continue  # runtime state a command writes, not a user input
             template = _template_for(rel_path)
             if template is None:
@@ -216,7 +216,9 @@ class TestTemplateCoverage:
         for rel_path in _referenced_profile_paths():
             if ".example." in rel_path or rel_path in COMMITTED_DEFAULTS:
                 continue
-            if "/verticals/example_" in rel_path or Path(rel_path).name.startswith("."):
+            if "/verticals/example_" in rel_path or any(
+                part.startswith(".") for part in Path(rel_path).parts
+            ):
                 continue
             if _template_for(rel_path) is None:
                 unmapped.append(rel_path)

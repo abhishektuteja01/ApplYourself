@@ -186,3 +186,27 @@ def test_automation_yaml_becomes_settings_with_the_bank_browser(tmp_path, capsys
     capsys.readouterr()
     assert _run(prof, apply=False) == 0
     assert "nothing to migrate" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_tool_state_moves_under_dot_state(tmp_path, capsys, edited):
+    prof = _profile(tmp_path)
+    (prof / ".bank_history").mkdir()
+    (prof / ".bank_history" / "application_answers.2026-01-01.yaml").write_text(
+        "x", encoding="utf-8"
+    )
+    (prof / ".synonym_history").mkdir()
+    (prof / ".synonym_history" / "bullets.md.1").write_text("y", encoding="utf-8")
+    (prof / "synonyms_declined.yaml").write_text("[]\n", encoding="utf-8")
+    rules = paths.default("de_ai_rules.yaml").read_text(encoding="utf-8")
+    (prof / "de_ai_rules.yaml").write_text(rules + ("# mine\n" if edited else ""), encoding="utf-8")
+
+    assert _run(prof, apply=True) == 0
+    assert (prof / ".state" / "bank_history" / "application_answers.2026-01-01.yaml").is_file()
+    assert (prof / ".state" / "synonym_history" / "bullets.md.1").is_file()
+    assert (prof / ".state" / "synonyms_declined.yaml").is_file()
+    assert not (prof / ".bank_history").exists() and not (prof / "synonyms_declined.yaml").exists()
+    assert (prof / "de_ai_rules.yaml").exists() is edited
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out

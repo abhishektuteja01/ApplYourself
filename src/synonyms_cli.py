@@ -74,6 +74,11 @@ def _new_job_ids() -> list[str]:
 
 
 def _read_yaml(path: Path, default):
+    old = paths.PROFILE / path.name
+    if path == paths.SYNONYM_DECLINED and old.is_file():
+        raise SynonymsError(
+            f"{old} moved to {path}: run `uv run config migrate --dry-run`, then --apply"
+        )
     if not path.is_file():
         return default
     data = yaml.safe_load(path.read_text(encoding="utf-8"))

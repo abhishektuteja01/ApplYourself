@@ -99,7 +99,7 @@ Read:
   the opening; never quoted into the draft).
 - `profile/voice_samples.md` -- the voice baseline (NOT templates; fresh
   generation in the user's voice)
-- `profile/de_ai_rules.yaml` -- every `rules:` entry whose `scope` holds `outreach`
+- `de_ai_rules.yaml` (`profile/`, else `data/defaults/`) -- every `rules:` entry whose `scope` holds `outreach`
 - the work-authorization row for the job's country, which sets the disclosure:
 
   ```bash
@@ -185,7 +185,7 @@ cd "$(git rev-parse --show-toplevel)" && uv run app build outreach <job_id>
 
 It fixes mechanical slips, then checks the shape, the word limits (`length`),
 numbers (`number`), cited ids (`unknown_id`) and every `rules:` entry in
-`profile/de_ai_rules.yaml` whose `scope` holds `outreach` (`lint`). On exit 2,
+`de_ai_rules.yaml` whose `scope` holds `outreach` (`lint`). On exit 2,
 rewrite what each problem names in `outreach.yaml`, in the user's voice and
 matched by no rule, and build again per the fix loop in
 `.claude/shared/no_fab.md` (read it: it holds the attempt cap). If still failing

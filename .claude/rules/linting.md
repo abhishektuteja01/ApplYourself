@@ -2,13 +2,16 @@
 paths:
   - "src/lint.py"
   - "src/app_cli.py"
+  - "data/defaults/de_ai_rules.yaml"
   - "profile/de_ai_rules.yaml"
 ---
 
 # Linting (`src/lint.py`)
 
 Two tiers: Tier 1 mechanical fixes (dashes, smart quotes, ellipsis, odd spaces)
-auto-applied, with every replacement value read from `profile/de_ai_rules.yaml`;
+auto-applied, with every replacement value read from `de_ai_rules.yaml`
+(`profile/de_ai_rules.yaml` if you made one, which replaces the whole shipped
+`data/defaults/de_ai_rules.yaml`);
 Tier 2 banned-phrase violations are flagged only, and the command session
 rewrites until the linter returns empty (the fix loop in
 `.claude/shared/no_fab.md`).

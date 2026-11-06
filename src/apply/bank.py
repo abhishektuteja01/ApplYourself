@@ -15,7 +15,7 @@ next form that asks the same thing is answered without anyone deciding again:
 Facts about the user (identity, work authorization per country) are never
 written here: those change only when the user states them. Every write is
 validated by loading the whole bank first, and the previous file is kept in
-`.bank_history/` next to it (last 20).
+`.state/bank_history/` next to it (last 20).
 
 R7: the session decides what each label means; this module only records it.
 """
@@ -78,7 +78,7 @@ HISTORY_KEEP = 20
 
 
 def write(data: dict, path: Path | None = None) -> Path:
-    """Validate, keep the old file in `.bank_history/`, then replace atomically."""
+    """Validate, keep the old file in `.state/bank_history/`, then replace atomically."""
     if unattended():
         raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
     p = Path(path) if path is not None else paths.ANSWER_BANK
@@ -87,8 +87,8 @@ def write(data: dict, path: Path | None = None) -> Path:
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     if p.exists():
-        history = p.parent / ".bank_history"
-        history.mkdir(exist_ok=True)
+        history = p.parent / ".state" / "bank_history"
+        history.mkdir(parents=True, exist_ok=True)
         stamp = clock.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
         (history / f"{p.stem}.{stamp}.yaml").write_text(
             p.read_text(encoding="utf-8"), encoding="utf-8"

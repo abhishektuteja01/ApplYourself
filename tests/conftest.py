@@ -78,7 +78,6 @@ def _isolate_root(tmp_path, tmp_path_factory, monkeypatch):
             "BULLETS": copies / "bullets.example.md",
             "SKILLS": copies / "skills_master.example.md",
             "SCORING": profile / "scoring.example.yaml",
-            "DE_AI_RULES": profile / "de_ai_rules.yaml",
             "VERTICALS_DIR": profile / "verticals",
         },
     )

@@ -5,7 +5,7 @@ import ast
 
 from src.shared import paths
 
-READ_IN_PLACE = {"SCORING", "DE_AI_RULES", "VERTICALS_DIR"}
+READ_IN_PLACE = {"SCORING", "VERTICALS_DIR"}
 
 
 def test_no_test_resolves_a_data_path_inside_the_repo(tmp_path):
