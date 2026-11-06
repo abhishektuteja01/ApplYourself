@@ -13,15 +13,16 @@ Every fact has one home, and each thing says where it appears:
 
 `check_sources` validates every pointer between them (run by verticals-check),
 so deleting a skill, bullet or project means deleting one block, and a stale
-pointer is named. `build` turns a plan (the model's choices) into resume
-markdown plus a trace, and reports every broken rule as a problem instead of
-rendering it.
+pointer is named. `build` turns a plan (the model's choices) into typed resume
+blocks (docx_render renders them; `markdown` prints them) plus a trace, and
+reports every broken rule as a problem instead of rendering it.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 
 import yaml
 
@@ -399,13 +400,80 @@ class Problem:
         return {"where": self.where, "code": self.code, "detail": self.detail}
 
 
+@dataclass(frozen=True)
+class Run:
+    text: str
+    bold: bool = False
+    url: str | None = None  # set: a Word hyperlink
+
+
+@dataclass(frozen=True)
+class Block:
+    """One resume paragraph. `kind` picks its template style; `line` is its
+    line in the markdown printout. No runs: a blank line, never rendered."""
+
+    kind: Literal["name", "section", "header", "body", "bullet"]
+    runs: tuple[Run, ...]
+    line: str
+
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+
+def inline_runs(text: str) -> tuple[Run, ...]:
+    """Split source text at its **bold** and [text](url) spans. Where a bold
+    span and a link span overlap, the one that starts first wins."""
+    matches: list[tuple[int, int, Run]] = []
+    for m in _BOLD_RE.finditer(text):
+        matches.append((m.start(), m.end(), Run(m.group(1), bold=True)))
+    for m in _LINK_RE.finditer(text):
+        matches.append((m.start(), m.end(), Run(m.group(1), url=m.group(2))))
+    matches.sort(key=lambda x: x[0])
+    runs: list[Run] = []
+    pos = 0
+    for start, end, run in matches:
+        if start < pos:
+            continue
+        if start > pos:
+            runs.append(Run(text[pos:start]))
+        runs.append(run)
+        pos = end
+    if pos < len(text):
+        runs.append(Run(text[pos:]))
+    return tuple(runs) or (Run(text),)
+
+
+def _plain(kind, text: str) -> Block:
+    return Block(kind, (Run(text.strip()),), f"**{text}**")
+
+
+def _inline(kind, text: str) -> Block:
+    shown = text.strip()
+    line = f"* {text}" if kind == "bullet" else text
+    return Block(kind, inline_runs(shown) if shown else (), line)
+
+
+def _header(title: str, tail: str) -> Block:
+    """A role, project or degree header: bold title, then the rest; a tab
+    reaches the template's right tab stop."""
+    rest = tail.rstrip()
+    runs = (Run(title.strip(), bold=True), *(inline_runs(rest) if rest else ()))
+    return Block("header", runs, f"**{title}**{tail}")
+
+
 @dataclass
 class Built:
-    markdown: str
+    blocks: list[Block]
     trace: list[str] = field(default_factory=list)
     problems: list[Problem] = field(default_factory=list)
     swapped: list[str] = field(default_factory=list)  # --final fallbacks taken
     warnings: list[dict] = field(default_factory=list)  # `warn` lint hits; never block
+
+    @property
+    def markdown(self) -> str:
+        """The blocks as markdown: trace.md line numbers and the judge packet."""
+        return "\n\n".join(b.line for b in self.blocks).rstrip() + "\n"
 
 
 def baseline_plan(src: Sources, lane: str) -> dict:
@@ -628,10 +696,13 @@ def build(
         if rendered:
             skill_lines.append((label, rendered))
 
-    # --- markdown + trace
-    md, trace = _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines)
-    trace += _keyword_trace(md, keywords)
-    return Built(markdown=md, trace=trace, problems=problems, swapped=swapped, warnings=warnings)
+    # --- blocks + trace
+    blocks, trace = _render(
+        src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines
+    )
+    built = Built(blocks=blocks, trace=trace, problems=problems, swapped=swapped, warnings=warnings)
+    built.trace += _keyword_trace(built.markdown, keywords)
+    return built
 
 
 def lint_warning(where: str, v: lint.Violation) -> dict:
@@ -651,42 +722,49 @@ def context_text(src: Sources) -> str:
 def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines):
     r = src.resume
     v = verticals.get_config().verticals[lane]
-    lines: list[str] = []
+    blocks: list[Block] = []
     trace: list[str] = []
 
-    def add(line: str, source: str = "", how: str = "", extra: list[str] | None = None) -> None:
-        lines.append(line)
-        lines.append("")
+    def add(block: Block, source: str = "", how: str = "", extra: list[str] | None = None) -> None:
+        blocks.append(block)
         if source:
-            trace.append(f"L{len(lines) - 1} source={source} transformation={how}")
+            trace.append(f"L{2 * len(blocks) - 1} source={source} transformation={how}")
             trace.extend(extra or [])
 
-    add(f"**{r['name']}**")
+    add(_plain("name", r["name"]))
     add(
-        " | ".join(
-            f"[{c['text']}]({c['url']})" if c.get("url") else c["text"] for c in r["contact"]
+        _inline(
+            "body",
+            " | ".join(
+                f"[{c['text']}]({c['url']})" if c.get("url") else c["text"] for c in r["contact"]
+            ),
         )
     )
     for section in v.resume.sections:
-        add(f"**{SECTION_TITLES[section]}**")
+        add(_plain("section", SECTION_TITLES[section]))
         if section == "summary":
-            add(s_text, "summary", s_source, [f"  uses: {s_uses}"] if s_uses else [])
+            add(
+                _inline("body", s_text),
+                "summary",
+                s_source,
+                [f"  uses: {s_uses}"] if s_uses else [],
+            )
         elif section in ("work", "projects"):
             for ctx in order:
                 c = src.contexts[ctx]
                 if c["section"] != section:
                     continue
                 if section == "work":
-                    add(f"**{c['title']}** - {c['org']}\t{c['location']} | {c['dates']}")
+                    add(_header(c["title"], f" - {c['org']}\t{c['location']} | {c['dates']}"))
                 else:
                     sub = f" - {c['subtitle']}" if c.get("subtitle") else ""
-                    add(f"**{c['title']}**{sub}\t{c['dates']}")
+                    add(_header(c["title"], f"{sub}\t{c['dates']}"))
                 for bid in sorted(
                     (b for b in chosen if src.context_of(b) == ctx), key=_canonical_key
                 ):
                     if bid in rewordings:
                         add(
-                            f"* {chosen[bid]}",
+                            _inline("bullet", chosen[bid]),
                             bid,
                             "rephrase",
                             [
@@ -695,20 +773,20 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
                             ],
                         )
                     else:
-                        add(f"* {chosen[bid]}", bid, "unchanged")
+                        add(_inline("bullet", chosen[bid]), bid, "unchanged")
         elif section == "education":
             for e in r.get("education") or []:
-                add(f"**{e['degree']}**\t{e['dates']}")
+                add(_header(e["degree"], f"\t{e['dates']}"))
                 if e.get("detail"):
-                    add(e["detail"])
+                    add(_inline("body", e["detail"]))
         elif section == "skills":
             for label, items in skill_lines:
                 add(
-                    f"**{label}:** " + ", ".join(t for _, t in items),
+                    _inline("body", f"**{label}:** " + ", ".join(t for _, t in items)),
                     ",".join(s for s, _ in items),
                     "skills",
                 )
-    return "\n".join(lines).rstrip() + "\n", trace
+    return blocks, trace
 
 
 def _keyword_trace(md: str, keywords: tuple[str, ...]) -> list[str]:

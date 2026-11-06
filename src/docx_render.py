@@ -4,8 +4,8 @@ Determinism boundary (R7): no LLM calls.
 
 render_resume uses templated paragraph styles only: the template
 (profile/resume_template.docx) defines the visual formatting, and this module
-creates paragraphs in the right styles from the markdown. The template MUST
-define these 5 named paragraph styles:
+writes resume_model's typed blocks as paragraphs in the matching styles. The
+template MUST define these 5 named paragraph styles:
   - Resume Name        (the name at top)
   - Resume Section     (SUMMARY / WORK EXPERIENCE / EDUCATION / ...)
   - Resume Job Header  (role / degree / project headers; bold via inline runs)
@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
@@ -34,6 +35,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+from src.resume_model import Block
 from src.shared import paths
 from src.shared.parquet_io import locked
 
@@ -45,7 +47,7 @@ REQUIRED_STYLES = [
     "Resume Bullet",
 ]
 
-# Required character-type style for clickable [text](url) markdown.
+# Required character-type style for clickable link runs.
 REQUIRED_CHARACTER_STYLE = "Hyperlink"
 
 
@@ -57,21 +59,13 @@ class TemplateError(ValueError):
     """Template exists but violates the docx_render contract."""
 
 
-class ResumeContentError(ValueError):
-    """Resume markdown violates a render contract the template depends on."""
-
-
-class Run(TypedDict, total=False):
-    text: str
-    bold: bool
-    url: str  # optional; when set, emit as a Word hyperlink (clickable,
-    # Hyperlink character style applied for blue+underline)
-
-
-class Block(TypedDict, total=False):
-    type: str  # "name" | "section_header" | "job_header" | "body" | "bullet"
-    text: str
-    runs: list[Run]
+STYLE_OF = {
+    "name": "Resume Name",
+    "section": "Resume Section",
+    "header": "Resume Job Header",
+    "body": "Resume Body",
+    "bullet": "Resume Bullet",
+}
 
 
 # =====================================================================
@@ -79,8 +73,8 @@ class Block(TypedDict, total=False):
 # =====================================================================
 
 
-def render_resume(md_content: str, template_path: Path, out_path: Path) -> None:
-    """Render resume markdown to an ATS-clean docx using the template.
+def render_resume(blocks: Sequence[Block], template_path: Path, out_path: Path) -> None:
+    """Render resume blocks to an ATS-clean docx using the template.
     Fail loud on missing template / missing required styles / forbidden
     template elements (tables, inline shapes)."""
     if not template_path.exists():
@@ -92,91 +86,9 @@ def render_resume(md_content: str, template_path: Path, out_path: Path) -> None:
     doc = Document(str(template_path))
     _validate_template(doc, template_path)
     _clear_body(doc)
-    blocks = parse_resume_md(md_content)
     _write_blocks(doc, blocks)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
-
-
-def parse_resume_md(md: str) -> list[Block]:
-    """Parse the markdown resume_model.build emits into typed blocks.
-
-      **Name**                          -> name (first such line only)
-      **SECTION NAME**                  -> section_header (all-caps content)
-      **Bold Prefix** rest of line      -> job_header
-      * bullet                          -> bullet
-      anything else (non-blank)         -> body
-
-    Inline **bold** runs are split for body / bullet / job_header blocks."""
-    blocks: list[Block] = []
-    seen_name = False
-    for raw in md.split("\n"):
-        line = raw.strip()
-        if not line:
-            continue
-        if not seen_name:
-            m = re.fullmatch(r"\*\*(.+?)\*\*", line)
-            if m:
-                blocks.append({"type": "name", "text": m.group(1).strip()})
-                seen_name = True
-                continue
-        # Bullet
-        if line.startswith("* "):
-            body = line[2:].strip()
-            blocks.append(
-                {
-                    "type": "bullet",
-                    "text": body,
-                    "runs": _inline_runs(body),
-                }
-            )
-            continue
-        # Section header: a line that is entirely **ALL CAPS WORDS**
-        m = re.fullmatch(r"\*\*([A-Z][A-Z0-9 &/]*[A-Z])\*\*", line)
-        if m:
-            blocks.append({"type": "section_header", "text": m.group(1).strip()})
-            continue
-        # A line that is only bold but not a section header, or a bold prefix
-        # with its colon outside the bold, would silently render as the wrong
-        # block type. Refuse it instead.
-        if re.fullmatch(r"\*\*[^*]+\*\*:?", line) or re.match(r"\*\*[^*]+\*\*:", line):
-            raise ResumeContentError(
-                f"ERROR: {line!r} is neither a section header (**ALL CAPS**), a "
-                f"job header (**Title** text), nor a skills line (**Label:** items)."
-            )
-        # Lines starting with **...** followed by more content:
-        # - Skills lines whose bold prefix ends with ":" route to body
-        #   (e.g. "**Programming:** Python, ..." -> Resume Body w/ inline bold).
-        # - Everything else routes to job_header (role / degree / project headers).
-        m = re.match(r"\*\*(.+?)\*\*(.*)", line)
-        if m and m.group(2).strip():
-            bold_prefix = m.group(1).strip()
-            if bold_prefix.endswith(":"):
-                blocks.append(
-                    {
-                        "type": "body",
-                        "text": line,
-                        "runs": _inline_runs(line),
-                    }
-                )
-                continue
-            runs: list[Run] = [
-                {"text": bold_prefix, "bold": True},
-            ]
-            tail = m.group(2)
-            if tail:
-                runs.extend(_inline_runs(tail))
-            blocks.append({"type": "job_header", "text": line, "runs": runs})
-            continue
-        # Plain body (may contain inline bold)
-        blocks.append(
-            {
-                "type": "body",
-                "text": line,
-                "runs": _inline_runs(line),
-            }
-        )
-    return blocks
 
 
 # =====================================================================
@@ -190,7 +102,7 @@ def _validate_template(doc, path: Path) -> None:
     if missing:
         raise TemplateError(
             f"Template {path} missing required paragraph styles: {missing}. "
-            f"Each maps to a markdown block type — define them in Word's Styles "
+            f"Each maps to a resume block type — define them in Word's Styles "
             f"panel. Required set: {REQUIRED_STYLES}"
         )
     if REQUIRED_CHARACTER_STYLE not in style_names:
@@ -219,11 +131,10 @@ def _clear_body(doc) -> None:
         elem.getparent().remove(elem)
 
 
-def _write_blocks(doc, blocks: list[Block]) -> None:
+def _write_blocks(doc, blocks: Sequence[Block]) -> None:
     """Write blocks to the doc body.
 
-    Two layout rules applied here (kept here vs in parse_resume_md so the
-    markdown shape stays inspection-friendly):
+    Two layout rules applied here:
 
     1. The first body block immediately after the name block is the contact
        line. Force-center it via WD_ALIGN_PARAGRAPH.CENTER on just that
@@ -234,41 +145,18 @@ def _write_blocks(doc, blocks: list[Block]) -> None:
        add_run("\\t") is emitted between the pieces so Word's layout engine
        advances to the paragraph style's next tab stop. Resume Job Header
        carries a right tab stop at 19.05 cm -- this is what right-aligns
-       the date on "**Title** ... <TAB> Date" job-header lines.
+       the date on "Title ... <TAB> Date" header lines.
     """
     name_just_emitted = False
     for block in blocks:
-        btype = block["type"]
-        if btype == "name":
-            p = doc.add_paragraph(style="Resume Name")
-            p.add_run(block["text"])
-            name_just_emitted = True
+        if not block.runs:
             continue
-        if btype == "section_header":
-            p = doc.add_paragraph(style="Resume Section")
-            p.add_run(block["text"])
-            name_just_emitted = False
-            continue
-        style_map = {
-            "job_header": "Resume Job Header",
-            "body": "Resume Body",
-            "bullet": "Resume Bullet",
-        }
-        if btype not in style_map:
-            raise ValueError(f"Unknown block type: {btype}")
-        p = doc.add_paragraph(style=style_map[btype])
-        is_contact = btype == "body" and name_just_emitted
-        if is_contact:
+        p = doc.add_paragraph(style=STYLE_OF[block.kind])
+        if block.kind == "body" and name_just_emitted:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        runs = block.get("runs") or [{"text": block["text"], "bold": False}]
-        for r in runs:
-            _emit_run_splitting_tabs(
-                p,
-                r["text"],
-                bold=bool(r.get("bold")),
-                url=r.get("url"),
-            )
-        name_just_emitted = False
+        for r in block.runs:
+            _emit_run_splitting_tabs(p, r.text, bold=r.bold, url=r.url)
+        name_just_emitted = block.kind == "name"
 
 
 def _emit_run_splitting_tabs(paragraph, text: str, *, bold: bool, url: str | None = None) -> None:
@@ -319,40 +207,6 @@ def _add_hyperlink(paragraph, text: str, url: str) -> None:
     new_run.append(t)
     hyperlink.append(new_run)
     paragraph._p.append(hyperlink)
-
-
-_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
-_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-
-
-def _inline_runs(text: str) -> list[Run]:
-    """Split text into runs at **bold** and [text](url) boundaries.
-
-    Plain text becomes plain runs; **x** becomes a bold run; [t](u) becomes a link run (bold
-    inside a link or a link inside bold are NOT supported -- if a
-    bold span and a link span overlap, whichever started earlier wins and
-    the later overlapping match is dropped)."""
-    matches: list[tuple[int, int, Run]] = []
-    for m in _BOLD_RE.finditer(text):
-        matches.append((m.start(), m.end(), {"text": m.group(1), "bold": True}))
-    for m in _LINK_RE.finditer(text):
-        matches.append((m.start(), m.end(), {"text": m.group(1), "bold": False, "url": m.group(2)}))
-    matches.sort(key=lambda x: x[0])
-
-    runs: list[Run] = []
-    pos = 0
-    for start, end, run in matches:
-        if start < pos:
-            continue  # overlap with a prior match; drop
-        if start > pos:
-            runs.append({"text": text[pos:start], "bold": False})
-        runs.append(run)
-        pos = end
-    if pos < len(text):
-        runs.append({"text": text[pos:], "bold": False})
-    if not runs:
-        runs.append({"text": text, "bold": False})
-    return runs
 
 
 # =====================================================================

@@ -50,7 +50,7 @@ from src import lint, resume_model, score_store, session_schema, state_io, track
 from src.apply import ledger
 from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
-from src.docx_render import ResumeContentError, TemplateError, export_pdf, render_resume
+from src.docx_render import TemplateError, export_pdf, render_resume
 from src.session_schema import ProblemCode
 from src.shared import clock, config_schema, paths, verticals
 
@@ -331,8 +331,8 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
 
     docx = folder / f"{info['file_slug']}_Resume.docx"
     try:
-        render_resume(built.markdown, paths.PROFILE / "resume_template.docx", docx)
-    except (TemplateError, ResumeContentError, FileNotFoundError) as exc:
+        render_resume(built.blocks, paths.PROFILE / "resume_template.docx", docx)
+    except (TemplateError, FileNotFoundError) as exc:
         raise AppError(str(exc)) from exc
     pdf = export_pdf(docx, folder.name)
     if pdf["status"] == "ok" and pdf["pages"] > 1:

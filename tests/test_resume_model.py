@@ -295,6 +295,19 @@ def test_keyword_coverage_is_traced(world):
     assert any(t.startswith("- SQL: L") for t in built.trace)
 
 
+def test_a_summary_that_looks_like_a_header_stays_a_body_paragraph(world):
+    """The renderer once guessed block types from markdown, so a summary opening
+    in bold became a job header."""
+    src = resume_model.load_sources()
+    text = "**Widget** reporting owner."
+    built = resume_model.build(
+        src, "example_primary", _plan(src, "example_primary", summary={"text": text})
+    )
+    assert built.problems == []
+    (block,) = [b for b in built.blocks if b.line == text]
+    assert block.kind == "body" and block.runs[0] == resume_model.Run("Widget", bold=True)
+
+
 def test_baseline_orders_contexts_by_the_lane_order(world):
     tmp, _ = world
     _edit(

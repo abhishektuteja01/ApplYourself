@@ -266,9 +266,12 @@ class TestResumeTemplateContract:
         a new clone actually has."""
         from src import resume_model
 
-        md = resume_model.baseline_markdown("example_primary")
+        src = resume_model.load_sources()
+        built = resume_model.build(
+            src, "example_primary", resume_model.baseline_plan(src, "example_primary")
+        )
         out = tmp_path / "resume.docx"
-        render_resume(md, RESUME_TEMPLATE, out)
+        render_resume(built.blocks, RESUME_TEMPLATE, out)
         doc = Document(str(out))
         used = {p.style.name for p in doc.paragraphs}
         assert used <= set(REQUIRED_STYLES), f"unexpected styles rendered: {used}"
@@ -281,7 +284,13 @@ class TestResumeTemplateContract:
         out = tmp_path / "resume.docx"
         # Deliberately shares no string with APPROVED_RESUME_TEXT, or the input
         # itself would trip the assertion below.
-        render_resume("**Real Name**\n\nMetropolis, ZZ", RESUME_TEMPLATE, out)
+        from src import resume_model
+
+        blocks = [
+            resume_model.Block("name", (resume_model.Run("Real Name"),), "**Real Name**"),
+            resume_model.Block("body", (resume_model.Run("Metropolis, ZZ"),), "Metropolis, ZZ"),
+        ]
+        render_resume(blocks, RESUME_TEMPLATE, out)
         rendered = _document_text(out)
         assert not (rendered & APPROVED_RESUME_TEXT), (
             f"template demo text leaked into the rendered resume: "
