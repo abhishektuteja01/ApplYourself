@@ -255,7 +255,7 @@ def test_run_saves_known_new_and_page_read_rows(monkeypatch, cfg, tmp_path, feed
     monkeypatch.setattr(
         stapply.http_client, "fetch_page", lambda url: (200, _page("<p>" + JD + "</p>"))
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     known = {"greenhouse|1": {"updated_at": ""}}
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path, known)
     lane.prepare(crawl)
@@ -277,7 +277,7 @@ def test_a_page_with_no_job_posting_block_leaves_the_row_out(monkeypatch, cfg, t
     monkeypatch.setattr(
         stapply.http_client, "fetch_page", lambda url: (200, "<html>app shell</html>")
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
     lane.prepare(crawl)
     stats = lane.run(crawl)
@@ -322,7 +322,7 @@ def test_a_site_whose_pages_never_read_is_given_up_for_the_night(monkeypatch, cf
         return 200, _page("<p>" + JD + "</p>") if "good" in url else "<html></html>"
 
     monkeypatch.setattr(stapply.http_client, "fetch_page", fetch)
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     stats = lane.run(crawl)
     assert sum("dead" in c for c in calls) == stapply.MAX_HOST_FAILURES
@@ -384,7 +384,7 @@ def test_a_slug_company_is_named_from_its_page_once(monkeypatch, cfg, tmp_path):
         "fetch_page",
         lambda url: calls.append(url) or (200, _employer_page("Lennox International")),
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     lane.run(crawl)
     [saved] = crawl.batch.rows.values()
@@ -411,7 +411,7 @@ def test_one_page_read_gives_both_the_jd_and_the_name(monkeypatch, cfg, tmp_path
             calls.append(url) or (200, _employer_page("Lennox International", "<p>" + JD + "</p>"))
         ),
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     lane.run(crawl)
     [saved] = crawl.batch.rows.values()
@@ -445,7 +445,7 @@ def test_a_page_with_no_employer_leaves_the_name(monkeypatch, cfg, tmp_path):
         company="obyteshr",
     )
     monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, "<html></html>"))
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     lane.run(crawl)
     [saved] = crawl.batch.rows.values()
@@ -463,7 +463,7 @@ def test_giving_up_counts_a_whole_site_not_one_subdomain(monkeypatch, cfg, tmp_p
     monkeypatch.setattr(
         stapply.http_client, "fetch_page", lambda url: calls.append(url) or (200, "")
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     stats = lane.run(crawl)
     assert len(calls) == stapply.MAX_HOST_FAILURES and len(crawl.batch.rows) == len(rows)
@@ -498,7 +498,7 @@ def test_an_oracle_row_reads_its_jd_from_the_requisition_api(monkeypatch, cfg, t
             }
         ),
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     lane.run(crawl)
     [saved] = crawl.batch.rows.values()
@@ -522,7 +522,7 @@ def test_a_tenant_coded_oracle_company_is_named_from_its_site_once(monkeypatch, 
         "fetch_page",
         lambda url: calls.append(url) or (200, _site_page("American Express")),
     )
-    monkeypatch.setattr(stapply.time, "sleep", lambda s: None)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
     lane.run(crawl)
     assert calls == ["https://egug.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1"]

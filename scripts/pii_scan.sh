@@ -43,6 +43,7 @@ allowlist=(
   LICENSE
   "$example"
   data/universe/boards.csv
+  data/universe/boards_retired.csv
   profile/resume_template.example.docx
   profile/cover_letter_template.example.docx
   docs/media/main.gif

@@ -21,7 +21,7 @@ import pandas as pd
 from src.discovery import parse
 from src.discovery.dedupe import NO_TRIM, Trim, _Index
 from src.shared import identity, paths, schemas
-from src.shared.job_boards import board_slug, detect_source
+from src.shared.job_boards import board_key
 from src.shared.parquet_io import locked, schema_version, write_parquet
 
 log = logging.getLogger(__name__)
@@ -182,8 +182,7 @@ def make_posting(**fields) -> dict:
     row["title_normalized"] = identity.normalize_title(row["title"])
     if not row["board"]:
         # The url's own ATS, so one board is one board whichever lane found it.
-        hit = board_slug(key_url)
-        row["board"] = f"{detect_source(key_url)}|{hit.lower()}" if hit else ""
+        row["board"] = board_key(key_url, tenant_only=True)
     return row
 
 

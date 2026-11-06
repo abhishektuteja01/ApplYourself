@@ -26,7 +26,7 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   real messages they actually sent; polished samples sound like nobody.
   `contacts.yaml` is optional alongside it. `--with-optional` copies both, plus
   the denylist. A board they care about that `data/universe/boards.csv` lacks
-  goes in that file as `ats,name,slug,active` (`name` must match how boards
+  goes in that file as `ats,name,slug` (`name` must match how boards
   spell it, because it feeds `job_id`).
 - **Restyling the two Word templates.** The resume body is rebuilt, but headers,
   footers and text boxes survive onto every resume — keep name and contact out of

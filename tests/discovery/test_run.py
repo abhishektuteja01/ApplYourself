@@ -61,7 +61,7 @@ def test_search_gates_touches_known_and_fetches_new_details(monkeypatch, cfg):
     monkeypatch.setattr(Q.time, "sleep", lambda s: None)
 
     class Client:
-        def _get_job_details(self, job_id):
+        def fetch(self, job_id):
             return {"description": JD}
 
     monkeypatch.setattr(Q, "_detail_client", lambda tally: Client())
@@ -443,3 +443,72 @@ def test_ingest_reads_a_pages_job_posting_block_first(monkeypatch):
     )
     monkeypatch.setattr(ingest_url.http, "fetch_page", lambda url: (200, "<p>Plain page JD.</p>"))
     assert ingest_url.fetch_page_text("https://example.com/job") == "Plain page JD."
+
+
+_CARD = (
+    '<div class="base-search-card"><a class="base-card__full-link" '
+    'href="https://www.linkedin.com/jobs/view/widget-platform-analyst-{id}?trk=x"></a>'
+    '<span class="sr-only">Widget Platform Analyst</span>'
+    '<h4 class="base-search-card__subtitle"><a href="https://x.example/c">Beta</a></h4></div>'
+)
+
+
+@pytest.mark.filterwarnings("ignore:The `dict` method is deprecated")
+@pytest.mark.filterwarnings("ignore:The 'text' argument to find")
+def test_linkedin_sends_the_recorded_requests(monkeypatch, cfg):
+    """The jobspy internals the LinkedIn lane leans on, pinned by what goes on
+    the wire: search params, detail urls, retry budgets and waits."""
+    import random
+
+    import requests
+    from requests.adapters import HTTPAdapter
+
+    from src.shared import http_client as http
+
+    sent, waits = [], []
+    pages = iter([_CARD.format(id=41), ""])
+
+    def send(self, request, **kwargs):
+        sent.append((request.url, self.max_retries.total))
+        r = requests.Response()
+        r.status_code, r.url, r.request = 200, request.url, request
+        detail = "/jobs/view/" in request.url
+        body = f'<div class="show-more-less-html__markup"><p>{JD}</p></div>' if detail else ""
+        r._content = (body if detail else next(pages)).encode()
+        return r
+
+    monkeypatch.setattr(HTTPAdapter, "send", send)
+    monkeypatch.setattr(Q.time, "sleep", waits.append)
+    monkeypatch.setattr(random, "uniform", lambda lo, hi: waits.append(("uniform", lo, hi)) or hi)
+    monkeypatch.setattr(
+        Q, "build_queries", lambda *a: [("v", "widget analyst", "United States", False, None)]
+    )
+    crawl = Crawl(cfg)
+    src = crawl.cfg.sources["linkedin"]
+    src.results_wanted, src.page_delay_seconds, src.page_delay_band_seconds = 2, 2.0, 1.0
+    tally = http.HttpTally()
+    stats = Q.SearchLane("linkedin").run(crawl, tally=tally)
+    search = (
+        "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
+        "keywords=widget+analyst&location=United+States&distance=50&pageNum=0&start={}"
+        "&f_TPR=r1209600"
+    )
+    # jobspy's search session keeps its own retry budget; the detail one has ours.
+    assert sent == [
+        (search.format(0), 3),
+        (search.format(1), 3),
+        ("https://www.linkedin.com/jobs/view/41", 1),
+    ]
+    assert waits == [("uniform", 2.0, 3.0), 3.0, ("uniform", 0.0, 0.5), 1.5]
+    assert stats.errors == [] and stats.detail_ok == 1
+    assert crawl.batch.rows["linkedin|41"]["jd_text"].strip()
+
+
+def test_jobspy_still_has_the_names_the_linkedin_lane_uses():
+    import jobspy
+    from jobspy.linkedin import LinkedIn
+
+    assert jobspy.LinkedIn is LinkedIn
+    assert isinstance(LinkedIn.delay, int | float) and isinstance(LinkedIn.band_delay, int | float)
+    assert callable(LinkedIn._get_job_details)
+    assert "https://" in LinkedIn().session.adapters
