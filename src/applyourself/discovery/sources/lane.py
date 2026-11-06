@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+DROP_SAMPLES = 3
+
 
 @dataclass
 class LaneStats:
@@ -33,6 +35,15 @@ class LaneStats:
     truncated: bool = False
     notes: list[str] = field(default_factory=list)
     capped: list[str] = field(default_factory=list)  # queries that hit results_wanted
+    drops: dict[str, int] = field(default_factory=dict)  # title-gate drops per reason
+    drop_samples: dict[str, list[str]] = field(default_factory=dict)
+
+    def drop(self, reason: str, title: str) -> None:
+        """Count one title-gate drop, keeping its first few titles as samples."""
+        self.drops[reason] = self.drops.get(reason, 0) + 1
+        samples = self.drop_samples.setdefault(reason, [])
+        if len(samples) < DROP_SAMPLES and title not in samples:
+            samples.append(title)
 
 
 class Lane:

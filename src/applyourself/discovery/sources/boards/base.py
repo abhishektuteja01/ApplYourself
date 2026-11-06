@@ -288,7 +288,7 @@ class Crawl:
             return out
 
     def record_listing(
-        self, source: str, title: str, vertical: str, passed: bool, key: str
+        self, source: str, title: str, vertical: str, passed: bool, key: str, reason: str = ""
     ) -> None:
         """One classified listing for tonight's debug shard."""
         with self._lock:
@@ -299,6 +299,7 @@ class Crawl:
                     "vertical": vertical,
                     "passed": passed,
                     "posting_key": key,
+                    "reason": reason,
                 }
             )
 
@@ -428,8 +429,11 @@ class BoardLane(Lane):
         key = posting["posting_key"]
         if vertical:
             stats.classified += 1
-            crawl.record_listing(self.name, posting["title"], vertical, verdict.passes, key)
+            crawl.record_listing(
+                self.name, posting["title"], vertical, verdict.passes, key, verdict.reason
+            )
         if not verdict.passes:
+            stats.drop(verdict.reason, posting["title"])
             return
         posting["vertical"] = vertical
         stats.passed += 1

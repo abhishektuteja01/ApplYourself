@@ -280,6 +280,19 @@ def render_md(report: dict) -> str:
         ]
     lines += ["", "## Clean view", ""]
     lines += [f"- {k}: {v}" for k, v in report["view"].items()]
+    drops = [(n, lane) for n, lane in report["lanes"].items() if lane.get("drops")]
+    if drops:
+        lines += [
+            "",
+            "## Title gate drops",
+            "",
+            "| lane | reason | count | e.g. |",
+            "|---|---|---|---|",
+        ]
+        for name, lane in drops:
+            for reason, n in sorted(lane["drops"].items(), key=lambda kv: (-kv[1], kv[0])):
+                eg = "; ".join(lane.get("drop_samples", {}).get(reason, []))
+                lines.append(f"| {name} | {reason} | {n} | {eg.replace('|', '/')} |")
     for name, lane in report["lanes"].items():
         if lane.get("crash") or lane.get("errors") or lane.get("notes"):
             lines += ["", f"### {name}", ""]

@@ -268,8 +268,11 @@ class SearchLane(Lane):
         verdict = title_gate.lane_for(posting["title"], posting["vertical"], self.name, crawl.vcfg)
         stats.classified += bool(verdict.lane)
         if verdict.lane or posting["vertical"]:
-            crawl.record_listing(self.name, posting["title"], verdict.lane, verdict.passes, key)
+            crawl.record_listing(
+                self.name, posting["title"], verdict.lane, verdict.passes, key, verdict.reason
+            )
         if not verdict.passes:
+            stats.drop(verdict.reason, posting["title"])
             return
         posting["vertical"] = verdict.lane
         stats.passed += 1

@@ -229,6 +229,8 @@ class StapplyLane(Lane):
                 keep.append(v.passes)
                 if v.passes:
                     verticals.append(v.lane)
+                else:
+                    self.stats.drop(v.reason, t or "")
                 if v.lane:
                     self.stats.classified += 1
             if not any(keep):

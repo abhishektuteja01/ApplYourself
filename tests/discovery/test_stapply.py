@@ -116,6 +116,9 @@ def test_only_rows_that_pass_the_title_gate_are_kept(cfg, tmp_path, feed):
     lane, _ = read(cfg, tmp_path, feed)
     assert lane.stats.listed == 6
     assert [r["title"] for r in lane.rows] == ["Cog Engineer"] * 4
+    # every drop is counted with its reason and a sample title, not stored
+    assert lane.stats.drops == {"no_lane": 2}
+    assert lane.stats.drop_samples == {"no_lane": ["Barista", "Store Manager"]}
 
 
 def test_a_known_board_keeps_our_name_and_a_placeholder_is_no_company(cfg, tmp_path, feed):

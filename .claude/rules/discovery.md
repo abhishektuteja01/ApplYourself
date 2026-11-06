@@ -24,8 +24,8 @@ paths:
 `jobs/runs/<run_id>.json` + `.md`. `clean.parquet` is the only discovery output
 anything downstream reads, apart from `jobs/maybe_duplicates.jsonl` (see the
 store), which only `summary` and `app dupes` read. `jobs/raw/` holds nightly debug shards (every
-classified listing plus its gate verdict; the feed's passes only), pruned
-after `raw_keep_days`; nothing in the pipeline reads them.
+classified listing plus its gate verdict and drop `reason`; the feed's passes
+only), pruned after `raw_keep_days`; nothing in the pipeline reads them.
 
 ## The title gate (`shared/title_gate.py`)
 
@@ -38,8 +38,9 @@ to the first classifier lane, else to the first lane one of whose terms it
 holds, else is dropped `no_lane`; board and feed rows have no hint. A title
 in a lane passes unless it holds a `title_exclude_terms` word (the global
 list in verticals.yaml `defaults:`, matched as written): `banned: <word>`.
-A manual add, and a stored row whose lane is no longer configured, always
-pass.
+Each lane counts its drops per reason with a few sample titles
+(`LaneStats.drops`, `drop_samples`), and the run report lists them. A manual
+add, and a stored row whose lane is no longer configured, always pass.
 
 ## The store (`store.py`, job_id matching in `dedupe.py`)
 
