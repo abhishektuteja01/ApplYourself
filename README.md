@@ -502,6 +502,7 @@ jobs/scored.staging/            per-lane packets, judge slices and answer files
 jobs/raw/<run_id>.parquet       debug: every classified listing and its gate verdict
 jobs/runs/<run_id>.json + .md   the run report
 data/universe/boards.csv        the board list
+data/universe/boards_retired.csv  spellings retired from it
 shortlist/<date>.md             today's keepers, sectioned by lane
 applications/<vertical>/<dir>/  one directory per tailoring run
 applications/apply_runs/        submission run reports and evidence
@@ -784,7 +785,7 @@ Three behaviors worth knowing:
 - It reads the git **index**, so it only sees tracked files. Run it *after*
   staging, and never put a real pattern in a committed file.
 
-`LICENSE`, the denylist template, `data/universe/boards.csv` and the two example
+`LICENSE`, the denylist template, `data/universe/boards.csv`, `boards_retired.csv` and the two example
 `.docx` are allowlisted in the script by **exact path, never by glob**. MIT
 attribution and vendored company names are supposed to be there. A new universe
 CSV isn't covered until it's added to that list by name.

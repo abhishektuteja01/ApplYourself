@@ -1,7 +1,8 @@
 """The board lanes: which boards to check tonight, and the one loop that
 checks them.
 
-`data/universe/boards.csv` lists the boards as `ats,name,slug,active`. `jobs/boards.parquet` holds
+`data/universe/boards.csv` lists the boards as `ats,name,slug`, and
+`boards_retired.csv` the spellings retired from it. `jobs/boards.parquet` holds
 one row per board: when it was last checked, when it last had a job that
 passed the title gate, and last check's counts. A board is due when
 `every_days` have passed since its last check; due boards run oldest first.
@@ -98,12 +99,16 @@ def load_boards(
 ) -> list[Board]:
     """Every live board, one per (ats, slug) whatever the slug's case.
 
-    `active=0` retires that exact spelling. A board listed in two cases stays
-    live while any spelling is; the first live spelling is the one used."""
+    `boards.csv` is the hand list; a spelling in `boards_retired.csv` (or a
+    row with `active=0`) is retired, and stays retired through a re-add. A
+    board listed in two cases stays live while any spelling is; the first
+    live spelling is the one used, and the last hand-list row the name."""
     boards_dir = Path(boards_dir or paths.UNIVERSE)
     spellings: dict[str, dict[str, bool]] = {}
     names: dict[str, str] = {}
-    for row in _read_csv(boards_dir / "boards.csv"):
+    listed = [(row, False) for row in _read_csv(boards_dir / "boards.csv")]
+    retired_rows = [(row, True) for row in _read_csv(boards_dir / "boards_retired.csv")]
+    for row, from_retired in listed + retired_rows:
         a = (row.get("ats") or "").strip().lower()
         name = (row.get("name") or "").strip()
         slug = (row.get("slug") or "").strip()
@@ -111,8 +116,11 @@ def load_boards(
             continue
         key = key_of(a, slug)
         retired = spellings.setdefault(key, {}).get(slug, False)
-        spellings[key][slug] = retired or (row.get("active") or "").strip() == "0"
-        names[key] = name
+        spellings[key][slug] = retired or from_retired or (row.get("active") or "").strip() == "0"
+        if from_retired:
+            names.setdefault(key, name)
+        else:
+            names[key] = name
     boards = []
     for key, spots in spellings.items():
         live = [s for s, retired in spots.items() if not retired]

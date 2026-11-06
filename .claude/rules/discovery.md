@@ -89,9 +89,11 @@ always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
 
 ## Boards (`sources/boards/base.py`)
 
-`data/universe/boards.csv` is `ats,name,slug,active`, the one board list. One
-board per (ats, slug) whatever the case. `active=0` retires that exact spelling
-and outlives a re-add; the last row wins the name. The name feeds `job_id`.
+`data/universe/boards.csv` is `ats,name,slug`, the one board list, one row per
+(ats, slug) whatever the case. `boards_retired.csv` (same columns) retires
+those exact spellings, and a retirement outlives a re-add; an old-layout
+`active=0` row still retires. The last hand-list row wins the name. The name
+feeds `job_id`.
 
 `jobs/boards.parquet` is one row per board. A board is due when `every_days`
 have passed since `last_checked`; due boards run oldest first. An error leaves

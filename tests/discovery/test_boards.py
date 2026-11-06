@@ -50,6 +50,17 @@ def test_a_tombstone_outlives_a_readd(tmp_path):
     assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 1
 
 
+def test_the_retired_list_outlives_a_readd_and_keeps_the_hand_name(tmp_path):
+    (tmp_path / "boards.csv").write_text(
+        "ats,name,slug\nlever,Fliff,Fliff\nlever,Gone,gone\n", encoding="utf-8"
+    )
+    (tmp_path / "boards_retired.csv").write_text(
+        "ats,name,slug\nlever,fliff old,fliff\nlever,Gone,gone\n", encoding="utf-8"
+    )
+    assert [(b.name, b.slug) for b in B.load_boards(boards_dir=tmp_path)] == [("Fliff", "Fliff")]
+    assert len(B.load_boards(boards_dir=tmp_path, include_retired=True)) == 2
+
+
 def test_unknown_ats_and_blank_rows_are_skipped(tmp_path):
     write(tmp_path / "boards.csv", [("taleo", "X", "x", ""), ("lever", "", "y", "")])
     assert B.load_boards(boards_dir=tmp_path) == []

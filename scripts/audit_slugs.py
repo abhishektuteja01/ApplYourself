@@ -279,7 +279,7 @@ def parse_args(argv):
     p.add_argument(
         "--include-retired",
         action="store_true",
-        help="also probe slugs marked active=0 in the board lists",
+        help="also probe slugs retired in boards_retired.csv",
     )
     p.add_argument("--out", help="output CSV (default jobs/slug_audit_<date>.csv)")
     return p.parse_args(argv)
