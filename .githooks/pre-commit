@@ -58,7 +58,7 @@ if ! uv run python -c "import postal.parser" >/dev/null 2>&1; then
   IGNORE="--ignore=tests/discovery"
 fi
 
-RUNNER=(uv run pytest tests -q -x -n auto)
+RUNNER=(uv run pytest tests -q -x -n 3 --dist loadgroup)
 [ -n "$IGNORE" ] && RUNNER+=("$IGNORE")
 
 OUT="$("${RUNNER[@]}" 2>&1)"

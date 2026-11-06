@@ -14,6 +14,25 @@ FIXTURE_PATH = Path(__file__).parent / "fixtures" / "verticals.yaml"
 REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.yaml"
 
 
+# Tests that load libpostal (~2 GB each process) share one xdist worker.
+_POSTAL_PATHS = (
+    "tests/discovery/",
+    "tests/shared/test_location.py",
+    "tests/test_optional_dependencies.py",
+    "tests/test_onboard_scaffold.py",
+    "tests/apply/test_apply_cli.py",
+    "tests/e2e/",
+)
+
+
+def pytest_collection_modifyitems(config, items):
+    root = Path(str(config.rootpath))
+    for item in items:
+        rel = Path(str(item.path)).relative_to(root).as_posix()
+        if rel.startswith(_POSTAL_PATHS):
+            item.add_marker(pytest.mark.xdist_group("postal"))
+
+
 def pytest_terminal_summary(terminalreporter):
     """Not pytest_report_header: the header is suppressed by -q, and
     `uv run pytest tests -q` is the documented command."""
