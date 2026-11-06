@@ -163,7 +163,7 @@ def update(
     folder is left behind."""
     if not create and not state_path.exists() and fn(None) is None:
         return None
-    with locked(state_path):
+    with locked(state_path, remove=True):
         current = load_state(state_path)
         data = fn(current)
         if data is None:
@@ -347,7 +347,7 @@ def _commit(
         and build(None) is None
     ):
         return None
-    with locked(state_path):
+    with locked(state_path, remove=True):
         current = load_state(state_path)
         healed = False
         if current is None:
@@ -788,7 +788,7 @@ def rebuild_states(pipeline_dir: Path, *, apply: bool) -> list[str]:
             continue
         differ.append(job_id)
         if apply:
-            with locked(p):
+            with locked(p, remove=True):
                 _write_state(p, folded)
     return differ
 
@@ -842,7 +842,7 @@ def iter_states(pipeline_dir: Path) -> Iterator[dict[str, Any]]:
     for job_id in sorted(files.keys() | folded.keys()):
         state_file = files.get(job_id) or state_path_for(pipeline_dir, job_id)
         if job_id not in files:
-            with locked(state_file):
+            with locked(state_file, remove=True):
                 if not state_file.exists():
                     _write_state(state_file, folded[job_id])
         try:

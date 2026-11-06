@@ -56,14 +56,26 @@ def schema_version(path: Path) -> int | None:
 
 
 @contextlib.contextmanager
-def locked(path: Path) -> Iterator[None]:
+def locked(path: Path, *, remove: bool = False) -> Iterator[None]:
     """Exclusive advisory lock on `<path>.lock` for a read-modify-write of
-    path. Blocks until the other writer finishes."""
+    path. Blocks until the other writer finishes. With remove, the lock file
+    is deleted before release; a waiter that then holds a deleted file retries."""
     lock = Path(path).with_name(f".{Path(path).name}.lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
-    with lock.open("w", encoding="utf-8") as f:
+    while True:
+        f = lock.open("w", encoding="utf-8")
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            same = os.stat(lock).st_ino == os.fstat(f.fileno()).st_ino
+        except FileNotFoundError:
+            same = False
+        if same:
+            break
+        f.close()
+    try:
+        yield
+    finally:
+        if remove:
+            lock.unlink(missing_ok=True)
+        fcntl.flock(f, fcntl.LOCK_UN)
+        f.close()

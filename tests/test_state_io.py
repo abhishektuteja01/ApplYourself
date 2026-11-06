@@ -528,6 +528,21 @@ def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
     assert len(data["outreach"]) == 1
 
 
+def test_many_writers_keep_every_update_and_leave_no_lock_file(tmp_path):
+    """Every update survives and the role folder keeps no lock file."""
+    import threading
+
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    transition(p, "saved", initial_fields=_initial())
+    threads = [threading.Thread(target=append_tailored_dir, args=(p, f"d{i}")) for i in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert sorted(load_state(p)["tailored_dirs"]) == sorted(f"d{i}" for i in range(12))
+    assert [x.name for x in p.parent.iterdir()] == ["state.yaml"]
+
+
 # --- R10: only track_cli changes state or appends state events ------------
 
 # Everything that writes `state:` or appends to pipeline/events.jsonl.

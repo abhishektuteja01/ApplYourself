@@ -107,3 +107,36 @@ def test_a_scored_file_from_newer_code_is_refused_and_an_unstamped_one_reads(tmp
     write_parquet(pd.DataFrame({"job_id": ["a"]}), path, schema_version=newer)
     with pytest.raises(ValueError, match="schema version"):
         score_store.read_scored(path)
+
+
+def test_a_waiter_on_a_removed_lock_file_does_not_share_the_lock(tmp_path):
+    """B waits on A's lock file; A removes it on release. B must take the
+    lock on a fresh file, so C still waits for B."""
+    import time
+
+    from src.shared.parquet_io import locked
+
+    path = tmp_path / "state.yaml"
+    a_in, a_go, b_in, b_go, c_in, c_go = (threading.Event() for _ in range(6))
+
+    def hold(entered, go, remove):
+        with locked(path, remove=remove):
+            entered.set()
+            go.wait(5)
+
+    a = threading.Thread(target=hold, args=(a_in, a_go, True))
+    a.start()
+    a_in.wait(5)
+    b = threading.Thread(target=hold, args=(b_in, b_go, True))
+    b.start()
+    time.sleep(0.2)  # B is now blocked on A's file
+    a_go.set()
+    assert b_in.wait(5)
+    c = threading.Thread(target=hold, args=(c_in, c_go, True))
+    c.start()
+    assert not c_in.wait(0.3)
+    b_go.set()
+    assert c_in.wait(5)
+    c_go.set()
+    for t in (a, b, c):
+        t.join(5)
