@@ -12,7 +12,7 @@ import pytest
 from src import score_cli, score_store
 from src.score_filter import SCORING_PATH, CountryRule, load_scoring
 from src.shared import verticals
-from tests.factories import write_clean, write_state
+from tests.factories import scored_rows, write_clean, write_state
 
 NOW = datetime(2026, 9, 27, 12, 0)
 RULE = CountryRule(home=frozenset({"us"}), abroad={"germany": frozenset({"example_secondary"})})
@@ -519,6 +519,39 @@ class TestPrune:
             write_state(env["pipeline"], jid, state)
         assert score_store.prune(env["scored"], env["clean"], env["pipeline"]) == 1
         assert set(_scored(env).index) == {"aaaaaaaa", "bbbbbbbb"}
+
+
+class TestView:
+    def test_legacy_rows_read_as_stored_and_filter_rows_are_not_scores(self, env):
+        legacy = scored_rows(
+            {
+                "job_id": "aaaaaaaa",
+                "fit_score": 77.0,
+                "suggested_action": "tailor",
+                "vertical": "example_primary",
+                "scored_by_model": "score-judge:sonnet",
+            },
+            {"job_id": "bbbbbbbb", "scored_by_model": "filter:years"},
+        ).drop(columns=["judge_answer", "judge_facts"])
+        legacy.to_parquet(env["scored"], index=False)
+        v = score_store.view(env["scored"]).set_index("job_id")
+        old = pd.read_parquet(env["scored"]).set_index("job_id").loc[["aaaaaaaa"]]
+        assert list(v.index) == ["aaaaaaaa"] and v.loc["aaaaaaaa", "basis"] == "legacy"
+        cols = [c for c in old.columns if c in v.columns]
+        pd.testing.assert_frame_equal(v[cols], old[cols], check_dtype=False)
+
+    def test_judged_rows_follow_todays_rules(self, env, scfg):
+        _clean(env, [{"job_id": "aaaaaaaa"}])
+        _start(env, scfg)
+        _write_answers(
+            env, score_store.load_run(env["staging"])["slices"], {"aaaaaaaa": _answer("aaaaaaaa")}
+        )
+        _finish(env, scfg)
+        stricter = dataclasses.replace(scfg, tailor_min=90)
+        row = score_store.view(env["scored"], stricter, RULE).iloc[0]
+        assert row["basis"] == "judged" and row["fit_score"] == 80
+        assert row["suggested_action"] == "manual-review"
+        assert _scored(env).loc["aaaaaaaa", "suggested_action"] == "tailor"
 
 
 class TestCli:

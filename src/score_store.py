@@ -31,6 +31,7 @@ from src.score_filter import (
     ScoringConfig,
     country_allowed,
     drop_reason,
+    load_scoring,
     normalize,
     seniority_cap,
     sponsorship_label,
@@ -55,7 +56,20 @@ SCORED_COLUMNS: list[str] = [
     "suggested_action",
     "scored_at",
     "scored_by_model",
+    "judge_answer",  # JSON: the judge's raw answer; empty on a legacy row
+    "judge_facts",  # JSON: {years, words, contract} read from the JD at start
 ]
+# What view() derives again from judge_answer under today's rules.
+DERIVED_COLUMNS = (
+    "fit_score",
+    "fit_subscores",
+    "sponsorship_label",
+    "sponsorship_evidence",
+    "reasoning",
+    "keywords_to_mirror",
+    "suggested_action",
+)
+VIEW_COLUMNS: list[str] = [c for c in SCORED_COLUMNS if not c.startswith("judge_")] + ["basis"]
 AXIS_MAXIMA = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
 ACTION_RANK = {"skip": 0, "manual-review": 1, "tailor": 2}
 
@@ -85,6 +99,49 @@ def read_scored(scored_path: Path) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = pd.Series(dtype="object")
     return df[SCORED_COLUMNS]
+
+
+def view(
+    scored_path: Path | None = None,
+    cfg: ScoringConfig | None = None,
+    rule: CountryRule | None = None,
+) -> pd.DataFrame:
+    """Every live score, the one way to read scored.parquet. A row holding the
+    judge's raw answer is derived again under today's rules (`basis` judged);
+    an older row keeps its stored score (`basis` legacy). Filter drops are not
+    scores and are left out."""
+    df = read_scored(scored_path or paths.SCORED)
+    df = df[~df["scored_by_model"].astype(str).str.startswith("filter:")].reset_index(drop=True)
+    raw = [isinstance(v, str) and v != "" for v in df["judge_answer"]]
+    basis = ["legacy"] * len(df)
+    if any(raw):
+        cfg = cfg or load_scoring()
+        if rule is None:
+            from src.discovery.config import load_config
+
+            rule = CountryRule.from_discovery(load_config())
+        lanes = verticals.get_config().verticals
+        cols = {c: df[c].astype(object).tolist() for c in DERIVED_COLUMNS}
+        for i, r in enumerate(cast(list[dict[str, Any]], df.to_dict("records"))):
+            lane = lanes.get(r["vertical"])
+            if not raw[i] or lane is None:
+                continue  # a lane no longer configured keeps its stored score
+            d = derive(
+                json.loads(r["judge_answer"]),
+                lane,
+                json.loads(r["judge_facts"]),
+                cfg,
+                rule,
+                r["scored_by_model"],
+                r["scored_at"],
+            )
+            for c in DERIVED_COLUMNS:
+                cols[c][i] = d[c]
+            basis[i] = "judged"
+        df = df.assign(**{c: pd.Series(v, index=df.index, dtype=object) for c, v in cols.items()})
+        df["fit_score"] = df["fit_score"].astype("float64")
+    df["basis"] = basis
+    return df[VIEW_COLUMNS]
 
 
 def merge_rows(scored_path: Path, rows: list[dict[str, Any]]) -> int:
@@ -129,6 +186,8 @@ def _row(
     action: str,
     model: str,
     now: datetime,
+    answer: str = "",
+    facts: str = "",
 ) -> dict[str, Any]:
     return {
         "job_id": job_id,
@@ -142,6 +201,8 @@ def _row(
         "suggested_action": action,
         "scored_at": pd.Timestamp(now),
         "scored_by_model": model,
+        "judge_answer": answer,
+        "judge_facts": facts,
     }
 
 
@@ -578,10 +639,12 @@ def finish(
         if errs:
             bad[name] = errs
             continue
-        rows += [
-            derive(a, lane, meta["facts"][a["job_id"]], cfg, rule, run["model"], now)
-            for a in answer
-        ]
+        for a in answer:
+            facts = meta["facts"][a["job_id"]]
+            row = derive(a, lane, facts, cfg, rule, run["model"], now)
+            row["judge_answer"] = json.dumps(a)
+            row["judge_facts"] = json.dumps({k: facts[k] for k in ("years", "words", "contract")})
+            rows.append(row)
         done.append(name)
     merged = merge_rows(scored_path, rows)
     for name in done:

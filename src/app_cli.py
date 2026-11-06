@@ -41,7 +41,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import lint, resume_model, session_schema, state_io, track_cli
+from src import lint, resume_model, score_store, session_schema, state_io, track_cli
 from src.apply import ledger
 from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
@@ -218,7 +218,7 @@ def _load_row(job_id: str) -> dict:
     if not SCORED.exists():
         raise AppError("jobs/scored.parquet missing — run /score first.")
     clean = pd.read_parquet(CLEAN)
-    scored = pd.read_parquet(SCORED)
+    scored = score_store.view(SCORED)
     c = clean[clean["job_id"] == job_id]
     s = scored[scored["job_id"] == job_id]
     if c.empty:

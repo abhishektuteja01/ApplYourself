@@ -26,6 +26,7 @@ from src import app_cli, state_io, synonyms_cli
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
+from src.score_store import view
 from src.shared import clock, paths
 
 LOGS = paths.REPO_ROOT / "logs"
@@ -656,7 +657,7 @@ def _tonight(rows: list[dict], since: datetime, date_key: str) -> list[dict]:
 def build(run_dir: Path | None, since: datetime) -> str:
     stages = stage_lines(run_dir)
     reports = digest.load_reports()
-    scored = pd.read_parquet(SCORED) if SCORED.exists() else None
+    scored = view(SCORED) if SCORED.exists() else None
     clean = (
         pd.read_parquet(CLEAN, columns=["job_id", "company", "title"])
         if CLEAN.exists()

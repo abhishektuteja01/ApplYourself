@@ -31,6 +31,7 @@ import pandas as pd
 import yaml
 
 from src.resume_model import parse_entries
+from src.score_store import view
 from src.shared import clock, paths
 from src.shared.config_schema import load_automation
 
@@ -107,7 +108,7 @@ def keywords() -> dict:
     skip = {_norm(d["keyword"]) for d in _read_yaml(DECLINED, [])}
     if not ids or not SCORED.exists():
         return {"job_ids": ids, "keywords": []}
-    scored = pd.read_parquet(SCORED)
+    scored = view(SCORED)
     scored = scored[scored["job_id"].isin(ids)]
     company = {}
     if CLEAN.exists():

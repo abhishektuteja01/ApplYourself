@@ -20,8 +20,13 @@ Three steps, one owner per rule:
    (years, country, the JD's sponsorship statements with literal JD quotes),
    keywords, a short reason, and an optional action that may only lower it.
 3. `score finish` (Python): checks each answer against its slice, derives the
-   sponsorship label, caps, tags, total and action, merges, prunes, and writes
-   the shortlist.
+   sponsorship label, caps, tags, total and action, merges (with the raw
+   answer in `judge_answer`), prunes, and writes the shortlist.
+
+Every reader of scored.parquet goes through `score_store.view()`: it derives
+each judged row again from `judge_answer` under today's rules, keeps an older
+row with no raw answer as `basis: legacy` at its stored score, and leaves out
+`filter:*` rows. Never `pd.read_parquet` it for a score.
 
 Do not move a mechanical rule back into a rubric, or judgment into Python. A
 new hard rule goes in `score_filter.py` plus a `profile/` key; a new derived

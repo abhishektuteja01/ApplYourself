@@ -20,7 +20,7 @@ import pandas as pd
 from src import contacts
 from src.apply.detect import is_auto_submittable
 from src.score_filter import ScoringConfig
-from src.score_store import read_scored
+from src.score_store import view
 from src.shared import verticals
 from src.state_io import load_state_index
 
@@ -30,7 +30,7 @@ _JOB_ID_RE = re.compile(r"`([0-9a-f]{8})`")
 def compute(scored_path: Path, clean_path: Path, pipeline_dir: Path, cfg: ScoringConfig) -> dict:
     """{"pipeline": [row...], "lanes": {lane: [row...]}} in display order."""
     names = verticals.get_config().names
-    scored = read_scored(scored_path)
+    scored = view(scored_path, cfg)
     if scored.empty:
         return {"pipeline": [], "lanes": {v: [] for v in names}}
     clean = pd.read_parquet(clean_path).drop(
@@ -155,7 +155,7 @@ def write(
 ) -> tuple[Path, int]:
     """Render and write shortlist/<date_str>.md. Returns (path, lane rows)."""
     result = compute(scored_path, clean_path, pipeline_dir, cfg)
-    n_scored = len(read_scored(scored_path))
+    n_scored = len(view(scored_path, cfg))
     n_clean = len(pd.read_parquet(clean_path, columns=["job_id"]))
     md = render(
         result,

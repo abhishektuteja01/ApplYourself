@@ -65,8 +65,10 @@ class ViewInputs:
 def read_scores(scored_path: Path) -> dict[str, float]:
     if not Path(scored_path).exists():
         return {}
+    from src.score_store import view
+
     try:
-        scored = pd.read_parquet(scored_path, columns=["job_id", "fit_score"])
+        scored = view(Path(scored_path))
     except (OSError, ValueError, KeyError) as e:
         log.warning("could not read %s: %s", scored_path, e)
         return {}

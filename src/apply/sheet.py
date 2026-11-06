@@ -25,6 +25,7 @@ from src import state_io
 from src.app_cli import built_folder
 from src.apply import confirmation, detect, ledger
 from src.score_filter import load_cutoffs
+from src.score_store import view
 from src.shared import paths
 from src.shared.config_schema import load_automation
 
@@ -171,7 +172,7 @@ def _load(table: Path):
 def _candidates(threshold: float, present: set[str], sent: set[str], states: dict) -> list[dict]:
     if not paths.SCORED.exists() or not paths.CLEAN.exists():
         return []
-    scored = pd.read_parquet(paths.SCORED, columns=["job_id", "fit_score"])
+    scored = view(paths.SCORED)[["job_id", "fit_score"]]
     clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "company", "title", "source", "url"])
     rows = scored.merge(clean, on="job_id")
     rows = rows[rows["fit_score"] >= threshold]
@@ -269,7 +270,7 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
     wb, ws, col = _load(table)
     present = {str(ws.cell(row=r, column=col["name"]).value) for r in range(2, ws.max_row + 1)}
     if add:
-        sheet_min = load_cutoffs(paths.PROFILE / "scoring.yaml").sheet
+        sheet_min = load_cutoffs().sheet
         for row in _candidates(float(sheet_min), present, sent_ids, states):
             ws.append([row.get(name, "") for name in sorted(col, key=col.get)])
 
