@@ -27,7 +27,7 @@ def test_each_kind_of_mismatch_is_listed_and_nothing_is_written(capsys):
     paths.STORE.parent.mkdir(parents=True)
     pd.DataFrame({"job_id": ["bbbbbbbb"]}).to_parquet(paths.STORE)
     before = sorted(p for p in paths.root().rglob("*"))
-    assert doctor.main([]) == 1
+    assert doctor.main(["--all"]) == 1
     assert sorted(p for p in paths.root().rglob("*")) == before
     assert capsys.readouterr().out.splitlines() == [
         "dir_missing bbbbbbbb lane/gone_bbbbbbbb",
@@ -35,5 +35,15 @@ def test_each_kind_of_mismatch_is_listed_and_nothing_is_written(capsys):
         "ledger_no_state dddddddd",
         "not_in_store cccccccc",
         "sent_not_applied cccccccc state saved",
-        "5 mismatch(es)",
+        "3 need(s) you",
+        "2 more that do not (--all lists them)",
+    ]
+
+
+def test_a_finished_role_with_no_folder_needs_nothing(capsys):
+    write_state(paths.PIPELINE, "eeeeeeee", "applied", tailored_dirs=["lane/gone_eeeeeeee"])
+    assert doctor.main([]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "nothing needs you",
+        "1 more that do not (--all lists them)",
     ]
