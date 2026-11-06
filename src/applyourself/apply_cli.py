@@ -523,7 +523,7 @@ def _cmd_resolve_urls(args: argparse.Namespace) -> int:
         r
         for r in sheet.queue()
         if r["status"] in apply_url.STATUS.values()
-        and r["name"] not in stored
+        and apply_url.needs_lookup(stored.get(r["name"]))
         and normalize_company(r["company"]) in by_company
     ][: args.limit]
     for r in todo:

@@ -31,6 +31,7 @@ SUBMITTABLE, MANUAL, NO_URL = "submittable", "manual", "no_url"
 STATUS = {MANUAL: "Manual apply", NO_URL: "No apply URL"}
 _LINK_RE = re.compile(r"https?://[^\s<>\"'()\[\]\\]+")
 _AGGREGATORS = ("linkedin", "indeed")  # job sites whose page is a listing, not a posting
+MATCHER = 2  # bump when the title match changes: older stored misses are looked up again
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,35 @@ def list_board(board) -> list[dict]:
     return lane.list_board(board, cast(Any, SimpleNamespace(deadline_ts=None)), lambda: None)
 
 
+def needs_lookup(stored: dict | None) -> bool:
+    """Not stored yet, or a miss from an older title match."""
+    return not stored or (not stored.get("apply_url") and stored.get("matcher") != MATCHER)
+
+
+def _match(postings: list[dict], title: str) -> str:
+    """The posting whose normalized title is the role's, else the one posting
+    whose title differs only in words `titles_differ` ignores; "" if none or several."""
+    from applyourself.discovery.dedupe import titles_differ
+
+    exact = next((p["url"] for p in postings if normalize_title(p["title"]) == title), "")
+    if exact:
+        return exact
+    role = {"title_normalized": title}
+    loose = [
+        p["url"]
+        for p in postings
+        if not titles_differ(
+            role,
+            {
+                "title_normalized": normalize_title(p["title"]),
+                "location_raw": p.get("location_raw", ""),
+            },
+        )
+    ]
+    loose = list(dict.fromkeys(loose))
+    return loose[0] if len(loose) == 1 else ""
+
+
 def find_on_boards(
     rows: list[dict],
     by_company: dict[str, list],
@@ -134,8 +164,9 @@ def find_on_boards(
     pause: float = 1.0,
 ) -> tuple[dict[str, dict], list[str]]:
     """For each row ({job_id, company, title}), the posting on its company's
-    board whose title matches exactly. Returns (job_id -> entry, errors); a
-    checked row with no match gets an entry with an empty `apply_url`."""
+    board whose title matches (`_match`). Returns (job_id -> entry, errors); a
+    checked row with no match gets an entry with an empty `apply_url` and the
+    `matcher` that missed."""
     listed: dict[str, list[dict] | None] = {}
     out: dict[str, dict] = {}
     errors: list[str] = []
@@ -157,12 +188,17 @@ def find_on_boards(
             if postings is None:
                 continue
             tried.append(f"{b.ats} board {b.slug}")
-            hit = next((p["url"] for p in postings if normalize_title(p["title"]) == title), "")
+            hit = _match(postings, title)
             if hit:
                 out[row["job_id"]] = {"apply_url": hit, "via": tried[-1], "checked": today}
                 break
         if not hit and tried:
-            out[row["job_id"]] = {"apply_url": "", "via": ", ".join(tried), "checked": today}
+            out[row["job_id"]] = {
+                "apply_url": "",
+                "via": ", ".join(tried),
+                "checked": today,
+                "matcher": MATCHER,
+            }
     return out, errors
 
 

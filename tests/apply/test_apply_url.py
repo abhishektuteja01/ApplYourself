@@ -74,3 +74,22 @@ def test_the_queue_shows_the_route_and_a_stored_url_reaches_resolve_url(tmp_path
     apply_url.save(found)
     assert apply_cli.resolve_url("aaaa1111", {"url": LI}) == GH
     assert sheet.queue()[0]["status"] == "Resume ready"
+
+
+def test_a_loose_title_match_takes_only_one_posting_and_never_another_level():
+    def found(postings, title="Agent Engineer (Bengaluru)"):
+        rows = [{"job_id": "j", "company": "Acme", "title": title}]
+        board = apply_url.boards_by_company([Board("greenhouse", "Acme", "acme")])
+        return apply_url.find_on_boards(rows, board, fetch=lambda b: postings, pause=0)[0]["j"]
+
+    here = {"title": "Agent Engineer", "url": GH, "location_raw": "Bengaluru, India"}
+    senior = {"title": "Senior Agent Engineer", "url": GH + "1", "location_raw": "Bengaluru"}
+    assert found([here, senior])["apply_url"] == GH
+    assert found([senior])["apply_url"] == ""
+    assert found([here, {**here, "url": GH + "2"}])["apply_url"] == ""
+
+
+def test_an_older_matchers_miss_is_looked_up_again_and_a_hit_never_is():
+    assert apply_url.needs_lookup({"apply_url": "", "via": "greenhouse board acme"})
+    assert not apply_url.needs_lookup({"apply_url": "", "matcher": apply_url.MATCHER})
+    assert not apply_url.needs_lookup({"apply_url": GH})
