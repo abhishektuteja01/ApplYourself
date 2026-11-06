@@ -23,10 +23,17 @@ else
   "$UV" run apply triage --fill ${LIMIT_ARGS[@]+"${LIMIT_ARGS[@]}"} || echo "apply triage failed: every role goes to /apply"
   "$UV" run apply sheet >/dev/null
 fi
-IDS="$("$UV" run apply sheet --list 'Resume ready' | head -n "${STAGE_LIMIT:-100000}")"
-N=$(grep -c . <<< "$IDS"); FAILED=0; DEF=0; STARTED=0
+# `<id> ok|fail` per role a session finished; a rerun after a usage-limit wait goes on from it.
+TRIED="$RUN_DIR/apply_prep.tried"
+[[ "${NIGHT_RERUN:-0}" == 1 ]] || : > "$TRIED"
+touch "$TRIED"
+PRIOR=$(grep -c . "$TRIED" || true); PRIOR=${PRIOR:-0}
+LEFT=$(( ${STAGE_LIMIT:-100000} - PRIOR )); [[ $LEFT -gt 0 ]] || LEFT=0
+IDS="$("$UV" run apply sheet --list 'Resume ready' | grep -vxFf <(cut -d' ' -f1 "$TRIED") | head -n "$LEFT")"
+N=$(grep -c . <<< "$IDS"); DEF=0; STARTED=0
+FAILED=$(grep -c ' fail$' "$TRIED" || true); FAILED=${FAILED:-0}
 CAP="$(night_cap apply_prep_max_per_night)"
-echo "Resume ready: $N (cap ${CAP/#0/none})"
+echo "Resume ready: $N, $PRIOR done in an earlier pass (cap ${CAP/#0/none})"
 
 # What is still unresolved after the session, for summary.md: the plan as JSON,
 # with the drafted answers applied when there are any. No browser.
@@ -40,14 +47,16 @@ snapshot() {
 
 for id in $IDS; do
   # Over the cap or past the usage limit: stays Resume ready for the rerun after the reset, or the next night.
-  if quota_hit || [[ $CAP -gt 0 && $STARTED -ge $CAP ]]; then DEF=$((DEF + 1)); continue; fi
+  if quota_hit || [[ $CAP -gt 0 && $((PRIOR + STARTED)) -ge $CAP ]]; then DEF=$((DEF + 1)); continue; fi
   STARTED=$((STARTED + 1))
   run_claude "$id" "$TOOLS" "/apply $id"; RC=$?
   if [[ $RC -eq 5 ]]; then DEF=$((DEF + 1)); echo "apply $id deferred"
-  elif [[ $RC -ne 0 ]]; then FAILED=$((FAILED + 1)); echo "apply $id failed"; fi
+  elif [[ $RC -ne 0 ]]; then FAILED=$((FAILED + 1)); echo "apply $id failed"; echo "$id fail" >> "$TRIED"
+  else echo "$id ok" >> "$TRIED"; fi
   snapshot "$id"
 done
 [[ "$DRY_RUN" == 1 ]] || "$UV" run apply sheet
+N=$((N + PRIOR))
 DONE=$((N - FAILED - DEF))
 DETAIL="$DONE/$N prepared"; [[ $DEF -gt 0 ]] && DETAIL="$DETAIL, $DEF deferred"
 if [[ "$DRY_RUN" != 1 && $N -gt 0 && $DONE -eq 0 ]]; then stage_end 1 "$DETAIL" fail "$DEF"; exit 1; fi

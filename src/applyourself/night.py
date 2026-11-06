@@ -13,8 +13,9 @@ A night started while another holds logs/night.lock exits 75, touching nothing
 but a `not started` line in logs/pipeline_history.log.
 A stage that hit the claude usage limit waits for the reset the limit message
 names (or polls every settings.yaml `usage_limit_poll_minutes`, doubling) and
-runs again, while the wait ends before `usage_limit_wait_until`; each wait is
-in run.json `waits`. A dry run never waits.
+runs again, while the wait ends before `usage_limit_wait_until` (no key: no
+waits); each wait is in run.json `waits`, each earlier run in the stage's
+`passes`. A dry run never waits.
 
   DRY_RUN=1          same as --dry-run: the stages print what they would run
   STAGE_LIMIT=N      passed to the stages: caps the roles tailor and apply_prep take
@@ -54,12 +55,12 @@ SPEND_CAP = "not run: spend cap"
 FINISH = ("summary", "email")
 DONE = ("ok", "skipped")
 LOCKED = 75
-WAIT_UNTIL = "19:00"  # usage_limit_wait_until when settings.yaml has none
+PASS_KEYS = ("rc", "status", "detail", "start", "end", "seconds")
 POLL_MINUTES = 15  # usage_limit_poll_minutes when settings.yaml has none
 POLL_MAX_DOUBLINGS = 3
 RESET_MARGIN = timedelta(minutes=3)
 RESET = re.compile(
-    r"resets\s+(?:(?P<mon>[a-z]{3})[a-z]*\.?\s+(?P<day>\d{1,2}),?\s+(?:at\s+)?)?"
+    r"resets?\s+(?:at\s+)?(?:(?P<mon>[a-z]{3})[a-z]*\.?\s+(?P<day>\d{1,2}),?\s+(?:at\s+)?)?"
     r"(?P<h>\d{1,2})(?::(?P<m>\d{2}))?\s*(?P<ap>am|pm)\b(?:\s*\((?P<tz>[\w/+-]+)\))?",
     re.I,
 )
@@ -111,8 +112,9 @@ def _spend_cap() -> float | None:
 
 
 def reset_at(text: str, now: datetime) -> datetime | None:
-    """When a usage-limit message says the limit resets, as naive local time
-    after `now`; None when it names no time."""
+    """When a usage-limit message says the limit resets, as naive local time:
+    the first such time after `now` (when the message was written); None when
+    it names no time."""
     if m := EPOCH.search(text):
         return datetime.fromtimestamp(int(m[1]))  # noqa: DTZ006 - naive local, like clock.now
     m = RESET.search(text)
@@ -138,9 +140,12 @@ def reset_at(text: str, now: datetime) -> datetime | None:
 
 
 def _wait_settings() -> tuple[str, int] | None:
-    """(usage_limit_wait_until, usage_limit_poll_minutes); None when settings.yaml is unreadable."""
+    """(usage_limit_wait_until, usage_limit_poll_minutes); None (no waits) when
+    the key is absent or settings.yaml is unreadable."""
     try:
-        until = config_schema.setting("usage_limit_wait_until", WAIT_UNTIL)
+        until = config_schema.setting("usage_limit_wait_until", None)
+        if until is None:
+            return None
         poll = config_schema.setting("usage_limit_poll_minutes", POLL_MINUTES)
         day_time.fromisoformat(str(until))
         if int(poll) < 1:
@@ -213,8 +218,21 @@ class Night:
 
     def stage(self, name: str, again: bool = False) -> dict:
         """Run one stage script. `again` (a rerun after a usage-limit wait) keeps
-        the items and seconds of the earlier run of this stage."""
+        the earlier runs of this stage in `passes`, adds to their items and
+        seconds, and tells the script (NIGHT_RERUN=1) to go on from them."""
         before = dict(self.run["stages"].get(name, {})) if again else {}
+        passes = [
+            *(before.get("passes") or []),
+            *(
+                [
+                    {k: before.get(k) for k in PASS_KEYS}
+                    | {"deferred": (before.get("counts") or {}).get("deferred", 0)}
+                ]
+                if again
+                else []
+            ),
+        ]
+        self.run["stages"].get(name, {}).pop("passes", None)
         script = self.stages_dir / f"{name}.sh"
         if not os.access(script, os.X_OK):
             self.set(name, status="skipped", rc=None, detail="no stage script")
@@ -228,6 +246,9 @@ class Night:
         # APPLY_UNATTENDED: apply run refuses --submit and bank writes (src/applyourself/apply/bank.py)
         env = {**os.environ, "RUN_DIR": str(self.run_dir), "DRY_RUN": "1" if self.dry else "0"}
         env["APPLY_UNATTENDED"] = "1"
+        env.pop("NIGHT_RERUN", None)
+        if again:
+            env["NIGHT_RERUN"] = "1"
         with self.log.open("a", encoding="utf-8") as out:
             rc = subprocess.run(
                 [str(script)], stdout=out, stderr=subprocess.STDOUT, env=env, cwd=paths.REPO_ROOT
@@ -249,6 +270,7 @@ class Night:
             cost_usd=_cost(self.run_dir / f"{name}.cost"),
             usage_limit=quota.is_file(),
             **({"items": items} if items else {}),
+            **({"passes": passes} if passes else {}),
         )
         self.run["cost_usd"] = round(
             sum(st.get("cost_usd") or 0 for st in self.run["stages"].values()), 4
@@ -269,7 +291,8 @@ class Night:
         quota = self.run_dir / f"{name}.quota"
         text = quota.read_text(encoding="utf-8") if quota.is_file() else ""
         now = clock.now()
-        at = reset_at(text, now)
+        written = datetime.fromtimestamp(quota.stat().st_mtime) if text else now  # noqa: DTZ006
+        at = reset_at(text, written)
         if at is not None:
             until, how = max(at, now) + RESET_MARGIN, f"resets {at:%Y-%m-%d %H:%M}"
         else:

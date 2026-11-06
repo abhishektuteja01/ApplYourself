@@ -16,7 +16,7 @@ max_budget_usd_per_call: 10  # spend cap for one claude -p call
 tailor_max_per_night: 0      # most roles /tailor takes a night; the rest wait (0 = no cap)
 apply_prep_max_per_night: 0  # most roles /apply takes a night (0 = no cap)
 # A stage that hits the claude usage limit waits for the reset, then runs again.
-usage_limit_wait_until: "19:00"  # latest local time (quoted HH:MM) a wait may end; keep it before the night's start
+usage_limit_wait_until: "19:00"  # latest local time (quoted HH:MM) a wait may end, before the night's start; absent = no waits
 usage_limit_poll_minutes: 15     # no reset time in the message: retry after this, doubling
 
 # Synonyms stage (/suggest-synonyms --auto).

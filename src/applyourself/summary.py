@@ -158,7 +158,7 @@ def stage_lines(run_dir: Path | None) -> dict[str, dict]:
                     "seconds": st.get("seconds", 0),
                     "status": st["status"],
                     "deferred": (st.get("counts") or {}).get("deferred", 0),
-                    "detail": st.get("detail", ""),
+                    "detail": st.get("detail", "") + _earlier(st.get("passes") or []),
                     "usage_limit": bool(
                         st.get("usage_limit", _old_usage_limit(st.get("detail", "")))
                     ),
@@ -230,14 +230,24 @@ def spend_line(run_dir: Path | None) -> list[str]:
     return [line]
 
 
+def _earlier(passes: list[dict]) -> str:
+    """` (before the usage-limit wait: ...)` for a stage run again after one; "" otherwise."""
+    said = [f"{p.get('detail') or p.get('status')}" for p in passes]
+    return f" (before the usage-limit wait: {'; '.join(said)})" if said else ""
+
+
 def wait_line(run_dir: Path | None) -> list[str]:
-    """`Usage-limit waits: ...` from run.json `waits` (src/applyourself/night.py); none when none."""
+    """`Usage-limit waits: ...` from run.json `waits` (src/applyourself/night.py); none when none.
+    The date shows when a wait ends on a later day than it began."""
     run = _run_json(run_dir)
-    parts = [
-        f"{w['stage']} until {str(w.get('until', ''))[11:16]} ({w.get('how', '')})"
-        + ("" if w.get("waited") else f", not waited: {w.get('detail', '')}")
-        for w in (run or {}).get("waits") or []
-    ]
+    parts = []
+    for w in (run or {}).get("waits") or []:
+        until, start = str(w.get("until", "")), str(w.get("start", ""))
+        shown = until[11:16] if until[:10] == start[:10] else f"{until[:10]} {until[11:16]}"
+        parts.append(
+            f"{w['stage']} until {shown} ({w.get('how', '')})"
+            + ("" if w.get("waited") else f", not waited: {w.get('detail', '')}")
+        )
     return ["Usage-limit waits: " + "; ".join(parts)] if parts else []
 
 

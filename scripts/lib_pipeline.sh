@@ -115,7 +115,7 @@ if isinstance(cost, (int, float)):
 if r.get("is_error"):
     text = str(r.get("result"))
     print("claude reported is_error:", text[:300])
-    if re.search(r"hit your .{0,40}limit|usage limit reached", text, re.I):
+    if re.search(r"hit your .{0,40}limit|(usage|session|weekly|[0-9]+-hour) limit reached|limit will reset", text, re.I):
         with open(sys.argv[4], "w", encoding="utf-8") as f:
             f.write(text)
         sys.exit(5)

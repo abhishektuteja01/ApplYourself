@@ -14,11 +14,19 @@ if [[ "$DRY_RUN" == 1 ]]; then
 else
   "$UV" run apply sheet --add || { stage_end 1 "apply sheet --add failed"; exit 1; }
 fi
-IDS="${ONLY_IDS:-$("$UV" run apply sheet --list New | head -n "${STAGE_LIMIT:-100000}")}"
+RESULTS="$RUN_DIR/tailor_results.txt"
+if [[ "${NIGHT_RERUN:-0}" == 1 && -f "$RESULTS" ]]; then
+  # A rerun after a usage-limit wait: the earlier pass's ok and failed roles are done.
+  grep -E ' (ok|fail)$' "$RESULTS" > "$RESULTS.tmp"; mv "$RESULTS.tmp" "$RESULTS"
+else
+  : > "$RESULTS"   # a resumed night starts its roles afresh
+fi
+PRIOR=$(grep -c . "$RESULTS" || true); PRIOR=${PRIOR:-0}
+LEFT=$(( ${STAGE_LIMIT:-100000} - PRIOR )); [[ $LEFT -gt 0 ]] || LEFT=0
+IDS="${ONLY_IDS:-$("$UV" run apply sheet --list New | grep -vxFf <(cut -d' ' -f1 "$RESULTS") | head -n "$LEFT")}"
 N=$(grep -c . <<< "$IDS")
 CAP="$(night_cap tailor_max_per_night)"
-echo "New roles: $N (one every ${STAGGER}s, at most $PAR at once, cap ${CAP/#0/none})"
-: > "$RUN_DIR/tailor_results.txt"   # a resumed night starts its roles afresh
+echo "New roles: $N, $PRIOR done in an earlier pass (one every ${STAGGER}s, at most $PAR at once, cap ${CAP/#0/none})"
 if [[ $N -gt 0 ]]; then
   PIDS=(); STARTED=0
   alive() {  # how many started roles are still running
@@ -29,7 +37,7 @@ if [[ $N -gt 0 ]]; then
   for id in $IDS; do
     while [[ "$(alive)" -ge "$PAR" ]]; do sleep 2; done
     # Over the cap or past the usage limit: left New for the rerun after the reset, or the next night.
-    if quota_hit || [[ $CAP -gt 0 && $STARTED -ge $CAP ]]; then
+    if quota_hit || [[ $CAP -gt 0 && $((PRIOR + STARTED)) -ge $CAP ]]; then
       echo "$id deferred" >> "$RUN_DIR/tailor_results.txt"; continue
     fi
     "${STAGES_DIR:-$REPO/scripts/stages}/tailor_one.sh" "$id" &
@@ -39,6 +47,7 @@ if [[ $N -gt 0 ]]; then
   for p in ${PIDS[@]+"${PIDS[@]}"}; do wait "$p"; done   # not the pdf helper
 fi
 [[ "$DRY_RUN" == 1 ]] || "$UV" run apply sheet
+N=$((N + PRIOR))
 OK=$(grep -c ' ok$' "$RUN_DIR/tailor_results.txt" 2>/dev/null || true); OK=${OK:-0}
 DEF=$(grep -c ' deferred$' "$RUN_DIR/tailor_results.txt" 2>/dev/null || true); DEF=${DEF:-0}
 DETAIL="$OK/$N tailored"; [[ $DEF -gt 0 ]] && DETAIL="$DETAIL, $DEF deferred"
