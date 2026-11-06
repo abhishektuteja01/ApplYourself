@@ -148,3 +148,19 @@ def test_run_claude_logs_every_calls_cost_even_a_retry_that_reuses_the_result_fi
     subprocess.run(["bash", "-c", script], env=env, check=True, capture_output=True)
     assert (tmp_path / "run" / "tailor.cost").read_text(encoding="utf-8") == "a1 0.25\na1 0.25\n"
     assert M._cost(tmp_path / "run" / "tailor.cost") == 0.5
+
+
+def test_a_usage_limit_is_a_run_json_field_and_a_stale_mark_is_cleared(logs, tmp_path):
+    (tmp_path / "stages" / "score.sh").write_text(
+        '#!/bin/bash\necho score >> "$RUN_DIR/../ran.txt"\n: > "$RUN_DIR/score.quota"\nexit 1\n',
+        encoding="utf-8",
+    )
+    assert M.main(["--dry-run"]) == 1
+    (d,) = logs.glob("pipeline_*")
+    assert json.loads((d / "run.json").read_text(encoding="utf-8"))["stages"]["score"][
+        "usage_limit"
+    ]
+    (tmp_path / "stages" / "score.sh").write_text(FAKE.format(rc=0), encoding="utf-8")
+    assert M.main(["--dry-run", "--resume"]) == 0
+    stages = json.loads((d / "run.json").read_text(encoding="utf-8"))["stages"]
+    assert stages["score"]["usage_limit"] is False and not (d / "score.quota").exists()

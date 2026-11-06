@@ -143,6 +143,8 @@ class Night:
             return self.run["stages"][name]
         result = self.run_dir / f"{name}.result.json"
         result.unlink(missing_ok=True)
+        quota = self.run_dir / f"{name}.quota"  # lib_pipeline.sh run_claude marks a usage limit
+        quota.unlink(missing_ok=True)
         t0 = time.monotonic()
         self.set(name, status="running", rc=None, start=_iso(), end=None, detail="", counts={})
         # APPLY_UNATTENDED: apply run refuses --submit and bank writes (src/apply/bank.py)
@@ -167,6 +169,7 @@ class Night:
             detail=said.get("detail", ""),
             counts=counts,
             cost_usd=_cost(self.run_dir / f"{name}.cost"),
+            usage_limit=quota.is_file(),
             **({"items": items} if items else {}),
         )
         self.run["cost_usd"] = round(

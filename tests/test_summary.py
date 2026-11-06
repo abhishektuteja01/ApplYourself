@@ -792,6 +792,19 @@ def test_a_score_usage_limit_gets_its_own_fix_line(tmp_path, monkeypatch):
     assert M.CUES["score_limit"] in text and "stage exited 1" not in text
 
 
+def test_the_usage_limit_cue_reads_the_run_json_field_not_the_wording(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    run = tmp_path / "logs" / "pipeline_2026-09-28_154500"
+    run.mkdir(parents=True)
+    score = {"stage": "score", "rc": 1, "status": "fail", "detail": "judges stopped"}
+    (run / "run.json").write_text(
+        json.dumps({"stages": {"score": {**score, "usage_limit": True}}}), encoding="utf-8"
+    )
+    assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
+    text = paths.SUMMARY.read_text(encoding="utf-8")
+    assert M.CUES["score_limit"] in text and "stage exited 1" not in text
+
+
 def test_apply_section_counts_the_roles_it_cannot_submit():
     rows = [
         _row("a1", "Resume ready"),

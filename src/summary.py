@@ -143,9 +143,10 @@ def _run_json(run_dir: Path | None) -> dict | None:
 
 
 def stage_lines(run_dir: Path | None) -> dict[str, dict]:
-    """{stage: {code, seconds, status, deferred, detail}} of the stages that ran, from
-    the run folder's run.json (src/night.py); a night from before it, from summary.txt,
-    where a line with no status= takes it from its code."""
+    """{stage: {code, seconds, status, deferred, detail, usage_limit}} of the stages that
+    ran, from the run folder's run.json (src/night.py); a night from before it, from
+    summary.txt, where a line with no status= takes it from its code. An older night
+    with no usage_limit field reads it from the detail text."""
     out: dict[str, dict] = {}
     if (run := _run_json(run_dir)) is not None:
         for name, st in run.get("stages", {}).items():
@@ -156,6 +157,9 @@ def stage_lines(run_dir: Path | None) -> dict[str, dict]:
                     "status": st["status"],
                     "deferred": (st.get("counts") or {}).get("deferred", 0),
                     "detail": st.get("detail", ""),
+                    "usage_limit": bool(
+                        st.get("usage_limit", _old_usage_limit(st.get("detail", "")))
+                    ),
                 }
         return out
     for line in _read_lines(run_dir / "summary.txt") if run_dir else []:  # before run.json
@@ -170,6 +174,7 @@ def stage_lines(run_dir: Path | None) -> dict[str, dict]:
                 "status": m[4] or ("ok" if code == 0 else "fail"),
                 "deferred": int(m[5] or 0),
                 "detail": m[6],
+                "usage_limit": _old_usage_limit(m[6]),
             }
     return out
 
@@ -283,7 +288,12 @@ def _errors(errors: list[str], cap: bool = True) -> list[str]:
 
 
 def scoring_section(
-    scored: pd.DataFrame | None, since: datetime, detail: str, open_slices: int, code: int | None
+    scored: pd.DataFrame | None,
+    since: datetime,
+    detail: str,
+    open_slices: int,
+    code: int | None,
+    usage_limit: bool = False,
 ) -> list[str]:
     lines = []
     if scored is not None and len(scored):
@@ -308,12 +318,12 @@ def scoring_section(
     if open_slices:
         errors.append(f"score run still open: {open_slices} slices owed (next /score resumes it)")
     if code:
-        errors.append(detail if usage_limit(detail) else f"stage exited {code}: {detail}")
+        errors.append(detail if usage_limit else f"stage exited {code}: {detail}")
     return [*lines, *_errors(errors)]
 
 
-def usage_limit(detail: str) -> bool:
-    """A stage's detail says the usage limit stopped it (scripts/stages/*.sh)."""
+def _old_usage_limit(detail: str) -> bool:
+    """A night from before run.json's usage_limit field: its detail says so."""
     return detail.startswith("usage limit hit")
 
 
@@ -754,7 +764,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
     unresolved = {j: why for j in failed if (why := tailor_reason(j, run_dir, live))}
     score, tailor = stages.get("score", {}), stages.get("tailor", {})
 
-    score_limit = bool(score.get("code")) and usage_limit(score.get("detail", ""))
+    score_limit = bool(score.get("code")) and bool(score.get("usage_limit"))
 
     def cue(name: str, lines: list[str], when: bool) -> list[str]:
         return ["", CUES[name]] if when else []
@@ -770,7 +780,12 @@ def build(run_dir: Path | None, since: datetime) -> str:
         state_io.load_state_index(paths.PIPELINE),
     )
     scoring = scoring_section(
-        scored, since, score.get("detail", ""), open_slices, score.get("code")
+        scored,
+        since,
+        score.get("detail", ""),
+        open_slices,
+        score.get("code"),
+        bool(score.get("usage_limit")),
     )
     synonyms = synonyms_section(_tonight(log, since, "date"), declined, opened)
     tailoring = tailoring_section(
