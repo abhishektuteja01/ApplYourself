@@ -20,7 +20,7 @@ import yaml
 
 from src.shared.verticals import load_verticals
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PROFILE = REPO_ROOT / "profile"
 
 _PATH_RE = re.compile(r"profile/[A-Za-z0-9_./<>*-]+")

@@ -44,7 +44,7 @@ A "vertical" is a job lane. `src/shared/verticals.py` is the single source of tr
 
 > The fixture is **synthetic** — three fictional verticals
 > (`example_primary/secondary/tertiary`), no real search terms or skill weights.
-> The real config is covered separately by `tests/test_real_config_drift.py`,
+> The real config is covered separately by `tests/repo/test_real_config_drift.py`,
 > which skips when `profile/verticals.yaml` is absent. Keep real strategy out of
 > the fixtures; add real-config assertions to the drift test instead,
 > structurally (never pin a real term — it is committed).

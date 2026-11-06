@@ -6,7 +6,7 @@ The templates are hand-authored in Word, so every save stamps the editor's name
 into docProps/core.xml and their company into docProps/app.xml. These two files
 are the repo's only tracked binaries and are allowlisted by name in
 scripts/pii_scan.sh, so the text scan that protects every other tracked file
-does not see them. Run this after any Word edit; tests/test_example_templates.py
+does not see them. Run this after any Word edit; tests/repo/test_example_templates.py
 verifies the result.
 
 What it removes:
@@ -23,7 +23,7 @@ What it removes:
                  -- silently blanking a placeholder the renderer requires.
 
 --check exits 1 without writing if either file still needs scrubbing. The gate CI
-and the pre-push hook actually run is tests/test_example_templates.py.
+and the pre-push hook actually run is tests/repo/test_example_templates.py.
 """
 
 from __future__ import annotations

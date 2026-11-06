@@ -18,7 +18,7 @@ from src import onboard_scaffold as scaffold
 from src.shared import paths
 from src.shared.verticals import load_verticals
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_PROFILE = REPO_ROOT / "profile"
 
 # What a default run must produce, derived from the shipped templates rather

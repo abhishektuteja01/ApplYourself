@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "pii_scan.sh"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "pii_scan.sh"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None or shutil.which("bash") is None,

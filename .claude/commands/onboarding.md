@@ -134,7 +134,7 @@ uv run python -c "import postal.parser" >/dev/null 2>&1 || uv sync --group disco
 git config core.hooksPath .githooks
 mkdir -p logs
 nohup uv run pytest tests -q --ignore=tests/discovery \
-      --ignore=tests/test_real_config_drift.py > logs/onboarding_tests.log 2>&1 &
+      --ignore=tests/repo/test_real_config_drift.py > logs/onboarding_tests.log 2>&1 &
 ```
 
 If the second line fails to compile, that is the C library missing — print the
@@ -463,7 +463,7 @@ tail -3 logs/onboarding_tests.log
 ```
 
 Green — one line, and note that `tests/discovery` and
-`tests/test_real_config_drift.py` were excluded from that run; `uv run pytest
+`tests/repo/test_real_config_drift.py` were excluded from that run; `uv run pytest
 tests -q` now covers both, since libpostal is installed and the lane is complete.
 Not green, or still running: report what failed and do not declare setup done.
 

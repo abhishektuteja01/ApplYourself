@@ -41,7 +41,7 @@ from src.docx_render import (
     render_resume,
 )
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 RESUME_TEMPLATE = REPO_ROOT / "profile" / "resume_template.example.docx"
 COVER_TEMPLATE = REPO_ROOT / "profile" / "cover_letter_template.example.docx"
 SCRUBBER = REPO_ROOT / "scripts" / "scrub_example_templates.py"

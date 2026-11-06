@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = REPO_ROOT / ".githooks" / "pre-push"
 PII_SCAN = REPO_ROOT / "scripts" / "pii_scan.sh"
 ZERO = "0" * 40

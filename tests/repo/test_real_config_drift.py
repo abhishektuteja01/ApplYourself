@@ -15,7 +15,7 @@ import pytest
 
 from src.shared import paths, verticals
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_CONFIG = REPO_ROOT / "profile" / "verticals.yaml"
 REAL_SKILLS_MASTER = REPO_ROOT / "profile" / "skills_master.md"
 

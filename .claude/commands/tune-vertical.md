@@ -45,7 +45,7 @@ confirmed → run the round's verify → report → next round.**
   config. **Never touch `tests/**/fixtures/verticals.yaml`**, and never copy a
   real block into it.
 - **Never put a literal real search term in a test.**
-  `tests/test_real_config_drift.py` is committed. Add structural assertions
+  `tests/repo/test_real_config_drift.py` is committed. Add structural assertions
   there if the lane needs them; nothing quoted from `profile/`.
 - **NO-FAB** — read `.claude/shared/no_fab.md`. `skill_weights`, rubric anchors
   and the resume shape come only from the user's answers plus existing
@@ -116,7 +116,7 @@ Verify:
 
 ```bash
 uv run config verticals <name>
-uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
+uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
 ## Round 2 — classifier rules, collisions, drop rules
@@ -156,7 +156,7 @@ Verify:
 uv run config verticals <name>
 uv run config classify '<title1>' '<title2>' '...'
 uv run config misclassified <name>
-uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
+uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
 Every `search_terms` and `linkedin_terms` entry must classify to this lane, and
@@ -211,7 +211,7 @@ lane's window, so it costs a full scoring pass — their call.
      context's `{min, max}` in `profile/resume.yaml`
    Show the proposed changes; the user approves the set.
 
-2. `tests/test_real_config_drift.py` runs against `profile/verticals.yaml` when
+2. `tests/repo/test_real_config_drift.py` runs against `profile/verticals.yaml` when
    present and is what covers this lane. It fails if any
    `search_terms`/`linkedin_terms` entry misclassifies, if
    the source check fails or a baseline resume does not build, or if a
@@ -223,7 +223,7 @@ lane's window, so it costs a full scoring pass — their call.
    ```bash
    uv run verticals-check
    uv run pytest tests -q
-   uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
+   uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
    grep -c "<name>:" profile/skills_master.md
    ```
 

@@ -7,7 +7,7 @@ paths:
 
 Every `profile/` input a command or module reads must be either committed outright
 or shipped as a `.example` template beside it.
-`tests/test_profile_templates.py` derives that list by scanning every place a
+`tests/repo/test_profile_templates.py` derives that list by scanning every place a
 `profile/` path can be referenced — command prose (all of `.claude/**/*.md`,
 including rules files), `src/` modules, scripts, hooks, CI config (see its
 `_source_groups()` for the current set) — so wiring in a new profile file fails the
@@ -21,7 +21,7 @@ does, with every example lane's baseline resume building clean
 (`TestExampleSourcesResolve`).
 
 `profile/*.example.docx` are the only tracked binaries, allowlisted **by name** in
-`pii_scan.sh` (never by glob) with `tests/test_example_templates.py` standing in
+`pii_scan.sh` (never by glob) with `tests/repo/test_example_templates.py` standing in
 for the text scan the gate skips. They are hand-authored in Word; every save stamps
 the editor's name into the document metadata, so run
 `scripts/scrub_example_templates.py` afterwards. `--check` exits 1 if either file

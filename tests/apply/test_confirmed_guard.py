@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-HOOK = Path(__file__).resolve().parent.parent / ".claude" / "hooks" / "confirmed_guard.sh"
+HOOK = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "confirmed_guard.sh"
 F = "applications/x/v1/answers_override.json.confirmed"
 
 

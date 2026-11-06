@@ -8,7 +8,7 @@ allowed-tools:
   - Bash(uv run verticals-check*)
   - Bash(uv run config *)
   - Bash(uv run python -c *)
-  - Bash(uv run pytest tests/test_real_config_drift.py *)
+  - Bash(uv run pytest tests/repo/test_real_config_drift.py *)
   - Bash(ls *)
   - Bash(cmp *)
   - Bash(echo *)
@@ -69,7 +69,7 @@ failed to anticipate.
 - **No code edits.** `src/`, `tests/*.py` and other command files stay
   untouched. Never edit `tests/**/fixtures/verticals.yaml` — synthetic by
   design; a new lane needs no fixture change.
-  `tests/test_real_config_drift.py` is generic over whatever lanes
+  `tests/repo/test_real_config_drift.py` is generic over whatever lanes
   `profile/verticals.yaml` holds, so it covers the new lane unedited. Lane-specific
   structural assertions are `/tune-vertical`'s.
 - **NO-FAB** — read `.claude/shared/no_fab.md`. Every drafted term, skill and
@@ -295,7 +295,7 @@ uv run config misclassified <name>
 `config verticals` loads the config, which is what catches a malformed `years` table or title
 term before the scrape.
 
-Do not run `verticals-check` or `tests/test_real_config_drift.py` here — both
+Do not run `verticals-check` or `tests/repo/test_real_config_drift.py` here — both
 fail by design until pass-b writes the prose and resume shape.
 
 ## Step 5b — verify (bare mode and `pass-b`)
@@ -304,7 +304,7 @@ Both commands above, then:
 
 ```bash
 uv run verticals-check
-uv run pytest tests/test_real_config_drift.py -q -rs   # no SKIPPED line
+uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
 Every search and LinkedIn term must classify to this lane; widen the rule until

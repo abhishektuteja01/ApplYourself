@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 SCANNED_DIRS = ("src", "tests")
 TEXT_IO_CALLS = {"read_text", "write_text", "open"}
 

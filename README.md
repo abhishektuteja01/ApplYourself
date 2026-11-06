@@ -464,7 +464,7 @@ write for themselves (answer-bank and synonym history, declined synonyms) sits i
 
 `profile/*.example.docx` are the repo's only tracked binaries. The PII gate
 allowlists them by name, so neither its binary check nor its text scan reads
-them, and `tests/test_example_templates.py` stands in for the scan it skips.
+them, and `tests/repo/test_example_templates.py` stands in for the scan it skips.
 
 Every string they contain is a generic stand-in: `Name`, `City, ST`,
 `Bullet Text 1`. The tests fail on any text outside that approved set, on
@@ -740,14 +740,14 @@ uv run pytest tests -q --ignore=tests/discovery
 Drop the `--ignore` once you've installed `--group discovery`.
 `tests/discovery/test_stapply.py` exercises the real address parser with no
 stub, so without libpostal it **errors rather than skips**, hence the flag;
-`tests/shared/test_location.py` skips itself. `tests/test_optional_dependencies.py` is the
+`tests/shared/test_location.py` skips itself. `tests/repo/test_optional_dependencies.py` is the
 one that covers the no-libpostal path, and it always runs.
 
 Tests run against a synthetic three-lane config in
 `tests/fixtures/verticals.yaml` and `tests/fixtures/verticals/<lane>/lane.yaml`, whose three lanes (`example_primary`,
 `example_secondary`, `example_tertiary`) come from a fictional
 widget/sprocket/cog world. Never your real one.
-`tests/test_real_config_drift.py` additionally checks your live
+`tests/repo/test_real_config_drift.py` additionally checks your live
 `profile/verticals.yaml` when it exists, structurally, and skips on a fresh
 clone with a warning in the summary.
 
@@ -810,7 +810,7 @@ of those blobs. `.githooks/pre-push` covers four blind spots:
 3. **`user.email` itself**, checked at both local and global scope. A global
    address that differs from the repo-local one is exactly how this leaks.
 4. **The two tracked `.docx`**, whose entire guard is
-   `tests/test_example_templates.py`, because the pickaxe is text-only and
+   `tests/repo/test_example_templates.py`, because the pickaxe is text-only and
    emits no diff lines for a Word file.
 
 It fails closed: no `uv` on PATH means the template guard didn't run, which is

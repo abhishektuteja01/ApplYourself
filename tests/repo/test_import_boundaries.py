@@ -6,7 +6,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[1] / "src"
+SRC = Path(__file__).resolve().parents[2] / "src"
 
 # Top-level modules that belong to a stage with a package or siblings.
 _STAGE_OF = {

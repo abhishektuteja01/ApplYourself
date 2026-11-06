@@ -594,7 +594,7 @@ def _r10_offenders(source: str) -> list[int]:
 
 
 def test_only_track_cli_changes_state():
-    root = Path(__file__).resolve().parents[1] / "src"
+    root = Path(__file__).resolve().parents[2] / "src"
     allowed = {root / "state_io.py", root / "track_cli.py"}
     assert _r10_offenders("from src import state_io\nstate_io.transition(p, 'applied')\n")
     assert _r10_offenders("from src.state_io import ensure_state as e\ne(p)\n")

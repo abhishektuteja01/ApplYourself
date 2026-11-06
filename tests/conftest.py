@@ -2,7 +2,7 @@
 the committed tests/fixtures/verticals.yaml (three synthetic verticals:
 example_primary/secondary/tertiary) is injected into the src.shared.verticals
 singleton for every test. Coverage of the real config lives in
-tests/test_real_config_drift.py, which skips when that file is absent."""
+tests/repo/test_real_config_drift.py, which skips when that file is absent."""
 
 from pathlib import Path
 
@@ -18,10 +18,10 @@ REAL_CONFIG = Path(__file__).resolve().parent.parent / "profile" / "verticals.ya
 _POSTAL_PATHS = (
     "tests/discovery/",
     "tests/shared/test_location.py",
-    "tests/test_optional_dependencies.py",
-    "tests/test_onboard_scaffold.py",
+    "tests/repo/test_optional_dependencies.py",
+    "tests/repo/test_onboard_scaffold.py",
     "tests/apply/test_apply_cli.py",
-    "tests/e2e/",
+    "tests/e2e/test_pipeline_smoke.py",
 )
 
 

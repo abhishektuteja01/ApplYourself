@@ -2,7 +2,7 @@
 of the stamps and reasoning texts that land in scored.parquet, validation
 failures, and the committed example template. Runs against the synthetic
 tests/fixtures/verticals.yaml; the real config is covered by
-tests/test_real_config_drift.py."""
+tests/repo/test_real_config_drift.py."""
 
 from pathlib import Path
 

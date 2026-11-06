@@ -6,7 +6,7 @@
 # years, regex + literal + compound classifier rules, and one vertical
 # owning rules at two priorities.
 #
-# Real-config coverage lives in tests/test_real_config_drift.py, which runs
+# Real-config coverage lives in tests/repo/test_real_config_drift.py, which runs
 # only on a machine that has profile/verticals.yaml.
 
 schema_version: 2

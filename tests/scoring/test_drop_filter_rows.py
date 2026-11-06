@@ -9,7 +9,7 @@ import pandas as pd
 
 from tests.factories import scored_rows
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "drop_filter_rows.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "drop_filter_rows.py"
 
 
 def _load():

@@ -14,7 +14,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Every module that transitively pulled in postal before the import was made
 # lazy: location itself and every discovery module around it.

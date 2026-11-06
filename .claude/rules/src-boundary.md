@@ -23,7 +23,7 @@ Never hardcode a vertical name, search term, or company. Those come only from
 are structurally required and do not count.
 
 A stage uses another stage's public names only, never a `_private` one;
-`tests/test_import_boundaries.py` fails on any.
+`tests/repo/test_import_boundaries.py` fails on any.
 
 ## Config access
 

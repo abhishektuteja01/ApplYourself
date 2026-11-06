@@ -18,7 +18,7 @@ from src.score_filter import load_scoring
 from src.shared import paths
 from tests.factories import scored_rows, write_clean
 
-SESSIONS = Path(__file__).parent / "fixtures" / "sessions"
+SESSIONS = Path(__file__).resolve().parents[1] / "fixtures" / "sessions"
 JD = (SESSIONS / "jd.txt").read_text(encoding="utf-8")
 ROLE = {
     "company": "Acme Widgets",

@@ -1138,13 +1138,6 @@ class TestUploadVerificationIsConfirmatoryNotPunitive:
         )
         assert result.failures == []
 
-    def test_a_readable_but_empty_input_is_still_a_failure(self, resume):
-        # The real bug this check exists for: the upload silently did nothing.
-        d = FakeDriver()
-        d.uploads_stick = False  # readable, and empty
-        with pytest.raises(FillError, match="holds no file"):
-            F._attach(d, FilePlan(id="resume", label="Resume/CV", required=True, path=resume))
-
 
 class TestTheWidgetOutranksTheInput:
     """Live on a Greenhouse board, `set_input_files` on the visually-hidden

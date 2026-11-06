@@ -31,7 +31,7 @@ example="profile/pii_denylist.example.txt"
 #                      a text file, and the binary check below would otherwise
 #                      reject them on sight. Narrowly allowlisted BY NAME, never
 #                      by a *.docx glob, and guarded by
-#                      tests/test_example_templates.py: it unzips both, asserts
+#                      tests/repo/test_example_templates.py: it unzips both, asserts
 #                      their text is confined to an approved set, and asserts
 #                      empty core properties. They are hand-authored in Word;
 #                      run scripts/scrub_example_templates.py after any save,
