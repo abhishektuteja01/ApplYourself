@@ -158,3 +158,11 @@ def test_a_placeholder_company_is_no_company(name):
 def test_oracle_postings_key_on_tenant_and_requisition(url, key):
     assert identity.posting_key(url) == key
     assert identity.posting_key(url.replace("210632946", "1").replace("12345", "1")) != key
+
+
+def test_a_wider_suffix_list_matches_without_moving_the_id():
+    assert identity.normalize_company("Acme AG") == "acme ag"
+    assert identity.dedupe_key("acme ag", "ai engineer") == identity.dedupe_key(
+        "acme", "ai engineer"
+    )
+    assert identity.dedupe_key("open ai", "x") == identity.dedupe_key("openai", "x") == "openai|x"

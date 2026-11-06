@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 STORE = paths.STORE
 MAYBE_DUPES = paths.MAYBE_DUPES
+JOB_IDS = paths.JOB_IDS
 
 STORE_COLUMNS: list[str] = [
     "posting_key",
@@ -55,6 +56,7 @@ STORE_COLUMNS: list[str] = [
     "first_seen",
     "last_seen",
     "last_score",
+    "dedupe_key",
 ]
 _STRING_COLUMNS = [
     "posting_key",
@@ -74,6 +76,7 @@ _STRING_COLUMNS = [
     "seniority_raw",
     "found_by_term",
     "updated_at",
+    "dedupe_key",
 ]
 _DATE_COLUMNS = ["posted_date", "first_seen", "last_seen"]
 # Fields a fresh copy of a known posting may update. job_id, first_seen and
@@ -116,7 +119,18 @@ def coerce_store(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     for col in ("remote_flag", "found_by_remote"):
         df[col] = df[col].where(df[col].notna(), False).astype(bool)
+    fill_dedupe_keys(df)
     return df.reset_index(drop=True)
+
+
+def fill_dedupe_keys(df: pd.DataFrame) -> None:
+    """Compute dedupe_key where blank (a store written before the column)."""
+    blank = df["dedupe_key"] == ""
+    if blank.any():
+        df.loc[blank, "dedupe_key"] = [
+            identity.dedupe_key(c, t)
+            for c, t in zip(df.loc[blank, "company_normalized"], df.loc[blank, "title_normalized"])
+        ]
 
 
 def load_store(path: Path | None = None) -> pd.DataFrame:
@@ -237,6 +251,7 @@ def apply_batch(
     tracked: frozenset[str],
     live_days: int,
     trim: Trim = NO_TRIM,
+    known: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, ApplyStats]:
     """The store with `batch` folded in. Known keys are refreshed or touched;
     new keys get an id by the first rule that matches: a known url, a known
@@ -278,12 +293,13 @@ def apply_batch(
     new_rows = [batch.rows[k] for k in sorted(batch.rows) if k not in pos]
     if not new_rows:
         return store, stats
-    index = _Index(store, tracked, trim)
+    index = _Index(store, tracked, trim, known)
     added, maybe_pairs = [], set()
     for row in new_rows:
         if not row["company_normalized"] or not row["title_normalized"]:
             stats.dropped_blank += 1
             continue
+        row["dedupe_key"] = identity.dedupe_key(row["company_normalized"], row["title_normalized"])
         jid, rule, maybes = index.assign(row)
         rec = {**row, "job_id": jid, "first_seen": today, "last_seen": today}
         index.add(rec)
@@ -329,14 +345,70 @@ def flush(
 ) -> ApplyStats:
     """Empty `batch` into the store: read, fold in, write, under the store's
     lock, so a concurrent `ingest-url` waits rather than being overwritten.
-    New maybe duplicates are appended to the store's maybe_duplicates.jsonl."""
+    New maybe duplicates are appended to the store's maybe_duplicates.jsonl.
+    The job_ids table beside it, once built (`discover-ids --apply`), is read
+    for matching and gains the new ids."""
     path = Path(path or STORE)
+    ids_path = path.with_name(JOB_IDS.name)
     pending = batch.take()
     with locked(path):
-        store, stats = apply_batch(load_store(path), pending, today, tracked, live_days, trim)
+        known = load_job_ids(ids_path) if ids_path.exists() else None
+        store, stats = apply_batch(
+            load_store(path), pending, today, tracked, live_days, trim, known
+        )
         save_store(store, path)
+        if known is not None:
+            table = merge_job_ids(known, job_id_rows(store))
+            if len(table) > len(known):
+                save_job_ids(table, ids_path)
         append_maybe_duplicates(stats.maybe_duplicates, path.with_name(MAYBE_DUPES.name))
     return stats
+
+
+# ---------------------------------------------------------------------
+# job_ids: every (job_id, pair) the store ever held, kept after `forget`
+# ---------------------------------------------------------------------
+
+JOB_IDS_COLUMNS = ["job_id", "company_normalized", "title_normalized", "dedupe_key", "first_seen"]
+_JOB_IDS_KEY = ["job_id", "company_normalized", "title_normalized"]
+
+
+def coerce_job_ids(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.reindex(columns=JOB_IDS_COLUMNS).copy()
+    for col in JOB_IDS_COLUMNS[:-1]:
+        df[col] = df[col].where(df[col].notna(), "").astype(str)
+    df["first_seen"] = parse.naive_datetime(df["first_seen"]).dt.normalize()
+    fill_dedupe_keys(df)
+    return df.reset_index(drop=True)
+
+
+def load_job_ids(path: Path | None = None) -> pd.DataFrame:
+    path = Path(path or JOB_IDS)
+    if not path.exists():
+        return coerce_job_ids(pd.DataFrame(columns=JOB_IDS_COLUMNS))
+    return coerce_job_ids(pd.read_parquet(path))
+
+
+def save_job_ids(df: pd.DataFrame, path: Path | None = None) -> None:
+    df = coerce_job_ids(df).sort_values(_JOB_IDS_KEY, kind="stable")
+    write_parquet(df.reset_index(drop=True), Path(path or JOB_IDS))
+
+
+def job_id_rows(store: pd.DataFrame) -> pd.DataFrame:
+    """One table row per (job_id, pair) in `store`, earliest first_seen."""
+    rows = store.sort_values("first_seen", kind="stable").drop_duplicates(_JOB_IDS_KEY)
+    return coerce_job_ids(rows[JOB_IDS_COLUMNS])
+
+
+def merge_job_ids(known: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    """`known` with `new`'s unseen (job_id, pair) rows added; nothing is dropped
+    or changed."""
+    new = coerce_job_ids(new).drop_duplicates(_JOB_IDS_KEY)
+    if known.empty:
+        return new
+    seen = pd.MultiIndex.from_frame(known[_JOB_IDS_KEY])
+    fresh = new[~pd.MultiIndex.from_frame(new[_JOB_IDS_KEY]).isin(seen)]
+    return pd.concat([known, fresh], ignore_index=True) if len(fresh) else known
 
 
 def load_maybe_duplicates(path: Path | None = None) -> list[dict]:

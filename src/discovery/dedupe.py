@@ -238,13 +238,23 @@ def _hash_ids(company: str, title: str, salts: int = 3) -> set[str]:
 
 class _Index:
     """Lookups over the store for id assignment, kept current as rows are
-    added so two new postings in one night agree with each other."""
+    added so two new postings in one night agree with each other. `known` is
+    the job_ids table: every id a pair ever had, kept after `forget`."""
 
-    def __init__(self, store: pd.DataFrame, tracked: frozenset[str], trim: Trim = NO_TRIM):
+    def __init__(
+        self,
+        store: pd.DataFrame,
+        tracked: frozenset[str],
+        trim: Trim = NO_TRIM,
+        known: pd.DataFrame | None = None,
+    ):
         self.tracked, self.trim = tracked, trim
         self.by_key: dict[str, str] = {}
         self.by_pair: dict[str, list[str]] = {}
         self.pair_of_id: dict[str, set[str]] = {}
+        # dedupe_key -> ids: a match here alone is only a maybe duplicate.
+        self.by_dedupe: dict[str, list[str]] = {}
+        self.company_of: dict[str, str] = {}
         # Each id's own title (the pair it hashes from), when the store holds it.
         self.own: dict[str, dict] = {}
         self.by_squash: dict[str, list[dict]] = {}
@@ -256,18 +266,21 @@ class _Index:
         )
         for rec in order.to_dict("records"):
             self.add(rec)
+        if known is not None and not known.empty:
+            for rec in known.sort_values(["first_seen", "job_id"], kind="stable").to_dict(
+                "records"
+            ):
+                self.remember(rec)
 
-    def add(self, rec: dict) -> None:
+    def remember(self, rec: dict) -> None:
+        """The id lookups alone: what a job_ids table row carries."""
         jid = rec["job_id"]
-        self.by_key.setdefault(rec["posting_key"], jid)
-        url_key = identity.posting_key(rec.get("url", ""))
-        if url_key:
-            self.by_key.setdefault(url_key, jid)
         pair = f"{rec['company_normalized']}|{rec['title_normalized']}"
         ids = self.by_pair.setdefault(pair, [])
         if jid not in ids:
             ids.append(jid)
         self.pair_of_id.setdefault(jid, set()).add(pair)
+        self.company_of.setdefault(jid, rec["company_normalized"])
         if jid not in self.own and jid in _hash_ids(
             rec["company_normalized"], rec["title_normalized"]
         ):
@@ -275,6 +288,21 @@ class _Index:
                 "title_normalized": rec["title_normalized"],
                 "location_raw": rec.get("location_raw", ""),
             }
+        dk = rec.get("dedupe_key") or identity.dedupe_key(
+            rec["company_normalized"], rec["title_normalized"]
+        )
+        if dk:
+            held = self.by_dedupe.setdefault(dk, [])
+            if jid not in held:
+                held.append(jid)
+
+    def add(self, rec: dict) -> None:
+        jid = rec["job_id"]
+        self.by_key.setdefault(rec["posting_key"], jid)
+        url_key = identity.posting_key(rec.get("url", ""))
+        if url_key:
+            self.by_key.setdefault(url_key, jid)
+        self.remember(rec)
         cand = {
             k: rec.get(k, "")
             for k in (
@@ -341,6 +369,19 @@ class _Index:
             }
             for jid in held
         }
+        # Same dedupe_key, other spelling ("Acme AG" / "Acme"): a maybe, never a join.
+        dk = row.get("dedupe_key") or identity.dedupe_key(
+            row["company_normalized"], row["title_normalized"]
+        )
+        for jid in self.by_dedupe.get(dk, []) if dk else []:
+            maybes.setdefault(
+                jid,
+                {
+                    "cand": {"job_id": jid, "company_normalized": self.company_of[jid]},
+                    "score": 0.0,
+                    "reason": "other_name",
+                },
+            )
         matches = set()
         for c in self.candidates(row):
             verdict, score = same_job_elsewhere(row, c, self.trim)
@@ -372,6 +413,19 @@ class _Index:
 def _rank(r: dict) -> tuple[bool, float]:
     """A merge verdict outranks any maybe; then the higher JD score."""
     return r["reason"] == "backfill_merge", r["jd_score"]
+
+
+def dedupe_matches(index: _Index, row: dict) -> list[str]:
+    """Other ids sharing `row`'s dedupe_key under another pair spelling."""
+    pair = f"{row['company_normalized']}|{row['title_normalized']}"
+    dk = row.get("dedupe_key") or identity.dedupe_key(
+        row["company_normalized"], row["title_normalized"]
+    )
+    return [
+        jid
+        for jid in (index.by_dedupe.get(dk, []) if dk else [])
+        if jid != row["job_id"] and pair not in index.pair_of_id[jid]
+    ]
 
 
 def find_pairs(store: pd.DataFrame, trim: Trim = NO_TRIM, date: str = "") -> list[dict]:
@@ -406,6 +460,22 @@ def find_pairs(store: pd.DataFrame, trim: Trim = NO_TRIM, date: str = "") -> lis
                 "reason": reason,
                 "date": date,
             }
+        for other in dedupe_matches(index, row):
+            key = "|".join(sorted((row["job_id"], other)))
+            best.setdefault(
+                key,
+                {
+                    "pair": key,
+                    "job_id": row["job_id"],
+                    "other": other,
+                    "company": row["company_normalized"],
+                    "other_company": index.company_of[other],
+                    "title": row["title_normalized"],
+                    "jd_score": 0.0,
+                    "reason": "backfill_other_name",
+                    "date": date,
+                },
+            )
     return sorted(best.values(), key=lambda r: (r["reason"], -r["jd_score"], r["pair"]))
 
 

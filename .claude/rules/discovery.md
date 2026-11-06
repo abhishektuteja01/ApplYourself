@@ -58,6 +58,15 @@ already stored and records them there too; no id is ever rewritten.
 Inherited ids (a pair whose id is not its own hash) are legitimate: they carry
 merges from before the store. Ids are stored, never recomputed: a hash already
 held by a different pair is salted (title + `#2`, `#3`, ...) until free.
+`jobs/job_ids.parquet` holds every (job_id, pair) the store ever held and is
+never pruned: `_Index` reads it, so a pair `forget` dropped keeps its id and a
+forgotten id is never minted for another pair. `store.flush` adds to it once it
+exists; `discover-ids --dry-run|--apply` builds it (and the store's `dedupe_key`)
+from jobs.parquet and pipeline/events.jsonl, `--dry-run` exiting 1 on a conflict.
+`dedupe_key` (`identity.dedupe_key`: `DEDUPE_SUFFIXES` dropped, spaces squashed)
+is for matching only: ids sharing it under another pair spelling are an
+`other_name` maybe, never a join. Widen `DEDUPE_SUFFIXES`, never the frozen
+id list, then re-run `discover-ids --apply` to refresh stored keys.
 
 Writes go through `store.flush` / `live_view.write_view`, under `parquet_io.locked`. The
 store is saved before board state, so a board is never marked checked while

@@ -24,7 +24,22 @@ _VIA_RE = re.compile(r"\s+via\s+(?:" + "|".join(re.escape(v) for v in _VIA_SOURC
 _PLACEHOLDER_COMPANIES = frozenset(
     {"siehe beschreibung", "non renseigné", "non renseigne", "unavailable"}
 )
-_SUFFIX_RE = re.compile(r"\s+(?:inc|llc|corp|corporation|ltd|limited|co|gmbh|plc|sa)\s*$")
+# Frozen: company_normalized feeds job_id. Widen DEDUPE_SUFFIXES instead.
+_ID_SUFFIXES = ("inc", "llc", "corp", "corporation", "ltd", "limited", "co", "gmbh", "plc", "sa")
+# Legal forms dropped for matching only (dedupe_key), never for the id.
+DEDUPE_SUFFIXES = (
+    *_ID_SUFFIXES,
+    *("ag", "kg", "llp", "lp", "bv", "b v", "nv", "n v", "se", "ab", "as", "oy", "oyj"),
+    *("srl", "spa", "sas", "sarl", "pvt", "private", "pty", "pte", "kk", "ug", "sl"),
+)
+
+
+def _suffix_re(suffixes: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(r"\s+(?:" + "|".join(re.escape(x) for x in suffixes) + r")\s*$")
+
+
+_SUFFIX_RE = _suffix_re(_ID_SUFFIXES)
+_DEDUPE_SUFFIX_RE = _suffix_re(DEDUPE_SUFFIXES)
 _LEADING_THE_RE = re.compile(r"^the\s+")
 _WS_RE = re.compile(r"\s+")
 _PUNCT_RE = re.compile(r"[^\w\s]")
@@ -51,6 +66,19 @@ def normalize_title(s: str | None) -> str:
     x = s.lower()
     x = _PUNCT_RE.sub(" ", x)
     return _WS_RE.sub(" ", x).strip()
+
+
+def dedupe_key(company_normalized: str, title_normalized: str) -> str:
+    """The pair as the matcher compares it: wider legal-suffix list, spaces
+    squashed. Matching only; it never feeds job_id, so it may change freely."""
+    x, prev = company_normalized or "", None
+    while prev != x:
+        prev = x
+        x = _DEDUPE_SUFFIX_RE.sub("", x)
+    company = x.replace(" ", "")
+    if not company or not title_normalized:
+        return ""
+    return f"{company}|{title_normalized}"
 
 
 def compute_job_id(company_normalized: str, title_normalized: str) -> str:

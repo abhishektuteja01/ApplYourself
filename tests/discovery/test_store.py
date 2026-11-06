@@ -129,8 +129,9 @@ def test_a_hash_clash_gets_a_salted_id_that_the_pair_keeps(monkeypatch):
     store, _ = fold(
         store, post(GH.format(2), company="Zeta", title="Chef", jd=JD_OTHER, source="lever")
     )
-    salted = real("zeta", "chef#2")
-    assert list(store["job_id"]) == [held, salted]
+    ids = S.job_id_rows(store).set_index(["company_normalized", "title_normalized"])["job_id"]
+    salted = ids[("zeta", "chef")]
+    assert list(store["job_id"]) == [held, salted] and salted != held
     store, stats = fold(
         store,
         post(
@@ -344,6 +345,39 @@ def test_a_maybe_pair_is_written_once_across_flushes(tmp_path):
         S.flush(batch, TODAY, frozenset(), 14, path=path)
     rows = S.load_maybe_duplicates(tmp_path / "maybe_duplicates.jsonl")
     assert [r["reason"] for r in rows] == ["other_name"]
+
+
+def test_a_legal_suffix_variant_is_a_maybe_never_a_join():
+    store, stats = _pair(
+        post(GH.format(1), company="Acme"),
+        post(LI.format(2), company="Acme AG", source="linkedin", jd=JD_OTHER),
+    )
+    assert store["job_id"].nunique() == 2
+    [m] = stats.maybe_duplicates
+    assert m["reason"] == "other_name" and m["pair"] == "|".join(sorted(store["job_id"]))
+    assert set(store["company_normalized"]) == {"acme", "acme ag"}
+
+
+def test_a_forgotten_inherited_id_comes_back_through_the_job_ids_table(tmp_path):
+    path = tmp_path / "jobs.parquet"
+    row = {**post(GH.format(1)), "job_id": "inherit1", "first_seen": TODAY, "last_seen": TODAY}
+    S.save_store(S.coerce_store(pd.DataFrame([row])), path)
+    S.save_job_ids(S.job_id_rows(S.load_store(path)), tmp_path / "job_ids.parquet")
+    later = TODAY + pd.Timedelta(days=200)
+    store, n = S.forget(S.load_store(path), later, 120, frozenset())
+    S.save_store(store, path)
+    assert n == 1
+    batch = S.Batch()
+    batch.upsert(post("https://jobs.lever.co/acme/2", source="lever", jd=JD_OTHER))
+    stats = S.flush(batch, later, frozenset(), 14, path=path)
+    assert stats.by_rule == {"pair": 1} and list(S.load_store(path)["job_id"]) == ["inherit1"]
+
+
+def test_flush_makes_no_job_ids_table_before_the_migration(tmp_path):
+    batch = S.Batch()
+    batch.upsert(post(GH.format(1)))
+    S.flush(batch, TODAY, frozenset(), 14, path=tmp_path / "jobs.parquet")
+    assert not (tmp_path / "job_ids.parquet").exists()
 
 
 def test_merged_stats_keep_each_pair_once():

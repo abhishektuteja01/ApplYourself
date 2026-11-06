@@ -95,7 +95,10 @@ them — `/score`'s baseline and `/tailor`'s plan alike.
 Changing the hash inputs would silently orphan `pipeline/<job_id>/state.yaml` and
 `applications/<dir>` keys. Do not add url/jd_text to the hash.
 Ids are stored, never recomputed; a hash already held by another pair gets a salt
-(title + `#2`, `#3`, ...).
+(title + `#2`, `#3`, ...). `jobs/job_ids.parquet` keeps every (id, pair) forever,
+so `forget` never makes a returning pair re-mint (`uv run discover-ids` builds it).
+Matching uses the stored `dedupe_key` (`identity.DEDUPE_SUFFIXES`), never the id;
+widen that list, not `normalize_company`.
 
 ## Commands
 
