@@ -131,6 +131,10 @@ questions:
   pronouns:
     answer: ["They/Them"]
     keywords: [pronouns]
+  languages_fluent:
+    # The languages you speak. /score also reads it: a JD requiring another is skipped.
+    answer: ["English"]
+    keywords: [languages in which you are fluent]
   legal_first_name:
     answer: {fact: identity.first_name}
     keywords: [legal first name]

@@ -7,8 +7,10 @@
   config misclassified LANE    the lane's search terms that classify elsewhere
   config reclassify            clean.parquet rows whose lane would change now
   config work-auth [COUNTRY]   the answer bank's work-authorization row
+  config migrate --dry-run|--apply [--profile DIR]
+                               move an older profile/ layout onto the current one
 
-Nothing here writes.
+Nothing here writes, except `migrate --apply`.
 """
 
 from __future__ import annotations
@@ -107,7 +109,16 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("reclassify")
     w = sub.add_parser("work-auth")
     w.add_argument("country", nargs="?", default="")
+    mg = sub.add_parser("migrate")
+    mode = mg.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--apply", action="store_true")
+    mg.add_argument("--profile", help="the profile/ folder (default: this repo's)")
     args = ap.parse_args(argv)
+    if args.cmd == "migrate":
+        from src import config_migrate
+
+        return config_migrate.main(args)
     try:
         if args.cmd == "get":
             print(_get(args.section, args.key))

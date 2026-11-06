@@ -64,6 +64,7 @@ class ScoringConfig:
     sponsorship_order: tuple[str, ...]
     note: str
     languages: tuple[str, ...] = ()
+    """The languages you speak, from the answer bank's `languages_fluent` question."""
     degree_rank: int | None = None
     """Your highest degree as a `degree_rank`, from the answer bank; None
     when it names none we know, so every years path counts."""
@@ -106,6 +107,17 @@ def bank_degree_rank(bank_path: Path) -> int | None:
     from src.apply.answers import load_answers
 
     return degree_rank(load_answers(bank_path).education.get("degree"))
+
+
+LANGUAGES_QUESTION = "languages_fluent"
+
+
+def bank_languages(bank_path: Path) -> tuple[str, ...]:
+    """The languages you speak: the answer bank's `languages_fluent` answer."""
+    from src.apply.answers import load_answers
+
+    q = load_answers(bank_path).question(LANGUAGES_QUESTION)
+    return q.answers if q is not None else ()
 
 
 def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> ScoringConfig:
@@ -153,7 +165,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         pipeline_show=_int(s, "pipeline_show", "shortlist", path),
         sponsorship_order=_phrases(s, "sponsorship_order", path),
         note=str(s.get("note") or ""),
-        languages=_phrases(data, "languages", path),
+        languages=bank_languages(Path(bank_path)),
         degree_rank=bank_degree_rank(Path(bank_path)),
         years_margin=_int(data, "years_margin", "top level", path) if "years_margin" in data else 0,
     )

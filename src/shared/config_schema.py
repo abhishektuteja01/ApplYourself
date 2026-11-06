@@ -108,11 +108,13 @@ class Shortlist(_Strict):
 
 
 class ScoringFile(_Strict):
-    retired: ClassVar[dict[str, str]] = {"action": "cutoffs.review and cutoffs.tailor"}
+    retired: ClassVar[dict[str, str]] = {
+        "action": "cutoffs.review and cutoffs.tailor",
+        "languages": "application_answers.yaml questions.languages_fluent",
+    }
     schema_version: Any = None
     ineligible: Any = None
     no_sponsorship: Any = None
-    languages: Any = None
     keywords_max: Any = None
     years_margin: Any = None
     jd_quality: JdQuality | None = None
