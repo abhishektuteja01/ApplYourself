@@ -20,12 +20,7 @@ Draft only -- the user sends.
 ## Step 1 — HARD-REFUSE prereqs (no silent generic-voice fallback)
 
 ```bash
-# Every path below is repo-relative, and src/ resolves its own paths from
-# the repo root — so anchor the shell there too.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
-# voice_samples.md is the load-bearing precondition. If it's missing or
-# empty, the model would otherwise fabricate a "generic voice", which
-# is explicitly forbidden.
 test -s profile/voice_samples.md || {
     cat <<'ERR'
 ERROR: profile/voice_samples.md is missing or empty.
@@ -47,9 +42,7 @@ case "$CHANNEL" in
     *) echo "ERROR: channel must be recruiter | referral | alumni (got $CHANNEL)"; exit 1 ;;
 esac
 
-# --to is REQUIRED for referral/alumni: both address a named person. Without
-# this guard the draft goes to nobody, lands at ..._unknown.md, and carries a
-# literal to_name='<recipient name>'.
+# --to is required for referral/alumni: both address a named person.
 case "$CHANNEL" in
     referral|alumni)
         ARGS=$(cat <<'EOF'

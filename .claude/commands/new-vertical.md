@@ -37,9 +37,7 @@ Optional second token in `$ARGUMENTS`, spelled exactly `pass-a` or `pass-b`.
 | `pass-a` | the lane's `lane.yaml` + its `lanes:` entry + one `classifier_rules` entry + the marker | all three questions | loader + classifier only |
 | `pass-b` | `rubric.md`, `tailoring.md`, the resume shape; deletes the marker | nothing | full block |
 
-`load_verticals()` needs only the lane block, so `pass-a` is enough to start a
-scrape. The rubric, tailoring and resume shape are needed only to score, and
-only they need authored bullets — which is why they can wait.
+`pass-a` is enough to start a scrape; scoring needs `pass-b`.
 
 Marker file: `profile/verticals/<name>/.pass_a_only`, written by `pass-a`,
 deleted by `pass-b`.
@@ -106,10 +104,8 @@ cmp -s profile/bullets.md profile/bullets.example.md && echo "STOP: bullets.md i
 cmp -s profile/skills_master.md profile/skills_master.example.md && echo "STOP: skills_master.md is still the example"
 ```
 
-Either `STOP:` line means `onboard-scaffold` copied the template and nothing has
-authored it yet. Stop and send the user to `/onboarding step 2`. Both files parse
-fine as the example person, so drafting against them silently fills the lane's
-resume shape, rubric and skill lines with someone else's evidence.
+Either `STOP:` line means the file is still the example person: stop and send
+the user to `/onboarding step 2`.
 
 **The marker decides what a partial lane means.** A hit on the `lane.yaml` or the
 `ls -d` means a previous run got partway:

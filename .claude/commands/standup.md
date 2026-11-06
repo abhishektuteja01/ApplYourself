@@ -18,8 +18,6 @@ state.yaml.
 ## Step 1 — read the digest
 
 ```bash
-# Every path below is repo-relative, and src/ resolves its own paths from
-# the repo root — so anchor the shell there too.
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 uv run track standup --digest
 ```
