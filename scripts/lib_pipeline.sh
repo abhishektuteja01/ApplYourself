@@ -81,7 +81,8 @@ stage_end() {
 # run_claude TAG TOOLS PROMPT [extra claude flags...]
 # One headless call. The prompt is first and TOOLS is one comma-joined value,
 # because --allowedTools takes a list and would swallow a prompt after it.
-# The JSON result goes to $RUN_DIR/<stage>_<tag>.json; returns non-zero when the
+# The JSON result goes to $RUN_DIR/<stage>_<tag>.json and its reported cost is
+# appended to $RUN_DIR/<stage>.cost (`night` sums it); returns non-zero when the
 # call failed or its result says is_error, and 5 when the usage limit was hit
 # (it also marks the stage, see quota_hit).
 run_claude() {
@@ -100,12 +101,16 @@ run_claude() {
     --max-budget-usd "$budget" "$@" > "$out" 2>>"$LOG"
   local code=$?
   echo "claude $tag exit=$code -> $out"
-  "$UV" run python - "$out" <<'PY'
+  "$UV" run python - "$out" "$RUN_DIR/$STAGE.cost" "$tag" <<'PY'
 import json, re, sys
 try:
     r = json.load(open(sys.argv[1], encoding="utf-8"))
 except (OSError, ValueError):
     sys.exit(3)
+cost = r.get("total_cost_usd", r.get("cost_usd"))
+if isinstance(cost, (int, float)):
+    with open(sys.argv[2], "a", encoding="utf-8") as f:
+        f.write(f"{sys.argv[3]} {cost}\n")
 if r.get("is_error"):
     text = str(r.get("result"))
     print("claude reported is_error:", text[:300])

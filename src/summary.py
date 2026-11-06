@@ -209,6 +209,20 @@ def run_section(stages: dict[str, dict]) -> list[str]:
     return lines
 
 
+def spend_line(run_dir: Path | None) -> list[str]:
+    """`Spend: $X (stage $Y · ...)` from run.json; none for a night from before it."""
+    run = _run_json(run_dir)
+    if run is None or "cost_usd" not in run:
+        return []
+    stages = run.get("stages", {})
+    parts = [f"{n} ${c:.2f}" for n, st in stages.items() if (c := st.get("cost_usd") or 0) > 0]
+    line = f"Spend: ${run['cost_usd']:.2f}" + (f" ({' · '.join(parts)})" if parts else "")
+    capped = [n for n, st in stages.items() if st.get("detail") == night.SPEND_CAP]
+    if capped:
+        line += f"; spend cap reached, deferred: {', '.join(capped)}"
+    return [line]
+
+
 def discovery_section(reports: list[dict], since: datetime) -> list[str]:
     stamp = since.strftime("%Y-%m-%d_%H%M")
     tonight = [r for r in reports if str(r.get("run_id", "")) >= stamp]
@@ -763,6 +777,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
         f"# Night summary — {since:%Y-%m-%d} (started {since:%H:%M})",
         "",
         *run_section(stages),
+        *spend_line(run_dir),
         "",
         "## Discovery",
         *discovery,

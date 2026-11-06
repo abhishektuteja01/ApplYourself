@@ -286,7 +286,10 @@ older than `log_keep_days` in `profile/discovery.yaml`.
 
 The same script then scores, adds synonyms, tailors, fills forms without submitting
 and writes `summary.md`; a failed discover or score stops it. `uv run night --resume`
-reruns the stages that did not finish ok; each night's `run.json` records them.
+reruns the stages that did not finish ok; each night's `run.json` records them,
+with what each stage's `claude` calls cost. Set `max_spend_usd_per_night` in
+`profile/settings.yaml` and the claude stages still to run once a night reaches
+it wait for the next night.
 
 </details>
 

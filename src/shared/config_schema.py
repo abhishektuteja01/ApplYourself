@@ -153,6 +153,7 @@ class Settings(_Strict):
     tailor_stagger_seconds: int | None = None
     retries: int | None = None
     max_budget_usd_per_call: float | None = None
+    max_spend_usd_per_night: float | None = None
     auto_add_synonyms: bool | None = None
     unlock_max_open: int | None = None
     summary_email: str | None = None

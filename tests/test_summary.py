@@ -78,6 +78,22 @@ def test_run_json_wins_over_the_old_text_files_and_lists_only_stages_that_ran(tm
     assert M.tailor_lines(tmp_path) == ["a1 ok", "b2 fail"]
 
 
+def test_spend_line_breaks_the_total_down_by_stage_and_names_the_capped_stages(tmp_path):
+    stages = {
+        "discover": {"status": "ok", "rc": 0, "cost_usd": 0.0},
+        "score": {"status": "ok", "rc": 0, "cost_usd": 1.1},
+        "tailor": {"status": "partial", "rc": 0, "cost_usd": 4.256},
+        "apply_prep": {"status": "deferred", "rc": None, "detail": M.night.SPEND_CAP},
+    }
+    run = {"cost_usd": 5.356, "stages": stages}
+    (tmp_path / "run.json").write_text(json.dumps(run), encoding="utf-8")
+    assert M.spend_line(tmp_path) == [
+        "Spend: $5.36 (score $1.10 · tailor $4.26); spend cap reached, deferred: apply_prep"
+    ]
+    (tmp_path / "run.json").write_text(json.dumps({"stages": {}}), encoding="utf-8")
+    assert M.spend_line(tmp_path) == []  # a night from before the cost fields
+
+
 def _report(run_id, new, lanes=None, clean=3000):
     return {
         "run_id": run_id,

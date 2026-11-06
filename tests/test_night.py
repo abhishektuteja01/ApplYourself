@@ -99,3 +99,52 @@ def test_a_run_json_from_newer_code_is_refused(tmp_path):
     )
     with pytest.raises(ValueError, match="schema version"):
         M.load(tmp_path)
+
+
+def test_the_spend_cap_defers_the_claude_stages_left_and_the_finishers_still_run(logs, tmp_path):
+    (tmp_path / "profile").mkdir()
+    (tmp_path / "profile" / "settings.yaml").write_text(
+        "max_spend_usd_per_night: 5\n", encoding="utf-8"
+    )
+    (tmp_path / "stages" / "score.sh").write_text(
+        '#!/bin/bash\necho "score" >> "$RUN_DIR/../ran.txt"\n'
+        'printf "judge_1 3.5\\njudge_2 1.5\\n" >> "$RUN_DIR/score.cost"\n',
+        encoding="utf-8",
+    )
+    assert M.main(["--dry-run"]) == 0
+    assert _ran(logs) == ["discover", "score", "cleanup", "summary", "email"]
+    (d,) = logs.glob("pipeline_*")
+    run = json.loads((d / "run.json").read_text(encoding="utf-8"))
+    assert run["cost_usd"] == 5.0 and run["stages"]["score"]["cost_usd"] == 5.0
+    for name in ("synonyms", "tailor", "apply_prep"):
+        assert run["stages"][name]["status"] == "deferred"
+        assert run["stages"][name]["detail"] == M.SPEND_CAP
+
+
+def test_run_claude_logs_every_calls_cost_even_a_retry_that_reuses_the_result_file(tmp_path):
+    import subprocess
+    import sys
+
+    from src.shared import paths
+
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "claude").write_text(
+        '#!/bin/bash\necho \'{"is_error": false, "total_cost_usd": 0.25}\'\n', encoding="utf-8"
+    )
+    (fake / "uv").write_text(  # `run config get` -> 10; `run python -` -> this python
+        f'#!/bin/bash\n[[ "$2" == python ]] && {{ shift 2; exec "{sys.executable}" "$@"; }}\n'
+        "echo 10\n",
+        encoding="utf-8",
+    )
+    for f in fake.iterdir():
+        f.chmod(0o755)
+    lib = paths.REPO_ROOT / "scripts" / "lib_pipeline.sh"
+    script = (
+        f'source "{lib}"; STAGE=tailor; LOG=/dev/null; run_claude a1 Read p; run_claude a1 Read p'
+    )
+    env = {"PATH": "/usr/bin:/bin", "UV": str(fake / "uv"), "CLAUDE": str(fake / "claude")}
+    env["RUN_DIR"] = str(tmp_path / "run")
+    subprocess.run(["bash", "-c", script], env=env, check=True, capture_output=True)
+    assert (tmp_path / "run" / "tailor.cost").read_text(encoding="utf-8") == "a1 0.25\na1 0.25\n"
+    assert M._cost(tmp_path / "run" / "tailor.cost") == 0.5

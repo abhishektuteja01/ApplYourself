@@ -5,6 +5,9 @@
 Each stage is its script in scripts/stages/; this only orders, locks and records
 (the stages call `claude`, never this). A failed discover or score stops the
 chain; the stages after it are `deferred`. summary and email always run last.
+Each stage's claude spend (the costs run_claude logs to <stage>.cost) goes into
+run.json; once the night's total reaches settings.yaml `max_spend_usd_per_night`,
+the claude stages still to run are `deferred` ("spend cap").
 `--resume` reruns, in the last run folder, every stage that did not end ok.
 
   DRY_RUN=1          same as --dry-run: the stages print what they would run
@@ -31,10 +34,12 @@ from pathlib import Path
 
 import yaml
 
-from src.shared import clock, paths, schemas
+from src.shared import clock, config_schema, paths, schemas
 
 STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 STOPS = ("discover", "score")
+CLAUDE_STAGES = ("score", "synonyms", "tailor", "apply_prep")
+SPEND_CAP = "not run: spend cap"
 FINISH = ("summary", "email")
 DONE = ("ok", "skipped")
 LOCKED = 75
@@ -66,6 +71,28 @@ def _iso() -> str:
     return clock.now().isoformat(timespec="seconds")
 
 
+def _cost(path: Path) -> float:
+    """The sum of a <stage>.cost file's `<tag> <usd>` lines; 0 when there is none."""
+    total = 0.0
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                total += float(line.split()[-1])
+            except (ValueError, IndexError):
+                continue
+    return round(total, 4)
+
+
+def _spend_cap() -> float | None:
+    """settings.yaml max_spend_usd_per_night; absent, 0 or an unreadable file is no cap."""
+    try:
+        cap = config_schema.setting("max_spend_usd_per_night", 0)
+    except (OSError, ValueError, yaml.YAMLError) as e:
+        print(f"night: no spend cap ({e})", file=sys.stderr)
+        return None
+    return float(cap) if cap and float(cap) > 0 else None
+
+
 def record(argv: list[str]) -> int:
     """Write <run_dir>/<stage>.result.json; a <stage>_results.txt of `<id> <status>` lines becomes items."""
     ap = argparse.ArgumentParser(prog="night record")
@@ -95,6 +122,7 @@ class Night:
         self.run_dir, self.run, self.dry, self.stages_dir = run_dir, run, dry, stages_dir
         self.log = run_dir / "pipeline.log"
         self.ran: list[str] = []
+        self.cap = _spend_cap()
 
     def say(self, text: str) -> None:
         print(text, flush=True)
@@ -138,8 +166,13 @@ class Night:
             seconds=int(time.monotonic() - t0),
             detail=said.get("detail", ""),
             counts=counts,
+            cost_usd=_cost(self.run_dir / f"{name}.cost"),
             **({"items": items} if items else {}),
         )
+        self.run["cost_usd"] = round(
+            sum(st.get("cost_usd") or 0 for st in self.run["stages"].values()), 4
+        )
+        self.save()
         self.ran.append(name)
         return self.run["stages"][name]
 
@@ -149,6 +182,9 @@ class Night:
         for name in todo:
             if stopped:
                 self.set(name, status="deferred", rc=None, detail=f"not run: {stopped} failed")
+                continue
+            if name in CLAUDE_STAGES and self.cap and self.run.get("cost_usd", 0) >= self.cap:
+                self.set(name, status="deferred", rc=None, detail=SPEND_CAP)
                 continue
             if self.stage(name)["status"] == "fail" and name in STOPS:
                 stopped = name
