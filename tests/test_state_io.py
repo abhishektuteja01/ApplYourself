@@ -508,9 +508,20 @@ def test_two_writers_on_one_role_do_not_lose_an_update(tmp_path):
     assert len(data["outreach"]) == 1
 
 
-# --- R10: only track_cli changes state -------------------------------------
+# --- R10: only track_cli changes state or appends state events ------------
 
-_STATE_WRITERS = {"transition", "ensure_state", "update", "_write_state", "_transitioned"}
+# Everything that writes `state:` or appends to pipeline/events.jsonl.
+_STATE_WRITERS = {
+    "transition",
+    "ensure_state",
+    "update",
+    "_write_state",
+    "_transitioned",
+    "_commit",
+    "_append_event",
+    "write_events",
+    "rebuild_states",
+}
 
 
 def _r10_offenders(source: str) -> list[int]:
@@ -554,6 +565,7 @@ def test_only_track_cli_changes_state():
     allowed = {root / "state_io.py", root / "track_cli.py"}
     assert _r10_offenders("from src import state_io\nstate_io.transition(p, 'applied')\n")
     assert _r10_offenders("from src.state_io import ensure_state as e\ne(p)\n")
+    assert _r10_offenders("from src import state_io\nstate_io._append_event(log, ev)\n")
     offenders = [
         f"{path.relative_to(root.parent)}:{line}"
         for path in sorted(root.rglob("*.py"))

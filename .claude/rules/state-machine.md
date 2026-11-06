@@ -27,10 +27,24 @@ not a move.
 `ghosted_after_days` (`profile/automation.yaml`, default 30): in `track
 states`, `/standup`, the status sheet and the night summary.
 
-R10: `src/track_cli.py` is the only module that calls `state_io.transition` or
-`ensure_state`; `/track`, `app_cli`, `apply_cli` and `apply/triage` call
-`track_cli.main`, and `tests/test_state_io.py` fails on any other caller. `/tailor` (through
-`uv run app build resume`) and `/outreach` only append to side lists
+History is `pipeline/events.jsonl`, one append-only line per change (`v, ts,
+job_id, kind, from, to, note, forced, data`; kinds `created`, `transition`,
+`tailored_dir`, `outreach_drafted`, `outreach_sent`, `cleaned`, and
+`imported` from the migration). Each `state.yaml` is a cache of its role's
+fold (`state_io.apply_event`), rewritten under the role's lock right after
+the event is appended with fsync; readers keep reading `state.yaml`. A write
+to a role whose `state.yaml` is gone rebuilds it from the log first, and
+`uv run track rebuild-states --dry-run|--apply` remakes any that drifted.
+Until `uv run track migrate-events --apply` creates the log, writes update
+`state.yaml` alone. The migration turns every `state_history` into events and
+restores the submit ledger's sent roles that have no `state.yaml`; `--dry-run`
+exits 1 if the fold differs from any file.
+
+R10: `src/track_cli.py` is the only module that appends state events
+(`created`, `transition`, through `state_io.transition` or `ensure_state`);
+`/track`, `app_cli`, `apply_cli` and `apply/triage` call `track_cli.main`, and
+`tests/test_state_io.py` fails on any other caller. `/tailor` (through
+`uv run app build resume`) and `/outreach` only append side-list events
 (`tailored_dirs[]`, `outreach[]`). Whether a role has a cover letter or company
 answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
@@ -40,13 +54,14 @@ deletes the folders of `skip` and never-applied `withdrawn` roles, and of
 `rejected`, applied-then-`withdrawn` and `ghosted` roles after writing one
 `applications/_archive/<lane>/<folder>.md`: the resume text, then a `## Job
 description` section from `jd_snapshot.md` when the folder has one. It records `cleaned:
-{date, archived}` through `state_io.update` and never changes `state:`. A
+{date, archived}` through `state_io.mark_cleaned` and never changes `state:`. A
 cleaned role's missing folder makes `app_cli.built_folder` None (so `app dir`
 gives an empty `dir`) and the sheet shows it `Cleaned`, so neither night stage
 rebuilds it; a fresh `/tailor` makes a new folder.
 
 `.claude/hooks/state_yaml_guard.sh` blocks the Edit/Write tools from targeting a
-`state.yaml` at all, since every legitimate write goes through Bash.
+`state.yaml` or `pipeline/events.jsonl` at all, since every legitimate write
+goes through Bash.
 
 ## The three `saved -> tailored` firers
 

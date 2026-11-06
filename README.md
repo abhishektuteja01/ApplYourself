@@ -486,7 +486,8 @@ data/universe/boards.csv        the board list
 shortlist/<date>.md             today's keepers, sectioned by lane
 applications/<vertical>/<dir>/  one directory per tailoring run
 applications/apply_runs/        submission run reports and evidence
-pipeline/<job_id>/state.yaml    one state file per tracked role
+pipeline/<job_id>/state.yaml    one state file per tracked role, a cache of its events
+pipeline/events.jsonl           the append-only history every state.yaml folds from
 pipeline.md                     the whole-pipeline view /standup rebuilds
 inbox/*.md                      manual JD clips, moved to .processed/ when read
 profile/                        your config and content
@@ -555,8 +556,12 @@ Otherwise they'd drag an `applied` role backwards. `/cover-letter` fires it afte
 `/apply` fires it once its plan-check confirms the board genuinely needs no
 letter.
 
+Every change is one line appended to `pipeline/events.jsonl`; each `state.yaml`
+is a cache of its role's fold, and `uv run track rebuild-states` remakes it.
+
 `.claude/hooks/state_yaml_guard.sh` blocks the Edit and Write tools from
-targeting a `state.yaml` at all, since every legitimate write goes through Bash.
+targeting a `state.yaml` or `pipeline/events.jsonl` at all, since every
+legitimate write goes through Bash.
 
 </details>
 
@@ -648,7 +653,7 @@ Three rules are enforced mechanically rather than by memory. All wired in
 
 | hook | when | blocks |
 |---|---|---|
-| `state_yaml_guard.sh` | before Edit/Write | any edit targeting a `pipeline/*/state.yaml` (R10) |
+| `state_yaml_guard.sh` | before Edit/Write | any edit targeting a `pipeline/*/state.yaml` or `pipeline/events.jsonl` (R10) |
 | `r7_no_llm_in_src.sh` | after Edit/Write | LLM SDK imports or API endpoints under `src/**/*.py` (R7) |
 | `pii_gate.sh` | before `git commit` | a commit whose index fails `scripts/pii_scan.sh` |
 

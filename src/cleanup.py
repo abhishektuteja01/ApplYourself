@@ -7,7 +7,7 @@
   under `## Job description`, its `jd_snapshot.md`; then the folders go.
 
 Each cleaned role gets a `cleaned: {date, archived}` side field, written by
-track_cli through `state_io.update`; `state:` never changes (R10). A cleaned role's recorded
+track_cli through `state_io.mark_cleaned`; `state:` never changes (R10). A cleaned role's recorded
 folder is then gone, so `app_cli.built_folder` gives None and the sheet shows
 it `Cleaned`: nothing rebuilds it until a fresh /tailor.
 """

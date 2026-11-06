@@ -29,6 +29,16 @@
                               / ghosted roles, archiving the resume and JD of those
                               that were applied (src/cleanup.py). Read-only
                               unless --apply. Never a transition.
+  migrate-events --dry-run|--apply [--pipeline DIR] [--ledger FILE]
+                              build pipeline/events.jsonl from every
+                              state.yaml's history plus the submit ledger's
+                              sent roles that have no state.yaml; --dry-run
+                              checks the fold matches every state.yaml and
+                              exits 1 on any mismatch. Run with nothing else
+                              writing state.
+  rebuild-states --dry-run|--apply [--pipeline DIR]
+                              list (or rewrite) every state.yaml that differs
+                              from the fold of pipeline/events.jsonl
 
 Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
 `uv run track ensure <job_id>`.
@@ -56,13 +66,14 @@ from src.state_io import (
     ghosted_after_days,
     load_all_states,
     load_state,
+    logged_state,
+    mark_cleaned,
     mark_outreach_sent,
     needs_stamp,
     shown_state,
     stamp_schema,
     state_path_for,
     transition,
-    update,
 )
 
 CLEAN = paths.CLEAN
@@ -123,7 +134,7 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     # Gate on content, not existence: an empty state.yaml carries no state and
     # is rebuilt from the parquets rather than transitioned in place.
     try:
-        existing = load_state(p)
+        existing = load_state(p) or logged_state(p)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -186,7 +197,7 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
     job_id = args.job_id
     p = state_path_for(paths.PIPELINE, job_id)
     try:
-        existing = load_state(p)
+        existing = load_state(p) or logged_state(p)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -317,14 +328,142 @@ def _cmd_cleanup(args: argparse.Namespace) -> int:
     actions = cleanup.plan(pipeline)
 
     def record(job_id: str, cleaned: dict[str, Any]) -> None:
-        def mark(data: dict[str, Any] | None) -> dict[str, Any] | None:
-            return None if data is None else {**data, "cleaned": cleaned}
-
-        update(state_path_for(pipeline, job_id), mark)
+        mark_cleaned(state_path_for(pipeline, job_id), cleaned)
 
     if args.apply:
         cleanup.apply(actions, record)
     print(f"OK: {cleanup.render(actions, args.apply)}")
+    return 0
+
+
+def _backfill_fields(
+    job_ids: set[str], lines: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Initial fields for ledger-only roles: clean.parquet, else the store, else
+    the ledger line itself. Each parquet is read once, in the needed columns."""
+    import pyarrow.parquet as pq
+
+    def rows(path: Path, cols: list[str]) -> dict[str, dict[str, Any]]:
+        if not job_ids or not path.exists():
+            return {}
+        names = pq.read_schema(path).names  # type: ignore[no-untyped-call]
+        cols = [c for c in cols if c in names]
+        df = pd.read_parquet(path, columns=cols, filters=[("job_id", "in", sorted(job_ids))])
+        if "last_seen" in df:
+            df = df.sort_values("last_seen")
+        return {str(r["job_id"]): {str(k): v for k, v in r.items()} for r in df.to_dict("records")}
+
+    base = ["job_id", "company", "title", "source", "url", "vertical"]
+    clean = rows(CLEAN, [*base, "location"])
+    store = rows(STORE, [*base, "location_raw", "last_seen"])
+    scored = rows(SCORED, ["job_id", "sponsorship_label", "fit_score"])
+    out = {}
+    for job_id in job_ids:
+        line = lines[job_id]
+        row = clean.get(job_id) or store.get(job_id) or {}
+        fields: dict[str, Any] = {
+            "company": str(row.get("company") or line.get("company") or ""),
+            "title": str(row.get("title") or line.get("title") or ""),
+            "source": str(row.get("source") or ""),
+            "url": str(row.get("url") or line.get("form_url") or ""),
+            "location": str(row.get("location") or row.get("location_raw") or ""),
+            "vertical": str(row.get("vertical") or ""),
+        }
+        if job_id in scored:
+            fields["sponsorship_label"] = str(scored[job_id].get("sponsorship_label") or "unknown")
+            fs = scored[job_id].get("fit_score")
+            fields["fit_score"] = int(fs) if pd.notna(fs) else None
+        out[job_id] = fields
+    return out
+
+
+def _cmd_migrate_events(args: argparse.Namespace) -> int:
+    from src import state_io
+
+    pipeline = args.pipeline or paths.PIPELINE
+    ledger_file = args.ledger or paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME
+    log_path = state_io.events_path_for(pipeline)
+    if log_path.exists():
+        print(f"ERROR: {log_path} already exists; nothing to migrate", file=sys.stderr)
+        return 1
+    records: dict[str, dict[str, Any]] = {}
+    errors = 0
+    for p in sorted(pipeline.glob("*/state.yaml")):
+        try:
+            data = load_state(p)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            errors += 1
+            continue
+        if data is None:
+            continue
+        if data.get("job_id") != p.parent.name:
+            print(f"ERROR: {p} has job_id {data.get('job_id')!r}", file=sys.stderr)
+            errors += 1
+            continue
+        records[p.parent.name] = data
+    events = [e for rec in records.values() for e in state_io.events_from_record(rec)]
+
+    latest: dict[str, dict[str, Any]] = {}
+    for line in ledger.records(ledger_file):
+        if line.get("job_id"):
+            latest[str(line["job_id"])] = line
+    verdicts = {j: ledger.verdict_of(r) for j, r in latest.items() if j not in records}
+    restore = {
+        j for j, v in verdicts.items() if v in (ledger.Verdict.SENT, ledger.Verdict.REJECTED)
+    }
+    unknown = sorted(j for j, v in verdicts.items() if v is ledger.Verdict.UNKNOWN)
+    fields = _backfill_fields(restore, latest)
+    for j in sorted(restore):
+        events += state_io.events_from_ledger(
+            j, latest[j], fields[j], rejected=verdicts[j] is ledger.Verdict.REJECTED
+        )
+
+    folded = state_io.fold(events)
+    mismatches = 0
+    for j, rec in records.items():
+        want, got = state_io.as_cached(rec), folded.get(j) or {}
+        if want != got:
+            mismatches += 1
+            keys = sorted(k for k in want.keys() | got.keys() if want.get(k) != got.get(k))
+            print(f"MISMATCH: {j}  {', '.join(keys)}", file=sys.stderr)
+    kinds: dict[str, int] = {}
+    for ev in events:
+        kinds[ev["kind"]] = kinds.get(ev["kind"], 0) + 1
+    print(
+        f"{len(records)} state.yaml files, {len(restore)} sent roles with no state.yaml in the ledger "
+        f"({sum(1 for j in restore if verdicts[j] is ledger.Verdict.REJECTED)} rejected), "
+        f"{len(events)} events ({', '.join(f'{n} {k}' for k, n in sorted(kinds.items()))})"
+    )
+    if unknown:
+        print(f"left out, the click may not have reached the board: {', '.join(unknown)}")
+    if mismatches or errors:
+        print(
+            f"ERROR: {mismatches} mismatches, {errors} unreadable; nothing written", file=sys.stderr
+        )
+        return 1
+    if not args.apply:
+        print(f"OK: the fold matches all {len(records)} state.yaml files; nothing written")
+        return 0
+    state_io.write_events(log_path, events)
+    rebuilt = state_io.rebuild_states(pipeline, apply=True)
+    print(f"OK: wrote {log_path}; rewrote {len(rebuilt)} state.yaml files from it")
+    return 0
+
+
+def _cmd_rebuild_states(args: argparse.Namespace) -> int:
+    from src import state_io
+
+    pipeline = args.pipeline or paths.PIPELINE
+    if not state_io.events_path_for(pipeline).exists():
+        print("ERROR: no pipeline/events.jsonl yet -- run `track migrate-events`", file=sys.stderr)
+        return 1
+    differ = state_io.rebuild_states(pipeline, apply=args.apply)
+    for j in differ:
+        print(f"{'rebuilt' if args.apply else 'differs'}: {j}")
+    print(
+        f"OK: {len(differ)} state.yaml files {'rebuilt' if args.apply else 'differ from the log'}"
+    )
     return 0
 
 
@@ -357,6 +496,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--pipeline", type=Path, default=None)
         args = parser.parse_args(argv[1:])
         return _cmd_cleanup(args)
+
+    if argv and argv[0] in ("migrate-events", "rebuild-states"):
+        parser = argparse.ArgumentParser(prog=f"track {argv[0]}")
+        mode = parser.add_mutually_exclusive_group(required=True)
+        mode.add_argument("--dry-run", action="store_true")
+        mode.add_argument("--apply", action="store_true")
+        parser.add_argument("--pipeline", type=Path, default=None)
+        if argv[0] == "migrate-events":
+            parser.add_argument("--ledger", type=Path, default=None)
+            return _cmd_migrate_events(parser.parse_args(argv[1:]))
+        return _cmd_rebuild_states(parser.parse_args(argv[1:]))
 
     if argv and argv[0] == "outreach-sent":
         parser = argparse.ArgumentParser(prog="track outreach-sent")

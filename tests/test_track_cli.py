@@ -346,3 +346,75 @@ def test_if_guard_checks_the_state_under_the_lock(tmp_path, monkeypatch, capsys)
     assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
     assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "applied"
     assert "left unchanged" in capsys.readouterr().out
+
+
+# --- migrate-events -----------------------------------------------------------
+
+
+def _real_shaped_pipeline(tmp_path) -> Path:
+    """A few state.yaml files shaped like the real ones, plus a submit ledger
+    with a sent, a rejected and a clicking role that have no state.yaml."""
+    import json
+
+    from src import state_io
+
+    pipe = tmp_path / "pipeline"
+    p = state_io.state_path_for(pipe, "aaaaaaaa")
+    initial = {"job_id": "aaaaaaaa", "company": "A", "title": "T"}
+    state_io.transition(p, "saved", initial_fields=initial)
+    state_io.append_tailored_dir(p, "example_primary/a_1")
+    state_io.append_outreach_draft(p, channel="recruiter", to_name="S", draft_file="d.md")
+    state_io.mark_outreach_sent(p, channel="recruiter", to_name="S")
+    state_io.transition(p, "applied")
+    state_io.transition(p, "applied", note="re-sent", force=True)
+    state_io.mark_cleaned(p, {"date": "2026-10-01", "archived": None})
+    write_state(pipe, "bbbbbbbb", "skip")
+    led = tmp_path / "applications" / "apply_runs" / "submitted.jsonl"
+    led.parent.mkdir(parents=True)
+    lines = [
+        {"at": "2026-08-12T19:05:03", "job_id": "cccccccc", "status": "backfill", "company": "C"},
+        {"at": "2026-08-13T10:00:00", "job_id": "dddddddd", "status": "rejected", "company": "D"},
+        {"at": "2026-08-14T10:00:00", "job_id": "eeeeeeee", "status": "clicking", "company": "E"},
+    ]
+    led.write_text("".join(json.dumps(x) + "\n" for x in lines), encoding="utf-8")
+    return pipe
+
+
+def test_migrate_events_dry_run_checks_the_fold_and_writes_nothing(tmp_path, capsys):
+    from src import state_io
+
+    pipe = _real_shaped_pipeline(tmp_path)
+    before = sorted(str(f) for f in pipe.rglob("*"))
+    assert track_cli.main(["migrate-events", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "2 state.yaml files, 2 sent roles" in out
+    assert "eeeeeeee" in out  # the clicking role is named, not restored
+    assert sorted(str(f) for f in pipe.rglob("*")) == before
+
+    assert track_cli.main(["migrate-events", "--apply"]) == 0
+    idx = state_io.load_state_index(pipe)
+    assert idx["cccccccc"]["state"] == "applied"
+    assert idx["dddddddd"]["state"] == "rejected"
+    assert "eeeeeeee" not in idx
+    # After the switch each write appends an event and the cache stays the fold.
+    assert track_cli.main(["bbbbbbbb", "saved"]) == 0
+    events = state_io.read_events(pipe / "events.jsonl")
+    assert events[-1]["kind"] == "transition" and events[-1]["from"] == "skip"
+    assert state_io.rebuild_states(pipe, apply=False) == []
+    # A lost state.yaml comes back from the log instead of re-registering.
+    p = state_io.state_path_for(pipe, "bbbbbbbb")
+    p.unlink()
+    assert track_cli.main(["ensure", "bbbbbbbb"]) == 0
+    restored = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert restored["state"] == "saved"
+    assert len(restored["state_history"]) == 2
+
+
+def test_migrate_events_refuses_on_a_mismatch(tmp_path, capsys):
+    pipe = _real_shaped_pipeline(tmp_path)
+    p = pipe / "bbbbbbbb" / "state.yaml"
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    p.write_text(yaml.safe_dump({**data, "state": "applied"}), encoding="utf-8")
+    assert track_cli.main(["migrate-events", "--apply"]) == 1
+    assert "MISMATCH: bbbbbbbb  state" in capsys.readouterr().err
+    assert not (pipe / "events.jsonl").exists()

@@ -28,9 +28,11 @@ is deterministic plumbing; all judgment happens inside a slash-command session,
 which calls the `src/` helpers via Bash. A corollary: `src/` is vertical-agnostic
 and company-agnostic.
 
-**R10 — one writer for state.** `src/track_cli.py` is the only module that changes
-`state:`; `/track`, `app_cli`, `apply_cli` and `apply/triage` all go through
-`track_cli.main`. Everything else appends to side lists only.
+**R10 — one writer for state.** `pipeline/events.jsonl` is the append-only
+history and each `state.yaml` is a cache of its fold. `src/track_cli.py` is the
+only module that appends state events (`created`, `transition`); `/track`,
+`app_cli`, `apply_cli` and `apply/triage` all go through `track_cli.main`.
+Everything else appends side-list events only.
 
 R7 and R10 are the only rule codes in this repo. Every other rule is stated inline
 where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
@@ -43,7 +45,7 @@ only when you open the code it governs — `src-boundary`, `state-machine`,
 `pii-gate`, `discovery`. Run `/context` to see what actually loaded.
 
 `.claude/hooks/*.sh` enforce four of these mechanically rather than by memory: the
-R7 boundary, the R10 state.yaml writer, the PII gate, and that only the user writes
+R7 boundary, the R10 state.yaml and events.jsonl writer, the PII gate, and that only the user writes
 an `/apply` `.confirmed` file.
 `.githooks/pre-commit` runs `scripts/r7_scan.sh` and the test suite on any commit
 that stages `src/`, `tests/`, `scripts/` or `profile/*.example.*`, and `ruff check`
@@ -73,7 +75,8 @@ when each was last checked.
 Application material lands in `applications/<vertical>/<dir>/`, and that folder
 is the only state the material commands share: `uv run app dir <id>` resolves it
 from `state.yaml`'s `tailored_dirs[-1]`, and "has a letter / answers" means the
-file is there. Tracking keeps one `pipeline/<job_id>/state.yaml` per role.
+file is there. Tracking keeps one `pipeline/<job_id>/state.yaml` per role, a
+cache of that role's events in `pipeline/events.jsonl`.
 
 ### One source per resume fact
 
