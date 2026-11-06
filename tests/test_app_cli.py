@@ -245,6 +245,15 @@ def test_build_resume_without_a_pdf_fails_closed_unless_no_pdf(repo, capsys, mon
     assert code == 0, res
 
 
+def test_no_pdf_never_starts_word_and_drops_an_older_pdf(repo, capsys, monkeypatch):
+    rel = _built(repo, capsys)
+    stale = repo / rel / "Alex_Example_Resume.pdf"
+    stale.write_bytes(b"old")
+    monkeypatch.setattr(app_cli, "export_pdf", lambda docx, token: pytest.fail("Word started"))
+    code, res = _run(capsys, "build", "resume", JOB, "--no-pdf")
+    assert code == 0 and res["pdf"]["status"] == "skipped" and not stale.exists()
+
+
 # ---------- dir ----------
 
 

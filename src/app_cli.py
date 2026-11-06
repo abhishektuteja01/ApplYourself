@@ -50,7 +50,7 @@ from src import lint, resume_model, score_store, session_schema, state_io, track
 from src.apply import ledger
 from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
-from src.docx_render import TemplateError, export_pdf, render_resume
+from src.docx_render import PdfResult, TemplateError, export_pdf, render_resume
 from src.session_schema import ProblemCode
 from src.shared import clock, config_schema, paths, verticals
 
@@ -307,6 +307,15 @@ def _pdf_unknown(where: str, pdf: dict) -> dict:
     }
 
 
+def _pdf(docx: Path, token: str, no_pdf: bool) -> PdfResult:
+    """The docx's pdf; with --no-pdf none is made (Word never starts), and an
+    older one is removed so it cannot pass for this docx."""
+    if no_pdf:
+        docx.with_suffix(".pdf").unlink(missing_ok=True)
+        return PdfResult(status="skipped", path="", pages=0, detail="--no-pdf")
+    return export_pdf(docx, token)
+
+
 def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> tuple[dict, int]:
     info = role_info(job_id)
     if not info["work_dir"]:
@@ -334,7 +343,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
         render_resume(built.blocks, paths.PROFILE / "resume_template.docx", docx)
     except (TemplateError, FileNotFoundError) as exc:
         raise AppError(str(exc)) from exc
-    pdf = export_pdf(docx, folder.name)
+    pdf = _pdf(docx, folder.name, no_pdf)
     if pdf["status"] == "ok" and pdf["pages"] > 1:
         return {
             "ok": False,
@@ -543,7 +552,7 @@ def cmd_build_letter(
         render_cover_letter(content, paths.PROFILE / "cover_letter_template.docx", docx)
     except (TemplateError, FileNotFoundError, ValueError) as exc:
         raise AppError(str(exc)) from exc
-    pdf = export_pdf(docx, folder.name)
+    pdf = _pdf(docx, folder.name, no_pdf)
     words = sum(len(p.split()) for p in body)
     if pdf["status"] == "ok" and pdf["pages"] > 1:
         return {
