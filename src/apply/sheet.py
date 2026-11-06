@@ -26,8 +26,8 @@ import pandas as pd
 import yaml
 
 from src import state_io
-from src.app_cli import built_folder
 from src.apply import apply_url, confirmation, cooldown, ledger, run_record
+from src.material.folders import built_folder
 from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths

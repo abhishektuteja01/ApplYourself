@@ -62,7 +62,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import app_cli, state_io, track_cli
+from src import state_io, track_cli
 from src.apply import (
     apply_url,
     ashby,
@@ -132,6 +132,7 @@ from src.apply.role_facts import (  # noqa: F401 - re-exported
     job_country,
 )
 from src.apply.schema import SchemaError
+from src.material import folders as app_folders
 from src.shared import clock, paths
 from src.shared.http_client import CareersError
 from src.shared.identity import normalize_company
@@ -199,8 +200,8 @@ def resolve_url(job_id: str, state: dict | None) -> str:
 def resolve_out_dir(job_id: str) -> Path:
     """The folder the role's resume was last built in, as `app dir` resolves it."""
     try:
-        return app_cli._built_dir(job_id)
-    except app_cli.AppError as exc:
+        return app_folders.built_dir(job_id)
+    except app_folders.AppError as exc:
         raise ApplyCliError(str(exc)) from exc
 
 
@@ -261,8 +262,8 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
 
     try:
         out_dir = resolve_out_dir(job_id)
-        info = app_cli.role_info(job_id)
-    except (ApplyCliError, app_cli.AppError) as exc:
+        info = app_folders.role_info(job_id)
+    except (ApplyCliError, app_folders.AppError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     vertical = info["vertical"]
@@ -659,7 +660,7 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
 
 
 def _built_on_disk(state: dict) -> bool:
-    folder = app_cli.built_folder(state)
+    folder = app_folders.built_folder(state)
     return folder is not None and folder.is_dir()
 
 

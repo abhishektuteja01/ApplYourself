@@ -29,11 +29,11 @@ from src.material.folders import (
     RESUME_PLAN,
     AppError,
     _atomic_write,
-    _built_dir,
     _identity,
     _load_yaml,
     _read_snapshot,
     _state,
+    built_dir,
     role_info,
 )
 from src.session_schema import ProblemCode
@@ -111,7 +111,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
 
 
 def cmd_build_answers(job_id: str) -> tuple[dict, int]:
-    folder = _built_dir(job_id)
+    folder = built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / ANSWERS)
     if bad := session_schema.problems("answers", data):
@@ -158,7 +158,7 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
 def cmd_build_letter(
     job_id: str, today: date | None = None, no_pdf: bool = False
 ) -> tuple[dict, int]:
-    folder = _built_dir(job_id)
+    folder = built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / LETTER_PLAN)
     if bad := session_schema.problems("letter", data):
@@ -253,7 +253,7 @@ def cmd_build_letter(
 
 
 def cmd_build_outreach(job_id: str, now: datetime | None = None) -> tuple[dict, int]:
-    folder = _built_dir(job_id)
+    folder = built_dir(job_id)
     facts, jd = _read_snapshot(folder)
     data = _load_yaml(folder / OUTREACH)
     if bad := session_schema.problems("outreach", data):

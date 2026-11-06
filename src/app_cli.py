@@ -53,7 +53,6 @@ from src.material.checks import (
     cmd_lint_outreach,
 )
 from src.material.folders import (
-    _IDLE_STATES,
     ANSWER_KEYS,
     ANSWERS,
     LETTER_PLAN,
@@ -62,23 +61,23 @@ from src.material.folders import (
     SNAPSHOT,
     AppError,
     _atomic_write,
-    _built_dir,
     _clean_value,
     _file_slug,
     _identity,
-    _load_row,
     _load_yaml,
     _read_snapshot,
-    _role_dirs,
     _slug,
     _state,
     _version,
+    built_dir,
     built_folder,
-    cmd_dupes,
-    cmd_new,
+    role_dirs,
     role_folder,
     role_info,
 )
+from src.material.new import _IDLE_STATES, _load_row, cmd_dupes, cmd_new
+
+_built_dir, _role_dirs = built_dir, role_dirs  # the names before they were public
 
 # Every name src/material/ took from this module stays importable from it.
 __all__ = [
@@ -108,6 +107,7 @@ __all__ = [
     "_slug",
     "_state",
     "_version",
+    "built_dir",
     "built_folder",
     "cmd_build_answers",
     "cmd_build_letter",
@@ -117,6 +117,7 @@ __all__ = [
     "cmd_lint_outreach",
     "cmd_new",
     "main",
+    "role_dirs",
     "role_folder",
     "role_info",
 ]

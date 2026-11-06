@@ -8,7 +8,7 @@
 
 Each cleaned role gets a `cleaned: {date, archived}` side field, written by
 track_cli through `state_io.mark_cleaned`; `state:` never changes (R10). A cleaned role's recorded
-folder is then gone, so `app_cli.built_folder` gives None and the sheet shows
+folder is then gone, so `material.folders.built_folder` gives None and the sheet shows
 it `Cleaned`: nothing rebuilds it until a fresh /tailor.
 """
 
@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src import app_cli, state_io
+from src import state_io
 from src.apply import ledger
+from src.material import folders as app_folders
 from src.shared import clock, paths
 
 ARCHIVE = "_archive"
@@ -50,7 +51,7 @@ def _reached_applied(data: dict[str, Any], sent: set[str]) -> bool:
 def _role_folders(job_id: str, data: dict[str, Any]) -> list[Path]:
     """Every folder of this role under a lane, never `_archive` or `apply_runs`."""
     apps = paths.APPLICATIONS
-    found = set(app_cli._role_dirs(job_id))
+    found = set(app_folders.role_dirs(job_id))
     found |= {apps / d for d in data.get("tailored_dirs") or [] if (apps / d).is_dir()}
     return sorted(
         p
@@ -94,10 +95,10 @@ def plan(pipeline_dir: Path | None = None) -> list[Action]:
             continue
         action = Action(job_id, shown, folders, bytes=sum(_size(f) for f in folders))
         if archive:
-            built = app_cli.built_folder(data)
+            built = app_folders.built_folder(data)
             source_dir = built if built is not None and built in folders else folders[-1]
             action.archive_from = _resume_source(source_dir)
-            jd = source_dir / app_cli.SNAPSHOT
+            jd = source_dir / app_folders.SNAPSHOT
             action.archive_jd = jd if jd.is_file() else None
             if action.archive_from is not None or action.archive_jd is not None:
                 lane = source_dir.parent.name

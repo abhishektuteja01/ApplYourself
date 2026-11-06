@@ -21,10 +21,11 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import app_cli, night, state_io
+from src import night, state_io
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
+from src.material import folders as app_folders
 from src.score_store import view
 from src.shared import clock, paths
 from src.shared.files import atomic_write_text
@@ -363,12 +364,12 @@ def tailoring_section(
 
 def tailor_reason(job: str, run_dir: Path | None, live: set[str]) -> str:
     """Why a role has no finished resume now; "" when it has one."""
-    folder = app_cli.role_folder(job)
+    folder = app_folders.role_folder(job)
     if folder:
         has = lambda pat: any(folder.glob(pat))  # noqa: E731
         if has("*_Resume.docx") and has("*_Resume.pdf"):
             state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, job)) or {}
-            if folder == app_cli.built_folder(state):
+            if folder == app_folders.built_folder(state):
                 return ""
             return "resume built but not recorded: it renders to more than one page"
         if has("*_Resume.docx"):

@@ -60,7 +60,7 @@ deletes the folders of `skip` and never-applied `withdrawn` roles, and of
 `applications/_archive/<lane>/<folder>.md`: the resume text, then a `## Job
 description` section from `jd_snapshot.md` when the folder has one. It records `cleaned:
 {date, archived}` through `state_io.mark_cleaned` and never changes `state:`. A
-cleaned role's missing folder makes `app_cli.built_folder` None (so `app dir`
+cleaned role's missing folder makes `material.folders.built_folder` None (so `app dir`
 gives an empty `dir`) and the sheet shows it `Cleaned`, so neither night stage
 rebuilds it; a fresh `/tailor` makes a new folder.
 
