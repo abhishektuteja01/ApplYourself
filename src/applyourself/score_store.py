@@ -317,8 +317,9 @@ def _slices(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 
 
 def judge_lines(run: dict[str, Any], staging: Path) -> list[str]:
-    """One `judge <slice file>...` line per judge, over the slices still unanswered."""
-    lines: list[str] = []
+    """One `judge <slice file>...` line per judge, over the slices still
+    unanswered; the lanes take turns, so a judge stopped early starves none."""
+    lanes: dict[str, list[str]] = {}
     cur: list[str] = []
     size, lane = 0, None
     for name, meta in run["slices"].items():
@@ -329,12 +330,15 @@ def judge_lines(run: dict[str, Any], staging: Path) -> list[str]:
             or size + meta["bytes"] > JUDGE_BYTES
             or meta["vertical"] != lane
         ):
-            lines.append("judge " + " ".join(cur))
+            lanes.setdefault(str(lane), []).append("judge " + " ".join(cur))
             cur, size = [], 0
         cur.append(str(staging / f"slice_{name}.md"))
         size += meta["bytes"]
         lane = meta["vertical"]
-    return lines + ["judge " + " ".join(cur)] if cur else lines
+    if cur:
+        lanes.setdefault(str(lane), []).append("judge " + " ".join(cur))
+    turns = max((len(v) for v in lanes.values()), default=0)
+    return [v[i] for i in range(turns) for v in lanes.values() if i < len(v)]
 
 
 def load_run(staging: Path) -> dict[str, Any] | None:
@@ -361,6 +365,16 @@ def first_seen_last_run(store_path: Path | None, job_ids: set[str]) -> set[str] 
     latest = pd.to_datetime(store["last_seen"]).max()
     first = pd.to_datetime(store["first_seen"]).groupby(store["job_id"]).min()
     return {j for j in job_ids if j in first.index and first[j] >= latest}
+
+
+def first_seen(store_path: Path | None, job_ids: set[str]) -> dict[str, float]:
+    """job_id -> its earliest first_seen in the jobs store, as a POSIX time; {} with no store."""
+    if store_path is None or not Path(store_path).exists() or not job_ids:
+        return {}
+    store = read_parquet(store_path, schemas.STORE_SCHEMA_VERSION, columns=["job_id", "first_seen"])
+    store = store[store["job_id"].isin(job_ids)]
+    first = pd.to_datetime(store["first_seen"]).groupby(store["job_id"]).min().dropna()
+    return {str(j): t.timestamp() for j, t in first.items()}
 
 
 def start(
@@ -459,9 +473,10 @@ def start(
         }
     remove_rows(scored_path, dropped)
 
-    keep.sort(
+    seen = first_seen(store_path, {r["job_id"] for r in keep})
+    keep.sort(  # newest first, so a judge stopped early has judged the newest
         key=lambda r: (
-            vcfg.names.index(r["vertical"]),
+            -seen.get(r["job_id"], float("-inf")),
             str(r.get("company") or "").lower(),
             str(r.get("title") or "").lower(),
         )

@@ -181,6 +181,23 @@ class TestStart:
         assert "job_ids, exactly these: " in text
         assert max(len(line) for line in text.splitlines()) <= 200
 
+    def test_stages_newest_first_and_the_lanes_take_turns(self, env, scfg):
+        rows = [{"job_id": f"{i:08x}", "company": f"Co{59 - i:02d}"} for i in range(60)]
+        _clean(env, [*rows, {"job_id": "ffffffff", "vertical": "example_secondary"}])
+        seen = [pd.Timestamp("2026-09-01") + pd.Timedelta(days=i) for i in range(60)]
+        pd.DataFrame(  # 00000000 is the newest and last by name; ffffffff is not in the store
+            {"job_id": [r["job_id"] for r in rows], "first_seen": seen[::-1], "last_seen": seen}
+        ).to_parquet(env["store"])
+        res = _start(env, scfg, store_path=env["store"])
+        run = score_store.load_run(env["staging"])
+        assert res["judge"] == 61
+        assert run["slices"]["example_primary_001"]["job_ids"][:2] == ["00000000", "00000001"]
+        assert [ln.split()[1].rsplit("slice_", 1)[1] for ln in res["lines"]] == [
+            "example_primary_001.md",
+            "example_secondary_001.md",
+            "example_primary_006.md",
+        ]
+
     def test_job_id_skips_the_drops(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa", "jd_text": JD + " 9+ years of experience"}])
         assert _start(env, scfg, job_ids=["aaaaaaaa"])["judge"] == 1
