@@ -111,7 +111,7 @@ def _role_dirs(job_id: str) -> list[Path]:
     """Every folder this role has had, in any lane, oldest version first."""
     found = [p for p in paths.APPLICATIONS.glob(f"*/*_{job_id}") if p.is_dir()]
     found += [p for p in paths.APPLICATIONS.glob(f"*/*_{job_id}_v*") if p.is_dir()]
-    return sorted(set(found), key=_version)
+    return sorted(set(found), key=lambda p: (_version(p), p.name))
 
 
 def role_folder(job_id: str) -> Path | None:
@@ -160,9 +160,10 @@ def _identity() -> tuple[str, str]:
 
 def built_folder(state: dict) -> Path | None:
     """The last folder a resume was built in (tailored_dirs[-1]), or None --
-    also when `track cleanup` removed it, so nothing builds on a deleted folder."""
+    also when `track cleanup` removed it, so nothing builds on a deleted folder,
+    and when the entry points outside applications/."""
     dirs = state.get("tailored_dirs") or []
-    if not dirs:
+    if not dirs or Path(dirs[-1]).is_absolute() or ".." in Path(dirs[-1]).parts:
         return None
     folder = paths.APPLICATIONS / dirs[-1]
     return None if state.get("cleaned") and not folder.is_dir() else folder

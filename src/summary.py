@@ -357,7 +357,10 @@ def tailor_reason(job: str, run_dir: Path | None, live: set[str]) -> str:
     if folder:
         has = lambda pat: any(folder.glob(pat))  # noqa: E731
         if has("*_Resume.docx") and has("*_Resume.pdf"):
-            return ""
+            state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, job)) or {}
+            if folder == app_cli.built_folder(state):
+                return ""
+            return "resume built but not recorded: it renders to more than one page"
         if has("*_Resume.docx"):
             return "resume built, PDF missing (Word conversion failed)"
     if job not in live:

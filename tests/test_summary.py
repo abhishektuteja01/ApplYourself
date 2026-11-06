@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from src import summary as M
 from src.shared import paths
-from tests.factories import scored_rows, write_clean
+from tests.factories import scored_rows, write_clean, write_state
 
 SINCE = datetime(2026, 9, 28, 15, 45)
 
@@ -216,6 +216,8 @@ def test_the_reason_a_role_has_no_resume_is_read_from_what_is_on_disk(tmp_path, 
         == "resume built, PDF missing (Word conversion failed)"
     )
     (lane / "2026-09-29_a_x_aaaaaaaa" / "N_Resume.pdf").write_bytes(b"p")
+    assert "not recorded" in M.tailor_reason("aaaaaaaa", None, {"aaaaaaaa"})
+    write_state(tmp_path / "pipeline", "aaaaaaaa", tailored_dirs=["lane/2026-09-29_a_x_aaaaaaaa"])
     assert M.tailor_reason("aaaaaaaa", None, {"aaaaaaaa"}) == ""
     assert "posting is gone" in M.tailor_reason("bbbbbbbb", None, set())
     run = tmp_path / "run"
