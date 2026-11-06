@@ -42,8 +42,9 @@ only when you open the code it governs — `src-boundary`, `state-machine`,
 `verticals-config`, `scoring`, `apply-submission`, `linting`, `profile-templates`,
 `pii-gate`, `discovery`. Run `/context` to see what actually loaded.
 
-`.claude/hooks/*.sh` enforce three of these mechanically rather than by memory: the
-R7 boundary, the R10 state.yaml writer, and the PII gate.
+`.claude/hooks/*.sh` enforce four of these mechanically rather than by memory: the
+R7 boundary, the R10 state.yaml writer, the PII gate, and that only the user writes
+an `/apply` `.confirmed` file.
 `.githooks/pre-commit` runs `scripts/r7_scan.sh` and the test suite on any commit
 that stages `src/`, `tests/`, `scripts/` or `profile/*.example.*`, and `ruff check`
 on any commit that stages a `.py` file (`git config core.hooksPath .githooks`,
