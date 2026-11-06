@@ -230,7 +230,9 @@ then `summary.md`, mailed to you if `summary_email` is set in
 `uv run night --only STAGE` runs one. `DRY_RUN=1` prints only. Each night's
 record is `logs/pipeline_<stamp>/run.json`. `max_spend_usd_per_night` caps what
 its `claude` calls cost. A stage that hits the `claude` usage limit waits for the
-reset and runs again, while the wait ends before `usage_limit_wait_until`.
+reset and runs again, while the wait ends before `usage_limit_wait_until`. A
+night started while another still runs exits and logs a line in
+`logs/pipeline_history.log`.
 
 To schedule it, `scripts/launchagent.example.plist` is a LaunchAgent for 20:00.
 A job whose time falls while the Mac sleeps is skipped, so it needs a `pmset`

@@ -9,6 +9,8 @@ Each stage's claude spend (the costs run_claude logs to <stage>.cost) goes into
 run.json; once the night's total reaches settings.yaml `max_spend_usd_per_night`,
 the claude stages still to run are `deferred` ("spend cap").
 `--resume` reruns, in the last run folder, every stage that did not end ok.
+A night started while another holds logs/night.lock exits 75, touching nothing
+but a `not started` line in logs/pipeline_history.log.
 A stage that hit the claude usage limit waits for the reset the limit message
 names (or polls every settings.yaml `usage_limit_poll_minutes`, doubling) and
 runs again, while the wait ends before `usage_limit_wait_until`; each wait is
@@ -369,11 +371,19 @@ def main(argv: list[str] | None = None) -> int:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print(
-                f"night: another run holds {paths.LOGS / 'night.lock'}; not starting",
-                file=sys.stderr,
-            )
+            # A night still running (or waiting out a usage limit): this one exits, untouched.
+            lock.seek(0)
+            holder = lock.read().strip() or "unknown"
+            line = f"{_stamp()} not started: another night holds night.lock ({holder})"
+            print(f"night: {line}", file=sys.stderr)
+            if not dry:
+                with (paths.LOGS / "pipeline_history.log").open("a", encoding="utf-8") as f:
+                    f.write(line + "\n")
             return LOCKED
+        lock.seek(0)
+        lock.truncate()
+        lock.write(f"pid {os.getpid()} since {_iso()}\n")
+        lock.flush()
         return _night(args, dry, skip, stages_dir)
 
 

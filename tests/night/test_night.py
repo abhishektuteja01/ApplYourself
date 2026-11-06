@@ -223,3 +223,19 @@ def test_a_usage_limit_waits_for_the_reset_then_reruns_the_stage(
         assert run["stages"]["tailor"]["status"] == "deferred"
     history = (logs / "pipeline_history.log").read_text(encoding="utf-8")
     assert ("waited 1x for the usage limit" in history) is waited
+
+
+def test_a_night_fired_while_one_runs_exits_and_leaves_a_history_line(logs):
+    logs.mkdir()
+    with (logs / "night.lock").open("a+", encoding="utf-8") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        held.write("pid 123 since 2026-11-06T21:00:00\n")
+        held.flush()
+        assert M.main([]) == M.LOCKED
+    assert not [p for p in logs.glob("pipeline_*") if p.is_dir()]
+    history = (logs / "pipeline_history.log").read_text(encoding="utf-8")
+    assert history.endswith(
+        "not started: another night holds night.lock (pid 123 since 2026-11-06T21:00:00)\n"
+    )
+    assert M.main(["--dry-run"]) == 0  # the lock is free again; the holder's note is replaced
+    assert "pid 123" not in (logs / "night.lock").read_text(encoding="utf-8")
