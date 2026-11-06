@@ -1,5 +1,9 @@
 """The search lanes: LinkedIn and Indeed through jobspy.
 
+jobspy is pinned exactly: LinkedIn leans on names outside its public API
+(`jobspy.LinkedIn`, `delay`, `band_delay`, `session`, `_get_job_details`),
+all used in `_paced_linkedin` and `_LinkedInDetails` alone.
+
 Every result is title-gated the moment it arrives. A posting the store
 already holds is only touched; LinkedIn's separate detail page is fetched for
 new postings alone, once per posting, paced.
@@ -81,18 +85,31 @@ def _paced_linkedin(page_delay: float, band: float, tally):
         jobspy.LinkedIn = original
 
 
-def _detail_client(tally) -> LinkedIn:
-    """A LinkedIn scraper for detail pages only, with a short retry budget:
-    jobspy's default spends ~50s on one dead page."""
-    client = LinkedIn()
-    client.scraper_input = ScraperInput(
-        site_type=[Site.LINKEDIN], description_format=DescriptionFormat(DESCRIPTION_FORMAT)
-    )
-    retries = Retry(
-        total=1, connect=1, status=1, status_forcelist=[500, 502, 503, 504, 429], backoff_factor=1
-    )
-    client.session.mount("https://", _TallyingAdapter(tally, max_retries=retries))
-    return client
+class _LinkedInDetails:
+    """LinkedIn's job page through jobspy's detail parser, with a short retry
+    budget: jobspy's default spends ~50s on one dead page."""
+
+    def __init__(self, tally) -> None:
+        self._client = LinkedIn()
+        self._client.scraper_input = ScraperInput(
+            site_type=[Site.LINKEDIN], description_format=DescriptionFormat(DESCRIPTION_FORMAT)
+        )
+        retries = Retry(
+            total=1,
+            connect=1,
+            status=1,
+            status_forcelist=[500, 502, 503, 504, 429],
+            backoff_factor=1,
+        )
+        self._client.session.mount("https://", _TallyingAdapter(tally, max_retries=retries))
+
+    def fetch(self, job_id: str) -> dict:
+        """jobspy's parsed detail page for one job id ({} when unreadable)."""
+        return self._client._get_job_details(job_id)
+
+
+def _detail_client(tally) -> _LinkedInDetails:
+    return _LinkedInDetails(tally)
 
 
 def _country_indeed(location: str) -> str:
@@ -288,7 +305,7 @@ class SearchLane(Lane):
                 continue
             pacer.wait()
             try:
-                details = client._get_job_details(job_id)
+                details = client.fetch(job_id)
             except Exception as e:  # noqa: BLE001 -- a parse failure on one page
                 stats.errors.append(f"detail {job_id}: {type(e).__name__}: {e}")
                 details = {}
