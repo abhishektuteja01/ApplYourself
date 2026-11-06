@@ -53,14 +53,14 @@ def build(store: pd.DataFrame, known: pd.DataFrame, pipeline_dir: Path, jobs_dir
     before = store["dedupe_key"].copy()
     store["dedupe_key"] = [
         identity.dedupe_key(c, t)
-        for c, t in zip(store["company_normalized"], store["title_normalized"])
+        for c, t in zip(store["company_normalized"], store["title_normalized"], strict=True)
     ]
     from_store = S.job_id_rows(store)
     from_events = _event_rows(pipeline_dir, set(store["job_id"]))
     table = S.merge_job_ids(S.merge_job_ids(known, from_store), from_events)
     table["dedupe_key"] = [
         identity.dedupe_key(c, t)
-        for c, t in zip(table["company_normalized"], table["title_normalized"])
+        for c, t in zip(table["company_normalized"], table["title_normalized"], strict=True)
     ]
 
     # The lookup flush will use, built from the table alone.
@@ -78,12 +78,16 @@ def build(store: pd.DataFrame, known: pd.DataFrame, pipeline_dir: Path, jobs_dir
     id_pairs = table.groupby("job_id").size()
     own_hash = {
         j
-        for j, c, t in zip(table["job_id"], table["company_normalized"], table["title_normalized"])
+        for j, c, t in zip(
+            table["job_id"], table["company_normalized"], table["title_normalized"], strict=True
+        )
         if j == identity.compute_job_id(c, t)
     }
     salted = {
         j
-        for j, c, t in zip(table["job_id"], table["company_normalized"], table["title_normalized"])
+        for j, c, t in zip(
+            table["job_id"], table["company_normalized"], table["title_normalized"], strict=True
+        )
         if j not in own_hash and j in dedupe._hash_ids(c, t)
     }
     flagged = set()

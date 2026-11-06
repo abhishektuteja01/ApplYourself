@@ -167,7 +167,7 @@ def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapsh
         ).drop_duplicates("job_id")
         links = {
             str(j): link
-            for j, jd in zip(clean["job_id"], clean["jd_text"])
+            for j, jd in zip(clean["job_id"], clean["jd_text"], strict=True)
             if (link := apply_url.jd_link(jd))
         }
         clean = clean.drop(columns=["jd_text"])

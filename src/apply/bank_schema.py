@@ -617,7 +617,7 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
         not_wordings = _normed_list(spec.get("not"), f"{where}.not")
         if not wordings and not keywords:
             raise AnswersError(f"{where}: needs wordings or keywords to be found by")
-        for original, keyword in zip(spec.get("keywords") or [], keywords):
+        for original, keyword in zip(spec.get("keywords") or [], keywords, strict=True):
             if len(keyword) < MIN_KEYWORD_LENGTH:
                 raise AnswersError(
                     f"{where}.keywords: {original!r} normalizes to {keyword!r}, under "

@@ -49,6 +49,7 @@ resolve-urls (--dry-run | --apply) [--limit N]
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import random
 import re
@@ -1030,10 +1031,8 @@ def _attempt(
         # The manifest is read before the click, so a crash after it still has
         # one worth keeping — it is the only record of what the form held.
         if manifest_path is not None and landed is not None and landed.manifest:
-            try:
+            with contextlib.suppress(OSError):
                 write_manifest(landed, plan, Path(manifest_path))
-            except OSError:
-                pass
         if landed is not None and landed.submitted:
             mark("ambiguous", f"{type(exc).__name__} after the click")
             rc, exc_note = _track_applied(job_id, plan)

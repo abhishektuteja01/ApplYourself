@@ -23,6 +23,7 @@ Pure function over the two parsed halves: no browser, no network.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import re
 from dataclasses import dataclass
@@ -122,11 +123,9 @@ def _plain_text(markup: str | None) -> str:
     text = html.unescape(markup or "").strip()
     if not text:
         return ""
-    try:
+    with contextlib.suppress(ParserError, ValueError):
         # Joined with spaces so two paragraphs do not run together.
         text = " ".join(lxml_html.fragment_fromstring(text, create_parent="div").itertext())
-    except (ParserError, ValueError):
-        pass
     return _SPACE_BEFORE_PUNCT.sub(r"\1", _label(text))
 
 

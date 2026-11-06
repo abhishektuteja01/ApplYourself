@@ -123,7 +123,7 @@ def keywords() -> dict:
         clean = read_parquet(
             paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id", "company"]
         )
-        company = dict(zip(clean["job_id"], clean["company"]))
+        company = dict(zip(clean["job_id"], clean["company"], strict=True))
     seen: dict[str, dict] = {}
     freq: Counter = Counter()
     for row in scored.sort_values("fit_score", ascending=False).itertuples():

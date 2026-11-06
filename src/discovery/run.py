@@ -374,7 +374,7 @@ def main(argv=None) -> int:
     store = S.load_store(p.store)
     known = {
         k: {"updated_at": u, "company": c}
-        for k, u, c in zip(store["posting_key"], store["updated_at"], store["company"])
+        for k, u, c in zip(store["posting_key"], store["updated_at"], store["company"], strict=True)
     }
     del store
     crawl = B.Crawl(

@@ -154,7 +154,7 @@ def due_boards(
     today = pd.Timestamp(today).normalize()
     known = {
         key_of(a, str(s)): r
-        for a, s, r in zip(state["ats"], state["slug"], state.to_dict("records"))
+        for a, s, r in zip(state["ats"], state["slug"], state.to_dict("records"), strict=True)
     }
     due = []
     for b in boards:
@@ -189,7 +189,10 @@ def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | N
     today = pd.Timestamp(today).normalize()
     with locked(path):
         state = load_state(path)
-        index = {key_of(a, str(s)): i for i, (a, s) in enumerate(zip(state["ats"], state["slug"]))}
+        index = {
+            key_of(a, str(s)): i
+            for i, (a, s) in enumerate(zip(state["ats"], state["slug"], strict=True))
+        }
         new_rows = []
         for r in results:
             b = r.board

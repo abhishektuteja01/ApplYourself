@@ -93,7 +93,7 @@ def company_names(companies: pd.DataFrame) -> dict[tuple[str, str], str]:
     ("jobs.danaher.com"); the list has the name ("Whatfix", "Danaher")."""
     out: dict[tuple[str, str], str] = {}
     for ats, name, slug, url in zip(
-        companies["ats"], companies["name"], companies["slug"], companies["url"]
+        companies["ats"], companies["name"], companies["slug"], companies["url"], strict=True
     ):
         if not isinstance(name, str) or not name.strip():
             continue
@@ -216,7 +216,7 @@ class StapplyLane(Lane):
             titles = light.column("title").to_pylist()
             self.stats.listed += len(titles)
             for url, ats in zip(
-                light.column("url").to_pylist(), light.column("ats_type").to_pylist()
+                light.column("url").to_pylist(), light.column("ats_type").to_pylist(), strict=True
             ):
                 if ats in _BOARD_ATS and (key := board_key(url or "")):
                     covered.add(key)
@@ -233,7 +233,7 @@ class StapplyLane(Lane):
             if not any(keep):
                 continue
             full = pf.read_row_group(i, columns=cols).filter(pa.array(keep)).to_pylist()
-            for row, vertical in zip(full, verticals):
+            for row, vertical in zip(full, verticals, strict=True):
                 posting = posting_from(row, vertical, names, feed_names or {})
                 crawl.record_listing(
                     self.name, posting["title"], vertical, True, posting["posting_key"]
