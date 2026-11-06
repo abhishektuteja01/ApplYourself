@@ -31,7 +31,7 @@ from src.apply import apply_url, confirmation, cooldown, ledger, run_record
 from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths
-from src.shared.config_schema import load_settings
+from src.shared.config_schema import load_settings, settings_data
 from src.shared.parquet_io import locked
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
@@ -142,6 +142,7 @@ class Snapshot:
 
     states: dict[str, dict]
     ledger_path: Path
+    ledger_lines: list[dict]
     outcomes: dict[str, tuple[str, str, str]]
     latest: dict
     live: dict[str, dict]
@@ -151,7 +152,9 @@ class Snapshot:
     cool_days: int
 
 
-def snapshot(outcomes: dict | None = None) -> Snapshot:
+def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapshot:
+    """`config`: profile/settings.yaml already loaded by the caller."""
+    config = settings_data() if config is None else config
     runs = paths.APPLICATIONS / "apply_runs"
     ledger_path = runs / ledger.LEDGER_NAME
     live: dict[str, dict] = {}
@@ -167,14 +170,16 @@ def snapshot(outcomes: dict | None = None) -> Snapshot:
         }
         clean = clean.drop(columns=["jd_text"])
         live = {str(r["job_id"]): r for r in clean.to_dict("records")}
+    lines = ledger.records(ledger_path)
     return Snapshot(
         states=state_io.load_state_index(paths.PIPELINE),
         ledger_path=ledger_path,
+        ledger_lines=lines,
         outcomes=latest_outcomes(runs) if outcomes is None else outcomes,
-        latest=cooldown.last_applications(ledger_path=ledger_path),
+        latest=cooldown.ledger_applications(lines, cooldown.last_applications()),
         live=live,
-        ghost_days=state_io.ghosted_after_days(),
-        cool_days=cooldown.cooldown_days(),
+        ghost_days=state_io.ghosted_after_days(config),
+        cool_days=cooldown.cooldown_days(config),
         jd_links=links,
         stored_urls=apply_url.load(),
     )
@@ -197,8 +202,11 @@ def _load(table: Path):
     return wb, ws, {name: i + 1 for i, name in enumerate(header)}
 
 
-def _table(settings: Path | None) -> Path:
-    config = load_settings(settings or paths.SETTINGS)
+def _config(settings: Path | None) -> dict:
+    return load_settings(settings or paths.SETTINGS)
+
+
+def _table(config: dict) -> Path:
     return paths.root() / config.get("table_path", "top_scored_open.xlsx")
 
 
@@ -249,7 +257,7 @@ def _row_status(job_id: str, snap: Snapshot) -> tuple[str, str, str]:
         job_id,
         path.kind == apply_url.SUBMITTABLE,
         state,
-        ledger.prior(snap.ledger_path, job_id, _form_url(state)),
+        ledger.prior_in(snap.ledger_lines, job_id, _form_url(state)),
         snap.outcomes.get(job_id),
         cooldown.until(company, snap.latest, days=snap.cool_days),
         days=snap.ghost_days,
@@ -294,8 +302,9 @@ def refresh(add: bool = False, settings: Path | None = None) -> dict[str, int]:
     for callers: every refresh holds every queued role. Returns a count per
     status; a role the old sheet held that left the queue counts under
     "<status> (removed)"."""
-    table = _table(settings)
-    snap = snapshot()
+    config = _config(settings)
+    table = _table(config)
+    snap = snapshot(config=config)
     new = queue(snap)
     counts: dict[str, int] = {}
     for row in new:
@@ -322,7 +331,8 @@ def check(settings: Path | None = None) -> dict[str, list[str]]:
     it, a job_id listed twice, and rows whose posting is no longer in the live
     view (`clean.parquet`), and rows whose status differs from what the records
     give now. Every list is empty on a clean sheet."""
-    table = _table(settings)
+    config = _config(settings)
+    table = _table(config)
     out: dict[str, list[str]] = {
         "finished": [],
         "duplicates": [],
@@ -331,7 +341,7 @@ def check(settings: Path | None = None) -> dict[str, list[str]]:
     }
     if not table.is_file():
         return out
-    snap = snapshot()
+    snap = snapshot(config=config)
     seen: set[str] = set()
     for row in _sheet_rows(table):
         job_id = row["name"]
@@ -351,8 +361,9 @@ def compare(settings: Path | None = None) -> dict[str, list[str]]:
     """Read-only: the sheet as it stands against `queue()`. `missing`: computed
     but not on the sheet; `extra`: on the sheet but not computed; `moved`: the
     shared roles, when their order differs."""
-    on_sheet = [row["name"] for row in _sheet_rows(_table(settings))]
-    computed = [row["name"] for row in queue()]
+    config = _config(settings)
+    on_sheet = [row["name"] for row in _sheet_rows(_table(config))]
+    computed = [row["name"] for row in queue(snapshot(config=config))]
     shared = set(on_sheet) & set(computed)
     sheet_order = [j for j in on_sheet if j in shared]
     queue_order = [j for j in computed if j in shared]

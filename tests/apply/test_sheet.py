@@ -277,3 +277,27 @@ def test_compare_names_rows_the_queue_does_not_hold_and_refresh_drops_them(
         ".sheet.xlsx.lock",
         "sheet.xlsx",
     ]
+
+
+def test_a_refresh_reads_settings_and_the_ledger_once(tmp_path, monkeypatch):
+    from src.shared import config_schema
+
+    _world(tmp_path, monkeypatch)
+    ledger.append(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME, "cccc3333", "accepted")
+    calls = {"settings": 0, "ledger": 0}
+
+    def counted(name, real):
+        def wrapper(*a, **k):
+            calls[name] += 1
+            return real(*a, **k)
+
+        return wrapper
+
+    monkeypatch.setattr(sheet, "load_settings", counted("settings", sheet.load_settings))
+    monkeypatch.setattr(
+        config_schema, "load_settings", counted("settings", config_schema.load_settings)
+    )
+    monkeypatch.setattr(ledger, "records", counted("ledger", ledger.records))
+    sheet.refresh()
+    assert len(_rows(tmp_path)) == 2
+    assert calls == {"settings": 1, "ledger": 1}

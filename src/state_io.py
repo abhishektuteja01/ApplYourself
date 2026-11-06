@@ -798,10 +798,10 @@ def rebuild_states(pipeline_dir: Path, *, apply: bool) -> list[str]:
 # ---------------------------------------------------------------
 
 
-def ghosted_after_days() -> int:
+def ghosted_after_days(data: dict[str, Any] | None = None) -> int:
     from src.shared.config_schema import setting
 
-    return int(setting("ghosted_after_days", 30))
+    return int(setting("ghosted_after_days", 30, data))
 
 
 def shown_state(
