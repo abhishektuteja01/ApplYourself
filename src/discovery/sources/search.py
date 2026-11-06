@@ -8,7 +8,6 @@ new postings alone, once per posting, paced.
 from __future__ import annotations
 
 import contextlib
-import random
 import time
 
 import jobspy
@@ -20,10 +19,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from src.discovery import parse
-from src.discovery.config import MIN_PAGE_DELAY_SECONDS, pacing_floor
+from src.discovery.config import MIN_PAGE_DELAY_SECONDS, pacing_for
 from src.discovery.sources.lane import Lane, LaneStats
 from src.discovery.store import make_posting
 from src.shared import title_gate
+from src.shared.http_client import Pacer
 
 DESCRIPTION_FORMAT = "markdown"
 DETAIL_PACING_SECONDS = 1.0
@@ -168,7 +168,8 @@ class SearchLane(Lane):
 
     def run(self, crawl, tally=None) -> LaneStats:
         src = crawl.cfg.sources[self.name]
-        pacing = max(pacing_floor(self.name), src.pacing_seconds)
+        pacing = pacing_for(crawl.cfg, self.name)
+        between = Pacer(pacing)
         page_delay = max(MIN_PAGE_DELAY_SECONDS, src.page_delay_seconds)
         band = max(0.0, src.page_delay_band_seconds)
         locations = crawl.cfg.effective_search_locations()
@@ -177,6 +178,7 @@ class SearchLane(Lane):
         fetch: dict[str, dict] = {}
         seen: set[str] = set()
         client = _detail_client(tally) if self.name == "linkedin" else None
+        detail_pacer = Pacer(DETAIL_PACING_SECONDS, DETAIL_JITTER_SECONDS, skip_first=False)
         made = saturated = 0
 
         stack = contextlib.ExitStack()
@@ -188,8 +190,7 @@ class SearchLane(Lane):
                 if crawl.deadline_reached():
                     stats.truncated = True
                     break
-                if made:
-                    time.sleep(pacing)
+                between.wait()
                 made += 1
                 try:
                     df = scrape_jobs(
@@ -229,7 +230,7 @@ class SearchLane(Lane):
                 # Details right after the query that found them, so a deadline
                 # never leaves a night's new postings without a JD.
                 if client is not None and fetch:
-                    self._details(fetch, crawl, stats, client)
+                    self._details(fetch, crawl, stats, client, detail_pacer)
                     fetch.clear()
         stats.notes.append(
             f"queries: {made} of {len(queries)}, {saturated} hit the "
@@ -274,7 +275,9 @@ class SearchLane(Lane):
         else:
             stats.short_jd += 1
 
-    def _details(self, fetch: dict[str, dict], crawl, stats: LaneStats, client) -> None:
+    def _details(
+        self, fetch: dict[str, dict], crawl, stats: LaneStats, client, pacer: Pacer
+    ) -> None:
         for posting in fetch.values():
             if crawl.deadline_reached():
                 stats.truncated = True
@@ -283,7 +286,7 @@ class SearchLane(Lane):
             if source != "linkedin" or not job_id.isdigit():
                 stats.detail_failed += 1
                 continue
-            time.sleep(DETAIL_PACING_SECONDS + random.uniform(0, DETAIL_JITTER_SECONDS))
+            pacer.wait()
             try:
                 details = client._get_job_details(job_id)
             except Exception as e:  # noqa: BLE001 -- a parse failure on one page

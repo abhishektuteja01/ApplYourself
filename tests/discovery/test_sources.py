@@ -202,10 +202,9 @@ def test_workday_pages_until_nothing_passes(monkeypatch, cfg, tmp_path):
         return {"jobPostings": items}
 
     monkeypatch.setattr(workday, "list_page", fake)
-    monkeypatch.setattr(workday, "_jitter", lambda: None)
     c = crawl(cfg, tmp_path)
     out = workday.WorkdayLane().list_board(
-        B.Board("workday", "Acme", "acme|wd5|External"), c, lambda: None
+        B.Board("workday", "Acme", "acme|wd5|External"), c, lambda *_: None
     )
     terms = B.search_terms(cfg)
     assert [o for t, o in pages if t == terms[0]] == [0, 20]

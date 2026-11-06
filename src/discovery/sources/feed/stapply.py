@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import tempfile
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -26,6 +25,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src.discovery import parse
+from src.discovery.config import pacing_for
 from src.discovery.sources.boards.base import load_boards
 from src.discovery.sources.feed import oracle
 from src.discovery.sources.lane import Lane, LaneStats
@@ -250,7 +250,7 @@ class StapplyLane(Lane):
         if self.failure is not None:
             raise self.failure
         stats = self.stats
-        pages = _PageReader(max(1.0, crawl.cfg.sources[self.name].pacing_seconds), crawl, stats)
+        pages = _PageReader(pacing_for(crawl.cfg, self.name), crawl, stats)
         named = 0
         site_names: dict[str, str] = {}
         for posting in self.rows:
@@ -342,8 +342,8 @@ class _PageReader:
     after MAX_HOST_FAILURES reads and no success."""
 
     def __init__(self, pacing: float, crawl, stats: LaneStats):
-        self.pacing, self.crawl, self.stats = pacing, crawl, stats
-        self.last = 0.0
+        self.pacer = http_client.Pacer(pacing, since_last=True)
+        self.crawl, self.stats = crawl, stats
         self.failures: dict[str, int] = {}
         self.worked: set[str] = set()
 
@@ -355,10 +355,7 @@ class _PageReader:
             site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES
         ):
             return None
-        wait = self.last + self.pacing - time.time()
-        if wait > 0:
-            time.sleep(wait)
-        self.last = time.time()
+        self.pacer.wait()
         try:
             if as_json:
                 return http_client.fetch_json(url, deadline_ts=self.crawl.deadline_ts or None)

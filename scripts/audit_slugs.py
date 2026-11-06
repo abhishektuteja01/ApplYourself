@@ -26,7 +26,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from src.discovery.config import load_config, pacing_floor
+from src.discovery.config import load_config, pacing_for
 from src.discovery.parse import iso_date, ms_date, relative_posted_date
 from src.discovery.sources.boards import ashby, greenhouse, lever
 from src.discovery.sources.boards import eightfold as ef
@@ -308,12 +308,7 @@ def main(argv=None) -> int:
         work[ats] = companies
 
     pacings = {
-        ats: (
-            args.pacing
-            if args.pacing is not None
-            else max(pacing_floor(ats), cfg.sources[ats].pacing_seconds)
-        )
-        for ats in lanes
+        ats: (args.pacing if args.pacing is not None else pacing_for(cfg, ats)) for ats in lanes
     }
 
     for ats in lanes:

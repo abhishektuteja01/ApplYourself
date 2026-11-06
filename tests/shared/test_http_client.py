@@ -301,3 +301,17 @@ def test_the_observer_is_per_thread_and_unset_after_the_block(responses, sleeps)
         t.join()
     fetch_json("https://x/after")
     assert events == []
+
+
+def test_pacer_waits_the_way_each_lane_did(sleeps, monkeypatch):
+    monkeypatch.setattr(http.random, "uniform", lambda lo, hi: hi)
+    lane = http.Pacer(2.0)
+    lane.wait(), lane.wait(), lane.wait(0.25)
+    detail = http.Pacer(1.0, 0.5, skip_first=False)
+    detail.wait()
+    assert sleeps == [2.0, 2.25, 1.5]
+    clock = iter([100.0, 100.0, 100.4, 100.4])
+    monkeypatch.setattr(http.time, "time", lambda: next(clock))
+    pages = http.Pacer(1.0, since_last=True)
+    pages.wait(), pages.wait()
+    assert sleeps[3:] == [pytest.approx(0.6)]

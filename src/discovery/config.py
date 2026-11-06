@@ -103,6 +103,11 @@ def pacing_floor(source_name: str) -> float:
     return MIN_PACING_SECONDS.get(source_name, DEFAULT_MIN_PACING_SECONDS)
 
 
+def pacing_for(cfg, source_name: str) -> float:
+    """Seconds between one source's requests: its `pacing_seconds`, never below its floor."""
+    return max(pacing_floor(source_name), cfg.sources[source_name].pacing_seconds)
+
+
 @dataclass
 class SourceConfig:
     enabled: bool = True

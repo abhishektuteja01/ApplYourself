@@ -24,10 +24,10 @@ from pathlib import Path
 import pandas as pd
 
 from src.discovery import parse
-from src.discovery.config import pacing_floor
+from src.discovery.config import pacing_for
 from src.discovery.sources.lane import Lane, LaneStats
 from src.shared import paths, title_gate
-from src.shared.http_client import CareersError
+from src.shared.http_client import CareersError, Pacer
 from src.shared.job_boards import ATS_SOURCE_NAMES, key_of
 from src.shared.parquet_io import locked, write_parquet
 
@@ -359,7 +359,7 @@ class BoardLane(Lane):
 
     def run(self, crawl: Crawl, tally=None) -> LaneStats:
         src = crawl.cfg.sources[self.name]
-        pacing = max(pacing_floor(self.name), src.pacing_seconds)
+        pause = Pacer(pacing_for(crawl.cfg, self.name)).wait
         state = load_state(crawl.board_state)
         boards = due_boards(
             load_boards(self.name, boards_dir=crawl.boards_dir),
@@ -376,13 +376,6 @@ class BoardLane(Lane):
         if due > len(boards):
             stats.notes.append(f"{due - len(boards)} due boards left to the feed")
         shape_errors = 0
-        first = [True]
-
-        def pause() -> None:
-            if not first[0]:
-                time.sleep(pacing)
-            first[0] = False
-
         for board in boards:
             if crawl.deadline_reached():
                 stats.truncated = True
