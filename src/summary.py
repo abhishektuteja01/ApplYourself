@@ -45,6 +45,10 @@ CUES = {
         "play. Nothing was merged."
     ),
     "scoring": "→ Run `/score` to resume the open run.",
+    "score_limit": (
+        "→ Usage limit: nothing is lost. The next night resumes the owed slices, or run `/score` "
+        "once the limit resets."
+    ),
     "synonyms": (
         "→ Per question id: `uv run synonyms answer <id> yes|no` (a yes means the user writes the bullet or "
         'skill block). Approve a declined keyword: `uv run synonyms approve "<keyword>"`. Undo an added '
@@ -268,8 +272,13 @@ def scoring_section(
     if open_slices:
         errors.append(f"score run still open: {open_slices} slices owed (next /score resumes it)")
     if code:
-        errors.append(f"stage exited {code}: {detail}")
+        errors.append(detail if usage_limit(detail) else f"stage exited {code}: {detail}")
     return [*lines, *_errors(errors)]
+
+
+def usage_limit(detail: str) -> bool:
+    """A stage's detail says the usage limit stopped it (scripts/stages/*.sh)."""
+    return detail.startswith("usage limit hit")
 
 
 def synonyms_section(added: list[dict], declined: list[dict], opened: list[dict]) -> list[str]:
@@ -683,6 +692,8 @@ def build(run_dir: Path | None, since: datetime) -> str:
     unresolved = {j: why for j in failed if (why := tailor_reason(j, run_dir, live))}
     score, tailor = stages.get("score", {}), stages.get("tailor", {})
 
+    score_limit = bool(score.get("code")) and usage_limit(score.get("detail", ""))
+
     def cue(name: str, lines: list[str], when: bool) -> list[str]:
         return ["", CUES[name]] if when else []
 
@@ -718,7 +729,8 @@ def build(run_dir: Path | None, since: datetime) -> str:
         "",
         "## Scoring",
         *scoring,
-        *cue("scoring", scoring, bool(open_slices)),
+        *cue("scoring", scoring, bool(open_slices) and not score_limit),
+        *cue("score_limit", scoring, score_limit),
         "",
         "## Synonyms",
         *synonyms,

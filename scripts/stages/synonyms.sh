@@ -22,8 +22,9 @@ if [[ "$ROLES" -eq 0 ]]; then stage_end 0 "no new roles"; exit 0; fi
 echo "New roles: $ROLES"
 
 rm -f jobs/synonyms_proposals.yaml
-run_claude auto "$TOOLS" "/suggest-synonyms --auto" || {
-  stage_end 1 "claude failed (see ${STAGE}_auto.json)"; exit 1; }
+run_claude auto "$TOOLS" "/suggest-synonyms --auto"; RC=$?
+if [[ $RC -eq 5 ]]; then stage_end 1 "usage limit hit: the next run proposes them"; exit 1; fi
+[[ $RC -eq 0 ]] || { stage_end 1 "claude failed (see ${STAGE}_auto.json)"; exit 1; }
 
 # The session runs `synonyms apply` itself; if it did not, do it here.
 if [[ -f jobs/synonyms_proposals.yaml ]]; then

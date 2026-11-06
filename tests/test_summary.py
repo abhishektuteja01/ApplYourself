@@ -756,3 +756,16 @@ def test_the_summary_shows_the_duplicates_section_and_its_cue(tmp_path, monkeypa
     text = M.OUT.read_text(encoding="utf-8")
     assert "## Possible duplicates\n1 pair not merged:" in text and M.CUES["dupes"] in text
     assert "cccc0001" not in text
+
+
+def test_a_score_usage_limit_gets_its_own_fix_line(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)
+    run = tmp_path / "logs" / "pipeline_2026-09-28_154500"
+    run.mkdir(parents=True)
+    (run / "summary.txt").write_text(
+        "score code=1 seconds=30 status=fail usage limit hit: owed slices deferred to the next run\n",
+        encoding="utf-8",
+    )
+    assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
+    text = M.OUT.read_text(encoding="utf-8")
+    assert M.CUES["score_limit"] in text and "stage exited 1" not in text
