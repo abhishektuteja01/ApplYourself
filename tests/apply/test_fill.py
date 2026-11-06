@@ -19,6 +19,8 @@ from src.apply.fill import FillError, FillResult, fill_plan
 from src.apply.plan import FieldPlan, FilePlan, Plan
 from src.shared import paths
 
+from .conftest import FakePage, FakeResponse, Group
+
 REPO_ROOT = paths.REPO_ROOT
 
 
@@ -67,29 +69,6 @@ def plan(
 def plan_ashby(**kw) -> Plan:
     """A plan on a board whose submit request we know how to watch."""
     return replace(plan(**kw), ats="ashby")
-
-
-class FakePage:
-    """Just enough page for the post-submit capture to read."""
-
-    def __init__(
-        self,
-        text="Thank you for applying to Gasket Works.",
-        url="https://boards.greenhouse.io/confirmation",
-    ):
-        self._text, self.url = text, url
-
-    def title(self):
-        return "Application submitted"
-
-    def locator(self, selector):
-        return self
-
-    def inner_text(self, timeout=None):
-        return self._text
-
-    def screenshot(self, path=None, full_page=False):
-        Path(path).write_bytes(b"\x89PNG")
 
 
 class FakeDriver:
@@ -800,21 +779,10 @@ class TestRadioGroup:
 
 class TestLeverBrowserDriverSelectorBoundary:
     def test_locates_by_name_attribute_not_id(self):
-        calls = []
-
-        class FakePage:
-            def locator(self, selector):
-                calls.append(selector)
-
-                class L:
-                    def click(self_inner):
-                        pass
-
-                return L()
-
-        driver = F.LeverBrowserDriver(FakePage())
+        page = FakePage(lambda selector: Group())
+        driver = F.LeverBrowserDriver(page)
         driver._locator("name")
-        assert calls == ['#application-form [name="name"]']
+        assert page.selectors == ['#application-form [name="name"]']
 
 
 class TestLeverCardRadios:
@@ -854,18 +822,7 @@ class TestLeverCardRadios:
             return Span()
 
     def _driver(self, radios):
-        class Group:
-            def count(self_inner):
-                return len(radios)
-
-            def nth(self_inner, i):
-                return radios[i]
-
-        class FakePage:
-            def locator(self_inner, selector):
-                return Group()
-
-        return F.LeverBrowserDriver(FakePage())
+        return F.LeverBrowserDriver(FakePage(lambda selector: Group(radios)))
 
     def test_checks_the_radio_whose_sibling_span_carries_the_label(self):
         radios = [self.FakeRadio("Yes", "Yes"), self.FakeRadio("No", "No")]
@@ -913,22 +870,7 @@ class TestLeverConsentCheckbox:
             self.checked = False
 
     def _driver(self, inputs):
-        class Group:
-            def count(self_inner):
-                return len(inputs)
-
-            def nth(self_inner, i):
-                return inputs[i]
-
-            @property
-            def first(self_inner):
-                return inputs[0]
-
-        class FakePage:
-            def locator(self_inner, selector):
-                return Group()
-
-        return F.LeverBrowserDriver(FakePage())
+        return F.LeverBrowserDriver(FakePage(lambda selector: Group(inputs)))
 
     def test_checks_the_real_box_and_skips_the_hidden_decoy(self):
         hidden = self.FakeInput("hidden", "0")
@@ -1781,43 +1723,22 @@ class TestGreenhouseSubmitMarkerIgnoresItsOwnGetLoad:
     submission.
     """
 
-    class _FakePage:
-        def __init__(self):
-            self.handler = None
-
-        def on(self, _event, handler):
-            self.handler = handler
-
-    class _FakeResponse:
-        def __init__(self, url, status, method):
-            self.url, self.status = url, status
-
-            class _Req:
-                pass
-
-            self.request = _Req()
-            self.request.method = method
-
     def test_a_get_to_the_embed_path_is_not_recorded(self):
-        page = self._FakePage()
+        page = FakePage()
         driver = F.BrowserDriver(page)
         sink: list[str] = []
         driver.watch_submit_requests("greenhouse", sink)
         page.handler(
-            self._FakeResponse(
-                "https://job-boards.greenhouse.io/embed/job_app?for=acme", 200, "GET"
-            )
+            FakeResponse("GET", "https://job-boards.greenhouse.io/embed/job_app?for=acme", 200)
         )
         assert sink == []
 
     def test_a_post_to_the_embed_path_is_recorded(self):
-        page = self._FakePage()
+        page = FakePage()
         driver = F.BrowserDriver(page)
         sink: list[str] = []
         driver.watch_submit_requests("greenhouse", sink)
-        page.handler(
-            self._FakeResponse("https://boards.greenhouse.io/embed/acme/jobs/123", 200, "POST")
-        )
+        page.handler(FakeResponse("POST", "https://boards.greenhouse.io/embed/acme/jobs/123", 200))
         assert sink == ["200 https://boards.greenhouse.io/embed/acme/jobs/123"]
 
 
@@ -2041,43 +1962,21 @@ class TestLeverLocationAutocomplete:
             return self.value
 
     def _page(self, *, options=(), location="", selected="", banner=None):
-        outer = self
+        def locate(selector):
+            if selector == F.LEVER_OPTION:
+                return Group(options)
+            if selector == F.LEVER_SELECTED_LOCATION:
+                return Group([self.Input(selected)] if selected is not None else [])
+            if selector == F.COOKIE_ACCEPT:
+                return Group([banner] if banner is not None else [])
+            return Group([self.Input(location)])
 
-        class Group:
-            def __init__(self, items):
-                self.items = list(items)
-
-            def count(self):
-                return len(self.items)
-
-            def nth(self, i):
-                return self.items[i]
-
-            @property
-            def first(self):
-                return self.items[0]
-
-        class FakePage:
-            def __init__(self):
-                self.selectors = []
-                self.waited = []
-
-            def locator(self, selector):
-                self.selectors.append(selector)
-                if selector == F.LEVER_OPTION:
-                    return Group(options)
-                if selector == F.LEVER_SELECTED_LOCATION:
-                    return Group([outer.Input(selected)] if selected is not None else [])
-                if selector == F.COOKIE_ACCEPT:
-                    return Group([banner] if banner is not None else [])
-                return Group([outer.Input(location)])
-
+        class SuggestPage(FakePage):
             def wait_for_selector(self, selector, timeout=None):
-                self.waited.append(selector)
                 if not options:
                     raise RuntimeError("no suggestions")
 
-        return FakePage()
+        return SuggestPage(locate)
 
     def test_click_option_reads_the_dropdown_results_not_select_option(self):
         page = self._page(options=[self.Node("Exampletown, Example State, United States")])
@@ -2146,19 +2045,11 @@ class TestLeverCookieBanner:
             self.clicked = True
 
     def _page(self, buttons):
-        class Group:
-            def count(self):
-                return len(buttons)
+        def locate(selector):
+            assert selector == F.COOKIE_ACCEPT
+            return Group(buttons)
 
-            def nth(self, i):
-                return buttons[i]
-
-        class FakePage:
-            def locator(self_inner, selector):
-                assert selector == F.COOKIE_ACCEPT
-                return Group()
-
-        return FakePage()
+        return FakePage(locate)
 
     def test_accepts_the_banner_when_one_is_up(self):
         b = self.Button()
@@ -2213,18 +2104,7 @@ class TestLeverCheckboxGroupIgnoresNonCheckboxes:
             self.checked = True
 
     def _driver(self, boxes):
-        class Group:
-            def count(self_inner):
-                return len(boxes)
-
-            def nth(self_inner, i):
-                return boxes[i]
-
-        class FakePage:
-            def locator(self_inner, selector):
-                return Group()
-
-        return F.LeverBrowserDriver(FakePage())
+        return F.LeverBrowserDriver(FakePage(lambda selector: Group(boxes)))
 
     def _group(self):
         return [
