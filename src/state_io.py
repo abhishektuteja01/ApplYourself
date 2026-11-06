@@ -16,7 +16,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Callable, Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -29,32 +29,38 @@ from src.shared.schemas import STATE_SCHEMA_VERSION
 log = logging.getLogger(__name__)
 
 
-# 11 states
+# 9 stored states; `ghosted` is derived on read (shown_state)
 VALID_STATES: frozenset[str] = frozenset(
     {
         "saved",
         "skip",
         "tailored",
         "applied",
-        "recruiter_contact",
         "screen",
         "interview",
         "offer",
         "rejected",
         "withdrawn",
-        "ghosted",
     }
 )
 
-# Terminal states reject all out-transitions
-TERMINAL_STATES: frozenset[str] = frozenset(
-    {
-        "offer",
-        "rejected",
-        "withdrawn",
-        "ghosted",
-    }
-)
+# The moves /track makes without --force; any other move needs --force and a note.
+ALLOWED: dict[str, frozenset[str]] = {
+    "saved": frozenset({"tailored", "applied", "skip", "withdrawn"}),
+    "tailored": frozenset({"applied", "saved", "skip", "withdrawn"}),
+    "applied": frozenset({"screen", "interview", "offer", "rejected", "withdrawn"}),
+    "screen": frozenset({"interview", "offer", "rejected", "withdrawn"}),
+    "interview": frozenset({"offer", "rejected", "withdrawn"}),
+    "skip": frozenset({"saved"}),
+    "offer": frozenset(),
+    "rejected": frozenset(),
+    "withdrawn": frozenset(),
+}
+
+# Terminal states allow no move without --force
+TERMINAL_STATES: frozenset[str] = frozenset(s for s, moves in ALLOWED.items() if not moves)
+
+GHOSTED = "ghosted"
 
 # /standup table splits
 ACTIVE_STATES: frozenset[str] = frozenset(
@@ -62,13 +68,12 @@ ACTIVE_STATES: frozenset[str] = frozenset(
         "saved",
         "tailored",
         "applied",
-        "recruiter_contact",
         "screen",
         "interview",
     }
 )
-# Closed = terminal + skip (skip is NOT terminal but closed for /standup view)
-CLOSED_STATES: frozenset[str] = TERMINAL_STATES | {"skip"}
+# Closed = terminal + skip + derived ghosted (skip is NOT terminal but closed for /standup view)
+CLOSED_STATES: frozenset[str] = TERMINAL_STATES | {"skip", GHOSTED}
 
 
 # ---------------------------------------------------------------
@@ -203,11 +208,14 @@ def transition(
     now: datetime | None = None,
     initial_fields: dict[str, Any] | None = None,
     if_state: str | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Transition the role at state_path to new_state.
 
     if_state: move only when the role is in that state, checked under the
     lock; otherwise raise NotInState and write nothing.
+    force: allow a move ALLOWED does not list; needs a note, and the history
+    entry is marked forced.
 
     If state.yaml does NOT exist (or is empty): creates it. Requires initial_fields to
     contain at minimum {job_id, company, title}; optional keys
@@ -218,7 +226,8 @@ def transition(
     If state.yaml exists:
       - rejects new_state not in VALID_STATES
       - rejects a record with no job_id (corrupt file)
-      - rejects any transition out of a TERMINAL_STATE
+      - rejects a move ALLOWED does not list (same-state and out of a
+        terminal included), unless force
       - appends to state_history (append-only)
       - updates last_touch
       - sets applied_at on first transition to "applied"
@@ -226,12 +235,16 @@ def transition(
     Raises ValueError on any of those rejections."""
     if new_state not in VALID_STATES:
         raise ValueError(f"unknown state {new_state!r}; valid: {sorted(VALID_STATES)}")
+    if force and not (note or "").strip():
+        raise ValueError("a forced move needs a note saying why")
     now_iso = _now_iso(now)
 
     def step(existing: State | None) -> State:
         if if_state is not None and (existing or {}).get("state") != if_state:
             raise NotInState((existing or {}).get("state"))
-        return _transitioned(state_path, existing, new_state, note, now_iso, initial_fields)
+        return _transitioned(
+            state_path, existing, new_state, note, now_iso, initial_fields, force=force
+        )
 
     return _written(state_path, update(state_path, step, create=if_state is None))
 
@@ -243,6 +256,8 @@ def _transitioned(
     note: str | None,
     now_iso: str,
     initial_fields: dict[str, Any] | None,
+    *,
+    force: bool = False,
 ) -> dict[str, Any]:
     if existing is None:
         if not initial_fields:
@@ -279,14 +294,20 @@ def _transitioned(
                 "and re-run /track to rebuild it from clean.parquet."
             )
         current = existing.get("state")
-        if current in TERMINAL_STATES:
+        allowed = ALLOWED.get(str(current), frozenset())
+        if new_state not in allowed and not force:
+            moves = ", ".join(sorted(allowed)) or "none (terminal)"
             raise ValueError(
-                f"cannot transition out of terminal state {current!r} "
-                f"(role at {state_path}); terminals: {sorted(TERMINAL_STATES)}"
+                f"{current!r} -> {new_state!r} is not an allowed move (role at "
+                f"{state_path}); from {current!r}: {moves}. To make it anyway: "
+                '--force --note "<why>"'
             )
         data = dict(existing)
         history = list(data.get("state_history") or [])
-        history.append({"state": new_state, "at": now_iso, "note": note or ""})
+        entry: dict[str, Any] = {"state": new_state, "at": now_iso, "note": note or ""}
+        if new_state not in allowed:
+            entry["forced"] = True
+        history.append(entry)
         data["state"] = new_state
         data["state_history"] = history
         data["last_touch"] = now_iso
@@ -417,6 +438,31 @@ def mark_outreach_sent(
 # ---------------------------------------------------------------
 # Read-only helpers (/standup, /score skip suppression)
 # ---------------------------------------------------------------
+
+
+def ghosted_after_days() -> int:
+    from src.shared.config_schema import automation_setting
+
+    return int(automation_setting("ghosted_after_days", 30))
+
+
+def shown_state(
+    data: dict[str, Any], *, days: int | None = None, now: datetime | None = None
+) -> str:
+    """The state to show: `ghosted` for an `applied` role whose last
+    state_history entry is older than ghosted_after_days, else the stored state."""
+    current = str(data.get("state") or "")
+    if current != "applied":
+        return current
+    history = data.get("state_history") or []
+    last = history[-1].get("at") if history and isinstance(history[-1], dict) else None
+    try:
+        at = datetime.fromisoformat(str(last))
+    except ValueError:
+        return current
+    limit = ghosted_after_days() if days is None else days
+    age = (now or clock.now()) - at.replace(tzinfo=None)
+    return GHOSTED if age > timedelta(days=limit) else current
 
 
 def iter_states(pipeline_dir: Path) -> Iterator[dict[str, Any]]:

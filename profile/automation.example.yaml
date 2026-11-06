@@ -18,3 +18,6 @@ unlock_max_open: 5           # memory-unlock questions waiting for your yes/no a
 
 # Mail summary.html here after each night (through the Mail app). Leave it out to skip.
 # summary_email: you@example.com
+
+# Tracking.
+ghosted_after_days: 30       # an `applied` role with no update this long shows as ghosted

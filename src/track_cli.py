@@ -1,19 +1,21 @@
 """Deterministic CLI for /track (R7: no LLM calls; R10: sole state writer).
 
-  <job_id> <state> [--note "..."] [--if S]
-                              move a role through the 11-state machine,
+  <job_id> <state> [--note "..."] [--if S] [--force]
+                              move a role along state_io.ALLOWED,
                               creating pipeline/<job_id>/state.yaml from
                               clean/scored parquet on first transition.
                               --if S: only when the role is currently in
-                              state S; otherwise a no-op, exit 0
+                              state S; otherwise a no-op, exit 0.
+                              --force --note "why": a move ALLOWED does not list
   outreach-draft <job_id> --channel C --to "N" --draft-file F
                  [--contact-id ID] [--medium M]
                               append a draft entry to outreach[]
   outreach-sent <job_id> --channel C --to "N"
                               flip the latest matching draft outreach[]
                               entry to sent
-  states                      every state.yaml, with the active and closed
-                              state names, as JSON (read-only)
+  states                      every state.yaml, with its shown_state (an old
+                              `applied` shows `ghosted`) and the active and
+                              closed state names, as JSON (read-only)
   ensure <job_id>             create state.yaml at `saved` if absent; no-op if
                               present. Bootstrap only, never a transition --
                               `app new` calls it so a re-tailor cannot rewind
@@ -46,10 +48,12 @@ from src.state_io import (
     NotInState,
     append_outreach_draft,
     ensure_state,
+    ghosted_after_days,
     load_all_states,
     load_state,
     mark_outreach_sent,
     needs_stamp,
+    shown_state,
     stamp_schema,
     state_path_for,
     transition,
@@ -62,15 +66,13 @@ SCORED = paths.SCORED
 NEXT_ACTION = {
     "saved": "ready for `/tailor {job_id}` once you've eyeballed the JD",
     "tailored": "`/apply {job_id}`, or submit it yourself and then `/track {job_id} applied`",
-    "applied": "verify E-Verify; await response; consider `/outreach {job_id} recruiter` if you have a contact",
+    "applied": "verify E-Verify; await response; consider `/outreach {job_id} recruiter` if you have a contact. Shows as ghosted after {ghosted_days} days with no update",
     "screen": "good luck; update with the outcome",
     "interview": "good luck; update with the outcome",
     "offer": "congrats. terminal -- no further /track transitions.",
     "rejected": "terminal. recorded.",
     "withdrawn": "terminal. recorded.",
-    "ghosted": "terminal. recorded.",
     "skip": "suppressed from the shortlist as of now.",
-    "recruiter_contact": "log notes in state.yaml.notes if useful.",
 }
 
 
@@ -126,7 +128,14 @@ def _cmd_transition(args: argparse.Namespace) -> int:
         else _gather_initial_fields(job_id)
     )
     try:
-        data = transition(p, new_state, note=note, initial_fields=initial, if_state=args.if_state)
+        data = transition(
+            p,
+            new_state,
+            note=note,
+            initial_fields=initial,
+            if_state=args.if_state,
+            force=args.force,
+        )
     except NotInState as e:
         print(f"OK: {job_id} is {e.current or 'untracked'}, not {args.if_state} -- left unchanged")
         return 0
@@ -140,7 +149,7 @@ def _cmd_transition(args: argparse.Namespace) -> int:
     print(f"     file: {p}")
     action = NEXT_ACTION.get(new_state)
     if action:
-        print(f"     next: {action.format(job_id=job_id)}")
+        print(f"     next: {action.format(job_id=job_id, ghosted_days=ghosted_after_days())}")
     return 0
 
 
@@ -243,8 +252,13 @@ def _cmd_states() -> int:
             for k, v in d.items()
         }
 
+    days = ghosted_after_days()
     out = {
-        "states": [jsonable(s) for s in load_all_states(paths.PIPELINE)],
+        "states": [
+            {**jsonable(s), "shown_state": shown_state(s, days=days)}
+            for s in load_all_states(paths.PIPELINE)
+        ],
+        "ghosted_after_days": days,
         "active_states": sorted(ACTIVE_STATES),
         "closed_states": sorted(CLOSED_STATES),
     }
@@ -321,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("state", choices=sorted(VALID_STATES))
     parser.add_argument("--note", default=None)
     parser.add_argument("--if", dest="if_state", choices=sorted(VALID_STATES), default=None)
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
     return _cmd_transition(args)
 

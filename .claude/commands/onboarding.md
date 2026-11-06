@@ -460,8 +460,9 @@ Three things that will otherwise confuse them on day two:
 - A thin first shortlist is normal. Only postings whose titles match a classifier
   rule enter the pipeline at all.
 - `/track` is the only thing that writes state; every other command appends to
-  side lists. Eleven states, of which `rejected, withdrawn, ghosted` and `offer`
-  are terminal and reject every out-transition.
+  side lists. Nine states, of which `rejected, withdrawn` and `offer` are
+  terminal; a move off the allowed list needs `--force --note`. An `applied`
+  role with no update for `ghosted_after_days` shows as `ghosted`.
 - `/apply` never touches Workday, LinkedIn, Indeed or a company careers page.
   Greenhouse, Lever and Ashby only; the rest stay manual.
 

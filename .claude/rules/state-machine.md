@@ -7,9 +7,25 @@ paths:
 
 # The state machine (R10)
 
-11 states: `saved, skip, tailored, applied, recruiter_contact, screen, interview,
-offer, rejected, withdrawn, ghosted`. Terminal (`offer, rejected, withdrawn,
-ghosted`) reject all out-transitions.
+9 states: `saved, skip, tailored, applied, screen, interview, offer, rejected,
+withdrawn`. `state_io.ALLOWED` lists the moves:
+
+- `saved` -> `tailored, applied, skip, withdrawn`
+- `tailored` -> `applied, saved, skip, withdrawn`
+- `applied` -> `screen, interview, offer, rejected, withdrawn`
+- `screen` -> `interview, offer, rejected, withdrawn`
+- `interview` -> `offer, rejected, withdrawn`
+- `skip` -> `saved`
+- `offer, rejected, withdrawn`: terminal.
+
+Any other move, same-state included, needs `--force --note "<why>"`; the
+history entry carries the note and `forced: true`. Creating a role's file is
+not a move.
+
+`ghosted` is never stored. `state_io.shown_state` shows an `applied` role as
+`ghosted` once its last `state_history` entry is older than
+`ghosted_after_days` (`profile/automation.yaml`, default 30): in `track
+states`, `/standup`, the status sheet and the night summary.
 
 R10: `src/track_cli.py` is the only module that calls `state_io.transition` or
 `ensure_state`; `/track`, `app_cli`, `apply_cli` and `apply/triage` call

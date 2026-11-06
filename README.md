@@ -60,7 +60,7 @@ flowchart TD
     C["<b>3. score</b><br/>hard-rule filter, then<br/>parallel judge agents"]
     D["<b>4. tailor</b><br/>resume, cover letter,<br/>outreach, audit trail"]
     E["<b>5. apply</b><br/>read the form,<br/>fill it, maybe submit"]
-    F["<b>6. track</b><br/>pipeline/&lt;job_id&gt;/state.yaml<br/>11 states, one file per role"]
+    F["<b>6. track</b><br/>pipeline/&lt;job_id&gt;/state.yaml<br/>9 states, one file per role"]
 
     A -->|"jobs/runs/&lt;run_id&gt;.json"| B
     B -->|"jobs/jobs.parquet<br/><b>jobs/clean.parquet</b>"| C
@@ -530,15 +530,17 @@ No client is ever constructed.
 <details>
 <summary><b>R10: <code>/track</code> is the only writer of state</b></summary>
 
-Eleven states:
+Nine states:
 
 ```
-saved  skip  tailored  applied  recruiter_contact  screen
-interview  offer  rejected  withdrawn  ghosted
+saved  skip  tailored  applied  screen
+interview  offer  rejected  withdrawn
 ```
 
-The four terminal states (`offer`, `rejected`, `withdrawn`, `ghosted`) reject all
-out-transitions.
+`state_io.ALLOWED` lists the moves; any other, out of the three terminal states
+(`offer`, `rejected`, `withdrawn`) included, needs `--force --note "<why>"`. An
+`applied` role with no update for `ghosted_after_days` (default 30) shows as
+`ghosted`; that state is derived, never stored.
 
 Every transition goes through `/track`. No other command writes `state:` itself.
 Other commands append to side lists only: `/tailor` to `tailored_dirs[]`,

@@ -33,23 +33,24 @@ fewer) covering:
 - **what changed since last standup**: roles whose `last_touch` is within
   the last ~3 days
 - **what's going stale**: roles in a non-terminal state with
-  `last_touch` more than 14 days ago
-- **suggested next actions**: 1-2 concrete prompts, e.g. "`/track
-  ${jid} ghosted` on 3 roles `applied` >14 days ago with no response;
-  `/outreach ${jid} referral --to '...'` on the strongest pending fit"
+  `last_touch` more than `ghosted_after_days` (Step 1's JSON) days ago
+- **suggested next actions**: 1-2 concrete prompts, e.g. "3 roles show
+  `ghosted` (no response in `ghosted_after_days`): `/track ${jid} withdrawn`
+  or `/outreach ${jid} referral --to '...'` on the strongest pending fit"
 
 Keep it tight. No bullet padding, no "Here's the summary:" preamble --
 the reader knows what they're reading.
 
 ## Step 3 — split into Active and Closed tables
 
-- **Active** / **Closed**: use the `active_states` and `closed_states` lists
-  Step 1 already printed from `src.state_io`. Do not restate the membership
+- **Active** / **Closed**: split on each row's `shown_state` against the
+  `active_states` and `closed_states` lists Step 1 already printed from
+  `src.state_io`. Do not restate the membership
   here — one source of truth, and `state_io` is it. (Note `skip` is in
   closed_states: closed-for-view, but not terminal.)
 
 For each row, compute the columns:
-- `state`
+- `state`           (`shown_state`: a stale `applied` shows as `ghosted`)
 - `company`
 - `title`           (truncate to ~60 chars if longer)
 - `vertical`        (a vertical name configured in `profile/verticals.yaml`,

@@ -30,8 +30,8 @@ from src.shared import paths
 from src.shared.config_schema import load_automation
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
-_DONE = frozenset({"applied", "recruiter_contact", "screen", "interview", "offer"})
-_CLOSED = frozenset({"skip", "withdrawn", "rejected", "ghosted"})
+_DONE = frozenset({"applied", "screen", "interview", "offer"})
+_CLOSED = frozenset({"skip", "withdrawn", "rejected", state_io.GHOSTED})
 _ROLE_LINE = re.compile(r"^- `([0-9a-f]{8})`")
 _HEADINGS = (
     ("SUBMITTED", "submitted"),
@@ -102,7 +102,7 @@ def status_for(
 ) -> tuple[str, str, str]:
     """(status, note, uv_run_command) for one row."""
     state = state or {}
-    current = state.get("state", "")
+    current = state_io.shown_state(state) if state else ""
     verdict = ledger.verdict_of(sent)
     if verdict is ledger.Verdict.REJECTED:
         return "Rejected by board", f"rejected by the board: {sent.get('detail', '')}", ""

@@ -669,7 +669,6 @@ class TestEligibleQueue:
             ("aaaa0001", "rejected"),
             ("aaaa0002", "withdrawn"),
             ("aaaa0003", "offer"),
-            ("aaaa0004", "ghosted"),
         ]:
             repo.write_state(job_id=job_id, state=state)
         assert apply_cli.eligible_queue(repo.pipeline) == []

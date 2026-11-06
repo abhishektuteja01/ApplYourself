@@ -11,6 +11,7 @@ import yaml
 
 from src.state_io import (
     ACTIVE_STATES,
+    ALLOWED,
     CLOSED_STATES,
     TERMINAL_STATES,
     VALID_STATES,
@@ -20,6 +21,7 @@ from src.state_io import (
     load_all_states,
     load_state,
     mark_outreach_sent,
+    shown_state,
     state_path_for,
     transition,
 )
@@ -49,11 +51,12 @@ def _yaml_load(path: Path) -> dict:
 
 
 def test_valid_states_count_and_terminal_subset():
-    """11 states locked; 4 are terminal."""
-    assert len(VALID_STATES) == 11
+    """9 states locked; 3 are terminal."""
+    assert len(VALID_STATES) == 9
     assert TERMINAL_STATES <= VALID_STATES
-    assert len(TERMINAL_STATES) == 4
-    assert {"offer", "rejected", "withdrawn", "ghosted"} == TERMINAL_STATES
+    assert {"offer", "rejected", "withdrawn"} == TERMINAL_STATES
+    assert set(ALLOWED) == VALID_STATES
+    assert all(moves <= VALID_STATES for moves in ALLOWED.values())
     assert ACTIVE_STATES.isdisjoint(TERMINAL_STATES)
     assert "skip" in CLOSED_STATES and "skip" not in TERMINAL_STATES
 
@@ -182,10 +185,10 @@ def test_transition_rejects_unknown_state(tmp_path):
 
 @pytest.mark.parametrize("terminal", sorted(TERMINAL_STATES))
 def test_transition_rejects_out_of_every_terminal_state(tmp_path, terminal):
-    """No transitions out of any of the 4 terminal states."""
+    """No transitions out of any terminal state without --force."""
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, terminal, initial_fields=_initial())
-    with pytest.raises(ValueError, match="cannot transition out of terminal"):
+    with pytest.raises(ValueError, match="not an allowed move"):
         transition(p, "saved")
 
 
@@ -197,9 +200,37 @@ def test_transition_rejects_a_terminal_self_transition(tmp_path, terminal):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     transition(p, terminal, initial_fields=_initial())
     before = load_state(p)
-    with pytest.raises(ValueError, match="cannot transition out of terminal"):
+    with pytest.raises(ValueError, match="not an allowed move"):
         transition(p, terminal)
     assert load_state(p) == before
+
+
+def test_a_move_off_the_table_needs_force_and_a_note(tmp_path):
+    p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
+    transition(p, "saved", initial_fields=_initial())
+    with pytest.raises(ValueError, match="not an allowed move"):
+        transition(p, "screen")
+    with pytest.raises(ValueError, match="needs a note"):
+        transition(p, "screen", force=True)
+    data = transition(p, "screen", force=True, note="recruiter called before I applied")
+    assert data["state"] == "screen"
+    assert data["state_history"][-1] == {
+        "state": "screen",
+        "at": data["state_history"][-1]["at"],
+        "note": "recruiter called before I applied",
+        "forced": True,
+    }
+
+
+def test_shown_state_derives_ghosted_from_the_last_history_entry():
+    now = datetime(2026, 7, 1, 12, 0, 0)
+    applied = {
+        "state": "applied",
+        "state_history": [{"state": "applied", "at": "2026-06-01T11:00:00"}],
+    }
+    assert shown_state(applied, days=30, now=now) == "ghosted"
+    assert shown_state(applied, days=31, now=now) == "applied"
+    assert shown_state({**applied, "state": "screen"}, days=1, now=now) == "screen"
 
 
 @pytest.mark.parametrize(

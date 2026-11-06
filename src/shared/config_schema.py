@@ -137,6 +137,7 @@ class Automation(_Strict):
     summary_email: str | None = None
     tailor_max_per_night: int | None = None
     apply_prep_max_per_night: int | None = None
+    ghosted_after_days: int | None = None
 
 
 # ---- contacts.yaml ----
@@ -263,3 +264,12 @@ def load_automation(path: Path) -> dict[str, Any]:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     validate(Automation, data, path)
     return data
+
+
+def automation_setting(key: str, default: Any) -> Any:
+    """One profile/automation.yaml value, or default when the file or key is absent."""
+    from src.shared import paths
+
+    path = paths.PROFILE / "automation.yaml"
+    value = load_automation(path).get(key) if path.is_file() else None
+    return default if value is None else value

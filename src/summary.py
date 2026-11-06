@@ -222,7 +222,7 @@ def duplicates_section(rows: list[dict], states: dict[str, dict]) -> list[str]:
         return ["None tonight."]
 
     def side(jid: str, company: str) -> str:
-        st = (states.get(jid) or {}).get("state")
+        st = state_io.shown_state(states[jid]) if jid in states else None
         return f"`{jid}` {company}" + (f" ({st})" if st else "")
 
     rows = sorted(
