@@ -141,12 +141,14 @@ unless a same-country or major city has the name.
 
 ## Searching is not accepting
 
-`location_allowlist.countries` is what the view accepts; `search_locations` is
+The answer bank's `work_authorization.countries` is the one country list. The
+view accepts your own country and every other row in it (`location_allowlist.countries`
+overrides that); `search_locations` is
 what the jobspy lanes query (absent: the allowlist, capped at
-`MAX_SEARCH_LOCATIONS`). An `abroad` block (`countries`, `verticals`) adds one
-query per country x `abroad_terms`, remote=False; its countries must be in the
-allowlist, and the view drops a row in an abroad country whose lane is not
-listed. A LinkedIn `companies` block (`terms`, `ids`) adds one home query per
+`MAX_SEARCH_LOCATIONS`). The top-level `abroad` block (`lanes`, `sources`) adds,
+on each listed source, one query per other bank country x lane `abroad_terms`,
+remote=False; those countries must be in the allowlist, and the view drops a
+row in an abroad country whose lane is not listed. `sources.*.abroad` is retired. A LinkedIn `companies` block (`terms`, `ids`) adds one home query per
 term x company id; those rows have no lane of their own and are classified by
 title. A location that is exactly a region acronym expands to its countries:
 overlap keeps it unresolved, no overlap drops it.

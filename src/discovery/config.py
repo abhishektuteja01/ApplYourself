@@ -40,6 +40,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "deadline_hours",
         "location_allowlist",
         "search_locations",
+        "abroad",
         "sources",
         "live_days",
         "search_max_age_days",
@@ -59,7 +60,6 @@ _SOURCE_KEYS = frozenset(
         "page_delay_seconds",
         "page_delay_band_seconds",
         "remote_queries",
-        "abroad",
         "every_days",
         "max_pages",
         "hours_old",
@@ -68,7 +68,7 @@ _SOURCE_KEYS = frozenset(
         "companies",
     }
 )
-_ABROAD_KEYS = frozenset({"countries", "verticals"})
+_ABROAD_KEYS = frozenset({"lanes", "sources"})
 _COMPANIES_KEYS = frozenset({"terms", "ids"})
 # Keys a schema_version 1 file may still carry, and what replaced them.
 _RETIRED_KEYS = {
@@ -82,6 +82,8 @@ _RETIRED_KEYS = {
     "cities": "(nothing)",
     "continents": "countries",
     "score_threshold": "scoring.yaml cutoffs.keep_long",
+    "abroad": "the top-level abroad: {lanes, sources}; its countries are "
+    "application_answers.yaml work_authorization.countries",
 }
 
 # With no `search_locations`, the jobspy lanes query the allowlist's
@@ -106,7 +108,7 @@ class SourceConfig:
     enabled: bool = True
     pacing_seconds: float = 1.0
     # jobspy lanes: page delay, the remote copy of each query, the search
-    # window, the result cap, and the `abroad` block.
+    # window, the result cap, and what the top-level `abroad` block gives it.
     page_delay_seconds: float = DEFAULT_PAGE_DELAY_SECONDS
     page_delay_band_seconds: float = DEFAULT_PAGE_DELAY_BAND_SECONDS
     remote_queries: bool = True
@@ -172,6 +174,9 @@ class DiscoveryConfig:
     raw_keep_days: int = 3
     log_keep_days: int = 30
     dead_every_days: int = 14
+    # The top-level `abroad` block; its countries are the bank's, minus home.
+    abroad_lanes_listed: list[str] = field(default_factory=list)
+    abroad_sources: list[str] = field(default_factory=list)
     unknown_keys: list[str] = field(default_factory=list)
 
     def abroad_lanes(self) -> dict[str, set[str]]:
@@ -218,34 +223,38 @@ class DiscoveryConfig:
     def _abroad_problems(self) -> list[str]:
         from src.shared.location.places import canonical_country
 
-        problems = []
+        problems: list[str] = []
+        if not (self.abroad_sources or self.abroad_lanes_listed):
+            return problems
         allowed = {c.lower() for c in self.location_allowlist.effective_countries()}
-        for name, src in self.sources.items():
-            if not (src.abroad_countries or src.abroad_verticals):
-                continue
-            where = f"sources.{name}.abroad"
+        for name in self.abroad_sources:
             if name not in JOBSPY_SOURCES:
-                problems.append(f"{where}: only {sorted(JOBSPY_SOURCES)} read it")
-                continue
-            if not src.abroad_countries or not src.abroad_verticals:
-                problems.append(f"{where}: needs both countries and verticals")
-            for c in src.abroad_countries:
-                canonical = canonical_country(c)
-                if canonical is None:
-                    problems.append(f"{where}.countries: {c!r} is not a country name")
-                elif allowed and canonical.lower() not in allowed:
-                    problems.append(
-                        f"{where}.countries: {c!r} is not in location_allowlist, "
-                        f"so the view would drop every row it finds"
-                    )
-            lanes = verticals.get_config().verticals
-            for v in src.abroad_verticals:
-                if v not in lanes:
-                    problems.append(f"{where}.verticals: {v!r} is not a vertical")
-                elif not lanes[v].abroad_terms:
-                    problems.append(
-                        f"{where}.verticals: {v!r} has no abroad_terms in profile/verticals.yaml"
-                    )
+                problems.append(f"abroad.sources: {name!r}: only {sorted(JOBSPY_SOURCES)} read it")
+        if not self.abroad_sources or not self.abroad_lanes_listed:
+            problems.append("abroad: needs both lanes and sources")
+        countries = next(
+            (s.abroad_countries for n, s in self.sources.items() if n in self.abroad_sources), []
+        )
+        if self.abroad_sources and not countries:
+            problems.append(
+                "abroad: application_answers.yaml work_authorization.countries lists "
+                "no country but your own (or the bank is missing)"
+            )
+        for c in countries:
+            canonical = canonical_country(c)
+            if allowed and canonical is not None and canonical.lower() not in allowed:
+                problems.append(
+                    f"abroad: {c!r} is not in location_allowlist, "
+                    f"so the view would drop every row it finds"
+                )
+        lanes = verticals.get_config().verticals
+        for v in self.abroad_lanes_listed:
+            if v not in lanes:
+                problems.append(f"abroad.lanes: {v!r} is not a vertical")
+            elif not lanes[v].abroad_terms:
+                problems.append(
+                    f"abroad.lanes: {v!r} has no abroad_terms in profile/verticals.yaml"
+                )
         return problems
 
 
@@ -288,17 +297,6 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         raise ValueError(
             f"{where}.remote_queries must be true or false, got {out.remote_queries!r}"
         )
-    abroad = v.get("abroad") or {}
-    if not isinstance(abroad, dict):
-        raise ValueError(f"{where}.abroad must be a mapping")
-    cfg.unknown_keys += [f"sources.{name}.abroad.{k}" for k in abroad if k not in _ABROAD_KEYS]
-    for key in _ABROAD_KEYS:
-        values = abroad.get(key) or []
-        if not isinstance(values, list) or not all(
-            isinstance(x, str) and x.strip() for x in values
-        ):
-            raise ValueError(f"{where}.abroad.{key} must be a list of names")
-        setattr(out, f"abroad_{key}", [x.strip() for x in values])
     companies = v.get("companies") or {}
     if not isinstance(companies, dict):
         raise ValueError(f"{where}.companies must be a mapping")
@@ -330,7 +328,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     p = Path(path or paths.DISCOVERY_CONFIG)
     if not p.exists():
         log.info("profile/discovery.yaml not found, using defaults")
-        return _keep_long(DiscoveryConfig())
+        return _keep_long(_countries(DiscoveryConfig(), p, {}))
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
@@ -354,6 +352,20 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
     cfg.unknown_keys += [f"location_allowlist.{k}" for k in allow if k not in _ALLOWLIST_KEYS]
     if "countries" in allow:
         cfg.location_allowlist = LocationAllowlist(list(allow.get("countries") or []))
+
+    abroad = data.get("abroad") or {}
+    if not isinstance(abroad, dict):
+        raise ValueError(f"{p}: abroad must be a mapping")
+    cfg.unknown_keys += [f"abroad.{k}" for k in abroad if k not in _ABROAD_KEYS]
+    for key in _ABROAD_KEYS:
+        values = abroad.get(key) or []
+        if not isinstance(values, list) or not all(
+            isinstance(x, str) and x.strip() for x in values
+        ):
+            raise ValueError(f"{p}: abroad.{key} must be a list of names")
+    cfg.abroad_lanes_listed = [x.strip() for x in abroad.get("lanes") or []]
+    cfg.abroad_sources = [x.strip() for x in abroad.get("sources") or []]
+    _countries(cfg, p, allow)
 
     if "search_locations" in data:
         raw = data["search_locations"] or []
@@ -382,6 +394,44 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
             _int(retention.get(key, getattr(cfg, f"retention_{key}")), f"{p}: retention.{key}", 1),
         )
     return _keep_long(cfg)
+
+
+def bank_countries(discovery_path: Path) -> tuple[str, list[str]] | None:
+    """(home, every other country the answer bank lists), or None with no bank.
+    The example discovery file reads the example bank."""
+    from src.apply.answers import EXAMPLE_NAME, AnswersError, load_answers
+    from src.shared.location.places import canonical_country
+
+    bank = (
+        paths.example(EXAMPLE_NAME)
+        if discovery_path.name.startswith("discovery.example")
+        else paths.ANSWER_BANK
+    )
+    if not bank.exists():
+        return None
+    try:
+        answers = load_answers(bank)
+    except AnswersError as exc:
+        raise ValueError(str(exc)) from exc
+    home = canonical_country(answers.home_country) or answers.home_country
+    others = [canonical_country(c) for c in answers.countries if c != "default"]
+    return home, [c for c in dict.fromkeys(others) if c and c != home]
+
+
+def _countries(cfg: DiscoveryConfig, p: Path, allow: dict) -> DiscoveryConfig:
+    """The bank's countries: the allowlist (unless `location_allowlist.countries`
+    sets it) and, for each `abroad.sources` lane, the abroad countries."""
+    found = bank_countries(p)
+    if found is None:
+        return cfg
+    home, others = found
+    if "countries" not in allow:
+        cfg.location_allowlist = LocationAllowlist([home, *others])
+    for name in cfg.abroad_sources:
+        if name in cfg.sources:
+            cfg.sources[name].abroad_countries = list(others)
+            cfg.sources[name].abroad_verticals = list(cfg.abroad_lanes_listed)
+    return cfg
 
 
 def _keep_long(cfg: DiscoveryConfig) -> DiscoveryConfig:

@@ -51,9 +51,10 @@ def test_unknown_source_is_an_error(tmp_path):
         ),
         ({"retention": {"highdays": 60}}, "retention.highdays"),
         (
-            {"sources": {"linkedin": {"abroad": {"countrys": ["India"]}}}},
-            "sources.linkedin.abroad.countrys",
+            {"sources": {"linkedin": {"abroad": {"countries": ["India"]}}}},
+            "sources.linkedin.abroad (removed; use the top-level abroad:",
         ),
+        ({"abroad": {"countries": ["India"]}}, "abroad.countries"),
         (
             {"sources": {"linkedin": {"companies": {"term": ["AI"]}}}},
             "sources.linkedin.companies.term",
@@ -116,7 +117,7 @@ def test_every_value_is_read(tmp_path, monkeypatch):
         {"sources": {"workday": {"every_days": 0}}},
         {"sources": {"linkedin": {"page_delay_seconds": 0.1}}},
         {"sources": {"linkedin": {"remote_queries": "no"}}},
-        {"sources": {"linkedin": {"abroad": {"countries": "India"}}}},
+        {"abroad": {"lanes": "x"}},
         {"search_locations": "United States"},
         {"sources": {"stapply": {"max_snapshot_age_hours": 0}}},
         {"sources": {"linkedin": {"companies": {"terms": ["AI"], "ids": {"Acme": "123"}}}}},
@@ -167,32 +168,39 @@ def abroad_lane(cfg):
 
 
 class TestAbroad:
-    def base(self, abroad, countries=("United States", "India")):
-        return {
-            "location_allowlist": {"countries": list(countries)},
-            "sources": {"linkedin": {"abroad": abroad}},
-        }
+    """Abroad searches every country the answer bank lists beyond your own."""
+
+    @pytest.fixture(autouse=True)
+    def bank(self):
+        data = yaml.safe_load(
+            paths.example("application_answers.example.yaml").read_text(encoding="utf-8")
+        )
+        rows = data["work_authorization"]["countries"]
+        rows["India"] = rows["Germany"] = {"authorized": False, "requires_sponsorship": True}
+        paths.ANSWER_BANK.parent.mkdir(parents=True, exist_ok=True)
+        paths.ANSWER_BANK.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    def base(self, lanes, sources=("linkedin",), **extra):
+        return {"abroad": {"lanes": list(lanes), "sources": list(sources)}, **extra}
+
+    def test_the_bank_is_the_country_list(self, tmp_path, abroad_lane):
+        c = load(tmp_path, self.base([abroad_lane]))
+        assert c.location_allowlist.effective_countries() == {"United States", "India", "Germany"}
+        assert c.abroad_lanes() == {"india": {abroad_lane}, "germany": {abroad_lane}}
+        assert c.sources["indeed"].abroad_countries == [] and c.validate() == []
 
     def test_a_country_outside_the_allowlist_is_flagged(self, tmp_path, abroad_lane):
-        lane = abroad_lane
-        c = load(tmp_path, self.base({"countries": ["Germany"], "verticals": [lane]}))
-        assert any("not in location_allowlist" in p for p in c.validate())
+        allow = {"countries": ["United States", "India"]}
+        c = load(tmp_path, self.base([abroad_lane], location_allowlist=allow))
+        assert any("'Germany' is not in location_allowlist" in p for p in c.validate())
 
     def test_an_unknown_lane_is_flagged(self, tmp_path):
-        c = load(tmp_path, self.base({"countries": ["India"], "verticals": ["nope"]}))
+        c = load(tmp_path, self.base(["nope"]))
         assert any("'nope' is not a vertical" in p for p in c.validate())
 
-    def test_only_jobspy_lanes_take_it(self, tmp_path):
-        c = load(
-            tmp_path,
-            {"sources": {"lever": {"abroad": {"countries": ["India"], "verticals": ["x"]}}}},
-        )
+    def test_only_jobspy_lanes_take_it(self, tmp_path, abroad_lane):
+        c = load(tmp_path, self.base([abroad_lane], sources=["lever"]))
         assert any("only" in p for p in c.validate())
-
-    def test_abroad_lanes(self, tmp_path, abroad_lane):
-        lane = abroad_lane
-        c = load(tmp_path, self.base({"countries": ["India"], "verticals": [lane]}))
-        assert c.abroad_lanes() == {"india": {lane}} and c.validate() == []
 
 
 def test_pacing_floor():

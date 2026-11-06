@@ -215,8 +215,8 @@ the resume.
    No Indeed unless the fallback fires, no Greenhouse, Lever, Ashby or Workday
    board crawls (those reach only boards listed in `data/universe/boards.csv`,
    and take far longer than this has). Expect a
-   fraction of an overnight run. `location_allowlist` stays at the shipped
-   `countries: ["United States"]`; nothing here needs undoing, because tomorrow's
+   fraction of an overnight run. The view accepts the answer bank's countries
+   (only your own, until you add rows); nothing here needs undoing, because tomorrow's
    plain `uv run discover` runs the full config.
 
 ## Step 2 — your resume (~7 min, 0 questions)
@@ -392,9 +392,10 @@ Never judge a slice yourself, and never read, edit or delete files in
 
 - A source they turn off is `enabled: false` under that source in
   `discovery.yaml`'s `sources` block, and nowhere else.
-- Locations go into `discovery.yaml`'s `location_allowlist`, the hard
-  geographic filter on `clean.parquet`. Country names only (`countries: ["United States"]`), not every spelling a
-  board might use.
+- A country is one row in the answer bank's `work_authorization.countries`
+  (its work-authorization facts), which is also the hard geographic filter on
+  `clean.parquet`. Country names only, not every spelling a board might use.
+  `discovery.yaml`'s `location_allowlist.countries` only narrows it.
 - A new years cap is the lane's `years` table; a new level band is its level
   words in `title_exclude_terms`.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.

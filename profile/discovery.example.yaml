@@ -1,12 +1,16 @@
 schema_version: 2
 # Lanes run at the same time, each against this budget, in hours.
 deadline_hours: 4
-location_allowlist:
-  countries: ["United States"]
-# Where the linkedin/indeed lanes search, as against the allowlist above, which
-# is what the view accepts. Absent = the allowlist's countries, capped at 5:
+# The view accepts your own country and every other country row in
+# application_answers.yaml work_authorization.countries. To narrow it, set
+# location_allowlist: {countries: [...]}.
+# Where the linkedin/indeed lanes search, as against what the view accepts. Absent = the allowlist's countries, capped at 5:
 # each location multiplies the query count. The board lanes are unaffected.
 # search_locations: ["Germany", "Netherlands", "United Kingdom"]
+# Optional: search these lanes' abroad_terms (verticals.yaml) in every other
+# country the answer bank lists, on these jobspy sources. Abroad, the view
+# keeps only these lanes.
+# abroad: {lanes: [example_primary], sources: [linkedin, indeed]}
 # The live view (clean.parquet): a job stays while seen within live_days; a
 # LinkedIn/Indeed row also needs a posted date within search_max_age_days.
 live_days: 14

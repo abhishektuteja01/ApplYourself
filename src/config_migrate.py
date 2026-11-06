@@ -20,6 +20,7 @@ import yaml
 
 BANK = "application_answers.yaml"
 SCORING = "scoring.yaml"
+DISCOVERY = "discovery.yaml"
 
 
 @dataclass
@@ -109,7 +110,137 @@ def _languages(p: Profile) -> None:
     p.texts[SCORING] = drop_top_key(p.text(SCORING) or "", "languages")
 
 
-STEPS: tuple[Callable[[Profile], None], ...] = (_languages,)
+def _flow_end(text: str, i: int) -> int:
+    """Where the flow value starting at text[i] ({...}, [...], *alias or a scalar) ends."""
+    if text[i] in "{[":
+        depth, quote = 0, ""
+        for j in range(i, len(text)):
+            ch = text[j]
+            if quote:
+                quote = "" if ch == quote else quote
+            elif ch in "\"'":
+                quote = ch
+            elif ch in "{[":
+                depth += 1
+            elif ch in "}]":
+                depth -= 1
+                if depth == 0:
+                    return j + 1
+        return len(text)
+    m = re.compile(r"[^,}\]\n#]*").match(text, i)
+    return m.end() if m else i
+
+
+def drop_flow_key(text: str, key: str) -> str:
+    """text without every non-top-level `key: <value>` entry, flow or block style."""
+    rx = re.compile(rf"(?m)^(?P<lead>[^#\n]*?)(?P<key>\b{re.escape(key)}:[ \t]*)")
+    while m := next((m for m in rx.finditer(text) if m["lead"]), None):
+        start, i = m.start("key"), m.end()
+        if i < len(text) and text[i] == "&":
+            i = re.compile(r"&\S+\s*").match(text, i).end()  # type: ignore[union-attr]
+        if i >= len(text) or text[i] in "\n#":
+            # Block style: the key's line and every line indented past it.
+            line_start = text.rfind("\n", 0, start) + 1
+            indent = start - line_start
+            end = text.find("\n", i)
+            end = len(text) if end < 0 else end + 1
+            while end < len(text):
+                nxt = text.find("\n", end)
+                line = text[end : (len(text) if nxt < 0 else nxt + 1)]
+                if line.strip() and len(line) - len(line.lstrip()) <= indent:
+                    break
+                end += len(line)
+            text = text[:line_start] + text[end:]
+            continue
+        end = _flow_end(text, i)
+        after = re.compile(r"\s*,\s*").match(text, end)
+        if after:
+            text = text[:start] + text[after.end() :]
+        else:
+            before = re.search(r",\s*$", text[:start])
+            text = text[: before.start() if before else start] + text[end:]
+    return text
+
+
+def _countries_of(bank: dict) -> tuple[str, list[str]] | None:
+    """(home, every other country row) of a bank mapping, canonical names."""
+    from src.shared.location.places import canonical_country
+
+    try:
+        home_raw = str(bank["identity"]["country"])
+        rows = list(bank["work_authorization"]["countries"])
+    except (KeyError, TypeError):
+        return None
+    home = canonical_country(home_raw) or home_raw
+    others = [canonical_country(str(c)) for c in rows if c != "default"]
+    return home, [c for c in dict.fromkeys(others) if c and c != home]
+
+
+def _abroad(p: Profile) -> None:
+    """discovery.yaml `sources.*.abroad` -> one top-level `abroad: {lanes, sources}`,
+    its countries the bank's; a `location_allowlist` equal to the bank's goes."""
+    from src.shared.location.places import canonical_country
+
+    disc = p.data(DISCOVERY)
+    if not isinstance(disc, dict):
+        return
+    sources = disc.get("sources") or {}
+    old = {n: s["abroad"] for n, s in sources.items() if isinstance(s, dict) and "abroad" in s}
+    allow = (disc.get("location_allowlist") or {}).get("countries")
+    if not old and allow is None:
+        return
+    found = _countries_of(p.data(BANK) or {})
+    if found is None:
+        p.problems.append(f"{BANK}: needed to move {DISCOVERY}'s countries")
+        return
+    home, others = found
+    text = p.text(DISCOVERY) or ""
+    if old:
+        lanes = [tuple((a or {}).get("verticals") or []) for a in old.values()]
+        wanted = {canonical_country(c) or c for a in old.values() for c in a.get("countries") or []}
+        if len(set(lanes)) != 1:
+            p.problems.append(
+                f"{DISCOVERY}: sources {sorted(old)} list different abroad verticals; "
+                "make them one list by hand first"
+            )
+            return
+        if wanted != set(others):
+            p.problems.append(
+                f"{DISCOVERY}: abroad countries {sorted(wanted)} differ from the bank's "
+                f"other countries {others}: abroad now searches every bank country, so "
+                "add or remove bank rows (or abroad countries) until they match"
+            )
+            return
+        text = drop_flow_key(text, "abroad")
+        block = (
+            "# Search these lanes' abroad_terms on these sources in every other country\n"
+            f"# {BANK} work_authorization.countries lists.\n"
+            f"abroad: {{lanes: [{', '.join(lanes[0])}], sources: [{', '.join(old)}]}}\n"
+        )
+        lines = text.splitlines(keepends=True)
+        at = next(i for i, ln in enumerate(lines) if ln.startswith("sources:"))
+        while at > 0 and lines[at - 1].lstrip().startswith("#"):
+            at -= 1
+        text = "".join(lines[:at]) + block + "".join(lines[at:])
+        p.notes.append(f"{DISCOVERY}: abroad: lanes {list(lanes[0])}, sources {list(old)}")
+    if allow is not None:
+        if {canonical_country(str(c)) or c for c in allow} == {home, *others}:
+            text = drop_top_key(text, "location_allowlist")
+            p.notes.append(f"{DISCOVERY}: location_allowlist dropped (the bank's countries)")
+        elif old:
+            p.notes.append(
+                f"{DISCOVERY}: location_allowlist.countries kept: it differs from the bank's "
+                f"countries {[home, *others]}, so it still overrides them"
+            )
+    new = yaml.safe_load(text)
+    for s in (new.get("sources") or {}).values():
+        if isinstance(s, dict) and "abroad" in s:
+            p.problems.append(f"{DISCOVERY}: could not remove sources.*.abroad; edit it by hand")
+            return
+    p.texts[DISCOVERY] = text
+
+
+STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad)
 
 
 def plan(root: Path) -> Profile:
