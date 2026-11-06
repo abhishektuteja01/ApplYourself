@@ -1489,6 +1489,11 @@ class TestLearnCommand:
 class TestApplyConfirm:
     """Only `apply confirm`'s stored hash confirms a file, and only while it matches."""
 
+    @pytest.fixture(autouse=True)
+    def _no_clean(self, tmp_path, monkeypatch):
+        # confirm builds the role's plan to list its guesses; never from real data.
+        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+
     def _file(self, tmp_path, data):
         path = tmp_path / "answers_override.json"
         path.write_text(json.dumps(data), encoding="utf-8")
@@ -1511,6 +1516,35 @@ class TestApplyConfirm:
         monkeypatch.setattr("builtins.input", _raise(AssertionError("must not prompt")))
         assert apply_cli.main(["confirm", str(path)]) == 1
         assert not confirmation.sidecar(path).exists()
+
+    def test_the_banks_standing_keyword_guesses_are_shown(self, tmp_path, monkeypatch, capsys):
+        """Confirming lets them through a submit, so the user must see them."""
+        from dataclasses import replace
+
+        from src.apply.plan import FieldPlan
+
+        guess = FieldPlan(
+            id="q",
+            name="q",
+            label="What's your LinkedIn?",
+            kind="text",
+            section="questions",
+            required=True,
+            multi=False,
+            value="https://x",
+            tier="B",
+            source="bank:linkedin~linkedin",
+        )
+        monkeypatch.setattr(
+            apply_cli,
+            "build",
+            lambda job_id, **kw: (replace(_fake_plan(job_id), fields=(guess,)), None),
+        )
+        path = self._file(tmp_path, {"job_id": JOB_ID})
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        assert apply_cli.main(["confirm", str(path)]) == 1
+        out = capsys.readouterr().out
+        assert "What's your LinkedIn?" in out and "bank:linkedin~linkedin" in out
 
 
 class TestARunLearnsWhatWasConfirmed:

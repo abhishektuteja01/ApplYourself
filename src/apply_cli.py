@@ -16,7 +16,8 @@ run [--job-id X] [--answers F] [--manifest F] [--submit] [--yes] [--limit N]
                       role already in the submit ledger. Writes
                       applications/apply_runs/<timestamp>.md.
 confirm <answers-file>
-                      show the answers, take a typed yes on a terminal, and
+                      show the answers and the bank's keyword guesses they
+                      leave standing, take a typed yes on a terminal, and
                       store their hash beside the file; run and the bank honour
                       the file only while it still matches.
 learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
@@ -1757,6 +1758,23 @@ def confirm_submission(job_ids: list[str]) -> int:
     return 0
 
 
+def _standing_guesses(job_id: str, answers_file: Path) -> str:
+    """The bank's keyword guesses this file leaves standing: confirming lets
+    them through a submit and saves each as a wording."""
+    if not job_id:
+        return "\nWARNING: no job_id in the file, so the bank's keyword guesses are not listed."
+    try:
+        plan, _ = build(job_id, answers_path=answers_file)
+    except (*BUILD_ERRORS, PostingExpired, OSError) as exc:
+        return f"\nWARNING: could not list the bank's keyword guesses for {job_id}: {exc}"
+    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
+    lines = [f"\nGuessed by keyword from the bank, also confirmed ({len(guesses)}):"]
+    for f in guesses:
+        lines.append(f'{f.id} — "{f.label}"')
+        lines.append(f"  {_value(f.value)}  [{f.source}]")
+    return "\n".join(lines)
+
+
 def _cmd_confirm(args: argparse.Namespace) -> int:
     if bank.unattended():
         print(
@@ -1770,6 +1788,7 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
         print(f"ERROR: {args.answers_file}: not readable JSON ({exc})", file=sys.stderr)
         return 1
     print(confirmation.render(data))
+    print(_standing_guesses(str(data.get("job_id") or ""), Path(args.answers_file)))
     print("\nConfirming saves these to the answer bank and lets them through a submit.")
     if not sys.stdin.isatty():
         print(
