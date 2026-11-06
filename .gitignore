@@ -66,6 +66,8 @@ pipeline.md
 # spoken claims, employer names, and the specific ways an answer fell apart.
 interview/
 /top_scored_open.xlsx
+/.top_scored_open.xlsx.lock
+/.top_scored_open.xlsx.tmp
 /summary.md
 /summary.html
 # Nightly discovery logs (scheduler job). The directory itself is committed via

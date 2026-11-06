@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tailor stage: add newly scored roles to the sheet, tailor every New row
+# Tailor stage: rewrite the sheet from the work queue, tailor every New role
 # STAGE_LIMIT=N (env) caps the roles a run takes, for a first live test.
 # (tailor_parallel at a time), rebuild the sheet.
 set -uo pipefail

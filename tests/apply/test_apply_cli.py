@@ -664,6 +664,10 @@ class TestEligibleQueue:
         repo.write_state(tailored_dirs=[])
         assert apply_cli.eligible_queue(repo.pipeline) == []
 
+    def test_a_tailored_role_whose_folder_is_gone_is_not_eligible(self, repo):
+        repo.write_state(tailored_dirs=["lane/2026-01-01_gone_eng_aaaa1111"])
+        assert apply_cli.eligible_queue(repo.pipeline) == []
+
     def test_terminal_states_are_excluded(self, repo):
         for job_id, state in [
             ("aaaa0001", "rejected"),

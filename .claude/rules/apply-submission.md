@@ -117,10 +117,16 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 
 ## The status sheet is derived
 
-`uv run apply sheet [--add]` (`src/apply/sheet.py`) rebuilds every row's status,
-note and submit command in `profile/automation.yaml`'s `table_path` from
-`state.yaml`, the ledger, the newest run record naming the role, and answers
-waiting for confirmation. Nothing else writes those cells.
+The work queue is `sheet.queue()`, computed and never read back from the xlsx:
+every role scored at or above scoring.yaml `cutoffs.sheet` (`score_store.view`)
+that is in `clean.parquet`, whose state is not past `tailored` or closed, and
+whose status is not Applied or Closed; highest score first, then job_id. Each status, note and submit command comes from `state.yaml`, the ledger,
+the newest run record naming the role, and answers waiting for confirmation.
+`uv run apply sheet` rewrites `profile/automation.yaml`'s `table_path` from it
+(under a lock, tmp file then rename); `--list STATUS` prints the queue at a status
+(the night stages and triage read this); `--compare` prints how the xlsx differs
+from the queue. `--add` is accepted and does nothing extra. Bank writes
+(`learn`, `undo`) hold the bank's lock across the read-modify-write.
 
 `apply run` writes `apply_runs/<ts>.json` (`src/apply/run_record.py`: per role
 `category`, a `ReasonCode`, `fields_parked`, timestamps) and renders `<ts>.md`

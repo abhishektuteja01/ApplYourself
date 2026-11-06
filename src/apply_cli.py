@@ -871,12 +871,25 @@ def _cmd_sheet(args: argparse.Namespace) -> int:
         if args.list:
             print("\n".join(sheet.job_ids(args.list)))
             return 0
+        if args.compare:
+            return _sheet_compare(sheet.compare())
         counts = sheet.refresh(add=args.add)
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     print(" · ".join(f"{status} {n}" for status, n in sorted(counts.items())))
     return 0
+
+
+def _sheet_compare(got: dict[str, list[str]]) -> int:
+    """Print how the sheet as it stands differs from the computed queue; 1 when
+    the roles differ. Order alone is not a difference: the queue sorts by score,
+    then job_id."""
+    print(f"sheet rows {len(got['sheet'])} · queue rows {len(got['queue'])}")
+    for key in ("missing", "extra"):
+        print(f"{key} {len(got[key])}: {' '.join(got[key][:20])}".rstrip(": "))
+    print("order: " + ("differs (queue sorts by score, then job_id)" if got["moved"] else "same"))
+    return 1 if got["missing"] or got["extra"] else 0
 
 
 def _cmd_learn(args: argparse.Namespace) -> int:
@@ -985,7 +998,7 @@ def render_fill(result, plan: Plan) -> str:
 
 
 def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
-    """`state == tailored` with a resume on file, and whose latest submit-ledger
+    """`state == tailored` with its built folder on disk, and whose latest submit-ledger
     line (if any) is `refused` — a role already sent to a board never
     re-enters the queue, even if its state.yaml was re-created. Matched on
     job_id or on the form URL, as `ledger.verdict` does.
@@ -1007,10 +1020,15 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
         job_id
         for job_id, st in idx.items()
         if st.get("state") == "tailored"
-        and st.get("tailored_dirs")
+        and _built_on_disk(st)
         and job_id not in sent
         and not (sent_forms and _form_key(job_id, st) in sent_forms)
     )
+
+
+def _built_on_disk(state: dict) -> bool:
+    folder = app_cli.built_folder(state)
+    return folder is not None and folder.is_dir()
 
 
 def _form_key(job_id: str, state: dict) -> str:
@@ -1900,7 +1918,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 f"already sent {sent.get('at', '')} ({sent.get('status', '')}) per "
                 f"{ledger.LEDGER_NAME}; delete that line to retry"
                 if sent
-                else "needs state == tailored with tailored_dirs[] non-empty"
+                else "needs state == tailored with its tailored_dirs[-1] folder on disk"
             )
             print(f"ERROR: {args.job_id} is not eligible — {why}", file=sys.stderr)
             return 1
@@ -1913,7 +1931,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             queue = queue[: args.limit]
 
     if not queue:
-        print("Nothing eligible: no role at state=tailored with tailored_dirs[] non-empty.")
+        print("Nothing eligible: no role at state=tailored with its built folder on disk.")
         return 0
 
     if args.submit and not args.yes:
@@ -2034,18 +2052,24 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("answers_file", type=Path)
     c.set_defaults(func=_cmd_confirm)
 
-    sh = sub.add_parser("sheet", help="rebuild the status sheet from state, ledger and run reports")
+    sh = sub.add_parser(
+        "sheet", help="rewrite the status sheet from the work queue (state, scores, ledger, runs)"
+    )
     sh.add_argument(
         "--add",
         action="store_true",
-        help="first append roles newly scored at or above scoring.yaml cutoffs.sheet",
+        help="kept for old callers; every rewrite holds every queued role",
     )
     sh.add_argument(
         "--list",
         default=None,
         metavar="STATUS",
-        help="print the job_ids at this status, one per line; "
-        "reads the sheet as it is, writes nothing",
+        help="print the queued job_ids at this status, one per line; writes nothing",
+    )
+    sh.add_argument(
+        "--compare",
+        action="store_true",
+        help="print how the sheet as it stands differs from the queue; writes nothing",
     )
     sh.set_defaults(func=_cmd_sheet)
 

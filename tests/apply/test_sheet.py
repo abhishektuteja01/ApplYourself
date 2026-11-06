@@ -123,12 +123,12 @@ def test_confirmed_answers_are_not_waiting(tmp_path, monkeypatch):
     assert _rows(tmp_path)["aaaa1111"]["status"] == "Resume ready"
 
 
-def test_job_ids_lists_one_status_in_sheet_order(tmp_path, monkeypatch, capsys):
+def test_job_ids_are_computed_without_the_sheet_file(tmp_path, monkeypatch, capsys):
     from src import apply_cli
 
     _world(tmp_path, monkeypatch)
-    assert sheet.job_ids("New") == []
-    sheet.refresh(add=True)
+    assert sheet.job_ids("New") == ["aaaa1111", "bbbb2222"]
+    assert not (tmp_path / "sheet.xlsx").exists()
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
     (paths.APPLICATIONS / folder).mkdir(parents=True)
     _state(tmp_path, "aaaa1111", "tailored", folder)
@@ -265,3 +265,24 @@ def test_run_backfill_dry_run_writes_nothing_and_apply_keeps_the_sheet(tmp_path,
     (runs / "2026-09-28T10-00-00.md").unlink()
     assert sheet.statuses(sheet.latest_outcomes(runs)) == before
     assert before["aaaa1111"][1] == "failed: TimeoutError: boom"
+
+
+def test_compare_names_rows_the_queue_does_not_hold_and_refresh_drops_them(
+    tmp_path, monkeypatch, capsys
+):
+    from src import apply_cli
+
+    _world(tmp_path, monkeypatch)
+    sheet.refresh()
+    wb = openpyxl.load_workbook(tmp_path / "sheet.xlsx")
+    wb.active.append([70, "cccc3333", "Acme", "Eng", "greenhouse", GH, "New", "", ""])
+    wb.save(tmp_path / "sheet.xlsx")
+    assert apply_cli.main(["sheet", "--compare"]) == 1
+    assert "extra 1: cccc3333" in capsys.readouterr().out
+    assert sheet.refresh() == {"New": 2, "New (removed)": 1}
+    assert list(_rows(tmp_path)) == ["aaaa1111", "bbbb2222"]
+    assert apply_cli.main(["sheet", "--compare"]) == 0
+    assert sorted(p.name for p in tmp_path.glob("*sheet.xlsx*")) == [
+        ".sheet.xlsx.lock",
+        "sheet.xlsx",
+    ]

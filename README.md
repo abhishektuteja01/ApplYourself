@@ -371,7 +371,7 @@ once and says which are active, empty, stale or dead into
 | `run [--job-id ID] [--answers F] [--manifest F] [--submit] [--yes] [--limit N] [--rate 4m]` | Fill, and click only with `--submit`. **Uploads your documents.** With `--answers` it first saves what your confirmed answers teach to the answer bank. `--manifest` dumps what the page actually holds against the plan. |
 | `confirm <answers-file>` | Show an `/apply` answers file and take your typed yes on a terminal. Stores a hash beside the file; `run` and the bank treat the file as confirmed only while it still matches. Refused without a terminal. |
 | `learn [--job J] [--undo ID [--wording W \| --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]` | Review what the answer bank holds, or take one thing back: a question, one wording or keyword of it, a work-authorization claim, or a judged work-authorization / export-control wording. |
-| `sheet [--add]` | Rebuild the overnight status sheet (`profile/automation.yaml` `table_path`) from state, the submit ledger and run reports. `--add` first appends roles newly scored at or above `scoring.yaml` `cutoffs.sheet`. |
+| `sheet [--list STATUS] [--compare]` | Rewrite the overnight status sheet (`profile/automation.yaml` `table_path`) from the work queue: every role scored at or above `scoring.yaml` `cutoffs.sheet`, live and not finished, with its status from state, the submit ledger and run records. `--list` prints the queue at one status; `--compare` shows how the xlsx differs. Both write nothing. |
 
 The submit path is bounded, all in `src/apply_cli.py`:
 
@@ -691,7 +691,7 @@ lies to you differently.
 | `plan.py` | Form plus answers to an ordered fill plan. The whole contract with the browser. |
 | `fill.py` | Executes the plan and makes the one guarded submit click. Config always wins; a react-select that didn't stick is a failure, not a warning. |
 | `ledger.py` | `submitted.jsonl`, the submit ledger: one line per click, read before any click. |
-| `sheet.py` | The overnight status sheet, rebuilt from the records that own each fact. |
+| `sheet.py` | The work queue, computed from the records that own each fact, and the overnight status sheet that renders it. |
 | `browser.py` | The only module that names Playwright's driver, and it defers the import into a function so a clone without `--group apply` still works. |
 
 </details>

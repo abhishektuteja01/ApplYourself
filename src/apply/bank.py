@@ -31,6 +31,7 @@ import yaml
 
 from src.apply import answers as A
 from src.shared import clock
+from src.shared.parquet_io import locked
 
 DEFAULT_PATH = A.DEFAULT_PATH
 
@@ -301,14 +302,28 @@ def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:
     """Write every lesson that holds into the bank; name the ones that do not."""
     if not lessons:
         return []
-    data = read(path)
-    changes = apply_lessons(data, lessons)
-    if any(not c.startswith(("not saved:", "keyword refused")) for c in changes):
-        write(data, path)
+    with locked(Path(path) if path is not None else DEFAULT_PATH):
+        data = read(path)
+        changes = apply_lessons(data, lessons)
+        if any(not c.startswith(("not saved:", "keyword refused")) for c in changes):
+            write(data, path)
     return changes
 
 
 def undo(
+    qid: str = "",
+    wording: str = "",
+    keyword: str = "",
+    claim: str = "",
+    fact: str = "",
+    path: Path | None = None,
+) -> str:
+    """`_undo` under the bank's lock, so it cannot interleave with a `learn`."""
+    with locked(Path(path) if path is not None else DEFAULT_PATH):
+        return _undo(qid, wording, keyword, claim, fact, path)
+
+
+def _undo(
     qid: str = "",
     wording: str = "",
     keyword: str = "",

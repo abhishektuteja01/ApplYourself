@@ -1,19 +1,22 @@
-"""The overnight status sheet (`profile/automation.yaml` `table_path`), derived.
+"""The work queue, and the overnight status sheet (`profile/automation.yaml`
+`table_path`) that renders it.
 
-Every `status`, `note` and `uv_run_command` cell is rebuilt from the records
-that own the facts — `pipeline/<job_id>/state.yaml`, the submit ledger, the
-latest run record that names the role, and a role's waiting answers — so the
-sheet can never disagree with them. Nothing else writes those columns.
-
-`--add` appends roles newly scored at or above scoring.yaml `cutoffs.sheet` that are not
-tracked as done and not in the ledger. A row that is Applied or Closed is
-removed on the rebuild (state.yaml and the ledger keep the record, and `--add`
-never brings it back); an Expired row stays, so it can be marked skip.
+`queue()` is computed, never read back from the sheet: every role scored at or
+above scoring.yaml `cutoffs.sheet` (`score_store.view`) that is in the live view
+(`clean.parquet`), whose state is not past tailored or closed, and whose status
+is not Applied or Closed; highest score first, then job_id.
+Each row's `status`, `note` and `uv_run_command` come from the records that own
+the facts — `pipeline/<job_id>/state.yaml`, the submit ledger, the latest run
+record that names the role, and a role's waiting answers. `apply sheet --list`,
+triage and the night stages read `job_ids()`; `refresh()` rewrites the xlsx
+from `queue()` atomically, so the file is a view and nothing reads it as input.
 """
 
 from __future__ import annotations
 
 import json
+import os
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -28,6 +31,7 @@ from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths
 from src.shared.config_schema import load_automation
+from src.shared.parquet_io import locked
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "screen", "interview", "offer"})
@@ -75,11 +79,13 @@ def status_for(
     sent: dict | None,
     outcome: tuple[str, str, str] | None,
     cool: date | None = None,
+    days: int | None = None,
 ) -> tuple[str, str, str]:
     """(status, note, uv_run_command) for one row. `cool`: the day the
-    company cooldown ends, which shows in place of Submittable."""
+    company cooldown ends, which shows in place of Submittable. `days`:
+    ghosted_after_days, read once by the caller."""
     state = state or {}
-    current = state_io.shown_state(state) if state else ""
+    current = state_io.shown_state(state, days=days) if state else ""
     verdict = ledger.verdict_of(sent)
     if verdict is ledger.Verdict.REJECTED:
         return "Rejected by board", f"rejected by the board: {sent.get('detail', '')}", ""
@@ -125,11 +131,37 @@ def status_for(
     return "Resume ready", "", ""
 
 
-def _submittable(job_id: str) -> bool:
-    """Whether `apply run` would find a posting to fill, the same way it looks."""
-    from src import apply_cli
+@dataclass(frozen=True)
+class Snapshot:
+    """Every record the queue reads, loaded once per call."""
 
-    return apply_cli._auto_submittable(job_id)
+    states: dict[str, dict]
+    ledger_path: Path
+    outcomes: dict[str, tuple[str, str, str]]
+    latest: dict
+    live: dict[str, dict]
+    ghost_days: int
+    cool_days: int
+
+
+def snapshot(outcomes: dict | None = None) -> Snapshot:
+    runs = paths.APPLICATIONS / "apply_runs"
+    ledger_path = runs / ledger.LEDGER_NAME
+    live: dict[str, dict] = {}
+    if paths.CLEAN.exists():
+        clean = pd.read_parquet(
+            paths.CLEAN, columns=["job_id", "company", "title", "source", "url"]
+        )
+        live = {str(r["job_id"]): r for r in clean.drop_duplicates("job_id").to_dict("records")}
+    return Snapshot(
+        states=state_io.load_state_index(paths.PIPELINE),
+        ledger_path=ledger_path,
+        outcomes=latest_outcomes(runs) if outcomes is None else outcomes,
+        latest=cooldown.last_applications(ledger_path=ledger_path),
+        live=live,
+        ghost_days=state_io.ghosted_after_days(),
+        cool_days=cooldown.cooldown_days(),
+    )
 
 
 def _load(table: Path):
@@ -149,35 +181,13 @@ def _load(table: Path):
     return wb, ws, {name: i + 1 for i, name in enumerate(header)}
 
 
-def _candidates(threshold: float, present: set[str], sent: set[str], states: dict) -> list[dict]:
-    if not paths.SCORED.exists() or not paths.CLEAN.exists():
-        return []
-    scored = view(paths.SCORED)[["job_id", "fit_score"]]
-    clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "company", "title", "source", "url"])
-    rows = scored.merge(clean, on="job_id")
-    rows = rows[rows["fit_score"] >= threshold]
-    out = []
-    for r in rows.sort_values("fit_score", ascending=False).itertuples():
-        state = (states.get(r.job_id) or {}).get("state", "")
-        if r.job_id in present or r.job_id in sent or state in _DONE | _CLOSED:
-            continue
-        out.append(
-            {
-                "score": int(r.fit_score),
-                "name": r.job_id,
-                "company": r.company,
-                "title": r.title,
-                "source": r.source,
-                "url": r.url,
-            }
-        )
-    return out
-
-
-def rows(automation: Path | None = None) -> list[dict[str, str]]:
-    """Every row of the sheet as it stands, as {column: text}. A pure read."""
+def _table(automation: Path | None) -> Path:
     config = load_automation(automation or paths.PROFILE / "automation.yaml")
-    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+    return paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+
+
+def _sheet_rows(table: Path) -> list[dict[str, str]]:
+    """The xlsx rows as they stand, as {column: text}."""
     if not table.is_file():
         return []
     _, ws, col = _load(table)
@@ -187,21 +197,6 @@ def rows(automation: Path | None = None) -> list[dict[str, str]]:
         if row["name"]:
             out.append(row)
     return out
-
-
-def job_ids(status: str, automation: Path | None = None) -> list[str]:
-    """The job_ids the sheet currently shows at `status`, in sheet order. A pure read."""
-    config = load_automation(automation or paths.PROFILE / "automation.yaml")
-    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
-    if not table.is_file():
-        return []
-    _, ws, col = _load(table)
-    return [
-        str(ws.cell(row=r, column=col["name"]).value)
-        for r in range(2, ws.max_row + 1)
-        if ws.cell(row=r, column=col["status"]).value == status
-        and ws.cell(row=r, column=col["name"]).value
-    ]
 
 
 def _finished(status: str) -> bool:
@@ -221,65 +216,80 @@ def _form_url(state: dict | None) -> str:
         return ""
 
 
-def _row_status(
-    job_id: str,
-    url: str,
-    states: dict,
-    ledger_path: Path,
-    outcomes: dict,
-    latest: dict | None = None,
-) -> tuple[str, str, str]:
-    submittable = detect.is_auto_submittable(url) or _submittable(job_id)
-    state = states.get(job_id)
+def _row_status(job_id: str, snap: Snapshot) -> tuple[str, str, str]:
+    """A posting is submittable when its live-view or state.yaml URL is one
+    `apply run` can fill, the same two places `resolve_url` looks."""
+    state = snap.states.get(job_id)
+    urls = ((snap.live.get(job_id) or {}).get("url"), (state or {}).get("url"))
     company = str((state or {}).get("company") or "")
     return status_for(
         job_id,
-        submittable,
+        any(detect.is_auto_submittable(str(u or "")) for u in urls),
         state,
-        ledger.prior(ledger_path, job_id, _form_url(state)),
-        outcomes.get(job_id),
-        cooldown.until(company, latest or {}),
+        ledger.prior(snap.ledger_path, job_id, _form_url(state)),
+        snap.outcomes.get(job_id),
+        cooldown.until(company, snap.latest, days=snap.cool_days),
+        days=snap.ghost_days,
     )
 
 
-def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:
-    """Rebuild every row's status; with `add`, append new roles first. Rows that
-    are Applied or Closed are removed. Returns a count per status, the removed
-    ones under "<status> (removed)"."""
-    config = load_automation(automation or paths.PROFILE / "automation.yaml")
-    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
-    runs = paths.APPLICATIONS / "apply_runs"
-    ledger_path = runs / ledger.LEDGER_NAME
-    states = state_io.load_state_index(paths.PIPELINE)
-    sent_ids = ledger.sent_job_ids(ledger_path)
-    outcomes = latest_outcomes(runs)
-    latest = cooldown.last_applications(ledger_path=ledger_path)
-
-    wb, ws, col = _load(table)
-    present = {str(ws.cell(row=r, column=col["name"]).value) for r in range(2, ws.max_row + 1)}
-    if add:
-        sheet_min = load_cutoffs().sheet
-        for row in _candidates(float(sheet_min), present, sent_ids, states):
-            ws.append([row.get(name, "") for name in sorted(col, key=col.get)])
-
-    counts: dict[str, int] = {}
-    finished: list[int] = []
-    for r in range(2, ws.max_row + 1):
-        job_id = str(ws.cell(row=r, column=col["name"]).value or "")
-        if not job_id:
+def queue(snap: Snapshot | None = None) -> list[dict[str, str]]:
+    """The work queue, in order, as {column: text}. A pure read."""
+    snap = snap or snapshot()
+    if not paths.SCORED.exists():
+        return []
+    scored = view(paths.SCORED)[["job_id", "fit_score"]]
+    scored = scored[scored["fit_score"] >= float(load_cutoffs().sheet)]
+    out = []
+    for r in scored.sort_values(["fit_score", "job_id"], ascending=[False, True]).itertuples():
+        live = snap.live.get(r.job_id)
+        stored = str((snap.states.get(r.job_id) or {}).get("state") or "")
+        if live is None or stored in _DONE | _CLOSED:
             continue
-        url = str(ws.cell(row=r, column=col["url"]).value or "")
-        status, note, command = _row_status(job_id, url, states, ledger_path, outcomes, latest)
-        ws.cell(row=r, column=col["status"], value=status)
-        ws.cell(row=r, column=col["note"], value=note)
-        ws.cell(row=r, column=col["uv_run_command"], value=command)
+        status, note, command = _row_status(r.job_id, snap)
         if _finished(status):
-            finished.append(r)
-            status = f"{status} (removed)"
-        counts[status] = counts.get(status, 0) + 1
-    for r in reversed(finished):
-        ws.delete_rows(r)
-    wb.save(table)
+            continue
+        row = {"score": int(r.fit_score), "name": r.job_id, **live}
+        row.update(status=status, note=note, uv_run_command=command)
+        out.append({n: "" if pd.isna(row.get(n)) else str(row.get(n) or "") for n in COLUMNS})
+    return out
+
+
+def rows(automation: Path | None = None) -> list[dict[str, str]]:
+    """Every row of the work queue. A pure read; `automation` is kept for callers."""
+    return queue()
+
+
+def job_ids(status: str, automation: Path | None = None) -> list[str]:
+    """The job_ids the queue holds at `status`, in queue order. A pure read."""
+    return [row["name"] for row in queue() if row["status"] == status]
+
+
+def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:
+    """Rewrite the sheet from `queue()` (tmp file, then rename). `add` is kept
+    for callers: every refresh holds every queued role. Returns a count per
+    status; a role the old sheet held that left the queue counts under
+    "<status> (removed)"."""
+    table = _table(automation)
+    snap = snapshot()
+    new = queue(snap)
+    counts: dict[str, int] = {}
+    for row in new:
+        counts[row["status"]] = counts.get(row["status"], 0) + 1
+    kept = {row["name"] for row in new}
+    with locked(table):
+        for old in _sheet_rows(table):
+            if old["name"] not in kept:
+                key = f"{_row_status(old['name'], snap)[0]} (removed)"
+                counts[key] = counts.get(key, 0) + 1
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(list(COLUMNS))
+        for row in new:
+            ws.append([int(row["score"]) if row["score"] else "", *(row[c] for c in COLUMNS[1:])])
+        tmp = table.with_name(f".{table.name}.tmp")
+        wb.save(tmp)
+        os.replace(tmp, table)
     return counts
 
 
@@ -288,8 +298,7 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     it, a job_id listed twice, and rows whose posting is no longer in the live
     view (`clean.parquet`), and rows whose status differs from what the records
     give now. Every list is empty on a clean sheet."""
-    config = load_automation(automation or paths.PROFILE / "automation.yaml")
-    table = paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+    table = _table(automation)
     out: dict[str, list[str]] = {
         "finished": [],
         "duplicates": [],
@@ -298,44 +307,42 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     }
     if not table.is_file():
         return out
-    runs = paths.APPLICATIONS / "apply_runs"
-    ledger_path = runs / ledger.LEDGER_NAME
-    states = state_io.load_state_index(paths.PIPELINE)
-    outcomes = latest_outcomes(runs)
-    latest = cooldown.last_applications(ledger_path=ledger_path)
-    _, ws, col = _load(table)
-    live = (
-        set(pd.read_parquet(paths.CLEAN, columns=["job_id"])["job_id"])
-        if paths.CLEAN.exists()
-        else None
-    )
+    snap = snapshot()
     seen: set[str] = set()
-    for r in range(2, ws.max_row + 1):
-        job_id = str(ws.cell(row=r, column=col["name"]).value or "")
-        if not job_id:
-            continue
-        if _finished(str(ws.cell(row=r, column=col["status"]).value or "")):
+    for row in _sheet_rows(table):
+        job_id = row["name"]
+        if _finished(row["status"]):
             out["finished"].append(job_id)
         if job_id in seen:
             out["duplicates"].append(job_id)
         seen.add(job_id)
-        if live is not None and job_id not in live:
+        if paths.CLEAN.exists() and job_id not in snap.live:
             out["not_live"].append(job_id)
-        url = str(ws.cell(row=r, column=col["url"]).value or "")
-        shown = str(ws.cell(row=r, column=col["status"]).value or "")
-        if _row_status(job_id, url, states, ledger_path, outcomes, latest)[0] != shown:
+        if _row_status(job_id, snap)[0] != row["status"]:
             out["wrong_status"].append(job_id)
     return out
 
 
-def statuses(outcomes: dict, automation: Path | None = None) -> dict[str, tuple[str, str, str]]:
-    """job_id -> (status, note, command) for every row on the sheet, from the
-    given run outcomes. A pure read; the run backfill compares two of these."""
-    runs = paths.APPLICATIONS / "apply_runs"
-    ledger_path = runs / ledger.LEDGER_NAME
-    states = state_io.load_state_index(paths.PIPELINE)
-    latest = cooldown.last_applications(ledger_path=ledger_path)
+def compare(automation: Path | None = None) -> dict[str, list[str]]:
+    """Read-only: the sheet as it stands against `queue()`. `missing`: computed
+    but not on the sheet; `extra`: on the sheet but not computed; `moved`: the
+    shared roles, when their order differs."""
+    on_sheet = [row["name"] for row in _sheet_rows(_table(automation))]
+    computed = [row["name"] for row in queue()]
+    shared = set(on_sheet) & set(computed)
+    sheet_order = [j for j in on_sheet if j in shared]
+    queue_order = [j for j in computed if j in shared]
     return {
-        row["name"]: _row_status(row["name"], row["url"], states, ledger_path, outcomes, latest)
-        for row in rows(automation)
+        "sheet": on_sheet,
+        "queue": computed,
+        "missing": [j for j in computed if j not in set(on_sheet)],
+        "extra": [j for j in on_sheet if j not in set(computed)],
+        "moved": [] if sheet_order == queue_order else queue_order,
     }
+
+
+def statuses(outcomes: dict, automation: Path | None = None) -> dict[str, tuple[str, str, str]]:
+    """job_id -> (status, note, command) for every queued role, from the given
+    run outcomes. A pure read; the run backfill compares two of these."""
+    snap = snapshot(outcomes)
+    return {row["name"]: _row_status(row["name"], snap) for row in queue(snap)}
