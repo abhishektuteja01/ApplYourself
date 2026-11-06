@@ -51,7 +51,7 @@ import pandas as pd
 import yaml
 
 from src import app_cli, state_io, track_cli
-from src.apply import ashby, bank, confirmation, ledger, lever
+from src.apply import ashby, bank, confirmation, greenhouse, ledger, lever
 from src.apply.answers import (
     DEFAULT_PATH,
     EXAMPLE_PATH,
@@ -975,7 +975,8 @@ def render_fill(result, plan: Plan) -> str:
 def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     """`state == tailored` with a resume on file, and whose latest submit-ledger
     line (if any) is `refused` — a role already sent to a board never
-    re-enters the queue, even if its state.yaml was re-created.
+    re-enters the queue, even if its state.yaml was re-created. Matched on
+    job_id or on the form URL, as `ledger.verdict` does.
 
     A cover letter is not required here: whether one is needed depends on what
     the board's form asks, which `/apply`'s step 3 (Materials) decides per
@@ -989,11 +990,30 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     """
     idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else paths.PIPELINE)
     sent = ledger.sent_job_ids(ledger_path())
+    sent_forms = ledger.sent_form_keys(ledger_path())
     return sorted(
         job_id
         for job_id, st in idx.items()
-        if st.get("state") == "tailored" and st.get("tailored_dirs") and job_id not in sent
+        if st.get("state") == "tailored"
+        and st.get("tailored_dirs")
+        and job_id not in sent
+        and not (sent_forms and _form_key(job_id, st) in sent_forms)
     )
+
+
+def _form_key(job_id: str, state: dict) -> str:
+    """`ledger.url_key` of the form this role would be filled through, or ""
+    when it has none: a retitled role keeps its form but gets a new id."""
+    try:
+        url = resolve_url(job_id, state)
+    except ApplyCliError:
+        return ""
+    parsers = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby}
+    module = parsers.get(detect_ats(url) or "")
+    try:
+        return ledger.url_key(module.parse_posting(url).form_url) if module else ""
+    except ApplyUrlError:
+        return ""
 
 
 _DURATION = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)?$")

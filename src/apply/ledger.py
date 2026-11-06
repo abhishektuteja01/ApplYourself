@@ -106,6 +106,16 @@ def sent_job_ids(path: Path) -> set[str]:
     return {j for j, rec in latest.items() if verdict_of(rec) is not Verdict.NOT_SENT}
 
 
+def sent_form_keys(path: Path) -> set[str]:
+    """`url_key` of every form URL whose latest line is not NOT_SENT."""
+    latest: dict[str, dict] = {}
+    for rec in records(path):
+        key = url_key(rec.get("form_url", ""))
+        if key:
+            latest[key] = rec
+    return {k for k, rec in latest.items() if verdict_of(rec) is not Verdict.NOT_SENT}
+
+
 def append(
     path: Path,
     job_id: str,

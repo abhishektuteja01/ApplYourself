@@ -20,7 +20,7 @@ import pytest
 import yaml
 
 from src import app_cli, apply_cli
-from src.apply import ashby, confirmation
+from src.apply import ashby, confirmation, ledger
 from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
 from src.apply.plan import PlanError
@@ -681,6 +681,13 @@ class TestEligibleQueue:
             ("bbbb0003", "screen"),
         ]:
             repo.write_state(job_id=job_id, state=state)
+        assert apply_cli.eligible_queue(repo.pipeline) == []
+
+    def test_a_retitled_role_whose_form_was_sent_is_not_eligible(self, repo):
+        """A new id for the same form must not re-enter the queue."""
+        repo.write_state(job_id="eeee5555")
+        form = "https://boards.greenhouse.io/embed/job_app?token=1000003"
+        ledger.append(apply_cli.ledger_path(), JOB_ID, "accepted", form_url=form)
         assert apply_cli.eligible_queue(repo.pipeline) == []
 
     def test_ordering_is_deterministic_regardless_of_write_order(self, repo):
