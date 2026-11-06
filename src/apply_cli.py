@@ -22,6 +22,11 @@ confirm <answers-file>
                       take a typed yes on a terminal, and
                       store their hash beside the file; run and the bank honour
                       the file only while it still matches.
+wordings (--review [--out F] | --save F)
+                      list the work-authorization wordings saved plan.json
+                      files park on that fact_wordings lacks, each with the
+                      suggested fact, its answer and a decision to set; --save
+                      saves the decision: yes rows (typed yes on a terminal).
 learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                       review what the bank holds, or take one thing back.
 triage [--fill] [--job-id J ...] [--limit N]
@@ -1903,6 +1908,58 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_wordings(args: argparse.Namespace) -> int:
+    from src.apply import wordings
+
+    bank_path = Path(args.path) if args.path else None
+    if args.review:
+        try:
+            out, rows = wordings.review(load_answers(bank_path), args.out)
+        except (AnswersError, OSError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(f"{len(rows)} wording(s) to decide: {out}")
+        return 0
+    if bank.unattended():
+        print(
+            f"ERROR: {bank.UNATTENDED_ENV}=1: apply wordings --save needs you at a terminal.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        lessons = wordings.to_save(args.save)
+    except wordings.WordingsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not lessons:
+        print("nothing to save: no row has decision: yes")
+        return 0
+    print(f"Saving {len(lessons)} wording(s) to the answer bank's fact_wordings:")
+    for lesson in lessons:
+        print(f"  {lesson.label!r} -> Yes when {(lesson.fact or {}).get('fact')} is true")
+    if not sys.stdin.isatty():
+        print(
+            "ERROR: apply wordings --save needs a typed yes and stdin is not a terminal.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        reply = input("Type 'yes' to save these wordings: ")
+    except EOFError:
+        reply = ""
+    if reply.strip().lower() not in _CONFIRM_YES:
+        print("ABORTED: nothing saved.", file=sys.stderr)
+        return 1
+    try:
+        changes = bank.learn(lessons, bank_path)
+    except (bank.BankError, AnswersError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    for line in changes or ["nothing to change: the bank already holds these"]:
+        print(line)
+    return 1 if any(c.startswith("not saved:") for c in changes) else 0
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     if bank.unattended() and (args.submit or answers_confirmed(args.answers)):
         what = "--submit" if args.submit else "a confirmed --answers file (it writes the bank)"
@@ -2079,6 +2136,31 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("confirm", help="confirm an /apply answers file (typed yes on a terminal)")
     c.add_argument("answers_file", type=Path)
     c.set_defaults(func=_cmd_confirm)
+
+    wd = sub.add_parser(
+        "wordings",
+        help="review the work-authorization wordings saved plans park on; save the approved ones",
+    )
+    wmode = wd.add_mutually_exclusive_group(required=True)
+    wmode.add_argument(
+        "--review",
+        action="store_true",
+        help='write each wording not yet in fact_wordings, with decision: "" to set',
+    )
+    wmode.add_argument(
+        "--save",
+        type=Path,
+        metavar="FILE",
+        help="save the decision: yes rows as exact fact_wordings (typed yes on a terminal)",
+    )
+    wd.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="with --review: where to write (default applications/apply_runs/wordings_review.yaml)",
+    )
+    wd.add_argument("--path", default=None, type=Path, help="bank path (tests)")
+    wd.set_defaults(func=_cmd_wordings)
 
     sh = sub.add_parser(
         "sheet", help="rewrite the status sheet from the work queue (state, scores, ledger, runs)"

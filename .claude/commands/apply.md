@@ -137,6 +137,12 @@ is still saved.
 | a choice the board lists every answer to | the true option, from your facts, `bullets.md` or `skills_master.md` | `option` |
 | your experience, a decision, a hard problem, a project | `profile/stories.md` for how you decided (match its `kind`), `profile/bullets.md` for what you built; 1–3 sentences, NO-FAB and REPHRASE-LICENSE, never from an `evidence:` line | the `S-` or `B-` id |
 
+To clear many new work-authorization wordings at once, outside a role: `uv run
+apply wordings --review` writes `applications/apply_runs/wordings_review.yaml`
+(each wording the saved `plan.json` files park on, its suggested fact and
+answer, and a `decision` the user sets to yes or no). The user then runs `! uv
+run apply wordings --save <file>` and types yes; never run `--save` yourself.
+
 A question the bank already answers but that this role needs said differently
 (a length cap in the board's `description`) gets a fresh answer under the same
 `question` id.
