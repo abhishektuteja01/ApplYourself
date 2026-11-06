@@ -126,6 +126,7 @@ confirmed answer is saved, so the next form asks less. A submit is bounded: it
 needs `--limit` (or one `--job-id`), waits at least 30s between roles, sends one
 per company per run, skips companies applied to within `company_cooldown_days`,
 and never clicks a role already in `applications/apply_runs/submitted.jsonl`.
+A batch takes the highest fit scores first.
 Workday, LinkedIn, Indeed and careers pages are always manual.
 
 - Slash command: `/apply <job_id> [--submit] [--letter]`.

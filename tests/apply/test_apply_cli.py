@@ -698,6 +698,22 @@ class TestEligibleQueue:
             repo.write_state(job_id=job_id)
         assert apply_cli.eligible_queue(repo.pipeline) == ["aaaa1111", "mmmm5555", "zzzz9999"]
 
+    def test_a_batch_takes_the_best_fits_first_and_an_unscored_role_last(self, repo):
+        for job_id in ("aaaa1111", "bbbb2222", "mmmm5555", "zzzz9999"):
+            repo.write_state(job_id=job_id)
+        paths.SCORED.parent.mkdir(parents=True, exist_ok=True)
+        factories.scored_rows(
+            {"job_id": "aaaa1111", "fit_score": 70},
+            {"job_id": "zzzz9999", "fit_score": 92},
+            {"job_id": "mmmm5555", "fit_score": 92},
+        ).to_parquet(paths.SCORED)
+        assert apply_cli.eligible_queue(repo.pipeline) == [
+            "mmmm5555",
+            "zzzz9999",
+            "aaaa1111",
+            "bbbb2222",
+        ]
+
 
 class TestParseDuration:
     @pytest.mark.parametrize(

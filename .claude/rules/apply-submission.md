@@ -97,6 +97,7 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 - `--submit` is off by default and needs `--limit`, unless `--job-id` names one
   role. It asks for a typed confirmation unless `--yes`; a non-tty stdin without
   `--yes` is refused. `--rate` is floored at 30s. One submission per company per run.
+  A batch takes the eligible roles highest fit_score first (`apply_cli.eligible_queue`).
 - The company cooldown (`company_cooldown_days` in `profile/settings.yaml`,
   `src/applyourself/apply/cooldown.py`): a batch `--submit` skips a role whose company
   (`normalize_company`) had an application within it, "cooldown until <date>".

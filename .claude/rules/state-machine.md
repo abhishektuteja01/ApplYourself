@@ -88,7 +88,7 @@ A cover letter is a per-board prerequisite, decided by that plan-check.
 - `apply run`'s `eligible_queue()` takes `tailored` only, with its
   `tailored_dirs[-1]` folder on disk, and leaves out every
   role whose latest submit-ledger line (`applications/apply_runs/submitted.jsonl`)
-  is anything but `refused`;
+  is anything but `refused`, highest fit_score first;
   `--job-id` is checked against that same queue.
 
 A board that DOES need a cover letter blocks inside the plan-check either way.

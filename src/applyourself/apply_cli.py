@@ -117,6 +117,7 @@ from applyourself.apply.report import (
 from applyourself.apply.role_facts import company_answers_for, job_country
 from applyourself.apply.schema import SchemaError
 from applyourself.material import folders as app_folders
+from applyourself.score_store import view
 from applyourself.shared import clock, paths, schemas
 from applyourself.shared.http_client import CareersError
 from applyourself.shared.identity import normalize_company
@@ -628,23 +629,28 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
     the board's form asks, which `/apply`'s step 3 (Materials) decides per
     role. A role whose board requires a cover letter it doesn't have
     surfaces via `build_plan()`'s `unmapped`/`parked` outcome, the same
-    mechanism that blocks any other missing required field. Sorted by job_id:
-    the only ordering signal every eligible role is guaranteed to carry, so
-    the queue is reproducible run to run.
+    mechanism that blocks any other missing required field. Highest fit_score
+    first (`score_store.view`; a role with no score last), then job_id, so a
+    batch `--limit` takes the best fits and the queue is reproducible run to run.
 
     Defaults to `paths.PIPELINE`, looked up at call time.
     """
     idx = state_io.load_state_index(pipeline_dir if pipeline_dir is not None else paths.PIPELINE)
     sent = ledger.sent_job_ids(ledger_path())
     sent_forms = ledger.sent_form_keys(ledger_path())
-    return sorted(
+    queue = [
         job_id
         for job_id, st in idx.items()
         if st.get("state") == "tailored"
         and _built_on_disk(st)
         and job_id not in sent
         and not (sent_forms and _form_key(job_id, st) in sent_forms)
-    )
+    ]
+    fit: dict[str, float] = {}
+    if queue and paths.SCORED.exists():
+        scored = view(paths.SCORED).dropna(subset=["fit_score"])
+        fit = dict(zip(scored["job_id"], scored["fit_score"], strict=True))
+    return sorted(queue, key=lambda j: (j not in fit, -fit.get(j, 0.0), j))
 
 
 def _built_on_disk(state: dict) -> bool:
