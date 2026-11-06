@@ -678,7 +678,7 @@ def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
 
     def run(cmd, input, **kw):
         calls.append(input)
-        if write_pdf:
+        if write_pdf and 'file name "' in input:
             staged = input.split('file name "')[1].split('"')[0]
             Path(staged).write_bytes(b"%PDF-1.4 fake")
         import subprocess
@@ -723,7 +723,39 @@ def test_export_pdf_stages_under_a_plain_name(monkeypatch, tmp_path):
     docx = tmp_path / "A_Resume.docx"
     docx.write_bytes(b"docx")
     assert export_pdf(docx, "2026_ai-engineer-göteborg_c52d7f9e")["status"] == "ok"
-    assert 'document "2026_ai-engineer-g_teborg_c52d7f9e_A_Resume.docx"' in calls[0]
+    assert 'is "2026_ai-engineer-g_teborg_c52d7f9e_A_Resume.docx"' in calls[0]
+    # The reference comes from the open, never from a lookup by name (-1728).
+    assert "set theDoc to active document" in calls[0]
+    assert "set theDoc to document " not in calls[0]
+
+
+def test_a_failed_conversion_restarts_word_once_and_retries(monkeypatch, tmp_path):
+    """Word stuck in a bad state failed every role of a night with -1728."""
+    import subprocess
+
+    from src import docx_render
+
+    _fake_word(monkeypatch, tmp_path)
+    outcomes = iter([1, 0, 0, 1])  # convert fails, restart, retry ok; next role fails
+    calls = []
+
+    def run(cmd, input, **kw):
+        calls.append("restart" if "quit saving no" in input else "convert")
+        rc = next(outcomes)
+        if rc == 0 and 'file name "' in input:
+            Path(input.split('file name "')[1].split('"')[0]).write_bytes(b"%PDF-1.4 fake")
+        return subprocess.CompletedProcess(cmd, rc, "", "-1728" if rc else "")
+
+    monkeypatch.setattr(docx_render.subprocess, "run", run)
+    jobs = []
+    for n in (1, 2):
+        docx = tmp_path / f"R{n}" / "A_Resume.docx"
+        docx.parent.mkdir()
+        docx.write_bytes(b"docx")
+        jobs.append((docx, f"role{n}"))
+    results = docx_render.pdf_sweep(jobs)
+    assert [r["status"] for r in results] == ["ok", "failed"]
+    assert calls == ["convert", "restart", "convert", "convert"]
 
 
 def test_export_pdf_skipped_without_word(monkeypatch, tmp_path):

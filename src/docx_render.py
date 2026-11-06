@@ -234,8 +234,9 @@ def _convert(docx_path: Path, pdf_path: Path, token: str) -> PdfResult | None:
     staged_pdf = staged_docx.with_suffix(".pdf")
     staged_pdf.unlink(missing_ok=True)
     shutil.copyfile(docx_path, staged_docx)
-    # A namesake left open by an earlier failed run makes `document "<name>"` fail
-    # with -1728, so close any first; and close ours whether or not the save worked.
+    # Close a namesake an earlier failed run left open, then keep the reference to
+    # the document this open made: a lookup by name races the open (-1728). Ours is
+    # closed whether or not the save worked.
     script = (
         'tell application "Microsoft Word"\n'
         "    repeat with i from (count of documents) to 1 by -1\n"
@@ -243,8 +244,18 @@ def _convert(docx_path: Path, pdf_path: Path, token: str) -> PdfResult | None:
         f'            if (name of document i) is "{name}" then close document i saving no\n'
         "        end try\n"
         "    end repeat\n"
+        "    set theDoc to missing value\n"
         f'    open POSIX file "{staged_docx}"\n'
-        f'    set theDoc to document "{name}"\n'
+        "    repeat 100 times\n"
+        "        try\n"
+        f'            if (name of active document) is "{name}" then\n'
+        "                set theDoc to active document\n"
+        "                exit repeat\n"
+        "            end if\n"
+        "        end try\n"
+        "        delay 0.2\n"
+        "    end repeat\n"
+        f'    if theDoc is missing value then error "Word never opened {name}" number -1728\n'
         "    try\n"
         f'        save as theDoc file format format PDF file name "{staged_pdf}"\n'
         "    on error errMsg number errNum\n"
@@ -288,6 +299,7 @@ def export_pdf(docx_path: Path, token: str) -> PdfResult:
     Any older pdf is deleted first, so a failed export can never leave a stale
     one looking current. `token` makes the staging name unique per role: Word
     resolves a document by name and would export an already-open namesake.
+    A failure restarts Word once and tries again (pdf_sweep).
     No Word (not macOS, or not installed) returns "skipped". With PDF_BROKER_DIR
     set, the night's helper (src/pdf_broker.py) does the conversion."""
     queue = os.environ.get("PDF_BROKER_DIR")
@@ -298,25 +310,78 @@ def export_pdf(docx_path: Path, token: str) -> PdfResult:
     return convert_locally(docx_path, token)
 
 
-def convert_locally(docx_path: Path, token: str) -> PdfResult:
-    """export_pdf in this process."""
-    pdf_path = docx_path.with_suffix(".pdf")
-    pdf_path.unlink(missing_ok=True)
-    if sys.platform != "darwin" or not WORD_APP.exists():
-        return PdfResult(
-            status="skipped",
-            path="",
-            pages=0,
-            detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable",
+# Quits Word only when no document is open, so a restart never closes the user's work.
+_RESTART_WORD = """
+tell application "Microsoft Word"
+    if (count of documents) > 0 then error "other documents are open in Word"
+    quit saving no
+end tell
+repeat 60 times
+    if application "Microsoft Word" is not running then return
+    delay 0.5
+end repeat
+error "Word did not quit"
+"""
+
+
+def _restart_word() -> str:
+    """Quit Word so the next conversion starts a fresh one; "" or why not."""
+    try:
+        proc = subprocess.run(
+            ["osascript"],
+            input=_RESTART_WORD,
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            timeout=60,
+            check=False,
         )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"osascript: {exc}"
+    return "" if proc.returncode == 0 else (proc.stderr or "quit failed").strip()
+
+
+def pdf_sweep(jobs: Sequence[tuple[Path, str]]) -> list[PdfResult]:
+    """Convert each (docx, token) to a pdf beside it, one at a time. The first
+    failed conversion restarts Word once and is tried again; later ones are not."""
+    for docx_path, _ in jobs:
+        docx_path.with_suffix(".pdf").unlink(missing_ok=True)
+    if sys.platform != "darwin" or not WORD_APP.exists():
+        return [
+            PdfResult(
+                status="skipped",
+                path="",
+                pages=0,
+                detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable",
+            )
+            for _ in jobs
+        ]
     paths.PDF_STAGING.mkdir(exist_ok=True)
+    results: list[PdfResult] = []
+    restarted = False
     # Word is one app: two conversions at once (parallel /tailor runs) collide with
     # -1728 "object does not exist", so they take turns.
     with locked(paths.PDF_STAGING.parent / f"{paths.PDF_STAGING.name.lstrip('.')}_word"):
-        failed = _convert(docx_path, pdf_path, token)
-    if failed:
-        return failed
-    return PdfResult(status="ok", path=str(pdf_path), pages=pdf_pages(pdf_path), detail="")
+        for docx_path, token in jobs:
+            pdf_path = docx_path.with_suffix(".pdf")
+            failed = _convert(docx_path, pdf_path, token)
+            if failed and not restarted:
+                restarted = True
+                why = _restart_word()
+                if why:
+                    failed["detail"] += f"; Word not restarted: {why}"
+                else:
+                    failed = _convert(docx_path, pdf_path, token)
+            results.append(
+                failed
+                or PdfResult(status="ok", path=str(pdf_path), pages=pdf_pages(pdf_path), detail="")
+            )
+    return results
+
+
+def convert_locally(docx_path: Path, token: str) -> PdfResult:
+    """export_pdf in this process: a sweep of one."""
+    return pdf_sweep([(docx_path, token)])[0]
 
 
 def pdf_pages(pdf_path: Path) -> int:
