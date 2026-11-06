@@ -2,6 +2,7 @@
 paths:
   - "src/lint.py"
   - "src/app_cli.py"
+  - "src/material/**"
   - "data/defaults/de_ai_rules.yaml"
   - "profile/de_ai_rules.yaml"
 ---

@@ -61,7 +61,7 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 |---|-------|---------|------------------------|
 | 1 | Discovery | `/discover` | `src/discovery/` — `run.py` checks due boards and searches (`sources/`) into the jobs store (`store.py`, ids in `dedupe.py`), rebuilds `clean.parquet` (`live_view.py`); `digest.py` reads the report back |
 | 2 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
-| 3 | Application material | `/tailor`, `/cover-letter`, `/company-answers`, `/outreach` | `app_cli.py`, `resume_model.py`, `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
+| 3 | Application material | `/tailor`, `/cover-letter`, `/company-answers`, `/outreach` | `app_cli.py`, `material/` (folders, checks, build), `resume_model.py`, `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
 | 4 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
 | 5 | Submission | `/apply` | `src/apply/`, `apply_cli.py` |
 

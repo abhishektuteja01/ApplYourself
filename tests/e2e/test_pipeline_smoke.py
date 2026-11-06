@@ -17,6 +17,7 @@ import yaml
 from src import app_cli, score_store, track_cli
 from src.discovery import live_view
 from src.discovery import store as S
+from src.material import build as material_build
 from src.score_filter import CountryRule, load_scoring
 from src.shared import paths
 from src.shared.location.allowlist import Allowed
@@ -82,7 +83,7 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
         tmp_path / "staging",
     )
     monkeypatch.setattr(
-        app_cli,
+        material_build,
         "export_pdf",
         lambda docx, token: {"status": "skipped", "path": "", "pages": 0, "detail": ""},
     )

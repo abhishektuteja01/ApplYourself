@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from src import app_cli, score_store
+from src.material import build as material_build
 from src.score_filter import load_scoring
 from src.shared import paths
 from tests.factories import scored_rows, write_clean
@@ -37,7 +38,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
     monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
     monkeypatch.setattr(
-        app_cli,
+        material_build,
         "export_pdf",
         lambda docx, token: {"status": "skipped", "path": "", "pages": 0, "detail": ""},
     )

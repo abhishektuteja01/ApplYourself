@@ -158,6 +158,7 @@ extra_checks = true
 [[tool.mypy.overrides]]
 module = [
     "src.app_cli",
+    "src.material.*",
     "src.apply.answers",
     "src.apply.ashby",
     "src.apply.bank_schema",

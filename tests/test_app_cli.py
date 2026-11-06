@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from src import app_cli
+from src.material import build as material_build
 from src.session_schema import ProblemCode
 from src.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
@@ -35,7 +36,7 @@ def repo(tmp_path, monkeypatch):
         tmp_path / "profile" / "cover_letter_template.docx",
     )
     monkeypatch.setattr(
-        app_cli,
+        material_build,
         "export_pdf",
         lambda docx, token: {"status": "ok", "path": "x", "pages": 1, "detail": ""},
     )
@@ -125,7 +126,7 @@ def test_new_reuses_an_unfinished_folder_instead_of_piling_up_versions(repo, cap
 
 def test_new_reuses_a_built_but_unrecorded_folder(repo, capsys, monkeypatch):
     monkeypatch.setattr(
-        app_cli,
+        material_build,
         "export_pdf",
         lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""},
     )
@@ -211,7 +212,7 @@ def test_no_fab_lists_exactly_the_problem_codes():
 
 def test_build_resume_over_one_page_is_a_problem(repo, capsys, monkeypatch):
     monkeypatch.setattr(
-        app_cli,
+        material_build,
         "export_pdf",
         lambda docx, token: {"status": "ok", "path": "x", "pages": 2, "detail": ""},
     )
@@ -230,7 +231,7 @@ def test_build_resume_over_one_page_is_a_problem(repo, capsys, monkeypatch):
 
 def test_build_resume_without_a_pdf_fails_closed_unless_no_pdf(repo, capsys, monkeypatch):
     monkeypatch.setattr(
-        app_cli,
+        material_build,
         "export_pdf",
         lambda docx, token: {"status": "failed", "path": "", "pages": 0, "detail": "-1728"},
     )
@@ -249,7 +250,9 @@ def test_no_pdf_never_starts_word_and_drops_an_older_pdf(repo, capsys, monkeypat
     rel = _built(repo, capsys)
     stale = repo / rel / "Alex_Example_Resume.pdf"
     stale.write_bytes(b"old")
-    monkeypatch.setattr(app_cli, "export_pdf", lambda docx, token: pytest.fail("Word started"))
+    monkeypatch.setattr(
+        material_build, "export_pdf", lambda docx, token: pytest.fail("Word started")
+    )
     code, res = _run(capsys, "build", "resume", JOB, "--no-pdf")
     assert code == 0 and res["pdf"]["status"] == "skipped" and not stale.exists()
 

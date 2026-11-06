@@ -19,12 +19,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src import app_cli, apply_cli
+from src import apply_cli
 from src.apply import ashby, confirmation, ledger
 from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
 from src.apply.plan import PlanError
 from src.apply.schema import parse_schema
+from src.material import folders as material_folders
 from src.shared import paths
 from tests import factories
 
@@ -43,7 +44,7 @@ def repo(tmp_path, monkeypatch, tailor_dir):
     pipeline.mkdir()
     monkeypatch.setitem(paths._overrides, "CLEAN", clean)
     monkeypatch.setitem(paths._overrides, "APPLICATIONS", tailor_dir.parent.parent)
-    monkeypatch.setattr(app_cli, "_identity", lambda: ("Alex Example", "Alex_Example"))
+    monkeypatch.setattr(material_folders, "_identity", lambda: ("Alex Example", "Alex_Example"))
 
     tailored = f"{tailor_dir.parent.name}/{tailor_dir.name}"
 
