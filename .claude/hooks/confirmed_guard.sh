@@ -2,7 +2,8 @@
 # /apply gate: a `<answers>.confirmed` file is the user's typed yes, written only
 # by `uv run apply confirm` on their own terminal. A session that writes one
 # approves its own answers, so Edit/Write on it, and Bash that writes it, are
-# blocked. Reading it stays allowed.
+# blocked. Reading it stays allowed. Pattern-based, so a soft guard: a path
+# built indirectly can get past it.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -29,8 +30,12 @@ S='[^;|&]*'          # the rest of one command, up to the next separator
 END="(['\"]|[[:space:]]|\$|[;|&)])"
 has() { printf '%s' "$CMD" | grep -Eq -- "$1"; }
 
-if has "confirmation\.record|from[[:space:]]+src\.apply\.confirmation[[:space:]]+import${S}\brecord\b"; then
+if has "confirmation\.(record|digest)|from[[:space:]]+src\.apply\.confirmation[[:space:]]+import${S}\b(record|digest)\b"; then
   block "this command calls the confirmation writer."
+fi
+
+if has "\b(python3?|uv)\b" && has "sha256" && has "sort_keys"; then
+  block "this command recomputes a confirmation hash."
 fi
 
 if has "\.confirmed${END}|SIDECAR_SUFFIX|sidecar\("; then

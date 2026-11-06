@@ -19,6 +19,8 @@ from src.apply.fill import FillResult, SubmitGuardError, run_one, submit
 from src.apply.plan import Plan, Unmapped
 from src.shared import paths
 
+from .conftest import FakePage, FakeResponse
+
 REPO_ROOT = paths.REPO_ROOT
 
 
@@ -576,24 +578,12 @@ class TestTheAllRequestsDiagnostic:
     too broadly is how a click that did nothing gets reported as a submission.
     """
 
-    class FakePage:
-        def __init__(self):
-            self.handlers = []
-
-        def on(self, event, handler):
-            self.handlers.append((event, handler))
-
-    class FakeResponse:
-        def __init__(self, method, url, status=200):
-            self.status, self.url = status, url
-            self.request = type("R", (), {"method": method})()
-
     def _driver(self, monkeypatch, *, enabled):
         if enabled:
             monkeypatch.setenv(F.LOG_ALL_REQUESTS_ENV, "1")
         else:
             monkeypatch.delenv(F.LOG_ALL_REQUESTS_ENV, raising=False)
-        page = self.FakePage()
+        page = FakePage()
         return F.BrowserDriver(page), page
 
     def test_off_by_default_on_an_unmarked_board(self, monkeypatch):
@@ -615,7 +605,7 @@ class TestTheAllRequestsDiagnostic:
         driver.watch_submit_requests("unmeasured_board", sink)
         _, handler = page.handlers[0]
         with caplog.at_level("INFO"):
-            handler(self.FakeResponse("POST", "https://jobs.lever.co/x/y/apply"))
+            handler(FakeResponse("POST", "https://jobs.lever.co/x/y/apply"))
         assert sink == [], "the diagnostic must not populate submit_requests"
         assert "jobs.lever.co/x/y/apply" in caplog.text
 
@@ -624,7 +614,7 @@ class TestTheAllRequestsDiagnostic:
         driver.watch_submit_requests("unmeasured_board", [])
         _, handler = page.handlers[0]
         with caplog.at_level("INFO"):
-            handler(self.FakeResponse("GET", "https://jobs.lever.co/x/y/apply"))
+            handler(FakeResponse("GET", "https://jobs.lever.co/x/y/apply"))
         assert "jobs.lever.co" not in caplog.text
 
     def test_a_marked_board_still_gets_its_real_watcher_too(self, monkeypatch):
@@ -646,29 +636,11 @@ class TestTheLeverSubmitMarker:
     run reported `submit_requests: []` even when it succeeded.
     """
 
-    class FakePage:
-        def __init__(self):
-            self.handler = None
-
-        def on(self, event, handler):
-            self.handler = handler
-
-    def _response(self, method, url, status):
-        return type(
-            "Resp",
-            (),
-            {
-                "status": status,
-                "url": url,
-                "request": type("R", (), {"method": method})(),
-            },
-        )()
-
     def _sink_for(self, method, url, status, ats="lever"):
-        page = self.FakePage()
+        page = FakePage()
         driver, sink = F.BrowserDriver(page), []
         driver.watch_submit_requests(ats, sink)
-        page.handler(self._response(method, url, status))
+        page.handler(FakeResponse(method, url, status))
         return sink
 
     FORM = "https://jobs.lever.co/thinkahead/cb488cff/apply"

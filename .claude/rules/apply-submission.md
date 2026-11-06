@@ -52,7 +52,10 @@ lesson is named and the rest stand. A new question's answer must come from
 something about the user (`B-`/`S-`/`SKILL-`, `option`, `user`), never the JD or
 a company. Facts are never written by it. Every write keeps the previous file in
 `profile/.state/bank_history/` (last 20). `apply learn` reviews and undoes (a question,
-one wording or keyword, one claim, one fact wording).
+one wording or keyword, one claim, one fact wording). `apply wordings --review`
+(`src/apply/wordings.py`) lists the `suggest:<fact>` wordings in saved `plan.json`
+files that `fact_wordings` lacks, each with a `decision` for the user; `--save`
+learns the yes rows as exact `fact_wordings`, on a typed yes at a terminal only.
 
 Scoring reads the same table: `score_filter` derives never / later / now per
 country from `work_authorization.countries`, and refuses `sponsorship_need` or
@@ -111,7 +114,9 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
   the bank's keyword guesses the file leaves standing, offline from the role's
   saved `plan.json`), whose
   stored hash must match the file's current content. `.claude/hooks/confirmed_guard.sh`
-  blocks a session from writing a `.confirmed` file.
+  blocks a session from writing a `.confirmed` file, by pattern (a soft guard).
+  `.claude/hooks/submit_ask.sh` asks before any Bash command naming `apply` and
+  `--submit`, however it is spelled.
 - Without a confirmed answers file, `apply run --submit` parks a role whose plan
   holds a keyword guess. With `--submit`, one browser fills, reads the form back,
   and clicks only when every filled field holds what was planned (`form_check`).

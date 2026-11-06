@@ -326,12 +326,18 @@ def load_settings(path: Path) -> dict[str, Any]:
     return data
 
 
-def setting(key: str, default: Any) -> Any:
-    """One profile/settings.yaml value, or default when the file or key is absent."""
+def settings_data() -> dict[str, Any]:
+    """profile/settings.yaml as a dict, or {} when the file is absent."""
     from src.shared import paths
 
     path = paths.SETTINGS
     if (exc := moved_hint(path)) is not None:
         raise exc
-    value = load_settings(path).get(key) if path.is_file() else None
+    return load_settings(path) if path.is_file() else {}
+
+
+def setting(key: str, default: Any, data: dict[str, Any] | None = None) -> Any:
+    """One profile/settings.yaml value (from `data` when given, already loaded),
+    or default when the file or key is absent."""
+    value = (settings_data() if data is None else data).get(key)
     return default if value is None else value

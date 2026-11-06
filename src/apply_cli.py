@@ -22,6 +22,11 @@ confirm <answers-file>
                       take a typed yes on a terminal, and
                       store their hash beside the file; run and the bank honour
                       the file only while it still matches.
+wordings (--review [--out F] | --save F)
+                      list the work-authorization wordings saved plan.json
+                      files park on that fact_wordings lacks, each with the
+                      suggested fact, its answer and a decision to set; --save
+                      saves the decision: yes rows (typed yes on a terminal).
 learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
                       review what the bank holds, or take one thing back.
 triage [--fill] [--job-id J ...] [--limit N]
@@ -52,11 +57,10 @@ import sys
 import time
 from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
-from datetime import datetime
+from datetime import datetime  # noqa: F401 - re-exported
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 from src import app_cli, state_io, track_cli
 from src.apply import (
@@ -73,7 +77,7 @@ from src.apply import (
 from src.apply.answers import (
     EXAMPLE_NAME,
     FACT_WORDING_FACTS,
-    UNKNOWN_COUNTRY,
+    UNKNOWN_COUNTRY,  # noqa: F401 - re-exported
     Answers,
     AnswersError,
     canonical_place,
@@ -103,6 +107,30 @@ from src.apply.fill import (
 from src.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
 from src.apply.plan import Override, Plan, PlanError, plan_for_board
 from src.apply.reconcile import ReconcileError
+from src.apply.report import (  # noqa: F401 - re-exported
+    _ignored_override_lines,
+    _offered,
+    _value,
+    as_dict,
+    render,
+    render_fill,
+    render_questions,
+    render_report,
+    reserve_report_path,
+    write_manifest,
+    write_report,
+)
+from src.apply.role_facts import (  # noqa: F401 - re-exported
+    _NO_PLACE,
+    _RESIDENCY_PHRASE,
+    _US_STATE_START,
+    _clean_value,
+    _jd_country,
+    _pieces_country,
+    _us_state_start,
+    company_answers_for,
+    job_country,
+)
 from src.apply.schema import SchemaError
 from src.shared import clock, paths
 from src.shared.http_client import CareersError
@@ -390,142 +418,6 @@ def salary_for(
     return float(salary.amount)
 
 
-def job_country(state: dict | None, answers: Answers) -> str:
-    """The job's country: from discovery's location for it (`clean.parquet`,
-    already cleaned), else `state.yaml`'s copy, else its title's residency
-    qualifier ("(Germany)"), else the one country its JD names. A location that
-    reads as no country is `UNKNOWN_COUNTRY`; no location at all, or "Remote",
-    is "" (the candidate's own country applies)."""
-    state = state or {}
-    job_id = str(state.get("job_id") or "")
-    try:
-        from src.shared.location.allowlist import residency_countries
-        from src.shared.location.parser import parse_location
-    except Exception:  # noqa: BLE001 - the parser is optional plumbing
-        return ""
-    for raw in (_clean_value(job_id, "location"), str(state.get("location") or "")):
-        try:
-            parsed = parse_location(raw)
-        except Exception:  # noqa: BLE001 - libpostal missing: no country, not a crash
-            continue
-        if parsed.country:
-            return parsed.country
-        if answers.home_country in parsed.candidate_countries:
-            return answers.home_country
-    raw = _clean_value(job_id, "location") or str(state.get("location") or "")
-    found = _pieces_country(raw, parse_location)
-    if found:
-        return found
-    named = residency_countries(str(state.get("title") or ""))
-    if len(named) == 1:
-        return next(iter(named))
-    found = _jd_country(job_id)
-    if found:
-        return found
-    if _US_STATE_START.match(raw.strip()):
-        return "United States"
-    # A place was given and nothing could read it: guessing home would answer
-    # a Polish job's work-authorization questions as a US one.
-    if raw.strip() and not _NO_PLACE.search(raw):
-        return UNKNOWN_COUNTRY
-    return ""
-
-
-def _us_state_start() -> re.Pattern:
-    import pycountry
-
-    codes = "|".join(
-        sub.code.split("-")[1] for sub in pycountry.subdivisions.get(country_code="US")
-    )
-    return re.compile(r"^(?:USA?-)?(?:" + codes + r")(?:\b|$)")
-
-
-_US_STATE_START = _us_state_start()
-# A location that says how, not where: the candidate's own country applies.
-_NO_PLACE = re.compile(
-    r"\b(?:remote|remoto|remota|hybrid|anywhere|work from home|wfh)\b", re.IGNORECASE
-)
-
-
-def _pieces_country(raw: str, parse_location) -> str:
-    """The one country the pieces of a location name, when the whole string
-    parses as none ("IN Pune", "USA-CA San Jose", "Wrocław, DO, PL")."""
-    from src.apply.answers import places_named
-
-    if re.match(r"^\s*(?:US|USA|U\.S\.A?\.?|United States)\b", raw):
-        return "United States"
-    named = {
-        p for p in places_named(raw) if p not in ("European Union", "Latin America", "Asia Pacific")
-    }
-    if len(named) == 1:
-        # A country the location names outright beats a city that could be
-        # in two ("Santa Clara" is in California and in Cuba).
-        return named.pop()
-    found = set(named)
-    words = [w for w in re.split(r"[\s,;/|()-]+", raw) if w]
-    for n in (3, 2, 1):
-        for i in range(len(words) - n + 1):
-            piece = " ".join(words[i : i + n])
-            if len(piece) < 4:
-                continue
-            try:
-                country = parse_location(piece).country
-            except Exception:  # noqa: BLE001 - libpostal missing
-                return ""
-            if country:
-                found.add(country)
-    return found.pop() if len(found) == 1 else ""
-
-
-def _clean_value(job_id: str, column: str) -> str:
-    if not job_id or not paths.CLEAN.exists():
-        return ""
-    import pyarrow.parquet as pq
-
-    if column not in pq.read_schema(paths.CLEAN).names:
-        return ""
-    clean = pd.read_parquet(paths.CLEAN, columns=["job_id", column])
-    row = clean.loc[clean["job_id"] == job_id]
-    return "" if row.empty else str(row.iloc[0][column] or "")
-
-
-# "must be based in Germany", "open to candidates located in India": the JD
-# saying where the hire works, not every country it happens to mention.
-_RESIDENCY_PHRASE = re.compile(
-    r"(?:based|located|residing|reside|live|living|work(?:ing)?\s+from|remote|"
-    r"authori[sz]ed\s+to\s+work|eligible\s+to\s+work|hiring)\s+(?:only\s+)?"
-    r"(?:in|within|from|across)\s+(?:the\s+)?([^.;\n]{2,40})",
-    re.IGNORECASE,
-)
-
-
-def _jd_country(job_id: str) -> str:
-    """The one country the JD says the hire works in, for a posting whose
-    location says only "Remote". Two countries, or none, is no answer."""
-    from src.apply.answers import places_named
-
-    countries = set()
-    for m in _RESIDENCY_PHRASE.finditer(_clean_value(job_id, "jd_text")):
-        countries |= {
-            p
-            for p in places_named(m.group(1))
-            if p not in ("European Union", "Latin America", "Asia Pacific")
-        }
-    return countries.pop() if len(countries) == 1 else ""
-
-
-def company_answers_for(out_dir: Path) -> dict[str, str]:
-    path = out_dir / "company_answers.yaml"
-    if not path.is_file():
-        return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return {
-        k: str(v).strip()
-        for k, v in data.items()
-        if isinstance(k, str) and isinstance(v, str) and v.strip()
-    }
-
-
 def build(
     job_id: str,
     url: str | None = None,
@@ -589,252 +481,6 @@ BUILD_ERRORS = (
     DomScanError,
     ReconcileError,
 )
-
-
-# ------------------------------------------------------------------ rendering
-
-
-def _value(value) -> str:
-    if isinstance(value, bool):
-        return "checked" if value else "unchecked"
-    if isinstance(value, tuple):
-        return ", ".join(value)
-    return str(value)
-
-
-def as_dict(plan: Plan) -> dict:
-    return {
-        "job_id": plan.job_id,
-        "board": plan.board,
-        "token": plan.token,
-        "form_url": plan.form_url,
-        "company": plan.company,
-        "title": plan.title,
-        "out_dir": str(plan.out_dir),
-        "submit_selector": plan.submit_selector,
-        "submit_disabled": plan.submit_disabled,
-        "parked": plan.parked,
-        "submittable": plan.submittable,
-        "work_authorization": plan.work_authorization,
-        "fields": [
-            {
-                "id": f.id,
-                "name": f.name,
-                "label": f.label,
-                "kind": f.kind,
-                "section": f.section,
-                "required": f.required,
-                "multi": f.multi,
-                "tier": f.tier,
-                "value": list(f.value) if isinstance(f.value, tuple) else f.value,
-                "assert_selected": f.needs_selection_assert,
-                "description": f.description,
-                "options": list(f.options),
-                "source": f.source,
-                "reason": f.reason,
-                "replaced": f.replaced,
-            }
-            for f in plan.fields
-        ],
-        "files": [
-            {
-                "id": f.id,
-                "name": f.name,
-                "label": f.label,
-                "required": f.required,
-                "path": str(f.path),
-            }
-            for f in plan.files
-        ],
-        "unmapped": [
-            {
-                "id": u.id,
-                "label": u.label,
-                "required": u.required,
-                "kind": u.kind,
-                "section": u.section,
-                "tier": u.tier,
-                "reason": u.reason,
-                "options": list(u.options),
-                "description": u.description,
-                "multi": u.multi,
-                "source": u.source,
-                "similar": list(u.similar),
-            }
-            for u in plan.unmapped
-        ],
-        "draftable": [
-            {
-                "id": d.id,
-                "label": d.label,
-                "kind": d.kind,
-                "section": d.section,
-                "options": list(d.options),
-                "description": d.description,
-                "required": d.required,
-                "tier": d.tier,
-                "reason": d.reason,
-                "multi": d.multi,
-                "source": d.source,
-                "similar": list(d.similar),
-            }
-            for d in plan.draftable
-        ],
-        "skipped": [
-            {"id": s.id, "label": s.label, "tier": s.tier, "reason": s.reason} for s in plan.skipped
-        ],
-        "api_only": list(plan.api_only),
-        "ats": plan.ats,
-        "requires_captcha": plan.requires_captcha,
-        "ignored_overrides": list(plan.ignored_overrides),
-    }
-
-
-def _ignored_override_lines(plan: Plan) -> list[str]:
-    if not plan.ignored_overrides:
-        return []
-    return [
-        "",
-        f"OVERRIDES IGNORED ({len(plan.ignored_overrides)}) — supplied, "
-        "validated, and not applied:",
-        *(f"  - {note}" for note in plan.ignored_overrides),
-    ]
-
-
-def render(plan: Plan) -> str:
-    lines = [
-        f"{plan.company or '(unknown company)'} — {plan.title or '(unknown title)'}",
-        f"job_id {plan.job_id}   board {plan.board}   token {plan.token}",
-        f"form    {plan.form_url}",
-        f"tailor  {plan.out_dir}",
-        "",
-        f"FILL ({len(plan.fields)})",
-    ]
-    for f in plan.fields:
-        flag = "*" if f.required else " "
-        assertion = "  [assert selection]" if f.needs_selection_assert else ""
-        lines.append(f"  {flag} {f.id:<28} [{f.tier}] {_value(f.value)}{assertion}")
-        lines.append(f"      {f.label}")
-
-    lines.append("")
-    lines.append(f"ATTACH ({len(plan.files)})")
-    for f in plan.files:
-        flag = "*" if f.required else " "
-        lines.append(f"  {flag} {f.id:<28} {f.path.name}")
-
-    lines.append("")
-    lines.append(f"DRAFTABLE, optional and unmatched ({len(plan.draftable)})")
-    for d in plan.draftable:
-        lines.append(f"    {d.id:<28} {d.label}")
-        if d.description:
-            lines.append(f"      note: {d.description}")
-        if d.options:
-            lines.append(f"      offers: {', '.join(d.options)}")
-
-    lines.append("")
-    lines.append(f"SKIPPED, optional ({len(plan.skipped)})")
-    for s in plan.skipped:
-        lines.append(f"    {s.id:<28} [{s.tier}] {s.reason}")
-
-    lines.append("")
-    lines.append(f"UNMAPPED ({len(plan.unmapped)})")
-    for u in plan.unmapped:
-        flag = "*" if u.required else " "
-        lines.append(f"  {flag} {u.id:<28} [{u.tier}] {u.reason}")
-        lines.append(f"      {u.label}")
-        if u.description:
-            lines.append(f"      note: {u.description}")
-        if u.options:
-            lines.append(f"      offers: {', '.join(u.options)}")
-
-    lines.append("")
-    if plan.parked:
-        required = len(plan.required_parked)
-        lines.append(
-            f"PARKED: {len(plan.unmapped)} unanswered question(s), {required} required. "
-            "Nothing would be submitted."
-        )
-    else:
-        lines.append("READY: every rendered field resolved. --submit would click.")
-    if plan.api_only:
-        lines.append(f"(declared by the API, rendered nowhere: {', '.join(plan.api_only)})")
-    lines.extend(_ignored_override_lines(plan))
-    return "\n".join(lines)
-
-
-def _offered(options: tuple[str, ...], limit: int = 6) -> str:
-    if not options:
-        return ""
-    shown = ", ".join(options[:limit])
-    return shown if len(options) <= limit else f"{shown}, +{len(options) - limit} more"
-
-
-def render_questions(plan: Plan) -> str:
-    """The form grouped by who answers it: known facts, keyword guesses to
-    confirm, questions the bank has never seen, and what blocks the submit."""
-    lines = [
-        f"{plan.company or '(unknown company)'} — {plan.title or '(unknown title)'}",
-        f"job_id {plan.job_id}   {plan.ats}/{plan.board}   {len(plan.fields)} filled, "
-        f"{len(plan.files)} attached, {len(plan.unmapped)} unanswered",
-        "",
-    ]
-    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
-    known = [f for f in plan.fields if f not in guesses]
-
-    lines.append(f"KNOWN — answered from the bank or your facts ({len(known)})")
-    for f in known:
-        flag = "*" if f.required else " "
-        via = f"  via {f.source}" if f.source else ""
-        lines.append(f"  {flag} [{f.tier}] {f.label}")
-        lines.append(f"      -> {_value(f.value)}{via}")
-        if f.options:
-            lines.append(f"      of {len(f.options)} offered: {_offered(f.options)}")
-
-    lines.append("")
-    lines.append(f"GUESSED BY KEYWORD — confirm or correct ({len(guesses)})")
-    for f in guesses:
-        flag = "*" if f.required else " "
-        lines.append(f"  {flag} [{f.id}] {f.label}")
-        lines.append(f"      -> {_value(f.value)}  via {f.source}")
-        if f.options:
-            lines.append(f"      of {len(f.options)} offered: {_offered(f.options, limit=10)}")
-
-    new = [*plan.draftable, *(u for u in plan.unmapped if u.tier == "C")]
-    lines.append("")
-    lines.append(f"NEW — not in the bank yet ({len(new)})")
-    for q in new:
-        flag = "*" if q.required else " "
-        lines.append(f"  {flag} [{q.id}] {q.label}")
-        if q.options:
-            lines.append(f"      choose from: {_offered(q.options, limit=10)}")
-        if q.description:
-            lines.append(f"      note: {q.description}")
-        if q.similar:
-            lines.append(f"      closest in the bank: {', '.join(q.similar)}")
-
-    blockers = [u for u in plan.unmapped if u.required or u.blocks]
-    lines.append("")
-    lines.append(f"BLOCKING — required and unanswered ({len(blockers)})")
-    for u in blockers:
-        lines.append(f"    [{u.tier}] [{u.id}] {u.label}")
-        lines.append(f"      {u.reason}")
-        if u.options:
-            lines.append(f"      offers: {_offered(u.options, limit=10)}")
-
-    if plan.skipped:
-        lines.append("")
-        lines.append(f"LEFT BLANK, optional ({len(plan.skipped)})")
-        for sk in plan.skipped:
-            lines.append(f"    [{sk.tier}] {sk.label}: {sk.reason}")
-
-    lines.append("")
-    lines.append(
-        "PARKED: nothing would be submitted."
-        if plan.parked
-        else "READY: every required field resolved. --submit would click."
-    )
-    lines.extend(_ignored_override_lines(plan))
-    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------ commands
@@ -978,48 +624,6 @@ def _cmd_teach(args: argparse.Namespace) -> int:
     for line in changes or ["nothing to change: the bank already answers this"]:
         print(line)
     return 1 if any(c.startswith("not saved:") for c in changes) else 0
-
-
-def render_fill(result, plan: Plan) -> str:
-    done = sum(1 for o in result.outcomes if o.action != "failed")
-    lines = [f"\nFILLED {done} / {len(result.outcomes)} — {plan.form_url}"]
-    for outcome in result.outcomes:
-        mark = "ok  " if outcome.action != "failed" else "FAIL"
-        was = f"   (was {outcome.before!r})" if outcome.was_prefilled else ""
-        lines.append(f"  {mark} {outcome.id:<26} {outcome.after or outcome.note}{was}")
-    if result.observed_options:
-        lines.append("\nOptions read off the opened widgets:")
-        for field_id, options in result.observed_options.items():
-            lines.append(f"  {field_id}: {list(options)}")
-    if result.recovered:
-        lines.append(
-            f"\nRecovered at fill time (parked, then resolved once the widget's "
-            f"real options could be read): {list(result.recovered)}"
-        )
-    if result.prefilled:
-        lines.append(f"\nPrefilled before we wrote (upload parse?): {list(result.prefilled)}")
-    drifted = [r for r in result.manifest if not r["matches"] and r["group"] == "filled"]
-    if drifted:
-        lines.append(f"\n{len(drifted)} FIELD(S) THE PAGE DISAGREES WITH:")
-        for row in drifted:
-            lines.append(
-                f"  - {row['id']}: planned {row['planned']!r}, page holds {row['actual']!r}"
-            )
-    occupied = [
-        r
-        for r in result.manifest
-        if r["group"] in ("parked", "left blank", "skipped") and r["actual"]
-    ]
-    if occupied:
-        lines.append(f"\n{len(occupied)} UNANSWERED QUESTION(S) THE PAGE ALREADY HAS A VALUE FOR:")
-        for row in occupied:
-            lines.append(
-                f"  - {row['id']} [{row['group']}]: {row['actual']!r} — {row['label'][:60]}"
-            )
-    if result.failures:
-        lines.append(f"\n{len(result.failures)} FAILURE(S):")
-        lines.extend(f"  - {f}" for f in result.failures)
-    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------ queue
@@ -1695,86 +1299,6 @@ _CLICKED = ("submitted", "submitted_unconfirmed", "submitted_untracked", "reject
 _EXIT_NONZERO = ("failed", "submitted_untracked")
 
 
-def render_report(
-    outcomes: list[RunOutcome], started_at: datetime, runs_dir: Path | None = None
-) -> str:
-    """The markdown report, rendered from the run's JSON record."""
-    record = run_record.build(outcomes, started_at.isoformat(timespec="seconds"), None)
-    trend = run_record.trend(runs_dir) if runs_dir is not None else []
-    return run_record.render(record, trend)
-
-
-def write_report(
-    outcomes: list[RunOutcome],
-    started_at: datetime,
-    out_dir: Path | None = None,
-    path: Path | None = None,
-) -> Path:
-    """Write the run's JSON record, then the markdown report rendered from it.
-    Returns the report's path; the record is beside it as `<stem>.json`."""
-    if path is not None:
-        out_dir = path.parent
-    else:
-        out_dir = out_dir if out_dir is not None else paths.APPLY_RUNS
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = path or reserve_report_path(started_at, out_dir)
-    record = run_record.build(
-        outcomes,
-        started_at.isoformat(timespec="seconds"),
-        clock.now().isoformat(timespec="seconds"),
-    )
-    run_record.write(record, path.with_suffix(".json"))
-    path.write_text(run_record.render(record, run_record.trend(out_dir)), encoding="utf-8")
-    return path
-
-
-def write_manifest(result, plan: Plan, path: Path) -> Path:
-    """The post-fill read-back, as JSON, at a path the caller named.
-
-    Only ever written when `--manifest` asked for it, and only for a run that
-    actually opened a browser — an unasked-for artifact next to the run report
-    would make "no run was started, so no report exists" untrue.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "job_id": plan.job_id,
-                "company": plan.company,
-                "title": plan.title,
-                "form_url": plan.form_url,
-                "landed_url": result.landed_url,
-                "page_title": result.title,
-                "submitted": result.submitted,
-                "failures": list(result.failures),
-                "recovered": list(result.recovered),
-                "fields": result.manifest,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    return path
-
-
-def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Path:
-    """A report path no existing run owns.
-
-    This file is the only record of what went out, so two runs starting in the
-    same second must not share a name. Reserved once per run and re-written
-    per role, so the crash-survival writes keep hitting the same file.
-    """
-    out_dir = out_dir if out_dir is not None else paths.APPLY_RUNS
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stem = started_at.strftime("%Y-%m-%dT%H-%M-%S")
-    path = out_dir / f"{stem}.md"
-    n = 2
-    while path.exists() or path.with_suffix(".json").exists():
-        path = out_dir / f"{stem}.{n}.md"
-        n += 1
-    return path
-
-
 def submission_preview(
     job_ids: list[str], pipeline_dir: Path | None = None, hold_company: bool = False
 ) -> list[tuple[str, str, str, str]]:
@@ -1901,6 +1425,58 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
         return 1
     print(f"Confirmed: {confirmation.record(args.answers_file, data)}")
     return 0
+
+
+def _cmd_wordings(args: argparse.Namespace) -> int:
+    from src.apply import wordings
+
+    bank_path = Path(args.path) if args.path else None
+    if args.review:
+        try:
+            out, rows = wordings.review(load_answers(bank_path), args.out)
+        except (AnswersError, OSError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(f"{len(rows)} wording(s) to decide: {out}")
+        return 0
+    if bank.unattended():
+        print(
+            f"ERROR: {bank.UNATTENDED_ENV}=1: apply wordings --save needs you at a terminal.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        lessons = wordings.to_save(args.save)
+    except wordings.WordingsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not lessons:
+        print("nothing to save: no row has decision: yes")
+        return 0
+    print(f"Saving {len(lessons)} wording(s) to the answer bank's fact_wordings:")
+    for lesson in lessons:
+        print(f"  {lesson.label!r} -> Yes when {(lesson.fact or {}).get('fact')} is true")
+    if not sys.stdin.isatty():
+        print(
+            "ERROR: apply wordings --save needs a typed yes and stdin is not a terminal.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        reply = input("Type 'yes' to save these wordings: ")
+    except EOFError:
+        reply = ""
+    if reply.strip().lower() not in _CONFIRM_YES:
+        print("ABORTED: nothing saved.", file=sys.stderr)
+        return 1
+    try:
+        changes = bank.learn(lessons, bank_path)
+    except (bank.BankError, AnswersError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    for line in changes or ["nothing to change: the bank already holds these"]:
+        print(line)
+    return 1 if any(c.startswith("not saved:") for c in changes) else 0
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -2079,6 +1655,31 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("confirm", help="confirm an /apply answers file (typed yes on a terminal)")
     c.add_argument("answers_file", type=Path)
     c.set_defaults(func=_cmd_confirm)
+
+    wd = sub.add_parser(
+        "wordings",
+        help="review the work-authorization wordings saved plans park on; save the approved ones",
+    )
+    wmode = wd.add_mutually_exclusive_group(required=True)
+    wmode.add_argument(
+        "--review",
+        action="store_true",
+        help='write each wording not yet in fact_wordings, with decision: "" to set',
+    )
+    wmode.add_argument(
+        "--save",
+        type=Path,
+        metavar="FILE",
+        help="save the decision: yes rows as exact fact_wordings (typed yes on a terminal)",
+    )
+    wd.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="with --review: where to write (default applications/apply_runs/wordings_review.yaml)",
+    )
+    wd.add_argument("--path", default=None, type=Path, help="bank path (tests)")
+    wd.set_defaults(func=_cmd_wordings)
 
     sh = sub.add_parser(
         "sheet", help="rewrite the status sheet from the work queue (state, scores, ledger, runs)"

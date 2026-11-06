@@ -7,7 +7,7 @@ disagree about what a URL is.
 
 Deterministic and LLM-free (R7). Vendor names are structurally required.
 
-Not here on purpose: `fill.py`'s SUBMIT_REQUEST_* tables. Those are measured
+Not here on purpose: `drivers.py`'s SUBMIT_REQUEST_* tables. Those are measured
 submit-*endpoint* paths, not board identity — folding them in would break the
 POST-gating that makes submission detection safe.
 """

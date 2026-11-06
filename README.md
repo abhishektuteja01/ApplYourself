@@ -714,9 +714,15 @@ lies to you differently.
 | `lever.py` | Server-rendered form straight to merged fields. Keys off `name`, not `id`. |
 | `ashby.py` | Client-rendered, so it POSTs the `ApplicationForm` GraphQL query, plus one headless page load for the per-field description text that query never returns. |
 | `answers.py` | Resolves each field to a value from `application_answers.yaml`. Anything unresolvable parks the role, which blocks submit. |
+| `bank_schema.py` | Loads and validates `application_answers.yaml` into the facts and questions `answers.py` reads. |
+| `places.py` | The countries and regions a form label can name. |
 | `bank.py` | The answer bank: saves what each confirmed run teaches, and takes it back for `apply learn`. |
+| `wordings.py` | `apply wordings`: one review file of the new work-authorization wordings saved plans park on; the rows you mark yes are saved to the bank. |
 | `plan.py` | Form plus answers to an ordered fill plan. The whole contract with the browser. |
 | `fill.py` | Executes the plan and makes the one guarded submit click. Config always wins; a react-select that didn't stick is a failure, not a warning. |
+| `drivers.py` | The browser drivers `fill.py` works through, one per board family, and the selectors and page markers they read. |
+| `role_facts.py` | What a run reads about a role besides its form: the job's country and its `company_answers.yaml`. |
+| `report.py` | What `apply plan` and `apply run` print and write: the plan, the fill summary, the run report, the manifest. |
 | `ledger.py` | `submitted.jsonl`, the submit ledger: one line per click, read before any click. |
 | `apply_url.py` | Where a role is applied through: submittable, manual or no URL, with the reason, from stored data; `apply resolve-urls` is its one network step. |
 | `sheet.py` | The work queue, computed from the records that own each fact, and the overnight status sheet that renders it. |

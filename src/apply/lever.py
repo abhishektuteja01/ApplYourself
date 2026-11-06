@@ -12,7 +12,7 @@ Two things Greenhouse never needed to handle:
 - **Fields key off `name`, not `id`.** Lever's core/custom-question inputs
   carry no `id` attribute at all, so `MergedField.id` (and `.name`) is the
   `name` attribute verbatim — unlike Greenhouse, this module never aliases
-  id away from the real DOM attribute, because `fill.py`'s Lever driver
+  id away from the real DOM attribute, because `drivers.py`'s Lever driver
   selects elements by `name` and needs `field.id` to still be that value.
   Where a Lever field is the same identity/EEOC concept Greenhouse already
   has a resolution rule for, `answers.py` carries Lever's raw spelling

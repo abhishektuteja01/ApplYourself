@@ -101,8 +101,13 @@ def _latest(recs: list[dict], job_id: str, form_url: str) -> dict | None:
 
 def prior(path: Path, job_id: str, form_url: str = "") -> dict | None:
     """The latest line for this role, unless the verdict is NOT_SENT."""
-    v, rec = verdict(path, job_id, form_url)
-    return None if v is Verdict.NOT_SENT else rec
+    return prior_in(records(path), job_id, form_url)
+
+
+def prior_in(recs: list[dict], job_id: str, form_url: str = "") -> dict | None:
+    """`prior` over ledger lines already read."""
+    hit = _latest(recs, job_id, form_url)
+    return None if verdict_of(hit) is Verdict.NOT_SENT else hit
 
 
 def sent_job_ids(path: Path) -> set[str]:

@@ -6,6 +6,71 @@ import pytest
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
 
+class Group:
+    """A locator over a fixed list of elements: count / nth / first."""
+
+    def __init__(self, items=()):
+        self.items = list(items)
+
+    def count(self):
+        return len(self.items)
+
+    def nth(self, i):
+        return self.items[i]
+
+    @property
+    def first(self):
+        return self.items[0]
+
+
+class FakePage:
+    """The one fake Playwright page. `locate(selector)` answers `locator()`
+    (default: the page itself), every selector asked is kept in `selectors`,
+    and `on()` handlers in `handlers`. Its text, title and screenshot are what
+    the post-submit capture reads."""
+
+    def __init__(
+        self,
+        locate=None,
+        *,
+        text="Thank you for applying to Gasket Works.",
+        url="https://boards.greenhouse.io/confirmation",
+    ):
+        self._locate = locate
+        self._text, self.url = text, url
+        self.selectors: list[str] = []
+        self.handlers: list[tuple] = []
+
+    def locator(self, selector):
+        self.selectors.append(selector)
+        return self if self._locate is None else self._locate(selector)
+
+    def on(self, event, handler):
+        self.handlers.append((event, handler))
+
+    @property
+    def handler(self):
+        """The last handler attached."""
+        return self.handlers[-1][1] if self.handlers else None
+
+    def title(self):
+        return "Application submitted"
+
+    def inner_text(self, timeout=None):
+        return self._text
+
+    def screenshot(self, path=None, full_page=False):
+        pathlib.Path(path).write_bytes(b"\x89PNG")
+
+
+class FakeResponse:
+    """A network response as a `page.on("response")` handler sees it."""
+
+    def __init__(self, method, url, status=200):
+        self.status, self.url = status, url
+        self.request = type("R", (), {"method": method})()
+
+
 def load_fixture(name: str):
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 

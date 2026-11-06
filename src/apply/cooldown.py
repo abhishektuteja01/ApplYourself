@@ -18,10 +18,10 @@ from src.shared import clock, paths
 from src.shared.identity import normalize_company
 
 
-def cooldown_days() -> int:
+def cooldown_days(data: dict | None = None) -> int:
     from src.shared.config_schema import setting
 
-    return int(setting("company_cooldown_days", 2))
+    return int(setting("company_cooldown_days", 2, data))
 
 
 def _at(value: object) -> datetime | None:
