@@ -29,11 +29,12 @@ from typing import Any, Protocol
 
 import yaml
 
-from applyourself.shared import paths
+from applyourself.shared import paths, title_terms
 from applyourself.shared.config_schema import Lane, VerticalsFile, validate
 from applyourself.shared.logs import setup_logging
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+Variants = title_terms.Variants
 _SCHEMA_VERSION = 2
 
 
@@ -106,6 +107,8 @@ class Vertical:
     display_name: str
     search_terms: tuple[str, ...]
     linkedin_terms: tuple[str, ...]
+    # The title ban list, `defaults:` merged in. The lane's own include and
+    # strong-keep lists are legacy (`config migrate` moves them out).
     title_exclude_terms: tuple[str, ...]
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
@@ -128,6 +131,8 @@ class VerticalsConfig:
     default_vertical: str
     verticals: dict[str, Vertical]  # insertion order == config order
     classifier_rules: tuple[tuple[str, ClassifierRule], ...]
+    # Groups of words a title may spell either way, for every loose term match.
+    title_variants: Variants = ()
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -156,26 +161,38 @@ class RegexRule:
 
 
 class CompoundRule:
-    """A `pattern: {match, require_any}` block: the match string must appear,
-    and so must at least one of require_any. Comparison is on a normalized form
-    so "Co-Pilot", "co pilot" and a non-breaking space all read alike."""
+    """A `pattern: {match, require_any}` block: the match term must appear,
+    and so must at least one of require_any, each matched loosely
+    (`title_terms`): "Co-Pilot", "co pilot" and "copilots" all read alike."""
 
-    def __init__(self, match_str: str, require_any: tuple[str, ...]):
-        self.match_str = self._normalize(match_str)
-        self.require_any = [self._normalize(req) for req in require_any]
-
-    @staticmethod
-    def _normalize(text: str) -> str:
-        return text.lower().replace("\xa0", " ").replace("-", " ")
+    def __init__(self, match_str: str, require_any: tuple[str, ...], variants: Variants = ()):
+        self.match_str = match_str
+        self.require_any = require_any
+        self.variants = variants
 
     def matches(self, title: str) -> bool:
-        title_norm = self._normalize(title)
-        if self.match_str not in title_norm:
-            return False
-        return any(req in title_norm for req in self.require_any)
+        text = title_terms.normalize(title)
+        must = title_terms.compile_terms((self.match_str,), self.variants)
+        anyof = title_terms.compile_terms(self.require_any, self.variants)
+        return bool(must and must.search(text) and anyof and anyof.search(text))
 
     def __repr__(self) -> str:
-        return f"CompoundRule({self.match_str!r}, require_any={self.require_any!r})"
+        return f"CompoundRule({self.match_str!r}, require_any={list(self.require_any)!r})"
+
+
+class TermsRule:
+    """A `terms: [...]` rule: any one term, matched loosely (`title_terms`)."""
+
+    def __init__(self, terms: tuple[str, ...], variants: Variants = ()):
+        self.terms = terms
+        self.variants = variants
+
+    def matches(self, title: str) -> bool:
+        rx = title_terms.compile_terms(self.terms, self.variants)
+        return bool(rx and rx.search(title_terms.normalize(title)))
+
+    def __repr__(self) -> str:
+        return f"TermsRule({list(self.terms)!r})"
 
 
 def _fail(path: Path, message: str) -> ValueError:
@@ -221,22 +238,19 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
         raise _fail(path, f"{where}.skill_weights must be a mapping")
     focus = _parse_focus(raw["focus"], path, f"{where}.focus") if "focus" in raw else None
 
-    # Title include-gate: opt-in per vertical. When title_include_terms is
-    # empty the gate is OFF and title_passes falls back to
-    # exclusion-only. See title_gate.title_passes.
-    # Blank terms are rejected, not skipped: a blank compiles to a pattern
-    # that matches every title, which silently empties a whole vertical.
-    title_terms = {}
+    # The title lists (title_gate.lane_for). Blank terms are rejected, not
+    # skipped: a blank ban term would match every title.
+    title_lists = {}
     for key in ("title_exclude_terms", "title_include_terms", "title_strong_keep_terms"):
         terms = raw.get(key, [])
         if not isinstance(terms, list) or not all(isinstance(t, str) for t in terms):
             raise _fail(path, f"{where}.{key} must be a list of strings")
         if any(not t.strip() for t in terms):
             raise _fail(path, f"{where}.{key} contains a blank term")
-        title_terms[key] = terms
-    exclude_terms = title_terms["title_exclude_terms"]
-    include_terms = title_terms["title_include_terms"]
-    strong_keep_terms = title_terms["title_strong_keep_terms"]
+        title_lists[key] = terms
+    exclude_terms = title_lists["title_exclude_terms"]
+    include_terms = title_lists["title_include_terms"]
+    strong_keep_terms = title_lists["title_strong_keep_terms"]
 
     # Optional to the loader so a lane can scrape before its resume shape
     # exists (/new-vertical pass-a); verticals-check requires it.
@@ -330,6 +344,7 @@ def build(data: dict[str, Any], lanes: dict[str, tuple[Any, Path]], p: Path) -> 
     if default_vertical not in verticals:
         raise _fail(p, f"default_vertical {default_vertical!r} is not a configured vertical")
 
+    variants = _variants(data.get("title_variants"), p)
     raw_rules = _require(data, "classifier_rules", p, "top level")
     if not isinstance(raw_rules, list) or not raw_rules:
         raise _fail(p, "classifier_rules must be a nonempty ordered list")
@@ -341,21 +356,29 @@ def build(data: dict[str, Any], lanes: dict[str, tuple[Any, Path]], p: Path) -> 
         vertical = _require(rule, "vertical", p, where)
         if vertical not in verticals:
             raise _fail(p, f"{where}.vertical {vertical!r} is not a configured vertical")
-        pattern = _require(rule, "pattern", p, where)
+        if ("pattern" in rule) == ("terms" in rule):
+            raise _fail(p, f"{where} needs exactly one of `pattern` or `terms`")
+        if "terms" in rule:
+            terms = _str_list(rule["terms"], p, f"{where}.terms")
+            if not terms or any(not t.strip() for t in terms):
+                raise _fail(p, f"{where}.terms must be a nonempty list of nonblank terms")
+            rules.append((vertical, TermsRule(terms, variants)))
+            continue
+        pattern = rule["pattern"]
         if isinstance(pattern, dict):
             match_str = _require(pattern, "match", p, f"{where}.pattern")
-            if not isinstance(match_str, str):
-                raise _fail(p, f"{where}.pattern.match must be a string")
+            if not isinstance(match_str, str) or not match_str.strip():
+                raise _fail(p, f"{where}.pattern.match must be a nonblank string")
             require_any = _str_list(
                 pattern.get("require_any", []), p, f"{where}.pattern.require_any"
             )
             if not require_any:
                 raise _fail(p, f"{where}.pattern.require_any must be nonempty")
-            rules.append((vertical, CompoundRule(match_str, tuple(require_any))))
+            rules.append((vertical, CompoundRule(match_str, tuple(require_any), variants)))
         else:
             try:
                 compiled = re.compile(pattern, re.IGNORECASE)
-            except re.error as exc:
+            except (re.error, TypeError) as exc:
                 raise _fail(p, f"{where}.pattern does not compile: {exc}") from exc
             rules.append((vertical, RegexRule(compiled)))
 
@@ -363,7 +386,23 @@ def build(data: dict[str, Any], lanes: dict[str, tuple[Any, Path]], p: Path) -> 
         default_vertical=default_vertical,
         verticals=verticals,
         classifier_rules=tuple(rules),
+        title_variants=variants,
     )
+
+
+def _variants(raw: Any, p: Path) -> Variants:
+    """`title_variants`: groups of two or more ways to spell one title word."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise _fail(p, "title_variants must be a list of groups")
+    out = []
+    for i, group in enumerate(raw):
+        terms = _str_list(group, p, f"title_variants[{i}]")
+        if len(terms) < 2 or any(not t.strip() for t in terms):
+            raise _fail(p, f"title_variants[{i}] must list two or more nonblank spellings")
+        out.append(terms)
+    return tuple(out)
 
 
 _config: VerticalsConfig | None = None

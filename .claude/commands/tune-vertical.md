@@ -124,14 +124,17 @@ uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 **`classifier_rules`.** Ordered, first match wins, and position decides
 collisions (a build-lane rule must sit AFTER a risk lane's, so "AI Risk
 Engineer" stays in the risk lane; a trailing catch-all stays last). A lane may
-own several rules at different priorities. Two forms, both compiled by the
+own several rules at different priorities. Three forms, all compiled by the
 loader:
 
 - `pattern: '<regex>'` — compiled IGNORECASE. `'\b(?:a|b|c)\b'` for a keyword
   family; a plain literal (`"AI Engineer"`) when the phrase is unambiguous.
-- `pattern: {match: <str>, require_any: [<str>, ...]}` — the match string must
-  appear AND at least one `require_any` entry must too; comparison normalizes
-  case, hyphens and NBSP. Use it when a title word is ambiguous alone.
+- `pattern: {match: <str>, require_any: [<str>, ...]}` — the match term must
+  appear AND at least one `require_any` entry must too, each matched loosely
+  (case, hyphens, spaces, plurals, word endings, `title_variants`; never from
+  inside a word, so "ML Engineer" misses "HTML Engineer"). Use it when a
+  title word is ambiguous alone.
+- `terms: [<str>, ...]` — any one term, matched loosely the same way.
 
 This is where a `/new-vertical` catch-all `'.'` usually gets replaced: once a
 second lane exists, or once the out-of-lane pool in Round 0 shows real noise

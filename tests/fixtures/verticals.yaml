@@ -21,6 +21,10 @@ lanes: [example_primary, example_secondary, example_tertiary]
 defaults:
   years: {3: 14, 4: 10}
 
+title_variants:
+  - [engineer, ingenieur]
+  - [cog, sprocketwheel]
+
 # Ordered — first match wins. example_primary owns two rules: a strong signal
 # above everything, and a generic catch-all below everything (ambiguity
 # defaults to primary). Precedence: primary-strong > secondary > tertiary >
@@ -54,3 +58,5 @@ classifier_rules:
         - Agents
   - vertical: example_primary
     pattern: '\b(?:functional|business analyst|systems? analyst|operations|risk|audit\w*|reconciliation)\b'
+  - vertical: example_tertiary
+    terms: [cog, flywheel, cog deployment]

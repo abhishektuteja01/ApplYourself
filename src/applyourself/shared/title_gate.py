@@ -1,83 +1,96 @@
-"""Which lane a title belongs to, and whether it passes that lane's title gate."""
+"""Which lane a title belongs to, and whether it passes that lane's title gate.
+
+A title fits lane L when one of L's `classifier_rules` matches it, or one of
+L's search terms (search, LinkedIn and abroad) appears in it, matched loosely
+(`title_terms`).
+"""
 
 from __future__ import annotations
 
-import re
-from functools import lru_cache
-
-from applyourself.shared import verticals
+from applyourself.shared import title_terms, verticals
 
 # ---------------------------------------------------------------------
 # vertical classifier and title gate
 # ---------------------------------------------------------------------
 
 
-def classify_vertical_from_title(title: str | None) -> str:
+def classify_vertical_from_title(
+    title: str | None, vcfg: verticals.VerticalsConfig | None = None
+) -> str:
     """The first `classifier_rules` lane whose rule matches, or ""."""
     if not isinstance(title, str) or not title:
         return ""
-    for vertical, rule in verticals.get_config().classifier_rules:
+    vcfg = vcfg or verticals.get_config()
+    for vertical, rule in vcfg.classifier_rules:
         if rule.matches(title):
             return vertical
     return ""
 
 
-def _term_pattern(term: str) -> str:
-    r"""`term` escaped, with \b only on a side that ends in a word character,
-    so "c++" and ".net" still match."""
-    pat = re.escape(term)
-    if term[:1].isalnum():
-        pat = r"\b" + pat
-    if term[-1:].isalnum():
-        pat = pat + r"\b"
-    return pat
+def _lane_terms(lane: verticals.Vertical) -> tuple[str, ...]:
+    # The include and strong-keep lists still count as fits while a config
+    # carries them.
+    return (
+        lane.search_terms
+        + lane.linkedin_terms
+        + lane.abroad_terms
+        + lane.title_include_terms
+        + lane.title_strong_keep_terms
+    )
 
 
-def _compile(terms: tuple[str, ...]) -> re.Pattern[str] | None:
-    if not terms:
-        return None
-    return re.compile("|".join(_term_pattern(t) for t in terms), re.IGNORECASE)
+def fits(title: str, lane: str, vcfg: verticals.VerticalsConfig | None = None) -> bool:
+    """Whether `title` fits `lane`: one of its rules, or one of its terms."""
+    vcfg = vcfg or verticals.get_config()
+    v = vcfg.verticals.get(lane)
+    if v is None or not isinstance(title, str) or not title:
+        return False
+    if any(name == lane and rule.matches(title) for name, rule in vcfg.classifier_rules):
+        return True
+    rx = title_terms.compile_terms(_lane_terms(v), vcfg.title_variants)
+    return bool(rx and rx.search(title_terms.normalize(title)))
 
 
-@lru_cache(maxsize=64)
-def _gate_patterns(
-    exclude: tuple[str, ...], include: tuple[str, ...], strong: tuple[str, ...]
-) -> tuple[re.Pattern[str] | None, re.Pattern[str] | None, re.Pattern[str] | None]:
-    return _compile(exclude), _compile(include), _compile(strong)
+def _first_fit(title: str, vcfg: verticals.VerticalsConfig) -> str:
+    """The classifier's lane, else the first lane (config order) one of whose
+    terms the title holds, else ""."""
+    lane = classify_vertical_from_title(title, vcfg)
+    if lane:
+        return lane
+    text = title_terms.normalize(title)
+    for name, v in vcfg.verticals.items():
+        rx = title_terms.compile_terms(_lane_terms(v), vcfg.title_variants)
+        if rx and rx.search(text):
+            return name
+    return ""
 
 
 def title_passes(
     title: str, vertical: str, source: str = "", vcfg: verticals.VerticalsConfig | None = None
 ) -> bool:
-    """The per-lane title gate: strong_keep OR (include_ok AND NOT exclude).
-    include_ok is True when the lane sets no include terms. A manual add and
-    a title in no lane are not gated here."""
+    """The per-lane title gate: strong_keep OR (fits AND NOT exclude). A
+    manual add and a title in no lane are not gated here."""
     if source == "manual":
         return True
     vcfg = vcfg or verticals.get_config()
     lane = vcfg.verticals.get(vertical)
     if lane is None:
         return True
-    exclude, include, strong = _gate_patterns(
-        tuple(lane.title_exclude_terms),
-        tuple(lane.title_include_terms),
-        tuple(lane.title_strong_keep_terms),
-    )
-    # "_" is a word character to \b, so "IN_Manager_Tax" hides "manager".
-    text = (title or "").replace("_", " ")
-    if strong and strong.search(text):
+    strong = title_terms.compile_terms(lane.title_strong_keep_terms, vcfg.title_variants)
+    if strong and strong.search(title_terms.normalize(title)):
         return True
-    if include and not include.search(text):
+    if not fits(title, vertical, vcfg):
         return False
-    return not (exclude and exclude.search(text))
+    return not title_terms.first_exact(lane.title_exclude_terms, title)
 
 
 def gate_reason(
     title: str, source: str = "", vcfg: verticals.VerticalsConfig | None = None
 ) -> tuple[str, bool]:
-    """(vertical, passes) for a board posting: classify, then gate. A title
-    that classifies into no lane never passes."""
-    vertical = classify_vertical_from_title(title)
+    """(vertical, passes) for a board posting: its first fitting lane, then
+    the gate. A title that fits no lane never passes."""
+    vcfg = vcfg or verticals.get_config()
+    vertical = _first_fit(title, vcfg)
     if not vertical:
         return "", False
     return vertical, title_passes(title, vertical, source, vcfg)

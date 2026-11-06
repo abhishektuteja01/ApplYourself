@@ -56,8 +56,8 @@ class TestFixtureHappyPath:
     def test_rule_order_and_ownership(self, cfg):
         """Precedence, not rule count: the strong primary signal wins first,
         example_secondary outranks example_tertiary, and the primary-adjacent
-        catch-all stays last."""
-        owners = [v for v, _ in cfg.classifier_rules]
+        catch-all stays last among the pattern rules (`terms` rules follow)."""
+        owners = [v for v, r in cfg.classifier_rules if not isinstance(r, verticals.TermsRule)]
         assert owners[0] == "example_primary"
         assert owners[-1] == "example_primary"
         assert set(owners[1:-1]) <= {"example_secondary", "example_tertiary"}
@@ -413,6 +413,26 @@ class TestClassifierRuleProtocol:
             "Co-pilot Engineer",
         ):
             assert rule.matches(title) is True, title
+
+    def test_compound_never_starts_inside_a_word(self):
+        rule = verticals.CompoundRule("ML Engineer", ("Platform",))
+        assert rule.matches("ML-Engineering Lead, Platform") is True
+        assert rule.matches("HTML Engineer, Platform") is False
+
+    def test_terms_rule_reads_endings_and_variants(self):
+        rule = verticals.TermsRule(("forward deployed",), (("engineer", "ingenieur"),))
+        assert rule.matches("Forward-Deployment Engineers") is True
+        assert verticals.TermsRule(("cog engineer",), (("engineer", "ingenieur"),)).matches(
+            "Cog-Ingenieur (m/w/d)"
+        )
+
+    def test_a_rule_takes_pattern_or_terms_not_both(self, tmp_path):
+        data = _load_raw()
+        data["classifier_rules"].append(
+            {"vertical": "example_primary", "pattern": "x", "terms": ["y"]}
+        )
+        with pytest.raises(ValueError, match="exactly one of `pattern` or `terms`"):
+            _write_and_load(tmp_path, data)
 
     def test_both_kinds_return_a_real_bool(self, cfg):
         """The classifier does `if rule.matches(title)`, and a rule that

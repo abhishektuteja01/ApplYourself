@@ -63,6 +63,7 @@ class RulePattern(_Strict):
 class ClassifierRule(_Strict):
     vertical: Any = None
     pattern: str | RulePattern | None = None
+    terms: Any = None
 
 
 class VerticalsFile(_Strict):
@@ -74,6 +75,7 @@ class VerticalsFile(_Strict):
     lanes: Any = None
     defaults: Lane | None = None
     classifier_rules: list[ClassifierRule] | None = None
+    title_variants: Any = None
 
 
 # ---- scoring.yaml ----

@@ -36,5 +36,9 @@ classifier_rules:
     pattern: '\b(?:sprocket|governance|compliance)\b'
   - vertical: example_tertiary
     pattern: '\bcog\b'
+  # A `terms` list: any one term, matched loosely (hyphens, spaces, plurals,
+  # word endings, title_variants), never from inside a word.
+  - vertical: example_secondary
+    terms: [sprocket model risk, sprocket assurance]
   - vertical: example_primary
     pattern: '\b(?:operations|systems? analyst)\b'
