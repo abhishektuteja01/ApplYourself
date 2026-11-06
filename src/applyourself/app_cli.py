@@ -39,90 +39,15 @@ from typing import Any
 
 from applyourself import lint, resume_model, session_schema
 from applyourself.material.build import (
-    _pdf,
     cmd_build_answers,
     cmd_build_letter,
     cmd_build_outreach,
     cmd_build_resume,
 )
-from applyourself.material.checks import (
-    _names_company,
-    _outreach_limits,
-    _pdf_unknown,
-    _prose_problems,
-    _sentences,
-    cmd_lint_outreach,
-)
-from applyourself.material.folders import (
-    ANSWER_KEYS,
-    ANSWERS,
-    LETTER_PLAN,
-    OUTREACH,
-    RESUME_PLAN,
-    SNAPSHOT,
-    AppError,
-    _atomic_write,
-    _clean_value,
-    _file_slug,
-    _identity,
-    _load_yaml,
-    _read_snapshot,
-    _slug,
-    _state,
-    _version,
-    built_dir,
-    built_folder,
-    role_dirs,
-    role_folder,
-    role_info,
-)
-from applyourself.material.new import _IDLE_STATES, _load_row, cmd_dupes, cmd_new
+from applyourself.material.checks import cmd_lint_outreach
+from applyourself.material.folders import AppError, role_info
+from applyourself.material.new import cmd_dupes, cmd_new
 from applyourself.shared.logs import setup_logging
-
-_built_dir, _role_dirs = built_dir, role_dirs  # the names before they were public
-
-# Every name src/applyourself/material/ took from this module stays importable from it.
-__all__ = [
-    "ANSWERS",
-    "ANSWER_KEYS",
-    "LETTER_PLAN",
-    "OUTREACH",
-    "RESUME_PLAN",
-    "SNAPSHOT",
-    "_IDLE_STATES",
-    "AppError",
-    "_atomic_write",
-    "_built_dir",
-    "_clean_value",
-    "_file_slug",
-    "_identity",
-    "_load_row",
-    "_load_yaml",
-    "_names_company",
-    "_outreach_limits",
-    "_pdf",
-    "_pdf_unknown",
-    "_prose_problems",
-    "_read_snapshot",
-    "_role_dirs",
-    "_sentences",
-    "_slug",
-    "_state",
-    "_version",
-    "built_dir",
-    "built_folder",
-    "cmd_build_answers",
-    "cmd_build_letter",
-    "cmd_build_outreach",
-    "cmd_build_resume",
-    "cmd_dupes",
-    "cmd_lint_outreach",
-    "cmd_new",
-    "main",
-    "role_dirs",
-    "role_folder",
-    "role_info",
-]
 
 
 def _emit(obj: dict[str, Any], code: int = 0) -> int:

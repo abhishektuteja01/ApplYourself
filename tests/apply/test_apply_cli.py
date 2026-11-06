@@ -14,14 +14,15 @@ from __future__ import annotations
 
 import json
 import shlex
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 import yaml
 
 from applyourself import apply_cli
-from applyourself.apply import ashby, confirmation, ledger
-from applyourself.apply.answers import AnswersError
+from applyourself.apply import ashby, confirmation, detect, ledger, role_facts
+from applyourself.apply.bank_schema import AnswersError
 from applyourself.apply.greenhouse import BoardForm, Posting, PostingExpired
 from applyourself.apply.plan import PlanError
 from applyourself.apply.schema import parse_schema
@@ -101,7 +102,7 @@ def stub_board(monkeypatch):
 @pytest.fixture(autouse=True)
 def stub_answers(monkeypatch):
     """The synthetic widget-world config, never the user's real one."""
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     loaded = load_answers(FIXTURES / "application_answers.yaml")
     monkeypatch.setattr(apply_cli, "load_answers", lambda *a, **k: loaded)
@@ -138,7 +139,7 @@ class TestDetectAts:
     def test_workday_is_recognised_but_not_submittable(self):
         url = "https://widgetco.wd5.myworkdayjobs.com/Careers/job/US/Eng_JR1"
         assert apply_cli.detect_ats(url) == "workday"
-        assert not apply_cli.is_auto_submittable(url)
+        assert not detect.is_auto_submittable(url)
 
     def test_neither(self):
         assert apply_cli.detect_ats(LINKEDIN_URL) is None
@@ -269,7 +270,7 @@ class TestResolveOutDir:
 
 def _salary_bank(us=None, germany=None):
     """The example bank, with `salary` on its United States and Germany rows."""
-    from applyourself.apply.answers import answers_from
+    from applyourself.apply.bank_schema import answers_from
 
     data = yaml.safe_load(
         paths.example("application_answers.example.yaml").read_text(encoding="utf-8")
@@ -834,7 +835,7 @@ class TestRunReport:
             ),
             RunOutcome("a3", "C Co", "Eng", "failed", detail="boom"),
         ]
-        text = apply_cli.render_report(outcomes, apply_cli.datetime(2026, 1, 1))
+        text = apply_cli.render_report(outcomes, datetime(2026, 1, 1))
         assert "## Submitted (1)" in text
         assert "## Parked (1)" in text
         assert "why_us" in text
@@ -852,7 +853,7 @@ class TestRunReport:
         out_dir = tmp_path / "apply_runs"
         path = apply_cli.write_report(
             [RunOutcome("a1", "A Co", "Eng", "submitted")],
-            apply_cli.datetime(2026, 1, 1, 9, 30, 0),
+            datetime(2026, 1, 1, 9, 30, 0),
             out_dir=out_dir,
         )
         assert path.parent == out_dir
@@ -1022,7 +1023,7 @@ class TestTheReportSurvivesACrash:
             "submitted",
             "failed",
         ]
-        started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
+        started = datetime(2026, 8, 10, 12, 0, 0)
         text = apply_cli.write_report(collected, started, tmp_path).read_text(encoding="utf-8")
         assert "first" in text and "second" in text and "third" in text
 
@@ -1084,7 +1085,7 @@ class TestOverridesAreBoundToOneRole:
 
 class TestTheReportNeverOverwritesAnotherRun:
     def test_two_runs_in_the_same_second_get_separate_files(self, tmp_path):
-        started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
+        started = datetime(2026, 8, 10, 12, 0, 0)
         first = apply_cli.reserve_report_path(started, tmp_path)
         apply_cli.write_report([], started, path=first)
         second = apply_cli.reserve_report_path(started, tmp_path)
@@ -1092,7 +1093,7 @@ class TestTheReportNeverOverwritesAnotherRun:
         assert first.exists()
 
     def test_per_role_writes_reuse_the_reserved_path(self, tmp_path):
-        started = apply_cli.datetime(2026, 8, 10, 12, 0, 0)
+        started = datetime(2026, 8, 10, 12, 0, 0)
         path = apply_cli.reserve_report_path(started, tmp_path)
         for _ in range(3):
             apply_cli.write_report([], started, path=path)
@@ -1458,7 +1459,7 @@ class TestOneSubmissionPerCompanyPerRun:
                     detail="already submitted to this company in this run",
                 )
             ],
-            apply_cli.datetime(2026, 1, 1),
+            datetime(2026, 1, 1),
         )
         assert "one submission per company per run" in text
         assert "## Failed" not in text
@@ -1820,7 +1821,8 @@ class TestKeywordsGeneralize:
 
     def test_a_keyword_lets_the_next_wording_be_guessed(self, tmp_path, monkeypatch):
         from applyourself.apply import bank
-        from applyourself.apply.answers import find_question, load_answers
+        from applyourself.apply.answers import find_question
+        from applyourself.apply.bank_schema import load_answers
 
         path = self._bank(tmp_path, monkeypatch)
         bank.learn(
@@ -2043,8 +2045,8 @@ def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
         {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."},
     )
     monkeypatch.setitem(paths._overrides, "CLEAN", clean)
-    assert apply_cli._jd_country("a") == "United States"
-    assert apply_cli._jd_country("b") == ""
+    assert role_facts._jd_country("a") == "United States"
+    assert role_facts._jd_country("b") == ""
 
 
 def _has_libpostal() -> bool:
@@ -2153,7 +2155,8 @@ class TestAConfirmedFactJudgmentIsLearned:
         import shutil
 
         from applyourself.apply import bank
-        from applyourself.apply.answers import load_answers, resolve
+        from applyourself.apply.answers import resolve
+        from applyourself.apply.bank_schema import load_answers
         from applyourself.apply.reconcile import MergedField, MergedOption
 
         path = tmp_path / "bank.yaml"
@@ -2214,7 +2217,8 @@ class TestAConfirmedFactJudgmentIsLearned:
 def test_teach_saves_one_answer_and_a_keyword_finds_the_next_wording(tmp_path, capsys):
     import shutil
 
-    from applyourself.apply.answers import find_question, load_answers
+    from applyourself.apply.answers import find_question
+    from applyourself.apply.bank_schema import load_answers
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)

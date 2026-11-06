@@ -44,7 +44,7 @@ def _contacts() -> None:
 
 
 def _answers() -> None:
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     load_answers()
 
@@ -80,7 +80,7 @@ CHECKS: tuple[tuple[str, bool, Callable[[], None]], ...] = (
 
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
-    from applyourself.apply.answers import AnswersError
+    from applyourself.apply.bank_schema import AnswersError
     from applyourself.shared.config_schema import moved_hint
 
     errors = (OSError, ValueError, KeyError, TypeError, yaml.YAMLError, AnswersError)

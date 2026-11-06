@@ -372,7 +372,7 @@ class TestEmploymentSwitch:
     def _answers(self, tmp_path, **employment):
         import yaml
 
-        from applyourself.apply.answers import load_answers
+        from applyourself.apply.bank_schema import load_answers
 
         from .conftest import FIXTURES
 
@@ -465,7 +465,7 @@ class TestEmploymentSwitch:
         assert [f.id for f in plan.fields] == ["school--0"]
 
     def test_an_unknown_flag_is_still_rejected(self, tmp_path):
-        from applyourself.apply.answers import AnswersError
+        from applyourself.apply.bank_schema import AnswersError
 
         with pytest.raises(AnswersError, match="unknown keys"):
             self._answers(tmp_path, only_when_requried=True)  # typo on purpose

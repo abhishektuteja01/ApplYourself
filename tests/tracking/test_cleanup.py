@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from applyourself import app_cli, state_io, track_cli
+from applyourself import state_io, track_cli
 from applyourself.apply import sheet
+from applyourself.material import folders
 from applyourself.shared import paths
 
 OLD = datetime(2026, 1, 1, 9, 0, 0)
@@ -69,6 +70,6 @@ def test_a_cleaned_role_brought_back_is_not_rebuilt_on_its_own():
     track_cli.main(["cleanup", "--apply"])
     track_cli.main(["aaaa0001", "saved"])
     state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, "aaaa0001"))
-    assert app_cli.built_folder(state) is None
+    assert folders.built_folder(state) is None
     # Not New (the night's tailor) nor Resume ready (the night's /apply).
     assert sheet.status_for("aaaa0001", True, state, None, None)[0] == "Cleaned"

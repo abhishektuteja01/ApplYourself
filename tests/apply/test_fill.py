@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from applyourself.apply import drivers as D
 from applyourself.apply import fill as F
 from applyourself.apply.fill import FillError, FillResult, fill_plan
 from applyourself.apply.plan import FieldPlan, FilePlan, Plan
@@ -1956,11 +1957,11 @@ class TestLeverLocationAutocomplete:
 
     def _page(self, *, options=(), location="", selected="", banner=None):
         def locate(selector):
-            if selector == F.LEVER_OPTION:
+            if selector == D.LEVER_OPTION:
                 return Group(options)
-            if selector == F.LEVER_SELECTED_LOCATION:
+            if selector == D.LEVER_SELECTED_LOCATION:
                 return Group([self.Input(selected)] if selected is not None else [])
-            if selector == F.COOKIE_ACCEPT:
+            if selector == D.COOKIE_ACCEPT:
                 return Group([banner] if banner is not None else [])
             return Group([self.Input(location)])
 
@@ -1976,8 +1977,8 @@ class TestLeverLocationAutocomplete:
         driver = F.LeverBrowserDriver(page)
 
         assert driver.click_option("Exampletown, Example State, United States") is True
-        assert F.LEVER_OPTION in page.selectors
-        assert F.SELECT_OPTION not in page.selectors, (
+        assert D.LEVER_OPTION in page.selectors
+        assert D.SELECT_OPTION not in page.selectors, (
             "react-select's class never appears on a Lever board"
         )
 
@@ -2039,7 +2040,7 @@ class TestLeverCookieBanner:
 
     def _page(self, buttons):
         def locate(selector):
-            assert selector == F.COOKIE_ACCEPT
+            assert selector == D.COOKIE_ACCEPT
             return Group(buttons)
 
         return FakePage(locate)
@@ -2268,22 +2269,22 @@ class TestRefusedFieldNames:
     def test_a_ticked_checkbox_group_is_not_a_refusal(self):
         """Greenhouse marks all 8 boxes `required`; one tick answers the group."""
         rows = [box("q[]", checked=i == 1) for i in range(8)]
-        assert F.refused_field_names(rows) == ()
+        assert D.refused_field_names(rows) == ()
 
     def test_an_untouched_checkbox_group_still_refuses(self):
         rows = [box("q[]", checked=False) for _ in range(8)]
-        assert F.refused_field_names(rows) == ("q[]",)
+        assert D.refused_field_names(rows) == ("q[]",)
 
     def test_a_required_empty_text_field_still_refuses(self):
         rows = [row(name="q1", valueMissing=True, invalid=True)]
-        assert F.refused_field_names(rows) == ("q1",)
+        assert D.refused_field_names(rows) == ("q1",)
 
     def test_a_text_input_sharing_the_groups_name_still_refuses(self):
         """Lever's pronouns group: ten boxes plus `customPronounsTextField`
         under one name. A tick must not clear the empty text input."""
         rows = [box("pronouns", checked=True), box("pronouns", checked=False)]
         rows.append(row(name="pronouns", valueMissing=True, invalid=True))
-        assert F.refused_field_names(rows) == ("pronouns",)
+        assert D.refused_field_names(rows) == ("pronouns",)
 
     def test_nameless_controls_are_never_grouped(self):
         """`name` is "" for both, so grouping on the id fallback would let the
@@ -2292,7 +2293,7 @@ class TestRefusedFieldNames:
             row(type="checkbox", checked=True),
             row(valueMissing=True, invalid=True, fallback="signature"),
         ]
-        assert F.refused_field_names(rows) == ("signature",)
+        assert D.refused_field_names(rows) == ("signature",)
 
     def test_a_non_valuemissing_failure_is_never_dropped(self):
         """A pattern failure is not an unticked sibling, so a tick cannot
@@ -2301,17 +2302,17 @@ class TestRefusedFieldNames:
             box("q[]", checked=True),
             row(name="q[]", type="checkbox", checked=False, invalid=True),
         ]
-        assert F.refused_field_names(rows) == ("q[]",)
+        assert D.refused_field_names(rows) == ("q[]",)
 
     def test_a_lone_unticked_consent_box_still_refuses(self):
-        assert F.refused_field_names([box("agree", checked=False)]) == ("agree",)
+        assert D.refused_field_names([box("agree", checked=False)]) == ("agree",)
 
     def test_an_unselected_radio_group_still_refuses(self):
         rows = [row(name="gender", type="radio", valueMissing=True, invalid=True) for _ in range(3)]
-        assert F.refused_field_names(rows) == ("gender",)
+        assert D.refused_field_names(rows) == ("gender",)
 
     def test_a_valid_form_reports_nothing(self):
-        assert F.refused_field_names([row(name="q1"), box("q[]", checked=True)]) == ()
+        assert D.refused_field_names([row(name="q1"), box("q[]", checked=True)]) == ()
 
     def test_names_are_deduped_in_first_seen_order(self):
         rows = [
@@ -2319,7 +2320,7 @@ class TestRefusedFieldNames:
             row(name="a", valueMissing=True, invalid=True),
             row(name="b", valueMissing=True, invalid=True),
         ]
-        assert F.refused_field_names(rows) == ("b", "a")
+        assert D.refused_field_names(rows) == ("b", "a")
 
 
 class TestDatePickerIsDismissed:

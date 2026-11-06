@@ -147,7 +147,8 @@ def resolve_confirmed(field, answers):
     this exact wording: what the regex families' policy tests check."""
     from dataclasses import replace
 
-    from applyourself.apply.answers import norm_label, resolve
+    from applyourself.apply.answers import resolve
+    from applyourself.apply.bank_schema import norm_label
 
     got = resolve(field, answers)
     if not got.source.startswith("suggest:"):
@@ -158,6 +159,6 @@ def resolve_confirmed(field, answers):
 
 @pytest.fixture
 def answers():
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     return load_answers(FIXTURES / "application_answers.yaml")

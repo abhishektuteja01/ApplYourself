@@ -14,6 +14,7 @@ import yaml
 
 from applyourself import app_cli
 from applyourself.material import build as material_build
+from applyourself.material import folders
 from applyourself.session_schema import ProblemCode
 from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
@@ -261,14 +262,14 @@ def test_no_pdf_never_starts_word_and_drops_an_older_pdf(repo, capsys, monkeypat
 
 
 def test_a_stored_folder_outside_applications_is_refused():
-    assert app_cli.built_folder({"tailored_dirs": ["../pipeline/x"]}) is None
-    assert app_cli.built_folder({"tailored_dirs": ["/tmp/x"]}) is None
+    assert folders.built_folder({"tailored_dirs": ["../pipeline/x"]}) is None
+    assert folders.built_folder({"tailored_dirs": ["/tmp/x"]}) is None
 
 
 def test_same_version_folders_in_two_lanes_order_by_name():
     for lane, day in (("b_lane", "2026-09-02"), ("a_lane", "2026-09-01")):
         (paths.APPLICATIONS / lane / f"{day}_a_x_{JOB}").mkdir(parents=True)
-    assert app_cli.role_folder(JOB).name.startswith("2026-09-02")
+    assert folders.role_folder(JOB).name.startswith("2026-09-02")
 
 
 def test_dir_points_everything_at_the_built_folder(repo, capsys):

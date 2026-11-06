@@ -33,37 +33,14 @@ from applyourself.apply import bank
 from applyourself.apply.answers import Answers, resolve
 from applyourself.apply.browser import launch as _launch
 from applyourself.apply.browser import require_playwright as _require_playwright
-from applyourself.apply.drivers import (  # noqa: F401 - re-exported
+from applyourself.apply.drivers import (  # noqa: F401 - drivers are looked up by name in _driver_for
     _OPTION_POLL_MS,
-    CONFIRMATION_MARKERS,
-    COOKIE_ACCEPT,
-    FIELD,
-    FIELD_BY_NAME,
-    FORM_SELECTOR,
-    FORM_TIMEOUT,
-    LEVER_OPTION,
-    LEVER_SELECTED_LOCATION,
-    LOG_ALL_REQUESTS_ENV,
-    MISSING_FIELD_PATTERN,
-    OPTION_TIMEOUT,
-    SELECT_MULTI_VALUE,
-    SELECT_OPTION,
-    SELECT_SINGLE_VALUE,
-    SUBMIT_REFUSED_MARKERS,
-    SUBMIT_REJECTED_MARKERS,
     SUBMIT_REQUEST_MARKERS,
-    SUBMIT_REQUEST_METHOD,
-    SUBMIT_REQUEST_REDIRECT_OK,
-    UPLOAD_CHOOSER_TIMEOUT,
-    UPLOAD_ERROR_MARKERS,
     UPLOAD_READBACK_TIMEOUT,
-    UPLOAD_VERDICT_TIMEOUT,
     AshbyBrowserDriver,
     BrowserDriver,
     FillError,
     LeverBrowserDriver,
-    _is_numeric,
-    refused_field_names,
 )
 from applyourself.apply.plan import FieldPlan, FilePlan, Plan
 from applyourself.apply.reconcile import MergedField, MergedOption

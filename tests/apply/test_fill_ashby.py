@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from lxml import html as lxml_html
 
+from applyourself.apply import drivers as D
 from applyourself.apply import fill as F
 from applyourself.apply.fill import FillError, fill_plan
 from applyourself.apply.plan import FieldPlan, Plan
@@ -477,13 +478,13 @@ class TestANumericFieldRefusesProse:
 
     @pytest.mark.parametrize("value", ["185000", "185000.50", " 42 ", "-5", "1e5"])
     def test_the_shapes_a_number_input_accepts(self, value):
-        assert F._is_numeric(value) is True
+        assert D._is_numeric(value) is True
 
     @pytest.mark.parametrize("value", ["$185,000", "185k", "negotiable", "", "1 2"])
     def test_it_does_not_try_to_parse_currency_or_units(self, value):
         """Stripping a "$" or a "k" would submit a number the user never
         wrote. Refusing parks the question instead."""
-        assert F._is_numeric(value) is False
+        assert D._is_numeric(value) is False
 
     def test_an_ordinary_text_field_is_unaffected(self):
         d, _ = driver()

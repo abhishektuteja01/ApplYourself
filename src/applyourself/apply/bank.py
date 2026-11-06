@@ -30,6 +30,7 @@ from pathlib import Path
 import yaml
 
 from applyourself.apply import answers as A
+from applyourself.apply import bank_schema as BS
 from applyourself.shared import clock, paths
 from applyourself.shared.files import atomic_write_text
 from applyourself.shared.parquet_io import locked
@@ -83,7 +84,7 @@ def write(data: dict, path: Path | None = None) -> Path:
     if unattended():
         raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
     p = Path(path) if path is not None else paths.ANSWER_BANK
-    A.answers_from(data, where=str(p), resume_path=A.resume_for(p))
+    BS.answers_from(data, where=str(p), resume_path=BS.resume_for(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
     if p.exists():
         history = p.parent / ".state" / "bank_history"
@@ -106,7 +107,7 @@ def _as_list(value) -> list[str]:
 
 def _owner_of(questions: dict, wording: str) -> str:
     for qid, spec in questions.items():
-        if wording in {A.norm_label(w) for w in spec.get("wordings") or []}:
+        if wording in {BS.norm_label(w) for w in spec.get("wordings") or []}:
             return qid
     return ""
 
@@ -137,14 +138,17 @@ def _reusable(source: str) -> bool:
 def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
     """Apply one lesson to `data` in place. Returns (changes, refusal)."""
     questions = data.setdefault("questions", {})
-    wording = A.norm_label(lesson.label)
+    wording = BS.norm_label(lesson.label)
     changes: list[str] = []
 
     if lesson.claim is not None:
         claims = data.get("claims") or {}
         data["claims"] = claims
         for option in _as_list(lesson.value):
-            if A._norm_option(option) not in A._BARE_OPTIONS and claims.get(option) != lesson.claim:
+            if (
+                A._norm_option(option) not in BS._BARE_OPTIONS
+                and claims.get(option) != lesson.claim
+            ):
                 claims[option] = dict(lesson.claim)
                 changes.append(f"claim: {option!r} -> {lesson.claim}")
         return changes, ""
@@ -152,7 +156,7 @@ def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
         judged = data.get("fact_wordings") or {}
         data["fact_wordings"] = judged
         label = lesson.label.strip()
-        taken = next((k for k in judged if A.norm_label(k) == wording), None)
+        taken = next((k for k in judged if BS.norm_label(k) == wording), None)
         if taken is not None and judged[taken] != lesson.fact:
             return changes, (
                 f"{label!r} is already judged {judged[taken]}; "
@@ -229,13 +233,13 @@ def _still_answers(data: dict, lesson: Lesson) -> str:
     if lesson.claim is not None or (not lesson.question and lesson.fact is None):
         return ""
     try:
-        bank = A.answers_from(data)
-    except A.AnswersError as exc:
+        bank = BS.answers_from(data)
+    except BS.AnswersError as exc:
         return f"the bank would not load: {exc}"
     if lesson.fact is not None:
         return (
             ""
-            if A.norm_label(lesson.label) in bank.fact_wordings
+            if BS.norm_label(lesson.label) in bank.fact_wordings
             else f"{lesson.label.strip()!r} would not be found"
         )
     found = A.find_question(lesson.label, bank)
@@ -251,7 +255,7 @@ def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
     for its label; a refused lesson is named and the others stand."""
     changes: list[str] = []
     for lesson in lessons:
-        wording = A.norm_label(lesson.label)
+        wording = BS.norm_label(lesson.label)
         trial = copy.deepcopy(data)
         made, refusal = _one(trial, lesson)
         refusal = refusal or (_still_answers(trial, lesson) if made else "")
@@ -281,13 +285,13 @@ def _add_keyword(data: dict, qid: str, keyword: str) -> list[str]:
     shadows another question, or asks a work-authorization question, is
     refused on its own and the rest of the lesson stands."""
     spec = data["questions"][qid]
-    word = A.norm_label(keyword)
-    if not word or word in [A.norm_label(k) for k in spec.get("keywords") or []]:
+    word = BS.norm_label(keyword)
+    if not word or word in [BS.norm_label(k) for k in spec.get("keywords") or []]:
         return []
     spec.setdefault("keywords", []).append(word)
     try:
-        A.answers_from(data)
-    except A.AnswersError as exc:
+        BS.answers_from(data)
+    except BS.AnswersError as exc:
         spec["keywords"].remove(word)
         if not spec["keywords"]:
             spec.pop("keywords")
@@ -334,7 +338,7 @@ def _undo(
     data = read(path)
     if fact:
         judged = data.get("fact_wordings") or {}
-        key = next((k for k in judged if A.norm_label(k) == A.norm_label(fact)), None)
+        key = next((k for k in judged if BS.norm_label(k) == BS.norm_label(fact)), None)
         if key is None:
             raise BankError(f"no fact wording {fact!r}")
         judged.pop(key)
@@ -355,7 +359,7 @@ def _undo(
     spec = questions[qid]
     if wording or keyword:
         key, target = ("wordings", wording) if wording else ("keywords", keyword)
-        kept = [w for w in spec.get(key) or [] if A.norm_label(w) != A.norm_label(target)]
+        kept = [w for w in spec.get(key) or [] if BS.norm_label(w) != BS.norm_label(target)]
         if len(kept) == len(spec.get(key) or []):
             raise BankError(f"{qid} has no {key[:-1]} {target!r}")
         spec[key] = kept

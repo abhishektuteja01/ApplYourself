@@ -82,7 +82,10 @@ def _reclassify() -> list[str]:
 
 
 def _work_auth(country: str) -> str:
-    from applyourself.apply.answers import AnswersError, load_answers
+    from applyourself.apply.bank_schema import (
+        AnswersError,
+        load_answers,
+    )
 
     try:
         a = load_answers()

@@ -204,8 +204,9 @@ def test_a_ledger_line_under_another_job_id_for_the_same_form_counts_as_sent(tmp
 
 def test_a_run_record_drives_the_sheet_and_renders_the_report(tmp_path, monkeypatch):
     import json
+    from datetime import datetime
 
-    from applyourself.apply_cli import RunOutcome, datetime, write_report
+    from applyourself.apply_cli import RunOutcome, write_report
 
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"

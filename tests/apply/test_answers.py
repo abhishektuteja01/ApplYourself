@@ -16,7 +16,12 @@ import pytest
 import yaml
 
 from applyourself.apply import answers as A
-from applyourself.apply.answers import AnswersError, Resolution, load_answers
+from applyourself.apply import bank_schema as BS
+from applyourself.apply.answers import Resolution
+from applyourself.apply.bank_schema import (
+    AnswersError,
+    load_answers,
+)
 from applyourself.apply.reconcile import MergedField, MergedOption
 from applyourself.shared import paths
 
@@ -171,7 +176,7 @@ class TestLoad:
         with pytest.raises(AnswersError, match="schema_version"):
             load_answers(write_config(tmp_path, schema_version=1))
 
-    @pytest.mark.parametrize("key", A.IDENTITY_KEYS)
+    @pytest.mark.parametrize("key", BS.IDENTITY_KEYS)
     def test_every_identity_key_is_required(self, tmp_path, answers, key, monkeypatch):
         monkeypatch.setitem(paths._overrides, "RESUME", tmp_path / "no_resume.yaml")
         identity = dict(answers.identity)
@@ -296,7 +301,7 @@ class TestWorkAuthorizationLoading:
         a = self._floor(
             tmp_path, {"amount": 48300, "currency": "EUR", "per": "year", "note": " EU Blue Card "}
         )
-        assert a.facts_for("Germany").visa_salary_floor == A.SalaryFloor(
+        assert a.facts_for("Germany").visa_salary_floor == BS.SalaryFloor(
             amount=48300, currency="EUR", per="year", note="EU Blue Card"
         )
         assert a.facts_for("France").visa_salary_floor is None
@@ -875,7 +880,7 @@ class TestWorkAuthorization:
             answers,
             countries={
                 **answers.countries,
-                "United States": A.CountryFacts(
+                "United States": BS.CountryFacts(
                     authorized=True, requires_sponsorship=False, unrestricted=True
                 ),
             },
@@ -1027,13 +1032,13 @@ class TestTierC:
 
 class TestTheShippedTemplate:
     def test_it_loads_through_the_real_loader(self):
-        loaded = load_answers(paths.example(A.EXAMPLE_NAME))
+        loaded = load_answers(paths.example(BS.EXAMPLE_NAME))
         assert loaded.identity["first_name"]
         assert "default" in loaded.countries
 
     def test_its_questions_answer_the_boards_in_the_fixtures(self, merged):
         """A template whose questions match nothing teaches the wrong shape."""
-        loaded = load_answers(paths.example(A.EXAMPLE_NAME))
+        loaded = load_answers(paths.example(BS.EXAMPLE_NAME))
         r = merged("form_minimal")
         assert resolve(by_label(r, "How did you hear"), loaded).action == "fill"
         assert resolve(by_label(r, "LinkedIn"), loaded).action == "fill"
@@ -1094,7 +1099,7 @@ class TestTheQualifiedFamily:
             answers,
             countries={
                 **answers.countries,
-                "United States": A.CountryFacts(
+                "United States": BS.CountryFacts(
                     authorized=True, requires_sponsorship=False, unrestricted=True
                 ),
             },
@@ -1368,13 +1373,13 @@ class TestLocationAlternates:
         )
 
     def test_a_non_list_is_refused(self, tmp_path):
-        from applyourself.apply.answers import AnswersError
+        from applyourself.apply.bank_schema import AnswersError
 
         with pytest.raises(AnswersError, match="location_alternates"):
             self._answers(tmp_path, self.ALTERNATE)
 
     def test_an_empty_string_entry_is_refused(self, tmp_path):
-        from applyourself.apply.answers import AnswersError
+        from applyourself.apply.bank_schema import AnswersError
 
         with pytest.raises(AnswersError, match="location_alternates"):
             self._answers(tmp_path, [""])

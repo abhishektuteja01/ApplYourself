@@ -26,9 +26,9 @@ import pytest
 
 from applyourself.apply.answers import (
     WORK_AUTH_CATEGORIES,
-    CountryFacts,
     classify_work_authorization,
 )
+from applyourself.apply.bank_schema import CountryFacts
 from applyourself.apply.reconcile import MergedField, MergedOption
 
 from .conftest import FIXTURES
@@ -510,7 +510,10 @@ class TestPlaceNames:
     def test_a_bank_row_must_name_a_real_place(self, tmp_path):
         import yaml
 
-        from applyourself.apply.answers import AnswersError, load_answers
+        from applyourself.apply.bank_schema import (
+            AnswersError,
+            load_answers,
+        )
 
         data = yaml.safe_load((FIXTURES / "application_answers.yaml").read_text(encoding="utf-8"))
         data["work_authorization"]["countries"]["Narnia"] = {
@@ -596,8 +599,8 @@ class TestANewWordingIsOnlySuggested:
         import shutil
 
         from applyourself.apply import bank
-        from applyourself.apply.answers import load_answers
         from applyourself.apply.answers import resolve as raw
+        from applyourself.apply.bank_schema import load_answers
 
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)

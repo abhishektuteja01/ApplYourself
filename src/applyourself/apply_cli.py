@@ -58,7 +58,6 @@ import sys
 import time
 from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
-from datetime import datetime  # noqa: F401 - re-exported
 from pathlib import Path
 
 import pandas as pd
@@ -76,27 +75,23 @@ from applyourself.apply import (
     run_record,
 )
 from applyourself.apply.answers import (
-    EXAMPLE_NAME,
-    FACT_WORDING_FACTS,
-    UNKNOWN_COUNTRY,  # noqa: F401 - re-exported
     Answers,
-    AnswersError,
     canonical_place,
     find_question,
+)
+from applyourself.apply.bank_schema import (
+    EXAMPLE_NAME,
+    FACT_WORDING_FACTS,
+    AnswersError,
     load_answers,
 )
 
 # Board identity comes from the shared table in
 # `src/applyourself/shared/job_boards.py`, wrapped by `applyourself.apply.detect` so
 # `shortlist.py` can ask "can /apply submit to this?" without importing this
-# CLI. Re-exported here because callers and tests already reach for
-# `apply_cli.detect_ats`. `detect_ats` recognizes Workday too, so every
+# CLI. `detect_ats` recognizes Workday too, so every
 # submission path gates on SUBMITTABLE_ATS, not on "not None".
-from applyourself.apply.detect import (
-    SUBMITTABLE_ATS,
-    detect_ats,
-    is_auto_submittable,  # noqa: F401 - re-exported
-)
+from applyourself.apply.detect import SUBMITTABLE_ATS, detect_ats
 from applyourself.apply.domscan import DomScanError
 from applyourself.apply.fill import (
     SubmitGuardError,
@@ -108,9 +103,7 @@ from applyourself.apply.fill import (
 from applyourself.apply.greenhouse import ApplyUrlError, PostingExpired, load_board
 from applyourself.apply.plan import Override, Plan, PlanError, plan_for_board
 from applyourself.apply.reconcile import ReconcileError
-from applyourself.apply.report import (  # noqa: F401 - re-exported
-    _ignored_override_lines,
-    _offered,
+from applyourself.apply.report import (
     _value,
     as_dict,
     render,
@@ -121,17 +114,7 @@ from applyourself.apply.report import (  # noqa: F401 - re-exported
     write_manifest,
     write_report,
 )
-from applyourself.apply.role_facts import (  # noqa: F401 - re-exported
-    _NO_PLACE,
-    _RESIDENCY_PHRASE,
-    _US_STATE_START,
-    _clean_value,
-    _jd_country,
-    _pieces_country,
-    _us_state_start,
-    company_answers_for,
-    job_country,
-)
+from applyourself.apply.role_facts import company_answers_for, job_country
 from applyourself.apply.schema import SchemaError
 from applyourself.material import folders as app_folders
 from applyourself.shared import clock, paths, schemas

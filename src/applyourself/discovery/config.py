@@ -405,7 +405,11 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
 def bank_countries(discovery_path: Path) -> tuple[str, list[str]] | None:
     """(home, every other country the answer bank lists), or None with no bank.
     The example discovery file reads the example bank."""
-    from applyourself.apply.answers import EXAMPLE_NAME, AnswersError, load_answers
+    from applyourself.apply.bank_schema import (
+        EXAMPLE_NAME,
+        AnswersError,
+        load_answers,
+    )
     from applyourself.shared.countries import canonical_country
 
     bank = (

@@ -68,7 +68,7 @@ class ViewInputs:
 def load_filter() -> ScoringConfig | None:
     import yaml
 
-    from applyourself.apply.answers import AnswersError
+    from applyourself.apply.bank_schema import AnswersError
 
     try:
         return load_scoring()

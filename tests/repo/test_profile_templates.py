@@ -260,7 +260,7 @@ class TestExampleConfigsAreValid:
     def test_application_answers_example_loads_through_the_real_loader(self):
         """`load_answers` is the strict validator /apply hits: existence says
         nothing about whether the template is a valid bank."""
-        from applyourself.apply.answers import load_answers
+        from applyourself.apply.bank_schema import load_answers
 
         loaded = load_answers(PROFILE / "application_answers.example.yaml")
         assert "default" in loaded.countries and loaded.questions

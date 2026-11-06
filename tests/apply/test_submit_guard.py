@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from applyourself.apply import drivers as D
 from applyourself.apply import fill as F
 from applyourself.apply.fill import FillResult, SubmitGuardError, run_one, submit
 from applyourself.apply.plan import Plan, Unmapped
@@ -580,9 +581,9 @@ class TestTheAllRequestsDiagnostic:
 
     def _driver(self, monkeypatch, *, enabled):
         if enabled:
-            monkeypatch.setenv(F.LOG_ALL_REQUESTS_ENV, "1")
+            monkeypatch.setenv(D.LOG_ALL_REQUESTS_ENV, "1")
         else:
-            monkeypatch.delenv(F.LOG_ALL_REQUESTS_ENV, raising=False)
+            monkeypatch.delenv(D.LOG_ALL_REQUESTS_ENV, raising=False)
         page = FakePage()
         return F.BrowserDriver(page), page
 
@@ -671,8 +672,8 @@ class TestTheLeverSubmitMarker:
     def test_the_redirect_allowance_is_not_global(self):
         """For the XHR boards a 3xx is a shape nothing has measured, so
         treating one as success there would be a guess."""
-        assert "ashby" not in F.SUBMIT_REQUEST_REDIRECT_OK
-        assert "greenhouse" not in F.SUBMIT_REQUEST_REDIRECT_OK
+        assert "ashby" not in D.SUBMIT_REQUEST_REDIRECT_OK
+        assert "greenhouse" not in D.SUBMIT_REQUEST_REDIRECT_OK
         assert (
             self._sink_for(
                 "POST",

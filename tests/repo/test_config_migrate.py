@@ -106,7 +106,7 @@ def test_source_abroad_blocks_become_one_top_level_block(tmp_path, cfg, monkeypa
 
 def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
     from applyourself import apply_cli
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     prof = _profile(tmp_path)
     v = prof / "verticals.yaml"
@@ -134,7 +134,7 @@ def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
 
 
 def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     prof = _profile(tmp_path)
     shutil.copyfile(paths.example("resume.example.yaml"), prof / "resume.yaml")
@@ -161,7 +161,10 @@ def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
 
 
 def test_automation_yaml_becomes_settings_with_the_bank_browser(tmp_path, capsys):
-    from applyourself.apply.answers import AnswersError, load_answers
+    from applyourself.apply.bank_schema import (
+        AnswersError,
+        load_answers,
+    )
     from applyourself.apply.browser import load_browser_config
     from applyourself.shared.config_schema import load_settings
 

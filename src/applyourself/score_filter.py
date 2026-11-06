@@ -21,7 +21,7 @@ from applyourself.shared import jd_trim, paths, verticals
 from applyourself.shared.config_schema import Cutoffs, ScoringFile, validate
 
 if TYPE_CHECKING:
-    from applyourself.apply.answers import CountryFacts
+    from applyourself.apply.bank_schema import CountryFacts
     from applyourself.discovery.config import DiscoveryConfig
 
 _SCHEMA_VERSION = 1
@@ -95,7 +95,7 @@ def _need(facts: CountryFacts) -> str:
 def sponsorship_needs(bank_path: Path) -> tuple[str, tuple[tuple[str, str], ...], str]:
     """(home need, per-country needs, default need), from the answer bank's
     work-authorization table — the one place those facts are stated."""
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     bank = load_answers(bank_path)
     rows = tuple((c, _need(f)) for c, f in bank.countries.items() if c != "default")
@@ -104,7 +104,7 @@ def sponsorship_needs(bank_path: Path) -> tuple[str, tuple[tuple[str, str], ...]
 
 def bank_degree_rank(bank_path: Path) -> int | None:
     """Your highest degree's rank, from the answer bank's education block."""
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     return degree_rank(load_answers(bank_path).education.get("degree"))
 
@@ -114,7 +114,7 @@ LANGUAGES_QUESTION = "languages_fluent"
 
 def bank_languages(bank_path: Path) -> tuple[str, ...]:
     """The languages you speak: the answer bank's `languages_fluent` answer."""
-    from applyourself.apply.answers import load_answers
+    from applyourself.apply.bank_schema import load_answers
 
     q = load_answers(bank_path).question(LANGUAGES_QUESTION)
     return q.answers if q is not None else ()
@@ -137,7 +137,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise ValueError(f"{path}: schema_version must be {_SCHEMA_VERSION}")
     if bank_path is None:
-        from applyourself.apply import answers as bank_module
+        from applyourself.apply import bank_schema as bank_module
 
         bank_path = (
             paths.example(bank_module.EXAMPLE_NAME)

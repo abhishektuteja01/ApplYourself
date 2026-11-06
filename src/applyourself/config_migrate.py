@@ -698,8 +698,8 @@ def main(args: Any) -> int:
         print(diff(p), end="")
         print("\ndry run: nothing written; --apply writes it")
         return 0
-    from applyourself.apply.answers import AnswersError
     from applyourself.apply.bank import BankError
+    from applyourself.apply.bank_schema import AnswersError
 
     try:
         written = write(p)

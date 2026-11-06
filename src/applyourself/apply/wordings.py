@@ -19,6 +19,7 @@ import yaml
 
 from applyourself.apply import answers as A
 from applyourself.apply import bank
+from applyourself.apply import bank_schema as BS
 from applyourself.apply.reconcile import MergedField, MergedOption
 from applyourself.shared import paths, schemas
 from applyourself.shared.files import atomic_write_text
@@ -80,7 +81,7 @@ def _earlier_decisions(out: Path) -> dict[str, str]:
     except (OSError, yaml.YAMLError, AttributeError):
         return {}
     return {
-        A.norm_label(str(r.get("label") or "")): _decision(r.get("decision"))
+        BS.norm_label(str(r.get("label") or "")): _decision(r.get("decision"))
         for r in rows
         if isinstance(r, dict) and _decision(r.get("decision"))
     }
@@ -102,7 +103,7 @@ def review(bank_answers: A.Answers, out: Path | None = None) -> tuple[Path, list
         for key in _PLAN_KEYS:
             for entry in plan.get(key) or []:
                 field = _field(entry)
-                norm = A.norm_label(field.label)
+                norm = BS.norm_label(field.label)
                 if not A.in_work_authorization_domain(field.label):
                     continue
                 if norm in bank_answers.fact_wordings:
@@ -158,9 +159,9 @@ def to_save(path: Path) -> list[bank.Lesson]:
         if not isinstance(row, dict) or _decision(row.get("decision")) != "yes":
             continue
         label, fact = str(row.get("label") or "").strip(), row.get("fact")
-        if not label or fact not in A.FACT_WORDING_FACTS:
+        if not label or fact not in BS.FACT_WORDING_FACTS:
             raise WordingsError(
-                f"{path}: wordings[{i}] needs a label and a fact in {list(A.FACT_WORDING_FACTS)}"
+                f"{path}: wordings[{i}] needs a label and a fact in {list(BS.FACT_WORDING_FACTS)}"
             )
         lessons.append(bank.Lesson(label=label, fact={"fact": fact, "yes_when": True}))
     return lessons
