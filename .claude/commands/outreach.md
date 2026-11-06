@@ -85,8 +85,8 @@ Parse `$ARGUMENTS` for:
 Read:
 - `pipeline/${JOB_ID}/state.yaml` (company, title, sponsorship_label,
   fit_score, existing outreach[])
-- `jobs/scored.parquet` + `jobs/clean.parquet` row (reasoning, keywords,
-  full JD body)
+- `uv run score show ${JOB_ID}` (reasoning, keywords) and the
+  `jobs/clean.parquet` row (full JD body)
 - `<dir>/trace.md`, where `<dir>` is what `uv run app dir <job_id>` prints (so
   the outreach knows which bullets your resume leads with). An empty `dir`
   means no resume is built yet: stop and tell the user to run `/tailor <job_id>`.

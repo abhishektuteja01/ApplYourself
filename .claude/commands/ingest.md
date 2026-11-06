@@ -87,15 +87,10 @@ distinct `job_id`.
 Already scored? Then skip to step 4 (a re-tailor becomes `_v2`):
 
 ```bash
-uv run python -c "
-import pandas as pd, sys
-from pathlib import Path
-p = Path('jobs/scored.parquet')
-print(p.exists() and sys.argv[1] in set(pd.read_parquet(p)['job_id']))
-" <job_id>
+uv run score show <job_id>
 ```
 
-`False` → `uv run score start --job-id <job_id>`. `--job-id` skips every drop
+Exit 0 → scored. Exit 1 (`not scored`) → `uv run score start --job-id <job_id>`. `--job-id` skips every drop
 except `no-lane`, so a deliberately chosen role gets real subscores and `keywords_to_mirror`.
 - Exit 1 → report the error, stop.
 - `judge=0` → the `job_id` is not in `clean.parquet`; stop.
@@ -120,16 +115,11 @@ Strictly sequential: it writes into the folder `/tailor` built.
 ## Step 6 — report
 
 ```bash
-uv run python -c "
-import pandas as pd, sys
-r = pd.read_parquet('jobs/scored.parquet').set_index('job_id').loc[sys.argv[1]]
-print(f'fit_score={r.fit_score:.0f} action={r.suggested_action} sponsorship={r.sponsorship_label}')
-print(f'reasoning: {r.reasoning}')
-" <job_id>
+uv run score show <job_id>
 ```
 
 Report, concisely: company and title (flag them as derived if step 2 needed
-`--dry-run`), vertical (flag it if it is not `$2`), the line above, and each
+`--dry-run`), vertical (flag it if it is not `$2`), its first two lines, and each
 artifact path, and the role's state as `uv run app dir <job_id>` reports it
 (`tailored` once a cover letter exists, else `saved`).
 

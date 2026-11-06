@@ -10,11 +10,15 @@ start [--all | --stale-only [--yes]] [--vertical V] [--job-id ID ...]
 finish
     Merge every answered slice, prune, write the shortlist. Exit 1 with the
     `judge ...` lines still owed when a slice is missing or malformed.
+show <job_id>
+    One role's score as every reader sees it. Read-only. Exit 1 when the
+    role has no score (never judged, or a filter drop).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from src import score_store, shortlist
@@ -91,6 +95,25 @@ def _cmd_finish(args: argparse.Namespace) -> int:
     return 1 if res["lines"] else 0
 
 
+def _cmd_show(args: argparse.Namespace) -> int:
+    v = score_store.view(SCORED)
+    rows = v[v["job_id"] == args.job_id]
+    if rows.empty:
+        print(f"not scored: {args.job_id}")
+        return 1
+    r = rows.iloc[0]
+    subs = json.loads(r["fit_subscores"])
+    print(
+        f"fit_score={r['fit_score']:.0f} action={r['suggested_action']} "
+        f"sponsorship={r['sponsorship_label']} basis={r['basis']}"
+    )
+    print(f"reasoning: {r['reasoning']}")
+    print("subscores: " + " / ".join(f"{k} {n}" for k, n in subs.items()))
+    print("keywords: " + ", ".join(map(str, r["keywords_to_mirror"])))
+    print(f"sponsorship evidence: {r['sponsorship_evidence'] or '-'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="score", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -119,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("finish", help="check, merge, prune, write the shortlist").set_defaults(
         func=_cmd_finish
     )
+    p = sub.add_parser("show", help="one role's score, read-only")
+    p.add_argument("job_id")
+    p.set_defaults(func=_cmd_show)
     args = parser.parse_args(argv)
     try:
         return int(args.func(args))

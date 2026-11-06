@@ -616,6 +616,11 @@ class TestCli:
         assert score_cli.main(["finish"]) == 0
         line = capsys.readouterr().out.strip()
         assert line.startswith("merged=1 pruned=0 shortlist=") and line.endswith("keepers=1")
+        assert score_cli.main(["show", "aaaaaaaa"]) == 0
+        out = capsys.readouterr().out.splitlines()
+        assert out[0] == "fit_score=80 action=tailor sponsorship=unknown basis=judged"
+        assert out[1] == "reasoning: solid fit"
+        assert score_cli.main(["show", "bbbbbbbb"]) == 1
 
     def test_finish_exit_1_prints_owed_judges(self, wired, capsys):
         _clean(wired, [{"job_id": "aaaaaaaa"}])
