@@ -53,25 +53,38 @@ def cfg():
 
 
 @pytest.fixture(autouse=True)
-def _example_resume_sources(monkeypatch):
-    """Resume sources come from the committed example world, never the
-    gitignored profile/resume.yaml, bullets.md or skills_master.md."""
-    from src import resume_model
+def _isolate_root(tmp_path, tmp_path_factory, monkeypatch):
+    """Every data path resolves under tmp_path, so no test reads or writes the
+    real pipeline/, jobs/, applications/ or profile/. Resume sources and scoring
+    are copies of the committed examples. To point one name elsewhere use
+    `monkeypatch.setitem(paths._overrides, NAME, path)`, never setattr on paths."""
+    import shutil
 
-    profile = Path(__file__).resolve().parent.parent / "profile"
-    monkeypatch.setattr(resume_model, "RESUME", profile / "resume.example.yaml")
-    monkeypatch.setattr(resume_model, "BULLETS", profile / "bullets.example.md")
-    monkeypatch.setattr(resume_model, "SKILLS", profile / "skills_master.example.md")
+    from src.shared import paths
 
-
-@pytest.fixture(autouse=True)
-def _example_scoring(monkeypatch):
-    """Scoring config comes from the committed example, never the gitignored
-    profile/scoring.yaml, so a key change there cannot turn the suite red."""
-    from src import score_filter
-
-    profile = Path(__file__).resolve().parent.parent / "profile"
-    monkeypatch.setattr(score_filter, "SCORING_PATH", profile / "scoring.example.yaml")
+    for name in set(vars(paths)) & set(paths._LAYOUT):
+        delattr(paths, name)
+    profile = paths.REPO_ROOT / "profile"
+    monkeypatch.setattr(paths, "_root", tmp_path)
+    copies = tmp_path_factory.mktemp("examples")
+    for name in ("resume.example.yaml", "bullets.example.md", "skills_master.example.md"):
+        shutil.copyfile(profile / name, copies / name)
+    # Copies of what a test may write; read-only committed files in place.
+    monkeypatch.setattr(
+        paths,
+        "_overrides",
+        {
+            "RESUME": copies / "resume.example.yaml",
+            "BULLETS": copies / "bullets.example.md",
+            "SKILLS": copies / "skills_master.example.md",
+            "SCORING": profile / "scoring.example.yaml",
+            "DE_AI_RULES": profile / "de_ai_rules.yaml",
+            "VERTICALS_DIR": profile / "verticals",
+        },
+    )
+    yield
+    leaked = sorted(set(vars(paths)) & set(paths._LAYOUT))
+    assert not leaked, f"setattr on paths.{leaked} leaks; setitem paths._overrides instead"
 
 
 @pytest.fixture(autouse=True)
@@ -83,56 +96,6 @@ def _no_git_hook_env(monkeypatch):
 
     for name in [n for n in os.environ if n.startswith("GIT_")]:
         monkeypatch.delenv(name, raising=False)
-
-
-@pytest.fixture(autouse=True)
-def _isolate_applications(tmp_path, monkeypatch):
-    """Keep run reports, post-submit evidence and the submit ledger out of the
-    real `applications/`. Tests that need a specific folder still set their own."""
-    from src import app_cli, apply_cli
-    from src.shared import paths
-
-    apps = tmp_path / "applications"
-    monkeypatch.setattr(paths, "APPLICATIONS", apps)
-    monkeypatch.setattr(app_cli, "APPLICATIONS", apps)
-    monkeypatch.setattr(apply_cli, "APPLICATIONS", apps)
-    monkeypatch.setattr(apply_cli, "APPLY_RUNS", apps / "apply_runs")
-
-
-@pytest.fixture(autouse=True)
-def _isolate_pipeline(tmp_path, monkeypatch):
-    """Keep the real `pipeline/` out of every test. Every module reads
-    `paths.PIPELINE` at call time, so this one patch covers them all."""
-    from src.shared import paths
-
-    monkeypatch.setattr(paths, "PIPELINE", tmp_path / "pipeline")
-
-
-@pytest.fixture(autouse=True)
-def _isolate_answer_bank(tmp_path, monkeypatch):
-    """Keep the user's real answer bank out of every test: a lesson written by
-    a test must never reach profile/application_answers.yaml."""
-    from src.apply import answers, bank
-
-    monkeypatch.setattr(answers, "DEFAULT_PATH", tmp_path / "no-bank.yaml")
-    monkeypatch.setattr(bank, "DEFAULT_PATH", tmp_path / "no-bank.yaml")
-
-
-@pytest.fixture(autouse=True)
-def _isolate_discovery_state(tmp_path, monkeypatch):
-    """Keep the jobs store, board state, board lists and inbox out of the real
-    repo. Every discovery writer resolves these names at call time."""
-    from src.discovery import digest, live_view, store
-    from src.discovery.sources import inbox
-    from src.discovery.sources.boards import base as boards
-
-    monkeypatch.setattr(store, "STORE", tmp_path / "jobs" / "jobs.parquet")
-    monkeypatch.setattr(live_view, "CLEAN", tmp_path / "jobs" / "clean.parquet")
-    monkeypatch.setattr(boards, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
-    monkeypatch.setattr(digest, "BOARD_STATE", tmp_path / "jobs" / "boards.parquet")
-    monkeypatch.setattr(digest, "JOBS_RUNS", tmp_path / "jobs" / "runs")
-    monkeypatch.setattr(boards, "BOARDS_DIR", tmp_path / "universe")
-    monkeypatch.setattr(inbox, "INBOX", tmp_path / "inbox")
 
 
 @pytest.fixture(autouse=True)

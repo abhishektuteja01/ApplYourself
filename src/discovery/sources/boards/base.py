@@ -32,8 +32,6 @@ from src.shared.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)
 
-BOARDS_DIR = paths.REPO_ROOT / "data" / "universe"
-BOARD_STATE = paths.BOARD_STATE
 
 # Three 404s in a row and a board is `dead`: checked every `dead_every_days`
 # instead, until it answers again.
@@ -115,7 +113,7 @@ def load_boards(
 
     `active=0` retires that exact spelling. A board listed in two cases stays
     live while any spelling is; the first live spelling is the one used."""
-    boards_dir = Path(boards_dir or BOARDS_DIR)
+    boards_dir = Path(boards_dir or paths.UNIVERSE)
     spellings: dict[str, dict[str, bool]] = {}
     names: dict[str, str] = {}
     for row in _read_csv(boards_dir / "boards.csv"):
@@ -139,7 +137,7 @@ def load_boards(
 
 
 def load_state(path: Path | None = None) -> pd.DataFrame:
-    path = path or BOARD_STATE
+    path = path or paths.BOARD_STATE
     if not Path(path).exists():
         return pd.DataFrame(columns=STATE_COLUMNS)
     df = pd.read_parquet(path).reindex(columns=STATE_COLUMNS)
@@ -190,7 +188,7 @@ def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | N
     """Fold a batch of board results into boards.parquet, under its lock.
     An error leaves last_checked alone, so the board is first in line next
     run; a 404 counts a strike."""
-    path = path or BOARD_STATE
+    path = path or paths.BOARD_STATE
     if not results:
         return
     today = pd.Timestamp(today).normalize()
@@ -273,8 +271,8 @@ class Crawl:
         self.deadline_ts = deadline_ts
         self.known = known
         self.batch = batch
-        self.board_state = board_state or BOARD_STATE
-        self.boards_dir = boards_dir or BOARDS_DIR
+        self.board_state = board_state or paths.BOARD_STATE
+        self.boards_dir = boards_dir or paths.UNIVERSE
         self._lock = threading.Lock()
         self.board_results: list[BoardResult] = []
         self.listed: list[dict] = []

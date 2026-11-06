@@ -28,9 +28,6 @@ import yaml
 
 from src.shared import paths
 
-USER_DATA_DIR = paths.REPO_ROOT / ".apply_profile"
-CONFIG_PATH = paths.PROFILE / "application_answers.yaml"
-
 DRIVERS = ("patchright", "playwright")
 DEFAULT_DRIVER = "playwright"
 
@@ -52,7 +49,7 @@ def load_browser_config(path=None) -> tuple[str, bool]:
     no stealth is exactly the old behaviour, so a clone that never opted in
     keeps working.
     """
-    p = Path(path) if path is not None else CONFIG_PATH
+    p = Path(path) if path is not None else paths.ANSWER_BANK
     if not p.exists():
         return DEFAULT_DRIVER, False
     try:
@@ -105,7 +102,7 @@ def launch(p, *, headless: bool = False, stealth: bool | None = None):
         # size is what a person would have.
         kwargs["no_viewport"] = True
     return p.chromium.launch_persistent_context(
-        user_data_dir=str(USER_DATA_DIR),
+        user_data_dir=str(paths.APPLY_BROWSER_DIR),
         channel="chrome",
         headless=headless,
         **kwargs,

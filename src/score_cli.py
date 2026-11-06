@@ -28,23 +28,17 @@ from src.discovery.config import load_config
 from src.score_filter import CountryRule, ScoringConfig, load_scoring
 from src.shared import clock, paths, verticals
 
-CLEAN = paths.CLEAN
-SCORED = paths.SCORED
-STORE = paths.STORE
-STAGING = paths.STAGING
-SHORTLIST = paths.SHORTLIST
-
 
 def _shortlist(cfg: ScoringConfig) -> str:
     path, keepers = shortlist.write(
-        SCORED, CLEAN, paths.PIPELINE, SHORTLIST, cfg, clock.today().isoformat()
+        paths.SCORED, paths.CLEAN, paths.PIPELINE, paths.SHORTLIST, cfg, clock.today().isoformat()
     )
-    shown = path.relative_to(paths.REPO_ROOT) if path.is_relative_to(paths.REPO_ROOT) else path
+    shown = path.relative_to(paths.root()) if path.is_relative_to(paths.root()) else path
     return f"shortlist={shown} keepers={keepers}"
 
 
 def _cmd_start(args: argparse.Namespace) -> int:
-    if not CLEAN.exists():
+    if not paths.CLEAN.exists():
         print("ERROR: jobs/clean.parquet missing — run discovery first")
         return 1
     cfg = load_scoring()
@@ -57,9 +51,9 @@ def _cmd_start(args: argparse.Namespace) -> int:
     count_only = args.stale_only and not args.yes
     try:
         res = score_store.start(
-            CLEAN,
-            SCORED,
-            STAGING,
+            paths.CLEAN,
+            paths.SCORED,
+            paths.STAGING,
             cfg,
             rescore=args.all,
             stale_only=args.stale_only,
@@ -67,7 +61,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
             vertical=args.vertical,
             job_ids=args.job_id,
             pipeline_dir=paths.PIPELINE,
-            store_path=STORE,
+            store_path=paths.STORE,
         )
     except score_store.RunOpen as e:
         print(f"ERROR: {e}")
@@ -91,7 +85,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
 def _cmd_finish(args: argparse.Namespace) -> int:
     cfg = load_scoring()
     rule = CountryRule.from_discovery(load_config())
-    res = score_store.finish(SCORED, STAGING, cfg, rule)
+    res = score_store.finish(paths.SCORED, paths.STAGING, cfg, rule)
     print(f"merged={res['merged']} {_shortlist(cfg)}")
     for job_id, regex, judge in res["years_gaps"]:
         print(f"years_gap {job_id} regex={regex} judge={judge}")
@@ -103,7 +97,7 @@ def _cmd_finish(args: argparse.Namespace) -> int:
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
-    v = score_store.view(SCORED)
+    v = score_store.view(paths.SCORED)
     rows = v[v["job_id"] == args.job_id]
     if rows.empty:
         print(f"not scored: {args.job_id}")

@@ -30,10 +30,8 @@ from pathlib import Path
 import yaml
 
 from src.apply import answers as A
-from src.shared import clock
+from src.shared import clock, paths
 from src.shared.parquet_io import locked
-
-DEFAULT_PATH = A.DEFAULT_PATH
 
 # Set to 1 by the night run: no bank write and no submit without a person there.
 UNATTENDED_ENV = "APPLY_UNATTENDED"
@@ -72,7 +70,7 @@ class Lesson:
 
 
 def read(path: Path | None = None) -> dict:
-    p = Path(path) if path is not None else DEFAULT_PATH
+    p = Path(path) if path is not None else paths.ANSWER_BANK
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
 
@@ -83,7 +81,7 @@ def write(data: dict, path: Path | None = None) -> Path:
     """Validate, keep the old file in `.bank_history/`, then replace atomically."""
     if unattended():
         raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
-    p = Path(path) if path is not None else DEFAULT_PATH
+    p = Path(path) if path is not None else paths.ANSWER_BANK
     A.answers_from(data, where=str(p))
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
     tmp = p.with_suffix(p.suffix + ".tmp")
@@ -302,7 +300,7 @@ def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:
     """Write every lesson that holds into the bank; name the ones that do not."""
     if not lessons:
         return []
-    with locked(Path(path) if path is not None else DEFAULT_PATH):
+    with locked(Path(path) if path is not None else paths.ANSWER_BANK):
         data = read(path)
         changes = apply_lessons(data, lessons)
         if any(not c.startswith(("not saved:", "keyword refused")) for c in changes):
@@ -319,7 +317,7 @@ def undo(
     path: Path | None = None,
 ) -> str:
     """`_undo` under the bank's lock, so it cannot interleave with a `learn`."""
-    with locked(Path(path) if path is not None else DEFAULT_PATH):
+    with locked(Path(path) if path is not None else paths.ANSWER_BANK):
         return _undo(qid, wording, keyword, claim, fact, path)
 
 

@@ -29,10 +29,6 @@ from src import lint
 from src.session_schema import ProblemCode
 from src.shared import paths, verticals
 
-RESUME = paths.PROFILE / "resume.yaml"
-BULLETS = paths.PROFILE / "bullets.md"
-SKILLS = paths.PROFILE / "skills_master.md"
-
 SECTIONS = ("summary", "work", "projects", "education", "skills")
 BULLET_KEYS = ("canonical", "tags", "default_for", "evidence", "allowable_synonyms")
 SKILL_KEYS = ("name", "evidence", "allowable_synonyms", "show")
@@ -104,18 +100,18 @@ class Sources:
 
 
 def load_sources() -> Sources:
-    for p in (RESUME, BULLETS, SKILLS):
+    for p in (paths.RESUME, paths.BULLETS, paths.SKILLS):
         if not p.is_file():
             raise SourceError(
-                f"{p.relative_to(paths.REPO_ROOT)} missing — copy its .example twin and fill it in."
+                f"{p.relative_to(paths.root())} missing — copy its .example twin and fill it in."
             )
-    resume = yaml.safe_load(RESUME.read_text(encoding="utf-8")) or {}
+    resume = yaml.safe_load(paths.RESUME.read_text(encoding="utf-8")) or {}
     if not isinstance(resume, dict):
         raise SourceError("profile/resume.yaml: top level must be a mapping")
     return Sources(
         resume=resume,
-        bullets=parse_entries(BULLETS.read_text(encoding="utf-8"), BULLETS.name),
-        skills=parse_entries(SKILLS.read_text(encoding="utf-8"), SKILLS.name),
+        bullets=parse_entries(paths.BULLETS.read_text(encoding="utf-8"), paths.BULLETS.name),
+        skills=parse_entries(paths.SKILLS.read_text(encoding="utf-8"), paths.SKILLS.name),
         rules=lint.load_de_ai_rules(),
     )
 
@@ -300,7 +296,7 @@ def _check_lane(src: Sources, lane: str, v: verticals.Vertical) -> list[str]:
                         f"lane {lane}: {a} name {na!r} lists {by_name[item]} "
                         f"({names[by_name[item]]!r}); the resume would show it twice"
                     )
-    prose = verticals.VERTICALS_DIR / lane / "tailoring.md"
+    prose = paths.VERTICALS_DIR / lane / "tailoring.md"
     if prose.is_file():
         ids = sorted(set(_ANY_ID.findall(prose.read_text(encoding="utf-8"))))
         if ids:

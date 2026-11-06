@@ -29,8 +29,8 @@ test injection via `set_config()` always wins. The one instance-capture to watch
 `discovery/run.py`'s `main`, which hands one config to `sources.boards.base.Crawl`
 for the run's lifetime.
 
-`src/shared/paths.py` is re-exported, not imported through: modules bind their own
-module-level names (`CLEAN = paths.CLEAN`) because tests patch those local names.
-A global path change touches one file; a test override needs the right alias.
-`PIPELINE` is the exception: read `paths.PIPELINE` at call time, and `tests/conftest.py`
-points it at `tmp_path` for every test.
+Canonical paths live in `src/shared/paths.py`. Read `paths.X` inside
+a function body, never copy it into a module-level name or a default argument: data
+paths resolve from `paths.root()` at call time. `tests/conftest.py` points that root
+at `tmp_path` for every test; a test that needs one path elsewhere uses
+`monkeypatch.setitem(paths._overrides, "X", path)`.

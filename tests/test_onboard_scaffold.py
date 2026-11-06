@@ -1,7 +1,7 @@
 """onboard-scaffold: the copies, the two YAML edits, and the safety contract.
 
-Every test runs against a throwaway copy of the shipped templates with
-`onboard_scaffold.PROFILE` repointed at it. Nothing here may touch the real
+Every test runs against a throwaway copy of the shipped templates in the
+test root's profile/. Nothing here may touch the real
 profile/ — it is a live install, and this CLI is a pile of cp example -> real.
 """
 
@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from src import onboard_scaffold as scaffold
+from src.shared import paths
 from src.shared.verticals import load_verticals
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -43,11 +44,10 @@ classifier_rules:
 def prof(tmp_path, monkeypatch) -> Path:
     """A scratch profile/ holding the real templates and the committed
     templates."""
-    target = tmp_path / "profile"
+    target = paths.PROFILE
     target.mkdir()
     for src in REAL_PROFILE.glob("*.example.*"):
         (target / src.name).write_bytes(src.read_bytes())
-    monkeypatch.setattr(scaffold, "PROFILE", target)
     return target
 
 
@@ -296,8 +296,8 @@ class TestVerticalName:
 
 
 def test_the_real_profile_is_never_a_target(prof):
-    """The fixture repoints PROFILE; this asserts the module reads it through
-    the module attribute rather than capturing paths.PROFILE at import."""
+    """The test root moves paths.PROFILE; this asserts the module reads it at
+    call time rather than capturing it at import."""
     run("--vertical", "my_lane", "--work-auth", "citizen")
     assert scaffold._templates(False)
     assert all(p.parent == prof for p in scaffold._templates(True))

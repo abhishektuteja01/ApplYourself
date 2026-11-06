@@ -15,8 +15,6 @@ from pathlib import Path
 
 from src.shared import paths
 
-JOBS_RUNS = paths.JOBS_RUNS
-BOARD_STATE = paths.BOARD_STATE
 DEFAULT_WINDOW = 7
 # How far below its own median a lane has to fall before it is called out.
 BELOW_MEDIAN_FRACTION = 0.5
@@ -25,7 +23,7 @@ _RUN_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{4}$")
 
 def load_reports(runs_dir: Path | None = None) -> list[dict]:
     """Every readable run report, newest first."""
-    runs_dir = Path(runs_dir or JOBS_RUNS)
+    runs_dir = Path(runs_dir or paths.JOBS_RUNS)
     out = []
     for path in sorted(runs_dir.glob("*.json"), key=lambda f: f.stem, reverse=True):
         if not _RUN_ID_RE.match(path.stem):
@@ -110,7 +108,7 @@ def build_digest(reports: list[dict], window: int = DEFAULT_WINDOW) -> dict | No
 
 def board_summary(path: Path | None = None) -> dict:
     """Per ATS: boards known, dead, and never with a gate-passing job."""
-    path = Path(path or BOARD_STATE)
+    path = Path(path or paths.BOARD_STATE)
     if not path.exists():
         return {}
     try:

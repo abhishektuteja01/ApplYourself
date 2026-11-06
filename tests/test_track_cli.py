@@ -12,14 +12,15 @@ import pytest
 import yaml
 
 from src import track_cli
+from src.shared import paths
 from tests.factories import write_clean, write_state
 
 
 @pytest.fixture(autouse=True)
 def _paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(track_cli, "CLEAN", tmp_path / "clean.parquet")
-    monkeypatch.setattr(track_cli, "SCORED", tmp_path / "scored.parquet")
-    monkeypatch.setattr(track_cli, "STORE", tmp_path / "jobs.parquet")
+    monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
+    monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
+    monkeypatch.setitem(paths._overrides, "STORE", tmp_path / "jobs.parquet")
     return tmp_path
 
 

@@ -26,9 +26,9 @@ def world(tmp_path, monkeypatch):
         ("skills_master.example.md", "skills_master.md"),
     ):
         shutil.copy(PROFILE / name, tmp_path / target)
-    monkeypatch.setattr(resume_model, "RESUME", tmp_path / "resume.yaml")
-    monkeypatch.setattr(resume_model, "BULLETS", tmp_path / "bullets.md")
-    monkeypatch.setattr(resume_model, "SKILLS", tmp_path / "skills_master.md")
+    monkeypatch.setitem(paths._overrides, "RESUME", tmp_path / "resume.yaml")
+    monkeypatch.setitem(paths._overrides, "BULLETS", tmp_path / "bullets.md")
+    monkeypatch.setitem(paths._overrides, "SKILLS", tmp_path / "skills_master.md")
     from tests.conftest import FIXTURE_PATH
 
     cfg = verticals.load_verticals(FIXTURE_PATH)
@@ -127,7 +127,7 @@ def test_ids_in_tailoring_prose_are_flagged(world, monkeypatch, tmp_path):
     lane_dir = tmp_path / "verticals" / "example_primary"
     lane_dir.mkdir(parents=True)
     (lane_dir / "tailoring.md").write_text("Prefer B-WID-02 and SKILL-SQL.", encoding="utf-8")
-    monkeypatch.setattr(verticals, "VERTICALS_DIR", tmp_path / "verticals")
+    monkeypatch.setitem(paths._overrides, "VERTICALS_DIR", tmp_path / "verticals")
     problems = resume_model.check_sources(resume_model.load_sources(), world[1])
     assert any("tailoring.md names ids" in p for p in problems)
 

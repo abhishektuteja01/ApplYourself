@@ -26,9 +26,6 @@ from src.shared.parquet_io import locked, write_parquet
 
 log = logging.getLogger(__name__)
 
-STORE = paths.STORE
-MAYBE_DUPES = paths.MAYBE_DUPES
-JOB_IDS = paths.JOB_IDS
 
 STORE_COLUMNS: list[str] = [
     "posting_key",
@@ -134,14 +131,14 @@ def fill_dedupe_keys(df: pd.DataFrame) -> None:
 
 
 def load_store(path: Path | None = None) -> pd.DataFrame:
-    path = path or STORE
+    path = path or paths.STORE
     if not Path(path).exists():
         return empty_store()
     return coerce_store(pd.read_parquet(path))
 
 
 def save_store(df: pd.DataFrame, path: Path | None = None) -> None:
-    path = path or STORE
+    path = path or paths.STORE
     df = coerce_store(df).sort_values("posting_key", kind="stable")
     write_parquet(df.reset_index(drop=True), path)
 
@@ -348,8 +345,8 @@ def flush(
     New maybe duplicates are appended to the store's maybe_duplicates.jsonl.
     The job_ids table beside it, once built (`discover-ids --apply`), is read
     for matching and gains the new ids."""
-    path = Path(path or STORE)
-    ids_path = path.with_name(JOB_IDS.name)
+    path = Path(path or paths.STORE)
+    ids_path = path.with_name(paths.JOB_IDS.name)
     pending = batch.take()
     with locked(path):
         known = load_job_ids(ids_path) if ids_path.exists() else None
@@ -361,7 +358,7 @@ def flush(
             table = merge_job_ids(known, job_id_rows(store))
             if len(table) > len(known):
                 save_job_ids(table, ids_path)
-        append_maybe_duplicates(stats.maybe_duplicates, path.with_name(MAYBE_DUPES.name))
+        append_maybe_duplicates(stats.maybe_duplicates, path.with_name(paths.MAYBE_DUPES.name))
     return stats
 
 
@@ -383,7 +380,7 @@ def coerce_job_ids(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_job_ids(path: Path | None = None) -> pd.DataFrame:
-    path = Path(path or JOB_IDS)
+    path = Path(path or paths.JOB_IDS)
     if not path.exists():
         return coerce_job_ids(pd.DataFrame(columns=JOB_IDS_COLUMNS))
     return coerce_job_ids(pd.read_parquet(path))
@@ -391,7 +388,7 @@ def load_job_ids(path: Path | None = None) -> pd.DataFrame:
 
 def save_job_ids(df: pd.DataFrame, path: Path | None = None) -> None:
     df = coerce_job_ids(df).sort_values(_JOB_IDS_KEY, kind="stable")
-    write_parquet(df.reset_index(drop=True), Path(path or JOB_IDS))
+    write_parquet(df.reset_index(drop=True), Path(path or paths.JOB_IDS))
 
 
 def job_id_rows(store: pd.DataFrame) -> pd.DataFrame:
@@ -413,7 +410,7 @@ def merge_job_ids(known: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
 
 def load_maybe_duplicates(path: Path | None = None) -> list[dict]:
     """Every recorded maybe-duplicate pair; unreadable lines are skipped."""
-    path = Path(path or MAYBE_DUPES)
+    path = Path(path or paths.MAYBE_DUPES)
     if not path.exists():
         return []
     out = []
@@ -429,7 +426,7 @@ def load_maybe_duplicates(path: Path | None = None) -> list[dict]:
 
 def append_maybe_duplicates(rows: list[dict], path: Path | None = None) -> list[dict]:
     """Append the pairs `path` does not hold yet; returns what was written."""
-    path = Path(path or MAYBE_DUPES)
+    path = Path(path or paths.MAYBE_DUPES)
     seen = {r["pair"] for r in load_maybe_duplicates(path)}
     new = [r for r in rows if r["pair"] not in seen]
     if new:

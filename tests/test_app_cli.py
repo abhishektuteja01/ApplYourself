@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src import app_cli, track_cli
+from src import app_cli
 from src.session_schema import ProblemCode
 from src.shared import paths
 from tests.factories import scored_rows, write_clean
@@ -23,18 +23,15 @@ JD = "Build widget assembly tooling in Python and SQL across 4 plants. Salary 12
 
 @pytest.fixture(autouse=True)
 def repo(tmp_path, monkeypatch):
-    for mod in (app_cli, track_cli):
-        monkeypatch.setattr(mod, "CLEAN", tmp_path / "clean.parquet")
-        monkeypatch.setattr(mod, "SCORED", tmp_path / "scored.parquet")
-    monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
-    monkeypatch.setattr(app_cli, "APPLICATIONS", tmp_path / "applications")
+    monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
+    monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
     (tmp_path / "profile").mkdir()
     shutil.copy(
-        paths.PROFILE / "resume_template.example.docx",
+        paths.example("resume_template.example.docx"),
         tmp_path / "profile" / "resume_template.docx",
     )
     shutil.copy(
-        paths.PROFILE / "cover_letter_template.example.docx",
+        paths.example("cover_letter_template.example.docx"),
         tmp_path / "profile" / "cover_letter_template.docx",
     )
     monkeypatch.setattr(
@@ -370,8 +367,8 @@ def test_letter_before_a_resume_is_refused(repo, capsys):
 
 
 def _dupes(repo, monkeypatch, rows, states=(), sent=()):
-    monkeypatch.setattr(app_cli, "MAYBE_DUPES", repo / "maybe_duplicates.jsonl")
-    monkeypatch.setattr(app_cli, "SUBMITTED", repo / "submitted.jsonl")
+    monkeypatch.setitem(paths._overrides, "MAYBE_DUPES", repo / "maybe_duplicates.jsonl")
+    monkeypatch.setitem(paths._overrides, "APPLY_RUNS", repo)
     (repo / "maybe_duplicates.jsonl").write_text(
         "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
     )

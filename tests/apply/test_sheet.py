@@ -13,17 +13,8 @@ GH = "https://job-boards.greenhouse.io/acme/jobs/1"
 
 
 def _world(tmp_path, monkeypatch):
-    for name, value in (
-        ("REPO_ROOT", tmp_path),
-        ("PROFILE", tmp_path / "profile"),
-        ("PIPELINE", tmp_path / "pipeline"),
-        ("SCORED", tmp_path / "scored.parquet"),
-        ("CLEAN", tmp_path / "clean.parquet"),
-    ):
-        monkeypatch.setattr(paths, name, value)
-    from src import apply_cli
-
-    monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
+    monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
+    monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
     (tmp_path / "profile").mkdir()
     (tmp_path / "profile" / "automation.yaml").write_text(
         yaml.safe_dump({"table_path": "sheet.xlsx"}), encoding="utf-8"

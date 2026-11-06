@@ -23,6 +23,7 @@ from src.docx_render import (
     parse_resume_md,
     render_resume,
 )
+from src.shared import paths
 
 # ---------- fixture templates ----------
 
@@ -757,7 +758,7 @@ def _fake_word(monkeypatch, tmp_path, *, returncode=0, write_pdf=True):
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
     monkeypatch.setattr(docx_render.sys, "platform", "darwin")
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)  # exists
-    monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
+    monkeypatch.setitem(paths._overrides, "PDF_STAGING", tmp_path / "staging")
     monkeypatch.setattr(docx_render, "pdf_pages", lambda p: 1)
     calls = []
 
@@ -830,7 +831,7 @@ def test_two_conversions_take_turns_at_word(monkeypatch, tmp_path):
     from src import docx_render
 
     monkeypatch.delenv("PDF_BROKER_DIR", raising=False)
-    monkeypatch.setattr(docx_render, "PDF_STAGING", tmp_path / "staging")
+    monkeypatch.setitem(paths._overrides, "PDF_STAGING", tmp_path / "staging")
     monkeypatch.setattr(docx_render, "WORD_APP", tmp_path)
     monkeypatch.setattr(docx_render.sys, "platform", "darwin")
     monkeypatch.setattr(docx_render, "pdf_pages", lambda p: 1)

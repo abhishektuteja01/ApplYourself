@@ -25,8 +25,6 @@ from src import apply_cli, track_cli
 from src.apply import sheet
 from src.shared import clock, paths
 
-TRIAGE = paths.JOBS / "apply_triage.json"
-
 
 def _open_detail(plan, guesses) -> dict:
     asks = list(plan.draftable) + [u for u in plan.unmapped if u.tier == "C" and u.required]
@@ -131,10 +129,10 @@ def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
         path = apply_cli.reserve_report_path(started)
         apply_cli.write_report(outcomes, started, path=path)
         result["report"] = str(path)
-    tmp = TRIAGE.with_name(f".{TRIAGE.name}.tmp")
-    TRIAGE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = paths.APPLY_TRIAGE.with_name(f".{paths.APPLY_TRIAGE.name}.tmp")
+    paths.APPLY_TRIAGE.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    os.replace(tmp, TRIAGE)
+    os.replace(tmp, paths.APPLY_TRIAGE)
     return result
 
 

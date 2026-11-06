@@ -14,11 +14,10 @@ from src.shared import paths
 from src.shared.config_schema import ContactsFile, validate
 from src.shared.identity import normalize_company
 
-CONTACTS_PATH = paths.PROFILE / "contacts.yaml"
 
-
-def referrals_by_company(path: Path = CONTACTS_PATH) -> dict[str, list[str]]:
+def referrals_by_company(path: Path | None = None) -> dict[str, list[str]]:
     """{normalized company: [names]} for every `relationship: referral` entry."""
+    path = path or paths.CONTACTS
     if not path.exists():
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

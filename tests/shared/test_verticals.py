@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.shared import verticals
+from src.shared import paths, verticals
 from tests.conftest import FIXTURE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -225,23 +225,11 @@ class TestMainCli:
     def _setup(self, tmp_path, monkeypatch, *, drop_prose=()):
         """Build a self-contained repo root from the fixture config, minus any
         prose files named in drop_prose."""
-        monkeypatch.setattr(verticals, "REPO_ROOT", tmp_path)
-        monkeypatch.setattr(
-            verticals, "DEFAULT_CONFIG_PATH", tmp_path / "profile" / "verticals.yaml"
-        )
-        monkeypatch.setattr(verticals, "VERTICALS_DIR", tmp_path / "profile" / "verticals")
+        monkeypatch.delitem(paths._overrides, "VERTICALS_DIR")
         (tmp_path / "profile").mkdir()
         (tmp_path / "profile" / "verticals.yaml").write_text(
             FIXTURE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
         )
-        from src import resume_model
-
-        for attr, name in (
-            ("RESUME", "resume.example.yaml"),
-            ("BULLETS", "bullets.example.md"),
-            ("SKILLS", "skills_master.example.md"),
-        ):
-            monkeypatch.setattr(resume_model, attr, REPO_ROOT / "profile" / name)
         cfg = verticals.load_verticals(FIXTURE_PATH)
         for name in cfg.verticals:
             d = tmp_path / "profile" / "verticals" / name
@@ -258,9 +246,6 @@ class TestMainCli:
         assert out.strip() == (f"verticals={','.join(cfg.names)} default={cfg.default_vertical}")
 
     def test_missing_config_file(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.setattr(
-            verticals, "DEFAULT_CONFIG_PATH", tmp_path / "profile" / "verticals.yaml"
-        )
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert out.startswith("ERROR: ")
@@ -323,7 +308,6 @@ class TestMainCli:
         assert "no `resume:` block" in out and "example_tertiary" in out
 
     def test_a_source_problem_is_reported(self, tmp_path, monkeypatch, capsys):
-        from src import resume_model
 
         self._setup(tmp_path, monkeypatch)
         broken = tmp_path / "bullets.md"
@@ -333,7 +317,7 @@ class TestMainCli:
             .replace("## B-WID-01", "## B-ZZZ-01"),
             encoding="utf-8",
         )
-        monkeypatch.setattr(resume_model, "BULLETS", broken)
+        monkeypatch.setitem(paths._overrides, "BULLETS", broken)
         assert verticals.main() == 1
         out = capsys.readouterr().out
         assert "problem(s) in the resume sources" in out and "no context 'ZZZ'" in out

@@ -183,7 +183,7 @@ def _load(table: Path):
 
 def _table(automation: Path | None) -> Path:
     config = load_automation(automation or paths.PROFILE / "automation.yaml")
-    return paths.REPO_ROOT / config.get("table_path", "top_scored_open.xlsx")
+    return paths.root() / config.get("table_path", "top_scored_open.xlsx")
 
 
 def _sheet_rows(table: Path) -> list[dict[str, str]]:

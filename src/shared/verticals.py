@@ -30,11 +30,6 @@ import yaml
 from src.shared import paths
 from src.shared.config_schema import VerticalsFile, validate
 
-REPO_ROOT = paths.REPO_ROOT  # tests repoint this name; keep it a module attr
-DEFAULT_CONFIG_PATH = REPO_ROOT / "profile" / "verticals.yaml"
-EXAMPLE_CONFIG_PATH = REPO_ROOT / "profile" / "verticals.example.yaml"
-VERTICALS_DIR = REPO_ROOT / "profile" / "verticals"
-
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SCHEMA_VERSION = 1
 
@@ -266,11 +261,11 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
     """Parse and validate the vertical registry. Raises FileNotFoundError
     (with a pointer at the committed template) if the file is missing, and
     ValueError on any schema violation. Never falls back silently."""
-    p = path or DEFAULT_CONFIG_PATH
+    p = path or paths.VERTICALS_CONFIG
     if not p.exists():
         raise FileNotFoundError(
             f"{p} not found — verticals are user data. Copy "
-            f"{EXAMPLE_CONFIG_PATH} to {DEFAULT_CONFIG_PATH} (and the "
+            f"{paths.example('verticals.example.yaml')} to {paths.VERTICALS_CONFIG} (and the "
             f"profile/verticals/example_* dirs to profile/verticals/<name>/) "
             f"and edit."
         )
@@ -330,7 +325,7 @@ _config: VerticalsConfig | None = None
 
 
 def get_config() -> VerticalsConfig:
-    """Lazy singleton over DEFAULT_CONFIG_PATH. Tests inject via set_config."""
+    """Lazy singleton over profile/verticals.yaml. Tests inject via set_config."""
     global _config
     if _config is None:
         _config = load_verticals()
@@ -350,10 +345,10 @@ def main() -> int:
         print(f"ERROR: {exc}")
         return 1
     missing = [
-        str(VERTICALS_DIR / name / fname)
+        str(paths.VERTICALS_DIR / name / fname)
         for name in cfg.names
         for fname in ("rubric.md", "tailoring.md")
-        if not (VERTICALS_DIR / name / fname).is_file()
+        if not (paths.VERTICALS_DIR / name / fname).is_file()
     ]
     if missing:
         print("ERROR: missing per-vertical prose files:")

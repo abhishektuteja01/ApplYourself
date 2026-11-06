@@ -151,7 +151,7 @@ def write(
     shortlist_dir: Path,
     cfg: ScoringConfig,
     date_str: str,
-    contacts_path: Path = contacts.CONTACTS_PATH,
+    contacts_path: Path | None = None,
 ) -> tuple[Path, int]:
     """Render and write shortlist/<date_str>.md. Returns (path, lane rows)."""
     result = compute(scored_path, clean_path, pipeline_dir, cfg)

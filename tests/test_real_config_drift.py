@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from src.shared import verticals
+from src.shared import paths, verticals
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REAL_CONFIG = REPO_ROOT / "profile" / "verticals.yaml"
@@ -95,7 +95,7 @@ def test_real_resume_sources_check_clean_and_every_baseline_builds(real_cfg, mon
     ):
         if not (profile / name).is_file():
             pytest.skip(f"profile/{name} is gitignored user data")
-        monkeypatch.setattr(resume_model, attr, profile / name)
+        monkeypatch.setitem(paths._overrides, attr, profile / name)
     src = resume_model.load_sources()
     assert resume_model.check_sources(src, real_cfg) == []
     for lane, v in real_cfg.verticals.items():

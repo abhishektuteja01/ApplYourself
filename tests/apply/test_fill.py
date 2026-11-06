@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-from src.apply import browser
 from src.apply import fill as F
 from src.apply.fill import FillError, FillResult, fill_plan
 from src.apply.plan import FieldPlan, FilePlan, Plan
@@ -1114,8 +1113,8 @@ class TestDriverGuards:
             F._require_playwright("patchright")
 
     def test_the_profile_dir_is_not_the_users_chrome(self):
-        assert browser.USER_DATA_DIR.name == ".apply_profile"
-        assert "Application Support" not in str(browser.USER_DATA_DIR)
+        assert paths.APPLY_BROWSER_DIR.name == ".apply_profile"
+        assert "Application Support" not in str(paths.APPLY_BROWSER_DIR)
 
 
 class TestAnUploadIsReadBack:
@@ -1252,7 +1251,6 @@ class TestThePostSubmitCapture:
     """
 
     def test_it_records_what_the_board_rendered(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         out = F.capture_submit_evidence(d, plan())
         assert out is not None and out.exists()
@@ -1262,19 +1260,16 @@ class TestThePostSubmitCapture:
         assert "a1b2c3d4" in body
 
     def test_it_saves_a_screenshot_beside_the_text(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         out = F.capture_submit_evidence(FakeDriver(), plan())
         assert out.with_suffix(".png").exists()
 
     def test_a_capture_failure_never_fails_the_submission(self, tmp_path, monkeypatch):
         # Diagnostics must not turn an application that went out into an error.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._page = None  # unreadable driver
         assert F.capture_submit_evidence(d, plan()) is None
 
     def test_the_submit_path_hangs_the_capture_off_the_result(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         result = FillResult(form_url="x")
         F.submit(plan(), result, d)
@@ -1366,7 +1361,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
     """
 
     def test_a_drifted_toggle_is_reapplied_before_the_click(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._selected["q1"] = "No"  # drifted since fill_plan set it to "Yes"
         p = plan(fields=[field(id="q1", kind="yesno", value="Yes")])
@@ -1376,7 +1370,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("yesno", "q1", "Yes") in d.calls
 
     def test_an_already_correct_toggle_is_left_alone(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._selected["q1"] = "Yes"
         p = plan(fields=[field(id="q1", kind="yesno", value="Yes")])
@@ -1385,7 +1378,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("yesno", "q1", "Yes") not in d.calls
 
     def test_a_drifted_radio_group_is_reapplied_before_the_click(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._selected["q1"] = "No"  # drifted since fill_plan set it to "Yes"
         p = plan(fields=[field(id="q1", kind="radio_group", value="Yes")])
@@ -1395,7 +1387,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_radio", "q1", "Yes") in d.calls
 
     def test_an_already_correct_radio_group_is_left_alone(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._selected["q1"] = "Yes"
         p = plan(fields=[field(id="q1", kind="radio_group", value="Yes")])
@@ -1406,7 +1397,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
     def test_a_dropped_checkbox_group_option_is_reapplied_before_the_click(
         self, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._checked_groups["q1"] = {"Python"}  # "Go" drifted out since fill_plan
         p = plan(fields=[field(id="q1", kind="checkbox_group", value=("Python", "Go"))])
@@ -1419,7 +1409,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_group", "q1", "Python") not in d.calls
 
     def test_an_already_correct_checkbox_group_is_left_alone(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d._checked_groups["q1"] = {"Python", "Go"}
         p = plan(fields=[field(id="q1", kind="checkbox_group", value=("Python", "Go"))])
@@ -1429,7 +1418,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_group", "q1", "Go") not in d.calls
 
     def test_a_drifted_text_field_is_refilled_before_the_click(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.values["q1"] = "https://linkedin.com/in/wrong"  # drifted after fill_plan
         p = plan(fields=[field(id="q1", kind="text", value="https://linkedin.com/in/right")])
@@ -1439,7 +1427,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("fill", "q1", "https://linkedin.com/in/right") in d.calls
 
     def test_an_already_correct_text_field_is_left_alone(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.values["q1"] = "https://linkedin.com/in/right"
         p = plan(fields=[field(id="q1", kind="text", value="https://linkedin.com/in/right")])
@@ -1454,7 +1441,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         # rendered (and filled) it as a live radio group — the reverify must
         # follow the live kind, not the planned one, or it silently skips
         # exactly this field.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(kinds={"q1": "radio_group"})
         d._selected["q1"] = "No experience with AI agents"  # drifted
         p = plan(fields=[field(id="q1", kind="select", value="I have built agents")])
@@ -1464,7 +1450,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_radio", "q1", "I have built agents") in d.calls
 
     def test_a_drifted_native_select_is_reapplied_before_the_click(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(options={"q1": ("Yes", "No")})
         d._selected["q1"] = "No"
         p = plan(fields=[field(id="q1", kind="select", value="Yes")])
@@ -1478,7 +1463,6 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         # that happens once. `_reverify_fields` must run right before *every*
         # click, including the retry, or a re-drift between attempts (e.g.
         # during the `settle()` wait each attempt does) goes uncaught again.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
 
         class RedriftingDriver(FakeDriver):
             def click_submit(self, selector):
@@ -1546,7 +1530,6 @@ class TestARefusedClickIsNotASubmission:
     """
 
     def test_an_explicit_refusal_leaves_submitted_false(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.refusals = ["updating your application"] * F.SUBMIT_ATTEMPTS
         result = FillResult(form_url="x")
@@ -1555,7 +1538,6 @@ class TestARefusedClickIsNotASubmission:
         assert "refused" in result.submit_error
 
     def test_it_retries_because_a_refusal_proves_nothing_was_sent(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.refusals = ["updating your application"]  # first click only
         result = FillResult(form_url="x")
@@ -1566,7 +1548,6 @@ class TestARefusedClickIsNotASubmission:
     def test_a_quiet_board_is_still_treated_as_submitted(self, tmp_path, monkeypatch):
         # The default must not invert: absence of a refusal means it went out,
         # or every unrecognised confirmation page becomes a duplicate.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         result = FillResult(form_url="x")
         F.submit(plan(), result, d)
@@ -1574,7 +1555,6 @@ class TestARefusedClickIsNotASubmission:
         assert [c for c in d.calls if c[0] == "click_submit"].__len__() == 1
 
     def test_the_page_is_given_time_before_it_is_judged(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         F.submit(plan(), FillResult(form_url="x"), d)
         kinds = [c[0] for c in d.calls]
@@ -1582,14 +1562,12 @@ class TestARefusedClickIsNotASubmission:
         assert kinds.index("wait") < kinds.index("submission_confirmed")
 
     def test_uploads_are_allowed_to_finish_before_the_click(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         F.submit(plan(), FillResult(form_url="x"), d)
         kinds = [c[0] for c in d.calls]
         assert kinds.index("settle") < kinds.index("click_submit")
 
     def test_a_refused_click_is_never_reported_as_confirmed(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()
         d.confirms = True  # a stale marker still on screen
         d.refusals = ["updating your application"] * F.SUBMIT_ATTEMPTS
@@ -1613,7 +1591,6 @@ class TestNamedMissingFieldsAreReappliedAfterARefusal:
     def test_a_field_the_board_named_missing_is_rewritten_even_though_it_reads_correct(
         self, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(values={"q1": "https://linkedin.com/in/right"})  # already correct
         d.refusals = ["missing entry for required field"]  # first click only
         d.named_missing = [["LinkedIn Profile"]]
@@ -1633,7 +1610,6 @@ class TestNamedMissingFieldsAreReappliedAfterARefusal:
         assert ("fill", "q1", "https://linkedin.com/in/right") in d.calls
 
     def test_a_field_the_board_did_not_name_is_left_alone(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(values={"q1": "v", "q2": "w"})
         d.refusals = ["missing entry for required field"]
         d.named_missing = [["Only Q1"]]
@@ -1649,7 +1625,6 @@ class TestNamedMissingFieldsAreReappliedAfterARefusal:
         assert ("fill", "q2", "w") not in d.calls
 
     def test_a_named_radio_group_field_is_reapplied_too(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(kinds={"q1": "radio_group"})
         d._selected["q1"] = "Yes"  # already correct
         d.refusals = ["missing entry for required field"]
@@ -1662,7 +1637,6 @@ class TestNamedMissingFieldsAreReappliedAfterARefusal:
         assert ("check_radio", "q1", "Yes") in d.calls
 
     def test_no_named_fields_means_no_reapply_attempt(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver(values={"q1": "v"})
         d.refusals = ["updating your application"]  # a refusal that names nothing
         p = plan(fields=[field(id="q1", kind="text", label="Q1", value="v")])
@@ -1694,7 +1668,6 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         return d
 
     def test_a_recorded_submit_response_confirms_on_its_own(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = self._driver_that_fires()
         d.confirms = False  # no marker text anywhere
         result = FillResult(form_url="x")
@@ -1708,7 +1681,6 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         # own confirmation email proved the click went through. Absence alone
         # must never flip `submitted` back off, or a real submission gets
         # re-clicked on the next attempt.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = FakeDriver()  # never records a request
         result = FillResult(form_url="x")
         F.submit(plan_ashby(), result, d)
@@ -1729,7 +1701,6 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         # kept for diagnostics/evidence) is non-empty because of attempt 1 —
         # but confirmation must be judged on the attempt that actually went
         # out, not on stale traffic from one the board already rejected.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         marker = F.SUBMIT_REQUEST_MARKERS["ashby"][0]
         d = FakeDriver()
         d.refusals = ["updating your application"]  # first click only
@@ -1765,7 +1736,6 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         # A board whose submit request has never been measured must keep the
         # old behaviour — assume submitted — or every role on it breaks.
         # Lever was this case until its marker was measured off cae17aa7.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         unmeasured = "unmeasured_board"
         assert unmeasured not in F.SUBMIT_REQUEST_MARKERS
         d = FakeDriver()
@@ -1777,7 +1747,6 @@ class TestTheSubmitRequestIsTheRealConfirmation:
         # boards.greenhouse.io/embed/<board>/jobs/<id>, measured live off
         # observe.ai's real submit — a 200 there is the same trustworthy
         # signal Ashby's op= name gives.
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = self._driver_that_fires(ats="greenhouse")
         result = FillResult(form_url="x")
         F.submit(plan(), result, d)
@@ -1928,7 +1897,6 @@ class TestAReverifyThatCannotWriteStillReachesTheClick:
     def test_a_field_that_refuses_the_rewrite_does_not_block_the_click(
         self, kind, method, value, drift, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = self._driver(method)
         if kind == "checkbox_group":
             d._checked_groups["q1"] = {"Python"}  # "Go" drifted out
@@ -1947,7 +1915,6 @@ class TestAReverifyThatCannotWriteStillReachesTheClick:
     def test_the_refusing_driver_really_would_have_raised(self, tmp_path, monkeypatch):
         """Without the swallow this is what `submit()` would have propagated —
         so the tests above are not passing because nothing was attempted."""
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         d = self._driver("fill_text")
         with pytest.raises(FillError):
             d.fill_text("q1", "right")
@@ -1960,7 +1927,6 @@ class TestAReapplyThatFailsStillLetsTheRetryClick:
     whether the retry lands."""
 
     def test_a_failed_reapply_does_not_abort_the_retry(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
 
         class RefusesTheRewrite(FakeDriver):
             def fill_text(self, field_id, value):
@@ -2028,7 +1994,6 @@ class TestTeardownAndReportingNeverLoseALandedSubmit:
     def test_a_context_that_will_not_close_still_returns_the_submission(
         self, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         sink: list = []
         driver, result = self._run(monkeypatch, self._ctx(close_raises=True), sink=sink)
         assert ("click_submit", plan().submit_selector) in driver.calls
@@ -2038,7 +2003,6 @@ class TestTeardownAndReportingNeverLoseALandedSubmit:
     def test_a_reporting_callback_that_blows_up_does_not_lose_the_submission(
         self, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr(paths, "APPLICATIONS", tmp_path)
         called: list = []
 
         def explode(result):

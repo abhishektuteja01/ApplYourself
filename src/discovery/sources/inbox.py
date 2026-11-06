@@ -15,8 +15,6 @@ from src.shared import paths, title_gate
 
 log = logging.getLogger(__name__)
 
-INBOX = paths.INBOX
-
 
 def parse_clip(path: Path) -> dict | None:
     """One clip as a store row, or None when it is malformed."""
@@ -70,7 +68,7 @@ class InboxLane(Lane):
     name = "manual"
 
     def __init__(self, inbox_dir: Path | None = None):
-        self.inbox_dir = Path(inbox_dir or INBOX)
+        self.inbox_dir = Path(inbox_dir or paths.INBOX)
         self.read: list[Path] = []
 
     def run(self, crawl, tally=None) -> LaneStats:

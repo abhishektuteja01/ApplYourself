@@ -19,7 +19,7 @@ def _role(job_id: str, moves: list[str], *, files=("resume.md", "jd_snapshot.md"
     for move in rest:
         state_io.transition(p, move, now=now)
     rel = f"example_primary/2026-01-01_acme_engineer_{job_id}"
-    folder = app_cli.APPLICATIONS / rel
+    folder = paths.APPLICATIONS / rel
     folder.mkdir(parents=True)
     for name in files:
         (folder / name).write_text(f"{job_id} {name}\n", encoding="utf-8")
@@ -33,15 +33,15 @@ def test_cleanup_deletes_done_folders_archives_applied_ones_and_never_moves_stat
     rejected = _role("aaaa0003", ["saved", "applied", "rejected"])
     ghosted = _role("aaaa0004", ["saved", "applied"], now=OLD)
     live = _role("aaaa0005", ["saved"])
-    other = app_cli.APPLICATIONS / "example_primary" / "2026-01-01_job-fair"
+    other = paths.APPLICATIONS / "example_primary" / "2026-01-01_job-fair"
     other.mkdir()
 
     assert track_cli.main(["cleanup"]) == 0  # read-only by default
     assert "would delete 4 folders" in capsys.readouterr().out
-    assert (app_cli.APPLICATIONS / skip).is_dir()
+    assert (paths.APPLICATIONS / skip).is_dir()
 
     assert track_cli.main(["cleanup", "--apply"]) == 0
-    apps = app_cli.APPLICATIONS
+    apps = paths.APPLICATIONS
     for rel in (skip, never, rejected, ghosted):
         assert not (apps / rel).exists()
     assert (apps / live).is_dir() and other.is_dir()

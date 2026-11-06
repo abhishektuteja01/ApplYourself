@@ -85,10 +85,6 @@ from src.state_io import (
     transition,
 )
 
-CLEAN = paths.CLEAN
-STORE = paths.STORE
-SCORED = paths.SCORED
-
 NEXT_ACTION = {
     "saved": "ready for `/tailor {job_id}` once you've eyeballed the JD",
     "tailored": "`/apply {job_id}`, or submit it yourself and then `/track {job_id} applied`",
@@ -103,14 +99,18 @@ NEXT_ACTION = {
 
 
 def _gather_initial_fields(job_id: str) -> dict[str, Any]:
-    if not CLEAN.exists():
+    if not paths.CLEAN.exists():
         raise SystemExit("ERROR: jobs/clean.parquet missing -- run discovery first")
-    clean = pd.read_parquet(CLEAN).set_index("job_id")
+    clean = pd.read_parquet(paths.CLEAN).set_index("job_id")
     if job_id in clean.index:
         row = clean.loc[job_id].to_dict()
     else:
         # A role retention dropped from the view is still in the store.
-        store = pd.read_parquet(STORE) if STORE.exists() else pd.DataFrame(columns=["job_id"])
+        store = (
+            pd.read_parquet(paths.STORE)
+            if paths.STORE.exists()
+            else pd.DataFrame(columns=["job_id"])
+        )
         hits = store[store["job_id"] == job_id]
         if hits.empty:
             raise SystemExit(
@@ -286,11 +286,11 @@ def _cmd_outreach_draft(args: argparse.Namespace) -> int:
 
 def _scores() -> dict[str, dict[str, Any]]:
     """{job_id: {sponsorship_label, fit_score}} from score_store.view()."""
-    if not SCORED.exists():
+    if not paths.SCORED.exists():
         return {}
     from src.score_store import view
 
-    v = view(SCORED)
+    v = view(paths.SCORED)
     return {
         str(r["job_id"]): {
             "sponsorship_label": str(r["sponsorship_label"] or "unknown"),
@@ -402,8 +402,8 @@ def _backfill_fields(
         return {str(r["job_id"]): {str(k): v for k, v in r.items()} for r in df.to_dict("records")}
 
     base = ["job_id", "company", "title", "source", "url", "vertical"]
-    clean = rows(CLEAN, [*base, "location"])
-    store = rows(STORE, [*base, "location_raw", "last_seen"])
+    clean = rows(paths.CLEAN, [*base, "location"])
+    store = rows(paths.STORE, [*base, "location_raw", "last_seen"])
     out = {}
     for job_id in job_ids:
         line = lines[job_id]

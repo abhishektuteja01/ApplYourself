@@ -49,7 +49,7 @@ def _reached_applied(data: dict[str, Any], sent: set[str]) -> bool:
 
 def _role_folders(job_id: str, data: dict[str, Any]) -> list[Path]:
     """Every folder of this role under a lane, never `_archive` or `apply_runs`."""
-    apps = app_cli.APPLICATIONS
+    apps = paths.APPLICATIONS
     found = set(app_cli._role_dirs(job_id))
     found |= {apps / d for d in data.get("tailored_dirs") or [] if (apps / d).is_dir()}
     return sorted(
@@ -75,7 +75,7 @@ def _resume_source(folder: Path) -> Path | None:
 
 def plan(pipeline_dir: Path | None = None) -> list[Action]:
     """What a cleanup would do, read-only."""
-    sent = ledger.sent_job_ids(app_cli.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME)
+    sent = ledger.sent_job_ids(paths.APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME)
     days = state_io.ghosted_after_days()
     actions = []
     for data in state_io.iter_states(pipeline_dir or paths.PIPELINE):
@@ -101,7 +101,7 @@ def plan(pipeline_dir: Path | None = None) -> list[Action]:
             action.archive_jd = jd if jd.is_file() else None
             if action.archive_from is not None or action.archive_jd is not None:
                 lane = source_dir.parent.name
-                action.archive_to = app_cli.APPLICATIONS / ARCHIVE / lane / f"{source_dir.name}.md"
+                action.archive_to = paths.APPLICATIONS / ARCHIVE / lane / f"{source_dir.name}.md"
         actions.append(action)
     return actions
 
@@ -127,7 +127,7 @@ def _archive(action: Action) -> str | None:
         text = f"{text.rstrip()}\n\n## Job description\n\n{jd}".lstrip()
     action.archive_to.parent.mkdir(parents=True, exist_ok=True)
     action.archive_to.write_text(text, encoding="utf-8")
-    return str(action.archive_to.relative_to(app_cli.APPLICATIONS.parent))
+    return str(action.archive_to.relative_to(paths.APPLICATIONS.parent))
 
 
 def apply(actions: list[Action], record: Callable[[str, dict[str, Any]], None]) -> None:

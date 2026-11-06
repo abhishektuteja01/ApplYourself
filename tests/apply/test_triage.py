@@ -11,6 +11,7 @@ from src import apply_cli, track_cli
 from src.apply import triage
 from src.apply.greenhouse import PostingExpired
 from src.apply.plan import FieldPlan, Plan, Unmapped
+from src.shared import paths
 
 
 def _field(fid="q1", source="bank:phone", value="+1"):
@@ -62,7 +63,7 @@ def _plan(job_id="aaaa1111", fields=(), unmapped=(), draftable=(), selector="#go
 
 @pytest.fixture
 def world(tmp_path, monkeypatch):
-    monkeypatch.setattr(triage, "TRIAGE", tmp_path / "apply_triage.json")
+    monkeypatch.setitem(paths._overrides, "APPLY_TRIAGE", tmp_path / "apply_triage.json")
     calls = {"track": [], "run": []}
     w = type("W", (), {"calls": calls, "tmp": tmp_path, "category": "ready"})
     monkeypatch.setattr(track_cli, "main", lambda argv: calls["track"].append(argv) or 0)
@@ -132,7 +133,7 @@ def test_without_fill_nothing_is_touched(world):
     world.plans["a"] = _plan("a", fields=[_field()])
     result = triage.run(["a"], fill=False, headless=True)
     assert result["ready"] == ["a"] and not world.calls["track"] and not world.calls["run"]
-    assert json.loads(triage.TRIAGE.read_text(encoding="utf-8"))["ready"] == ["a"]
+    assert json.loads(paths.APPLY_TRIAGE.read_text(encoding="utf-8"))["ready"] == ["a"]
 
 
 def test_fill_tracks_then_fills_each_ready_role_and_never_submits(world):

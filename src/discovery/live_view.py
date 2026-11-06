@@ -27,7 +27,6 @@ from src.state_io import ACTIVE_STATES
 
 log = logging.getLogger(__name__)
 
-CLEAN = paths.CLEAN
 
 # Closed schema, fixed order: what every downstream reader of clean.parquet
 # expects.
@@ -215,7 +214,7 @@ def _one_per_job(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def write_view(view: pd.DataFrame, path: Path | None = None) -> None:
-    path = path or CLEAN
+    path = path or paths.CLEAN
     with locked(path):
         write_parquet(view, path)
 

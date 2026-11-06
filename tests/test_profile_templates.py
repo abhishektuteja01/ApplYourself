@@ -205,8 +205,8 @@ class TestTemplateCoverage:
         for path in (REPO_ROOT / "src").rglob("*.py"):
             from_ast |= _profile_filenames_from_ast(path)
         assert from_ast, "AST pass found no PROFILE-joined filenames"
-        assert "de_ai_rules.yaml" in from_ast
-        assert "bullets.md" in from_ast
+        assert "resume_template.docx" in from_ast
+        assert "stories.md" in from_ast
 
     def test_an_unknown_extension_is_not_silently_exempt(self):
         """_template_for returns None for an unmapped suffix, and the coverage

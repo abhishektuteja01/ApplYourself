@@ -242,7 +242,7 @@ def packet_text(lane: verticals.Vertical, cfg: ScoringConfig) -> str:
         f"`keywords_to_mirror`: up to {cfg.keywords_max}.\n",
         f"Languages the candidate speaks: {', '.join(cfg.languages)}.\n" if cfg.languages else "",
         SHARED_RUBRIC.read_text(encoding="utf-8"),
-        (verticals.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
+        (paths.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
         "## Skill weights\n\n```yaml\n"
         + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip()
         + "\n```\n",

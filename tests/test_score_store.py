@@ -10,8 +10,8 @@ import pandas as pd
 import pytest
 
 from src import score_cli, score_store
-from src.score_filter import SCORING_PATH, CountryRule, load_scoring
-from src.shared import verticals
+from src.score_filter import CountryRule, load_scoring
+from src.shared import paths, verticals
 from tests.factories import scored_rows, write_clean, write_state
 
 NOW = datetime(2026, 9, 27, 12, 0)
@@ -21,7 +21,7 @@ JD = "Build widget assembly tooling in Python. " * 50  # > 300 words
 
 @pytest.fixture
 def scfg():
-    return load_scoring(SCORING_PATH.with_name("scoring.example.yaml"))
+    return load_scoring(paths.example("scoring.example.yaml"))
 
 
 @pytest.fixture
@@ -612,11 +612,7 @@ class TestCli:
     @pytest.fixture
     def wired(self, env, monkeypatch):
         for name in ("clean", "scored", "staging", "shortlist", "store"):
-            monkeypatch.setattr(score_cli, name.upper(), env[name])
-        # profile/scoring.yaml is personal and gitignored; tests use the template.
-        monkeypatch.setattr(
-            "src.score_filter.SCORING_PATH", SCORING_PATH.with_name("scoring.example.yaml")
-        )
+            monkeypatch.setitem(paths._overrides, name.upper(), env[name])
         return env
 
     def test_start_then_finish(self, wired, capsys):

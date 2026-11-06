@@ -56,8 +56,7 @@ import yaml
 from src import app_cli, state_io, track_cli
 from src.apply import ashby, bank, confirmation, cooldown, greenhouse, ledger, lever, run_record
 from src.apply.answers import (
-    DEFAULT_PATH,
-    EXAMPLE_PATH,
+    EXAMPLE_NAME,
     FACT_WORDING_FACTS,
     UNKNOWN_COUNTRY,
     Answers,
@@ -95,15 +94,10 @@ from src.shared.identity import normalize_company
 
 R = run_record.ReasonCode
 
-CLEAN = paths.CLEAN
-APPLICATIONS = paths.APPLICATIONS
-APPLY_RUNS = APPLICATIONS / "apply_runs"
-
 
 def ledger_path() -> Path:
-    """`submitted.jsonl`, resolved at call time so a test that points
-    `APPLY_RUNS` elsewhere moves the ledger with it."""
-    return APPLY_RUNS / ledger.LEDGER_NAME
+    """`submitted.jsonl`, resolved at call time from `paths.APPLY_RUNS`."""
+    return paths.APPLY_RUNS / ledger.LEDGER_NAME
 
 
 # What an `--answers` entry may carry. `label` is a record for the reader; the
@@ -137,8 +131,8 @@ def resolve_url(job_id: str, state: dict | None) -> str:
     neither is.
     """
     candidates: list[tuple[str, str]] = []
-    if CLEAN.exists():
-        clean = pd.read_parquet(CLEAN, columns=["job_id", "url"])
+    if paths.CLEAN.exists():
+        clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "url"])
         row = clean.loc[clean["job_id"] == job_id]
         if not row.empty:
             candidates.append(("clean.parquet", str(row.iloc[0]["url"] or "")))
@@ -198,9 +192,10 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
     if not state_path.exists():
         print(f"ERROR: {state_path} missing.", file=sys.stderr)
         return 1
-    if not DEFAULT_PATH.exists():
+    if not paths.ANSWER_BANK.exists():
         print(
-            f"ERROR: {DEFAULT_PATH} missing. Copy {EXAMPLE_PATH} and fill it in.", file=sys.stderr
+            f"ERROR: {paths.ANSWER_BANK} missing. Copy {paths.example(EXAMPLE_NAME)} and fill it in.",
+            file=sys.stderr,
         )
         return 1
     if not _playwright_available():
@@ -372,8 +367,8 @@ def salary_for(job_id: str, vertical: str, country: str) -> float | None:
         return None
     us = country == "United States"
     markup = expectation.get("markup_pct")
-    if us and markup is not None and CLEAN.exists():
-        clean = pd.read_parquet(CLEAN)
+    if us and markup is not None and paths.CLEAN.exists():
+        clean = pd.read_parquet(paths.CLEAN)
         if {"salary_min", "salary_currency"} <= set(clean.columns):
             row = clean.loc[clean["job_id"] == job_id]
             if not row.empty:
@@ -482,13 +477,13 @@ def _pieces_country(raw: str, parse_location) -> str:
 
 
 def _clean_value(job_id: str, column: str) -> str:
-    if not job_id or not CLEAN.exists():
+    if not job_id or not paths.CLEAN.exists():
         return ""
     import pyarrow.parquet as pq
 
-    if column not in pq.read_schema(CLEAN).names:
+    if column not in pq.read_schema(paths.CLEAN).names:
         return ""
-    clean = pd.read_parquet(CLEAN, columns=["job_id", column])
+    clean = pd.read_parquet(paths.CLEAN, columns=["job_id", column])
     row = clean.loc[clean["job_id"] == job_id]
     return "" if row.empty else str(row.iloc[0][column] or "")
 
@@ -1687,7 +1682,7 @@ def write_report(
     if path is not None:
         out_dir = path.parent
     else:
-        out_dir = out_dir if out_dir is not None else APPLY_RUNS
+        out_dir = out_dir if out_dir is not None else paths.APPLY_RUNS
     out_dir.mkdir(parents=True, exist_ok=True)
     path = path or reserve_report_path(started_at, out_dir)
     record = run_record.build(
@@ -1736,7 +1731,7 @@ def reserve_report_path(started_at: datetime, out_dir: Path | None = None) -> Pa
     same second must not share a name. Reserved once per run and re-written
     per role, so the crash-survival writes keep hitting the same file.
     """
-    out_dir = out_dir if out_dir is not None else APPLY_RUNS
+    out_dir = out_dir if out_dir is not None else paths.APPLY_RUNS
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = started_at.strftime("%Y-%m-%dT%H-%M-%S")
     path = out_dir / f"{stem}.md"

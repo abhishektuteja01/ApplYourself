@@ -17,7 +17,7 @@ import yaml
 from src import app_cli, score_store, track_cli
 from src.discovery import live_view
 from src.discovery import store as S
-from src.score_filter import SCORING_PATH, CountryRule, load_scoring
+from src.score_filter import CountryRule, load_scoring
 from src.shared import paths
 from src.shared.location.allowlist import Allowed
 
@@ -77,15 +77,10 @@ def _app(capsys, *argv) -> dict:
 
 def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
     clean, scored, staging = (
-        live_view.CLEAN,
-        tmp_path / "jobs" / "scored.parquet",
+        paths.CLEAN,
+        paths.SCORED,
         tmp_path / "staging",
     )
-    for mod in (app_cli, track_cli):
-        monkeypatch.setattr(mod, "CLEAN", clean)
-        monkeypatch.setattr(mod, "SCORED", scored)
-    monkeypatch.setattr(track_cli, "STORE", S.STORE)
-    monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
     monkeypatch.setattr(
         app_cli,
         "export_pdf",
@@ -93,7 +88,7 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
     )
     (tmp_path / "profile").mkdir()
     shutil.copy(
-        paths.PROFILE / "resume_template.example.docx",
+        paths.example("resume_template.example.docx"),
         tmp_path / "profile" / "resume_template.docx",
     )
 
@@ -121,7 +116,7 @@ def test_one_night_from_lane_to_tracked_role(tmp_path, monkeypatch, capsys):
     assert KEPT in set(on_disk["job_id"]) and len(on_disk) == 2
 
     # score: filter drop, then the recorded judge answer
-    scfg = load_scoring(SCORING_PATH.with_name("scoring.example.yaml"))
+    scfg = load_scoring(paths.example("scoring.example.yaml"))
     started = score_store.start(clean, scored, staging, scfg, now=NOW)
     assert started["dropped"] == {"phrase": 1} and started["judge"] == 1
     (name,) = score_store.load_run(staging)["slices"]

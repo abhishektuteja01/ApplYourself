@@ -14,7 +14,6 @@ FAKE = '#!/bin/bash\necho "$(basename "$0" .sh)" >> "$RUN_DIR/../ran.txt"\nexit 
 
 @pytest.fixture
 def logs(tmp_path, monkeypatch):
-    monkeypatch.setattr(M, "LOGS", tmp_path / "logs")
     stages = tmp_path / "stages"
     stages.mkdir()
     for name in M.STAGES + M.FINISH:

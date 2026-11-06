@@ -18,6 +18,7 @@ import yaml
 from src.apply import answers as A
 from src.apply.answers import AnswersError, Resolution, load_answers, resolve
 from src.apply.reconcile import MergedField, MergedOption
+from src.shared import paths
 
 from .conftest import FIXTURES
 
@@ -1005,13 +1006,13 @@ class TestTierC:
 
 class TestTheShippedTemplate:
     def test_it_loads_through_the_real_loader(self):
-        loaded = load_answers(A.EXAMPLE_PATH)
+        loaded = load_answers(paths.example(A.EXAMPLE_NAME))
         assert loaded.identity["first_name"]
         assert "default" in loaded.countries
 
     def test_its_questions_answer_the_boards_in_the_fixtures(self, merged):
         """A template whose questions match nothing teaches the wrong shape."""
-        loaded = load_answers(A.EXAMPLE_PATH)
+        loaded = load_answers(paths.example(A.EXAMPLE_NAME))
         r = merged("form_minimal")
         assert resolve(by_label(r, "How did you hear"), loaded).action == "fill"
         assert resolve(by_label(r, "LinkedIn"), loaded).action == "fill"

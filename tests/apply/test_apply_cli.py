@@ -25,6 +25,7 @@ from src.apply.answers import AnswersError
 from src.apply.greenhouse import BoardForm, Posting, PostingExpired
 from src.apply.plan import PlanError
 from src.apply.schema import parse_schema
+from src.shared import paths
 from tests import factories
 
 from .conftest import FIXTURES, load_fixture, load_html
@@ -40,10 +41,8 @@ def repo(tmp_path, monkeypatch, tailor_dir):
     clean = tmp_path / "clean.parquet"
     pipeline = tmp_path / "pipeline"
     pipeline.mkdir()
-    monkeypatch.setattr(apply_cli, "CLEAN", clean)
-    monkeypatch.setattr(apply_cli, "APPLICATIONS", tailor_dir.parent.parent)
-    # The role's folder comes from app_cli's resolver.
-    monkeypatch.setattr(app_cli, "APPLICATIONS", tailor_dir.parent.parent)
+    monkeypatch.setitem(paths._overrides, "CLEAN", clean)
+    monkeypatch.setitem(paths._overrides, "APPLICATIONS", tailor_dir.parent.parent)
     monkeypatch.setattr(app_cli, "_identity", lambda: ("Alex Example", "Alex_Example"))
 
     tailored = f"{tailor_dir.parent.name}/{tailor_dir.name}"
@@ -291,40 +290,40 @@ class TestSalaryFor:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
+        monkeypatch.setitem(paths._overrides, "PROFILE", tmp_path)
 
     def test_a_us_role_marks_up_its_posted_minimum(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
         self._write_clean(clean, JOB_ID, 120000, "USD")
-        monkeypatch.setattr(apply_cli, "CLEAN", clean)
+        monkeypatch.setitem(paths._overrides, "CLEAN", clean)
         self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
         assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 132000.0
 
     def test_no_posted_minimum_uses_the_lane_fallback(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
         self._write_clean(clean, JOB_ID, None, "USD")
-        monkeypatch.setattr(apply_cli, "CLEAN", clean)
+        monkeypatch.setitem(paths._overrides, "CLEAN", clean)
         self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
         assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
 
     def test_a_plain_fallback_is_a_us_figure_only(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+        monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
         self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
         assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") is None
 
     def test_a_per_country_fallback(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+        monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
         self._verticals(
             tmp_path, monkeypatch, {"fallback": {"United States": 110000, "Germany": 70000}}
         )
         assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") == 70000.0
 
     def test_no_salary_expectation_is_none(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "missing.parquet")
+        monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
         (tmp_path / "verticals.yaml").write_text(
             yaml.safe_dump({"verticals": {"example_primary": {}}}), encoding="utf-8"
         )
-        monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
+        monkeypatch.setitem(paths._overrides, "PROFILE", tmp_path)
         assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") is None
 
 
@@ -473,10 +472,7 @@ class TestPrepareCommand:
     def _answers_yaml_exists(self, monkeypatch, tmp_path):
         answers_path = tmp_path / "application_answers.yaml"
         answers_path.write_text("schema_version: 2\n", encoding="utf-8")
-        monkeypatch.setattr(apply_cli, "DEFAULT_PATH", answers_path)
-        monkeypatch.setattr(
-            apply_cli, "EXAMPLE_PATH", tmp_path / "application_answers.example.yaml"
-        )
+        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", answers_path)
         monkeypatch.setattr(apply_cli, "_playwright_available", lambda: True)
 
     def test_happy_path_prints_every_field(self, repo, capsys):
@@ -531,7 +527,7 @@ class TestPrepareCommand:
 
     def test_missing_application_answers_yaml_exits_1(self, repo, monkeypatch, tmp_path, capsys):
         missing = tmp_path / "does_not_exist.yaml"
-        monkeypatch.setattr(apply_cli, "DEFAULT_PATH", missing)
+        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", missing)
         repo.write_state()
         assert apply_cli.main(["prepare", JOB_ID]) == 1
         assert str(missing) in capsys.readouterr().err
@@ -646,7 +642,7 @@ class TestManifest:
         monkeypatch.setattr(
             apply_cli, "run_one", lambda plan, answers, **kw: _fake_result(manifest=self.ROWS)
         )
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "runs")
         out_path = tmp_path / "m.json"
         assert (
             apply_cli.main(["run", "--job-id", JOB_ID, "--headless", "--manifest", str(out_path)])
@@ -867,7 +863,7 @@ class TestRunCommand:
 
     def test_default_path_never_submits(self, repo, monkeypatch, tmp_path):
         repo.write_state()
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "apply_runs")
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         submit_after_seen = []
         monkeypatch.setattr(
@@ -883,7 +879,7 @@ class TestRunCommand:
 
     def test_job_id_override_runs_one_role_even_off_queue_order(self, repo, monkeypatch, tmp_path):
         repo.write_state()
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "apply_runs")
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         assert apply_cli.main(["run", "--job-id", JOB_ID, "--rate", "0s"]) == 0
@@ -895,7 +891,7 @@ class TestRunCommand:
     def test_limit_caps_the_queue(self, repo, monkeypatch, tmp_path):
         for job_id in ("aaaa1111", "bbbb2222"):
             repo.write_state(job_id=job_id)
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "apply_runs")
         seen = []
 
         def build_and_record(job_id, **kw):
@@ -910,7 +906,7 @@ class TestRunCommand:
     def test_a_failed_role_exits_1_and_a_report_is_written(self, repo, monkeypatch, tmp_path):
         repo.write_state()
         out_dir = tmp_path / "apply_runs"
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", out_dir)
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", out_dir)
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(
             apply_cli,
@@ -1220,7 +1216,7 @@ class TestSubmitRequiresAnExplicitBound:
     ):
         repo.write_state()
         runs = tmp_path / "apply_runs"
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", runs)
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", runs)
         planned: list[str] = []
         monkeypatch.setattr(
             apply_cli,
@@ -1254,7 +1250,7 @@ class TestSubmitRequiresAnExplicitBound:
         # The bound is on *submitting*, not on walking. A fill-and-stop run
         # sends nothing, so it stays unbounded.
         repo.write_state()
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "apply_runs")
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         assert apply_cli.main(["run", "--rate", "0s", "--jitter", "0s"]) == 0
@@ -1263,7 +1259,7 @@ class TestSubmitRequiresAnExplicitBound:
         self, repo, monkeypatch, tmp_path
     ):
         repo.write_state()
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "apply_runs")
         monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id), None))
         seen: list = []
         monkeypatch.setattr(
@@ -1304,7 +1300,7 @@ class TestTheRateFloor:
         """Defining the clamp is not the same as wiring it in — `--rate 0s`
         has to arrive at `run_queue` as 30, not 0."""
         repo.write_state()
-        monkeypatch.setattr(apply_cli, "APPLY_RUNS", tmp_path / "apply_runs")
+        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "apply_runs")
         recorded: dict = {}
 
         def record(job_ids, **kw):
@@ -1579,11 +1575,9 @@ class TestARunLearnsWhatWasConfirmed:
     def _bank(self, tmp_path, monkeypatch):
         import shutil
 
-        from src.apply import bank
-
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
-        monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
         return path
 
     def _plan(self, fields):
@@ -1733,7 +1727,7 @@ class TestWorkdayIsRecognisedButNeverSubmitted:
     WD_URL = "https://widgetco.wd5.myworkdayjobs.com/Careers/job/US/Eng_JR1"
 
     def test_resolve_url_refuses_a_workday_posting(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(apply_cli, "CLEAN", tmp_path / "clean.parquet")
+        monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
         with pytest.raises(apply_cli.ManualApplyOnly):
             apply_cli.resolve_url("a1b2c3d4", {"url": self.WD_URL})
 
@@ -1809,18 +1803,16 @@ def test_tests_never_touch_the_real_applications_folder():
     from src.shared import paths
 
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
-    assert apply_cli.APPLY_RUNS.parent != paths.REPO_ROOT / "applications"
+    assert paths.APPLY_RUNS.parent != paths.REPO_ROOT / "applications"
 
 
 class TestKeywordsGeneralize:
     def _bank(self, tmp_path, monkeypatch):
         import shutil
 
-        from src.apply import bank
-
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
-        monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
         return path
 
     def test_a_keyword_lets_the_next_wording_be_guessed(self, tmp_path, monkeypatch):
@@ -1868,7 +1860,7 @@ def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
-    monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+    monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
     data = bank.read()
     data["questions"]["years_of_professional_experience_total"] = {
         "answer": "2",
@@ -1898,11 +1890,9 @@ class TestEachLessonMustHold:
     def _bank(self, tmp_path, monkeypatch):
         import shutil
 
-        from src.apply import bank
-
         path = tmp_path / "bank.yaml"
         shutil.copy(FIXTURES / "application_answers.yaml", path)
-        monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
         return path
 
     def test_a_different_answer_under_the_same_id_is_refused(self, tmp_path, monkeypatch):
@@ -2009,7 +1999,7 @@ def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
     factories.write_clean(
         clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0, "salary_currency": "USD"}
     )
-    monkeypatch.setattr(apply_cli, "CLEAN", clean)
+    monkeypatch.setitem(paths._overrides, "CLEAN", clean)
     (tmp_path / "verticals.yaml").write_text(
         yaml.safe_dump(
             {
@@ -2022,7 +2012,7 @@ def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(apply_cli.paths, "PROFILE", tmp_path)
+    monkeypatch.setitem(paths._overrides, "PROFILE", tmp_path)
     assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
 
 
@@ -2061,7 +2051,7 @@ def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
         },
         {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."},
     )
-    monkeypatch.setattr(apply_cli, "CLEAN", clean)
+    monkeypatch.setitem(paths._overrides, "CLEAN", clean)
     assert apply_cli._jd_country("a") == "United States"
     assert apply_cli._jd_country("b") == ""
 
@@ -2110,12 +2100,11 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
     import shutil
     from dataclasses import replace
 
-    from src.apply import bank
     from src.apply.plan import FieldPlan
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
-    monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+    monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
     guess = FieldPlan(
         id="q",
         name="q",
@@ -2151,7 +2140,7 @@ def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monke
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
-    monkeypatch.setattr(bank, "DEFAULT_PATH", path)
+    monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
     bank.learn(
         [
             bank.Lesson(

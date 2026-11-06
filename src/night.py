@@ -33,7 +33,6 @@ import yaml
 
 from src.shared import clock, paths
 
-LOGS = paths.REPO_ROOT / "logs"
 STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 STOPS = ("discover", "score")
 FINISH = ("summary", "email")
@@ -171,14 +170,14 @@ def _prune(keep_dir: Path) -> None:
     except (OSError, ValueError, TypeError, ImportError, yaml.YAMLError):
         return  # a config that fails to load skips the prune
     cutoff = time.time() - (keep + 1) * 86400
-    for d in LOGS.glob("pipeline_*"):
+    for d in paths.LOGS.glob("pipeline_*"):
         if d.is_dir() and d != keep_dir and d.stat().st_mtime < cutoff:
             shutil.rmtree(d, ignore_errors=True)
 
 
 def _last_run(dry: bool) -> tuple[Path, dict] | None:
     """The newest run folder with a run.json of the same kind (dry or real)."""
-    for d in sorted(LOGS.glob("pipeline_*"), reverse=True):
+    for d in sorted(paths.LOGS.glob("pipeline_*"), reverse=True):
         if re.fullmatch(r"pipeline_\d{4}-\d{2}-\d{2}_\d{6}", d.name):
             run = load(d)
             if run is not None and bool(run.get("dry_run")) == dry:
@@ -199,12 +198,15 @@ def main(argv: list[str] | None = None) -> int:
     skip = set(os.environ.get("SKIP_STAGES", "").split())
     stages_dir = Path(os.environ.get("STAGES_DIR") or paths.REPO_ROOT / "scripts" / "stages")
 
-    LOGS.mkdir(parents=True, exist_ok=True)
-    with (LOGS / "night.lock").open("a+", encoding="utf-8") as lock:
+    paths.LOGS.mkdir(parents=True, exist_ok=True)
+    with (paths.LOGS / "night.lock").open("a+", encoding="utf-8") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print(f"night: another run holds {LOGS / 'night.lock'}; not starting", file=sys.stderr)
+            print(
+                f"night: another run holds {paths.LOGS / 'night.lock'}; not starting",
+                file=sys.stderr,
+            )
             return LOCKED
         return _night(args, dry, skip, stages_dir)
 
@@ -213,7 +215,7 @@ def _night(args: argparse.Namespace, dry: bool, skip: set[str], stages_dir: Path
     if args.resume:
         last = _last_run(dry)
         if last is None:
-            print(f"night: no run.json to resume under {LOGS}", file=sys.stderr)
+            print(f"night: no run.json to resume under {paths.LOGS}", file=sys.stderr)
             return 1
         run_dir, run = last
         run.setdefault("resumes", []).append(_iso())
@@ -230,7 +232,7 @@ def _night(args: argparse.Namespace, dry: bool, skip: set[str], stages_dir: Path
             return 0
     else:
         stamp = _stamp()
-        run_dir = LOGS / f"pipeline_{stamp}"
+        run_dir = paths.LOGS / f"pipeline_{stamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
         todo = [args.only] if args.only else [s for s in STAGES if s not in skip]
         run = {"stamp": stamp, "started": _iso(), "dry_run": dry, "stages": {}}
@@ -260,7 +262,7 @@ def _night(args: argparse.Namespace, dry: bool, skip: set[str], stages_dir: Path
 
     line = night.history_line() + (f" | stopped at {stopped}" if stopped else "")
     if not dry:
-        with (LOGS / "pipeline_history.log").open("a", encoding="utf-8") as f:
+        with (paths.LOGS / "pipeline_history.log").open("a", encoding="utf-8") as f:
             f.write(line + "\n")
     night.say(f"=== pipeline end {_stamp()} ===")
     print(line)

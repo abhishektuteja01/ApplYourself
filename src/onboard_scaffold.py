@@ -46,9 +46,6 @@ import yaml
 
 from src.shared import paths
 
-PROFILE = paths.PROFILE  # tests repoint these names; keep them module attrs
-REPO_ROOT = paths.REPO_ROOT
-
 # Gated out of the default path — see the module docstring.
 OPTIONAL_TEMPLATES = (
     "voice_samples.example.md",
@@ -84,7 +81,7 @@ class Report:
 
 def _rel(path: Path) -> str:
     try:
-        return str(path.relative_to(REPO_ROOT))
+        return str(path.relative_to(paths.root()))
     except ValueError:
         return str(path)
 
@@ -101,7 +98,7 @@ def _templates(with_optional: bool) -> list[Path]:
     excluded = set()
     if not with_optional:
         excluded |= set(OPTIONAL_TEMPLATES)
-    return [p for p in sorted(PROFILE.glob("*.example.*")) if p.name not in excluded]
+    return [p for p in sorted(paths.PROFILE.glob("*.example.*")) if p.name not in excluded]
 
 
 def copy_templates(templates: list[Path], force: bool, dry_run: bool, rep: Report) -> set[str]:
@@ -215,8 +212,8 @@ def reconcile_verticals(default_vertical: str, copied: bool, dry_run: bool, rep:
     Only ever touches a file this run wrote — so skip/force are inherited from
     the copy above. A verticals.yaml that was skipped is a live config with
     real lanes in it, and the strip is not idempotent against one."""
-    example = PROFILE / "verticals.example.yaml"
-    target = PROFILE / "verticals.yaml"
+    example = paths.PROFILE / "verticals.example.yaml"
+    target = paths.PROFILE / "verticals.yaml"
     if not example.is_file():
         rep.failed.append(f"{_rel(example)} missing — cannot scaffold verticals.yaml")
         return
@@ -259,8 +256,8 @@ def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
     from src.apply import answers as A
     from src.apply import bank
 
-    target = PROFILE / "application_answers.yaml"
-    source = target if target.is_file() else PROFILE / "application_answers.example.yaml"
+    target = paths.PROFILE / "application_answers.yaml"
+    source = target if target.is_file() else paths.PROFILE / "application_answers.example.yaml"
     if not source.is_file():
         rep.failed.append(f"{_rel(target)} missing and no template to copy it from")
         return
@@ -330,7 +327,7 @@ def setup_apply_path(dry_run: bool, rep: Report) -> bool:
         if dry_run:
             rep.done.append(f"would run: {printable}")
             continue
-        result = subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=False)
+        result = subprocess.run(cmd, cwd=paths.REPO_ROOT, env=env, check=False)
         if result.returncode == 0:
             rep.done.append(f"ran: {printable}")
         else:

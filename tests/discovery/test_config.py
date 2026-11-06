@@ -66,12 +66,11 @@ def test_unknown_and_retired_keys_are_named(tmp_path, data, needle):
 
 
 def test_every_value_is_read(tmp_path, monkeypatch):
-    from src import score_filter
 
     scoring = tmp_path / "scoring.yaml"
     cutoffs = {"review": 50, "tailor": 60, "keep_long": 75, "sheet": 85}
     scoring.write_text(yaml.safe_dump({"cutoffs": cutoffs}), encoding="utf-8")
-    monkeypatch.setattr(score_filter, "SCORING_PATH", scoring)
+    monkeypatch.setitem(paths._overrides, "SCORING", scoring)
     cfg = load(
         tmp_path,
         {
@@ -213,7 +212,7 @@ def test_the_example_config_validates():
 def test_the_cli_reports_a_bad_config(monkeypatch, tmp_path, capsys):
     p = tmp_path / "d.yaml"
     p.write_text("schema_version: 9\n", encoding="utf-8")
-    monkeypatch.setattr(C, "DEFAULT_CONFIG_PATH", p)
+    monkeypatch.setitem(paths._overrides, "DISCOVERY_CONFIG", p)
     assert C.main() == 1 and "schema_version" in capsys.readouterr().out
 
 

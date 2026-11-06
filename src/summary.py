@@ -22,20 +22,12 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import app_cli, state_io, synonyms_cli
+from src import app_cli, state_io
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
 from src.score_store import view
 from src.shared import clock, paths
-
-LOGS = paths.REPO_ROOT / "logs"
-OUT = paths.REPO_ROOT / "summary.md"
-SCORED = paths.SCORED
-CLEAN = paths.CLEAN
-STAGING = paths.STAGING
-APPLICATIONS = paths.APPLICATIONS
-MAYBE_DUPES = paths.MAYBE_DUPES
 
 # One short "what to do" line per section, written only into summary.md (the
 # session's copy) and only when the section has something to act on.
@@ -111,7 +103,7 @@ def since_of(run_dir: Path | None) -> datetime:
 def latest_run_dir() -> Path | None:
     dirs = sorted(
         d
-        for d in LOGS.glob("pipeline_*")
+        for d in paths.LOGS.glob("pipeline_*")
         if d.is_dir() and re.fullmatch(r"pipeline_" + _STAMP.pattern, d.name)
     )
     return dirs[-1] if dirs else None
@@ -651,7 +643,7 @@ def sheet_line(check: dict[str, list[str]]) -> list[str]:
 
 def _snapshots(since: datetime) -> tuple[list[tuple[str, dict]], dict[str, str]]:
     plans, bad = [], {}
-    for path in sorted(APPLICATIONS.glob("*/*/plan_after.json")):
+    for path in sorted(paths.APPLICATIONS.glob("*/*/plan_after.json")):
         if datetime.fromtimestamp(path.stat().st_mtime) < since:  # noqa: DTZ006 - local, like `since`
             continue
         job = re.search(r"_([0-9a-f]{8})(?:_v\d+)?$", path.parent.name)
@@ -682,31 +674,31 @@ def _tonight(rows: list[dict], since: datetime, date_key: str) -> list[dict]:
 def build(run_dir: Path | None, since: datetime) -> str:
     stages = stage_lines(run_dir)
     reports = digest.load_reports()
-    scored = view(SCORED) if SCORED.exists() else None
+    scored = view(paths.SCORED) if paths.SCORED.exists() else None
     clean = (
-        pd.read_parquet(CLEAN, columns=["job_id", "company", "title"])
-        if CLEAN.exists()
+        pd.read_parquet(paths.CLEAN, columns=["job_id", "company", "title"])
+        if paths.CLEAN.exists()
         else pd.DataFrame(columns=["job_id", "company", "title"])
     )
     names = {r.job_id: f"{r.company} — {r.title}" for r in clean.itertuples()}
-    run_json = STAGING / "run.json"
+    run_json = paths.STAGING / "run.json"
     open_slices = (
         len(json.loads(run_json.read_text(encoding="utf-8")).get("slices", {}))
         if run_json.is_file()
         else 0
     )
 
-    log = [json.loads(x) for x in _read_lines(synonyms_cli.LOG)]
+    log = [json.loads(x) for x in _read_lines(paths.SYNONYM_LOG)]
     declined = _tonight(
-        yaml.safe_load(synonyms_cli.DECLINED.read_text(encoding="utf-8")) or []
-        if synonyms_cli.DECLINED.is_file()
+        yaml.safe_load(paths.SYNONYM_DECLINED.read_text(encoding="utf-8")) or []
+        if paths.SYNONYM_DECLINED.is_file()
         else [],
         since,
         "first_seen",
     )
     opened = (
-        (yaml.safe_load(synonyms_cli.OPEN.read_text(encoding="utf-8")) or {}).get("open") or []
-        if synonyms_cli.OPEN.is_file()
+        (yaml.safe_load(paths.SYNONYM_OPEN.read_text(encoding="utf-8")) or {}).get("open") or []
+        if paths.SYNONYM_OPEN.is_file()
         else []
     )
 
@@ -730,7 +722,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
     items["names"] = names
     discovery = discovery_section(reports, since)
     dupes = duplicates_section(
-        _tonight(load_maybe_duplicates(MAYBE_DUPES), since, "date"),
+        _tonight(load_maybe_duplicates(paths.MAYBE_DUPES), since, "date"),
         state_io.load_state_index(paths.PIPELINE),
     )
     scoring = scoring_section(
@@ -771,7 +763,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
             sheet.rows(),
             items,
             unreadable,
-            sheet.latest_outcomes(APPLICATIONS / "apply_runs"),
+            sheet.latest_outcomes(paths.APPLICATIONS / "apply_runs"),
             since,
         ),
         *([f"Cleanup: {stages['cleanup']['detail']}"] if stages.get("cleanup") else []),
@@ -878,7 +870,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    out = args.out or OUT
+    out = args.out or paths.SUMMARY
     for path, content in ((out, text), (out.with_suffix(".html"), to_html(text))):
         tmp = path.with_name(f".{path.name}.tmp")
         tmp.write_text(content, encoding="utf-8")

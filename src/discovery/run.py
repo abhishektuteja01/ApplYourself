@@ -318,7 +318,7 @@ def main(argv=None) -> int:
         help="read and write the store, view and reports here",
     )
     parser.add_argument(
-        "--boards-dir", type=Path, default=B.BOARDS_DIR, help="where boards.csv lives"
+        "--boards-dir", type=Path, default=paths.UNIVERSE, help="where boards.csv lives"
     )
     args = parser.parse_args(argv)
 

@@ -10,7 +10,8 @@ import pytest
 import yaml
 
 from src import score_store, shortlist
-from src.score_filter import SCORING_PATH, load_scoring
+from src.score_filter import load_scoring
+from src.shared import paths
 from tests.factories import write_clean, write_state
 
 NOW = datetime(2026, 9, 27)
@@ -18,7 +19,7 @@ NOW = datetime(2026, 9, 27)
 
 @pytest.fixture
 def scfg():
-    return load_scoring(SCORING_PATH.with_name("scoring.example.yaml"))
+    return load_scoring(paths.example("scoring.example.yaml"))
 
 
 @pytest.fixture

@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from src import app_cli, score_store, track_cli
-from src.score_filter import SCORING_PATH, load_scoring
+from src import app_cli, score_store
+from src.score_filter import load_scoring
 from src.shared import paths
 from tests.factories import scored_rows, write_clean
 
@@ -34,10 +34,8 @@ JOB = "b1ccd805"  # the hash of ROLE's company + title
 
 @pytest.fixture
 def world(tmp_path, monkeypatch):
-    for mod in (app_cli, track_cli):
-        monkeypatch.setattr(mod, "CLEAN", tmp_path / "clean.parquet")
-        monkeypatch.setattr(mod, "SCORED", tmp_path / "scored.parquet")
-    monkeypatch.setattr(app_cli, "PROFILE", tmp_path / "profile")
+    monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
+    monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
     monkeypatch.setattr(
         app_cli,
         "export_pdf",
@@ -46,7 +44,7 @@ def world(tmp_path, monkeypatch):
     (tmp_path / "profile").mkdir()
     for kind in ("resume", "cover_letter"):
         shutil.copy(
-            paths.PROFILE / f"{kind}_template.example.docx",
+            paths.example(f"{kind}_template.example.docx"),
             tmp_path / "profile" / f"{kind}_template.docx",
         )
     assert write_clean(tmp_path / "clean.parquet", ROLE)["job_id"][0] == JOB
@@ -89,7 +87,7 @@ def _judge(world) -> list[str]:
         world / "clean.parquet",
         world / "scored.parquet",
         staging,
-        load_scoring(SCORING_PATH.with_name("scoring.example.yaml")),
+        load_scoring(paths.example("scoring.example.yaml")),
         now=datetime(2026, 9, 27, 12, 0),
     )
     (meta,) = score_store.load_run(staging)["slices"].values()

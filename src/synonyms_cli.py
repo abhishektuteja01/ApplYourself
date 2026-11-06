@@ -35,17 +35,6 @@ from src.score_store import view
 from src.shared import clock, paths
 from src.shared.config_schema import load_automation
 
-BULLETS = paths.PROFILE / "bullets.md"
-SKILLS = paths.PROFILE / "skills_master.md"
-AUTOMATION = paths.PROFILE / "automation.yaml"
-DECLINED = paths.PROFILE / "synonyms_declined.yaml"
-HISTORY = paths.PROFILE / ".synonym_history"
-PROPOSALS = paths.JOBS / "synonyms_proposals.yaml"
-LOG = paths.JOBS / "synonyms_log.jsonl"
-OPEN = paths.JOBS / "synonyms_open.yaml"
-SCORED = paths.SCORED
-CLEAN = paths.CLEAN
-
 HISTORY_KEEP = 20
 MAX_WORDS = 8
 TOP_KEYWORDS = 40
@@ -57,7 +46,7 @@ class SynonymsError(ValueError):
 
 def _config() -> dict:
     try:
-        data = load_automation(AUTOMATION)
+        data = load_automation(paths.AUTOMATION)
     except ValueError as exc:
         raise SynonymsError(str(exc)) from exc
     for key in ("auto_add_synonyms", "unlock_max_open"):
@@ -105,14 +94,14 @@ def keywords() -> dict:
     """The top keywords of the roles with no resume yet, minus every keyword
     already declined."""
     ids = _new_job_ids()
-    skip = {_norm(d["keyword"]) for d in _read_yaml(DECLINED, [])}
-    if not ids or not SCORED.exists():
+    skip = {_norm(d["keyword"]) for d in _read_yaml(paths.SYNONYM_DECLINED, [])}
+    if not ids or not paths.SCORED.exists():
         return {"job_ids": ids, "keywords": []}
-    scored = view(SCORED)
+    scored = view(paths.SCORED)
     scored = scored[scored["job_id"].isin(ids)]
     company = {}
-    if CLEAN.exists():
-        clean = pd.read_parquet(CLEAN, columns=["job_id", "company"])
+    if paths.CLEAN.exists():
+        clean = pd.read_parquet(paths.CLEAN, columns=["job_id", "company"])
         company = dict(zip(clean["job_id"], clean["company"]))
     seen: dict[str, dict] = {}
     freq: Counter = Counter()
@@ -177,10 +166,10 @@ def _remove_phrase(text: str, entry: str, phrase: str) -> tuple[str, bool]:
 
 
 def _backup(path: Path) -> None:
-    HISTORY.mkdir(parents=True, exist_ok=True)
+    paths.SYNONYM_HISTORY.mkdir(parents=True, exist_ok=True)
     stamp = clock.now().strftime("%Y%m%dT%H%M%S%f")
-    shutil.copy2(path, HISTORY / f"{path.name}.{stamp}")
-    old = sorted(HISTORY.glob(f"{path.name}.*"))
+    shutil.copy2(path, paths.SYNONYM_HISTORY / f"{path.name}.{stamp}")
+    old = sorted(paths.SYNONYM_HISTORY.glob(f"{path.name}.*"))
     for f in old[:-HISTORY_KEEP]:
         f.unlink()
 
@@ -220,7 +209,7 @@ def _screen(item: dict, sources: dict[str, dict], batch: set) -> str:
 
 def apply(proposals_path: Path | None = None) -> list[str]:
     cfg = _config()
-    path = proposals_path or PROPOSALS
+    path = proposals_path or paths.SYNONYM_PROPOSALS
     if not path.is_file():
         raise SynonymsError(f"{path.name} not found")
     data = _read_yaml(path, {}) or {}
@@ -228,8 +217,8 @@ def apply(proposals_path: Path | None = None) -> list[str]:
     today = _today()
 
     sources = {
-        "bullets": parse_entries(BULLETS.read_text(encoding="utf-8"), BULLETS.name),
-        "skills": parse_entries(SKILLS.read_text(encoding="utf-8"), SKILLS.name),
+        "bullets": parse_entries(paths.BULLETS.read_text(encoding="utf-8"), paths.BULLETS.name),
+        "skills": parse_entries(paths.SKILLS.read_text(encoding="utf-8"), paths.SKILLS.name),
     }
     added: list[dict] = []
     if cfg["auto_add_synonyms"]:
@@ -252,7 +241,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
                     "keyword": str(item.get("keyword") or ""),
                 }
             )
-        for file_key, file_path in (("bullets", BULLETS), ("skills", SKILLS)):
+        for file_key, file_path in (("bullets", paths.BULLETS), ("skills", paths.SKILLS)):
             text = file_path.read_text(encoding="utf-8")
             expect = {k: dict(v) for k, v in sources[file_key].items()}
             touched = False
@@ -268,14 +257,14 @@ def apply(proposals_path: Path | None = None) -> list[str]:
             if touched:
                 _save(file_path, text, expect)
         if added:
-            LOG.parent.mkdir(parents=True, exist_ok=True)
-            with LOG.open("a", encoding="utf-8") as f:
+            paths.SYNONYM_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with paths.SYNONYM_LOG.open("a", encoding="utf-8") as f:
                 for row in added:
                     f.write(json.dumps(row, ensure_ascii=False) + "\n")
     else:
         out.append("auto_add_synonyms is off: nothing added")
 
-    declined = _read_yaml(DECLINED, [])
+    declined = _read_yaml(paths.SYNONYM_DECLINED, [])
     known = {_norm(d["keyword"]) for d in declined}
     new_declined = 0
     for item in data.get("declined") or []:
@@ -293,9 +282,9 @@ def apply(proposals_path: Path | None = None) -> list[str]:
             )
             new_declined += 1
     if new_declined:
-        _write_yaml(DECLINED, declined)
+        _write_yaml(paths.SYNONYM_DECLINED, declined)
 
-    state = _read_yaml(OPEN, {}) or {}
+    state = _read_yaml(paths.SYNONYM_OPEN, {}) or {}
     open_items, closed = state.get("open") or [], state.get("closed") or []
     asked = {(i["kind"], _norm(i["thing"])) for i in [*open_items, *closed]}
     queued = 0
@@ -319,7 +308,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
         )
         queued += 1
     if queued:
-        _write_yaml(OPEN, {"open": open_items, "closed": closed})
+        _write_yaml(paths.SYNONYM_OPEN, {"open": open_items, "closed": closed})
 
     path.unlink()
     out.insert(0, f"added={len(added)} declined={new_declined} unlock={queued}")
@@ -330,7 +319,7 @@ def apply(proposals_path: Path | None = None) -> list[str]:
 
 
 def undo(target: str, phrase: str) -> str:
-    file_path = BULLETS if target.startswith("B-") else SKILLS
+    file_path = paths.BULLETS if target.startswith("B-") else paths.SKILLS
     text = file_path.read_text(encoding="utf-8")
     new, changed = _remove_phrase(text, target, phrase)
     if not changed:
@@ -344,26 +333,26 @@ def undo(target: str, phrase: str) -> str:
 
 
 def approve(words: list[str]) -> list[str]:
-    declined = _read_yaml(DECLINED, [])
+    declined = _read_yaml(paths.SYNONYM_DECLINED, [])
     out = []
     for w in words:
         hit = [d for d in declined if _norm(d["keyword"]) == _norm(w)]
         for d in hit:
             d["approved"] = True
         out.append(f"approved {w!r}" if hit else f"no declined keyword {w!r}")
-    _write_yaml(DECLINED, declined)
+    _write_yaml(paths.SYNONYM_DECLINED, declined)
     return out
 
 
 def answer(item_id: str, reply: str) -> str:
-    state = _read_yaml(OPEN, {}) or {}
+    state = _read_yaml(paths.SYNONYM_OPEN, {}) or {}
     open_items, closed = state.get("open") or [], state.get("closed") or []
     hit = next((i for i in open_items if i["id"] == item_id), None)
     if hit is None:
         return f"no open question {item_id}"
     open_items.remove(hit)
     closed.append({**hit, "answer": reply, "answered": _today()})
-    _write_yaml(OPEN, {"open": open_items, "closed": closed})
+    _write_yaml(paths.SYNONYM_OPEN, {"open": open_items, "closed": closed})
     return f"{item_id}: {reply}"
 
 
@@ -397,8 +386,8 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(approve(args.keywords)))
         elif args.cmd == "added":
             rows = (
-                [json.loads(x) for x in LOG.read_text(encoding="utf-8").splitlines()]
-                if LOG.exists()
+                [json.loads(x) for x in paths.SYNONYM_LOG.read_text(encoding="utf-8").splitlines()]
+                if paths.SYNONYM_LOG.exists()
                 else []
             )
             print(sum(r["date"] == clock.today().isoformat() for r in rows))

@@ -362,7 +362,6 @@ def _inline_runs(text: str) -> list[Run]:
 WORD_APP = Path("/Applications/Microsoft Word.app")
 # Word's sandbox keeps one folder-access grant for a fixed path, so every
 # conversion goes through the same staging dir.
-PDF_STAGING = paths.REPO_ROOT / ".pdf_staging"
 
 
 class PdfResult(TypedDict):
@@ -377,7 +376,7 @@ def _convert(docx_path: Path, pdf_path: Path, token: str) -> PdfResult | None:
     # Plain characters only: Word cannot find a document by a name like "göteborg"
     # (-1728), as the file system and AppleScript spell such letters differently.
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"{token}_{docx_path.stem}") + ".docx"
-    staged_docx = PDF_STAGING / name
+    staged_docx = paths.PDF_STAGING / name
     staged_pdf = staged_docx.with_suffix(".pdf")
     staged_pdf.unlink(missing_ok=True)
     shutil.copyfile(docx_path, staged_docx)
@@ -456,10 +455,10 @@ def convert_locally(docx_path: Path, token: str) -> PdfResult:
             pages=0,
             detail="Microsoft Word on macOS is needed for the pdf; the docx is the deliverable",
         )
-    PDF_STAGING.mkdir(exist_ok=True)
+    paths.PDF_STAGING.mkdir(exist_ok=True)
     # Word is one app: two conversions at once (parallel /tailor runs) collide with
     # -1728 "object does not exist", so they take turns.
-    with locked(PDF_STAGING.parent / f"{PDF_STAGING.name.lstrip('.')}_word"):
+    with locked(paths.PDF_STAGING.parent / f"{paths.PDF_STAGING.name.lstrip('.')}_word"):
         failed = _convert(docx_path, pdf_path, token)
     if failed:
         return failed

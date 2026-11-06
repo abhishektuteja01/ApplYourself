@@ -42,8 +42,6 @@ class Violation(TypedDict):
     category: str
 
 
-_DEFAULT_RULES_PATH = paths.PROFILE / "de_ai_rules.yaml"
-
 # The keys de_ai_rules.yaml `mechanical:` must define. The file is the only
 # source of the replacement values.
 MECH_KEYS = (
@@ -70,7 +68,7 @@ class LintConfigError(ValueError):
 
 def load_de_ai_rules(path: Path | None = None) -> dict:
     """Load profile/de_ai_rules.yaml. A missing file raises LintConfigError."""
-    p = path or _DEFAULT_RULES_PATH
+    p = path or paths.DE_AI_RULES
     if not p.exists():
         raise LintConfigError(f"{p} is missing")
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}

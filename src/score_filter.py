@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from src.apply.answers import CountryFacts
     from src.discovery.config import DiscoveryConfig
 
-SCORING_PATH = paths.PROFILE / "scoring.yaml"
 _SCHEMA_VERSION = 1
 
 
@@ -115,7 +114,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
     Your sponsorship need comes from the answer bank (`bank_path`, default
     profile/application_answers.yaml; the example bank for the example scoring
     file), never from scoring.yaml."""
-    path = path or SCORING_PATH
+    path = path or paths.SCORING
     if not path.exists():
         raise FileNotFoundError(
             f"{path} not found — copy profile/scoring.example.yaml "
@@ -129,9 +128,9 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         from src.apply import answers as bank_module
 
         bank_path = (
-            bank_module.EXAMPLE_PATH
+            paths.example(bank_module.EXAMPLE_NAME)
             if path.name.startswith("scoring.example")
-            else bank_module.DEFAULT_PATH
+            else paths.ANSWER_BANK
         )
     home_need, country_needs, default_need = sponsorship_needs(Path(bank_path))
     q = data.get("jd_quality") or {}
@@ -163,7 +162,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
 
 def load_cutoffs(path: Path | None = None) -> Cutoffs:
     """scoring.yaml's `cutoffs` block, for a caller that needs no other rule."""
-    path = path or SCORING_PATH
+    path = path or paths.SCORING
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return validate(ScoringFile, data, path).cutoffs
 
@@ -305,7 +304,7 @@ def trim_jd(jd_text: Any, cfg: ScoringConfig) -> str:
 def load_trim(path: Path | None = None) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """(headings, keep_words) from scoring.yaml's trim_jd block alone, for a
     caller that needs no other scoring rule; ((), ()) with no file."""
-    path = path or SCORING_PATH
+    path = path or paths.SCORING
     if not path.exists():
         return (), ()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

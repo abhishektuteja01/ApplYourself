@@ -49,13 +49,6 @@ from src.docx_render import ResumeContentError, TemplateError, export_pdf, rende
 from src.session_schema import ProblemCode
 from src.shared import clock, paths, verticals
 
-CLEAN = paths.CLEAN
-SCORED = paths.SCORED
-PROFILE = paths.PROFILE
-APPLICATIONS = paths.APPLICATIONS
-MAYBE_DUPES = paths.MAYBE_DUPES
-SUBMITTED = APPLICATIONS / "apply_runs" / ledger.LEDGER_NAME
-
 RESUME_PLAN = "resume_plan.yaml"
 LETTER_PLAN = "cover_letter.yaml"
 ANSWERS = "company_answers.yaml"
@@ -110,8 +103,8 @@ def _atomic_write(path: Path, text: str) -> None:
 
 def _role_dirs(job_id: str) -> list[Path]:
     """Every folder this role has had, in any lane, oldest version first."""
-    found = [p for p in APPLICATIONS.glob(f"*/*_{job_id}") if p.is_dir()]
-    found += [p for p in APPLICATIONS.glob(f"*/*_{job_id}_v*") if p.is_dir()]
+    found = [p for p in paths.APPLICATIONS.glob(f"*/*_{job_id}") if p.is_dir()]
+    found += [p for p in paths.APPLICATIONS.glob(f"*/*_{job_id}_v*") if p.is_dir()]
     return sorted(set(found), key=_version)
 
 
@@ -165,7 +158,7 @@ def built_folder(state: dict) -> Path | None:
     dirs = state.get("tailored_dirs") or []
     if not dirs:
         return None
-    folder = APPLICATIONS / dirs[-1]
+    folder = paths.APPLICATIONS / dirs[-1]
     return None if state.get("cleaned") and not folder.is_dir() else folder
 
 
@@ -185,14 +178,14 @@ def role_info(job_id: str) -> dict:
         "job_id": job_id,
         "state": state.get("state", ""),
         "vertical": (
-            built_dir.relative_to(APPLICATIONS).parts[0]
+            built_dir.relative_to(paths.APPLICATIONS).parts[0]
             if built_dir
             else newest.parent.name
             if newest
             else ""
         ),
-        "dir": str(built_dir.relative_to(APPLICATIONS.parent)) if built_dir else "",
-        "work_dir": str(newest.relative_to(APPLICATIONS.parent)) if newest else "",
+        "dir": str(built_dir.relative_to(paths.APPLICATIONS.parent)) if built_dir else "",
+        "work_dir": str(newest.relative_to(paths.APPLICATIONS.parent)) if newest else "",
         "name": name,
         "file_slug": slug,
         "has_resume": has(built_dir, f"{slug}_Resume.docx"),
@@ -205,7 +198,7 @@ def _built_dir(job_id: str) -> Path:
     info = role_info(job_id)
     if not info["dir"]:
         raise AppError(f"{job_id} has no built resume yet — run /tailor {job_id} first.")
-    folder = APPLICATIONS.parent / info["dir"]
+    folder = paths.APPLICATIONS.parent / info["dir"]
     if not folder.is_dir():
         raise AppError(f"{info['dir']} is in state.yaml but not on disk.")
     return folder
@@ -217,12 +210,12 @@ def _built_dir(job_id: str) -> Path:
 
 
 def _load_row(job_id: str) -> dict:
-    if not CLEAN.exists():
+    if not paths.CLEAN.exists():
         raise AppError("jobs/clean.parquet missing — run discovery first.")
-    if not SCORED.exists():
+    if not paths.SCORED.exists():
         raise AppError("jobs/scored.parquet missing — run /score first.")
-    clean = pd.read_parquet(CLEAN)
-    scored = score_store.view(SCORED)
+    clean = pd.read_parquet(paths.CLEAN)
+    scored = score_store.view(paths.SCORED)
     c = clean[clean["job_id"] == job_id]
     s = scored[scored["job_id"] == job_id]
     if c.empty:
@@ -234,7 +227,7 @@ def _load_row(job_id: str) -> dict:
 
 def cmd_new(job_id: str, today: str | None = None) -> dict:
     today = today or clock.today().isoformat()
-    if not (PROFILE / "resume_template.docx").is_file():
+    if not (paths.PROFILE / "resume_template.docx").is_file():
         raise AppError("profile/resume_template.docx missing.")
     resume_model.load_sources()
     row = _load_row(job_id)
@@ -258,13 +251,13 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
         and newest.parent.name == lane
         and (
             not (newest / f"{slug}_Resume.docx").exists()
-            or str(newest.relative_to(APPLICATIONS)) not in recorded
+            or str(newest.relative_to(paths.APPLICATIONS)) not in recorded
         )
     ):
         folder = newest  # an unfinished or unrecorded run: resume it
     else:
         base = f"{today}_{_slug(row.get('company', '')) or job_id}_{_slug(row.get('title', ''))}_{job_id}"
-        folder = APPLICATIONS / lane / (f"{base}_v{_version(newest) + 1}" if newest else base)
+        folder = paths.APPLICATIONS / lane / (f"{base}_v{_version(newest) + 1}" if newest else base)
         folder.mkdir(parents=True)
 
     facts = {
@@ -287,7 +280,7 @@ def cmd_new(job_id: str, today: str | None = None) -> dict:
     )
     return {
         **role_info(job_id),
-        "work_dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "work_dir": str(folder.relative_to(paths.APPLICATIONS.parent)),
         "company": facts["company"],
         "title": facts["title"],
         "keywords_to_mirror": facts["keywords_to_mirror"],
@@ -312,7 +305,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
     info = role_info(job_id)
     if not info["work_dir"]:
         raise AppError(f"{job_id} has no folder — run `uv run app new {job_id}` first.")
-    folder = APPLICATIONS.parent / info["work_dir"]
+    folder = paths.APPLICATIONS.parent / info["work_dir"]
     lane = folder.parent.name
     facts, _ = _read_snapshot(folder)
     plan = _load_yaml(folder / RESUME_PLAN)
@@ -332,7 +325,7 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
 
     docx = folder / f"{info['file_slug']}_Resume.docx"
     try:
-        render_resume(built.markdown, PROFILE / "resume_template.docx", docx)
+        render_resume(built.markdown, paths.PROFILE / "resume_template.docx", docx)
     except (TemplateError, ResumeContentError, FileNotFoundError) as exc:
         raise AppError(str(exc)) from exc
     pdf = export_pdf(docx, folder.name)
@@ -357,11 +350,11 @@ def cmd_build_resume(job_id: str, final: bool = False, no_pdf: bool = False) -> 
         "",
     ]
     _atomic_write(folder / "trace.md", "\n".join(header + built.trace) + "\n")
-    rel = str(folder.relative_to(APPLICATIONS))
+    rel = str(folder.relative_to(paths.APPLICATIONS))
     state_io.append_tailored_dir(state_io.state_path_for(paths.PIPELINE, job_id), rel)
     return {
         "ok": True,
-        "dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "dir": str(folder.relative_to(paths.APPLICATIONS.parent)),
         "docx": docx.name,
         "pdf": pdf,
         "swapped": built.swapped,
@@ -445,7 +438,7 @@ def cmd_build_answers(job_id: str) -> tuple[dict, int]:
     )
     return {
         "ok": True,
-        "dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "dir": str(folder.relative_to(paths.APPLICATIONS.parent)),
         "answered": [k for k in ANSWER_KEYS if data.get(k)],
         "no_research": [k for k in ANSWER_KEYS if not data.get(k)],
     }, 0
@@ -527,7 +520,7 @@ def cmd_build_letter(
     }
     docx = folder / f"{slug}_Cover_Letter.docx"
     try:
-        render_cover_letter(content, PROFILE / "cover_letter_template.docx", docx)
+        render_cover_letter(content, paths.PROFILE / "cover_letter_template.docx", docx)
     except (TemplateError, FileNotFoundError, ValueError) as exc:
         raise AppError(str(exc)) from exc
     pdf = export_pdf(docx, folder.name)
@@ -548,7 +541,7 @@ def cmd_build_letter(
         return {"ok": False, "words": words, "problems": [_pdf_unknown("body", pdf)]}, 2
     return {
         "ok": True,
-        "dir": str(folder.relative_to(APPLICATIONS.parent)),
+        "dir": str(folder.relative_to(paths.APPLICATIONS.parent)),
         "docx": docx.name,
         "pdf": pdf,
         "words": words,
@@ -567,9 +560,10 @@ def cmd_dupes(job_id: str) -> dict:
     """Other job_ids recorded in maybe_duplicates.jsonl with this one whose
     role is tailored or further, or was submitted. Read-only; a warning for
     the session to show, never a stop."""
-    sent = ledger.sent_job_ids(SUBMITTED) if SUBMITTED.exists() else set()
+    submitted = paths.APPLY_RUNS / ledger.LEDGER_NAME
+    sent = ledger.sent_job_ids(submitted) if submitted.exists() else set()
     found: dict[str, dict] = {}
-    for rec in load_maybe_duplicates(MAYBE_DUPES):
+    for rec in load_maybe_duplicates(paths.MAYBE_DUPES):
         ids = str(rec["pair"]).split("|")
         if job_id not in ids or len(ids) != 2:
             continue

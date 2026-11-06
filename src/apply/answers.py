@@ -35,9 +35,7 @@ import yaml
 from src.apply.reconcile import MergedField
 from src.shared import clock, paths
 
-PROFILE = paths.PROFILE
-DEFAULT_PATH = PROFILE / "application_answers.yaml"
-EXAMPLE_PATH = PROFILE / "application_answers.example.yaml"
+EXAMPLE_NAME = "application_answers.example.yaml"
 
 SCHEMA_VERSION = 2
 
@@ -1334,9 +1332,9 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
 def load_answers(path: Path | None = None) -> Answers:
     """Load and validate the answer bank. Fails loud on anything ambiguous: a
     wrong answer here is sent under the user's name."""
-    p = Path(path) if path is not None else DEFAULT_PATH
+    p = Path(path) if path is not None else paths.ANSWER_BANK
     if not p.exists():
-        raise AnswersError(f"{p} missing. Copy {EXAMPLE_PATH} and fill it in.")
+        raise AnswersError(f"{p} missing. Copy {paths.example(EXAMPLE_NAME)} and fill it in.")
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:

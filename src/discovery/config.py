@@ -18,7 +18,6 @@ from src.shared.job_boards import ATS_SOURCE_NAMES
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CONFIG_PATH = paths.REPO_ROOT / "profile" / "discovery.yaml"
 SCHEMA_VERSION = 2
 
 # Every lane and its kind: the search lanes (jobspy), the bulk-file feed, and
@@ -328,7 +327,7 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         verticals.get_config()
     except FileNotFoundError as e:
         raise FileNotFoundError(f"profile/verticals.yaml missing: {e}") from e
-    p = Path(path or DEFAULT_CONFIG_PATH)
+    p = Path(path or paths.DISCOVERY_CONFIG)
     if not p.exists():
         log.info("profile/discovery.yaml not found, using defaults")
         return _keep_long(DiscoveryConfig())
@@ -390,7 +389,7 @@ def _keep_long(cfg: DiscoveryConfig) -> DiscoveryConfig:
     scoring.yaml nothing is scored yet, so the default stands."""
     from src import score_filter
 
-    if score_filter.SCORING_PATH.exists():
+    if paths.SCORING.exists():
         cfg.retention_score_threshold = float(score_filter.load_cutoffs().keep_long)
     return cfg
 

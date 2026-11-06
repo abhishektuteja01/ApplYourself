@@ -5,9 +5,10 @@ from __future__ import annotations
 import pytest
 
 from src import score_filter as sf
+from src.shared import paths
 
-REAL_SCORING = sf.SCORING_PATH.with_name("scoring.example.yaml")
-EXAMPLE_BANK = sf.SCORING_PATH.with_name("application_answers.example.yaml")
+REAL_SCORING = paths.example("scoring.example.yaml")
+EXAMPLE_BANK = paths.example("application_answers.example.yaml")
 
 
 @pytest.fixture

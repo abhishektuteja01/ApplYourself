@@ -7,8 +7,7 @@ import os
 from datetime import datetime, timedelta
 
 from src import summary as M
-from src import synonyms_cli
-from src.discovery import digest
+from src.shared import paths
 from tests.factories import scored_rows, write_clean
 
 SINCE = datetime(2026, 9, 28, 15, 45)
@@ -21,7 +20,7 @@ def test_since_comes_from_the_run_folder_name(tmp_path):
 
 
 def test_the_latest_run_folder_ignores_anything_that_is_not_a_night(tmp_path, monkeypatch):
-    monkeypatch.setattr(M, "LOGS", tmp_path)
+    monkeypatch.setitem(paths._overrides, "LOGS", tmp_path)
     assert M.latest_run_dir() is None
     for name in (
         "pipeline_2026-09-27_154500",
@@ -193,7 +192,6 @@ def test_tailoring_lists_every_unresolved_role_with_its_reason_uncapped():
 
 
 def test_the_reason_a_role_has_no_resume_is_read_from_what_is_on_disk(tmp_path, monkeypatch):
-    monkeypatch.setattr(M, "APPLICATIONS", tmp_path / "applications")
     lane = tmp_path / "applications" / "lane"
     (lane / "2026-09-29_a_x_aaaaaaaa").mkdir(parents=True)
     (lane / "2026-09-29_a_x_aaaaaaaa" / "N_Resume.docx").write_bytes(b"d")
@@ -495,7 +493,6 @@ def test_an_error_from_an_earlier_night_is_listed_apart_with_its_date():
 
 def test_an_expired_posting_reads_as_gone_not_as_a_traceback(tmp_path, monkeypatch):
     apps = tmp_path / "applications"
-    monkeypatch.setattr(M, "APPLICATIONS", apps)
     d = apps / "lane" / "2026-09-29_acme_eng_a1b2c3d4"
     d.mkdir(parents=True)
     (d / "plan_after.json").write_text("", encoding="utf-8")
@@ -519,19 +516,7 @@ def test_sheet_line_says_what_is_wrong_in_words_and_offers_the_fix():
 
 def _world(tmp_path, monkeypatch):
     apps = tmp_path / "applications"
-    for mod, name, value in (
-        (M, "LOGS", tmp_path / "logs"),
-        (M, "OUT", tmp_path / "summary.md"),
-        (M, "SCORED", tmp_path / "scored.parquet"),
-        (M, "CLEAN", tmp_path / "clean.parquet"),
-        (M, "STAGING", tmp_path / "staging"),
-        (M, "APPLICATIONS", apps),
-        (synonyms_cli, "LOG", tmp_path / "log.jsonl"),
-        (synonyms_cli, "DECLINED", tmp_path / "declined.yaml"),
-        (synonyms_cli, "OPEN", tmp_path / "open.yaml"),
-        (M, "MAYBE_DUPES", tmp_path / "maybe_duplicates.jsonl"),
-    ):
-        monkeypatch.setattr(mod, name, value)
+    (tmp_path / "jobs").mkdir()
     monkeypatch.setattr(M.sheet, "rows", lambda: [_row("a1", "Submittable")])
     monkeypatch.setattr(
         M.sheet,
@@ -551,14 +536,14 @@ def test_the_whole_summary_from_a_night_of_records(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     (run / "tailor_results.txt").write_text("a1 ok\nb2 fail\n", encoding="utf-8")
-    write_clean(M.CLEAN, {"job_id": "b2", "company": "Beta", "title": "Eng"})
-    _scored([("2026-09-29T01:00:00", "score-judge:x", "tailor")]).to_parquet(M.SCORED)
-    reports = digest.JOBS_RUNS
+    write_clean(paths.CLEAN, {"job_id": "b2", "company": "Beta", "title": "Eng"})
+    _scored([("2026-09-29T01:00:00", "score-judge:x", "tailor")]).to_parquet(paths.SCORED)
+    reports = paths.JOBS_RUNS
     reports.mkdir(parents=True)
     (reports / "2026-09-28_1600.json").write_text(
         json.dumps(_report("2026-09-28_1600", ["a"])), encoding="utf-8"
     )
-    synonyms_cli.LOG.write_text(
+    paths.SYNONYM_LOG.write_text(
         json.dumps(
             {
                 "date": "2026-09-29",
@@ -587,9 +572,9 @@ def test_the_whole_summary_from_a_night_of_records(tmp_path, monkeypatch):
     (broken / "plan_after.json").write_text("", encoding="utf-8")
     (broken / "plan_after.err").write_text("x\nPostingExpired: gone\n", encoding="utf-8")
 
-    (M.APPLICATIONS / "lane" / "2026-09-29_b_y_b2b2b2b2").mkdir(parents=True)
+    (paths.APPLICATIONS / "lane" / "2026-09-29_b_y_b2b2b2b2").mkdir(parents=True)
     assert M.main(["--run-dir", str(run)]) == 0
-    text = M.OUT.read_text(encoding="utf-8")
+    text = paths.SUMMARY.read_text(encoding="utf-8")
     for want in (
         "# Night summary — 2026-09-28 (started 15:45)",
         "discover ok 10m",
@@ -606,7 +591,7 @@ def test_the_whole_summary_from_a_night_of_records(tmp_path, monkeypatch):
     ):
         assert want in text, want
     assert "Old question" not in text
-    page = M.OUT.with_suffix(".html").read_text(encoding="utf-8")
+    page = paths.SUMMARY.with_suffix(".html").read_text(encoding="utf-8")
     assert "<h2>Discovery</h2>" in page and 'class="cue"' in page and "Why us?" in page
     for command in (
         "uv run synonyms answer",
@@ -617,7 +602,9 @@ def test_the_whole_summary_from_a_night_of_records(tmp_path, monkeypatch):
     first = text
     (run / "tailor_results.txt").write_text("a1 ok\n", encoding="utf-8")
     assert M.main(["--run-dir", str(run)]) == 0
-    assert M.OUT.read_text(encoding="utf-8") != first and not list(tmp_path.glob(".summary*"))
+    assert paths.SUMMARY.read_text(encoding="utf-8") != first and not list(
+        tmp_path.glob(".summary*")
+    )
 
 
 def test_the_html_is_one_mobile_page_and_escapes_the_records():
@@ -726,7 +713,7 @@ def test_an_empty_night_still_writes_a_summary(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
     monkeypatch.setattr(M.sheet, "rows", lambda: [])
     assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
-    text = M.OUT.read_text(encoding="utf-8")
+    text = paths.SUMMARY.read_text(encoding="utf-8")
     assert "Stages: discover not run" in text and "Nothing scored." in text
     assert "Nothing to tailor." in text
 
@@ -761,7 +748,7 @@ def test_duplicates_lists_tonights_pairs_tracked_first_never_the_backfill():
 def test_the_summary_shows_the_duplicates_section_and_its_cue(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
     monkeypatch.setattr(M.sheet, "rows", lambda: [])
-    M.MAYBE_DUPES.write_text(
+    paths.MAYBE_DUPES.write_text(
         json.dumps(_dupe("aaaa0001", "bbbb0001"))
         + "\n"
         + json.dumps(_dupe("cccc0001", "dddd0001", date="2026-09-01"))
@@ -769,7 +756,7 @@ def test_the_summary_shows_the_duplicates_section_and_its_cue(tmp_path, monkeypa
         encoding="utf-8",
     )
     assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
-    text = M.OUT.read_text(encoding="utf-8")
+    text = paths.SUMMARY.read_text(encoding="utf-8")
     assert "## Possible duplicates\n1 pair not merged:" in text and M.CUES["dupes"] in text
     assert "cccc0001" not in text
 
@@ -783,5 +770,5 @@ def test_a_score_usage_limit_gets_its_own_fix_line(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     assert M.main(["--since", "2026-09-28T15:45:00"]) == 0
-    text = M.OUT.read_text(encoding="utf-8")
+    text = paths.SUMMARY.read_text(encoding="utf-8")
     assert M.CUES["score_limit"] in text and "stage exited 1" not in text

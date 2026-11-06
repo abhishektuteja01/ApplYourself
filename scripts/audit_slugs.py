@@ -35,7 +35,6 @@ from src.discovery.sources.boards.base import job_items, load_boards
 from src.shared import clock, paths
 from src.shared.http_client import CareersError, fetch_json
 
-OUT_DIR = paths.REPO_ROOT / "jobs"
 DEFAULT_ATS = ("ashby", "greenhouse", "lever")
 DEFAULT_STALE_DAYS = 90
 COLUMNS = ["ats", "slug", "name", "status", "postings", "newest_posting", "http", "note"]
@@ -290,7 +289,7 @@ def main(argv=None) -> int:
     args = parse_args(argv or sys.argv[1:])
     lanes = tuple(dict.fromkeys(args.ats)) if args.ats else DEFAULT_ATS
     today = clock.today()
-    out = paths.REPO_ROOT / args.out if args.out else OUT_DIR / f"slug_audit_{today}.csv"
+    out = paths.root() / args.out if args.out else paths.JOBS / f"slug_audit_{today}.csv"
 
     cfg = load_config()
 
