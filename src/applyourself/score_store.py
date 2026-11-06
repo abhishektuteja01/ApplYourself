@@ -317,9 +317,8 @@ def _slices(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 
 
 def judge_lines(run: dict[str, Any], staging: Path) -> list[str]:
-    """One `judge <slice file>...` line per judge, over the slices still
-    unanswered; the lanes take turns, so a judge stopped early starves none."""
-    lanes: dict[str, list[str]] = {}
+    """One `judge <slice file>...` line per judge, over the slices still unanswered."""
+    lines: list[str] = []
     cur: list[str] = []
     size, lane = 0, None
     for name, meta in run["slices"].items():
@@ -330,15 +329,12 @@ def judge_lines(run: dict[str, Any], staging: Path) -> list[str]:
             or size + meta["bytes"] > JUDGE_BYTES
             or meta["vertical"] != lane
         ):
-            lanes.setdefault(str(lane), []).append("judge " + " ".join(cur))
+            lines.append("judge " + " ".join(cur))
             cur, size = [], 0
         cur.append(str(staging / f"slice_{name}.md"))
         size += meta["bytes"]
         lane = meta["vertical"]
-    if cur:
-        lanes.setdefault(str(lane), []).append("judge " + " ".join(cur))
-    turns = max((len(v) for v in lanes.values()), default=0)
-    return [v[i] for i in range(turns) for v in lanes.values() if i < len(v)]
+    return lines + ["judge " + " ".join(cur)] if cur else lines
 
 
 def load_run(staging: Path) -> dict[str, Any] | None:
@@ -479,6 +475,7 @@ def start(
             -seen.get(r["job_id"], float("-inf")),
             str(r.get("company") or "").lower(),
             str(r.get("title") or "").lower(),
+            r["job_id"],
         )
     )
     if not keep:
