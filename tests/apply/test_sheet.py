@@ -16,7 +16,7 @@ def _world(tmp_path, monkeypatch):
     monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
     monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "clean.parquet")
     (tmp_path / "profile").mkdir()
-    (tmp_path / "profile" / "automation.yaml").write_text(
+    (tmp_path / "profile" / "settings.yaml").write_text(
         yaml.safe_dump({"table_path": "sheet.xlsx"}), encoding="utf-8"
     )
     cutoffs = {"review": 50, "tailor": 60, "keep_long": 70, "sheet": 80}

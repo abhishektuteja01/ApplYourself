@@ -1,6 +1,6 @@
 #!/bin/bash
 # Email stage: mail summary.html (summary.md as the plain-text part) to
-# `summary_email` in profile/automation.yaml, through the Mail app. Best effort:
+# `summary_email` in profile/settings.yaml, through the Mail app. Best effort:
 # a failure is logged and never stops anything. No address set: nothing is sent.
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"

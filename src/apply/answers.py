@@ -82,9 +82,6 @@ TOP_LEVEL_KEYS = (
     "fact_wordings",
     # Not an answer: whether an optional cover-letter upload gets a letter.
     "cover_letter",
-    # Not an answer: which browser drives the form. Owned and validated by
-    # src/apply/browser.py.
-    "browser",
 )
 
 # A keyword this short matches almost any label. Punctuation is stripped before
@@ -1441,6 +1438,11 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
     if data.get("schema_version") != SCHEMA_VERSION:
         raise AnswersError(f"{where}: schema_version must be {SCHEMA_VERSION}")
     data = with_resume(data, resume_facts.read(resume_path or paths.RESUME))
+    if "browser" in data:
+        raise AnswersError(
+            f"{where}: browser: moved to profile/settings.yaml. Run "
+            "`uv run config migrate --dry-run`, then --apply"
+        )
     unknown_top = set(data) - set(TOP_LEVEL_KEYS)
     if unknown_top:
         raise AnswersError(

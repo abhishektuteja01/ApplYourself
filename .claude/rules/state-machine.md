@@ -24,7 +24,7 @@ not a move.
 
 `ghosted` is never stored. `state_io.shown_state` shows an `applied` role as
 `ghosted` once its last `state_history` entry is older than
-`ghosted_after_days` (`profile/automation.yaml`, default 30): in `track
+`ghosted_after_days` (`profile/settings.yaml`, default 30): in `track
 states`, `/standup`, the status sheet and the night summary.
 
 History is `pipeline/events.jsonl`, one append-only line per change (`v, ts,

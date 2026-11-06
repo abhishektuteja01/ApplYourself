@@ -1,5 +1,5 @@
 """The company cooldown: no second application to a company within
-`company_cooldown_days` (profile/automation.yaml) of the last one.
+`company_cooldown_days` (profile/settings.yaml) of the last one.
 
 Every application counts: an `applied` entry in any role's state_history (by
 hand or by the submitter) and every submit-ledger line that may have reached
@@ -19,9 +19,9 @@ from src.shared.identity import normalize_company
 
 
 def cooldown_days() -> int:
-    from src.shared.config_schema import automation_setting
+    from src.shared.config_schema import setting
 
-    return int(automation_setting("company_cooldown_days", 2))
+    return int(setting("company_cooldown_days", 2))
 
 
 def _at(value: object) -> datetime | None:

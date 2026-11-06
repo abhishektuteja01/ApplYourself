@@ -44,7 +44,7 @@ def world(tmp_path, monkeypatch):
     jobs.mkdir()
     (prof / "bullets.md").write_text(BULLETS, encoding="utf-8")
     (prof / "skills_master.md").write_text(SKILLS, encoding="utf-8")
-    (prof / "automation.yaml").write_text(
+    (prof / "settings.yaml").write_text(
         yaml.safe_dump({"auto_add_synonyms": True, "unlock_max_open": 2}), encoding="utf-8"
     )
     return tmp_path
@@ -118,7 +118,7 @@ def test_each_write_keeps_a_backup_and_only_the_last_twenty(world, monkeypatch):
 
 
 def test_with_the_switch_off_nothing_is_added_but_the_rest_is_recorded(world):
-    paths.AUTOMATION.write_text(
+    paths.SETTINGS.write_text(
         yaml.safe_dump({"auto_add_synonyms": False, "unlock_max_open": 2}), encoding="utf-8"
     )
     before = paths.BULLETS.read_text(encoding="utf-8")
@@ -207,7 +207,7 @@ def test_keywords_with_no_new_roles_is_empty(world, monkeypatch):
 
 
 def test_the_cli_reports_a_missing_config_key(world, capsys):
-    paths.AUTOMATION.write_text(yaml.safe_dump({"auto_add_synonyms": True}), encoding="utf-8")
+    paths.SETTINGS.write_text(yaml.safe_dump({"auto_add_synonyms": True}), encoding="utf-8")
     _propose()
     assert S.main(["apply"]) == 1
     assert "unlock_max_open" in capsys.readouterr().err

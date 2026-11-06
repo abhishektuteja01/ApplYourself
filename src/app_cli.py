@@ -584,11 +584,11 @@ def cmd_build_letter(
 
 
 def _outreach_limits() -> dict:
-    limits = config_schema.automation_setting("outreach_word_limits", None)
+    limits = config_schema.setting("outreach_word_limits", None)
     if not limits:
         raise AppError(
-            "profile/automation.yaml has no outreach_word_limits; copy that block "
-            "from profile/automation.example.yaml."
+            "profile/settings.yaml has no outreach_word_limits; copy that block "
+            "from profile/settings.example.yaml."
         )
     return limits
 

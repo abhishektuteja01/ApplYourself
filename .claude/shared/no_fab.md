@@ -36,7 +36,7 @@ file may hold.
 | `number` | a number with no source: on a resume, the cited bullets, a context header or the baseline summary; in a letter or answers, the JD, a context header or a `uses` bullet |
 | `skill` | a summary names a skill no cited bullet backs, or an alias that is not an allowable synonym |
 | `lint` | a banned phrase from a `level: block` rule in `profile/de_ai_rules.yaml`; a `level: warn` hit is listed under `warnings` and never fails the build. Company names, the recipient's name, skill names, context titles and orgs, URLs and dates are never flagged |
-| `length` | an outreach body or subject runs past its `outreach_word_limits` entry in `profile/automation.yaml` |
+| `length` | an outreach body or subject runs past its `outreach_word_limits` entry in `profile/settings.yaml` |
 | `pages` | the pdf runs past one page, or "page count unknown": no pdf was made. That one is not a plan problem: do not edit, stop and report it (`--no-pdf` passes without a page count, only when the user asks) |
 
 Mechanical fixes (dashes, smart quotes, ellipses, odd spaces) are applied

@@ -511,8 +511,8 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
 Offer this only once the daily loop works. The agent runs
 `scripts/nightly_pipeline.sh`: discover, score, synonyms, tailor, apply prep
 (never submits), then `summary.md`. It runs headless `claude` sessions, so it
-spends their usage. It needs `profile/automation.yaml`: copy
-`profile/automation.example.yaml`, then set or delete `summary_email` and set
+spends their usage. It needs `profile/settings.yaml`: copy
+`profile/settings.example.yaml`, then set or delete `summary_email` and set
 the per-night caps. Show `pmset -g sched` first — the block **replaces** their wake
 schedule wholesale — then print it for them to run. Do not run any of it: it
 writes outside the repo, needs `sudo`, and calls `launchctl`. The script derives

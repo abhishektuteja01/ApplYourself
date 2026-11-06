@@ -799,9 +799,9 @@ def rebuild_states(pipeline_dir: Path, *, apply: bool) -> list[str]:
 
 
 def ghosted_after_days() -> int:
-    from src.shared.config_schema import automation_setting
+    from src.shared.config_schema import setting
 
-    return int(automation_setting("ghosted_after_days", 30))
+    return int(setting("ghosted_after_days", 30))
 
 
 def shown_state(

@@ -375,7 +375,7 @@ once and says which are active, empty, stale or dead into
 | `run [--job-id ID] [--answers F] [--manifest F] [--submit] [--yes] [--limit N] [--rate 4m]` | Fill, and click only with `--submit`. **Uploads your documents.** With `--answers` it first saves what your confirmed answers teach to the answer bank. `--manifest` dumps what the page actually holds against the plan. |
 | `confirm <answers-file>` | Show an `/apply` answers file and take your typed yes on a terminal. Stores a hash beside the file; `run` and the bank treat the file as confirmed only while it still matches. Refused without a terminal. |
 | `learn [--job J] [--undo ID [--wording W \| --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]` | Review what the answer bank holds, or take one thing back: a question, one wording or keyword of it, a work-authorization claim, or a judged work-authorization / export-control wording. |
-| `sheet [--list STATUS] [--compare]` | Rewrite the overnight status sheet (`profile/automation.yaml` `table_path`) from the work queue: every role scored at or above `scoring.yaml` `cutoffs.sheet`, live and not finished, with its status from state, the submit ledger and run records. `--list` prints the queue at one status; `--compare` shows how the xlsx differs. Both write nothing. |
+| `sheet [--list STATUS] [--compare]` | Rewrite the overnight status sheet (`profile/settings.yaml` `table_path`) from the work queue: every role scored at or above `scoring.yaml` `cutoffs.sheet`, live and not finished, with its status from state, the submit ledger and run records. `--list` prints the queue at one status; `--compare` shows how the xlsx differs. Both write nothing. |
 
 The submit path is bounded, all in `src/apply_cli.py`:
 
@@ -435,6 +435,9 @@ Also in `profile/`, but rules rather than personal data:
   the `ineligible` drop list, the action thresholds and the shortlist size. Your
   sponsorship need per country comes from `application_answers.yaml`'s
   work-authorization table.
+- `settings.yaml`, copied from `settings.example.yaml`, holds machine settings:
+  the night run's caps and retries, the outreach word limits, the cooldown and
+  ghosted windows, and which browser `/apply` drives.
 
 The shared judging guide (the four axes, the answer fields, the sponsorship
 vocabulary) is `.claude/shared/scoring_rubric.md`, committed, layered under each

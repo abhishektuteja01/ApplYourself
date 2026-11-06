@@ -23,6 +23,8 @@ SCORING = "scoring.yaml"
 DISCOVERY = "discovery.yaml"
 VERTICALS = "verticals.yaml"
 RESUME = "resume.yaml"
+SETTINGS = "settings.yaml"
+OLD_SETTINGS = "automation.yaml"
 
 
 @dataclass
@@ -33,10 +35,12 @@ class Profile:
     texts: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    renamed: dict[str, str] = field(default_factory=dict)
+    """new name -> old name: the new file's text starts from the old one's."""
 
     def text(self, name: str) -> str | None:
         if name not in self.texts:
-            p = self.root / name
+            p = self.root / self.renamed.get(name, name)
             if not p.is_file():
                 return None
             self.texts[name] = p.read_text(encoding="utf-8")
@@ -361,7 +365,48 @@ def _resume_facts(p: Profile) -> None:
     p.notes.append(f"{BANK}: schema_version 3; identity, education and employment read {RESUME}")
 
 
-STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad, _salary, _resume_facts)
+def _settings(p: Profile) -> None:
+    """automation.yaml -> settings.yaml, and the bank's `browser:` block into it."""
+    if (p.root / OLD_SETTINGS).is_file():
+        if (p.root / SETTINGS).is_file():
+            p.problems.append(
+                f"{OLD_SETTINGS} and {SETTINGS} both exist: move what {OLD_SETTINGS} "
+                f"still holds into {SETTINGS} by hand, then delete {OLD_SETTINGS}"
+            )
+            return
+        p.renamed[SETTINGS] = OLD_SETTINGS
+        p.texts[SETTINGS] = p.text(SETTINGS) or ""
+        p.notes.append(f"{OLD_SETTINGS} -> {SETTINGS}")
+    bank = p.data(BANK)
+    if not isinstance(bank, dict) or "browser" not in bank:
+        return
+    have = (p.data(SETTINGS) or {}).get("browser")
+    if have is not None and have != bank["browser"]:
+        p.problems.append(
+            f"{BANK} browser: {bank['browser']} differs from {SETTINGS} browser: {have}; "
+            f"keep one in {SETTINGS} and delete the other"
+        )
+        return
+    if have is None:
+        text = (p.text(SETTINGS) or "").rstrip("\n")
+        block = yaml.safe_dump({"browser": bank["browser"]}, sort_keys=False)
+        p.texts[SETTINGS] = (
+            (text + "\n\n" if text else "")
+            + "# Which browser drives the /apply form. patchright | playwright.\n"
+            + block
+        )
+    del bank["browser"]
+    p.set_bank(bank)
+    p.notes.append(f"{BANK} browser: -> {SETTINGS}")
+
+
+STEPS: tuple[Callable[[Profile], None], ...] = (
+    _languages,
+    _abroad,
+    _salary,
+    _resume_facts,
+    _settings,
+)
 
 
 def plan(root: Path) -> Profile:
@@ -376,8 +421,9 @@ def changed(p: Profile) -> dict[str, tuple[str, str]]:
     """{file: (old text, new text)} for every file a step changed."""
     out = {}
     for name, new in p.texts.items():
-        old = (p.root / name).read_text(encoding="utf-8") if (p.root / name).is_file() else ""
-        if new != old:
+        src = p.root / p.renamed.get(name, name)
+        old = src.read_text(encoding="utf-8") if src.is_file() else ""
+        if new != old or name in p.renamed:
             out[name] = (old, new)
     return out
 
@@ -388,7 +434,7 @@ def diff(p: Profile) -> str:
             difflib.unified_diff(
                 old.splitlines(keepends=True),
                 new.splitlines(keepends=True),
-                f"a/{name}",
+                f"a/{p.renamed.get(name, name)}",
                 f"b/{name}",
             )
         )
@@ -411,6 +457,8 @@ def write(p: Profile) -> list[str]:
         tmp.write_text(new, encoding="utf-8")
         os.replace(tmp, path)
         done.append(name)
+        if name in p.renamed:
+            (p.root / p.renamed[name]).unlink()
     if BANK in todo:
         path = p.root / BANK
         with locked(path):

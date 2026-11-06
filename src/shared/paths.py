@@ -35,7 +35,7 @@ _LAYOUT = {
     "RESUME": "profile/resume.yaml",
     "BULLETS": "profile/bullets.md",
     "SKILLS": "profile/skills_master.md",
-    "AUTOMATION": "profile/automation.yaml",
+    "SETTINGS": "profile/settings.yaml",
     "CONTACTS": "profile/contacts.yaml",
     "SCORING": "profile/scoring.yaml",
     "DE_AI_RULES": "profile/de_ai_rules.yaml",
@@ -76,7 +76,7 @@ PROFILE: Path
 RESUME: Path
 BULLETS: Path
 SKILLS: Path
-AUTOMATION: Path
+SETTINGS: Path
 CONTACTS: Path
 SCORING: Path
 DE_AI_RULES: Path

@@ -12,11 +12,6 @@
 
 schema_version: 3
 
-# Which browser drives the form. patchright | playwright.
-browser:
-  driver: patchright
-  stealth: true
-
 # identity, education and employment read profile/resume.yaml for every key
 # left out here: first/last/preferred name from `name`, email and phone from the
 # mailto:/tel: contact links, location from the first plain contact line;

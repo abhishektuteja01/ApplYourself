@@ -158,3 +158,31 @@ def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
         before.education,
         before.employment,
     )
+
+
+def test_automation_yaml_becomes_settings_with_the_bank_browser(tmp_path, capsys):
+    from src.apply.answers import AnswersError, load_answers
+    from src.apply.browser import load_browser_config
+    from src.shared.config_schema import load_settings
+
+    prof = _profile(tmp_path)
+    shutil.copyfile(paths.example("resume.example.yaml"), prof / "resume.yaml")
+    settings = paths.example("settings.example.yaml").read_text(encoding="utf-8")
+    old = settings[: settings.index("# Which browser")].rstrip("\n") + "\n"
+    (prof / "automation.yaml").write_text(old, encoding="utf-8")
+    b = prof / "application_answers.yaml"
+    bank = yaml.safe_load(b.read_text(encoding="utf-8"))
+    bank["browser"] = {"driver": "patchright", "stealth": True}
+    b.write_text(yaml.safe_dump(bank, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"automation\.yaml moved to .*settings\.yaml"):
+        load_settings(prof / "settings.yaml")
+    with pytest.raises(AnswersError, match=r"browser: moved to profile/settings\.yaml"):
+        load_answers(b)
+
+    assert _run(prof, apply=True) == 0
+    assert not (prof / "automation.yaml").exists()
+    assert load_browser_config(prof / "settings.yaml") == ("patchright", True)
+    load_answers(b)
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out

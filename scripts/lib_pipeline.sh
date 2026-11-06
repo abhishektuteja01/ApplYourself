@@ -19,9 +19,9 @@ fi
 mkdir -p "$RUN_DIR"
 export RUN_DIR DRY_RUN
 
-# cfg KEY: one value from profile/automation.yaml. A missing key is an error,
+# cfg KEY: one value from profile/settings.yaml. A missing key is an error,
 # so the numbers live in the config, not here.
-cfg() { "$UV" run config get automation "$1"; }
+cfg() { "$UV" run config get settings "$1"; }
 
 now() { date +%Y-%m-%d_%H%M%S; }
 
@@ -122,7 +122,7 @@ PY
 # quota_hit: 0 once a call in this stage hit the usage limit; launch nothing more.
 quota_hit() { [[ -f "$RUN_DIR/$STAGE.quota" ]]; }
 
-# night_cap KEY: a per-night cap from profile/automation.yaml; 0 (or no key) is no cap.
+# night_cap KEY: a per-night cap from profile/settings.yaml; 0 (or no key) is no cap.
 night_cap() {
   local v; v="$(cfg "$1" 2>/dev/null)" || v=0
   [[ "$v" =~ ^[0-9]+$ ]] || v=0

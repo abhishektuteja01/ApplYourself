@@ -94,7 +94,7 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 - `--submit` is off by default and needs `--limit`, unless `--job-id` names one
   role. It asks for a typed confirmation unless `--yes`; a non-tty stdin without
   `--yes` is refused. `--rate` is floored at 30s. One submission per company per run.
-- The company cooldown (`company_cooldown_days` in `profile/automation.yaml`,
+- The company cooldown (`company_cooldown_days` in `profile/settings.yaml`,
   `src/apply/cooldown.py`): a batch `--submit` skips a role whose company
   (`normalize_company`) had an application within it, "cooldown until <date>".
   Every application counts: any `applied` entry in a state_history and every
@@ -140,7 +140,7 @@ listing), the note saying why; the summary counts both. `apply resolve-urls
 --dry-run|--apply` is the only fetch: it looks the title up on the company's own
 Greenhouse, Lever or Ashby board from `boards.csv` and stores hit or miss. The
 night never runs it.
-`uv run apply sheet` rewrites `profile/automation.yaml`'s `table_path` from it
+`uv run apply sheet` rewrites `profile/settings.yaml`'s `table_path` from it
 (under a lock, tmp file then rename); `--list STATUS` prints the queue at a status
 (the night stages and triage read this); `--compare` prints how the xlsx differs
 from the queue. `--add` is accepted and does nothing extra. Bank writes

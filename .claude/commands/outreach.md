@@ -118,7 +118,7 @@ Read:
 
 ## Step 3 — generate the draft per channel rubric (LOCKED)
 
-Word limits are `outreach_word_limits` in `profile/automation.yaml`; the build
+Word limits are `outreach_word_limits` in `profile/settings.yaml`; the build
 checks them, so write within the one named for the channel.
 
 ### recruiter

@@ -99,7 +99,7 @@ def _built(what: str, fixture: str):
     def run(world):
         folder = _build_resume(world)
         shutil.copy(SESSIONS / fixture, folder)
-        shutil.copy(paths.example("automation.example.yaml"), world / "profile" / "automation.yaml")
+        shutil.copy(paths.example("settings.example.yaml"), world / "profile" / "settings.yaml")
         code, out = (
             _app("build", what, JOB, "--no-pdf") if what == "letter" else _app("build", what, JOB)
         )

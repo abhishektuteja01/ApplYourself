@@ -1,4 +1,4 @@
-"""The work queue, and the overnight status sheet (`profile/automation.yaml`
+"""The work queue, and the overnight status sheet (`profile/settings.yaml`
 `table_path`) that renders it.
 
 `queue()` is computed, never read back from the sheet: every role scored at or
@@ -31,7 +31,7 @@ from src.apply import apply_url, confirmation, cooldown, ledger, run_record
 from src.score_filter import load_cutoffs
 from src.score_store import view
 from src.shared import paths
-from src.shared.config_schema import load_automation
+from src.shared.config_schema import load_settings
 from src.shared.parquet_io import locked
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
@@ -197,8 +197,8 @@ def _load(table: Path):
     return wb, ws, {name: i + 1 for i, name in enumerate(header)}
 
 
-def _table(automation: Path | None) -> Path:
-    config = load_automation(automation or paths.PROFILE / "automation.yaml")
+def _table(settings: Path | None) -> Path:
+    config = load_settings(settings or paths.SETTINGS)
     return paths.root() / config.get("table_path", "top_scored_open.xlsx")
 
 
@@ -279,22 +279,22 @@ def queue(snap: Snapshot | None = None) -> list[dict[str, str]]:
     return out
 
 
-def rows(automation: Path | None = None) -> list[dict[str, str]]:
-    """Every row of the work queue. A pure read; `automation` is kept for callers."""
+def rows(settings: Path | None = None) -> list[dict[str, str]]:
+    """Every row of the work queue. A pure read; `settings` is kept for callers."""
     return queue()
 
 
-def job_ids(status: str, automation: Path | None = None) -> list[str]:
+def job_ids(status: str, settings: Path | None = None) -> list[str]:
     """The job_ids the queue holds at `status`, in queue order. A pure read."""
     return [row["name"] for row in queue() if row["status"] == status]
 
 
-def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]:
+def refresh(add: bool = False, settings: Path | None = None) -> dict[str, int]:
     """Rewrite the sheet from `queue()` (tmp file, then rename). `add` is kept
     for callers: every refresh holds every queued role. Returns a count per
     status; a role the old sheet held that left the queue counts under
     "<status> (removed)"."""
-    table = _table(automation)
+    table = _table(settings)
     snap = snapshot()
     new = queue(snap)
     counts: dict[str, int] = {}
@@ -317,12 +317,12 @@ def refresh(add: bool = False, automation: Path | None = None) -> dict[str, int]
     return counts
 
 
-def check(automation: Path | None = None) -> dict[str, list[str]]:
+def check(settings: Path | None = None) -> dict[str, list[str]]:
     """Read-only look at the sheet as it stands: Applied or Closed rows still on
     it, a job_id listed twice, and rows whose posting is no longer in the live
     view (`clean.parquet`), and rows whose status differs from what the records
     give now. Every list is empty on a clean sheet."""
-    table = _table(automation)
+    table = _table(settings)
     out: dict[str, list[str]] = {
         "finished": [],
         "duplicates": [],
@@ -347,11 +347,11 @@ def check(automation: Path | None = None) -> dict[str, list[str]]:
     return out
 
 
-def compare(automation: Path | None = None) -> dict[str, list[str]]:
+def compare(settings: Path | None = None) -> dict[str, list[str]]:
     """Read-only: the sheet as it stands against `queue()`. `missing`: computed
     but not on the sheet; `extra`: on the sheet but not computed; `moved`: the
     shared roles, when their order differs."""
-    on_sheet = [row["name"] for row in _sheet_rows(_table(automation))]
+    on_sheet = [row["name"] for row in _sheet_rows(_table(settings))]
     computed = [row["name"] for row in queue()]
     shared = set(on_sheet) & set(computed)
     sheet_order = [j for j in on_sheet if j in shared]
@@ -365,7 +365,7 @@ def compare(automation: Path | None = None) -> dict[str, list[str]]:
     }
 
 
-def statuses(outcomes: dict, automation: Path | None = None) -> dict[str, tuple[str, str, str]]:
+def statuses(outcomes: dict, settings: Path | None = None) -> dict[str, tuple[str, str, str]]:
     """job_id -> (status, note, command) for every queued role, from the given
     run outcomes. A pure read; the run backfill compares two of these."""
     snap = snapshot(outcomes)
