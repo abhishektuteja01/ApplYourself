@@ -125,10 +125,16 @@ def _write_state(state_path: Path, data: dict[str, Any]) -> None:
 State = dict[str, Any]
 
 
-def update(state_path: Path, fn: Callable[[State | None], State | None]) -> State | None:
+def update(
+    state_path: Path, fn: Callable[[State | None], State | None], *, create: bool = False
+) -> State | None:
     """The one read-modify-write of a state.yaml: under the file's lock, pass
     the current dict (None when absent or empty) to fn and write what it
-    returns. fn returning None writes nothing and returns the current dict."""
+    returns. fn returning None writes nothing and returns the current dict.
+    Without create, an absent file is never locked, so no empty role folder
+    is left behind."""
+    if not create and not state_path.exists() and fn(None) is None:
+        return None
     with locked(state_path):
         current = load_state(state_path)
         data = fn(current)
@@ -227,7 +233,7 @@ def transition(
             raise NotInState((existing or {}).get("state"))
         return _transitioned(state_path, existing, new_state, note, now_iso, initial_fields)
 
-    return _written(state_path, update(state_path, step))
+    return _written(state_path, update(state_path, step, create=if_state is None))
 
 
 def _transitioned(
@@ -310,7 +316,7 @@ def ensure_state(
             state_path, None, "saved", "auto-registered by /tailor", _now_iso(now), initial_fields
         )
 
-    return _written(state_path, update(state_path, create)), bool(created)
+    return _written(state_path, update(state_path, create, create=True)), bool(created)
 
 
 # ---------------------------------------------------------------

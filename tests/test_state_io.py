@@ -257,6 +257,7 @@ def test_append_tailored_dir_requires_existing_state(tmp_path):
     p = state_path_for(tmp_path / "pipeline", "aaaaaaaa")
     with pytest.raises(ValueError, match="does not exist"):
         append_tailored_dir(p, "d1")
+    assert not p.parent.exists()  # no role folder holding only a lock file
 
 
 # ---------- outreach[] ----------

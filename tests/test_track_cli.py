@@ -310,7 +310,7 @@ def test_if_guard_fires_only_from_the_named_state(tmp_path, capsys):
     )
     state_file = tmp_path / "pipeline" / "aaaaaaaa" / "state.yaml"
     assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
-    assert not state_file.exists()  # untracked: no-op
+    assert not state_file.parent.exists()  # untracked: no-op, no empty folder
     assert track_cli.main(["aaaaaaaa", "saved"]) == 0
     assert track_cli.main(["aaaaaaaa", "tailored", "--if", "saved"]) == 0
     assert yaml.safe_load(state_file.read_text(encoding="utf-8"))["state"] == "tailored"
