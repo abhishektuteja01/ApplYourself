@@ -3,7 +3,7 @@ per new posting that passes the title gate.
 
 Read-only discovery; Workday roles are manual-apply. The slug is
 `company|wd#|site_id`. The list endpoint filters server-side on `searchText`,
-so each tenant is searched once per lane (that lane's first search term).
+so each tenant is searched with each lane's first `terms_per_lane` search terms.
 `total` cannot be trusted past page 0, so paging stops on a short page, a
 page with nothing that passes the gate, or `max_pages`.
 """

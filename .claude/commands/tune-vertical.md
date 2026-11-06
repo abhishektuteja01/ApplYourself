@@ -89,9 +89,11 @@ under which code, and the score distribution. That report is Round 1's input.
 The question this round answers: is the lane catching the right titles, and
 only those.
 
-- **`search_terms` / `linkedin_terms`** — add the in-lane title families the
-  evidence shows the current terms miss; drop terms whose rows the user rejects
-  on sight. `linkedin_terms` stays the reduced set (429 mitigation).
+- **`search_terms`** — the lane's one search list (3-6 broad titles, broadest
+  first; Workday/Eightfold read the first `terms_per_lane`). Add the in-lane
+  title families the evidence shows the current terms miss; drop terms whose
+  rows the user rejects on sight. `linkedin_terms` / `abroad_terms`, if set,
+  replace it on LinkedIn / abroad.
 - **The title gate** (`title_gate.lane_for`) is lenient: a title passes when
   it fits the lane (one of its `classifier_rules`, or one of its search terms,
   matched loosely) and holds no word of the one global ban list,

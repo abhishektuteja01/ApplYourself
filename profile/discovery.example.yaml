@@ -40,9 +40,10 @@ sources:
   lever:         {enabled: true,  pacing_seconds: 1, every_days: 1}
   ashby:         {enabled: true,  pacing_seconds: 2, every_days: 1}
   # Workday is the slowest lane per kept row and manual-apply only, so a
-  # third of it a night is a good start.
+  # third of it a night is a good start. Workday and Eightfold search each
+  # tenant with each lane's first terms_per_lane search terms (default 3).
   workday:       {enabled: true,  pacing_seconds: 2, every_days: 3}
-  # Ten postings a page; each tenant searched with each lane's first term.
+  # Ten postings a page.
   eightfold:     {enabled: true,  pacing_seconds: 1, every_days: 3, max_pages: 6}
   # The stapply.ai daily file of public ATS jobs (one download a night).
   # A snapshot older than max_snapshot_age_hours is skipped.

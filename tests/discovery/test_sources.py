@@ -211,6 +211,27 @@ def test_workday_pages_until_nothing_passes(monkeypatch, cfg, tmp_path):
     assert out[0]["posting_key"] == "workday|acme|widget-consultant_r0"
 
 
+def test_board_search_reads_each_lanes_first_terms_per_lane_terms(monkeypatch, cfg, tmp_path):
+    searched = []
+
+    def fake(company, wd, site_id, offset, search_text="", deadline_ts=None):
+        searched.append(search_text)
+        return {"jobPostings": []}
+
+    monkeypatch.setattr(workday, "list_page", fake)
+    board = B.Board("workday", "Acme", "acme|wd5|External")
+    c = crawl(cfg, tmp_path)
+    workday.WorkdayLane().list_board(board, c, lambda *_: None)
+    lanes = [cfg.verticals[cfg.default_vertical]] + [
+        v for n, v in cfg.verticals.items() if n != cfg.default_vertical
+    ]
+    assert searched == list(dict.fromkeys(t for v in lanes for t in v.search_terms[:3]))
+    searched.clear()
+    c.cfg.sources["workday"].terms_per_lane = 1
+    workday.WorkdayLane().list_board(board, c, lambda *_: None)
+    assert searched == list(dict.fromkeys(v.search_terms[0] for v in lanes))
+
+
 def test_workday_rejects_a_bad_slug():
     with pytest.raises(workday.WorkdaySlugError):
         workday.parse_slug("acme|x5|site")

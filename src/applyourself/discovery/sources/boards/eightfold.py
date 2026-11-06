@@ -5,7 +5,7 @@ Read-only discovery. The slug is `host|domain`: the careers host and the
 company domain its API asks for. A tenant answers one of two APIs, PCSX
 (`/api/pcsx/...`) or the older apply/v2 (`/api/apply/v2/...`); the list tries
 PCSX and falls back to v2 when PCSX is refused. Each tenant is searched with
-each lane's first search term, like Workday, and paging stops on a short
+each lane's first `terms_per_lane` search terms, like Workday, and paging stops on a short
 page, a page with nothing that passes the gate, or `max_pages`.
 """
 

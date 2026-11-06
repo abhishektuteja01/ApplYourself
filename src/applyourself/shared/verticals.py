@@ -105,6 +105,8 @@ def _parse_focus(raw: Any, path: Path, where: str) -> Focus:
 class Vertical:
     name: str
     display_name: str
+    # The lane's one search list, for every searching source. `linkedin_terms`
+    # and `abroad_terms` are optional overrides; absent, they are search_terms.
     search_terms: tuple[str, ...]
     linkedin_terms: tuple[str, ...]
     # The title ban list, `defaults:` merged in. The lane's own include and
@@ -113,7 +115,7 @@ class Vertical:
     title_include_terms: tuple[str, ...]
     title_strong_keep_terms: tuple[str, ...]
     resume: LaneResume | None = None
-    # Optional. The terms a jobspy lane's `abroad` block queries per country.
+    # The terms a jobspy lane's `abroad` block queries per country.
     abroad_terms: tuple[str, ...] = ()
     # `years` maps required years -> seniority cap; a JD the judge reads
     # asking more than its largest key is forced to skip. `drop_phrases` is
@@ -246,10 +248,10 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
     )
     if not search_terms:
         raise _fail(path, f"{where}.search_terms must be nonempty")
-    linkedin_terms = _str_list(
-        _require(raw, "linkedin_terms", path, where), path, f"{where}.linkedin_terms"
+    linkedin_terms, abroad_terms = (
+        _str_list(raw[key], path, f"{where}.{key}") if key in raw else search_terms
+        for key in ("linkedin_terms", "abroad_terms")
     )
-    abroad_terms = _str_list(raw.get("abroad_terms", []), path, f"{where}.abroad_terms")
 
     drop_phrases = _str_list(raw.get("drop_phrases", []), path, f"{where}.drop_phrases")
     years = raw.get("years") or {}

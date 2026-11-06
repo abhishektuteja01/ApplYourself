@@ -123,7 +123,8 @@ have passed since `last_checked`; due boards run oldest first. An error leaves
 rest due.
 
 Workday (`company|wd#|site`) and Eightfold (`host|domain`) filter server-side,
-so each tenant is searched with each lane's first search term. Vendor modules
+so each tenant is searched with each lane's first `terms_per_lane` search
+terms (default 3). Vendor modules
 only list a board and fetch one posting. The loop, the gate, known-vs-new,
 detail fetching and board results live in `BoardLane` once.
 
@@ -164,12 +165,18 @@ unless a same-country or major city has the name.
 
 ## Searching is not accepting
 
+A lane's `search_terms` is its one search list: LinkedIn, Indeed, the
+`abroad` block and the Workday/Eightfold boards all read it. Its
+`linkedin_terms` and `abroad_terms`, when set, still replace it on LinkedIn
+and abroad.
+
 The answer bank's `work_authorization.countries` is the one country list. The
 view accepts your own country and every other row in it (`location_allowlist.countries`
 overrides that); `search_locations` is
 what the jobspy lanes query (absent: the allowlist, capped at
 `MAX_SEARCH_LOCATIONS`). The top-level `abroad` block (`lanes`, `sources`) adds,
-on each listed source, one query per other bank country x lane `abroad_terms`,
+on each listed source, one query per other bank country x lane `abroad_terms`
+(absent: its `search_terms`),
 remote=False; those countries must be in the allowlist, and the view drops a
 row in an abroad country whose lane is not listed. `sources.*.abroad` is retired. A LinkedIn `companies` block (`terms`, `ids`) adds one home query per
 term x company id; those rows have no lane of their own and are classified by

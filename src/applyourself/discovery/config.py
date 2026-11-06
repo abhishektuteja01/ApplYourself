@@ -67,6 +67,7 @@ _SOURCE_KEYS = frozenset(
         "results_wanted",
         "max_snapshot_age_hours",
         "companies",
+        "terms_per_lane",
     }
 )
 _ABROAD_KEYS = frozenset({"lanes", "sources"})
@@ -129,9 +130,11 @@ class SourceConfig:
     # LinkedIn: each term searched within each company's LinkedIn id.
     company_terms: list[str] = field(default_factory=list)
     company_ids: dict[str, int] = field(default_factory=dict)
-    # Board lanes: days between checks of one board. Workday: pages per term.
+    # Board lanes: days between checks of one board. Workday/Eightfold: pages
+    # per term, and how many of each lane's first search terms they search.
     every_days: int = 1
     max_pages: int = 6
+    terms_per_lane: int = 3
     # Feed lanes: a snapshot older than this is skipped, not applied.
     max_snapshot_age_hours: int = 36
 
@@ -271,7 +274,8 @@ class DiscoveryConfig:
                 problems.append(f"abroad.lanes: {v!r} is not a vertical")
             elif not lanes[v].abroad_terms:
                 problems.append(
-                    f"abroad.lanes: {v!r} has no abroad_terms in profile/verticals/{v}/lane.yaml"
+                    f"abroad.lanes: {v!r} has an empty abroad_terms in "
+                    f"profile/verticals/{v}/lane.yaml (leave it out to use search_terms)"
                 )
         return problems
 
@@ -296,6 +300,7 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         remote_queries=v.get("remote_queries", True),
         every_days=_int(v.get("every_days", 1), f"{where}.every_days", 1),
         max_pages=_int(v.get("max_pages", 6), f"{where}.max_pages", 1),
+        terms_per_lane=_int(v.get("terms_per_lane", 3), f"{where}.terms_per_lane", 1),
         hours_old=_int(v.get("hours_old", 336), f"{where}.hours_old", 1),
         results_wanted=_int(v.get("results_wanted", 100), f"{where}.results_wanted", 1),
         max_snapshot_age_hours=_int(

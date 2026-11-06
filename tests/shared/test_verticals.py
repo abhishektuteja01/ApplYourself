@@ -178,10 +178,13 @@ class TestValidation:
         ):
             _write_and_load(tmp_path, data)
 
-    def test_missing_linkedin_terms(self, tmp_path):
+    def test_missing_linkedin_terms_reads_search_terms_but_a_bad_one_fails(self, tmp_path):
         data = _load_raw()
         del data["verticals"]["example_primary"]["linkedin_terms"]
-        with pytest.raises(ValueError, match="linkedin_terms"):
+        lane = _write_and_load(tmp_path, data).verticals["example_primary"]
+        assert lane.linkedin_terms == lane.search_terms
+        data["verticals"]["example_primary"]["linkedin_terms"] = "Widget Engineer"
+        with pytest.raises(ValueError, match="linkedin_terms must be a list"):
             _write_and_load(tmp_path, data)
 
     @pytest.mark.parametrize(
@@ -442,10 +445,10 @@ class TestClassifierRuleProtocol:
 
 
 class TestAbroadTerms:
-    """Optional: absent means no abroad queries for that lane."""
+    """Optional: absent, a lane listed in `abroad` searches its search_terms."""
 
-    def test_absent_is_empty(self, cfg):
-        assert all(v.abroad_terms == () for v in cfg.verticals.values())
+    def test_absent_is_the_search_terms(self, cfg):
+        assert all(v.abroad_terms == v.search_terms for v in cfg.verticals.values())
 
     def test_a_list_is_loaded_in_order(self, tmp_path):
         data = _load_raw()

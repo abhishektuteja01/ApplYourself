@@ -162,7 +162,7 @@ Read `profile/verticals.example.yaml` and, for items 3-5, `profile/bullets.md`,
 and the `resume:` block in `profile/verticals/example_primary/lane.yaml`.
 Draft from those plus the lane name and description. Ask nothing yet.
 
-In `pass-a`, `search_terms` and `linkedin_terms` come from the role titles in the
+In `pass-a`, `search_terms` come from the role titles in the
 description argument plus the lane name — bullets are not read.
 
 **1. The lane's `lane.yaml`.** Exactly these keys, nothing else. A key in
@@ -170,9 +170,11 @@ description argument plus the lane name — bullets are not read.
 any other key the lane sets replaces the default's.
 
 - `display_name` — shortlist section header text.
-- `search_terms` — 6-12 real job titles for the lane, spine first, adjacent
-  after; comment the tiers like the example block does.
-- `linkedin_terms` — the reduced set (429 mitigation), usually the spine only.
+- `search_terms` — 3-6 broad real job titles for the lane, broadest first:
+  LinkedIn, Indeed, the `abroad` block and the Workday/Eightfold boards (its
+  first `terms_per_lane`) all search them.
+- `linkedin_terms` / `abroad_terms` — leave out; set one only to give LinkedIn
+  or abroad a different list.
 - `years` — required years mapped to a seniority cap (0-20), largest key =
   Step 3's cap, lower caps for higher asks (cap 5 → `{3: 14, 4: 10, 5: 6}`).
   A JD the judge reads asking more than the largest key is forced to skip.

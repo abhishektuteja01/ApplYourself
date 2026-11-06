@@ -75,15 +75,16 @@ class Board:
 # ---------------------------------------------------------------------
 
 
-def search_terms(vcfg) -> tuple[str, ...]:
-    """Each lane's first search term, default lane first, duplicates once:
-    what a board that filters server-side is searched with."""
+def search_terms(vcfg, per_lane: int = 1) -> tuple[str, ...]:
+    """Each lane's first `per_lane` search terms, default lane first,
+    duplicates once: what a board that filters server-side is searched with."""
     order = [vcfg.default_vertical] + [n for n in vcfg.verticals if n != vcfg.default_vertical]
     terms: list[str] = []
     for name in order:
         lane = vcfg.verticals.get(name)
-        if lane is not None and lane.search_terms and lane.search_terms[0] not in terms:
-            terms.append(lane.search_terms[0])
+        for term in lane.search_terms[:per_lane] if lane is not None else ():
+            if term not in terms:
+                terms.append(term)
     return tuple(terms)
 
 
@@ -339,10 +340,11 @@ class BoardLane(Lane):
         pages. A term stops on a short page or a page with nothing past the
         title gate; everything stops at the deadline. `fetch_page(term, offset)`
         returns the page's items, `to_posting(item, term)` a posting or None."""
-        max_pages = crawl.cfg.sources[self.name].max_pages
+        src = crawl.cfg.sources[self.name]
+        max_pages = src.max_pages
         out: dict[str, dict] = {}
         first = True
-        for term in search_terms(crawl.vcfg):
+        for term in search_terms(crawl.vcfg, src.terms_per_lane):
             for page in range(max_pages):
                 if crawl.deadline_reached():
                     return list(out.values())

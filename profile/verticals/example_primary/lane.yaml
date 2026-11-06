@@ -19,7 +19,8 @@ search_terms:
   - Gizmo Systems Consultant
   # adjacent
   - Widget Operations Analyst
-# Reduced list for LinkedIn (429 mitigation); may equal search_terms.
+# Every searching source reads search_terms. Optional: linkedin_terms (and
+# abroad_terms) replace it on LinkedIn (and abroad).
 linkedin_terms:
   - Widget Engineer
   - Gizmo Systems Consultant
