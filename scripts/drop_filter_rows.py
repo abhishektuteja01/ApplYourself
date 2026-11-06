@@ -19,8 +19,8 @@ import pandas as pd
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from src.shared import paths  # noqa: E402
-from src.shared.parquet_io import locked, write_parquet  # noqa: E402
+from src.shared import paths, schemas  # noqa: E402
+from src.shared.parquet_io import locked, schema_version, write_parquet  # noqa: E402
 
 
 def _filter_mask(df: pd.DataFrame) -> pd.Series:
@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.scored} not found: nothing to migrate")
         return 0
     with locked(args.scored):
+        schemas.check(schema_version(args.scored), schemas.SCORED_SCHEMA_VERSION, args.scored)
         df = pd.read_parquet(args.scored)
         mask = _filter_mask(df)
         codes = df.loc[mask, "scored_by_model"].str[len("filter:") :].value_counts()
@@ -45,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         for code, n in codes.items():
             print(f"  {code}: {n}")
         if args.apply and mask.any():
-            write_parquet(df[~mask], args.scored)
+            write_parquet(df[~mask], args.scored, schema_version=schemas.SCORED_SCHEMA_VERSION)
     print("written" if args.apply and mask.any() else "nothing written")
     return 0
 

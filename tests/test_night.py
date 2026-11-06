@@ -88,3 +88,14 @@ def test_run_json_is_replaced_whole_or_not_at_all(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         M.write_json(path, {"stages": {}})
     assert json.loads(path.read_text(encoding="utf-8"))["stages"]["score"]["status"] == "ok"
+
+
+def test_a_run_json_from_newer_code_is_refused(tmp_path):
+    from src.shared import schemas
+
+    (tmp_path / "run.json").write_text(
+        json.dumps({"schema_version": schemas.NIGHT_RUN_SCHEMA_VERSION + 1, "stages": {}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="schema version"):
+        M.load(tmp_path)

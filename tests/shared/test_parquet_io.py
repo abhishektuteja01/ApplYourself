@@ -94,3 +94,16 @@ def test_the_written_file_keeps_the_usual_mode(tmp_path):
     plain = tmp_path / "plain.bin"
     plain.write_bytes(b"")
     assert stat.S_IMODE(path.stat().st_mode) == stat.S_IMODE(plain.stat().st_mode)
+
+
+def test_a_scored_file_from_newer_code_is_refused_and_an_unstamped_one_reads(tmp_path):
+    from src import score_store
+    from src.shared import schemas
+
+    path = tmp_path / "scored.parquet"
+    write_parquet(pd.DataFrame({"job_id": ["a"]}), path)
+    assert list(score_store.read_scored(path)["job_id"]) == ["a"]
+    newer = schemas.SCORED_SCHEMA_VERSION + 1
+    write_parquet(pd.DataFrame({"job_id": ["a"]}), path, schema_version=newer)
+    with pytest.raises(ValueError, match="schema version"):
+        score_store.read_scored(path)

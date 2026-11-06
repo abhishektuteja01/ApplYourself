@@ -20,21 +20,39 @@ from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+_VERSION_KEY = b"schema_version"
 
 
-def write_parquet(df: pd.DataFrame, path: Path, *, index: bool = False) -> None:
-    """Write df to path atomically, creating the parent directory."""
+def write_parquet(
+    df: pd.DataFrame, path: Path, *, index: bool = False, schema_version: int | None = None
+) -> None:
+    """Write df to path atomically, creating the parent directory. A
+    `schema_version` is stored in the file's metadata."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp")
     try:
-        df.to_parquet(tmp, index=index)
+        if schema_version is None:
+            df.to_parquet(tmp, index=index)
+        else:
+            table = pa.Table.from_pandas(df, preserve_index=index)
+            meta = {**(table.schema.metadata or {}), _VERSION_KEY: str(schema_version).encode()}
+            pq.write_table(table.replace_schema_metadata(meta), tmp)  # type: ignore[no-untyped-call]
         with tmp.open("rb") as f:
             os.fsync(f.fileno())
         # Same directory, so this is a real atomic replace on POSIX.
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def schema_version(path: Path) -> int | None:
+    """The version `write_parquet` stored in path, or None for a file without one."""
+    raw = (pq.read_schema(path).metadata or {}).get(_VERSION_KEY)  # type: ignore[no-untyped-call]
+    return int(raw) if raw is not None else None
 
 
 @contextlib.contextmanager

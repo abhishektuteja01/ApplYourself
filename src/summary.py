@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src import app_cli, state_io
+from src import app_cli, night, state_io
 from src.apply import sheet
 from src.discovery import digest
 from src.discovery.store import load_maybe_duplicates
@@ -134,8 +134,7 @@ def _shown(items: list[str], limit: int = ERRORS_SHOWN) -> list[str]:
 
 
 def _run_json(run_dir: Path | None) -> dict | None:
-    path = run_dir / "run.json" if run_dir else None
-    return json.loads(path.read_text(encoding="utf-8")) if path and path.is_file() else None
+    return night.load(run_dir) if run_dir else None
 
 
 def stage_lines(run_dir: Path | None) -> dict[str, dict]:

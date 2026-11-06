@@ -31,7 +31,7 @@ from pathlib import Path
 
 import yaml
 
-from src.shared import clock, paths
+from src.shared import clock, paths, schemas
 
 STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 STOPS = ("discover", "score")
@@ -51,7 +51,11 @@ def write_json(path: Path, data: dict) -> None:
 
 def load(run_dir: Path) -> dict | None:
     path = run_dir / "run.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if not path.is_file():
+        return None
+    run = json.loads(path.read_text(encoding="utf-8"))
+    schemas.check(run.get("schema_version"), schemas.NIGHT_RUN_SCHEMA_VERSION, path)
+    return run
 
 
 def _stamp() -> str:
@@ -235,7 +239,13 @@ def _night(args: argparse.Namespace, dry: bool, skip: set[str], stages_dir: Path
         run_dir = paths.LOGS / f"pipeline_{stamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
         todo = [args.only] if args.only else [s for s in STAGES if s not in skip]
-        run = {"stamp": stamp, "started": _iso(), "dry_run": dry, "stages": {}}
+        run = {
+            "schema_version": schemas.NIGHT_RUN_SCHEMA_VERSION,
+            "stamp": stamp,
+            "started": _iso(),
+            "dry_run": dry,
+            "stages": {},
+        }
         for s in STAGES:
             status = "pending" if s in todo else "skipped"
             run["stages"][s] = {"stage": s, "status": status, "rc": None}

@@ -20,9 +20,9 @@ import pandas as pd
 
 from src.discovery import parse
 from src.discovery.dedupe import NO_TRIM, Trim, _Index
-from src.shared import identity, paths
+from src.shared import identity, paths, schemas
 from src.shared.job_boards import board_slug, detect_source
-from src.shared.parquet_io import locked, write_parquet
+from src.shared.parquet_io import locked, schema_version, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -383,12 +383,17 @@ def load_job_ids(path: Path | None = None) -> pd.DataFrame:
     path = Path(path or paths.JOB_IDS)
     if not path.exists():
         return coerce_job_ids(pd.DataFrame(columns=JOB_IDS_COLUMNS))
+    schemas.check(schema_version(path), schemas.JOB_IDS_SCHEMA_VERSION, path)
     return coerce_job_ids(pd.read_parquet(path))
 
 
 def save_job_ids(df: pd.DataFrame, path: Path | None = None) -> None:
     df = coerce_job_ids(df).sort_values(_JOB_IDS_KEY, kind="stable")
-    write_parquet(df.reset_index(drop=True), Path(path or paths.JOB_IDS))
+    write_parquet(
+        df.reset_index(drop=True),
+        Path(path or paths.JOB_IDS),
+        schema_version=schemas.JOB_IDS_SCHEMA_VERSION,
+    )
 
 
 def job_id_rows(store: pd.DataFrame) -> pd.DataFrame:

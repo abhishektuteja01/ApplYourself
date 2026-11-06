@@ -41,8 +41,8 @@ from src.score_filter import (
     wrap,
     years_required,
 )
-from src.shared import clock, paths, verticals
-from src.shared.parquet_io import locked, write_parquet
+from src.shared import clock, paths, schemas, verticals
+from src.shared.parquet_io import locked, schema_version, write_parquet
 from src.state_io import load_state_index
 
 SCORED_COLUMNS: list[str] = [
@@ -98,6 +98,7 @@ class RunOpen(RuntimeError):
 def read_scored(scored_path: Path) -> pd.DataFrame:
     if not scored_path.exists():
         return pd.DataFrame({c: pd.Series(dtype="object") for c in SCORED_COLUMNS})
+    schemas.check(schema_version(scored_path), schemas.SCORED_SCHEMA_VERSION, scored_path)
     df = pd.read_parquet(scored_path)
     for col in SCORED_COLUMNS:
         if col not in df.columns:
@@ -159,7 +160,11 @@ def merge_rows(scored_path: Path, rows: list[dict[str, Any]]) -> int:
         old = read_scored(scored_path)
         old = old[~old["job_id"].isin(set(new["job_id"]))]
         out = pd.concat([old, new], ignore_index=True) if len(old) else new
-        write_parquet(out.drop_duplicates("job_id", keep="last"), scored_path)
+        write_parquet(
+            out.drop_duplicates("job_id", keep="last"),
+            scored_path,
+            schema_version=schemas.SCORED_SCHEMA_VERSION,
+        )
     return len(rows)
 
 
@@ -202,10 +207,11 @@ def remove_rows(scored_path: Path, job_ids: set[str]) -> int:
     if not job_ids or not scored_path.exists():
         return 0
     with locked(scored_path):
+        schemas.check(schema_version(scored_path), schemas.SCORED_SCHEMA_VERSION, scored_path)
         scored = pd.read_parquet(scored_path)
         mask = scored["job_id"].isin(job_ids)
         if mask.any():
-            write_parquet(scored[~mask], scored_path)
+            write_parquet(scored[~mask], scored_path, schema_version=schemas.SCORED_SCHEMA_VERSION)
     return int(mask.sum())
 
 

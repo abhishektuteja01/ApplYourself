@@ -24,7 +24,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-SCHEMA = 1
+from src.shared import schemas
+
+SCHEMA = schemas.APPLY_RUN_SCHEMA_VERSION
 
 
 class ReasonCode(StrEnum):
@@ -218,7 +220,10 @@ def load(path: Path) -> dict | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return data if isinstance(data, dict) and isinstance(data.get("roles"), list) else None
+    if not isinstance(data, dict) or not isinstance(data.get("roles"), list):
+        return None
+    schemas.check(data.get("schema"), SCHEMA, path)
+    return data
 
 
 def _order_key(stem: str) -> str:
