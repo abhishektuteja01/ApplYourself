@@ -8,7 +8,7 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(uv run verticals-check*)
   - Bash(uv run config *)
-  - Bash(uv run python -c *)
+  - Bash(uv run score lane *)
   - Bash(uv run pytest tests *)
   - Bash(grep *)
   - Read
@@ -74,28 +74,10 @@ argues from. `jobs/clean.parquet` holds the 14-day window;
 `jobs/scored.parquet` is the longer history.
 
 ```bash
-# What the lane actually caught.
-uv run python -c "
-import pandas as pd
-d = pd.read_parquet('jobs/clean.parquet'); v = d[d.vertical == '<name>']
-print(len(v), 'in lane /', len(d), 'total')
-print(v.title.value_counts().head(40).to_string())"
-
-# What it did not: neighbouring lanes and unclassified titles.
-uv run python -c "
-import pandas as pd
-d = pd.read_parquet('jobs/clean.parquet')
-for lane, g in d[d.vertical != '<name>'].groupby(d.vertical.fillna('')):
-    print('--', lane or '(out-of-lane)', len(g)); print(g.title.value_counts().head(15).to_string())"
-
-# The lane's judged scores. Drops are not stored: the last `/score` printed
-# them as dropped_<code>; the night's summary.md lists only first-time drops as Filtered.
-uv run python -c "
-import pandas as pd
-s = pd.read_parquet('jobs/scored.parquet'); s = s[s.vertical == '<name>']
-s = s[~s.scored_by_model.astype(str).str.startswith('filter:')]
-print(s.fit_score.describe().to_string())
-print(s.sort_values('fit_score', ascending=False)[['fit_score','suggested_action','keywords_to_mirror']].head(15).to_string())"
+# What the lane caught, what it did not (other lanes, out-of-lane titles), and its
+# judged scores. Drops are not stored: the last `/score` printed them as
+# dropped_<code>; the night's summary.md lists only first-time drops as Filtered.
+uv run score lane <name>
 ```
 
 Report in five lines: lane volume, the title families that dominate it, the

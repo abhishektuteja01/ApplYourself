@@ -15,6 +15,9 @@ finish
 show <job_id>
     One role's score as every reader sees it. Read-only. Exit 1 when the
     role has no score (never judged, or a filter drop).
+lane <vertical>
+    What a lane caught in clean.parquet, what the other lanes and no lane
+    caught, and the lane's judged scores. Read-only (/tune-vertical).
 """
 
 from __future__ import annotations
@@ -115,6 +118,28 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_lane(args: argparse.Namespace) -> int:
+    import pandas as pd
+
+    lane = args.vertical
+    d = pd.read_parquet(paths.CLEAN, columns=["job_id", "title", "vertical"])
+    v = d[d["vertical"] == lane]
+    print(f"== caught: {len(v)} in lane / {len(d)} total")
+    print(v["title"].value_counts().head(40).to_string())
+    print("== not caught: other lanes and out-of-lane titles")
+    rest = d[d["vertical"] != lane]
+    for name, g in rest.groupby(rest["vertical"].fillna("")):
+        print("--", name or "(out-of-lane)", len(g))
+        print(g["title"].value_counts().head(15).to_string())
+    s = score_store.view(paths.SCORED)
+    s = s[s["vertical"] == lane]
+    print(f"== judged scores: {len(s)}")
+    print(s["fit_score"].describe().to_string())
+    top = s.sort_values("fit_score", ascending=False)
+    print(top[["fit_score", "suggested_action", "keywords_to_mirror"]].head(15).to_string())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="score", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -146,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("show", help="one role's score, read-only")
     p.add_argument("job_id")
     p.set_defaults(func=_cmd_show)
+    p = sub.add_parser("lane", help="one lane's caught titles, neighbours and scores, read-only")
+    p.add_argument("vertical")
+    p.set_defaults(func=_cmd_lane)
     args = parser.parse_args(argv)
     try:
         return int(args.func(args))

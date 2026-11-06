@@ -634,6 +634,9 @@ class TestCli:
         assert out[0] == "fit_score=80 action=tailor sponsorship=unknown basis=judged"
         assert out[1] == "reasoning: solid fit"
         assert score_cli.main(["show", "bbbbbbbb"]) == 1
+        capsys.readouterr()
+        assert score_cli.main(["lane", "example_primary"]) == 0
+        assert "== judged scores: 1" in capsys.readouterr().out
 
     def test_finish_exit_1_prints_owed_judges(self, wired, capsys):
         _clean(wired, [{"job_id": "aaaaaaaa"}])
