@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Blocks a commit that stages a .py file failing `ruff check` or
 # `ruff format --check` or mypy, or a change under
-# src/, tests/, scripts/ or a profile example while the R7 scan or the test
+# src/, tests/, scripts/, data/defaults/ or a profile example while the R7 scan or the test
 # suite is red. Any other commit skips both.
 #
 # Enable once per clone:  git config core.hooksPath .githooks
@@ -43,7 +43,7 @@ if [ -n "$(git diff --cached --name-only -- '*.py' 2>/dev/null || true)" ]; then
   fi
 fi
 
-WATCHED=(src tests 'profile/*.example.*' scripts)
+WATCHED=(src tests 'profile/*.example.*' scripts data/defaults)
 STAGED="$(git diff --cached --name-only -- "${WATCHED[@]}" 2>/dev/null || true)"
 [ -n "$STAGED" ] || exit 0
 

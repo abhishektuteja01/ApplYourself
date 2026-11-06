@@ -48,7 +48,3 @@ A "vertical" is a job lane. `src/shared/verticals.py` is the single source of tr
 > which skips when `profile/verticals.yaml` is absent. Keep real strategy out of
 > the fixtures; add real-config assertions to the drift test instead,
 > structurally (never pin a real term — it is committed).
-
-Note: `apply_cli.py` reads `profile/verticals.yaml` raw for an `apply:` block the
-`Vertical` dataclass does not model, so `set_config()` injection does not reach
-that path.

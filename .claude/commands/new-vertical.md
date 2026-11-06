@@ -187,8 +187,8 @@ any other key the lane sets replaces the default's.
   - Matching is whole-word and case-insensitive. Keep the list short and
     specific. A bare short word over-catches (`associate` also matches
     "Associate Director"); prefer the longer phrase when it would.
-  - A wrong guess costs no re-scrape: the raw shards keep the rows, so editing
-    the list undoes it on the next clean rebuild.
+  - Tightening the list applies on the next `clean.parquet` rebuild; loosening
+    it brings rows back as their boards are next checked.
 
 Omit `skill_weights`, `title_include_terms` and `title_strong_keep_terms`
 entirely. A nonempty `title_include_terms` turns the lane into an allowlist

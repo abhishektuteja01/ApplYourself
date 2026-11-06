@@ -13,4 +13,6 @@ Run and print the output verbatim, nothing added:
 uv run track $ARGUMENTS
 ```
 
+`outreach-draft` belongs to `uv run app build outreach`; never run it by hand.
+
 If it exits nonzero, the stderr line already says what's wrong -- stop, don't retry or work around it.

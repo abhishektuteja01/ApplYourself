@@ -19,7 +19,7 @@ import lines and LLM API endpoints, so the `score-judge:<model>` stamp `score_st
 ## `src/` is vertical-agnostic and company-agnostic
 
 Never hardcode a vertical name, search term, or company. Those come only from
-`profile/*.yaml` and `data/universe/boards*.csv`. ATS vendor names and job-board names
+`profile/*.yaml` and `data/universe/boards.csv`. ATS vendor names and job-board names
 are structurally required and do not count.
 
 ## Config access

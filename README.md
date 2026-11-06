@@ -358,10 +358,10 @@ Every entry point in `pyproject.toml [project.scripts]`. These never call an LLM
 | `uv run discover-digest [--json] [--run-id ID] [--window N] [--runs-dir D]` | Read the recent `jobs/runs/*.json` reports and print the trend facts `/discover` renders: per-lane rows against that lane's own 7-day median, error delta, zero streaks, 403/429 counts, crashed or truncated lanes, dead boards. Reader only. | nothing |
 | `uv run onboard-scaffold --vertical V --work-auth citizen\|needs_now\|time_limited [--with-apply] [--with-optional] [--force] [--dry-run]` | Every mechanical setup chore: copy each `profile/*.example.*` to its real name, strip the example lanes from the copied `verticals.yaml` and set `default_vertical`, set your home country's work-authorization row in `application_answers.yaml`, probe for libpostal. `--with-apply` installs the apply dependency group and Playwright's Chrome. Skips any file that already exists unless `--force`. | the copied `profile/` files |
 | `uv run score start [--all \| --stale-only [--yes]] [--vertical V] [--job-id ID]` / `uv run score finish` / `uv run score show <job_id>` | `/score`'s plumbing: `start` drops rows by the hard rules (never stored) and stages judge slices; `--stale-only` counts judged rows whose JD or packet changed, `--yes` stages them; `finish` checks the answers, merges and writes the shortlist; `show` prints one role's score, read-only. | `jobs/scored.staging/*`, `jobs/scored.parquet`, `shortlist/<date>.md` |
-| `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>` and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
+| `uv run track <job_id> <state> [--note ...]` | One state transition. Also `ensure <job_id>`, `outreach-draft` (written by `app build outreach`) and `outreach-sent`. | `pipeline/<job_id>/state.yaml` |
 | `uv run app new\|dir\|build <job_id>` | The plumbing of `/tailor`, `/cover-letter` and `/company-answers`: open the role's folder, resolve it, and build a resume, letter or answer sheet from the session's YAML. `build` prints problems and exits 2 instead of rendering anything wrong. | the role's `applications/` folder, `tailored_dirs[]` |
 | `uv run profile-extract <file>` | Dump a `.docx` or `.md` resume's text. Refuses `.pdf`. | nothing; prints to stdout |
-| `uv run apply <subcommand>` | `prepare`, `plan`, `run`, `learn`, `sheet`. Needs `--group apply`. | see below |
+| `uv run apply <subcommand>` | `prepare`, `plan`, `run`, `confirm`, `learn`, `teach`, `triage`, `sheet`, `resolve-urls`. Needs `--group apply`. | see below |
 
 Plus three scripts: `./scripts/pii_scan.sh` (the
 [PII gate](#before-you-push-the-pii-gate)),
@@ -380,7 +380,10 @@ once and says which are active, empty, stale or dead into
 | `run [--job-id ID] [--answers F] [--manifest F] [--submit] [--yes] [--limit N] [--rate 4m]` | Fill, and click only with `--submit`. **Uploads your documents.** With `--answers` it first saves what your confirmed answers teach to the answer bank. `--manifest` dumps what the page actually holds against the plan. |
 | `confirm <answers-file>` | Show an `/apply` answers file and take your typed yes on a terminal. Stores a hash beside the file; `run` and the bank treat the file as confirmed only while it still matches. Refused without a terminal. |
 | `learn [--job J] [--undo ID [--wording W \| --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]` | Review what the answer bank holds, or take one thing back: a question, one wording or keyword of it, a work-authorization claim, or a judged work-authorization / export-control wording. |
-| `sheet [--list STATUS] [--compare]` | Rewrite the overnight status sheet (`profile/settings.yaml` `table_path`) from the work queue: every role scored at or above `scoring.yaml` `cutoffs.sheet`, live and not finished, with its status from state, the submit ledger and run records. `--list` prints the queue at one status; `--compare` shows how the xlsx differs. Both write nothing. |
+| `teach --question-id Q --label L --value V [...]` | Save one answer to the bank, for a question answered outside a run. |
+| `triage [--fill] [--job-id J ...] [--limit N]` | Sort the Resume ready roles into ready / open with no model. `--fill` fills the ready ones (never submits) and writes a run report. |
+| `resolve-urls (--dry-run \| --apply) [--limit N]` | For Manual apply / No apply URL roles whose company has a Greenhouse, Lever or Ashby board in `boards.csv`, look for the title there. `--dry-run` makes no network call; `--apply` stores `jobs/apply_urls.json`. |
+| `sheet [--add \| --list STATUS] [--compare]` | Rewrite the overnight status sheet (`profile/settings.yaml` `table_path`) from the work queue: every role scored at or above `scoring.yaml` `cutoffs.sheet`, live and not finished, with its status from state, the submit ledger and run records. `--list` prints the queue at one status; `--compare` shows how the xlsx differs. Both write nothing. |
 
 The submit path is bounded, all in `src/apply_cli.py`:
 
@@ -545,7 +548,7 @@ No client is ever constructed.
 </details>
 
 <details>
-<summary><b>R10: <code>/track</code> is the only writer of state</b></summary>
+<summary><b>R10: <code>src/track_cli.py</code> is the only writer of state</b></summary>
 
 Nine states:
 
@@ -559,18 +562,19 @@ interview  offer  rejected  withdrawn
 `applied` role with no update for `ghosted_after_days` (default 30) shows as
 `ghosted`; that state is derived, never stored.
 
-Every transition goes through `/track`. No other command writes `state:` itself.
+Every transition goes through `track_cli.main` (`/track`, `app_cli`, `apply_cli`,
+`apply/triage`). Nothing else writes `state:` itself.
 Other commands append to side lists only: `/tailor` to `tailored_dirs[]`,
 `/outreach` to `outreach[]`. A role's letter and company answers are whatever
 files its latest folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`. Even `/apply` transitions
 to `applied` by calling `track_cli`, never by touching the file.
 
-Two commands fire the `saved -> tailored` self-promotion, both as
+Three paths fire the `saved -> tailored` self-promotion, all as
 `uv run track <id> tailored --if saved`, so they can only fire from `saved`.
 Otherwise they'd drag an `applied` role backwards. `/cover-letter` fires it after writing a letter;
 `/apply` fires it once its plan-check confirms the board genuinely needs no
-letter.
+letter; `apply triage --fill` fires it for each role it fills.
 
 Every change is one line appended to `pipeline/events.jsonl`; each `state.yaml`
 is a cache of its role's fold, and `uv run track rebuild-states` remakes it.
@@ -594,6 +598,10 @@ re-scrapes even when a posting's URL changes or its description is edited.
 That stability is what lets `pipeline/<job_id>/state.yaml` and the
 `applications/<dir>` names survive. Changing the hash inputs would silently
 orphan every one of them. Do not add url or jd_text to the hash.
+
+Ids are stored, never recomputed; a hash already held by another pair gets a
+salt (title + `#2`, `#3`, ...), and `jobs/job_ids.parquet` keeps every (id, pair)
+forever.
 
 </details>
 
@@ -666,14 +674,16 @@ banned phrase in a bullet is fixed in `bullets.md`, not worked around per role.
 <details>
 <summary><b>The Claude Code hooks</b></summary>
 
-Three rules are enforced mechanically rather than by memory. All wired in
-`.claude/settings.json`, all fail with exit 2.
+Four rules are enforced mechanically rather than by memory. All wired in
+`.claude/settings.json`, all exit 2. The R7 hook runs after the edit, so it
+reports rather than blocks; pre-commit and CI run the same scan.
 
 | hook | when | blocks |
 |---|---|---|
 | `state_yaml_guard.sh` | before Edit/Write | any edit targeting a `pipeline/*/state.yaml` or `pipeline/events.jsonl` (R10) |
 | `r7_no_llm_in_src.sh` | after Edit/Write | LLM SDK imports or API endpoints under `src/**/*.py` (R7) |
 | `pii_gate.sh` | before `git commit` | a commit whose index fails `scripts/pii_scan.sh` |
+| `confirmed_guard.sh` | before Edit/Write/Bash | a session writing an `/apply` `.confirmed` file, which only `uv run apply confirm` writes |
 
 The per-area detail lives in `.claude/rules/*.md`, each scoped by `paths:` so it
 loads only when you open the code it governs: `src-boundary`, `state-machine`,
@@ -681,9 +691,9 @@ loads only when you open the code it governs: `src-boundary`, `state-machine`,
 `profile-templates`, `pii-gate`, `discovery`. Run `/context` to see what actually loaded.
 
 The test suite runs from `.githooks/pre-commit` instead: any commit that stages
-`src/`, `tests/`, `scripts/` or `profile/*.example.*` is blocked while the R7
-scan or the suite is red, and any commit that stages a `.py` file is blocked on
-`ruff check`. Enable it once per clone
+`src/`, `tests/`, `scripts/`, `data/defaults/` or `profile/*.example.*` is
+blocked while the R7 scan or the suite is red, and any commit that stages a `.py`
+file is blocked on `ruff check`, `ruff format --check` and `mypy`. Enable it once per clone
 with `git config core.hooksPath .githooks`.
 
 </details>
@@ -720,9 +730,10 @@ lies to you differently.
 uv run pytest tests -q --ignore=tests/discovery
 ```
 
-Drop the `--ignore` once you've installed `--group discovery`. Those tests
-exercise the real address parser with no stub, so without libpostal they **error
-rather than skip**, hence the flag. `tests/test_optional_dependencies.py` is the
+Drop the `--ignore` once you've installed `--group discovery`.
+`tests/discovery/test_stapply.py` exercises the real address parser with no
+stub, so without libpostal it **errors rather than skips**, hence the flag;
+`tests/shared/test_location.py` skips itself. `tests/test_optional_dependencies.py` is the
 one that covers the no-libpostal path, and it always runs.
 
 Tests run against a synthetic three-lane config in
