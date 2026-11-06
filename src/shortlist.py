@@ -27,10 +27,18 @@ from src.state_io import load_state_index
 _JOB_ID_RE = re.compile(r"`([0-9a-f]{8})`")
 
 
-def compute(scored_path: Path, clean_path: Path, pipeline_dir: Path, cfg: ScoringConfig) -> dict:
-    """{"pipeline": [row...], "lanes": {lane: [row...]}} in display order."""
+def compute(
+    scored_path: Path,
+    clean_path: Path,
+    pipeline_dir: Path,
+    cfg: ScoringConfig,
+    scored: pd.DataFrame | None = None,
+) -> dict:
+    """{"pipeline": [row...], "lanes": {lane: [row...]}} in display order.
+    `scored` is `view(scored_path, cfg)` when the caller already has it."""
     names = verticals.get_config().names
-    scored = view(scored_path, cfg)
+    if scored is None:
+        scored = view(scored_path, cfg)
     if scored.empty:
         return {"pipeline": [], "lanes": {v: [] for v in names}}
     clean = pd.read_parquet(clean_path).drop(
@@ -154,8 +162,9 @@ def write(
     contacts_path: Path | None = None,
 ) -> tuple[Path, int]:
     """Render and write shortlist/<date_str>.md. Returns (path, lane rows)."""
-    result = compute(scored_path, clean_path, pipeline_dir, cfg)
-    n_scored = len(view(scored_path, cfg))
+    scored = view(scored_path, cfg)
+    result = compute(scored_path, clean_path, pipeline_dir, cfg, scored)
+    n_scored = len(scored)
     n_clean = len(pd.read_parquet(clean_path, columns=["job_id"]))
     md = render(
         result,
