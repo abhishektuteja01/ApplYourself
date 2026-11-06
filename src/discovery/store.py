@@ -22,7 +22,7 @@ from src.discovery import parse
 from src.discovery.dedupe import NO_TRIM, Trim, _Index
 from src.shared import identity, paths, schemas
 from src.shared.job_boards import board_key
-from src.shared.parquet_io import locked, schema_version, write_parquet
+from src.shared.parquet_io import locked, read_parquet, schema_version, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -134,13 +134,13 @@ def load_store(path: Path | None = None) -> pd.DataFrame:
     path = path or paths.STORE
     if not Path(path).exists():
         return empty_store()
-    return coerce_store(pd.read_parquet(path))
+    return coerce_store(read_parquet(path, schemas.STORE_SCHEMA_VERSION))
 
 
 def save_store(df: pd.DataFrame, path: Path | None = None) -> None:
     path = path or paths.STORE
     df = coerce_store(df).sort_values("posting_key", kind="stable")
-    write_parquet(df.reset_index(drop=True), path)
+    write_parquet(df.reset_index(drop=True), path, schema_version=schemas.STORE_SCHEMA_VERSION)
 
 
 # ---------------------------------------------------------------------
@@ -424,6 +424,7 @@ def load_maybe_duplicates(path: Path | None = None) -> list[dict]:
         except ValueError:
             continue
         if isinstance(rec, dict) and rec.get("pair"):
+            schemas.check(rec.get("schema_version"), schemas.MAYBE_DUPES_SCHEMA_VERSION, path)
             out.append(rec)
     return out
 
@@ -436,7 +437,8 @@ def append_maybe_duplicates(rows: list[dict], path: Path | None = None) -> list[
     if new:
         with path.open("a", encoding="utf-8") as fh:
             for r in new:
-                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                rec = {"schema_version": schemas.MAYBE_DUPES_SCHEMA_VERSION, **r}
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     return new
 
 

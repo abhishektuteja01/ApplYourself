@@ -107,3 +107,16 @@ def test_a_scored_file_from_newer_code_is_refused_and_an_unstamped_one_reads(tmp
     write_parquet(pd.DataFrame({"job_id": ["a"]}), path, schema_version=newer)
     with pytest.raises(ValueError, match="schema version"):
         score_store.read_scored(path)
+
+
+def test_the_store_is_stamped_and_one_from_newer_code_is_refused(tmp_path):
+    from src.discovery import store
+    from src.shared import schemas
+    from src.shared.parquet_io import schema_version
+
+    path = tmp_path / "jobs.parquet"
+    store.save_store(store.empty_store(), path)
+    assert schema_version(path) == schemas.STORE_SCHEMA_VERSION
+    write_parquet(store.empty_store(), path, schema_version=schemas.STORE_SCHEMA_VERSION + 1)
+    with pytest.raises(ValueError, match="schema version"):
+        store.load_store(path)

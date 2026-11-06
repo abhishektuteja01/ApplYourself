@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from src.shared import paths
+from src.shared import paths, schemas
 from src.shared.config_schema import ContactsFile, validate
 from src.shared.identity import normalize_company
 
@@ -22,6 +22,7 @@ def referrals_by_company(path: Path | None = None) -> dict[str, list[str]]:
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     validate(ContactsFile, data, path)
+    schemas.check(data.get("schema_version"), schemas.CONTACTS_SCHEMA_VERSION, path)
     out: dict[str, list[str]] = {}
     for c in data.get("contacts") or []:
         key = normalize_company(c.get("company"))

@@ -17,6 +17,7 @@ import fcntl
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pandas as pd
@@ -53,6 +54,14 @@ def schema_version(path: Path) -> int | None:
     """The version `write_parquet` stored in path, or None for a file without one."""
     raw = (pq.read_schema(path).metadata or {}).get(_VERSION_KEY)  # type: ignore[no-untyped-call]
     return int(raw) if raw is not None else None
+
+
+def read_parquet(path: Path, known: int, **kwargs: Any) -> pd.DataFrame:
+    """pd.read_parquet, refusing a file stamped newer than `known`."""
+    from src.shared import schemas
+
+    schemas.check(schema_version(path), known, path)
+    return pd.read_parquet(path, **kwargs)
 
 
 @contextlib.contextmanager

@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from src.shared import schemas
+
 _MONTHS = {m.lower()[:3]: m for m in calendar.month_name if m}
 _SPAN = re.compile(
     r"^\s*(?P<sm>[A-Za-z]+)\.?\s+(?P<sy>\d{4})\s*[-–—]\s*"
@@ -118,4 +120,7 @@ def read(path: Path) -> dict:
     if not path.is_file():
         return {}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    schemas.check(data.get("schema_version"), schemas.RESUME_SCHEMA_VERSION, path)
+    return data

@@ -26,10 +26,10 @@ import pandas as pd
 from src.discovery import parse
 from src.discovery.config import pacing_for
 from src.discovery.sources.lane import Lane, LaneStats
-from src.shared import paths, title_gate
+from src.shared import paths, schemas, title_gate
 from src.shared.http_client import CareersError, Pacer
 from src.shared.job_boards import ATS_SOURCE_NAMES, key_of
-from src.shared.parquet_io import locked, write_parquet
+from src.shared.parquet_io import locked, read_parquet, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ def load_state(path: Path | None = None) -> pd.DataFrame:
     path = path or paths.BOARD_STATE
     if not Path(path).exists():
         return pd.DataFrame(columns=STATE_COLUMNS)
-    df = pd.read_parquet(path).reindex(columns=STATE_COLUMNS)
+    df = read_parquet(path, schemas.BOARD_STATE_SCHEMA_VERSION).reindex(columns=STATE_COLUMNS)
     for col in ("last_checked", "last_found"):
         df[col] = pd.to_datetime(df[col], errors="coerce")
     for col in ("listed", "passed", "new", "strikes"):
@@ -235,7 +235,7 @@ def update_state(results: list[BoardResult], today: pd.Timestamp, path: Path | N
             if r.passed:
                 state.at[i, "last_found"] = today
         state = state.sort_values(["ats", "slug"], kind="stable").reset_index(drop=True)
-        write_parquet(state[STATE_COLUMNS], path)
+        write_parquet(state[STATE_COLUMNS], path, schema_version=schemas.BOARD_STATE_SCHEMA_VERSION)
 
 
 # ---------------------------------------------------------------------

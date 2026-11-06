@@ -12,7 +12,7 @@ from src.apply import (
     run_record,
 )
 from src.apply.plan import Plan
-from src.shared import clock, paths
+from src.shared import clock, paths, schemas
 
 if TYPE_CHECKING:
     from src.apply_cli import RunOutcome
@@ -28,6 +28,7 @@ def _value(value) -> str:
 
 def as_dict(plan: Plan) -> dict:
     return {
+        "schema_version": schemas.PLAN_SCHEMA_VERSION,
         "job_id": plan.job_id,
         "board": plan.board,
         "token": plan.token,

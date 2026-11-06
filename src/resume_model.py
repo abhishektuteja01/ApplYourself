@@ -28,7 +28,7 @@ import yaml
 
 from src import lint
 from src.session_schema import ProblemCode
-from src.shared import paths, verticals
+from src.shared import paths, schemas, verticals
 
 BULLET_KEYS = ("canonical", "tags", "default_for", "evidence", "allowable_synonyms")
 SKILL_KEYS = ("name", "evidence", "allowable_synonyms", "show")
@@ -108,6 +108,10 @@ def load_sources() -> Sources:
     resume = yaml.safe_load(paths.RESUME.read_text(encoding="utf-8")) or {}
     if not isinstance(resume, dict):
         raise SourceError("profile/resume.yaml: top level must be a mapping")
+    try:
+        schemas.check(resume.get("schema_version"), schemas.RESUME_SCHEMA_VERSION, paths.RESUME)
+    except ValueError as exc:
+        raise SourceError(str(exc)) from exc
     return Sources(
         resume=resume,
         bullets=parse_entries(paths.BULLETS.read_text(encoding="utf-8"), paths.BULLETS.name),

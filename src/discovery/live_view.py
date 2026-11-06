@@ -20,7 +20,7 @@ from src.discovery import store as store_mod
 from src.discovery.config import JOBSPY_SOURCES
 from src.discovery.store import coerce_store
 from src.score_filter import ScoringConfig, drop_reason, load_scoring
-from src.shared import paths, title_gate
+from src.shared import paths, schemas, title_gate
 from src.shared.job_boards import is_applyable
 from src.shared.parquet_io import locked, write_parquet
 from src.state_io import ACTIVE_STATES
@@ -216,7 +216,7 @@ def _one_per_job(df: pd.DataFrame) -> pd.DataFrame:
 def write_view(view: pd.DataFrame, path: Path | None = None) -> None:
     path = path or paths.CLEAN
     with locked(path):
-        write_parquet(view, path)
+        write_parquet(view, path, schema_version=schemas.CLEAN_SCHEMA_VERSION)
 
 
 def rebuild_view(cfg, p, today, state_index: dict) -> tuple[dict, dict]:

@@ -30,9 +30,9 @@ from src.app_cli import built_folder
 from src.apply import apply_url, confirmation, cooldown, ledger, run_record
 from src.score_filter import load_cutoffs
 from src.score_store import view
-from src.shared import paths
+from src.shared import paths, schemas
 from src.shared.config_schema import load_settings, settings_data
-from src.shared.parquet_io import locked
+from src.shared.parquet_io import locked, read_parquet
 
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "screen", "interview", "offer"})
@@ -160,8 +160,10 @@ def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapsh
     live: dict[str, dict] = {}
     links: dict[str, str] = {}
     if paths.CLEAN.exists():
-        clean = pd.read_parquet(
-            paths.CLEAN, columns=["job_id", "company", "title", "source", "url", "jd_text"]
+        clean = read_parquet(
+            paths.CLEAN,
+            schemas.CLEAN_SCHEMA_VERSION,
+            columns=["job_id", "company", "title", "source", "url", "jd_text"],
         ).drop_duplicates("job_id")
         links = {
             str(j): link
@@ -235,7 +237,9 @@ def _form_url(state: dict | None) -> str:
     if plan is None or not plan.is_file():
         return ""
     try:
-        return str(json.loads(plan.read_text(encoding="utf-8")).get("form_url") or "")
+        data = json.loads(plan.read_text(encoding="utf-8"))
+        schemas.check(data.get("schema_version"), schemas.PLAN_SCHEMA_VERSION, plan)
+        return str(data.get("form_url") or "")
     except ValueError:
         return ""
 

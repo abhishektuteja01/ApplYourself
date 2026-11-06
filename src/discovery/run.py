@@ -39,7 +39,7 @@ from src.discovery.sources.boards.workday import WorkdayLane
 from src.discovery.sources.feed.stapply import StapplyLane
 from src.discovery.sources.inbox import InboxLane
 from src.score_filter import load_trim
-from src.shared import clock, http_client, paths, verticals
+from src.shared import clock, http_client, paths, schemas, verticals
 from src.shared.job_boards import ATS_SOURCE_NAMES
 from src.shared.parquet_io import write_parquet
 from src.state_io import load_state_index
@@ -412,6 +412,7 @@ def main(argv=None) -> int:
     pruned = _write_raw(crawl.take_listed(), p, run_id, today, cfg.raw_keep_days)
     applied = asdict(writer.stats)
     report = {
+        "schema_version": schemas.DISCOVERY_RUN_SCHEMA_VERSION,
         "run_id": run_id,
         "run_date": str(today.date()),
         "wall_time_s": round(time.time() - t0, 1),

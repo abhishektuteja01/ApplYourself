@@ -23,7 +23,7 @@ from pathlib import Path
 
 from src import apply_cli, track_cli
 from src.apply import sheet
-from src.shared import clock, paths
+from src.shared import clock, paths, schemas
 
 
 def _open_detail(plan, guesses) -> dict:
@@ -131,7 +131,8 @@ def run(job_ids: list[str], *, fill: bool, headless: bool) -> dict:
         result["report"] = str(path)
     tmp = paths.APPLY_TRIAGE.with_name(f".{paths.APPLY_TRIAGE.name}.tmp")
     paths.APPLY_TRIAGE.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    stamped = {"schema_version": schemas.APPLY_TRIAGE_SCHEMA_VERSION, **result}
+    tmp.write_text(json.dumps(stamped, indent=2), encoding="utf-8")
     os.replace(tmp, paths.APPLY_TRIAGE)
     return result
 

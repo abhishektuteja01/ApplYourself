@@ -42,7 +42,7 @@ from src.score_filter import (
     years_required,
 )
 from src.shared import clock, paths, schemas, verticals
-from src.shared.parquet_io import locked, schema_version, write_parquet
+from src.shared.parquet_io import locked, read_parquet, schema_version, write_parquet
 from src.state_io import load_state_index
 
 SCORED_COLUMNS: list[str] = [
@@ -339,7 +339,11 @@ def judge_lines(run: dict[str, Any], staging: Path) -> list[str]:
 
 def load_run(staging: Path) -> dict[str, Any] | None:
     p = staging / "run.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+    if not p.exists():
+        return None
+    run: dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
+    schemas.check(run.get("schema_version"), schemas.SCORE_STAGING_SCHEMA_VERSION, p)
+    return run
 
 
 def _save_run(staging: Path, run: dict[str, Any]) -> None:
@@ -351,7 +355,9 @@ def first_seen_last_run(store_path: Path | None, job_ids: set[str]) -> set[str] 
     first_seen on or after the store's newest last_seen. None: no store."""
     if store_path is None or not Path(store_path).exists():
         return None
-    store = pd.read_parquet(store_path, columns=["job_id", "first_seen", "last_seen"])
+    store = read_parquet(
+        store_path, schemas.STORE_SCHEMA_VERSION, columns=["job_id", "first_seen", "last_seen"]
+    )
     latest = pd.to_datetime(store["last_seen"]).max()
     first = pd.to_datetime(store["first_seen"]).groupby(store["job_id"]).min()
     return {j for j in job_ids if j in first.index and first[j] >= latest}
@@ -392,7 +398,7 @@ def start(
         }
     now = now or clock.now()
     vcfg = verticals.get_config()
-    clean = pd.read_parquet(clean_path)
+    clean = read_parquet(clean_path, schemas.CLEAN_SCHEMA_VERSION)
     stored = read_scored(scored_path)
     hashes = {
         j: h
@@ -469,7 +475,12 @@ def start(
             "resumed": False,
         }
     staging.mkdir(parents=True, exist_ok=True)
-    run = {"model": _judge_model(), "started": now.isoformat(), "slices": {}}
+    run = {
+        "schema_version": schemas.SCORE_STAGING_SCHEMA_VERSION,
+        "model": _judge_model(),
+        "started": now.isoformat(),
+        "slices": {},
+    }
     for lane in vcfg.verticals.values():
         rows = [r for r in keep if r["vertical"] == lane.name]
         if not rows:

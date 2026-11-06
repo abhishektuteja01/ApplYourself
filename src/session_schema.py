@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 
+from src.shared import schemas
+
 
 class ProblemCode(StrEnum):
     """Every code `app build` reports; .claude/shared/no_fab.md lists the same."""
@@ -55,18 +57,21 @@ Pick = Annotated[SkillPick, BeforeValidator(_bare_id, json_schema_input_type=str
 
 
 class ResumePlan(_Strict):
+    schema_version: int | None = None
     summary: Summary | None = None
     entries: list[Entry] = []
     skills: dict[str, list[Pick]] = {}
 
 
 class LetterPlan(_Strict):
+    schema_version: int | None = None
     salutation: str
     uses: list[str] = []
     body: list[str]
 
 
 class CompanyAnswers(_Strict):
+    schema_version: int | None = None
     researched_at: date | str
     sources: list[str]
     uses: list[str]
@@ -76,6 +81,7 @@ class CompanyAnswers(_Strict):
 
 
 class OutreachDraft(_Strict):
+    schema_version: int | None = None
     channel: Literal["recruiter", "referral", "alumni"]
     medium: Literal["linkedin", "email"]
     to: str | None = None
@@ -123,6 +129,11 @@ def problems(kind: str, data: dict) -> list[dict]:
     """[] when `data` has the shape of `kind`'s file, else one layout problem
     per bad key: file, key path, and the closest valid key for an unknown one."""
     fname, model = KINDS[kind]
+    version = data.get("schema_version") if isinstance(data, dict) else None
+    try:
+        schemas.check(version, schemas.SESSION_YAML_SCHEMA_VERSION, fname)
+    except ValueError as e:
+        return [{"where": f"{fname}: schema_version", "code": ProblemCode.LAYOUT, "detail": str(e)}]
     try:
         model.model_validate(data)
     except ValidationError as e:

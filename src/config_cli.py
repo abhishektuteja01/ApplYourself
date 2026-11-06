@@ -67,11 +67,11 @@ def _misclassified(lane: str) -> str:
 
 
 def _reclassify() -> list[str]:
-    import pandas as pd
-
+    from src.shared import schemas
+    from src.shared.parquet_io import read_parquet
     from src.shared.title_gate import classify_vertical_from_title as c
 
-    d = pd.read_parquet(paths.CLEAN)
+    d = read_parquet(paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION)
     now = d.title.map(c)
     moved = d[now != d.vertical.fillna("")]
     return [
