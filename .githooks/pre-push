@@ -45,8 +45,11 @@ denylist="$root/profile/pii_denylist.txt"
 
 patterns=$(mktemp)
 trap 'rm -f "$patterns"' EXIT
+# Same matching as pii_scan.sh: whole words by default, a leading "~" opts out.
 grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$denylist" \
-  | sed -e 's/^~//' -e 's/[[:space:]]*$//' >"$patterns" || true
+  | sed -e 's/[[:space:]]*$//' \
+  | awk '{ if (substr($0,1,1) == "~") print substr($0,2);
+           else print "(^|[^[:alnum:]_])(" $0 ")([^[:alnum:]_]|$)" }' >"$patterns" || true
 [[ -s "$patterns" ]] || exit 0
 
 alt="$(paste -sd'|' "$patterns")"

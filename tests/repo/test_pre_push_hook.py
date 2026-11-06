@@ -172,3 +172,13 @@ def test_a_new_branch_still_catches_its_own_commits(tmp_path):
     result = _push(repo, bad, remote_sha=ZERO)
     assert result.returncode == 1
     assert "Quimby" in result.stderr
+
+
+def test_a_word_pattern_inside_a_longer_word_passes_like_the_file_scan(tmp_path):
+    repo = _repo(tmp_path, denylist="Quimby\n~sprocket\n")
+    (repo / "g.txt").write_text("quimbyland\n", encoding="utf-8")
+    _git(repo, "add", "g.txt")
+    assert _push(repo, _commit(repo, "a board slug")).returncode == 0
+    (repo / "g.txt").write_text("bigsprockets\n", encoding="utf-8")
+    _git(repo, "add", "g.txt")
+    assert _push(repo, _commit(repo, "a substring pattern")).returncode == 1
