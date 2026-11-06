@@ -432,7 +432,8 @@ class BrowserDriver:
             return ""
         try:
             value = el.first.input_value(timeout=1000)
-        except Exception:  # noqa: BLE001 - not an <input>, e.g. a fieldset
+        except Exception as exc:  # noqa: BLE001 - not an <input>, e.g. a fieldset
+            log.debug("%s: no input value (%s)", field_id, exc)
             value = ""
         if value:
             return value
@@ -507,7 +508,8 @@ class BrowserDriver:
         while True:
             try:
                 text = group.first.inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
-            except Exception:  # noqa: BLE001 - detached/re-rendered node
+            except Exception as exc:  # noqa: BLE001 - detached/re-rendered node
+                log.debug("%s: upload widget unreadable (%s)", field_id, exc)
                 return None
             if filename in text:
                 return True
@@ -530,13 +532,15 @@ class BrowserDriver:
             try:
                 if self.page.locator(marker).count() > 0:
                     return True
-            except Exception:  # noqa: BLE001 - a bad marker is not a failure
+            except Exception as exc:  # noqa: BLE001 - a bad marker is not a failure
+                log.debug("confirmation marker %r unreadable (%s)", marker, exc)
                 continue
         try:
             # Greenhouse lands on /embed/job_app/confirmation after a submit
             # (d4e8be80: "Thank you for your interest in career opportunities").
             return "/confirmation" in (self.page.url or "")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - an unreadable url confirms nothing
+            log.debug("page url unreadable (%s)", exc)
             return False
 
     def watch_submit_requests(self, ats: str, sink: list[str]) -> None:
@@ -614,7 +618,8 @@ class BrowserDriver:
         """
         try:
             text = self.page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
-        except Exception:  # noqa: BLE001 - unreadable page is not a refusal
+        except Exception as exc:  # noqa: BLE001 - unreadable page is not a refusal
+            log.debug("page text unreadable for the refusal check (%s)", exc)
             return ""
         lowered = text.casefold()
         for marker in SUBMIT_REFUSED_MARKERS:
@@ -631,7 +636,8 @@ class BrowserDriver:
         """
         try:
             text = self.page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
-        except Exception:  # noqa: BLE001 - unreadable page is not a rejection
+        except Exception as exc:  # noqa: BLE001 - unreadable page is not a rejection
+            log.debug("page text unreadable for the rejection check (%s)", exc)
             return ""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         for i, line in enumerate(lines):
@@ -655,7 +661,8 @@ class BrowserDriver:
         """
         try:
             text = self.page.locator("body").inner_text(timeout=UPLOAD_READBACK_TIMEOUT)
-        except Exception:  # noqa: BLE001 - unreadable page names nothing
+        except Exception as exc:  # noqa: BLE001 - unreadable page names nothing
+            log.debug("page text unreadable for missing fields (%s)", exc)
             return ()
         return tuple(m.strip() for m in MISSING_FIELD_PATTERN.findall(text) if m.strip())
 
@@ -682,7 +689,8 @@ class BrowserDriver:
                 "node => node.files ? Array.from(node.files, f => f.name) : []",
                 timeout=UPLOAD_READBACK_TIMEOUT,
             )
-        except Exception:  # noqa: BLE001 - detached/re-rendered node
+        except Exception as exc:  # noqa: BLE001 - detached/re-rendered node
+            log.debug("%s: attached files unreadable (%s)", field_id, exc)
             return None
         return tuple(names or ())
 
@@ -719,7 +727,8 @@ class BrowserDriver:
         filtered set, not everything the widget has."""
         try:
             self.page.wait_for_selector(SELECT_OPTION, timeout=OPTION_TIMEOUT)
-        except Exception:  # noqa: BLE001 - an empty listbox is an answer
+        except Exception as exc:  # noqa: BLE001 - an empty listbox is an answer
+            log.debug("no listbox options (%s)", exc)
             return ()
         nodes = self.page.locator(SELECT_OPTION)
         return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
@@ -1006,7 +1015,8 @@ class LeverBrowserDriver(BrowserDriver):
                 if not button.is_visible():
                     continue
                 button.click(timeout=OPTION_TIMEOUT)
-            except Exception:  # noqa: BLE001 - a banner we cannot click is not fatal
+            except Exception as exc:  # noqa: BLE001 - a banner we cannot click is not fatal
+                log.debug("cookie banner button %d not clickable (%s)", i, exc)
                 continue
             return True
         return False
@@ -1020,7 +1030,8 @@ class LeverBrowserDriver(BrowserDriver):
     def visible_options(self) -> tuple[str, ...]:
         try:
             self.page.wait_for_selector(LEVER_OPTION, timeout=OPTION_TIMEOUT)
-        except Exception:  # noqa: BLE001 - an empty suggestion list is an answer
+        except Exception as exc:  # noqa: BLE001 - an empty suggestion list is an answer
+            log.debug("no location suggestions (%s)", exc)
             return ()
         nodes = self.page.locator(LEVER_OPTION)
         return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
@@ -1196,7 +1207,8 @@ class AshbyBrowserDriver(BrowserDriver):
     def visible_options(self) -> tuple[str, ...]:
         try:
             self.page.wait_for_selector(self.LISTBOX, timeout=OPTION_TIMEOUT)
-        except Exception:  # noqa: BLE001 - an empty listbox is an answer
+        except Exception as exc:  # noqa: BLE001 - an empty listbox is an answer
+            log.debug("no listbox options (%s)", exc)
             return ()
         nodes = self.page.locator(self.LISTBOX)
         return tuple(nodes.nth(i).inner_text().strip() for i in range(nodes.count()))
@@ -1260,7 +1272,8 @@ class AshbyBrowserDriver(BrowserDriver):
             return self.selected_label(field_id)
         try:
             value = el.first.input_value(timeout=1000)
-        except Exception:  # noqa: BLE001 - a fieldset has no value
+        except Exception as exc:  # noqa: BLE001 - a fieldset has no value
+            log.debug("%s: no input value (%s)", field_id, exc)
             value = ""
         return value or self.selected_label(field_id)
 
@@ -1734,7 +1747,8 @@ def read_back(driver, field_id: str, planned_kind: str) -> str:
         if kind == "react_select":
             return driver.selected_label(field_id)
         return driver.value_of(field_id)
-    except Exception:  # noqa: BLE001 - a read must never fail a run
+    except Exception as exc:  # noqa: BLE001 - a read must never fail a run
+        log.debug("%s: read-back failed (%s)", field_id, exc)
         return ""
 
 
@@ -1764,8 +1778,8 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
     invalid = set()
     try:
         invalid = set(driver.invalid_fields())
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 - a read must never fail a run
+        log.debug("validity check unreadable (%s)", exc)
 
     outcomes = {o.id: o for o in result.outcomes}
     rows: list[dict] = []
@@ -1775,7 +1789,8 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
         actual = read_back(driver, field_id, kind)
         try:
             live = driver.resolve_kind(field_id, kind)
-        except Exception:  # noqa: BLE001 - a read must never fail a run
+        except Exception as exc:  # noqa: BLE001 - a read must never fail a run
+            log.debug("%s: live kind unreadable (%s)", field_id, exc)
             live = kind
         # Popped unconditionally: computing it inside the dict display let the
         # `or` short-circuit skip the pop, and `**extra` then put the plan's
@@ -1827,8 +1842,8 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
         attached = None
         try:
             attached = driver.attached_files(f.id)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 - a read must never fail a run
+            log.debug("%s: attached files unreadable (%s)", f.id, exc)
         rows.append(
             {
                 "id": f.id,
