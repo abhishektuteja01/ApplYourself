@@ -644,7 +644,6 @@ class TestManifest:
         monkeypatch.setattr(
             apply_cli, "run_one", lambda plan, answers, **kw: _fake_result(manifest=self.ROWS)
         )
-        monkeypatch.setitem(paths._overrides, "APPLY_RUNS", tmp_path / "runs")
         out_path = tmp_path / "m.json"
         assert (
             apply_cli.main(["run", "--job-id", JOB_ID, "--headless", "--manifest", str(out_path)])

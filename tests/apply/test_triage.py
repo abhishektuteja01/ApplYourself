@@ -63,7 +63,6 @@ def _plan(job_id="aaaa1111", fields=(), unmapped=(), draftable=(), selector="#go
 
 @pytest.fixture
 def world(tmp_path, monkeypatch):
-    monkeypatch.setitem(paths._overrides, "APPLY_TRIAGE", tmp_path / "apply_triage.json")
     calls = {"track": [], "run": []}
     w = type("W", (), {"calls": calls, "tmp": tmp_path, "category": "ready"})
     monkeypatch.setattr(track_cli, "main", lambda argv: calls["track"].append(argv) or 0)

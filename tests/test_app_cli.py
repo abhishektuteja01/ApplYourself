@@ -15,7 +15,7 @@ import yaml
 from src import app_cli
 from src.session_schema import ProblemCode
 from src.shared import paths
-from tests.factories import scored_rows, write_clean
+from tests.factories import scored_rows, write_clean, write_state
 
 JOB = "a1b2c3d4"
 JD = "Build widget assembly tooling in Python and SQL across 4 plants. Salary 120000."
@@ -382,13 +382,7 @@ def _dupes(repo, monkeypatch, rows, states=(), sent=()):
         "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
     )
     for jid, state in states:
-        (repo / "pipeline" / jid).mkdir(parents=True)
-        _write(
-            repo,
-            f"pipeline/{jid}",
-            "state.yaml",
-            {"job_id": jid, "company": "Vouch Insurance", "title": "AI Engineer", "state": state},
-        )
+        write_state(repo / "pipeline", jid, state, company="Vouch Insurance", title="AI Engineer")
     if sent:
         (repo / "submitted.jsonl").write_text(
             "".join(json.dumps({"job_id": j, "status": "submitted"}) + "\n" for j in sent),
