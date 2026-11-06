@@ -67,6 +67,7 @@ from applyourself.apply import (
     apply_url,
     ashby,
     bank,
+    browser,
     confirmation,
     cooldown,
     greenhouse,
@@ -95,7 +96,6 @@ from applyourself.apply.detect import SUBMITTABLE_ATS, detect_ats
 from applyourself.apply.domscan import DomScanError
 from applyourself.apply.fill import (
     SubmitGuardError,
-    _require_playwright,
     blocking_details,
     has_driver,
     run_one,
@@ -197,12 +197,12 @@ def _playwright_available() -> bool:
     """A separate, monkeypatchable seam so tests never depend on whether the
     optional `apply` dependency group is actually installed.
 
-    Delegates to `fill._require_playwright()` rather than importing
+    Delegates to `browser.require_playwright()` rather than importing
     `playwright` here directly — `test_no_module_but_fill_names_the_driver`
-    enforces that only fill.py may name that import, so every other module
+    enforces that only browser.py and fill.py may name that import, so every other module
     stays importable without the `apply` extras group."""
     try:
-        _require_playwright()
+        browser.require_playwright()
     except SystemExit:
         return False
     return True
