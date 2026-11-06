@@ -9,6 +9,10 @@ Each stage's claude spend (the costs run_claude logs to <stage>.cost) goes into
 run.json; once the night's total reaches settings.yaml `max_spend_usd_per_night`,
 the claude stages still to run are `deferred` ("spend cap").
 `--resume` reruns, in the last run folder, every stage that did not end ok.
+A stage that hit the claude usage limit waits for the reset the limit message
+names (or polls every settings.yaml `usage_limit_poll_minutes`, doubling) and
+runs again, while the wait ends before `usage_limit_wait_until`; each wait is
+in run.json `waits`. A dry run never waits.
 
   DRY_RUN=1          same as --dry-run: the stages print what they would run
   STAGE_LIMIT=N      passed to the stages: caps the roles tailor and apply_prep take
@@ -30,7 +34,10 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from datetime import datetime, timedelta
+from datetime import time as day_time
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -45,6 +52,17 @@ SPEND_CAP = "not run: spend cap"
 FINISH = ("summary", "email")
 DONE = ("ok", "skipped")
 LOCKED = 75
+WAIT_UNTIL = "19:00"  # usage_limit_wait_until when settings.yaml has none
+POLL_MINUTES = 15  # usage_limit_poll_minutes when settings.yaml has none
+POLL_MAX_DOUBLINGS = 3
+RESET_MARGIN = timedelta(minutes=3)
+RESET = re.compile(
+    r"resets\s+(?:(?P<mon>[a-z]{3})[a-z]*\.?\s+(?P<day>\d{1,2}),?\s+(?:at\s+)?)?"
+    r"(?P<h>\d{1,2})(?::(?P<m>\d{2}))?\s*(?P<ap>am|pm)\b(?:\s*\((?P<tz>[\w/+-]+)\))?",
+    re.I,
+)
+EPOCH = re.compile(r"\|(\d{10})\b")  # the older "usage limit reached|<epoch>" form
+MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -90,6 +108,60 @@ def _spend_cap() -> float | None:
     return float(cap) if cap and float(cap) > 0 else None
 
 
+def reset_at(text: str, now: datetime) -> datetime | None:
+    """When a usage-limit message says the limit resets, as naive local time
+    after `now`; None when it names no time."""
+    if m := EPOCH.search(text):
+        return datetime.fromtimestamp(int(m[1]))  # noqa: DTZ006 - naive local, like clock.now
+    m = RESET.search(text)
+    if m is None:
+        return None
+    try:
+        tz = ZoneInfo(m["tz"]) if m["tz"] else None
+    except (ZoneInfoNotFoundError, ValueError):
+        tz = None
+    here = now.astimezone(tz) if tz else now
+    hour = int(m["h"]) % 12 + (12 if m["ap"].lower() == "pm" else 0)
+    try:
+        at = here.replace(hour=hour, minute=int(m["m"] or 0), second=0, microsecond=0)
+        if m["mon"]:
+            at = at.replace(month=MONTHS.index(m["mon"].lower()) + 1, day=int(m["day"]))
+            if at < here - timedelta(days=1):
+                at = at.replace(year=at.year + 1)
+        elif at <= here:
+            at += timedelta(days=1)
+    except ValueError:
+        return None
+    return at.astimezone().replace(tzinfo=None) if tz else at
+
+
+def _wait_settings() -> tuple[str, int] | None:
+    """(usage_limit_wait_until, usage_limit_poll_minutes); None when settings.yaml is unreadable."""
+    try:
+        until = config_schema.setting("usage_limit_wait_until", WAIT_UNTIL)
+        poll = config_schema.setting("usage_limit_poll_minutes", POLL_MINUTES)
+        day_time.fromisoformat(str(until))
+        if int(poll) < 1:
+            raise ValueError(f"usage_limit_poll_minutes {poll} is below 1")
+        return str(until), int(poll)
+    except (OSError, ValueError, TypeError, yaml.YAMLError) as e:
+        print(f"night: no usage-limit waits ({e})", file=sys.stderr)
+        return None
+
+
+def _deadline(start: datetime, hhmm: str) -> datetime:
+    """The first `hhmm` (local) after `start`."""
+    t = day_time.fromisoformat(hhmm)
+    at = start.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+    return at if at > start else at + timedelta(days=1)
+
+
+def _sleep_until(until: datetime) -> None:
+    """Sleep to a wall-clock time, in short steps, so a Mac asleep meanwhile wakes on time."""
+    while (left := (until - clock.now()).total_seconds()) > 0:
+        time.sleep(min(left, 60))
+
+
 def record(argv: list[str]) -> int:
     """Write <run_dir>/<stage>.result.json; a <stage>_results.txt of `<id> <status>` lines becomes items."""
     ap = argparse.ArgumentParser(prog="night record")
@@ -119,7 +191,11 @@ class Night:
         self.run_dir, self.run, self.dry, self.stages_dir = run_dir, run, dry, stages_dir
         self.log = run_dir / "pipeline.log"
         self.ran: list[str] = []
+        self.waited = 0
         self.cap = _spend_cap()
+        wait = None if dry else _wait_settings()
+        self.deadline = _deadline(clock.now(), wait[0]) if wait else None
+        self.poll = timedelta(minutes=wait[1]) if wait else timedelta(0)
 
     def say(self, text: str) -> None:
         print(text, flush=True)
@@ -133,7 +209,10 @@ class Night:
         self.run["stages"].setdefault(stage, {"stage": stage}).update(fields)
         self.save()
 
-    def stage(self, name: str) -> dict:
+    def stage(self, name: str, again: bool = False) -> dict:
+        """Run one stage script. `again` (a rerun after a usage-limit wait) keeps
+        the items and seconds of the earlier run of this stage."""
+        before = dict(self.run["stages"].get(name, {})) if again else {}
         script = self.stages_dir / f"{name}.sh"
         if not os.access(script, os.X_OK):
             self.set(name, status="skipped", rc=None, detail="no stage script")
@@ -152,7 +231,7 @@ class Night:
                 [str(script)], stdout=out, stderr=subprocess.STDOUT, env=env, cwd=paths.REPO_ROOT
             ).returncode
         said = json.loads(result.read_text(encoding="utf-8")) if result.is_file() else {}
-        items = said.get("items") or {}
+        items = {**(before.get("items") or {}), **(said.get("items") or {})}
         counts = dict(Counter(items.values()))
         if said.get("deferred"):
             counts["deferred"] = said["deferred"]
@@ -162,7 +241,7 @@ class Night:
             status=status,
             rc=rc,
             end=_iso(),
-            seconds=int(time.monotonic() - t0),
+            seconds=int(time.monotonic() - t0) + int(before.get("seconds") or 0),
             detail=said.get("detail", ""),
             counts=counts,
             cost_usd=_cost(self.run_dir / f"{name}.cost"),
@@ -173,8 +252,49 @@ class Night:
             sum(st.get("cost_usd") or 0 for st in self.run["stages"].values()), 4
         )
         self.save()
-        self.ran.append(name)
+        if name not in self.ran:
+            self.ran.append(name)
         return self.run["stages"][name]
+
+    def capped(self) -> bool:
+        return bool(self.cap and self.run.get("cost_usd", 0) >= self.cap)
+
+    def wait(self, name: str, polls: int) -> bool:
+        """After `name` hit the usage limit: sleep until the limit resets and
+        say True, or record why not and say False."""
+        if self.deadline is None:
+            return False
+        quota = self.run_dir / f"{name}.quota"
+        text = quota.read_text(encoding="utf-8") if quota.is_file() else ""
+        now = clock.now()
+        at = reset_at(text, now)
+        if at is not None:
+            until, how = max(at, now) + RESET_MARGIN, f"resets {at:%Y-%m-%d %H:%M}"
+        else:
+            until = now + self.poll * 2 ** min(polls, POLL_MAX_DOUBLINGS)
+            how = "no reset time in the message: poll"
+        entry: dict[str, object] = {
+            "stage": name,
+            "start": _iso(),
+            "until": until.isoformat(timespec="seconds"),
+            "how": how,
+        }
+        self.run.setdefault("waits", []).append(entry)
+        if until > self.deadline:
+            entry.update(
+                waited=False, detail=f"past usage_limit_wait_until {self.deadline:%Y-%m-%d %H:%M}"
+            )
+            self.save()
+            self.say(f"=== {name}: usage limit; {how}, {entry['detail']}: not waiting ===")
+            return False
+        entry["waited"] = True
+        self.waited += 1
+        self.save()
+        self.say(f"=== {name}: usage limit; {how}; waiting until {until:%Y-%m-%d %H:%M} ===")
+        _sleep_until(until)
+        entry["end"] = _iso()
+        self.save()
+        return True
 
     def chain(self, todo: list[str], finish: bool) -> str:
         """Run todo in stage order, then the finishers; the stage that stopped the chain, or ""."""
@@ -183,10 +303,15 @@ class Night:
             if stopped:
                 self.set(name, status="deferred", rc=None, detail=f"not run: {stopped} failed")
                 continue
-            if name in CLAUDE_STAGES and self.cap and self.run.get("cost_usd", 0) >= self.cap:
+            if name in CLAUDE_STAGES and self.capped():
                 self.set(name, status="deferred", rc=None, detail=SPEND_CAP)
                 continue
-            if self.stage(name)["status"] == "fail" and name in STOPS:
+            st, polls = self.stage(name), 0
+            while st.get("usage_limit") and st["status"] not in DONE and not self.capped():
+                if not self.wait(name, polls):
+                    break
+                st, polls = self.stage(name, again=True), polls + 1
+            if st["status"] == "fail" and name in STOPS:
                 stopped = name
                 self.say(f"=== {name} failed: stopping the chain ===")
         for name in FINISH if finish else ():
@@ -199,7 +324,7 @@ class Night:
             st = self.run["stages"][name]
             ok = {"ok": "ok", "partial": "partial"}.get(st["status"], f"FAIL(code={st['rc']})")
             line += f" | {name} {ok} {st.get('seconds', 0)}s"
-        return line
+        return line + (f" | waited {self.waited}x for the usage limit" if self.waited else "")
 
 
 def _prune(keep_dir: Path) -> None:

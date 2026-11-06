@@ -230,6 +230,17 @@ def spend_line(run_dir: Path | None) -> list[str]:
     return [line]
 
 
+def wait_line(run_dir: Path | None) -> list[str]:
+    """`Usage-limit waits: ...` from run.json `waits` (src/applyourself/night.py); none when none."""
+    run = _run_json(run_dir)
+    parts = [
+        f"{w['stage']} until {str(w.get('until', ''))[11:16]} ({w.get('how', '')})"
+        + ("" if w.get("waited") else f", not waited: {w.get('detail', '')}")
+        for w in (run or {}).get("waits") or []
+    ]
+    return ["Usage-limit waits: " + "; ".join(parts)] if parts else []
+
+
 def discovery_section(reports: list[dict], since: datetime) -> list[str]:
     stamp = since.strftime("%Y-%m-%d_%H%M")
     tonight = [r for r in reports if str(r.get("run_id", "")) >= stamp]
@@ -798,6 +809,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
         "",
         *run_section(stages),
         *spend_line(run_dir),
+        *wait_line(run_dir),
         "",
         "## Discovery",
         *discovery,

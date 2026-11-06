@@ -3,7 +3,7 @@
 # re-render from the saved plan. A docx with no PDF re-renders only (no model).
 # Called by tailor.sh, one process per role.
 # Appends "<job_id> ok|fail|deferred" to $RUN_DIR/tailor_results.txt (deferred:
-# the usage limit was hit, so no retry; the role stays New for the next night).
+# the usage limit was hit, so no retry; the role stays New for the rerun after the reset).
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 # shellcheck disable=SC2034  # read by lib_pipeline.sh

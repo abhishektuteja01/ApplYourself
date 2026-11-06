@@ -147,6 +147,9 @@ class Browser(_Strict):
     stealth: Any = None
 
 
+ClockTime = Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]  # "HH:MM", quoted in YAML
+
+
 class Settings(_Strict):
     retired: ClassVar[dict[str, str]] = {"score_threshold": "scoring.yaml cutoffs.sheet"}
     schema_version: int | None = None
@@ -156,6 +159,8 @@ class Settings(_Strict):
     retries: int | None = None
     max_budget_usd_per_call: float | None = None
     max_spend_usd_per_night: float | None = None
+    usage_limit_wait_until: ClockTime | None = None
+    usage_limit_poll_minutes: Annotated[int, Field(ge=1)] | None = None
     auto_add_synonyms: bool | None = None
     unlock_max_open: int | None = None
     summary_email: str | None = None

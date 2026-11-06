@@ -84,7 +84,8 @@ stage_end() {
 # The JSON result goes to $RUN_DIR/<stage>_<tag>.json and its reported cost is
 # appended to $RUN_DIR/<stage>.cost (`night` sums it); returns non-zero when the
 # call failed or its result says is_error, and 5 when the usage limit was hit
-# (it also marks the stage, see quota_hit).
+# (it also marks the stage with the limit message, which `night` reads for the
+# reset time; see quota_hit).
 run_claude() {
   local tag="$1" tools="$2" prompt="$3"; shift 3
   local out="$RUN_DIR/${STAGE}_${tag}.json"
@@ -101,7 +102,7 @@ run_claude() {
     --max-budget-usd "$budget" "$@" > "$out" 2>>"$LOG"
   local code=$?
   echo "claude $tag exit=$code -> $out"
-  "$UV" run python - "$out" "$RUN_DIR/$STAGE.cost" "$tag" <<'PY'
+  "$UV" run python - "$out" "$RUN_DIR/$STAGE.cost" "$tag" "$RUN_DIR/$STAGE.quota" <<'PY'
 import json, re, sys
 try:
     r = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -114,11 +115,16 @@ if isinstance(cost, (int, float)):
 if r.get("is_error"):
     text = str(r.get("result"))
     print("claude reported is_error:", text[:300])
-    sys.exit(5 if re.search(r"hit your .{0,40}limit|usage limit reached", text, re.I) else 4)
+    if re.search(r"hit your .{0,40}limit|usage limit reached", text, re.I):
+        with open(sys.argv[4], "w", encoding="utf-8") as f:
+            f.write(text)
+        sys.exit(5)
+    sys.exit(4)
 PY
   local verdict=$?
   if [[ $verdict -eq 5 ]]; then
-    : > "$RUN_DIR/$STAGE.quota"; echo "claude $tag: usage limit hit"; return 5
+    [[ -f "$RUN_DIR/$STAGE.quota" ]] || : > "$RUN_DIR/$STAGE.quota"
+    echo "claude $tag: usage limit hit"; return 5
   fi
   [[ $code -eq 0 ]] || return "$code"
   return "$verdict"

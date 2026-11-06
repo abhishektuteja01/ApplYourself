@@ -166,3 +166,60 @@ def test_a_usage_limit_is_a_run_json_field_and_a_stale_mark_is_cleared(logs, tmp
     assert M.main(["--dry-run", "--resume"]) == 0
     stages = json.loads((d / "run.json").read_text(encoding="utf-8"))["stages"]
     assert stages["score"]["usage_limit"] is False and not (d / "score.quota").exists()
+
+
+def test_reset_at_reads_the_limit_messages_claude_prints():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    la = ZoneInfo("America/Los_Angeles")
+
+    def local(*a):
+        return datetime(*a, tzinfo=la).astimezone().replace(tzinfo=None)
+
+    now = local(2026, 11, 6, 23, 0)
+    text = "You've hit your 5-hour limit · resets 12:10am (America/Los_Angeles)"
+    assert M.reset_at(text, now) == local(2026, 11, 7, 0, 10)  # past midnight: tomorrow
+    text = "You've hit your session limit · resets 11:50pm (America/Los_Angeles)"
+    assert M.reset_at(text, now) == local(2026, 11, 6, 23, 50)
+    assert M.reset_at(
+        "You've hit your weekly limit · resets Nov 10, 5pm", datetime(2026, 11, 6)
+    ) == (datetime(2026, 11, 10, 17, 0))
+    assert M.reset_at("You've hit your limit", now) is None
+
+
+@pytest.mark.parametrize("wait_until, waited", [("19:00", True), ("00:30", False)])
+def test_a_usage_limit_waits_for_the_reset_then_reruns_the_stage(
+    logs, tmp_path, monkeypatch, wait_until, waited
+):
+    from datetime import datetime
+
+    (tmp_path / "profile").mkdir()
+    (tmp_path / "profile" / "settings.yaml").write_text(
+        f'usage_limit_wait_until: "{wait_until}"\n', encoding="utf-8"
+    )
+    (tmp_path / "stages" / "score.sh").write_text(
+        '#!/bin/bash\necho score >> "$RUN_DIR/../ran.txt"\n'
+        '[[ -f "$RUN_DIR/../once" ]] && exit 0\n: > "$RUN_DIR/../once"\n'
+        'echo "You\'ve hit your 5-hour limit · resets 1:10am" > "$RUN_DIR/score.quota"\nexit 1\n',
+        encoding="utf-8",
+    )
+    slept = []
+    monkeypatch.setattr(M.clock, "now", lambda: datetime(2026, 11, 6, 23, 0))
+    monkeypatch.setattr(M, "_sleep_until", slept.append)
+    monkeypatch.setattr(M.shutil, "which", lambda _: None)  # no caffeinate
+    assert M.main([]) == (0 if waited else 1)
+    (d,) = (p for p in logs.glob("pipeline_*") if p.is_dir())
+    run = json.loads((d / "run.json").read_text(encoding="utf-8"))
+    (wait,) = run["waits"]
+    assert wait["stage"] == "score" and wait["until"] == "2026-11-07T01:13:00"
+    assert wait["waited"] is waited
+    if waited:
+        assert slept == [datetime(2026, 11, 7, 1, 13)]
+        assert _ran(logs)[:3] == ["discover", "score", "score"]
+        assert run["stages"]["score"]["status"] == "ok" and run["stages"]["tailor"]["rc"] == 0
+    else:
+        assert slept == [] and _ran(logs) == ["discover", "score", "summary", "email"]
+        assert run["stages"]["tailor"]["status"] == "deferred"
+    history = (logs / "pipeline_history.log").read_text(encoding="utf-8")
+    assert ("waited 1x for the usage limit" in history) is waited

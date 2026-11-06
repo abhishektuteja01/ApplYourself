@@ -39,7 +39,7 @@ snapshot() {
 }
 
 for id in $IDS; do
-  # Over the cap or past the usage limit: stays Resume ready for the next night.
+  # Over the cap or past the usage limit: stays Resume ready for the rerun after the reset, or the next night.
   if quota_hit || [[ $CAP -gt 0 && $STARTED -ge $CAP ]]; then DEF=$((DEF + 1)); continue; fi
   STARTED=$((STARTED + 1))
   run_claude "$id" "$TOOLS" "/apply $id"; RC=$?

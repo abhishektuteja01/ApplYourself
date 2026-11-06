@@ -28,7 +28,7 @@ if [[ $N -gt 0 ]]; then
   }
   for id in $IDS; do
     while [[ "$(alive)" -ge "$PAR" ]]; do sleep 2; done
-    # Over the cap or past the usage limit: left New for the next night.
+    # Over the cap or past the usage limit: left New for the rerun after the reset, or the next night.
     if quota_hit || [[ $CAP -gt 0 && $STARTED -ge $CAP ]]; then
       echo "$id deferred" >> "$RUN_DIR/tailor_results.txt"; continue
     fi
