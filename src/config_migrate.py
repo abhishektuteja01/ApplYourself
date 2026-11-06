@@ -21,6 +21,7 @@ import yaml
 BANK = "application_answers.yaml"
 SCORING = "scoring.yaml"
 DISCOVERY = "discovery.yaml"
+VERTICALS = "verticals.yaml"
 
 
 @dataclass
@@ -150,6 +151,8 @@ def drop_flow_key(text: str, key: str) -> str:
                 if line.strip() and len(line) - len(line.lstrip()) <= indent:
                     break
                 end += len(line)
+            while end > i and text[:end].endswith("\n\n"):
+                end -= 1
             text = text[:line_start] + text[end:]
             continue
         end = _flow_end(text, i)
@@ -240,7 +243,84 @@ def _abroad(p: Profile) -> None:
     p.texts[DISCOVERY] = text
 
 
-STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad)
+def _salary(p: Profile) -> None:
+    """verticals.yaml `<lane>.salary_expectation` -> `salary` on the bank's country rows."""
+    from src.shared.location.places import canonical_country
+
+    vert = p.data(VERTICALS)
+    lanes_all = (vert or {}).get("verticals") or {}
+    old = {
+        n: v["salary_expectation"]
+        for n, v in lanes_all.items()
+        if isinstance(v, dict) and v.get("salary_expectation")
+    }
+    if not isinstance(vert, dict) or not any(
+        isinstance(v, dict) and "salary_expectation" in v for v in lanes_all.values()
+    ):
+        return
+    bank = p.data(BANK)
+    found = _countries_of(bank or {})
+    if found is None:
+        p.problems.append(f"{BANK}: needed to move {VERTICALS}'s salary_expectation")
+        return
+    home = found[0]
+    rows = bank["work_authorization"]["countries"]
+    row_of = {canonical_country(str(k)) or str(k): k for k in rows if k != "default"}
+    # country -> {lane: (amount, markup)}
+    per: dict[str, dict[str, tuple[Any, Any]]] = {}
+    for lane, exp in old.items():
+        fallback = exp.get("fallback")
+        figures = fallback if isinstance(fallback, dict) else {home: fallback}
+        markup = exp.get("markup_pct")
+        if markup is not None and home != "United States":
+            p.problems.append(
+                f"{VERTICALS}: {lane}.salary_expectation.markup_pct was a US-only markup; "
+                f"set salary.markup_pct and currency on your {home} row by hand"
+            )
+            return
+        for country, amount in figures.items():
+            c = canonical_country(str(country)) or str(country)
+            if amount is None:
+                continue
+            if c not in row_of:
+                p.problems.append(
+                    f"{VERTICALS}: {lane}.salary_expectation names {country}, which has no "
+                    f"row in {BANK} work_authorization.countries; add the row first"
+                )
+                return
+            per.setdefault(c, {})[lane] = (amount, markup if c == home else None)
+        if markup is not None and home not in figures and home not in per:
+            p.problems.append(
+                f"{VERTICALS}: {lane}.salary_expectation has a markup but no {home} figure; "
+                "the row's salary needs an amount"
+            )
+            return
+    for c, by_lane in per.items():
+        if len(set(by_lane.values())) != 1:
+            p.problems.append(
+                f"{VERTICALS}: lanes {sorted(by_lane)} ask different salaries in {c}; "
+                f"one {BANK} row holds one: make them one figure by hand first"
+            )
+            return
+        amount, markup = next(iter(by_lane.values()))
+        salary: dict[str, Any] = {"amount": amount}
+        if markup is not None:
+            salary.update(currency="USD", markup_pct=markup)
+        if set(by_lane) != set(lanes_all):
+            salary["lanes"] = sorted(by_lane)
+        rows[row_of[c]]["salary"] = salary
+        p.notes.append(f"{BANK}: work_authorization.countries.{row_of[c]}.salary = {salary}")
+    if per:
+        p.set_bank(bank)
+    text = drop_flow_key(p.text(VERTICALS) or "", "salary_expectation")
+    new = yaml.safe_load(text) or {}
+    if any("salary_expectation" in (v or {}) for v in (new.get("verticals") or {}).values()):
+        p.problems.append(f"{VERTICALS}: could not remove salary_expectation; edit it by hand")
+        return
+    p.texts[VERTICALS] = text
+
+
+STEPS: tuple[Callable[[Profile], None], ...] = (_languages, _abroad, _salary)
 
 
 def plan(root: Path) -> Profile:

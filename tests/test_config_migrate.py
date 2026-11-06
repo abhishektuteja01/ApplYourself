@@ -102,3 +102,32 @@ def test_source_abroad_blocks_become_one_top_level_block(tmp_path, cfg, monkeypa
     capsys.readouterr()
     assert _run(prof, apply=False) == 0
     assert "nothing to migrate" in capsys.readouterr().out
+
+
+def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
+    from src import apply_cli
+    from src.apply.answers import load_answers
+
+    prof = _profile(tmp_path)
+    v = prof / "verticals.yaml"
+    v.write_text(
+        "verticals:\n"
+        "  widgets:\n"
+        "    display_name: Widgets\n"
+        "    salary_expectation:\n"
+        "      markup_pct: 10\n"
+        "      fallback:\n"
+        "        United States: 110000\n"
+        "\n"
+        "  gizmos:\n"
+        "    display_name: Gizmos\n",
+        encoding="utf-8",
+    )
+    assert _run(prof, apply=True) == 0
+    assert v.read_text(encoding="utf-8") == (
+        "verticals:\n  widgets:\n    display_name: Widgets\n\n  gizmos:\n    display_name: Gizmos\n"
+    )
+    bank = load_answers(prof / "application_answers.yaml")
+    assert bank.facts_for("United States").salary.lanes == ("widgets",)
+    assert apply_cli.salary_for("x", "widgets", "United States", bank) == 110000.0
+    assert apply_cli.salary_for("x", "gizmos", "United States", bank) is None

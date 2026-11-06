@@ -265,9 +265,24 @@ class TestResolveOutDir:
             apply_cli.resolve_out_dir(JOB_ID)
 
 
+def _salary_bank(us=None, germany=None):
+    """The example bank, with `salary` on its United States and Germany rows."""
+    from src.apply.answers import answers_from
+
+    data = yaml.safe_load(
+        paths.example("application_answers.example.yaml").read_text(encoding="utf-8")
+    )
+    rows = data["work_authorization"]["countries"]
+    rows["Germany"] = {"authorized": False, "requires_sponsorship": True}
+    for name, salary in (("United States", us), ("Germany", germany)):
+        if salary is not None:
+            rows[name]["salary"] = salary
+    return answers_from(data)
+
+
 class TestSalaryFor:
     """`salary_for()` — the figure a salary question asks for, from this
-    posting's parsed compensation and the lane's `salary_expectation`."""
+    posting's parsed compensation and the `salary` on its country's bank row."""
 
     def _write_clean(self, path, job_id, salary_min, salary_currency):
         factories.write_clean(
@@ -280,51 +295,42 @@ class TestSalaryFor:
             },
         )
 
-    def _verticals(self, tmp_path, monkeypatch, expectation):
-        path = tmp_path / "verticals.yaml"
-        path.write_text(
-            yaml.safe_dump(
-                {
-                    "verticals": {"example_primary": {"salary_expectation": expectation}},
-                }
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setitem(paths._overrides, "PROFILE", tmp_path)
+    US = {"amount": 110000, "currency": "USD", "markup_pct": 10}
 
-    def test_a_us_role_marks_up_its_posted_minimum(self, tmp_path, monkeypatch):
+    def test_a_home_role_marks_up_its_posted_minimum(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
         self._write_clean(clean, JOB_ID, 120000, "USD")
         monkeypatch.setitem(paths._overrides, "CLEAN", clean)
-        self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
-        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 132000.0
+        bank = _salary_bank(us=self.US)
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 132000.0
 
-    def test_no_posted_minimum_uses_the_lane_fallback(self, tmp_path, monkeypatch):
+    def test_a_posting_in_another_currency_takes_the_amount(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
-        self._write_clean(clean, JOB_ID, None, "USD")
+        self._write_clean(clean, JOB_ID, 120000, "EUR")
         monkeypatch.setitem(paths._overrides, "CLEAN", clean)
-        self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
-        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
+        bank = _salary_bank(us=self.US)
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 110000.0
 
-    def test_a_plain_fallback_is_a_us_figure_only(self, tmp_path, monkeypatch):
+    def test_no_row_salary_is_none_and_lanes_limit_it(self, tmp_path, monkeypatch):
         monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
-        self._verticals(tmp_path, monkeypatch, {"markup_pct": 10, "fallback": 110000})
-        assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") is None
+        bank = _salary_bank(us=self.US, germany={"amount": 70000, "lanes": ["example_primary"]})
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany", bank) == 70000.0
+        assert apply_cli.salary_for(JOB_ID, "example_secondary", "Germany", bank) is None
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "Canada", bank) is None
 
-    def test_a_per_country_fallback(self, tmp_path, monkeypatch):
-        monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
-        self._verticals(
-            tmp_path, monkeypatch, {"fallback": {"United States": 110000, "Germany": 70000}}
-        )
-        assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany") == 70000.0
+    def test_a_markup_abroad_is_refused(self):
+        with pytest.raises(AnswersError, match="only your own country"):
+            _salary_bank(germany={"amount": 1, "currency": "EUR", "markup_pct": 5})
 
-    def test_no_salary_expectation_is_none(self, tmp_path, monkeypatch):
-        monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
-        (tmp_path / "verticals.yaml").write_text(
-            yaml.safe_dump({"verticals": {"example_primary": {}}}), encoding="utf-8"
-        )
-        monkeypatch.setitem(paths._overrides, "PROFILE", tmp_path)
-        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") is None
+    def test_the_old_lane_key_names_where_it_moved(self, tmp_path):
+        from src.shared.config_schema import VerticalsFile, validate
+
+        with pytest.raises(ValueError, match=r"moved to application_answers\.yaml"):
+            validate(
+                VerticalsFile,
+                {"verticals": {"example_primary": {"salary_expectation": {"fallback": 1}}}},
+                "verticals.yaml",
+            )
 
 
 class TestPlanCommand:
@@ -2000,20 +2006,8 @@ def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
         clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0, "salary_currency": "USD"}
     )
     monkeypatch.setitem(paths._overrides, "CLEAN", clean)
-    (tmp_path / "verticals.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "verticals": {
-                    "example_primary": {
-                        "salary_expectation": {"markup_pct": 10, "fallback": 110000}
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setitem(paths._overrides, "PROFILE", tmp_path)
-    assert apply_cli.salary_for(JOB_ID, "example_primary", "United States") == 110000.0
+    bank = _salary_bank(us={"amount": 110000, "currency": "USD", "markup_pct": 10})
+    assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 110000.0
 
 
 def test_an_optional_export_control_question_takes_no_override(answers, tailor_dir):

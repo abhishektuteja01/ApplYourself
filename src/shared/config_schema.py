@@ -36,6 +36,9 @@ class Focus(_Strict):
 
 
 class Lane(_Strict):
+    retired: ClassVar[dict[str, str]] = {
+        "salary_expectation": "application_answers.yaml work_authorization.countries.<country>.salary"
+    }
     display_name: Any = None
     search_terms: Any = None
     linkedin_terms: Any = None
@@ -48,7 +51,6 @@ class Lane(_Strict):
     title_include_terms: Any = None
     title_strong_keep_terms: Any = None
     resume: LaneResume | None = None
-    salary_expectation: Any = None  # read raw by apply_cli
 
 
 class RulePattern(_Strict):

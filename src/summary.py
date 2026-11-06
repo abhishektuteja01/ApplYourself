@@ -75,7 +75,7 @@ CUES = {
         "...` for the roles it unblocks (no model, never submits), then `uv run apply sheet`."
     ),
     "missing": (
-        "→ Set salary in `profile/verticals.yaml` (`salary_expectation`) or `start_in_days` in the answer bank "
+        "→ Set `salary` or `start_in_days` on the country's row in the answer bank "
         "(`work_authorization.countries`), then `uv run apply plan <id> --questions`."
     ),
     "missing_other": (
@@ -462,7 +462,7 @@ def _why_waiting(items: dict, job: str) -> str:
 _FACT_PATTERNS = (
     (
         r"salary: no figure for a role in (.+?) \(",
-        "Salary for a role in {0}: no figure set. Add one under salary_expectation in verticals.yaml",
+        "Salary for a role in {0}: no figure set. Add salary to its row under work_authorization.countries in the answer bank",
     ),
     (
         r"start date: no start_in_days set for (.+?) \(",

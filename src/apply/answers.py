@@ -829,6 +829,21 @@ class SalaryFloor:
 
 
 @dataclass(frozen=True)
+class Salary:
+    """The figure a salary question asks for in one country."""
+
+    amount: float
+    currency: str = ""
+    markup_pct: float | None = None
+    """Your own country only: a posting's minimum in `currency` times this, ahead of `amount`."""
+    lanes: tuple[str, ...] = ()
+    """The lanes it answers for; empty is every lane."""
+
+    def for_lane(self, lane: str) -> bool:
+        return not self.lanes or lane in self.lanes
+
+
+@dataclass(frozen=True)
 class CountryFacts:
     authorized: bool
     requires_sponsorship: bool
@@ -837,6 +852,7 @@ class CountryFacts:
     followup: str = ""
     start_in_days: int | None = None
     visa_salary_floor: SalaryFloor | None = None
+    salary: Salary | None = None
 
 
 @dataclass(frozen=True)
@@ -1002,9 +1018,11 @@ _COUNTRY_ROW_KEYS = (
     "followup",
     "start_in_days",
     "visa_salary_floor",
+    "salary",
 )
 _SALARY_FLOOR_KEYS = ("amount", "currency", "per", "note")
 _SALARY_FLOOR_PER = ("year", "month")
+_SALARY_KEYS = ("amount", "currency", "markup_pct", "lanes")
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 _US_PERSON = ("park", "yes", "no")
 _CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
@@ -1042,6 +1060,37 @@ def _parse_salary_floor(raw, where: str) -> SalaryFloor | None:
     if not isinstance(note, str):
         raise AnswersError(f"{where}.note: must be a string")
     return SalaryFloor(amount=amount, currency=currency, per=per, note=note.strip())
+
+
+def _parse_salary(raw, where: str) -> Salary | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise AnswersError(f"{where}: must be {{amount[, currency, markup_pct, lanes]}}")
+    unknown = set(raw) - set(_SALARY_KEYS)
+    if unknown:
+        raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
+    amount = raw.get("amount")
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
+        raise AnswersError(f"{where}.amount: must be a positive number")
+    currency = raw.get("currency", "")
+    if currency and (not isinstance(currency, str) or not _CURRENCY.match(currency)):
+        raise AnswersError(f"{where}.currency: must be a three-letter ISO code, e.g. EUR")
+    markup = raw.get("markup_pct")
+    if markup is not None:
+        if isinstance(markup, bool) or not isinstance(markup, (int, float)) or markup < 0:
+            raise AnswersError(f"{where}.markup_pct: must be a number >= 0")
+        if not currency:
+            raise AnswersError(f"{where}: markup_pct needs the posting currency it applies to")
+    lanes = raw.get("lanes") or []
+    if not isinstance(lanes, list) or not all(isinstance(x, str) and x.strip() for x in lanes):
+        raise AnswersError(f"{where}.lanes: must be a list of lane names")
+    return Salary(
+        amount=amount,
+        currency=currency,
+        markup_pct=markup,
+        lanes=tuple(x.strip() for x in lanes),
+    )
 
 
 def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str, ...], str]:
@@ -1111,6 +1160,7 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
             followup=str(row.get("followup", "")).strip(),
             start_in_days=start,
             visa_salary_floor=floor,
+            salary=_parse_salary(row.get("salary"), f"{where}.salary"),
         )
     return countries, tuple(n.strip() for n in nationalities), us_person
 
@@ -1365,6 +1415,13 @@ def answers_from(data, where: str = "answer bank") -> Answers:
             employment[flag] = bool(data["employment"].get(flag))
 
     countries, nationalities, us_person = _parse_work_authorization(data)
+    home = canonical_place(identity["country"]) or identity["country"]
+    for name, row in countries.items():
+        if row.salary and row.salary.markup_pct is not None and name != home:
+            raise AnswersError(
+                f"work_authorization.countries.{name}.salary.markup_pct: only your own "
+                f"country's row ({home}) takes a markup"
+            )
 
     cover_letter = data.get("cover_letter", "when_required")
     if cover_letter not in COVER_LETTER_POLICIES:
@@ -1940,7 +1997,7 @@ def _computed(question: Question, field: MergedField, answers: Answers, source: 
         )
     if answers.salary_figure is None:
         return _park(
-            f"salary: no figure for a role in {country} (verticals.yaml salary_expectation)",
+            f"salary: no figure for a role in {country} (its work_authorization row's salary)",
             "B",
             source=source,
         )

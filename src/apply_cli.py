@@ -76,6 +76,7 @@ from src.apply.answers import (
     UNKNOWN_COUNTRY,
     Answers,
     AnswersError,
+    canonical_place,
     find_question,
     load_answers,
 )
@@ -353,32 +354,25 @@ def answers_confirmed(path: Path | None) -> bool:
     return confirmation.is_confirmed(path)
 
 
-def _salary_expectation(vertical: str) -> dict:
-    verticals_path = paths.PROFILE / "verticals.yaml"
-    if not vertical or not verticals_path.is_file():
-        return {}
-    config = yaml.safe_load(verticals_path.read_text(encoding="utf-8")) or {}
-    block = (config.get("verticals") or {}).get(vertical) or {}
-    return block.get("salary_expectation") or {}
-
-
 #: A posted minimum below this is a rate per hour or month, not per year.
 MIN_ANNUAL_SALARY = 20000
 
 
-def salary_for(job_id: str, vertical: str, country: str) -> float | None:
-    """The figure to ask for: this posting's own USD minimum times the lane's
-    `markup_pct` for a US role, else the lane's `fallback` for this country.
+def salary_for(
+    job_id: str, vertical: str, country: str, answers: Answers | None = None
+) -> float | None:
+    """The figure to ask for, from the bank's `salary` on this country's
+    work-authorization row: in your own country, this posting's minimum (in the
+    row's currency) times its `markup_pct`, else its `amount`.
 
-    `fallback` is a number (a US figure) or a mapping of country to number.
-    None when nothing is configured for this country: the question parks.
+    None when the row sets none for this lane: the question parks.
     """
-    expectation = _salary_expectation(vertical)
-    if not expectation:
+    answers = answers if answers is not None else load_answers()
+    salary = answers.facts_for(country).salary
+    if salary is None or not salary.for_lane(vertical):
         return None
-    us = country == "United States"
-    markup = expectation.get("markup_pct")
-    if us and markup is not None and paths.CLEAN.exists():
+    home = (canonical_place(country) or country) == answers.home_country
+    if home and salary.markup_pct is not None and paths.CLEAN.exists():
         clean = pd.read_parquet(paths.CLEAN)
         if {"salary_min", "salary_currency"} <= set(clean.columns):
             row = clean.loc[clean["job_id"] == job_id]
@@ -386,18 +380,14 @@ def salary_for(job_id: str, vertical: str, country: str) -> float | None:
                 salary_min = row.iloc[0]["salary_min"]
                 currency = str(row.iloc[0]["salary_currency"] or "").strip().upper()
                 # Under this is an hourly or monthly rate, not a year's pay:
-                # the lane's fallback answers instead.
+                # the row's amount answers instead.
                 if (
-                    currency == "USD"
+                    currency == salary.currency
                     and not pd.isna(salary_min)
                     and salary_min >= MIN_ANNUAL_SALARY
                 ):
-                    return float(salary_min) * (1 + float(markup) / 100)
-    fallback = expectation.get("fallback")
-    if isinstance(fallback, dict):
-        value = fallback.get(country)
-        return float(value) if value is not None else None
-    return float(fallback) if fallback is not None and us else None
+                    return float(salary_min) * (1 + float(salary.markup_pct) / 100)
+    return float(salary.amount)
 
 
 def job_country(state: dict | None, answers: Answers) -> str:
@@ -559,7 +549,7 @@ def build(
         job_country=job_country(state, answers),
         company_answers=company_answers_for(target),
     )
-    answers = replace(answers, salary_figure=salary_for(job_id, vertical, answers.country))
+    answers = replace(answers, salary_figure=salary_for(job_id, vertical, answers.country, answers))
     overrides = load_overrides(Path(answers_path), job_id) if answers_path else None
 
     ats = detect_ats(posting_url)

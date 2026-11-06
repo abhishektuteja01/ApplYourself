@@ -22,7 +22,9 @@ report lists them under `manual`, not `failed`.
   per-country table of `authorized`, `requires_sponsorship`, `unrestricted`,
   `status_label`, `followup`, `start_in_days`, `visa_salary_floor`
   (`{amount, currency, per: year|month, note}`, the visa's lowest gross salary),
-  with a required `default` row);
+  `salary` (`{amount, currency, markup_pct, lanes}`, what `{computed: salary}`
+  answers there; `markup_pct`, home row only, scales a posting's minimum in
+  `currency`), with a required `default` row);
 - **`claims`**: a board's full-sentence work-authorization option -> the facts it
   states. An option is picked only when every stated fact is true for the
   question's country;

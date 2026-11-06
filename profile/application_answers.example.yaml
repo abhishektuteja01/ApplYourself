@@ -72,6 +72,10 @@ cover_letter: when_required
 #   start_in_days         your start date is this many days after the form is filled
 #   visa_salary_floor     optional: the lowest gross salary that country's work visa
 #                         allows, {amount, currency (ISO code), per: year | month, note}
+#   salary                optional: what a salary question asks for there, {amount,
+#                         currency, markup_pct, lanes}. markup_pct (your own country
+#                         only): a posting's minimum in `currency` times it, ahead of
+#                         amount. lanes: the lanes it answers for (absent: every lane).
 # us_person: park | yes | no — the export-control "U.S. person" question. Quote it.
 work_authorization:
   us_person: "park"
@@ -84,6 +88,7 @@ work_authorization:
       status_label: "F-1 STEM OPT"
       followup: "Authorized under F-1 STEM OPT; will need sponsorship when it ends."
       start_in_days: 14
+      # salary: {amount: 110000, currency: USD, markup_pct: 10}
     # Germany:
     #   authorized: false
     #   requires_sponsorship: true
@@ -116,9 +121,8 @@ questions:
     answer: "https://example.com"
     keywords: [website, portfolio, personal site]
   salary:
-    # A US role asks for its posting's minimum times the lane's markup, else the
-    # lane's fallback (verticals.yaml salary_expectation). "Yes" answers a
-    # Yes/No "is the posted range acceptable?".
+    # The `salary` on the role's country row (work_authorization). "Yes" answers
+    # a Yes/No "is the posted range acceptable?".
     answer: {computed: salary, fallback: ["Yes"]}
     keywords: [salary, compensation, desired rate of pay, pay expectation]
   start_date:

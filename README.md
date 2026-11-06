@@ -140,7 +140,8 @@ budget, skill line labels and a baseline summary.
   your search terms into hundreds of off-lane titles a blocklist can't keep up
   with. Off by default.
 - `skill_weights` are 0-10 integers, consumed by the judges, opaque to `src/`.
-- `salary_expectation` is read only by `/apply`, only for lanes that set it.
+- Salary is not a lane key: it is `salary` on each country row of the answer bank
+  (`{amount, currency, markup_pct, lanes}`), read only by `/apply`.
 
 `src/shared/verticals.py` is the single loader and it is **strict**: a vertical block
 missing any required key raises `ValueError`. Because `tests/conftest.py` injects
