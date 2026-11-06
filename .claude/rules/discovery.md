@@ -27,6 +27,11 @@ store), which only `summary` and `app dupes` read. `jobs/raw/` holds nightly deb
 classified listing plus its gate verdict and drop `reason`; the feed's passes
 only), pruned after `raw_keep_days`; nothing in the pipeline reads them.
 
+A `--jobs-dir` other than `jobs/` is a shadow run: it writes only there, reads
+`pipeline/` and never touches `inbox/` (the manual lane is skipped).
+`--profile-dir D` (shadow runs only) reads `D/verticals.yaml`, its lanes under
+`D/verticals/`, and `D/discovery.yaml` where present, in place of `profile/`'s.
+
 ## The title gate (`shared/title_gate.py`)
 
 One rule for every source, `lane_for(title, hint)`. Titles and terms are NFC;

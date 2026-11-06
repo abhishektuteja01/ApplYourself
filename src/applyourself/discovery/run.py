@@ -3,7 +3,11 @@ find into the jobs store as it arrives, then rebuild clean.parquet and write
 the run report.
 
     uv run discover [--deadline-hours H] [--source NAME ...] [--max-terms N]
-                    [--jobs-dir D] [--boards-dir D]
+                    [--jobs-dir D] [--boards-dir D] [--profile-dir D]
+
+A `--jobs-dir` other than jobs/ is a shadow run: it never reads or moves inbox
+clips, and `--profile-dir` (which needs one) swaps in another verticals.yaml
+(lanes under D/verticals/) and discovery.yaml.
 
 Lanes run on their own threads; a writer saves the store every few minutes,
 so a killed run loses at most that much and the next run simply finds the
@@ -334,7 +338,15 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--boards-dir", type=Path, default=paths.UNIVERSE, help="where boards.csv lives"
     )
+    parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        metavar="D",
+        help="shadow run: read D/verticals.yaml (lanes in D/verticals/) and D/discovery.yaml "
+        "where present instead of profile/'s; needs a --jobs-dir other than jobs/",
+    )
     args = parser.parse_args(argv)
+    shadow = Path(args.jobs_dir).resolve() != Path(paths.JOBS).resolve()
 
     unknown = sorted(set(args.source or []) - set(LANE_NAMES))
     if unknown:
@@ -343,8 +355,29 @@ def main(argv=None) -> int:
         sys.exit("ERROR: --deadline-hours must be >= 0.")
     if args.max_terms is not None and args.max_terms < 1:
         sys.exit("ERROR: --max-terms must be >= 1.")
+    overrides = []
+    shadow_files: dict[str, Path] = {}
+    if args.profile_dir is not None:
+        if not shadow:
+            sys.exit("ERROR: --profile-dir needs a --jobs-dir of its own, never jobs/.")
+        shadow_files = {
+            name: args.profile_dir / name
+            for name in ("verticals.yaml", "discovery.yaml")
+            if (args.profile_dir / name).is_file()
+        }
+        if not shadow_files:
+            sys.exit(
+                f"ERROR: --profile-dir {args.profile_dir} holds no verticals.yaml or discovery.yaml."
+            )
+        overrides.append(f"--profile-dir {args.profile_dir} ({', '.join(shadow_files)})")
     try:
-        cfg = load_config()
+        if "verticals.yaml" in shadow_files:
+            verticals.set_config(verticals.load_verticals(shadow_files["verticals.yaml"]))
+        cfg = (
+            load_config(shadow_files["discovery.yaml"])
+            if "discovery.yaml" in shadow_files
+            else load_config()
+        )
         from applyourself.shared.location.parser import require_libpostal
 
         require_libpostal()
@@ -364,7 +397,6 @@ def main(argv=None) -> int:
     p.runs.mkdir(parents=True, exist_ok=True)
     print(f"run id: {run_id}", flush=True)
 
-    overrides = []
     if args.deadline_hours is not None:
         cfg.deadline_hours = args.deadline_hours
         overrides.append(f"--deadline-hours {args.deadline_hours:g}")
@@ -379,6 +411,10 @@ def main(argv=None) -> int:
         wanted = [
             n for n in LANE_NAMES if n == "manual" or (n in cfg.sources and cfg.sources[n].enabled)
         ]
+    if shadow and "manual" in wanted:
+        # Inbox clips belong to the real store: a shadow run leaves them be.
+        wanted.remove("manual")
+        overrides.append("inbox skipped (shadow --jobs-dir)")
     if cfg.deadline_hours <= 0:
         wanted = []
     deadline_ts = time.time() + cfg.deadline_hours * 3600 if wanted else 0.0

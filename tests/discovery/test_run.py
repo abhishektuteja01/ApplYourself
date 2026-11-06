@@ -322,6 +322,54 @@ def test_deadline_zero_only_rebuilds_the_view(wired):
     assert report["lanes"] == {}
 
 
+def test_profile_dir_needs_a_jobs_dir_of_its_own(wired, tmp_path):
+    from applyourself.shared import paths
+
+    with pytest.raises(SystemExit, match="--jobs-dir of its own"):
+        R.main(["--jobs-dir", str(paths.JOBS), "--profile-dir", str(tmp_path)])
+
+
+def test_a_shadow_run_reads_its_own_lanes_and_leaves_the_inbox_alone(wired, monkeypatch, cfg):
+    """--profile-dir swaps the lanes; a shadow --jobs-dir never takes a real clip."""
+    import shutil
+
+    import yaml
+
+    from applyourself.shared import paths
+    from tests.conftest import FIXTURE_PATH
+
+    shadow = wired / "shadow_profile"
+    shutil.copytree(FIXTURE_PATH.parent / "verticals", shadow / "verticals")
+    shutil.copy(FIXTURE_PATH, shadow / "verticals.yaml")
+    lane = shadow / "verticals" / "example_primary" / "lane.yaml"
+    data = yaml.safe_load(lane.read_text(encoding="utf-8"))
+    data["search_terms"] = ["Widget Shadow Analyst"]
+    lane.write_text(yaml.safe_dump(data), encoding="utf-8")
+    paths.INBOX.mkdir(parents=True, exist_ok=True)
+    clip = paths.INBOX / "a.md"
+    clip.write_text(
+        "---\ncompany: Acme\ntitle: Widget Analyst\nurl: https://x.io/1\n---\n" + JD,
+        encoding="utf-8",
+    )
+    seen = []
+
+    class Records(FakeLane):
+        def run(self, crawl, tally=None):
+            seen.append(crawl.vcfg.verticals["example_primary"].search_terms)
+            return super().run(crawl)
+
+    monkeypatch.setattr(R, "_lane", lambda name: Records())
+    jobs = wired / "shadow_jobs"
+    args = ["--jobs-dir", str(jobs), "--boards-dir", str(wired), "--profile-dir", str(shadow)]
+    assert R.main(args + ["--source", "manual", "--source", "greenhouse"]) == 0
+    assert seen == [("Widget Shadow Analyst",)]
+    assert clip.exists() and not (paths.INBOX / ".processed").exists()
+    assert set(S.load_store(jobs / "jobs.parquet")["source"]) == {"greenhouse"}
+    [report] = [json.loads(f.read_text(encoding="utf-8")) for f in (jobs / "runs").glob("*.json")]
+    assert "manual" not in report["lanes"]
+    assert "inbox skipped (shadow --jobs-dir)" in report["overrides"]
+
+
 def test_unknown_source_is_refused(wired):
     with pytest.raises(SystemExit):
         R.main(["--jobs-dir", str(wired), "--source", "monster"])
