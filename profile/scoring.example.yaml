@@ -43,6 +43,11 @@ no_sponsorship:
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
 
+# `/score --stale-only`: a role whose JD changed only to a copy from the same
+# source at least this alike (0-1; word order, case, punctuation and a shorter
+# copy aside) is not stale. Absent = 0.9.
+rejudge_jd_similarity: 0.9
+
 # A JD under min_words has its skills axis capped at skills_cap.
 jd_quality:
   min_words: 300

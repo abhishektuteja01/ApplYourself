@@ -180,7 +180,8 @@ def build_view(
     view = _one_per_job(df_live)
     funnel["jobs"] = len(view)
 
-    first_seen = df.groupby("job_id")["first_seen"].min()
+    # A repost restarts the clock: retention counts from the newest posting.
+    first_seen = df.groupby("job_id")["first_seen"].max()
     # last_score: a frozen legacy copy, read only for a job scored.parquet no longer holds.
     remembered = df.groupby("job_id")["last_score"].max()
     lifetimes = []

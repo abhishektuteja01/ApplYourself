@@ -44,7 +44,9 @@ field goes in `score_store.derive`.
 `/score --all [--vertical V]` re-judges instead of scoring only new rows,
 except roles whose state is past `shortlist.pipeline_states`; there is no
 separate rescore command. `--stale-only` takes only judged rows whose hash
-changed and prints the count without staging; `--yes` stages them. A row with
+changed and prints the count without staging; `--yes` stages them. A row whose
+JD is only a near copy (`rejudge_jd_similarity`, `same_jd_copies`) of the judged
+one from the same source, such as a repost, is not stale. A row with
 no hash (legacy) is never stale, and a plain `score start` re-judges nothing.
 `--job-id` (for `/ingest`) skips every drop except no-lane.
 `scripts/dev/drop_filter_rows.py --dry-run|--apply` removes the old `filter:*`

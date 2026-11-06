@@ -677,6 +677,15 @@ def test_view_retention_tiers():
     assert set(out["title"]) == {"AI Engineer", "Data Engineer"}
 
 
+def test_view_retention_counts_from_the_newest_posting_of_a_job():
+    """A repost under an old job_id restarts its clock."""
+    store, _ = fold(S.empty_store(), post(GH.format(1)), today=at(100))
+    store, _ = fold(store, post(GH.format(2)), today=at(2))
+    assert store["job_id"].nunique() == 1
+    out, _ = view(store, scores={store.at[0, "job_id"]: 40.0})
+    assert len(out) == 1
+
+
 def test_view_gives_an_unscored_row_the_filter_drops_low_retention(monkeypatch):
     """Drops are not stored, so retention asks today's filter again."""
     monkeypatch.setattr(live_view.title_gate, "lane_for", lambda t, v, *a: title_gate.Verdict(v))

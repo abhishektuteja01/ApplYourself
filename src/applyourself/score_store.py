@@ -25,6 +25,8 @@ from typing import Annotated, Any, Literal, cast
 import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from rapidfuzz import fuzz
+from rapidfuzz.utils import default_process
 
 from applyourself.score_filter import (
     SPONSORSHIP_FACTS,
@@ -373,6 +375,43 @@ def first_seen(store_path: Path | None, job_ids: set[str]) -> dict[str, float]:
     return {str(j): t.timestamp() for j, t in first.items()}
 
 
+def same_jd_copies(
+    rows: list[dict[str, Any]],
+    hashes: dict[str, str],
+    packets: dict[str, str],
+    store_path: Path | None,
+    cfg: ScoringConfig,
+) -> set[str]:
+    """The ids among changed `rows` whose JD is only a near copy of the judged
+    one: a stored posting from the row's own source whose JD gives the stored
+    hash under today's packet, at least `rejudge_jd_similarity` alike (word
+    order, case, punctuation and a shorter copy aside)."""
+    if not rows or store_path is None or not Path(store_path).exists():
+        return set()
+    ids = {r["job_id"] for r in rows}
+    store = read_parquet(
+        store_path, schemas.STORE_SCHEMA_VERSION, columns=["job_id", "source", "jd_text"]
+    )
+    store = store[store["job_id"].isin(ids)]
+    postings: dict[str, list[tuple[str, str]]] = {}
+    for jid, source, jd in zip(store["job_id"], store["source"], store["jd_text"], strict=True):
+        postings.setdefault(jid, []).append((source, jd))
+    out = set()
+    for r in rows:
+        for source, jd in postings.get(r["job_id"], []):
+            judged = trim_jd(jd, cfg)
+            if (
+                source != r.get("source")
+                or input_hash(packets[r["vertical"]], judged) != hashes[r["job_id"]]
+            ):
+                continue
+            alike = fuzz.token_set_ratio(judged, r["_jd"], processor=default_process) / 100
+            if alike >= cfg.rejudge_jd_similarity:
+                out.add(r["job_id"])
+            break
+    return out
+
+
 def start(
     clean_path: Path,
     scored_path: Path,
@@ -454,6 +493,9 @@ def start(
         if stale_only and row["_hash"] == hashes.get(row["job_id"]):
             continue
         keep.append(row)
+    if stale_only:
+        copies = same_jd_copies(keep, hashes, packets, store_path, cfg)
+        keep = [r for r in keep if r["job_id"] not in copies]
     fresh = first_seen_last_run(store_path, dropped)
     first: dict[str, int] = {}
     for jid, code in codes.items():
