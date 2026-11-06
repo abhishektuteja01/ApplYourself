@@ -46,6 +46,16 @@ def _example_resume_sources(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _example_scoring(monkeypatch):
+    """Scoring config comes from the committed example, never the gitignored
+    profile/scoring.yaml, so a key change there cannot turn the suite red."""
+    from src import score_filter
+
+    profile = Path(__file__).resolve().parent.parent / "profile"
+    monkeypatch.setattr(score_filter, "SCORING_PATH", profile / "scoring.example.yaml")
+
+
+@pytest.fixture(autouse=True)
 def _no_git_hook_env(monkeypatch):
     """A commit hook runs this suite with GIT_DIR and GIT_INDEX_FILE set, and a
     test that makes a temp repo would then write to the real one (it set
