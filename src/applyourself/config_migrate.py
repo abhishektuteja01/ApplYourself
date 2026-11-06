@@ -634,7 +634,16 @@ def _migrated_rules(
             out.append({"vertical": n, "terms": kept, "keep": True})
         single = [t for t, c in words[n].items() if c == 1 and t not in strong[n]]
         if single and len(words[n]) > 1:
-            out.append({"vertical": n, "pattern": {"match": single, "require_any": list(words[n])}})
+            out.append(
+                {
+                    "vertical": n,
+                    "pattern": {
+                        "match": single,
+                        "require_any": list(words[n]),
+                        "search_is_context": True,
+                    },
+                }
+            )
         elif single:
             out.append({"vertical": n, "terms": single})
     return out
@@ -662,21 +671,25 @@ def _replay_titles(jobs: Path) -> list[tuple[str, str, str]]:
     return list(seen)
 
 
-def _replay(old: Any, new: Any, rows: list[tuple[str, str, str]]) -> list[str]:
-    """Each title that passes the old config and drops, or changes lane, under the new."""
+def _replay(
+    old: Any, new: Any, rows: list[tuple[str, str, str]]
+) -> tuple[list[str], dict[str, list[str]]]:
+    """Both configs read with today's matcher: each title that passes before
+    and drops or changes lane after, and per lane the titles that pass only after."""
     from applyourself.shared.title_gate import lane_for
 
-    bad = []
+    bad: list[str] = []
+    gained: dict[str, list[str]] = {}
     for t, hint, src in rows:
         a = lane_for(t, hint, src, old)
-        if not a.passes:
-            continue
         b = lane_for(t, hint, src, new)
-        if not b.passes or b.lane != a.lane:
+        if a.passes and (not b.passes or b.lane != a.lane):
             bad.append(
                 f"{t!r} ({src}, {hint or 'no hint'}): {a.lane} -> {b.lane or '-'} {b.reason}"
             )
-    return bad
+        elif b.passes and not a.passes:
+            gained.setdefault(b.lane, []).append(t)
+    return bad, gained
 
 
 def _title_lists(p: Profile) -> None:
@@ -718,22 +731,17 @@ def _title_lists(p: Profile) -> None:
     }
     excludes = [[str(t) for t in raws.get(n, {}).get("title_exclude_terms") or []] for n in names]
     variants = tuple(tuple(g) for g in data.get("title_variants") or [] if isinstance(g, list))
-    rows = _replay_titles(p.root.parent / "jobs")
-    strong_rx = title_terms.compile_terms(tuple(t for ts in strong.values() for t in ts), variants)
-    kept_titles = [
-        t for t, _, _ in rows if strong_rx and strong_rx.search(title_terms.normalize(t))
-    ]
-    # A ban every lane shares moves to defaults, unless a title some lane's
-    # strong-keep term keeps holds it; a defaults list already there is the
-    # one ban list, so nothing joins it.
+    from applyourself.shared import paths
+
+    jobs = paths.JOBS if p.root.resolve() == paths.PROFILE.resolve() else p.root.parent / "jobs"
+    rows = _replay_titles(jobs)
+    # Every ban all lanes share moves to defaults (a `keep: true` rule beats
+    # it, as strong-keep did); a defaults list already there is the one ban
+    # list, so nothing joins it.
     shared = [
         t
         for t in dict.fromkeys(excludes[0] if excludes and not have else [])
         if all(t.lower() in {x.lower() for x in e} for e in excludes)
-        and not any(
-            title_terms.first_exact((t,), k)
-            for k in [*(t for ts in strong.values() for t in ts), *kept_titles]
-        )
     ]
 
     text = p.text(VERTICALS) or ""
@@ -818,11 +826,12 @@ def _title_lists(p: Profile) -> None:
     except ValueError as exc:
         p.problems.append(f"{VERTICALS}: does not load after moving the title lists: {exc}")
         return
-    bad = _replay(old, new, rows)
+    bad, gained = _replay(old, new, rows)
     if bad:
         p.problems.append(
-            f"{VERTICALS}: moving the title lists would drop or move {len(bad)} title(s) "
-            "that pass today; move them by hand:\n         " + "\n         ".join(bad[:50])
+            f"{VERTICALS}: under today's matcher, moving the title lists would drop or move "
+            f"{len(bad)} title(s) that pass with the lists in place; move them by hand:\n         "
+            + "\n         ".join(bad[:50])
         )
         return
     p.texts[VERTICALS] = top
@@ -841,8 +850,17 @@ def _title_lists(p: Profile) -> None:
         f"{VERTICALS}: include/strong-keep terms -> classifier_rules for "
         f"{[n for n in names if keeps.get(n)]}; "
         + (f"defaults title_exclude_terms + {shared}; " if shared else "")
-        + f"lane-only exclude terms dropped {dropped}; replayed {len(rows)} titles, none drop "
-        "or change lane"
+        + f"lane-only exclude terms dropped {dropped}; "
+        + (
+            f"replayed {len(rows)} titles from {jobs}, both configs under today's matcher: "
+            "this step drops or moves none; passing only after it, per lane: "
+            + (
+                "; ".join(f"{n} {len(ts)} (e.g. {ts[:10]})" for n, ts in sorted(gained.items()))
+                or "none"
+            )
+            if rows
+            else f"no titles under {jobs} to replay: lane decisions NOT checked"
+        )
         + (
             "; a board title holding one of these terms goes where an earlier rule "
             f"puts it: {elsewhere}"

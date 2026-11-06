@@ -47,20 +47,30 @@ def test_lane_for(cfg, title, hint, lane, reason):
         (".net developer", "ASP.NET Developer", True),
         ("forward deployed engineer", "VegaのForward Deployed Engineer", True),
         ("ml engineer", "HTML Engineer", False),
+        ("ai", "AI工程师", True),
+        ("ai engineer", "AIエンジニア", True),
+        ("ai", "Aid Worker", False),
         ("ingénieur", "Ingénieur IA", True),  # decomposed accent, NFC on both sides
     ],
 )
 def test_terms_match_loosely_but_never_inside_a_latin_word(term, title, hit):
-    rx = title_terms.compile_terms((term,))
+    rx = title_terms.compile_terms((term,), (("engineer", "エンジニア"),))
     assert bool(rx and rx.search(title_terms.normalize(title))) is hit
 
 
 def test_a_single_word_needs_its_lanes_context_except_on_its_own_search():
-    rule = verticals.CompoundRule(("agent", "agents"), ("ai", "llm", "agents"))
+    rule = verticals.CompoundRule(("agent", "agents"), ("ai", "llm", "agents"), (), True)
     assert rule.matches("AI Agent Developer")
     assert not rule.matches("Insurance Agents")  # "agents" is the match itself
     assert rule.matches("Insurance Agents", hinted=True)
+    # a hand-written rule never takes the search as context
+    assert not verticals.CompoundRule("agent", ("ai",)).matches("Insurance Agent", hinted=True)
+    words = verticals.CompoundRule(("ai", "ml"), ("ai", "ml", "machine learning"))
+    assert words.matches("AI ML Engineer") and not words.matches("ML ML")
     assert verticals.CompoundRule("ML Engineer", ("LLM",)).matches("ML Engineer, LLMOps")
+    sap = verticals.CompoundRule("pm", ("sap", "rag"))
+    assert sap.matches("SAP PM Consultant")
+    assert not sap.matches("PM, Sapphire Ventures") and not sap.matches("PM Ragnarok")
 
 
 def test_a_keep_rule_beats_a_ban_word(cfg):

@@ -20,10 +20,14 @@ _TOKEN_RE = re.compile(r"[\w&+.#']+")
 # A word ending these is matched from its stem on ("deployed" reads "deploy\w*").
 _SUFFIXES = ("ments", "ment", "ings", "ing", "ed", "es", "s")
 _MIN_STEM = 4
-# Not inside a Latin word; a CJK letter right before is fine ("のForward").
-_NOT_IN_WORD = r"(?<![0-9A-Za-z\u00c0-\u024f])"
-# A short last word that may run on inside a compound ("LLM" in "LLMOps").
+# Not inside a Latin word; a CJK letter beside it is fine ("のForward", "AI工程师").
+_LATIN = r"0-9A-Za-z\u00c0-\u024f"
+_NOT_IN_WORD = rf"(?<![{_LATIN}])"
+_WORD_ENDS = rf"(?![{_LATIN}])"
+# A short last word that may run on inside a compound: before a capital that
+# starts a new part ("LLMOps") or a known tail ("llmops"), never "Sapient".
 _OPEN_MIN = 3
+_RUN_ON = r"(?:(?-i:[A-Z][a-z])\w*|ops\w*)"
 
 
 def nfc(text: str | None) -> str:
@@ -61,9 +65,9 @@ def _word(tok: str, last: bool, open_end: bool) -> str:
         return re.escape(_stem(tok)) + r"\w*"
     if tok.isalnum():
         if last and open_end and len(tok) >= _OPEN_MIN:
-            return re.escape(tok) + r"\w*"
-        return re.escape(tok) + r"(?:e?s)?" + (r"(?!\w)" if last else "")
-    return re.escape(tok) + (r"(?!\w)" if last and tok[-1:].isalnum() else "")
+            return re.escape(tok) + rf"(?:{_RUN_ON}|(?:e?s)?{_WORD_ENDS})"
+        return re.escape(tok) + r"(?:e?s)?" + (_WORD_ENDS if last else "")
+    return re.escape(tok) + (_WORD_ENDS if last and tok[-1:].isalnum() else "")
 
 
 def _phrase(toks: tuple[str, ...], last: bool, open_end: bool) -> str:

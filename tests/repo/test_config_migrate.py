@@ -297,9 +297,9 @@ lanes:
   - beta
 classifier_rules:
   - vertical: alpha
-    pattern: '\\\\bwidget\\\\b'
+    pattern: '\\bwidget\\b'
   - vertical: beta
-    pattern: '\\\\bgizmo\\\\b'
+    pattern: '\\bgizmo\\b'
 """
 LANE = """display_name: {name}
 search_terms: [{search}]
@@ -344,8 +344,10 @@ def test_title_lists_migration_keeps_strong_keep_and_routes_specific_first(tmp_p
     assert _run(prof, apply=True) == 0, capsys.readouterr().out
     new = V.load_verticals(prof / "verticals.yaml")
     ban = new.verticals["beta"].title_exclude_terms
-    assert "thesis" in ban and "sales" not in ban  # a strong-keep title holds "sales"
-    assert title_gate.lane_for("Thesis: Sales Widget", "", "greenhouse", new).passes
+    assert "thesis" in ban and "sales" in ban  # every ban both lanes share
+    assert title_gate.lane_for("Thesis: Sales Widget", "", "greenhouse", new).passes  # keep
+    assert title_gate.lane_for("Gizmo Sales", "", "greenhouse", new).reason == "banned: sales"
+    assert "lane decisions NOT checked" not in capsys.readouterr().out
     route = {t: title_gate.lane_for(t, "", "greenhouse", new).lane for t in (
         "Agent Risk Analyst", "Insurance Agent", "Data Platform Risk Lead")}  # fmt: skip
     assert route == {
@@ -354,6 +356,15 @@ def test_title_lists_migration_keeps_strong_keep_and_routes_specific_first(tmp_p
         "Data Platform Risk Lead": "beta",
     }
     assert title_gate.lane_for("Agent Ops", "alpha", "linkedin", new).lane == "alpha"
+
+
+def test_title_lists_migration_says_so_when_there_is_nothing_to_replay(tmp_path, capsys):
+    import shutil as sh
+
+    prof = _two_lanes(tmp_path)
+    sh.rmtree(tmp_path / "jobs")
+    assert _run(prof, apply=False) == 0
+    assert "lane decisions NOT checked" in capsys.readouterr().out
 
 
 def test_title_lists_migration_refuses_when_a_title_would_change_lane(tmp_path, capsys):

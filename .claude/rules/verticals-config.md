@@ -29,12 +29,14 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   and strong-keep count as fits for the lane's own search rows, strong-keep
   beats a ban). `uv run config migrate` moves them out: multi-word terms into
   `terms` rules, most words first (strong-keep ones `keep: true`), each lane's
-  single words into one `{match, require_any}` rule needing another of its
-  words; the exclude terms every lane shares into `defaults:` (none when
-  `defaults:` already has a list, none that a strong-keep title holds). It
-  replays jobs/clean.parquet and jobs/raw/ beside the profile and refuses on
-  any title that would drop or change lane. Add `title_variants` before
-  migrating: a variants group counts as one word.
+  single words into one `{match, require_any, search_is_context: true}` rule
+  needing another of its words; every exclude term all lanes share into
+  `defaults:` (none when `defaults:` already has a list). It replays
+  jobs/clean.parquet and jobs/raw/, reading the config before and after with
+  today's matcher, refuses on any title that would drop or change lane, lists
+  the titles that pass only after, and says so when there is nothing to
+  replay. Add `title_variants` before migrating: a variants group counts as
+  one word.
 - **One source per resume fact** (`src/applyourself/resume_model.py`): `profile/resume.yaml`
   holds name, contact, education and each context's header plus per-lane
   `{min, max, order}`; `bullets.md` holds claims and `default_for`;

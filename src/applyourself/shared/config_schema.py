@@ -58,6 +58,7 @@ class Lane(_Strict):
 class RulePattern(_Strict):
     match: Any = None
     require_any: Any = None
+    search_is_context: Any = None
 
 
 class ClassifierRule(_Strict):

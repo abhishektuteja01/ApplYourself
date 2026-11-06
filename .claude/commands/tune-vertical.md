@@ -136,8 +136,10 @@ loader:
   must appear AND, elsewhere in the title, one `require_any` entry too, each
   matched loosely (case, hyphens, spaces, plurals, word endings,
   `title_variants`; never from inside a word, so "ML Engineer" misses "HTML
-  Engineer"; a short last require word runs on, "LLM" finds "LLMOps"). On a
-  title a search for this lane found, the match term alone is enough. Use it
+  Engineer"; a short last require word runs on into a compound part, "LLM"
+  finds "LLMOps" but "SAP" never "Sapient"). With `search_is_context: true`
+  (what `config migrate` writes), on a title a search for this lane found the
+  match term alone is enough. Use it
   for a word that is ambiguous alone ("agent", a two-letter module code).
 - `terms: [<str>, ...]` — any one term, matched loosely the same way; with
   `keep: true` a title it matches passes even when it holds a ban word. Keep

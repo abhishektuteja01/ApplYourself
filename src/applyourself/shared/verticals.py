@@ -165,30 +165,36 @@ class CompoundRule:
     """A `pattern: {match, require_any}` block: a match term (one, or any of
     a list) must appear, and so must one of require_any somewhere else in the
     title, each matched loosely (`title_terms`; a short last require word may
-    run on, "LLM" in "LLMOps"). On a title a search for this lane found, the
-    search is the context: the match term alone is enough."""
+    run on in a compound, "LLM" in "LLMOps"). With `search_is_context`, on a
+    title a search for this lane found the match term alone is enough."""
 
     def __init__(
         self,
         match_str: str | tuple[str, ...],
         require_any: tuple[str, ...],
         variants: Variants = (),
+        search_is_context: bool = False,
     ):
         self.match = (match_str,) if isinstance(match_str, str) else tuple(match_str)
         self.require_any = require_any
         self.variants = variants
+        self.search_is_context = search_is_context
 
     def matches(self, title: str, hinted: bool = False) -> bool:
         text = title_terms.normalize(title)
         must = title_terms.compile_terms(self.match, self.variants)
-        spans = [m.span() for m in must.finditer(text)] if must else []
-        if not spans or hinted:
-            return bool(spans)
+        hits = [(m.span(), m.group(0).lower()) for m in must.finditer(text)] if must else []
+        if not hits or (hinted and self.search_is_context):
+            return bool(hits)
         anyof = title_terms.compile_terms(self.require_any, self.variants, open_end=True)
         if anyof is None:
             return False
+        # A require hit counts beside a match hit it does not overlap and that
+        # reads differently: "AI ML Engineer" passes, "ML ML" and "Agents" alone do not.
         return any(
-            all(m.end() <= a or m.start() >= b for a, b in spans) for m in anyof.finditer(text)
+            (m.end() <= a or m.start() >= b) and m.group(0).lower() != word
+            for m in anyof.finditer(text)
+            for (a, b), word in hits
         )
 
     def __repr__(self) -> str:
@@ -403,7 +409,10 @@ def build(data: dict[str, Any], lanes: dict[str, tuple[Any, Path]], p: Path) -> 
             )
             if not require_any:
                 raise _fail(p, f"{where}.pattern.require_any must be nonempty")
-            rules.append((vertical, CompoundRule(match_str, tuple(require_any), variants)))
+            context = pattern.get("search_is_context", False)
+            if type(context) is not bool:
+                raise _fail(p, f"{where}.pattern.search_is_context must be true or false")
+            rules.append((vertical, CompoundRule(match_str, tuple(require_any), variants, context)))
         else:
             try:
                 compiled = re.compile(pattern, re.IGNORECASE)
