@@ -99,6 +99,7 @@ def _built(what: str, fixture: str):
     def run(world):
         folder = _build_resume(world)
         shutil.copy(SESSIONS / fixture, folder)
+        shutil.copy(paths.example("automation.example.yaml"), world / "profile" / "automation.yaml")
         code, out = (
             _app("build", what, JOB, "--no-pdf") if what == "letter" else _app("build", what, JOB)
         )
@@ -113,6 +114,7 @@ def _built(what: str, fixture: str):
         pytest.param(lambda w: [] if _build_resume(w) else ["no folder"], id="resume_plan"),
         pytest.param(_built("letter", "cover_letter.yaml"), id="cover_letter"),
         pytest.param(_built("answers", "company_answers.yaml"), id="company_answers"),
+        pytest.param(_built("outreach", "outreach.yaml"), id="outreach"),
         pytest.param(_judge, id="judge_answer"),
     ],
 )

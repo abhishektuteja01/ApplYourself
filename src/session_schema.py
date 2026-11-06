@@ -8,7 +8,7 @@ import difflib
 import typing
 from datetime import date
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 
@@ -25,6 +25,7 @@ class ProblemCode(StrEnum):
     SKILL = "skill"
     LINT = "lint"
     PAGES = "pages"
+    LENGTH = "length"
 
 
 class _Strict(BaseModel):
@@ -74,10 +75,22 @@ class CompanyAnswers(_Strict):
     what_interests_you_about_product: str | None
 
 
+class OutreachDraft(_Strict):
+    channel: Literal["recruiter", "referral", "alumni"]
+    medium: Literal["linkedin", "email"]
+    to: str | None = None
+    contact_id: str | None = None
+    subject: str | None = None
+    body: str
+    why: str
+    uses: list[str] = []
+
+
 KINDS: dict[str, tuple[str, type[BaseModel]]] = {
     "resume": ("resume_plan.yaml", ResumePlan),
     "letter": ("cover_letter.yaml", LetterPlan),
     "answers": ("company_answers.yaml", CompanyAnswers),
+    "outreach": ("outreach.yaml", OutreachDraft),
 }
 
 

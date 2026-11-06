@@ -22,3 +22,12 @@ unlock_max_open: 5           # memory-unlock questions waiting for your yes/no a
 # Tracking and submission.
 ghosted_after_days: 30       # an `applied` role with no update this long shows as ghosted
 company_cooldown_days: 2     # no batch submit to a company applied to this recently
+
+# Outreach drafts (`uv run app build outreach`): most words in the body per
+# channel (recruiter per medium), and in an email subject line.
+outreach_word_limits:
+  recruiter_linkedin: 90
+  recruiter_email: 150
+  referral: 120
+  alumni: 100
+  subject: 8

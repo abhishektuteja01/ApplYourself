@@ -432,3 +432,43 @@ def test_lint_outreach_on_a_missing_draft_prints_one_line(repo, capsys):
     code = app_cli.main(["lint", "outreach", str(repo / "absent.md"), "--company", "Acme"])
     out = capsys.readouterr().out
     assert code == 2 and out.count("\n") == 1 and "absent.md" in json.loads(out)["error"]
+
+
+# ---------- outreach ----------
+
+
+def _outreach(repo, capsys, limits=None, **over):
+    rel = _built(repo, capsys)
+    auto = yaml.safe_load(paths.example("automation.example.yaml").read_text(encoding="utf-8"))
+    auto["outreach_word_limits"].update(limits or {})
+    (repo / "profile" / "automation.yaml").write_text(yaml.safe_dump(auto), encoding="utf-8")
+    draft = {
+        "channel": "recruiter",
+        "medium": "email",
+        "to": "May Chen",
+        "subject": "Widget Engineer role",
+        "uses": ["B-WID-01"],
+        "body": "I owned the daily widget assembly throughput report across four plants.",
+        "why": "Short and direct, as the voice samples are.",
+        **over,
+    }
+    _write(repo, rel, "outreach.yaml", draft)
+    return _run(capsys, "build", "outreach", JOB)
+
+
+def test_outreach_writes_the_draft_and_records_it_once(repo, capsys):
+    code, out = _outreach(repo, capsys)
+    assert code == 0, out
+    assert _run(capsys, "build", "outreach", JOB)[0] == 0
+    text = (repo / out["draft"]).read_text(encoding="utf-8")
+    assert "# Subject" in text and "# Why this approach" in text
+    state = yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))
+    assert [(e["draft_file"], e["medium"]) for e in state["outreach"]] == [
+        (out["draft_file"], "email")
+    ]
+
+
+def test_outreach_length_comes_from_the_profile_limits(repo, capsys):
+    code, out = _outreach(repo, capsys, limits={"recruiter_email": 5})
+    assert code == 2 and [p["code"] for p in out["problems"]] == ["length"]
+    assert not (repo / "pipeline" / JOB / "outreach").exists()

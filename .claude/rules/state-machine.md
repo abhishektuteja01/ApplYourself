@@ -49,8 +49,8 @@ R10: `src/track_cli.py` is the only module that appends state events
 (`created`, `transition`, through `state_io.transition` or `ensure_state`);
 `/track`, `app_cli`, `apply_cli` and `apply/triage` call `track_cli.main`, and
 `tests/test_state_io.py` fails on any other caller. `/tailor` (through
-`uv run app build resume`) and `/outreach` only append side-list events
-(`tailored_dirs[]`, `outreach[]`). Whether a role has a cover letter or company
+`uv run app build resume`) and `/outreach` (through `uv run app build outreach`)
+only append side-list events (`tailored_dirs[]`, `outreach[]`). Whether a role has a cover letter or company
 answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
 

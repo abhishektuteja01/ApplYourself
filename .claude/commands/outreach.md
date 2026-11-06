@@ -1,5 +1,5 @@
 ---
-description: Generate an outreach draft (recruiter / referral / alumni) for a specific job_id. Per-channel work-authorization disclosure and length defaults. Fully linted with outreach_only banned phrases. HARD-REFUSES if profile/voice_samples.md is missing or empty.
+description: Generate an outreach draft (recruiter / referral / alumni) for a specific job_id. Per-channel work-authorization disclosure; `uv run app build outreach` checks the length per channel and lints with the outreach-scope rules. HARD-REFUSES if profile/voice_samples.md is missing or empty.
 model: sonnet
 effort: medium
 allowed-tools:
@@ -118,14 +118,17 @@ Read:
 
 ## Step 3 — generate the draft per channel rubric (LOCKED)
 
+Word limits are `outreach_word_limits` in `profile/automation.yaml`; the build
+checks them, so write within the one named for the channel.
+
 ### recruiter
 
 LinkedIn DM:
-- **≤ 90 words**, NO subject line
+- within `recruiter_linkedin` words, NO subject line
 - Disclosure: **only if asked**.
 
 Email:
-- **≤ 150 words**, short subject line (≤ 8 words)
+- within `recruiter_email` words, a short subject line (within `subject` words)
 - Disclosure: **only if asked**
 
 Pick the medium by the first rule that applies:
@@ -138,7 +141,7 @@ That is the whole rule. Reachability is not a judgment call to make here.
 
 ### referral
 
-- **≤ 120 words**
+- within `referral` words
 - Warm contact you know; asking them to refer you internally
 - **Disclosure: upfront**, so the contact can check internally before
   spending social capital
@@ -146,7 +149,7 @@ That is the whole rule. Reachability is not a judgment call to make here.
 
 ### alumni
 
-- **≤ 100 words**
+- within `alumni` words
 - **LEAD with the shared affiliation** -- a school or employer the recipient
   and the user have in common, taken from the entry's `shared_affiliation` in
   `profile/contacts.yaml`, the `--via` context, or an employer or school in
@@ -154,86 +157,52 @@ That is the whole rule. Reachability is not a judgment call to make here.
 - **Ask for a 15-minute call -- NOT a referral up front**
 - **Disclosure: upfront**
 
-### Output file structure
+### Write `outreach.yaml`
 
-Write to `pipeline/<job_id>/outreach/<YYYY-MM-DD>_<channel>_<recipient-slug>.md`
-— today's date, the `$CHANNEL` arg, and the recipient's name lowercased with
-non-alphanumerics collapsed to `-` (`Priya Raman` -> `priya-raman`). Call this
-path DRAFT_PATH below; Step 5 records the filename in `state.yaml`:
+Write `<dir>/outreach.yaml` (`<dir>` from `uv run app dir <job_id>`).
+`uv run app schema outreach` prints every key it may hold:
 
-```markdown
----
-job_id: <id>
-channel: <c>
-to: <recipient name>
-contact_id: <id from contacts.yaml or null>
+```yaml
+channel: <the $CHANNEL arg>
 medium: linkedin | email
-generated_at: <ISO ts>
-status: draft
----
-
-# Subject
-
-<short subject line; OMIT this section entirely for LinkedIn DM>
-
-# Body
-
-<the message, in user's voice per voice_samples.md, within length limit>
-
-# Why this approach
-
-<2-3 sentences: which voice cue you mirrored, which JD signal you
-referenced, why this disclosure choice for this channel.
-The user deletes this section before sending.>
+to: <recipient name, or null for a recruiter with no name>
+contact_id: <id from contacts.yaml, or null>
+subject: <email only; leave it out for a LinkedIn DM>
+uses: [<bullet ids whose facts the message states>]
+body: <the message, in the user's voice per voice_samples.md>
+why: <2-3 sentences: which voice cue you mirrored, which JD signal you
+  referenced, why this disclosure choice for this channel>
 ```
 
-Filename slug rule for `RECIPIENT_SLUG`: lowercase the `--to` value,
-collapse non-alphanumerics to `-`, strip leading/trailing `-`. If no
-`--to` was given (rare; recruiter cold-DM), use `unknown`.
+NO-FAB: every number in `subject` or `body` must be in a `uses` bullet, a context
+header or the JD; the build refuses one that is not.
 
-## Step 4 — LINT the draft (outreach context)
+## Step 4 — build the draft
 
 ```bash
-# Substitute the literal path of the draft written in Step 3 — bash
-# variables do not persist between Bash calls. Drop --recipient if none.
-# Fixes mechanical slips in the draft in place, then lists the outreach-scope
-# rule hits: `violations` (level block) and `warnings` (level warn).
-uv run app lint outreach "pipeline/<job_id>/outreach/<date>_<channel>_<recipient-slug>.md" \
-    --company "<company>" --recipient "<recipient name>"
+cd "$(git rev-parse --show-toplevel)" && uv run app build outreach <job_id>
 ```
 
-If any violation:
-- Rewrite the offending line using a phrasing that is (a) in the user's
-  voice per `voice_samples.md` and (b) not matched by any rule.
-- Re-save and re-lint per the fix loop in `.claude/shared/no_fab.md` (read it:
-  it holds the attempt cap).
-- If still failing after 5: refuse with the specific line + the phrase
-  that won't clean, and tell the user to either tweak the draft by hand
-  or expand `voice_samples.md` with an alternate phrasing.
+It fixes mechanical slips, then checks the shape, the word limits (`length`),
+numbers (`number`), cited ids (`unknown_id`) and every `rules:` entry in
+`profile/de_ai_rules.yaml` whose `scope` holds `outreach` (`lint`). On exit 2,
+rewrite what each problem names in `outreach.yaml`, in the user's voice and
+matched by no rule, and build again per the fix loop in
+`.claude/shared/no_fab.md` (read it: it holds the attempt cap). If still failing
+after 5: refuse with the specific line and the problem that won't clean, and tell
+the user to either tweak the draft by hand or expand `voice_samples.md` with an
+alternate phrasing. `warnings` never fail the build; mention them in the report.
 
 **Never silently let a banned phrase ship.**
 
-## Step 5 — register the draft in state.yaml.outreach[]
+On exit 0 the build has written the draft to `pipeline/<job_id>/outreach/` (the
+path is `draft` in its JSON) and recorded it in `state.yaml`'s `outreach[]`
+through `uv run track outreach-draft`. A rebuild rewrites the same day's draft
+and never records it twice.
 
-```bash
-# Substitute the literal job_id/channel/recipient/filename/medium values —
-# bash variables do not persist between Bash calls.
-uv run track outreach-draft <job_id> --channel <channel> --to "<recipient name>" \
-    --draft-file "<date>_<channel>_<recipient-slug>.md" \
-    --contact-id "<id from contacts.yaml>" \
-    --medium <linkedin | email>
-```
+## Step 5 — runtime assertions
 
-Drop `--contact-id` if the recipient has no `contacts.yaml` entry, and `--medium`
-if no medium applies.
-
-## Step 6 — runtime assertions
-
-- [ ] Draft file exists at DRAFT_PATH (defined in Step 3)
-- [ ] Final lint pass returns zero violations in outreach context
-- [ ] Word count is within the channel limit
-- [ ] state.yaml.outreach[] has a new `{channel, to, status: draft, draft_file}` entry,
-      carrying `contact_id` when the recipient came from `contacts.yaml`
+- [ ] `uv run app build outreach <job_id>` exited 0
 - [ ] If the row has `requires_sponsorship: false`, the draft never mentions
       work authorization
 - [ ] Otherwise: a `recruiter` draft does NOT volunteer it; a `referral` or
@@ -241,14 +210,14 @@ if no medium applies.
 
 If any assertion fails, do NOT report success.
 
-## Step 7 — report
+## Step 6 — report
 
-Tell the user, filling every `<...>` from what you actually wrote:
+Tell the user, filling every `<...>` from what the build printed:
 ```
-Outreach drafted: <DRAFT_PATH>
+Outreach drafted: <draft>
   - channel: <channel>   to: <recipient name>   medium: <linkedin | email>
-  - word count: <n> (channel limit: <the limit for this channel>)
-  - lint: 0 violations
+  - word count: <words> (channel limit: <limit>)
+  - lint: 0 violations<, warnings: ... when any>
   - "Why this approach" footer is at the bottom — DELETE before sending.
 
 Send manually, then:

@@ -124,6 +124,14 @@ class ScoringFile(_Strict):
 # ---- automation.yaml ----
 
 
+class OutreachWordLimits(_Strict):
+    recruiter_linkedin: int
+    recruiter_email: int
+    referral: int
+    alumni: int
+    subject: int
+
+
 class Automation(_Strict):
     retired: ClassVar[dict[str, str]] = {"score_threshold": "scoring.yaml cutoffs.sheet"}
     schema_version: int | None = None
@@ -139,6 +147,7 @@ class Automation(_Strict):
     apply_prep_max_per_night: int | None = None
     ghosted_after_days: int | None = None
     company_cooldown_days: int | None = None
+    outreach_word_limits: OutreachWordLimits | None = None
 
 
 # ---- contacts.yaml ----

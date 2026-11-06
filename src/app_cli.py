@@ -1,4 +1,4 @@
-"""`uv run app` — the deterministic half of /tailor, /cover-letter and
+"""`uv run app` — the deterministic half of /tailor, /cover-letter, /outreach and
 /company-answers (R7: no LLM calls; R10: never writes `state:`).
 
 The role folder is the only state these commands share:
@@ -9,14 +9,18 @@ The role folder is the only state these commands share:
     trace.md, *_Resume.*  written by `build resume`
     company_answers.yaml  the session's research answers, checked by `build answers`
     cover_letter.yaml     the session's letter, rendered by `build letter`
+    outreach.yaml         the session's outreach message, written by `build outreach`
 
   new <job_id>                  checks, registers the role, opens its folder
   dir <job_id>                  where things are, as JSON
   build resume <job_id> [--final]
   build letter <job_id>
   build answers <job_id>
+  build outreach <job_id>       check outreach.yaml, write the draft under
+                                pipeline/<job_id>/outreach/ and record it in outreach[]
   dupes <job_id>                other ids that may be this role, already in play
-  schema resume|letter|answers  the keys that session file may hold (JSON Schema)
+  schema resume|letter|answers|outreach
+                                the keys that session file may hold (JSON Schema)
   lint outreach <draft> --company C [--recipient R]
                                 fix the draft's mechanical slips in place, list
                                 the phrase violations left
@@ -35,8 +39,9 @@ import os
 import re
 import sys
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 import yaml
@@ -47,11 +52,12 @@ from src.discovery.store import load_maybe_duplicates
 from src.docx_cover_letter import render_cover_letter
 from src.docx_render import ResumeContentError, TemplateError, export_pdf, render_resume
 from src.session_schema import ProblemCode
-from src.shared import clock, paths, verticals
+from src.shared import clock, config_schema, paths, verticals
 
 RESUME_PLAN = "resume_plan.yaml"
 LETTER_PLAN = "cover_letter.yaml"
 ANSWERS = "company_answers.yaml"
+OUTREACH = "outreach.yaml"
 SNAPSHOT = "jd_snapshot.md"
 ANSWER_KEYS = ("why_company", "why_role", "what_interests_you_about_product")
 
@@ -375,6 +381,7 @@ def _prose_problems(
     grounds: str,
     keep: list[str],
     warnings: list[dict],
+    context: Literal["resume", "outreach"] = "resume",
 ) -> list[dict]:
     """Numbers must come from a cited bullet or the JD; lint with keep-terms.
     `warn` lint hits go to `warnings`, never to the problems."""
@@ -394,7 +401,7 @@ def _prose_problems(
         }
         for n in resume_model.ungrounded_numbers(text, allowed)
     ]
-    found = lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
+    found = lint.find_phrase_violations(text, context=context, rules=src.rules, keep=keep)
     warnings += [resume_model.lint_warning(where, v) for v in found if v["level"] == "warn"]
     out += [
         {
@@ -563,6 +570,107 @@ def cmd_build_letter(
 
 
 # =====================================================================
+# build outreach
+# =====================================================================
+
+
+def _outreach_limits() -> dict:
+    limits = config_schema.automation_setting("outreach_word_limits", None)
+    if not limits:
+        raise AppError(
+            "profile/automation.yaml has no outreach_word_limits; copy that block "
+            "from profile/automation.example.yaml."
+        )
+    return limits
+
+
+def cmd_build_outreach(job_id: str, now: datetime | None = None) -> tuple[dict, int]:
+    folder = _built_dir(job_id)
+    facts, jd = _read_snapshot(folder)
+    data = _load_yaml(folder / OUTREACH)
+    if bad := session_schema.problems("outreach", data):
+        return {"ok": False, "problems": bad}, 2
+    limits = _outreach_limits()
+    src = resume_model.load_sources()
+    company = str(facts.get("company", ""))
+    channel, medium = data["channel"], data["medium"]
+    to = str(data.get("to") or "").strip()
+    subject = lint.fix_mechanical(str(data.get("subject") or "").strip(), src.rules)[0]
+    body = lint.fix_mechanical(str(data["body"]).strip(), src.rules)[0]
+    uses = [str(u) for u in data.get("uses") or []]
+    keep = resume_model.keep_terms(src, company, *([to] if to else []))
+    problems: list[dict] = []
+    warnings: list[dict] = []
+
+    def layout(where: str, detail: str) -> None:
+        problems.append({"where": where, "code": ProblemCode.LAYOUT, "detail": detail})
+
+    def length(where: str, words: int, limit: int, what: str) -> None:
+        if words > limit:
+            problems.append(
+                {
+                    "where": where,
+                    "code": ProblemCode.LENGTH,
+                    "detail": f"{words} words; {what} allows {limit}",
+                }
+            )
+
+    if channel != "recruiter" and not to:
+        layout("to", f"a {channel} message is addressed to a person")
+    if medium == "email" and not subject:
+        layout("subject", "an email needs a subject line")
+    if medium == "linkedin" and subject:
+        layout("subject", "a LinkedIn DM has no subject line")
+    limit = limits[f"recruiter_{medium}" if channel == "recruiter" else channel]
+    words = len(body.split())
+    length("body", words, limit, f"a {channel} {medium} message")
+    length("subject", len(subject.split()), limits["subject"], "a subject line")
+    if subject:
+        problems += _prose_problems(src, "subject", subject, uses, jd, keep, warnings, "outreach")
+    problems += _prose_problems(src, "body", body, uses, jd, keep, warnings, "outreach")
+    if problems:
+        return {"ok": False, "words": words, "problems": problems}, 2
+
+    at = (now or clock.now()).replace(microsecond=0)
+    slug = re.sub(r"[^a-z0-9]+", "-", to.lower()).strip("-") or "unknown"
+    name = f"{at.date().isoformat()}_{channel}_{slug}.md"
+    head = {
+        "job_id": job_id,
+        "channel": channel,
+        "to": to or None,
+        "contact_id": data.get("contact_id"),
+        "medium": medium,
+        "generated_at": at.isoformat(),
+        "status": "draft",
+    }
+    parts = ["---", yaml.safe_dump(head, sort_keys=False, allow_unicode=True).rstrip(), "---", ""]
+    if subject:
+        parts += ["# Subject", "", subject, ""]
+    parts += ["# Body", "", body, "", "# Why this approach", "", str(data["why"]).strip(), ""]
+    draft = paths.PIPELINE / job_id / "outreach" / name
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(draft, "\n".join(parts))
+
+    entries = _state(job_id).get("outreach") or []
+    if name not in {e.get("draft_file") for e in entries if isinstance(e, dict)}:
+        argv = ["outreach-draft", job_id, "--channel", channel, "--to", to or "unknown"]
+        argv += ["--draft-file", name, "--medium", medium]
+        if data.get("contact_id"):
+            argv += ["--contact-id", str(data["contact_id"])]
+        with contextlib.redirect_stdout(sys.stderr):
+            if track_cli.main(argv) != 0:
+                raise AppError(f"could not record {name} in {job_id}'s outreach[].")
+    return {
+        "ok": True,
+        "draft": str(draft.relative_to(paths.PIPELINE.parent)),
+        "draft_file": name,
+        "words": words,
+        "limit": limit,
+        "warnings": warnings,
+    }, 0
+
+
+# =====================================================================
 # dupes
 # =====================================================================
 
@@ -633,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     p_dupes = sub.add_parser("dupes")
     p_dupes.add_argument("job_id")
     p_build = sub.add_parser("build")
-    p_build.add_argument("what", choices=["resume", "letter", "answers"])
+    p_build.add_argument("what", choices=["resume", "letter", "answers", "outreach"])
     p_build.add_argument("job_id")
     p_build.add_argument(
         "--final",
@@ -670,6 +778,8 @@ def main(argv: list[str] | None = None) -> int:
             out, code = cmd_build_resume(args.job_id, final=args.final, no_pdf=args.no_pdf)
         elif args.what == "letter":
             out, code = cmd_build_letter(args.job_id, no_pdf=args.no_pdf)
+        elif args.what == "outreach":
+            out, code = cmd_build_outreach(args.job_id)
         else:
             out, code = cmd_build_answers(args.job_id)
         return _emit(out, code)
