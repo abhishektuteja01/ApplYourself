@@ -648,6 +648,9 @@ def main(argv: list[str] | None = None) -> int:
             fname, model = session_schema.KINDS[args.kind]
             return _emit({"file": fname, "schema": model.model_json_schema()})
         if args.cmd == "lint":
+            if not Path(args.draft).is_file():
+                print(json.dumps({"ok": False, "error": f"{args.draft}: no such draft"}))
+                return 2
             return _emit(cmd_lint_outreach(args.draft, args.company, args.recipient))
         if args.what == "resume":
             out, code = cmd_build_resume(args.job_id, final=args.final, no_pdf=args.no_pdf)

@@ -426,3 +426,9 @@ def test_dupes_stays_quiet_for_idle_partners_and_other_roles(repo, capsys, monke
         states=[("2add76fe", "saved")],
     )
     assert _run(capsys, "dupes", JOB) == (0, {"job_id": JOB, "duplicates": []})
+
+
+def test_lint_outreach_on_a_missing_draft_prints_one_line(repo, capsys):
+    code = app_cli.main(["lint", "outreach", str(repo / "absent.md"), "--company", "Acme"])
+    out = capsys.readouterr().out
+    assert code == 2 and out.count("\n") == 1 and "absent.md" in json.loads(out)["error"]
