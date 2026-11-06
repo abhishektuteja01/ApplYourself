@@ -22,6 +22,7 @@ from rapidfuzz.utils import default_process
 from src.discovery import parse
 from src.score_filter import load_trim
 from src.shared import clock, identity, jd_trim, paths
+from src.shared.logs import setup_logging
 from src.state_io import load_state_index
 
 TITLE_MIN = 90
@@ -491,6 +492,7 @@ def _line(r: dict, states: dict) -> str:
 
 
 def main(argv=None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="discover-dupes",
         description="List stored job_ids that look like one role and record them in "

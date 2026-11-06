@@ -71,6 +71,7 @@ import pandas as pd
 
 from src.apply import cooldown, ledger
 from src.shared import clock, paths
+from src.shared.logs import setup_logging
 from src.state_io import (
     ACTIVE_STATES,
     CLOSED_STATES,
@@ -605,6 +606,7 @@ def _cmd_rebuild_states(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     argv = sys.argv[1:] if argv is None else argv
 
     if argv == ["states"]:

@@ -137,6 +137,7 @@ from src.material import folders as app_folders
 from src.shared import clock, paths, schemas
 from src.shared.http_client import CareersError
 from src.shared.identity import normalize_company
+from src.shared.logs import setup_logging
 from src.shared.parquet_io import read_parquet
 
 R = run_record.ReasonCode
@@ -1583,6 +1584,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
         prog="apply",

@@ -21,6 +21,7 @@ import pandas as pd
 from src import state_io
 from src.apply import ledger
 from src.shared import paths
+from src.shared.logs import setup_logging
 
 _FOLDER = re.compile(r"_([0-9a-f]{8})(?:_v\d+)?$")
 _BEFORE_APPLIED = frozenset({"saved", "tailored", "skip"})
@@ -69,6 +70,7 @@ def problems() -> list[tuple[str, str, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="doctor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

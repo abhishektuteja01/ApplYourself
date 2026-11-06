@@ -41,6 +41,7 @@ from src.discovery.sources.inbox import InboxLane
 from src.score_filter import load_trim
 from src.shared import clock, http_client, paths, schemas, verticals
 from src.shared.job_boards import ATS_SOURCE_NAMES
+from src.shared.logs import setup_logging
 from src.shared.parquet_io import write_parquet
 from src.state_io import load_state_index
 
@@ -294,7 +295,7 @@ def render_md(report: dict) -> str:
 
 
 def main(argv=None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    setup_logging(logging.INFO, "%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="discover")
     parser.add_argument(
         "--deadline-hours",

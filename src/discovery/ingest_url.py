@@ -29,6 +29,7 @@ from src.score_filter import load_trim
 from src.shared import clock, paths, schemas, title_gate, verticals
 from src.shared import http_client as http
 from src.shared.job_boards import parse_posting_url
+from src.shared.logs import setup_logging
 from src.shared.parquet_io import read_parquet
 from src.state_io import load_state_index
 
@@ -178,7 +179,7 @@ def ingest(
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+    setup_logging(logging.INFO, logging.BASIC_FORMAT)
     parser = argparse.ArgumentParser(
         prog="ingest-url", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

@@ -32,6 +32,8 @@ from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
+from src.shared.logs import setup_logging
+
 PASSTHROUGH_SUFFIXES = {".md", ".txt", ".markdown"}
 DOCX_SUFFIXES = {".docx"}
 # .doc is the pre-2007 binary format; python-docx cannot read it at all.
@@ -131,6 +133,7 @@ def extract(path: Path) -> str:
 
 
 def main() -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="profile-extract",
         description="Dump a resume's text (.docx, .md, .txt) to stdout.",

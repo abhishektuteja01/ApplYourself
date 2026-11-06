@@ -29,6 +29,7 @@ from src.material import folders as app_folders
 from src.score_store import view
 from src.shared import clock, paths
 from src.shared.files import atomic_write_text
+from src.shared.logs import setup_logging
 
 # One short "what to do" line per section, written only into summary.md (the
 # session's copy) and only when the section has something to act on.
@@ -915,6 +916,7 @@ def to_html(md: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     ap = argparse.ArgumentParser(prog="summary", description=__doc__.split("\n\n")[0])
     ap.add_argument("--run-dir", type=Path, default=None)
     ap.add_argument(

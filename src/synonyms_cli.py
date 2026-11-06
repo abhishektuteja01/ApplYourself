@@ -33,6 +33,7 @@ from src.score_store import view
 from src.shared import clock, paths, schemas
 from src.shared.config_schema import load_settings
 from src.shared.files import atomic_write_text
+from src.shared.logs import setup_logging
 from src.shared.parquet_io import read_parquet
 
 HISTORY_KEEP = 20
@@ -381,6 +382,7 @@ def answer(item_id: str, reply: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     ap = argparse.ArgumentParser(prog="synonyms", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("keywords")

@@ -36,6 +36,7 @@ import yaml
 
 from src.shared import clock, config_schema, paths, schemas
 from src.shared.files import atomic_write_text
+from src.shared.logs import setup_logging
 
 STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 STOPS = ("discover", "score")
@@ -225,6 +226,7 @@ def _last_run(dry: bool) -> tuple[Path, dict] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["record"]:
         return record(argv[1:])

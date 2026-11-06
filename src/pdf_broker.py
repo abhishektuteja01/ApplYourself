@@ -20,6 +20,7 @@ from pathlib import Path
 from src import docx_render
 from src.docx_render import PdfResult
 from src.shared.files import atomic_write_text
+from src.shared.logs import setup_logging
 
 ENV = "PDF_BROKER_DIR"
 PID_FILE = "broker.pid"
@@ -102,6 +103,7 @@ def serve(queue: Path, parent: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(prog="pdf-broker")
     parser.add_argument("queue", type=Path)
     parser.add_argument("--parent", type=int, required=True)

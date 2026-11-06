@@ -22,6 +22,7 @@ import pyarrow.parquet as pq
 from src.discovery import dedupe
 from src.discovery import store as S
 from src.shared import identity, paths
+from src.shared.logs import setup_logging
 from src.shared.parquet_io import locked
 from src.state_io import events_path_for, read_events
 
@@ -123,6 +124,7 @@ def build(store: pd.DataFrame, known: pd.DataFrame, pipeline_dir: Path, jobs_dir
 
 
 def main(argv=None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="discover-ids",
         description="Build jobs/job_ids.parquet and the store's dedupe_key column. "

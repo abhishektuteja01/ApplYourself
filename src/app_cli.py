@@ -76,6 +76,7 @@ from src.material.folders import (
     role_info,
 )
 from src.material.new import _IDLE_STATES, _load_row, cmd_dupes, cmd_new
+from src.shared.logs import setup_logging
 
 _built_dir, _role_dirs = built_dir, role_dirs  # the names before they were public
 
@@ -134,6 +135,7 @@ def _emit(obj: dict, code: int = 0) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="uv run app", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

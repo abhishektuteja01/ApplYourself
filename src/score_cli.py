@@ -30,6 +30,7 @@ from src import score_store, shortlist
 from src.discovery.config import load_config
 from src.score_filter import CountryRule, ScoringConfig, load_scoring
 from src.shared import clock, paths, verticals
+from src.shared.logs import setup_logging
 
 
 def _shortlist(cfg: ScoringConfig) -> str:
@@ -141,6 +142,7 @@ def _cmd_lane(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="score", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

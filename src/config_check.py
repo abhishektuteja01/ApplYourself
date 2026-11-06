@@ -8,6 +8,7 @@ from collections.abc import Callable
 import yaml
 
 from src.shared import paths
+from src.shared.logs import setup_logging
 
 
 def _verticals() -> None:
@@ -78,6 +79,7 @@ CHECKS: tuple[tuple[str, bool, Callable[[], None]], ...] = (
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     from src.apply.answers import AnswersError
     from src.shared.config_schema import moved_hint
 
