@@ -131,7 +131,7 @@ Every source parses flags, salaries and placeholder company names through
 
 ## Locations
 
-`parse_location` is the one country reader; `apply_cli.job_country` falls back
+`parse_location` is the one country reader; `apply.role_facts.job_country` falls back
 to it piece by piece. A country code closing an address names the country
 ("Amsterdam, NH, NL"), and one that is also a US state code counts only when the
 address shows otherwise ("Pune, MH, IN", "Hamburg, DE"); a leading code

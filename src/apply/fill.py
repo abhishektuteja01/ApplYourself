@@ -1,4 +1,4 @@
-"""Execute a plan against a real form. Fill only — there is no submit here.
+"""Execute a plan against a real form: fill, and `submit()`, the one function that clicks submit.
 
 The plan decided everything; this module types, selects, checks and uploads, and
 refuses to paper over a widget that did not take the value. Two rules shape it:
