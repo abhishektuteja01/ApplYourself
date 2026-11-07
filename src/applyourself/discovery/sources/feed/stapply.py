@@ -28,6 +28,7 @@ import pyarrow.parquet as pq
 
 from applyourself.discovery import parse
 from applyourself.discovery.config import pacing_for
+from applyourself.discovery.sources.boards import ashby, greenhouse, lever, workday
 from applyourself.discovery.sources.boards.base import load_boards
 from applyourself.discovery.sources.feed import arbeitsagentur, oracle
 from applyourself.discovery.sources.feed.failed_reads import FailedReads
@@ -36,7 +37,7 @@ from applyourself.discovery.store import make_posting
 from applyourself.shared import http_client, identity, title_gate
 from applyourself.shared.countries import CC_TO_COUNTRY
 from applyourself.shared.http_client import CareersError
-from applyourself.shared.job_boards import ATS_SOURCE_NAMES, board_key
+from applyourself.shared.job_boards import ATS_SOURCE_NAMES, board_key, parse_posting_url
 from applyourself.shared.location.parser import parse_location
 
 log = logging.getLogger(__name__)
@@ -312,8 +313,8 @@ class StapplyLane(Lane):
             reader = posting_api(posting["url"], crawl.deadline_ts or None) if needs_jd else None
             if reader is not None:
                 # A host with a JSON API: its JD is read there, else from the page.
-                found = pages.call(*reader)
-                if found:
+                found = pages.call(*reader) or ""
+                if len(found.strip()) >= parse.MIN_JD_CHARS:
                     posting = {**posting, "jd_text": found}
                     needs_jd = False
             if needs_jd and failed.skip(key):
@@ -379,7 +380,28 @@ def posting_api(url: str, deadline_ts: float | None) -> tuple[str, Callable[[], 
         return "api:arbeitsagentur", lambda: arbeitsagentur.jd_text(
             http_client.fetch_json(api, deadline_ts=deadline_ts, headers=arbeitsagentur.HEADERS)
         )
+    api = workday.detail_api_url(url)
+    if api:
+        return "api:workday", lambda: workday.jd_text(
+            http_client.fetch_json(api, deadline_ts=deadline_ts)
+        )
+    hit = parse_posting_url(url)
+    if hit is None or not hit.slug or not hit.posting_id:
+        return None
+    slug, pid = hit.slug, hit.posting_id
+    if hit.source == "greenhouse":
+        return "api:greenhouse", lambda: _jd(greenhouse.fetch_posting(slug, pid, "", deadline_ts))
+    if hit.source == "lever":
+        return "api:lever", lambda: _jd(lever.fetch_posting(slug, pid, "", hit.region))
+    if hit.source == "ashby":
+        return "api:ashby", lambda: parse.html_to_text(
+            (ashby.job_posting(slug, pid, deadline_ts) or {}).get("descriptionHtml")
+        )
     return None
+
+
+def _jd(posting: dict | None) -> str:
+    return posting["jd_text"] if posting else ""
 
 
 def site_of(url: str) -> str:
@@ -434,8 +456,9 @@ class _PageReader:
                 self.failures[site] = self.failures.get(site, 0) + 1
         else:
             self.worked.add(site)
-        self.stats.detail_ok += bool(jd)
-        self.stats.detail_failed += not jd
+        ok = len(jd.strip()) >= parse.MIN_JD_CHARS
+        self.stats.detail_ok += ok
+        self.stats.detail_failed += not ok
         return jd
 
     def result(self, url: str, ok: bool) -> None:

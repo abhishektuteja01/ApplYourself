@@ -162,8 +162,9 @@ An Oracle Recruiting Cloud row's JD comes from its requisition-detail API
 requisition id. One named only by its tenant code ("Egug") is named from its
 candidate site page's `og:site_name`, read once per site a night. An
 arbeitsagentur.de row's JD comes from the job search's detail API
-(`feed/arbeitsagentur.py`, the url's reference number in base64); with none
-there, the page is read as before. A 404 from such an API is the posting's
+(`feed/arbeitsagentur.py`, the url's reference number in base64), and a
+Greenhouse, Lever, Ashby or Workday row's from that board's own posting API
+(the board lane's client); with none there, the page is read as before. A 404 from such an API is the posting's
 answer and never gives the API up for the night. Feed rows are
 board rows to the view: no search-age cut.
 

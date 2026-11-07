@@ -11,11 +11,13 @@ page with nothing that passes the gate, or `max_pages`.
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 from applyourself.discovery import parse
 from applyourself.discovery.sources.boards.base import Board, BoardLane
 from applyourself.discovery.store import make_posting
 from applyourself.shared.http_client import fetch_json, fetch_json_post
+from applyourself.shared.job_boards import parse_posting_url
 
 # Workday's server-side page-size ceiling: 21 fails, 20 succeeds.
 LIST_LIMIT = 20
@@ -43,6 +45,26 @@ def _base(company: str, wd: str) -> str:
 
 def public_url(company: str, wd: str, site_id: str, path: str) -> str:
     return f"https://{company}.{wd}.myworkdayjobs.com/{site_id}{path}"
+
+
+def detail_api_url(url: str) -> str:
+    """The detail API url for a public posting url (`/<site>/job/...`, maybe
+    after a locale segment), or ""."""
+    hit = parse_posting_url(url)
+    if hit is None or hit.source != "workday" or not hit.pod:
+        return ""
+    segs = [s for s in urlsplit(url).path.split("/") if s]
+    if len(segs) > 3 and segs[1] != "job" and segs[2] == "job":
+        segs = segs[1:]
+    if len(segs) < 3 or segs[1] != "job":
+        return ""
+    return f"{_base(hit.slug, hit.pod)}/{'/'.join(segs)}"
+
+
+def jd_text(payload) -> str:
+    """The JD in a detail response, "" when there is none."""
+    info = payload.get("jobPostingInfo") if isinstance(payload, dict) else None
+    return parse.html_to_text(info.get("jobDescription") or "") if isinstance(info, dict) else ""
 
 
 def list_page(

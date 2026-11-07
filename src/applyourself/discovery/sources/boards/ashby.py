@@ -92,6 +92,17 @@ def graphql_board(slug: str, deadline_ts: float | None = None) -> list[dict] | N
     return None if board is None else job_items(board, "jobPostings")
 
 
+def job_posting(slug: str, posting_id: str, deadline_ts: float | None = None) -> dict | None:
+    """One posting's JD fields from the board page's GraphQL, or None."""
+    found = graphql(
+        "ApiJobPosting",
+        POSTING_QUERY,
+        {"organizationHostedJobsPageName": slug, "jobPostingId": posting_id},
+        deadline_ts,
+    ).get("jobPosting")
+    return found if isinstance(found, dict) else None
+
+
 class AshbyLane(BoardLane):
     name = "ashby"
 
@@ -127,13 +138,8 @@ class AshbyLane(BoardLane):
         return out
 
     def detail(self, board: Board, posting: dict, crawl) -> dict | None:
-        found = graphql(
-            "ApiJobPosting",
-            POSTING_QUERY,
-            {"organizationHostedJobsPageName": board.slug, "jobPostingId": posting["_id"]},
-            crawl.deadline_ts,
-        ).get("jobPosting")
-        if not isinstance(found, dict):
+        found = job_posting(board.slug, posting["_id"], crawl.deadline_ts)
+        if found is None:
             return None
         return {
             **posting,

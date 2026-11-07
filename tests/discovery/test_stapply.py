@@ -13,6 +13,7 @@ import pytest
 
 from applyourself.discovery import store as S
 from applyourself.discovery.config import DiscoveryConfig
+from applyourself.discovery.sources.boards import ashby, greenhouse, lever, workday
 from applyourself.discovery.sources.boards import base as B
 from applyourself.discovery.sources.feed import arbeitsagentur, oracle, stapply
 
@@ -608,6 +609,22 @@ def test_a_posting_the_api_no_longer_holds_falls_back_to_its_page(monkeypatch, c
     assert stats.errors == []
 
 
+def test_a_short_api_jd_still_reads_the_page(monkeypatch, cfg, tmp_path):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(1)).assign(description=None).to_parquet(path)
+    monkeypatch.setattr(
+        stapply.http_client,
+        "fetch_json",
+        lambda url, deadline_ts=None, headers=None: {"stellenangebotsBeschreibung": "Siehe Link."},
+    )
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, _page(JD)))
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    assert saved["jd_text"].startswith("Build and ship")
+
+
 def _night(cfg, tmp_path, path, day):
     crawl = B.Crawl(
         DiscoveryConfig(),
@@ -672,3 +689,72 @@ def test_an_unreadable_record_starts_afresh(monkeypatch, cfg, tmp_path):
     stats, crawl = _night(cfg, tmp_path, path, 0)
     assert "unreadable" in stats.notes[0] and len(crawl.batch.rows) == 1
     assert json.loads((tmp_path / "failed.json").read_text(encoding="utf-8")) == {}
+
+
+UUID = "0000abcd-0000-0000-0000-000000000000"
+
+
+@pytest.mark.parametrize(
+    "url, module, name, payload, api",
+    [
+        (
+            GH.format(7),
+            greenhouse,
+            "fetch_json",
+            {"title": "Cog Engineer", "content": "&lt;p&gt;" + JD + "&lt;/p&gt;"},
+            "https://boards-api.greenhouse.io/v1/boards/ddome/jobs/7",
+        ),
+        (
+            f"https://jobs.lever.co/acme/{UUID}",
+            lever,
+            "fetch_json",
+            {
+                "text": "Cog Engineer",
+                "hostedUrl": f"https://jobs.lever.co/acme/{UUID}",
+                "descriptionPlain": JD,
+            },
+            f"https://api.lever.co/v0/postings/acme/{UUID}",
+        ),
+        (
+            f"https://jobs.ashbyhq.com/acme/{UUID}",
+            ashby,
+            "fetch_json_post",
+            {"data": {"jobPosting": {"id": UUID, "descriptionHtml": "<p>" + JD + "</p>"}}},
+            ashby.GRAPHQL_URL + "?op=ApiJobPosting",
+        ),
+        (
+            WD.format(9),
+            stapply.http_client,
+            "fetch_json",
+            {"jobPostingInfo": {"jobDescription": "<p>" + JD + "</p>"}},
+            "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/job/Berlin/AI-Engineer_R9",
+        ),
+    ],
+)
+def test_a_board_hosted_row_reads_its_jd_from_the_board_api(
+    monkeypatch, cfg, tmp_path, url, module, name, payload, api
+):
+    path = _one_row_feed(tmp_path, url=url, company="Acme", description="Short.")
+    calls = []
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page read"))
+    monkeypatch.setattr(
+        module, name, lambda url, *a, deadline_ts=None, **k: calls.append(url) or payload
+    )
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    assert calls == [api] and saved["jd_text"].startswith("Build and ship")
+
+
+@pytest.mark.parametrize(
+    "url, api",
+    [
+        ("https://acme.wd5.myworkdayjobs.com/en-US/Ext/job/Berlin/AI_R1", "/Ext/job/Berlin/AI_R1"),
+        ("https://acme.wd5.myworkdayjobs.com/us/job/Austin/AI_R1", "/us/job/Austin/AI_R1"),
+        ("https://acme.wd5.myworkdayjobs.com/Ext", ""),
+    ],
+)
+def test_a_workday_url_names_its_detail_api(url, api):
+    base = "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme"
+    assert workday.detail_api_url(url) == (base + api if api else "")
