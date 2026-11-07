@@ -121,6 +121,12 @@ def test_results_wanted_is_per_source_and_linkedin_stops_at_its_paging_limit(tmp
     assert any("sources.linkedin.results_wanted (141)" in p for p in cfg.validate())
 
 
+def test_terms_per_lane_is_refused_where_nothing_reads_it(tmp_path):
+    assert load(tmp_path, {"sources": {"eightfold": {"terms_per_lane": 1}}}).validate() == []
+    with pytest.raises(ValueError, match="terms_per_lane is read only by"):
+        load(tmp_path, {"sources": {"greenhouse": {"terms_per_lane": 2}}})
+
+
 def test_retention_from_defaults_to_first_and_rejects_anything_else(tmp_path):
     assert load(tmp_path, {}).retention_from == "first"
     assert load(tmp_path, {"retention_from": "newest"}).retention_from == "newest"

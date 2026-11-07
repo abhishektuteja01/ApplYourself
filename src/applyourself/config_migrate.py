@@ -229,8 +229,8 @@ def _abroad(p: Profile) -> None:
             return
         text = drop_flow_key(text, "abroad")
         block = (
-            "# Search these lanes' abroad_terms on these sources in every other country\n"
-            f"# {BANK} work_authorization.countries lists.\n"
+            "# Search these lanes' abroad_terms (absent: their search_terms) on these\n"
+            f"# sources in every other country {BANK} work_authorization.countries lists.\n"
             f"abroad: {{lanes: [{', '.join(lanes[0])}], sources: [{', '.join(old)}]}}\n"
         )
         lines = text.splitlines(keepends=True)

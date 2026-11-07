@@ -24,7 +24,7 @@ from pathlib import Path
 import pandas as pd
 
 from applyourself.discovery import parse
-from applyourself.discovery.config import pacing_for
+from applyourself.discovery.config import DEFAULT_TERMS_PER_LANE, pacing_for
 from applyourself.discovery.sources.lane import Lane, LaneStats
 from applyourself.shared import paths, schemas, title_gate
 from applyourself.shared.http_client import CareersError, Pacer
@@ -75,7 +75,7 @@ class Board:
 # ---------------------------------------------------------------------
 
 
-def search_terms(vcfg, per_lane: int = 1) -> tuple[str, ...]:
+def search_terms(vcfg, per_lane: int = DEFAULT_TERMS_PER_LANE) -> tuple[str, ...]:
     """Each lane's first `per_lane` search terms, default lane first,
     duplicates once: what a board that filters server-side is searched with."""
     order = [vcfg.default_vertical] + [n for n in vcfg.verticals if n != vcfg.default_vertical]

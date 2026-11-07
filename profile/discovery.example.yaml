@@ -7,8 +7,8 @@ deadline_hours: 4
 # Where the linkedin/indeed lanes search, as against what the view accepts. Absent = the allowlist's countries, capped at 5:
 # each location multiplies the query count. The board lanes are unaffected.
 # search_locations: ["Germany", "Netherlands", "United Kingdom"]
-# Optional: search these lanes' abroad_terms (verticals.yaml) in every other
-# country the answer bank lists, on these jobspy sources. Abroad, the view
+# Optional: search these lanes' abroad_terms (lane.yaml; absent: its
+# search_terms) in every other country the answer bank lists, on these jobspy sources. Abroad, the view
 # keeps only these lanes.
 # abroad: {lanes: [example_primary], sources: [linkedin, indeed]}
 # The live view (clean.parquet): a job stays while seen within live_days.

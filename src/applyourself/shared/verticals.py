@@ -252,6 +252,8 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
         _str_list(raw[key], path, f"{where}.{key}") if key in raw else search_terms
         for key in ("linkedin_terms", "abroad_terms")
     )
+    if not linkedin_terms:
+        raise _fail(path, f"{where}.linkedin_terms is empty: leave it out to use search_terms")
 
     drop_phrases = _str_list(raw.get("drop_phrases", []), path, f"{where}.drop_phrases")
     years = raw.get("years") or {}

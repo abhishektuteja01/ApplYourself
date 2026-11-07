@@ -90,6 +90,10 @@ _RETIRED_KEYS = {
 }
 
 RETENTION_FROM = ("first", "newest")
+# The board lanes that search server-side, and how many of each lane's first
+# search terms they use.
+TERMS_PER_LANE_SOURCES = ("workday", "eightfold")
+DEFAULT_TERMS_PER_LANE = 3
 
 # With no `search_locations`, the jobspy lanes query the allowlist's
 # countries; past this many, the query count outruns the deadline.
@@ -137,7 +141,7 @@ class SourceConfig:
     # per term, and how many of each lane's first search terms they search.
     every_days: int = 1
     max_pages: int = 6
-    terms_per_lane: int = 3
+    terms_per_lane: int = DEFAULT_TERMS_PER_LANE
     # Feed lanes: a snapshot older than this is skipped, not applied.
     max_snapshot_age_hours: int = 36
 
@@ -306,7 +310,9 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         remote_queries=v.get("remote_queries", True),
         every_days=_int(v.get("every_days", 1), f"{where}.every_days", 1),
         max_pages=_int(v.get("max_pages", 6), f"{where}.max_pages", 1),
-        terms_per_lane=_int(v.get("terms_per_lane", 3), f"{where}.terms_per_lane", 1),
+        terms_per_lane=_int(
+            v.get("terms_per_lane", DEFAULT_TERMS_PER_LANE), f"{where}.terms_per_lane", 1
+        ),
         hours_old=_int(v.get("hours_old", 336), f"{where}.hours_old", 1),
         results_wanted=_int(v.get("results_wanted", 100), f"{where}.results_wanted", 1),
         max_snapshot_age_hours=_int(
@@ -325,6 +331,10 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
     if not isinstance(out.remote_queries, bool):
         raise ValueError(
             f"{where}.remote_queries must be true or false, got {out.remote_queries!r}"
+        )
+    if "terms_per_lane" in v and name not in TERMS_PER_LANE_SOURCES:
+        raise ValueError(
+            f"{where}.terms_per_lane is read only by {', '.join(TERMS_PER_LANE_SOURCES)}"
         )
     companies = v.get("companies") or {}
     if not isinstance(companies, dict):

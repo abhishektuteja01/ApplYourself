@@ -133,7 +133,7 @@ rest due.
 
 Workday (`company|wd#|site`) and Eightfold (`host|domain`) filter server-side,
 so each tenant is searched with each lane's first `terms_per_lane` search
-terms (default 3). Vendor modules
+terms (default 3; the key is refused on any other source). Vendor modules
 only list a board and fetch one posting. The loop, the gate, known-vs-new,
 detail fetching and board results live in `BoardLane` once.
 

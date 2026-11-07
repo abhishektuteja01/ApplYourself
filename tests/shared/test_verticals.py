@@ -186,6 +186,9 @@ class TestValidation:
         data["verticals"]["example_primary"]["linkedin_terms"] = "Widget Engineer"
         with pytest.raises(ValueError, match="linkedin_terms must be a list"):
             _write_and_load(tmp_path, data)
+        data["verticals"]["example_primary"]["linkedin_terms"] = []
+        with pytest.raises(ValueError, match="linkedin_terms is empty: leave it out"):
+            _write_and_load(tmp_path, data)
 
     @pytest.mark.parametrize(
         "key", ["title_exclude_terms", "title_include_terms", "title_strong_keep_terms"]
