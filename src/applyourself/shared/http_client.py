@@ -165,20 +165,22 @@ def _fetch[T](
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
     json_body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> T:
     """GET (or, with `json_body`, POST) url, retrying 429/5xx, and hand the 200
-    response to `read`.
+    response to `read`. `headers` are added to the default ones.
 
     `read` owns what a 200 body means: a body it cannot use is a wall or a wrong
     slug rather than a blip, so it raises instead of retrying.
     """
+    sent = {**_HEADERS, **headers} if headers else _HEADERS
     for attempt in range(1, MAX_RETRIES + 1):
         t0 = time.monotonic()
         try:
             resp = (
-                _post(url, json=json_body, timeout=timeout, headers=_HEADERS)
+                _post(url, json=json_body, timeout=timeout, headers=sent)
                 if json_body is not None
-                else _get(url, timeout=timeout, headers=_HEADERS)
+                else _get(url, timeout=timeout, headers=sent)
             )
         except requests.RequestException as exc:
             _notify(url=url, secs=time.monotonic() - t0, status=None)
@@ -306,9 +308,10 @@ def fetch_json(
     url: str,
     timeout: int = REQUEST_TIMEOUT,
     deadline_ts: float | None = None,
+    headers: dict[str, str] | None = None,
 ) -> Any:
     """GET url -> parsed JSON. Retries 429/5xx (Retry-After capped at MAX_RETRY_AFTER)."""
-    return _fetch(url, _json_reader(url), timeout=timeout, deadline_ts=deadline_ts)
+    return _fetch(url, _json_reader(url), timeout=timeout, deadline_ts=deadline_ts, headers=headers)
 
 
 def fetch_json_post(

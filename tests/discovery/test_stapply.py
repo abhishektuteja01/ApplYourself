@@ -14,7 +14,7 @@ import pytest
 from applyourself.discovery import store as S
 from applyourself.discovery.config import DiscoveryConfig
 from applyourself.discovery.sources.boards import base as B
-from applyourself.discovery.sources.feed import oracle, stapply
+from applyourself.discovery.sources.feed import arbeitsagentur, oracle, stapply
 
 TODAY = pd.Timestamp("2026-10-23")
 JD = "Build and ship retrieval systems for clinical trial data. " * 6
@@ -547,3 +547,62 @@ def test_a_tenant_coded_oracle_company_is_named_from_its_site_once(monkeypatch, 
 )
 def test_a_site_label_is_cut_to_the_employer(label, expected):
     assert oracle.site_name(_site_page(label)) == expected
+
+
+BA = "https://www.arbeitsagentur.de/jobsuche/jobdetail/{}"
+
+
+def _ba_rows(n):
+    return [
+        row(url=BA.format(f"10000-{i}-S"), ats_type="bundesagentur", company="Acme GmbH")
+        for i in range(n)
+    ]
+
+
+def test_an_arbeitsagentur_row_reads_its_jd_from_the_detail_api(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(
+        tmp_path,
+        url=BA.format("13319-871150/1_622307LS-S"),
+        ats_type="bundesagentur",
+        company="Acme GmbH",
+        description=None,
+    )
+    calls = []
+
+    def fetch_json(url, deadline_ts=None, headers=None):
+        calls.append((url, headers))
+        return {"stellenangebotsBeschreibung": "## Aufgaben\n\n" + JD}
+
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page read"))
+    monkeypatch.setattr(stapply.http_client, "fetch_json", fetch_json)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    lane.run(crawl)
+    [saved] = crawl.batch.rows.values()
+    # The whole tail, "/" included, is the reference number.
+    assert calls == [
+        (arbeitsagentur.API + "MTMzMTktODcxMTUwLzFfNjIyMzA3TFMtUw==", arbeitsagentur.HEADERS)
+    ]
+    assert saved["jd_text"].startswith("## Aufgaben\n\nBuild and ship")
+
+
+def test_a_posting_the_api_no_longer_holds_falls_back_to_its_page(monkeypatch, cfg, tmp_path):
+    n = stapply.MAX_HOST_FAILURES + 2
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(n)).assign(description=None).to_parquet(path)
+    api, pages = [], []
+
+    def gone(url, deadline_ts=None, headers=None):
+        api.append(url)
+        raise stapply.CareersError("HTTP 404", status=404, permanent=True)
+
+    monkeypatch.setattr(stapply.http_client, "fetch_json", gone)
+    monkeypatch.setattr(
+        stapply.http_client, "fetch_page", lambda url: pages.append(url) or (200, _page(JD))
+    )
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    lane, crawl = read(cfg, tmp_path, path)
+    stats = lane.run(crawl)
+    # A 404 is that posting's answer: the API is never given up over it.
+    assert len(api) == n and len(pages) == n and len(crawl.batch.rows) == n
+    assert stats.errors == []

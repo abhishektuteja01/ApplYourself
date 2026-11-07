@@ -5,8 +5,8 @@ and job sites (storage.stapply.ai), read in place of crawling them.
 snapshot older than `max_snapshot_age_hours`, downloads the file, title-gates
 every row one row group at a time, maps the passing rows, and records which
 of our boards the file carried so the board lanes skip them. `run` then
-saves the rows, fetching a JD from the posting's own page only for a new row
-the file has none for. The file is deleted once read.
+saves the rows, fetching a JD from the posting's host API or its own page
+only for a new row the file has none for. The file is deleted once read.
 
 Deterministic and LLM-free (R7).
 """
@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ import pyarrow.parquet as pq
 from applyourself.discovery import parse
 from applyourself.discovery.config import pacing_for
 from applyourself.discovery.sources.boards.base import load_boards
-from applyourself.discovery.sources.feed import oracle
+from applyourself.discovery.sources.feed import arbeitsagentur, oracle
 from applyourself.discovery.sources.lane import Lane, LaneStats
 from applyourself.discovery.store import make_posting
 from applyourself.shared import http_client, identity, title_gate
@@ -295,6 +296,13 @@ class StapplyLane(Lane):
                 if payload is not None:
                     pages.result(posting["url"], bool(jd))
                 needs_jd = False
+            reader = posting_api(posting["url"], crawl.deadline_ts or None) if needs_jd else None
+            if reader is not None:
+                # A host with a JSON API: its JD is read there, else from the page.
+                found = pages.call(*reader)
+                if found:
+                    posting = {**posting, "jd_text": found}
+                    needs_jd = False
             if needs_jd or needs_name:
                 page = pages.read(posting["url"])
                 jd = parse.jobposting_text(page) if needs_jd else ""
@@ -334,6 +342,17 @@ class StapplyLane(Lane):
         return stats
 
 
+def posting_api(url: str, deadline_ts: float | None) -> tuple[str, Callable[[], str]] | None:
+    """(the API's give-up key, a call returning the posting's JD) for a url whose
+    host has a JSON API we read, else None."""
+    api = arbeitsagentur.detail_url(url)
+    if api:
+        return "api:arbeitsagentur", lambda: arbeitsagentur.jd_text(
+            http_client.fetch_json(api, deadline_ts=deadline_ts, headers=arbeitsagentur.HEADERS)
+        )
+    return None
+
+
 def site_of(url: str) -> str:
     """The site a page belongs to, across its subdomains: "obyteshr.bamboohr.com"
     and "prospect.bamboohr.com" are both bamboohr.com."""
@@ -367,6 +386,28 @@ class _PageReader:
             self.stats.errors.append(f"{url}: {type(e).__name__}: {e}")
             return ""
         return body if status == 200 else ""
+
+    def call(self, site: str, fetch: Callable[[], str]) -> str | None:
+        """`fetch()`'s JD, paced; "" when it gave none, None when not called (the
+        deadline, or `site` given up tonight). A 404 is that posting's answer,
+        so it never counts toward giving the site up."""
+        if self.crawl.deadline_reached() or (
+            site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES
+        ):
+            return None
+        self.pacer.wait()
+        try:
+            jd = fetch() or ""
+        except Exception as e:  # noqa: BLE001 -- one posting, not the lane
+            jd = ""
+            if not (isinstance(e, CareersError) and e.status == 404):
+                self.stats.errors.append(f"{site}: {type(e).__name__}: {e}")
+                self.failures[site] = self.failures.get(site, 0) + 1
+        else:
+            self.worked.add(site)
+        self.stats.detail_ok += bool(jd)
+        self.stats.detail_failed += not jd
+        return jd
 
     def result(self, url: str, ok: bool) -> None:
         site = site_of(url)

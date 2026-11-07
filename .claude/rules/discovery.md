@@ -156,7 +156,11 @@ first ten reads tonight give nothing is not read again tonight.
 An Oracle Recruiting Cloud row's JD comes from its requisition-detail API
 (`feed/oracle.py`), since its job page is built in the browser; its key is tenant +
 requisition id. One named only by its tenant code ("Egug") is named from its
-candidate site page's `og:site_name`, read once per site a night. Feed rows are
+candidate site page's `og:site_name`, read once per site a night. An
+arbeitsagentur.de row's JD comes from the job search's detail API
+(`feed/arbeitsagentur.py`, the url's reference number in base64); with none
+there, the page is read as before. A 404 from such an API is the posting's
+answer and never gives the API up for the night. Feed rows are
 board rows to the view: no search-age cut.
 
 Every source parses flags, salaries and placeholder company names through
