@@ -9,6 +9,7 @@ Text edits keep a YAML file's comments; the answer bank is rewritten through
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import re
 from collections.abc import Callable
@@ -942,6 +943,22 @@ def _scoring_v2(p: Profile) -> None:
     )
     if not todo:
         return
+    from applyourself import score_store
+    from applyourself.shared import paths
+
+    jobs = paths.JOBS if p.root.resolve() == paths.PROFILE.resolve() else p.root.parent / "jobs"
+    open_run = jobs / "scored.staging" / "run.json"
+    if open_run.is_file():
+        try:
+            old_run = not score_store.is_current(json.loads(open_run.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            old_run = True
+        if old_run:
+            p.problems.append(
+                f"{open_run} is a /score run for the old judge, which reads the keys this "
+                "step removes: run `score start` first"
+            )
+            return
     sheet = cutoffs.get("sheet")
     top = p.text(VERTICALS) or ""
     for key in OLD_JUDGE_KEYS:

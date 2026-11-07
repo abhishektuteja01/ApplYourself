@@ -701,32 +701,58 @@ def test_a_blank_blocker_reads_as_none(env, scfg):
     assert _scored(env).loc["aaaaaaaa", "fit_score"] == 80
 
 
-def test_an_old_judges_open_run_keeps_its_answers_and_restages_the_rest(env, scfg):
-    """A run staged before v2 would fail every v2 check night after night."""
-    _clean(env, [{"job_id": j, "company": f"Co{j}"} for j in ("aaaaaaaa", "bbbbbbbb")])
+def _old_run(env, scfg, ids, answered):
+    """An open run staged for the old judge: one slice per id, the `answered`
+    ones with a v1 answer (its `years` from the dict)."""
+    _clean(env, [{"job_id": j, "company": f"Co{j}"} for j in ids])
     _start(env, scfg)
     run = score_store.load_run(env["staging"])
     (name,) = run["slices"]
     meta = run["slices"][name]
     old = {"schema_version": 1, "model": "score-judge:sonnet", "started": run["started"]}
-    old["slices"] = {
-        f"{name}_a": {**meta, "job_ids": ["aaaaaaaa"]},
-        f"{name}_b": {**meta, "job_ids": ["bbbbbbbb"]},
-    }
+    old["slices"] = {f"{name}_{j}": {**meta, "job_ids": [j]} for j in ids}
     (env["staging"] / "run.json").write_text(json.dumps(old), encoding="utf-8")
-    v1 = {"job_id": "aaaaaaaa", "title": 25, "skills": 25, "seniority": 15, "domain": 15}
-    v1 |= {k: _answer("x")[k] for k in ("years", "country", "sponsorship", "evidence")}
-    v1 |= {"keywords_to_mirror": ["python"], "reasoning": "old fit"}
-    (env["staging"] / f"out_{name}_a.json").write_text(json.dumps([v1]), encoding="utf-8")
+    for j, years in answered.items():
+        v1 = {"job_id": j, "title": 25, "skills": 25, "seniority": 15, "domain": 15}
+        v1 |= {k: _answer("x")[k] for k in ("country", "sponsorship", "evidence")}
+        v1 |= {"years": years, "keywords_to_mirror": ["python"], "reasoning": "old fit"}
+        (env["staging"] / f"out_{name}_{j}.json").write_text(json.dumps([v1]), encoding="utf-8")
+
+
+def test_an_old_judges_open_run_keeps_its_answers_and_restages_the_rest(env, scfg, monkeypatch):
+    """A run staged before v2 would fail every v2 check night after night.
+    The fixture's example_primary still has the old `years: {3: 14, 4: 10}`."""
+    from tests.conftest import FIXTURE_PATH
+
+    monkeypatch.setitem(paths._overrides, "VERTICALS_CONFIG", FIXTURE_PATH)
+    ids = ("aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd")
+    _old_run(env, scfg, ids, {"aaaaaaaa": 0, "bbbbbbbb": 3, "cccccccc": 5})
     fin = _finish(env, scfg)
     assert fin["merged"] == 0 and "run" in fin["bad"]  # finish refuses it
     res = _start(env, scfg)
-    assert (res["kept_v1"], res["restaged"], res["judge"]) == (1, 1, 1)
+    assert (res["kept_v1"], res["restaged"], res["judge"]) == (3, 1, 1)
     run = score_store.load_run(env["staging"])
     assert score_store.is_current(run)
-    assert [j for m in run["slices"].values() for j in m["job_ids"]] == ["bbbbbbbb"]
-    row = score_store.view(env["scored"], scfg, RULE).set_index("job_id").loc["aaaaaaaa"]
-    assert (row["basis"], row["fit_score"]) == ("v1", 80)
+    assert [j for m in run["slices"].values() for j in m["job_ids"]] == ["dddddddd"]
+    v = score_store.view(env["scored"], scfg, RULE).set_index("job_id")
+    assert set(v.loc[["aaaaaaaa", "bbbbbbbb", "cccccccc"], "basis"]) == {"v1"}
+    # 80 as judged; 3 years caps seniority at 14; past the table's 4 years, 0 and skip
+    assert list(v.loc[["aaaaaaaa", "bbbbbbbb", "cccccccc"], "fit_score"]) == [80, 79, 0]
+    assert v.loc["cccccccc", "suggested_action"] == "skip"
+
+
+def test_an_old_run_on_a_lane_with_no_years_table_is_judged_again(env, scfg):
+    _old_run(env, scfg, ("aaaaaaaa",), {"aaaaaaaa": 0})  # no lane.yaml on disk: no years
+    res = _start(env, scfg)
+    assert (res["kept_v1"], res["restaged"], res["judge"]) == (0, 1, 1)
+
+
+def test_staging_never_keeps_a_leftover_answer(env, scfg):
+    _clean(env, [{"job_id": "aaaaaaaa"}])
+    env["staging"].mkdir()
+    (env["staging"] / "out_example_primary_001.json").write_text("[]", encoding="utf-8")
+    _start(env, scfg)
+    assert not (env["staging"] / "out_example_primary_001.json").exists()
 
 
 def test_a_profile_edit_is_reported_but_never_stale(env, scfg):
@@ -744,6 +770,10 @@ def test_a_profile_edit_is_reported_but_never_stale(env, scfg):
     )
     res = _start(env, scfg, stale_only=True, count_only=True)
     assert (res["judge"], res["profile_changed"]) == (0, 1)
+    rows = pd.read_parquet(env["scored"])
+    rows["judge_profile_hash"] = None  # unknown, as on a row from before the hash
+    rows.to_parquet(env["scored"], index=False)
+    assert _start(env, scfg, stale_only=True, count_only=True)["profile_changed"] == 0
 
 
 def test_a_lane_cutoff_below_review_fails_loading(cfg):

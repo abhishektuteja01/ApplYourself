@@ -49,12 +49,18 @@ def _months(dates: Any, today: date) -> set[int]:
     return set(range(first, last + 1))
 
 
-def digest(cfg: ScoringConfig, today: date | None = None) -> str:
+def _open(dates: Any) -> bool:
+    m = _RANGE_RE.match(str(dates or "").lower())
+    return bool(m and m[3] is None)
+
+
+def digest(cfg: ScoringConfig, today: date | None = None, open_lengths: bool = True) -> str:
     """The candidate profile digest: education, every context with its span
     (an open one up to `today`, default the clock's), total work years,
     sponsorship need per country and languages, one line per bullet with its
     tags, and every skill with its aliases. A bullet's rephrasings stay out."""
     today = today or clock.today()
+    # open_lengths=False: no length that grows with the date (profile_hash's form).
     from applyourself import resume_model
 
     src = resume_model.load_sources()
@@ -79,6 +85,8 @@ def digest(cfg: ScoringConfig, today: date | None = None) -> str:
             if str(ctx.get(k) or "").strip()
         )
         months = _months(ctx.get("dates"), today)
+        if not open_lengths and _open(ctx.get("dates")):
+            months = set()
         if section == "Work":
             worked |= months
         out.append(f"- {section}: {head}" + (f" ({len(months) / 12:.1f} years)" if months else ""))

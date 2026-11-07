@@ -526,7 +526,7 @@ def start(
     profiles = {
         j: h
         for j, h in zip(stored["job_id"], stored["judge_profile_hash"], strict=True)
-        if j in hashes
+        if j in hashes and isinstance(h, str) and h  # unknown before v2: not counted
     }
 
     dropped: set[str] = set()
@@ -536,6 +536,7 @@ def start(
     packets: dict[str, str] = {}
     hashed: dict[str, str] = {}  # each lane's packet without the digest
     digest: str | None = None
+    profile = ""
     changed = 0
     for row in cast(list[dict[str, Any]], clean.to_dict("records")):
         reason = drop_reason(row, cfg)
@@ -551,10 +552,11 @@ def start(
         if lane not in packets:
             if digest is None:
                 digest = score_packet.digest(cfg, now.date())
+                profile = profile_hash(score_packet.digest(cfg, now.date(), open_lengths=False))
             packets[lane] = packet_text(vcfg.verticals[lane], cfg, digest)
             hashed[lane] = packet_text(vcfg.verticals[lane], cfg, "")
         row["_hash"] = input_hash(hashed[lane], row["_jd"])
-        if row["job_id"] in profiles and profiles[row["job_id"]] != profile_hash(digest or ""):
+        if row["job_id"] in profiles and profiles[row["job_id"]] != profile:
             changed += 1
         if stale_only and row["_hash"] == hashes.get(row["job_id"]):
             continue
@@ -597,7 +599,7 @@ def start(
             "resumed": False,
             **extra,
         }
-    run = stage_rows(staging, keep, packets, cfg, now, profile=profile_hash(digest or ""))
+    run = stage_rows(staging, keep, packets, cfg, now, profile=profile)
     return {
         "dropped": counts,
         "first_dropped": first,
@@ -637,6 +639,7 @@ def stage_rows(
         (staging / f"packet_{lane.name}.md").write_text(packets[lane.name], encoding="utf-8")
         for n, part in enumerate(_slices(lane_rows), 1):
             name = f"{lane.name}_{n:03d}"
+            (staging / f"out_{name}.json").unlink(missing_ok=True)  # never a leftover answer
             text = _slice_text(name, part, staging)
             (staging / f"slice_{name}.md").write_text(text, encoding="utf-8")
             run["slices"][name] = {

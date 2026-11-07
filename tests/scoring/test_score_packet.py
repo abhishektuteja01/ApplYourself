@@ -35,6 +35,16 @@ def test_digest_holds_every_claim_and_skill_and_counts_present_to_the_day(scfg):
     assert "- United States: authorized now, will need sponsorship later" in text
 
 
+def test_the_profile_form_does_not_move_with_the_month(scfg):
+    resume = yaml.safe_load(paths.RESUME.read_text(encoding="utf-8"))
+    resume["contexts"]["COG"]["dates"] = "Nov 2025 - Present"
+    paths.RESUME.write_text(yaml.safe_dump(resume, sort_keys=False), encoding="utf-8")
+    feb, may = date(2026, 2, 10), date(2026, 5, 10)
+    assert score_packet.digest(scfg, feb) != score_packet.digest(scfg, may)
+    same = [score_packet.digest(scfg, d, open_lengths=False) for d in (feb, may)]
+    assert same[0] == same[1] and "Nov 2025 - Present\n" in same[0]
+
+
 def test_no_languages_listed_is_said_so(scfg):
     import dataclasses
 

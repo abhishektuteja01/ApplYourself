@@ -419,3 +419,20 @@ def test_scoring_v2_moves_the_sheet_line_to_the_lanes_and_drops_the_old_judge_ke
     capsys.readouterr()
     assert _run(prof, apply=False) == 0
     assert "nothing to migrate" in capsys.readouterr().out
+
+
+def test_scoring_v2_waits_for_an_old_judges_open_run(tmp_path, capsys):
+    prof = _profile(tmp_path)
+    s = prof / "scoring.yaml"
+    s.write_text(
+        s.read_text(encoding="utf-8").replace("  tailor: 60\n", "  tailor: 60\n  sheet: 85\n"),
+        encoding="utf-8",
+    )
+    shutil.copytree(paths.example("verticals"), prof / "verticals")
+    shutil.copyfile(paths.example("verticals.example.yaml"), prof / "verticals.yaml")
+    staging = tmp_path / "jobs" / "scored.staging"
+    staging.mkdir(parents=True)
+    (staging / "run.json").write_text('{"schema_version": 1, "slices": {}}', encoding="utf-8")
+    assert _run(prof, apply=True) == 1
+    assert "run `score start` first" in capsys.readouterr().out
+    assert "sheet: 85" in s.read_text(encoding="utf-8")

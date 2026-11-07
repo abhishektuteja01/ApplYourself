@@ -277,7 +277,9 @@ def stage(
             packets[arm],
             cfg,
             now,
-            profile=score_store.profile_hash(digest),
+            profile=score_store.profile_hash(
+                score_packet.digest(cfg, now.date(), open_lengths=False)
+            ),
             form="v1" if arm == "v1" else "v2",
         )
         lines[arm] = score_store.judge_lines(run, out / arm)
@@ -336,10 +338,12 @@ def close_v1_run(
             answer = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
         except json.JSONDecodeError:
             answer = None
+        raw = raw_lane(lane)
         if (
             answer is None
             or lane not in verticals.get_config().verticals
-            or _v1_problems(answer, meta, _v1_focus(raw_lane(lane)) is not None)
+            or "years" not in raw  # the old years rule is gone: judge it again
+            or _v1_problems(answer, meta, _v1_focus(raw) is not None)
         ):
             owed |= set(meta["job_ids"])
             continue
