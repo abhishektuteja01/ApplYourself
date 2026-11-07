@@ -1,0 +1,23 @@
+# /score's shipped defaults. A profile/scoring_defaults.yaml replaces this
+# whole file. verticals.yaml `defaults: score:` and each lane's `score:` sit
+# over `score` here, key by key.
+schema_version: 1
+
+# A lane's penalties: the score is the judge's fit less the larger of its
+# level's and its years' penalty (the largest key at or below the years the JD
+# asks), and 0 from years_zero_at years.
+score:
+  level: {entry: 0, mid: 5, senior: 15, lead: 25}
+  years: {3: 5, 4: 10, 5: 15, 6: 20, 7: 25, 8: 30, 9: 35}
+  years_zero_at: 10
+
+# A lane's sheet and retention line when neither it nor scoring.yaml's older
+# cutoffs.sheet sets one.
+cutoff: 76
+
+# `score examples`: [in_lane, target fit] per calibration example. In lane,
+# the past row nearest the fit; out of lane, the highest fit.
+example_targets: [[true, 93], [true, 82], [true, 67], [false, 0]]
+
+# `score ab-stage`'s v1 arm: the old short-JD skills cap when scoring.yaml has none.
+v1_skills_cap: 12

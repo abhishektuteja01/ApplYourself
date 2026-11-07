@@ -914,7 +914,7 @@ def _scoring_v2(p: Profile) -> None:
     import dataclasses
     import tempfile
 
-    from applyourself.score_filter import CUTOFF_DEFAULT
+    from applyourself.shared import scoring_defaults
     from applyourself.shared import verticals as V
 
     data = p.data(VERTICALS)
@@ -954,7 +954,9 @@ def _scoring_v2(p: Profile) -> None:
                 return
             top = cut
     if "score" not in defaults:
-        score = {**V.SCORE_DEFAULTS, "cutoff": sheet if type(sheet) is int else CUTOFF_DEFAULT}
+        shipped = scoring_defaults.load()
+        line_at = sheet if type(sheet) is int else shipped["cutoff"]
+        score = {**V.score_defaults(), "cutoff": line_at}
         block = [
             "  # /score: fit less the larger of the level and years penalties; 0 from\n",
             "  # years_zero_at years. cutoff: the sheet and retention line. A lane's\n",

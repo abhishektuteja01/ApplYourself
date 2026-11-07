@@ -25,13 +25,14 @@ Three steps, one owner per rule:
    Filtered). Discovery's retention asks the same rule of an unscored row.
    The rest is staged in `jobs/scored.staging/` as one packet per
    lane and slices of at most 10 roles, each row with its `judge_input_hash`
-   (`input_hash` of the lane packet and the trimmed JD). The packet, always
+   (`input_hash` of the lane packet without the digest, and the trimmed JD)
+   and `judge_profile_hash` (the digest's `profile_hash`). The packet, always
    in this order: `.claude/shared/scoring_rubric.md` (fixed fit bands,
    tie-breaks), the candidate digest (`score_packet.digest`: every bullet with
    its tags, every skill with its aliases (no bullet rephrasings), each
-   context's span, education, the bank's
-   sponsorship needs and languages; rebuilt every run, so an edit to those
-   files changes the hash), the lane's `rubric.md`, its optional
+   context's span (an open "Present" one up to the staging day), education,
+   the bank's sponsorship needs and languages, rebuilt every run), the lane's
+   `rubric.md`, its optional
    `examples.yaml` (`score examples` picks them from past scores by a stable
    rule), and the answer schema. Rows go newest
    first (the store's first_seen; the newest posting's with discovery.yaml
@@ -63,6 +64,14 @@ v1`) and a row with no raw answer too (`basis: legacy`), and leaves out
 `filter:*` rows. Nothing re-judges an old row by itself. Never
 `pd.read_parquet` it for a score.
 
+run.json records its answer form (`schema_version` 2, `form`). A run left
+open from the old judge is closed by the next `score start`: its answered
+slices merge at their old score (`basis: v1`), the rest are staged again;
+`score finish` refuses it until then. Shipped defaults (the `score:`
+penalties, the fallback cutoff, the example targets) live in
+`data/defaults/scoring_defaults.yaml`; a `profile/scoring_defaults.yaml`
+replaces it. A lane `score.cutoff` below `cutoffs.review` fails loading.
+
 `score ab-stage --out DIR` stages one sample with the old (v1) packet and the
 new one into `DIR/v1`, `DIR/v2` and a repeat subset into `DIR/v2_repeat`;
 `score ab-compare DIR` reads the answers. The v1 arm lives only in
@@ -75,8 +84,10 @@ field goes in `score_store.derive`.
 
 `/score --all [--vertical V]` re-judges instead of scoring only new rows,
 except roles whose state is past `shortlist.pipeline_states`; there is no
-separate rescore command. `--stale-only` takes only judged rows whose hash
-changed and prints the count without staging; `--yes` stages them. A row whose
+separate rescore command. `--stale-only` takes only judged rows whose input
+hash changed and prints the count without staging; `--yes` stages them. A
+profile edit alone never makes a row stale: it prints an `info` line with how
+many rows were judged before the profile last changed. A row whose
 JD only reformats the judged one from the same source or moves its sentences
 (the same sentences, boilerplate trimmed, `+`/`#` kept; `same_jd_copies`),
 such as a repost, is not stale; any added, dropped, changed or swapped word is. A row with

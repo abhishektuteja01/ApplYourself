@@ -258,7 +258,7 @@ def test_retention_never_expires_a_role_above_its_lane_line(cfg, tmp_path):
     }
     verticals.set_config(dataclasses.replace(cfg, verticals=plain))
     assert cuts(sheet=85)[0] == dict.fromkeys(lines, 85)  # an unmigrated profile
-    assert cuts()[0] == dict.fromkeys(lines, sf.CUTOFF_DEFAULT)
+    assert cuts()[0] == dict.fromkeys(lines, 76)  # scoring_defaults.yaml
 
 
 def _need(scfg, need):

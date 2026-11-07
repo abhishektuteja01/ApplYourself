@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from applyourself.discovery.config import DiscoveryConfig
 
 _SCHEMA_VERSION = 1
-CUTOFF_DEFAULT = 76  # a lane's cutoff when neither it nor cutoffs.sheet sets one
 
 
 SPONSORSHIP_NEEDS = ("never", "later", "now")
@@ -168,6 +167,15 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         languages=bank_languages(Path(bank_path)),
         degree_rank=bank_degree_rank(Path(bank_path)),
     )
+    low = {
+        n: v.score.cutoff
+        for n, v in verticals.get_config().verticals.items()
+        if v.score.cutoff is not None and v.score.cutoff < cfg.review_min
+    }
+    if low:
+        raise ValueError(
+            f"lane score.cutoff below {path.name} cutoffs.review ({cfg.review_min}): {low}"
+        )
     return cfg
 
 
@@ -180,9 +188,11 @@ def load_cutoffs(path: Path | None = None) -> Cutoffs:
 
 def lane_cutoffs(path: Path | None = None) -> dict[str, int]:
     """Each lane's sheet and retention line: its `score.cutoff`, else
-    scoring.yaml's older `cutoffs.sheet`, else CUTOFF_DEFAULT."""
+    scoring.yaml's older `cutoffs.sheet`, else scoring_defaults.yaml's `cutoff`."""
     old = load_cutoffs(path).sheet
-    fallback = old if old is not None else CUTOFF_DEFAULT
+    from applyourself.shared import scoring_defaults
+
+    fallback = old if old is not None else int(scoring_defaults.load()["cutoff"])
     return {
         name: lane.score.cutoff if lane.score.cutoff is not None else fallback
         for name, lane in verticals.get_config().verticals.items()

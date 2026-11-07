@@ -206,6 +206,7 @@ class TestValidation:
         "score, where",
         [
             ({"level": {"entry": 0, "mid": 5}}, "score.level must set each"),
+            ({"level": {"entry": 0, 1: 5, "senior": 15, "lead": 25}}, "score.level must set each"),
             ({"years": {"3": 5}}, "score.years must map"),
             ({"years": {3: 101}}, r"score.years.3 must be"),
             ({"years_zero_at": 0}, "score.years_zero_at must be"),
@@ -218,6 +219,12 @@ class TestValidation:
         data["verticals"]["example_primary"]["score"] = score
         with pytest.raises(ValueError, match=where):
             _write_and_load(tmp_path, data)
+
+    def test_an_empty_lane_score_keeps_the_defaults(self, tmp_path):
+        data = _load_raw()
+        data["verticals"]["example_secondary"]["score"] = None
+        lane = _write_and_load(tmp_path, data).verticals["example_secondary"]
+        assert (lane.score.cutoff, lane.score.years_zero_at) == (80, 8)  # defaults:, not code
 
     def test_old_judge_keys_are_still_read(self, tmp_path):
         data = _load_raw()

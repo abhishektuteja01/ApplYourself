@@ -408,7 +408,7 @@ def test_scoring_v2_moves_the_sheet_line_to_the_lanes_and_drops_the_old_judge_ke
     assert _run(prof, apply=True) == 0, capsys.readouterr().out
     cfg = V.load_verticals(prof / "verticals.yaml")
     assert {v.score.cutoff for v in cfg.verticals.values()} == {85}
-    assert cfg.verticals["example_primary"].score.level == V.SCORE_DEFAULTS["level"]
+    assert cfg.verticals["example_primary"].score.level == V.score_defaults()["level"]
     data = yaml.safe_load(s.read_text(encoding="utf-8"))
     assert data["cutoffs"] == {"review": 50, "tailor": 60, "keep_long": 80}
     assert data["jd_quality"] == {"min_words": 300}  # no fit_cap: no cap

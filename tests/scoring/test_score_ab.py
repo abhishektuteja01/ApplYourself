@@ -94,3 +94,10 @@ def test_both_arms_stage_the_same_rows_and_compare(world):
     line = {"example_primary": 80, "example_secondary": 78}  # v1 scores fit - 10 here
     crossing = {j for j, lane in sample["lanes"].items() if fit[j] - 10 < line[lane] <= fit[j]}
     assert {x["job_id"] for x in rep["crossing"]} == crossing and crossing
+
+
+def test_shares_split_by_largest_remainder_and_never_pass_the_total():
+    assert score_ab.shares({"a": 5, "b": 3, "c": 2}, 5) == {"a": 3, "b": 1, "c": 1}
+    assert score_ab.shares({"a": 100, "b": 100, "c": 100}, 200) == {"a": 67, "b": 67, "c": 66}
+    assert score_ab.shares({"a": 1, "b": 0}, 10) == {"a": 1, "b": 0}
+    assert sum(score_ab.shares({"a": 7, "b": 7, "c": 7}, 10).values()) == 10

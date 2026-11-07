@@ -355,7 +355,6 @@ class TestFinish:
             {"fit": "80"},
             {"in_lane": "yes"},
             {"level": "junior"},
-            {"blocker": ""},
             {"blocker": ...},  # facts first: the blocker is always answered
             {"title": 25},  # the old judge's four axes
             {"sponsorship": "maybe"},
@@ -686,3 +685,74 @@ class TestCli:
         score_cli.main(["start"])
         assert score_cli.main(["start", "--all"]) == 1
         assert "still open" in capsys.readouterr().out
+
+    def test_lane_names_an_unknown_lane(self, wired, capsys):
+        _clean(wired, [{"job_id": "aaaaaaaa"}])
+        assert score_cli.main(["lane", "nope"]) == 1
+        assert "unknown vertical 'nope'" in capsys.readouterr().out
+
+
+def test_a_blank_blocker_reads_as_none(env, scfg):
+    _clean(env, [{"job_id": "aaaaaaaa"}])
+    _start(env, scfg)
+    run = score_store.load_run(env["staging"])
+    _write_answers(env, run["slices"], {"aaaaaaaa": _answer("aaaaaaaa", blocker="  ")})
+    assert _finish(env, scfg)["merged"] == 1
+    assert _scored(env).loc["aaaaaaaa", "fit_score"] == 80
+
+
+def test_an_old_judges_open_run_keeps_its_answers_and_restages_the_rest(env, scfg):
+    """A run staged before v2 would fail every v2 check night after night."""
+    _clean(env, [{"job_id": j, "company": f"Co{j}"} for j in ("aaaaaaaa", "bbbbbbbb")])
+    _start(env, scfg)
+    run = score_store.load_run(env["staging"])
+    (name,) = run["slices"]
+    meta = run["slices"][name]
+    old = {"schema_version": 1, "model": "score-judge:sonnet", "started": run["started"]}
+    old["slices"] = {
+        f"{name}_a": {**meta, "job_ids": ["aaaaaaaa"]},
+        f"{name}_b": {**meta, "job_ids": ["bbbbbbbb"]},
+    }
+    (env["staging"] / "run.json").write_text(json.dumps(old), encoding="utf-8")
+    v1 = {"job_id": "aaaaaaaa", "title": 25, "skills": 25, "seniority": 15, "domain": 15}
+    v1 |= {k: _answer("x")[k] for k in ("years", "country", "sponsorship", "evidence")}
+    v1 |= {"keywords_to_mirror": ["python"], "reasoning": "old fit"}
+    (env["staging"] / f"out_{name}_a.json").write_text(json.dumps([v1]), encoding="utf-8")
+    fin = _finish(env, scfg)
+    assert fin["merged"] == 0 and "run" in fin["bad"]  # finish refuses it
+    res = _start(env, scfg)
+    assert (res["kept_v1"], res["restaged"], res["judge"]) == (1, 1, 1)
+    run = score_store.load_run(env["staging"])
+    assert score_store.is_current(run)
+    assert [j for m in run["slices"].values() for j in m["job_ids"]] == ["bbbbbbbb"]
+    row = score_store.view(env["scored"], scfg, RULE).set_index("job_id").loc["aaaaaaaa"]
+    assert (row["basis"], row["fit_score"]) == ("v1", 80)
+
+
+def test_a_profile_edit_is_reported_but_never_stale(env, scfg):
+    _clean(env, [{"job_id": "aaaaaaaa"}])
+    _start(env, scfg)
+    _write_answers(
+        env, score_store.load_run(env["staging"])["slices"], {"aaaaaaaa": _answer("aaaaaaaa")}
+    )
+    _finish(env, scfg)
+    paths.SKILLS.write_text(
+        paths.SKILLS.read_text(encoding="utf-8")
+        + "\n## SKILL-NEW\nname: Brand New Skill\nevidence: B-WID-01\n"
+        + "allowable_synonyms: []\nshow: {}\n",
+        encoding="utf-8",
+    )
+    res = _start(env, scfg, stale_only=True, count_only=True)
+    assert (res["judge"], res["profile_changed"]) == (0, 1)
+
+
+def test_a_lane_cutoff_below_review_fails_loading(cfg):
+    from applyourself.shared import verticals
+
+    lane = cfg.verticals["example_primary"]
+    low = dataclasses.replace(lane, score=dataclasses.replace(lane.score, cutoff=40))
+    verticals.set_config(
+        dataclasses.replace(cfg, verticals={**cfg.verticals, "example_primary": low})
+    )
+    with pytest.raises(ValueError, match=r"score\.cutoff below"):
+        load_scoring(paths.example("scoring.example.yaml"))

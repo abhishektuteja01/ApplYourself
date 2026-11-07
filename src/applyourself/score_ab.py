@@ -41,7 +41,6 @@ ARMS = ("v1", "v2", "v2_repeat")
 V1_RUBRIC = paths.REPO_ROOT / ".claude" / "shared" / "scoring_rubric_v1.md"
 V1_LANE_RUBRIC = "rubric.v1.md"  # beside rubric.md once that holds the v2 lane
 _V1_AXES = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
-_V1_SKILLS_CAP = 12  # scoring.yaml jd_quality.skills_cap when it is gone
 
 
 class V1Answer(BaseModel):
@@ -75,11 +74,12 @@ class V1Answer(BaseModel):
 
 def raw_lane(name: str) -> dict[str, Any]:
     """The lane's lane.yaml merged over `defaults:`, as written: the v1 arm
-    reads the old keys the loader no longer keeps."""
+    reads the old keys the loader no longer keeps. {} without the files."""
+    lane_path = verticals.lane_file(paths.VERTICALS_CONFIG, name)
+    if not lane_path.is_file():
+        return {}
     top = yaml.safe_load(paths.VERTICALS_CONFIG.read_text(encoding="utf-8")) or {}
-    lane = yaml.safe_load(
-        verticals.lane_file(paths.VERTICALS_CONFIG, name).read_text(encoding="utf-8")
-    )
+    lane = yaml.safe_load(lane_path.read_text(encoding="utf-8"))
     return verticals.merge_defaults(top.get("defaults") or {}, lane or {})
 
 
@@ -167,7 +167,9 @@ def v1_score(
 def _v1_skills_cap() -> int:
     data = yaml.safe_load(paths.SCORING.read_text(encoding="utf-8")) or {}
     cap = (data.get("jd_quality") or {}).get("skills_cap")
-    return cap if type(cap) is int else _V1_SKILLS_CAP
+    from applyourself.shared import scoring_defaults
+
+    return cap if type(cap) is int else int(scoring_defaults.load()["v1_skills_cap"])
 
 
 # ---------------------------------------------------------------------
@@ -175,31 +177,44 @@ def _v1_skills_cap() -> int:
 # ---------------------------------------------------------------------
 
 
+def shares(sizes: dict[str, int], total: int) -> dict[str, int]:
+    """`total` split over the lanes by size, largest remainder first (ties by
+    lane name), no lane past its size, never more than `total` in all."""
+    whole = sum(sizes.values())
+    if whole == 0 or total <= 0:
+        return dict.fromkeys(sizes, 0)
+    total = min(total, whole)
+    exact = {n: total * s / whole for n, s in sizes.items()}
+    out = {n: int(x) for n, x in exact.items()}
+    for n in sorted(sizes, key=lambda n: (-(exact[n] - out[n]), n))[: total - sum(out.values())]:
+        out[n] += 1
+    return out
+
+
 def sample(
     candidates: list[dict[str, Any]], scores: dict[str, float], rows: int, top: int, seed: int
 ) -> list[dict[str, Any]]:
     """Each lane's `top` best-scored rows, then random others (seeded,
-    spread over the lanes by their share) up to `rows` in all."""
+    spread over the lanes by their share), `rows` in all at most: when the
+    tops alone pass it, each lane keeps its share of them."""
     by_lane: dict[str, list[dict[str, Any]]] = {}
     for r in sorted(candidates, key=lambda r: r["job_id"]):
         by_lane.setdefault(r["vertical"], []).append(r)
-    picked: list[dict[str, Any]] = []
-    rest: dict[str, list[dict[str, Any]]] = {}
+    tops: dict[str, list[dict[str, Any]]] = {}
     for lane, lane_rows in by_lane.items():
         ranked = sorted(
             (r for r in lane_rows if r["job_id"] in scores),
             key=lambda r: (-scores[r["job_id"]], r["job_id"]),
         )
-        tops = ranked[:top]
-        picked += tops
-        taken = {r["job_id"] for r in tops}
-        rest[lane] = [r for r in lane_rows if r["job_id"] not in taken]
-    extra = max(0, rows - len(picked))
-    pool = sum(len(v) for v in rest.values())
+        tops[lane] = ranked[:top]
+    keep = shares({n: len(v) for n, v in tops.items()}, rows)
+    picked = [r for n in sorted(tops) for r in tops[n][: keep[n]]]
+    taken = {r["job_id"] for r in picked}
+    rest = {n: [r for r in v if r["job_id"] not in taken] for n, v in by_lane.items()}
     rng = random.Random(seed)
+    extra = shares({n: len(v) for n, v in rest.items()}, rows - len(picked))
     for lane in sorted(rest):
-        k = min(len(rest[lane]), round(extra * len(rest[lane]) / pool)) if pool else 0
-        picked += rng.sample(rest[lane], k)
+        picked += rng.sample(rest[lane], extra[lane])
     return picked
 
 
@@ -239,22 +254,32 @@ def stage(
         )
     )
     lanes = sorted({r["vertical"] for r in picked}, key=list(vcfg.names).index)
-    digest = score_packet.digest(cfg)
+    digest = score_packet.digest(cfg, now.date())
     packets = {
         "v1": {n: v1_packet(vcfg.verticals[n], cfg) for n in lanes},
         "v2": {n: score_store.packet_text(vcfg.verticals[n], cfg, digest) for n in lanes},
     }
     packets["v2_repeat"] = packets["v2"]
+    hashed = {n: score_store.packet_text(vcfg.verticals[n], cfg, "") for n in lanes}
     lines: dict[str, list[str]] = {}
     for arm in ARMS:
+        by = packets["v1"] if arm == "v1" else hashed
         arm_rows = [
-            {**r, "_hash": score_store.input_hash(packets[arm][r["vertical"]], r["_jd"])}
+            {**r, "_hash": score_store.input_hash(by[r["vertical"]], r["_jd"])}
             for r in picked
             if arm != "v2_repeat" or r["job_id"] in repeat_ids
         ]
         if not arm_rows:
             continue
-        run = score_store.stage_rows(out / arm, arm_rows, packets[arm], cfg, now)
+        run = score_store.stage_rows(
+            out / arm,
+            arm_rows,
+            packets[arm],
+            cfg,
+            now,
+            profile=score_store.profile_hash(digest),
+            form="v1" if arm == "v1" else "v2",
+        )
         lines[arm] = score_store.judge_lines(run, out / arm)
     (out / "sample.json").write_text(
         json.dumps(
@@ -293,6 +318,59 @@ def _v1_problems(answer: Any, meta: dict[str, Any], focus: bool) -> list[str]:
             f"{a['job_id']}: focus must be true or false" for a in answer if a.get("focus") is None
         ]
     return errs
+
+
+def close_v1_run(
+    run: dict[str, Any], staging: Path, cfg: ScoringConfig, rule: CountryRule, now: datetime
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """An open jobs/scored.staging/ run staged for the old judge: (the
+    scored.parquet rows of its answered, valid slices, at their old score with
+    the raw answer kept, so `view` reads them as `basis: v1`; every other
+    job_id, owed again)."""
+    rows: list[dict[str, Any]] = []
+    owed: set[str] = set()
+    for name, meta in run.get("slices", {}).items():
+        lane = meta["vertical"]
+        path = staging / f"out_{name}.json"
+        try:
+            answer = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        except json.JSONDecodeError:
+            answer = None
+        if (
+            answer is None
+            or lane not in verticals.get_config().verticals
+            or _v1_problems(answer, meta, _v1_focus(raw_lane(lane)) is not None)
+        ):
+            owed |= set(meta["job_ids"])
+            continue
+        for a in answer:
+            facts = meta["facts"][a["job_id"]]
+            score, skip = v1_score(a, lane, facts, cfg, rule)
+            action = (
+                "skip"
+                if skip or score < cfg.review_min
+                else "tailor"
+                if score >= cfg.tailor_min and a.get("action") != "manual-review"
+                else "manual-review"
+            )
+            row = score_store._row(
+                a["job_id"],
+                lane,
+                score,
+                {k: a[k] for k in _V1_AXES},
+                sponsorship_label(a["sponsorship"], a["country"], cfg),
+                a["evidence"].strip(),
+                a["reasoning"].strip(),
+                a["keywords_to_mirror"][: cfg.keywords_max],
+                action,
+                run.get("model", ""),
+                now,
+            )
+            row["judge_answer"] = json.dumps(a)
+            row["judge_facts"] = json.dumps({k: facts[k] for k in ("years", "words", "contract")})
+            row["judge_input_hash"] = facts.get("hash", "")
+            rows.append(row)
+    return rows, owed
 
 
 def read_arm(

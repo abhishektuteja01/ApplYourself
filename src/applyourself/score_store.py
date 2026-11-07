@@ -24,7 +24,14 @@ from typing import Annotated, Any, Literal, cast
 
 import pandas as pd
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from applyourself import score_packet
 from applyourself.score_filter import (
@@ -60,6 +67,7 @@ SCORED_COLUMNS: list[str] = [
     "judge_answer",  # JSON: the judge's raw answer; empty on a legacy row
     "judge_facts",  # JSON: {years, words, contract} read from the JD at start
     "judge_input_hash",  # input_hash() of what was judged; empty on a legacy row
+    "judge_profile_hash",  # profile_hash() of the digest the judge read; empty before v2
 ]
 # What view() derives again from judge_answer under today's rules.
 DERIVED_COLUMNS = (
@@ -206,6 +214,7 @@ def _row(
         "judge_answer": "",
         "judge_facts": "",
         "judge_input_hash": "",
+        "judge_profile_hash": "",
     }
 
 
@@ -234,8 +243,20 @@ def _judge_model() -> str:
 
 
 def input_hash(packet: str, jd: str) -> str:
-    """What a judgment was made from: the lane's packet and the trimmed JD."""
+    """What a judgment was made from: the lane's packet without the digest
+    (`packet_text(..., digest="")`) and the trimmed JD."""
     return hashlib.sha1(f"{packet}\0{jd}".encode()).hexdigest()[:16]
+
+
+def profile_hash(digest: str) -> str:
+    """The candidate digest a judgment read, apart from input_hash: a profile
+    edit is reported, never a reason to re-judge on its own."""
+    return hashlib.sha1(digest.encode()).hexdigest()[:16]
+
+
+def is_current(run: dict[str, Any]) -> bool:
+    """An open run staged for today's answer form."""
+    return bool(run.get("schema_version", 1) >= 2 and run.get("form", "v2") == "v2")
 
 
 def schema_text(model: type[BaseModel]) -> str:
@@ -438,9 +459,28 @@ def start(
     and loses any score it had. `first_dropped` counts only the drops the
     latest discovery run saw first (all of them without `store_path`).
     `stale_only` takes only judged rows whose input hash changed; a row with
-    no hash is never stale. `count_only` returns the counts and writes nothing.
-    An open run is resumed when no selector is given, refused otherwise."""
+    no hash is never stale; `profile_changed` counts the judged rows whose
+    digest differs from today's. `count_only` returns the counts and writes
+    nothing. An open run is resumed when no selector is given, refused
+    otherwise. A run staged for the old judge is closed instead: its answered
+    slices are kept (`basis: v1`), the rest restaged under today's packet
+    (`restaged`)."""
     run = load_run(staging)
+    owed: set[str] = set()
+    kept = 0
+    if run is not None and not is_current(run):
+        if count_only:
+            raise RunOpen("a /score run for the old judge is open: run `/score` to restage it")
+        from applyourself import score_ab
+        from applyourself.discovery.config import load_config
+
+        rows, owed = score_ab.close_v1_run(
+            run, staging, cfg, CountryRule.from_discovery(load_config()), now or clock.now()
+        )
+        kept = merge_rows(scored_path, rows)
+        for f in staging.glob("*"):
+            f.unlink()
+        run = None
     if run is not None:
         if rescore or stale_only or vertical or job_ids:
             raise RunOpen("a /score run is still open: run `/score` to finish it first")
@@ -450,6 +490,9 @@ def start(
             "judge": sum(len(m["job_ids"]) for m in run["slices"].values()),
             "lines": judge_lines(run, staging),
             "resumed": True,
+            "restaged": 0,
+            "kept_v1": 0,
+            "profile_changed": 0,
         }
     now = now or clock.now()
     vcfg = verticals.get_config()
@@ -476,13 +519,24 @@ def start(
         clean = clean[clean["vertical"] == vertical]
     if job_ids:
         clean = clean[clean["job_id"].isin(job_ids)]
+    if owed:
+        whole = read_parquet(clean_path, schemas.CLEAN_SCHEMA_VERSION)
+        whole = whole[whole["job_id"].isin(owed - set(clean["job_id"]))]
+        clean = pd.concat([clean, whole], ignore_index=True) if len(whole) else clean
+    profiles = {
+        j: h
+        for j, h in zip(stored["job_id"], stored["judge_profile_hash"], strict=True)
+        if j in hashes
+    }
 
     dropped: set[str] = set()
     keep: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
     codes: dict[str, str] = {}
     packets: dict[str, str] = {}
+    hashed: dict[str, str] = {}  # each lane's packet without the digest
     digest: str | None = None
+    changed = 0
     for row in cast(list[dict[str, Any]], clean.to_dict("records")):
         reason = drop_reason(row, cfg)
         if job_ids and reason and reason[0] != "no-lane":
@@ -496,15 +550,19 @@ def start(
         lane = row["vertical"]
         if lane not in packets:
             if digest is None:
-                digest = score_packet.digest(cfg)
+                digest = score_packet.digest(cfg, now.date())
             packets[lane] = packet_text(vcfg.verticals[lane], cfg, digest)
-        row["_hash"] = input_hash(packets[lane], row["_jd"])
+            hashed[lane] = packet_text(vcfg.verticals[lane], cfg, "")
+        row["_hash"] = input_hash(hashed[lane], row["_jd"])
+        if row["job_id"] in profiles and profiles[row["job_id"]] != profile_hash(digest or ""):
+            changed += 1
         if stale_only and row["_hash"] == hashes.get(row["job_id"]):
             continue
         keep.append(row)
     if stale_only:
-        copies = same_jd_copies(keep, hashes, packets, store_path, cfg)
+        copies = same_jd_copies(keep, hashes, hashed, store_path, cfg)
         keep = [r for r in keep if r["job_id"] not in copies]
+    extra = {"restaged": len(owed), "kept_v1": kept, "profile_changed": changed}
     fresh = first_seen_last_run(store_path, dropped)
     first: dict[str, int] = {}
     for jid, code in codes.items():
@@ -517,6 +575,7 @@ def start(
             "judge": len(keep),
             "lines": [],
             "resumed": False,
+            **extra,
         }
     remove_rows(scored_path, dropped)
 
@@ -536,14 +595,16 @@ def start(
             "judge": 0,
             "lines": [],
             "resumed": False,
+            **extra,
         }
-    run = stage_rows(staging, keep, packets, cfg, now)
+    run = stage_rows(staging, keep, packets, cfg, now, profile=profile_hash(digest or ""))
     return {
         "dropped": counts,
         "first_dropped": first,
         "judge": len(keep),
         "lines": judge_lines(run, staging),
         "resumed": False,
+        **extra,
     }
 
 
@@ -553,13 +614,18 @@ def stage_rows(
     packets: dict[str, str],
     cfg: ScoringConfig,
     now: datetime,
+    *,
+    profile: str = "",
+    form: str = "v2",
 ) -> dict[str, Any]:
     """Write one packet per lane, the slices and run.json for `rows` (each
     with its trimmed `_jd` and `_hash`, in judging order) into `staging`.
-    Returns the run."""
+    `profile`: the digest's profile_hash; `form`: the answer form the packets
+    ask for. Returns the run."""
     staging.mkdir(parents=True, exist_ok=True)
     run: dict[str, Any] = {
         "schema_version": schemas.SCORE_STAGING_SCHEMA_VERSION,
+        "form": form,
         "model": _judge_model(),
         "started": now.isoformat(),
         "slices": {},
@@ -583,6 +649,7 @@ def stage_rows(
                         "words": word_count(r.get("jd_text")),
                         "contract": "contract" in str(r.get("employment_type") or "").lower(),
                         "hash": r["_hash"],
+                        "profile_hash": profile,
                         # everything the judge is shown, so a quote from the title or company counts
                         "jd": normalize(
                             f"{r.get('title') or ''}\n{r.get('company') or ''}\n{r['_jd']}"
@@ -627,6 +694,12 @@ class JudgeAnswer(BaseModel):
     evidence: str
     blocker: str | None
     fit: Annotated[int, Field(ge=0, le=100)]
+
+    @field_validator("blocker", mode="before")
+    @classmethod
+    def _no_blank_blocker(cls, v: Any) -> Any:
+        return None if isinstance(v, str) and not v.strip() else v
+
     keywords_to_mirror: list[str]
     reasoning: Annotated[str, Field(pattern=r"\S")]
 
@@ -636,8 +709,6 @@ class JudgeAnswer(BaseModel):
             raise ValueError("sponsorship cannot mix silent with other statements")
         if self.sponsorship != ["silent"] and not self.evidence.strip():
             raise ValueError(f"evidence must quote the JD for {', '.join(self.sponsorship)}")
-        if self.blocker is not None and not self.blocker.strip():
-            raise ValueError("blocker must be null or a reason")
         return self
 
 
@@ -704,8 +775,9 @@ def derive(
     if not country_allowed(a["country"], lane.name, rule):
         reasoning += f" [out of scope: {a['country']}]"
         zero = True
-    if a["blocker"] is not None:
-        reasoning += f" [blocked: {a['blocker'].strip()}]"
+    blocker = (a["blocker"] or "").strip()  # a blank one is none
+    if blocker:
+        reasoning += f" [blocked: {blocker}]"
         zero = True
     fit = a["fit"]
     if facts["words"] < cfg.min_words:
@@ -758,6 +830,17 @@ def finish(
             "lines": [],
             "years_gaps": [],
         }
+    if not is_current(run):
+        return {
+            "merged": 0,
+            "bad": {
+                "run": [
+                    "staged for the old judge: `score start` keeps its answers, restages the rest"
+                ]
+            },
+            "lines": [],
+            "years_gaps": [],
+        }
     now = now or clock.now()
     lanes = verticals.get_config().verticals
     rows, bad, done = [], {}, []
@@ -783,6 +866,7 @@ def finish(
             row["judge_answer"] = json.dumps(a)
             row["judge_facts"] = json.dumps({k: facts[k] for k in ("years", "words", "contract")})
             row["judge_input_hash"] = facts.get("hash", "")
+            row["judge_profile_hash"] = facts.get("profile_hash", "")
             rows.append(row)
             if abs(facts["years"] - a["years"]) >= YEARS_GAP_LOG:
                 gaps.append((a["job_id"], facts["years"], a["years"]))

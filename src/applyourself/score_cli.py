@@ -86,11 +86,26 @@ def _cmd_start(args: argparse.Namespace) -> int:
         [f"dropped_{k}={n}" for k, n in sorted(res["dropped"].items())]
         + [f"filtered_{k}={n}" for k, n in sorted(res["first_dropped"].items())]
     )
+    notes = []
+    if res["restaged"] or res["kept_v1"]:
+        notes.append(
+            f"info an open run for the old judge was closed: {res['kept_v1']} answered row(s) "
+            f"kept, {res['restaged']} restaged under today's packet"
+        )
+    if args.stale_only and res["profile_changed"]:
+        notes.append(
+            f"info {res['profile_changed']} row(s) were judged before your profile last "
+            "changed (not stale on that alone; --all re-judges them)"
+        )
     if count_only:
         print(f"stale={res['judge']} {dropped}".strip())
+        for line in notes:
+            print(line)
         print("done nothing staged: add --yes to stage the stale rows for judging")
         return 0
     print(f"{'resumed' if res['resumed'] else 'judge'}={res['judge']} {dropped}".strip())
+    for line in notes:
+        print(line)
     if not res["lines"] and not res["resumed"]:
         print(f"done {_shortlist(cfg)}")
     for line in res["lines"]:
@@ -109,7 +124,7 @@ def _cmd_finish(args: argparse.Namespace) -> int:
         print(f"bad {name}: {'; '.join(errs[:3])}")
     for line in res["lines"]:
         print(line)
-    return 1 if res["lines"] else 0
+    return 1 if res["lines"] or "run" in res["bad"] else 0
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
@@ -135,6 +150,9 @@ def _cmd_lane(args: argparse.Namespace) -> int:
     import pandas as pd
 
     lane = args.vertical
+    if lane not in verticals.get_config().names:
+        print(f"ERROR: unknown vertical {lane!r}")
+        return 1
     d = pd.read_parquet(paths.CLEAN, columns=["job_id", "title", "vertical"])
     v = d[d["vertical"] == lane]
     print(f"== caught: {len(v)} in lane / {len(d)} total")

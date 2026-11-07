@@ -84,7 +84,7 @@ _RETIRED_KEYS = {
     "states": "(nothing)",
     "cities": "(nothing)",
     "continents": "countries",
-    "score_threshold": "scoring.yaml cutoffs.keep_long",
+    "score_threshold": "verticals.yaml score.cutoff (defaults: or the lane's)",
     "abroad": "the top-level abroad: {lanes, sources}; its countries are "
     "application_answers.yaml work_authorization.countries",
 }

@@ -161,7 +161,9 @@ ClockTime = Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]  # "HH:M
 
 
 class Settings(_Strict):
-    retired: ClassVar[dict[str, str]] = {"score_threshold": "scoring.yaml cutoffs.sheet"}
+    retired: ClassVar[dict[str, str]] = {
+        "score_threshold": "verticals.yaml score.cutoff (defaults: or the lane's)"
+    }
     schema_version: int | None = None
     table_path: str | None = None
     tailor_parallel: int | None = None
@@ -215,6 +217,16 @@ class LintRule(_Strict):
     scope: list[Literal["resume", "outreach"]] = Field(min_length=1)
     level: Literal["block", "warn"]
     unless_before: Literal["number"] | None = None
+
+
+class ScoringDefaults(_Strict):
+    """data/defaults/scoring_defaults.yaml, or the profile/ copy that replaces it."""
+
+    schema_version: Literal[1]
+    score: dict[str, Any]
+    cutoff: Score
+    example_targets: list[tuple[bool, Score]]
+    v1_skills_cap: Score
 
 
 class DeAiRules(_Strict):

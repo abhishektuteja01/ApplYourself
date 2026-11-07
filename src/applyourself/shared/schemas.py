@@ -16,7 +16,9 @@ SYNONYM_PROPOSALS_SCHEMA_VERSION = 1  # jobs/synonyms_proposals.yaml, key `schem
 SYNONYM_OPEN_SCHEMA_VERSION = 1  # jobs/synonyms_open.yaml, key `schema_version`
 SYNONYM_LOG_SCHEMA_VERSION = 1  # jobs/synonyms_log.jsonl, key `schema_version` per line
 SYNONYM_KEYWORDS_SCHEMA_VERSION = 1  # `synonyms keywords` output (jobs/synonyms_keywords.json)
-SCORE_STAGING_SCHEMA_VERSION = 1  # jobs/scored.staging/run.json, key `schema_version`
+SCORE_STAGING_SCHEMA_VERSION = (
+    2  # jobs/scored.staging/run.json, key `schema_version`; 1: the old judge
+)
 LEDGER_SCHEMA_VERSION = 1  # applications/apply_runs/submitted.jsonl, key `schema_version` per line
 PLAN_SCHEMA_VERSION = 1  # `apply plan --json` output (applications/<dir>/plan.json)
 SESSION_YAML_SCHEMA_VERSION = 1  # applications/<dir>/ session YAMLs (session_schema.KINDS)

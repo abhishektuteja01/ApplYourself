@@ -79,12 +79,16 @@ def _parse_lane_resume(raw: Any, path: Path, where: str) -> LaneResume:
 
 
 LEVELS = ("entry", "mid", "senior", "lead")
-# Used where neither the lane nor `defaults:` sets a `score:` key.
-SCORE_DEFAULTS: dict[str, Any] = {
-    "level": {"entry": 0, "mid": 5, "senior": 15, "lead": 25},
-    "years": {3: 5, 4: 10, 5: 15, 6: 20, 7: 25, 8: 30, 9: 35},
-    "years_zero_at": 10,
-}
+SCORE_KEYS = ("level", "years", "years_zero_at")
+
+
+def score_defaults() -> dict[str, Any]:
+    """The `score:` keys used where neither the lane nor `defaults:` sets one
+    (`scoring_defaults.yaml`)."""
+    from applyourself.shared import scoring_defaults
+
+    shipped = scoring_defaults.load()["score"]
+    return {k: shipped[k] for k in SCORE_KEYS if k in shipped}
 
 
 @dataclass(frozen=True)
@@ -117,9 +121,16 @@ def _parse_score(raw: Any, path: Path, where: str) -> ScoreRules:
         raw = {}
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
-    got = {**SCORE_DEFAULTS, **raw}
+    got = {**score_defaults(), **raw}
+    missing = [k for k in SCORE_KEYS if k not in got]
+    if missing:
+        raise _fail(path, f"{where} has no {', '.join(missing)} (nor scoring_defaults.yaml)")
     level = got["level"]
-    if not isinstance(level, dict) or sorted(level) != sorted(LEVELS):
+    if (
+        not isinstance(level, dict)
+        or not all(isinstance(k, str) for k in level)
+        or sorted(level) != sorted(LEVELS)
+    ):
         raise _fail(path, f"{where}.level must set each of {', '.join(LEVELS)}")
     years = got["years"]
     if not isinstance(years, dict) or not all(type(k) is int and k >= 0 for k in years):
@@ -333,8 +344,8 @@ def merge_defaults(defaults: dict[str, Any], lane: dict[str, Any]) -> dict[str, 
         base = out.get(key)
         if isinstance(base, list) and isinstance(value, list):
             out[key] = value + base
-        elif key == "score" and isinstance(base, dict) and isinstance(value, dict):
-            out[key] = {**base, **value}
+        elif key == "score" and isinstance(base, dict) and isinstance(value, dict | None):
+            out[key] = {**base, **(value or {})}  # `score:` left empty keeps the defaults
         else:
             out[key] = value
     return out

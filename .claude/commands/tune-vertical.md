@@ -252,4 +252,5 @@ lane's window, so it costs a full scoring pass — their call.
    anchors, resume shape), anything deliberately left alone, and the two follow-ups —
    `uv run discover` for the term and rule changes to take effect, and
    `/score --all --vertical <name>` for the rubric and example changes to reach rows
-   already scored (a `score:` change applies on the next read).
+   already scored (a `score:` change applies on the next read to rows the v2
+   judge scored; older rows keep their stored score until re-judged).

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ import pandas as pd
 import yaml
 
 from applyourself.score_filter import ScoringConfig, word_count
-from applyourself.shared import paths, schemas, verticals
+from applyourself.shared import clock, paths, schemas, verticals
 from applyourself.shared.parquet_io import read_parquet
 
 EXAMPLES_NAME = "examples.yaml"
@@ -31,26 +32,29 @@ _MONTHS = {
     m: i for i, m in enumerate(("jan feb mar apr may jun jul aug sep oct nov dec").split(), 1)
 }
 _RANGE_RE = re.compile(
-    r"^\s*([a-z]{3})[a-z]*\.?\s+(\d{4})\s*[-–]\s*([a-z]{3})[a-z]*\.?\s+(\d{4})\s*$"
+    r"^\s*([a-z]{3})[a-z]*\.?\s+(\d{4})\s*[-–]\s*"
+    r"(?:([a-z]{3})[a-z]*\.?\s+(\d{4})|present|current|now)\s*$"
 )
 
 
-def _months(dates: Any) -> set[int]:
-    """The months a closed "Mon YYYY - Mon YYYY" range covers, both ends in,
-    as year * 12 + month; empty for an open ("Present") or unreadable range,
-    so the digest never depends on today's date."""
+def _months(dates: Any, today: date) -> set[int]:
+    """The months a "Mon YYYY - Mon YYYY" range covers, both ends in, as
+    year * 12 + month; an open one ("Present") runs to `today`'s month.
+    Empty for an unreadable range."""
     m = _RANGE_RE.match(str(dates or "").lower())
-    if not m or m[1] not in _MONTHS or m[3] not in _MONTHS:
+    if not m or m[1] not in _MONTHS or (m[3] is not None and m[3] not in _MONTHS):
         return set()
     first = int(m[2]) * 12 + _MONTHS[m[1]]
-    return set(range(first, int(m[4]) * 12 + _MONTHS[m[3]] + 1))
+    last = today.year * 12 + today.month if m[3] is None else int(m[4]) * 12 + _MONTHS[m[3]]
+    return set(range(first, last + 1))
 
 
-def digest(cfg: ScoringConfig) -> str:
-    """The candidate profile digest: education, every context with its span,
-    total work years, sponsorship need per country and languages, one line
-    per bullet with its tags, and every skill with its aliases. A bullet's
-    rephrasings stay out."""
+def digest(cfg: ScoringConfig, today: date | None = None) -> str:
+    """The candidate profile digest: education, every context with its span
+    (an open one up to `today`, default the clock's), total work years,
+    sponsorship need per country and languages, one line per bullet with its
+    tags, and every skill with its aliases. A bullet's rephrasings stay out."""
+    today = today or clock.today()
     from applyourself import resume_model
 
     src = resume_model.load_sources()
@@ -74,17 +78,20 @@ def digest(cfg: ScoringConfig) -> str:
             for k in ("title", "org" if section == "Work" else "subtitle", "dates")
             if str(ctx.get(k) or "").strip()
         )
-        months = _months(ctx.get("dates"))
+        months = _months(ctx.get("dates"), today)
         if section == "Work":
             worked |= months
         out.append(f"- {section}: {head}" + (f" ({len(months) / 12:.1f} years)" if months else ""))
     if worked:
-        out.append(f"- Work experience in total: {len(worked) / 12:.1f} years (closed ranges).")
+        out.append(f"- Work experience in total: {len(worked) / 12:.1f} years.")
     out += ["", "### Work authorization and languages", ""]
     out += [f"- {country}: {_NEED[need]}" for country, need in cfg.country_needs]
     out.append(f"- Anywhere else: {_NEED[cfg.default_need]}")
-    if cfg.languages:
-        out.append(f"- Languages: {', '.join(cfg.languages)}")
+    out.append(
+        f"- Languages: {', '.join(cfg.languages)}"
+        if cfg.languages
+        else "- Languages: not listed (a language requirement is not a blocker)"
+    )
     out += ["", "### Claims, one per bullet", ""]
     for bid, b in src.bullets.items():
         ctx = src.contexts.get(src.context_of(bid)) or {}
@@ -171,7 +178,6 @@ def examples_text(lane: str) -> str:
 _OLD_FIT_AXES = ("title", "skills", "domain")
 _OLD_FIT_MAX = 80
 # (in_lane, target fit): one example per upper band, and one out-of-lane role.
-EXAMPLE_TARGETS: tuple[tuple[bool, int], ...] = ((True, 93), (True, 82), (True, 67), (False, 0))
 _TAG_RE = re.compile(r"\s*\[[^\]]*\]")
 
 
@@ -218,15 +224,18 @@ def candidates(
                 continue
             got = {k: answer[k] for k in ("in_lane", "level", "fit")}
         else:
+            # An old judge's raw axes; a legacy row has only the stored ones,
+            # which a zero rule set all to 0.
             try:
-                subs = json.loads(r["fit_subscores"])
-                fit = round(sum(int(subs[k]) for k in _OLD_FIT_AXES) * 100 / _OLD_FIT_MAX)
-                # Old seniority holds the years cap too, so it gives no level.
-                got = {"in_lane": int(subs["title"]) > 0, "fit": fit}
+                subs = answer if isinstance(answer, dict) else json.loads(r["fit_subscores"])
+                axes = {k: int(subs[k]) for k in (*_OLD_FIT_AXES, "seniority")}
             except (TypeError, ValueError, KeyError):
                 continue
-            if r["fit_score"] == 0 and got["in_lane"]:
-                continue  # a zeroed old row says nothing about fit
+            if r["fit_score"] == 0 and (axes["title"] > 0 or not any(axes.values())):
+                continue  # zeroed by a rule, not out of lane: says nothing about fit
+            fit = round(sum(axes[k] for k in _OLD_FIT_AXES) * 100 / _OLD_FIT_MAX)
+            # Old seniority holds the years cap too, so it gives no level.
+            got = {"in_lane": axes["title"] > 0, "fit": fit}
         out.append(
             {
                 "job_id": str(r["job_id"]),
@@ -241,11 +250,14 @@ def candidates(
 
 
 def choose(cands: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One example per EXAMPLE_TARGETS entry, by a stable rule: in lane, the
+    """One example per scoring_defaults.yaml `example_targets` entry
+    ([in_lane, fit]), by a stable rule: in lane, the
     row whose fit is nearest the target; out of lane, the one with the
     highest fit. Ties go to the lowest job_id; a row is used once."""
     picked: list[dict[str, Any]] = []
-    for in_lane, target in EXAMPLE_TARGETS:
+    from applyourself.shared import scoring_defaults
+
+    for in_lane, target in scoring_defaults.load()["example_targets"]:
         used = {c["job_id"] for c in picked}
         pool = [c for c in cands if c["in_lane"] is in_lane and c["job_id"] not in used]
 

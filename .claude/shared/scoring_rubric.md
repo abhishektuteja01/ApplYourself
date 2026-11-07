@@ -48,7 +48,8 @@ Fill the fields in this order. Read the whole posting before the first one.
 6. `evidence`: each sponsorship statement's shortest JD phrase, verbatim,
    joined with " ... ". `""` only when `["silent"]`.
 7. `blocker`: `null`, or a reason of a few words when one of these holds:
-   - the JD requires working fluency in a language the digest does not list;
+   - the JD requires working fluency in a language the digest does not list
+     (never when the digest says languages are not listed);
    - a campus or graduate program whose required degree or graduation window
      the digest does not meet;
    - a test, placeholder or fake posting;
