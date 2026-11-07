@@ -46,6 +46,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "live_days",
         "search_max_age_days",
         "retention",
+        "retention_from",
         "forget_after_days",
         "raw_keep_days",
         "log_keep_days",
@@ -87,6 +88,8 @@ _RETIRED_KEYS = {
     "abroad": "the top-level abroad: {lanes, sources}; its countries are "
     "application_answers.yaml work_authorization.countries",
 }
+
+RETENTION_FROM = ("first", "newest")
 
 # With no `search_locations`, the jobspy lanes query the allowlist's
 # countries; past this many, the query count outruns the deadline.
@@ -184,6 +187,9 @@ class DiscoveryConfig:
     retention_score_threshold: float = 80.0
     retention_high_days: int = 60
     retention_low_days: int = 15
+    # Retention's clock: a job's `first` posting, or its `newest` one that
+    # passes the view (a repost restarts it).
+    retention_from: str = "first"
     forget_after_days: int = 120
     raw_keep_days: int = 3
     log_keep_days: int = 30
@@ -407,6 +413,13 @@ def load_config(path: Path | None = None) -> DiscoveryConfig:
         "dead_every_days",
     ):
         setattr(cfg, key, _int(data.get(key, getattr(cfg, key)), f"{p}: {key}", 1))
+    if "retention_from" in data:
+        if data["retention_from"] not in RETENTION_FROM:
+            raise ValueError(
+                f"{p}: retention_from must be one of {', '.join(RETENTION_FROM)}, "
+                f"got {data['retention_from']!r}"
+            )
+        cfg.retention_from = data["retention_from"]
     retention = data.get("retention") or {}
     if not isinstance(retention, dict):
         raise ValueError(f"{p}: retention must be a mapping")
@@ -518,7 +531,8 @@ def main() -> int:
     )
     print(
         f"live view: seen within {cfg.live_days}d; {age}; keep {cfg.retention_high_days}d at fit >= "
-        f"{cfg.retention_score_threshold:g}, else {cfg.retention_low_days}d"
+        f"{cfg.retention_score_threshold:g}, else {cfg.retention_low_days}d, "
+        f"from the {cfg.retention_from} posting"
     )
     print(f"deadline_hours: {cfg.deadline_hours:g}")
     problems = cfg.validate()

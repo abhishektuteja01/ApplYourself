@@ -63,8 +63,9 @@ key, then a known `(company_normalized, title_normalized)` pair, then the same
 role on another board (`same_job_elsewhere`), else the hash. The pair and
 fuzzy rules join an id only when the title agrees with that id's own title
 (the pair it hashes from, when stored); otherwise it is an `other_title` maybe. A stored
-row's `job_id`, `first_seen`, `company_normalized` and `title` never change: a
-refresh cannot move the id pair, though it may improve the shown `company`. A posting's `board` is its url's own ATS + slug,
+row's `job_id`, `company_normalized` and `title` never change, and its
+`first_seen` only restarts when it comes back after more than `live_days`
+unseen: a refresh cannot move the id pair, though it may improve the shown `company`. A posting's `board` is its url's own ATS + slug,
 whichever lane found it. Two postings of one board never merge, and two titles
 that disagree on level tokens never merge.
 
@@ -107,8 +108,9 @@ undated. Then the title gate and the
 location allowlist, both re-applied at build time (a stored row whose title no
 longer fits its lane moves to the lane it fits now), then JD >= `MIN_JD_CHARS`.
 One row per `job_id`: an applyable url, then a resolved location, then the
-newest sighting, then the longest JD. Retention runs from the job's newest
-posting's `first_seen` (a repost restarts it): `high_days` at fit >= threshold or unscored, else `low_days`; an
+newest sighting, then the longest JD. Retention runs from the job's earliest
+`first_seen`, or with `retention_from: newest` from the newest `first_seen`
+among its postings that passed the gates above (a repost restarts it): `high_days` at fit >= threshold or unscored, else `low_days`; an
 unscored row `score_filter.drop_reason` drops today gets `low_days`.
 Tracked roles skip the search-age cut and retention; `ACTIVE_STATES` roles are
 always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.

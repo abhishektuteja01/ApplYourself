@@ -364,13 +364,17 @@ def first_seen_last_run(store_path: Path | None, job_ids: set[str]) -> set[str] 
     return {j for j in job_ids if j in first.index and first[j] >= latest}
 
 
-def first_seen(store_path: Path | None, job_ids: set[str]) -> dict[str, float]:
-    """job_id -> its earliest first_seen in the jobs store, as a POSIX time; {} with no store."""
+def first_seen(
+    store_path: Path | None, job_ids: set[str], newest: bool = False
+) -> dict[str, float]:
+    """job_id -> its earliest (`newest`: latest) first_seen in the jobs store,
+    as a POSIX time; {} with no store."""
     if store_path is None or not Path(store_path).exists() or not job_ids:
         return {}
     store = read_parquet(store_path, schemas.STORE_SCHEMA_VERSION, columns=["job_id", "first_seen"])
     store = store[store["job_id"].isin(job_ids)]
-    first = pd.to_datetime(store["first_seen"]).groupby(store["job_id"]).min().dropna()
+    by_job = pd.to_datetime(store["first_seen"]).groupby(store["job_id"])
+    first = (by_job.max() if newest else by_job.min()).dropna()
     return {str(j): t.timestamp() for j, t in first.items()}
 
 
@@ -428,6 +432,7 @@ def start(
     pipeline_dir: Path | None = None,
     now: datetime | None = None,
     store_path: Path | None = None,
+    newest_first_seen: bool = False,
 ) -> dict[str, Any]:
     """Stage a run. Returns {"dropped": {code: n}, "first_dropped": {code: n},
     "judge": n, "lines": [...], "resumed": bool}. A dropped row is not stored,
@@ -513,7 +518,7 @@ def start(
         }
     remove_rows(scored_path, dropped)
 
-    seen = first_seen(store_path, {r["job_id"] for r in keep})
+    seen = first_seen(store_path, {r["job_id"] for r in keep}, newest_first_seen)
     keep.sort(  # newest first, so a judge stopped early has judged the newest
         key=lambda r: (
             -seen.get(r["job_id"], float("-inf")),

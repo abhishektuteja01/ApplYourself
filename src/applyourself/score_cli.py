@@ -66,6 +66,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
             job_ids=args.job_id,
             pipeline_dir=paths.PIPELINE,
             store_path=paths.STORE,
+            newest_first_seen=load_config().retention_from == "newest",
         )
     except score_store.RunOpen as e:
         print(f"ERROR: {e}")

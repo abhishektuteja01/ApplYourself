@@ -121,6 +121,13 @@ def test_results_wanted_is_per_source_and_linkedin_stops_at_its_paging_limit(tmp
     assert any("sources.linkedin.results_wanted (141)" in p for p in cfg.validate())
 
 
+def test_retention_from_defaults_to_first_and_rejects_anything_else(tmp_path):
+    assert load(tmp_path, {}).retention_from == "first"
+    assert load(tmp_path, {"retention_from": "newest"}).retention_from == "newest"
+    with pytest.raises(ValueError, match="retention_from must be one of first, newest"):
+        load(tmp_path, {"retention_from": "latest"})
+
+
 @pytest.mark.parametrize("data", [{}, {"search_max_age_days": None}])
 def test_search_max_age_days_absent_or_null_is_no_cut(tmp_path, data):
     assert load(tmp_path, data).search_max_age_days is None

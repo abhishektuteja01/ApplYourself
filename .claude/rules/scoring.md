@@ -24,7 +24,8 @@ Three steps, one owner per rule:
    The rest is staged in `jobs/scored.staging/` as one packet per
    lane and slices of at most 10 roles, each row with its `judge_input_hash`
    (`input_hash` of the lane packet and the trimmed JD). Rows go newest
-   first (the store's first_seen), so each judge works its newest slices first.
+   first (the store's first_seen; the newest posting's with discovery.yaml
+   `retention_from: newest`), so each judge works its newest slices first.
 2. `score-judge` agents (the only model step): four subscores, the facts
    (years, country, the JD's sponsorship statements with literal JD quotes),
    keywords, a short reason, and an optional action that may only lower it.

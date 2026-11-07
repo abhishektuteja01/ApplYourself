@@ -63,6 +63,7 @@ class ViewInputs:
     low_days: int
     # today's hard filter; an unscored row it drops gets low_days. None: no filter.
     scoring: ScoringConfig | None = None
+    retention_from: str = "first"
 
 
 def load_filter() -> ScoringConfig | None:
@@ -102,6 +103,7 @@ def inputs_from(cfg, today, state_index: dict, scored_path: Path) -> ViewInputs:
         high_days=cfg.retention_high_days,
         low_days=cfg.retention_low_days,
         scoring=load_filter(),
+        retention_from=cfg.retention_from,
     )
 
 
@@ -180,8 +182,11 @@ def build_view(
     view = _one_per_job(df_live)
     funnel["jobs"] = len(view)
 
-    # A repost restarts the clock: retention counts from the newest posting.
-    first_seen = df.groupby("job_id")["first_seen"].max()
+    if inp.retention_from == "newest":
+        # A repost restarts the clock: the newest posting that passed the view.
+        first_seen = df_live.groupby("job_id")["first_seen"].max()
+    else:
+        first_seen = df.groupby("job_id")["first_seen"].min()
     # last_score: a frozen legacy copy, read only for a job scored.parquet no longer holds.
     remembered = df.groupby("job_id")["last_score"].max()
     lifetimes = []

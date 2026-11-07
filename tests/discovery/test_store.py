@@ -603,7 +603,14 @@ class AllowAll:
         return Allowed(True, raw or "", bool(raw))
 
 
-def view(store, state_index=None, scores=None, today=TODAY, search_max_age_days=14):
+def view(
+    store,
+    state_index=None,
+    scores=None,
+    today=TODAY,
+    search_max_age_days=14,
+    retention_from="first",
+):
     inp = live_view.ViewInputs(
         today=today,
         state_index=state_index or {},
@@ -613,6 +620,7 @@ def view(store, state_index=None, scores=None, today=TODAY, search_max_age_days=
         score_threshold=80,
         high_days=60,
         low_days=15,
+        retention_from=retention_from,
     )
     return live_view.build_view(store, AllowAll(), inp)
 
@@ -677,13 +685,19 @@ def test_view_retention_tiers():
     assert set(out["title"]) == {"AI Engineer", "Data Engineer"}
 
 
-def test_view_retention_counts_from_the_newest_posting_of_a_job():
-    """A repost under an old job_id restarts its clock."""
+def test_view_retention_from_newest_counts_only_postings_that_pass_the_view():
+    """retention_from: newest restarts a repost's clock; a newer posting the
+    view drops (here its location) restarts nothing; `first` keeps today's rule."""
     store, _ = fold(S.empty_store(), post(GH.format(1)), today=at(100))
-    store, _ = fold(store, post(GH.format(2)), today=at(2))
+    store, _ = fold(store, post(GH.format(2), location_raw="Paris, France"), today=at(2))
+    jid = store.at[0, "job_id"]
     assert store["job_id"].nunique() == 1
-    out, _ = view(store, scores={store.at[0, "job_id"]: 40.0})
-    assert len(out) == 1
+    store["last_seen"] = TODAY
+    scores = {jid: 40.0}
+    assert view(store, scores=scores, retention_from="newest")[0].empty
+    store, _ = fold(store, post(GH.format(3)), today=at(2))
+    assert len(view(store, scores=scores, retention_from="newest")[0]) == 1
+    assert view(store, scores=scores)[0].empty
 
 
 def test_view_gives_an_unscored_row_the_filter_drops_low_retention(monkeypatch):
