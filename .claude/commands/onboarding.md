@@ -203,7 +203,7 @@ the resume.
    duplicate any of it here and do not pre-empt them.
 
    The level answer becomes the lane's `# Target level:` line, which pass B
-   turns into the rubric's seniority tiers. No title is dropped for its
+   turns into the rubric's level note. No title is dropped for its
    level; the title gate drops only the `defaults:` ban list.
 
    Pass A ends with the loader working and a marker at
@@ -298,7 +298,7 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    `.pass_a_only` marker, and ends with `verticals-check` passing. It asks
    nothing. If the check does not pass, stop and report.
 
-   Skill weights, rubric tier boundaries, classifier collisions stay out of
+   Score rules, rubric anchors, classifier collisions stay out of
    both passes; they are `/tune-vertical`'s.
 
 ## Step 3 — scoring starts (~3 min, 2 questions)
@@ -391,8 +391,8 @@ Never judge a slice yourself, and never read, edit or delete files in
   (its work-authorization facts), which is also the hard geographic filter on
   `clean.parquet`. Country names only, not every spelling a board might use.
   `discovery.yaml`'s `location_allowlist.countries` only narrows it.
-- A new years cap is the lane's `years` table; a new level band is its
-  `# Target level:` line and the rubric's seniority tiers.
+- A new years cap is the lane's `score: years_zero_at`; a new level band is
+  its `# Target level:` line and the rubric's level note.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
 
 Then wait on the judges and run `/score`'s step 3: `uv run score finish`; on
@@ -413,14 +413,14 @@ Apply what they said, in one pass, then stop. No second round.
   the family the keeps share if the current terms missed it. Step 1 only used
   the first two, so the rest of the list is untested — leave it.
 - **Rubric feel.** A row they would apply to that scored low, or a high scorer
-  they rejected, is one tier-boundary edit in the lane's `rubric.md`. If it takes
+  they rejected, is one anchor edit in the lane's `rubric.md`. If it takes
   more than one, that is `/tune-vertical` — say so and leave the rubric alone.
 
 ```bash
 uv run verticals-check
 ```
 
-If a rubric boundary or the `years` table changed, run `/score --all` and
+If a rubric anchor changed, run `/score --all` and
 show the new top rows — otherwise their edit has no visible effect. Term changes need a fresh
 scrape, so those only say "next run".
 

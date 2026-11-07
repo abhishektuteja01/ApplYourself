@@ -12,9 +12,11 @@ from applyourself.shared.logs import setup_logging
 
 
 def _verticals() -> None:
+    from applyourself.score_packet import load_examples
     from applyourself.shared.verticals import load_verticals
 
-    load_verticals()
+    for lane in load_verticals().names:
+        load_examples(lane)
 
 
 def _scoring() -> None:

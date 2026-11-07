@@ -24,17 +24,7 @@ search_terms:
 linkedin_terms:
   - Widget Engineer
   - Gizmo Systems Consultant
-# 0-10 integer weights; consumed by LLM judges for skills,
-# opaque to src/. Base every entry on attested experience only.
-skill_weights:
-  widgets:
-    widget_assembly: 10   # 2yr production experience
-    gizmo_calibration: 7  # secondary tooling
-  domain:
-    widget_supply_chain: 9
-# Optional. The judge answers the question yes/no; yes lifts the domain
-# axis to at least yes_min, no holds it at no_max or below.
-# focus:
-#   question: Does the company sell mainly to widget makers?
-#   yes_min: 18
-#   no_max: 17
+# Optional. Replaces the same keys of verticals.yaml `defaults: score:`, one
+# by one (here: this lane's sheet and retention line).
+# score:
+#   cutoff: 80

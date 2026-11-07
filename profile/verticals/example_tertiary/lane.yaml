@@ -17,7 +17,3 @@ search_terms:
   - Cog Platform Engineer
 linkedin_terms:
   - Cog Engineer
-skill_weights:
-  cog_stack:
-    cog_agents: 9
-    cog_platform: 8

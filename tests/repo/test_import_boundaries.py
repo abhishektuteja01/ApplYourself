@@ -15,6 +15,8 @@ _STAGE_OF = {
     "applyourself.score_cli": "applyourself.score",
     "applyourself.score_store": "applyourself.score",
     "applyourself.score_filter": "applyourself.score",
+    "applyourself.score_packet": "applyourself.score",
+    "applyourself.score_ab": "applyourself.score",
     "applyourself.shortlist": "applyourself.score",
     "applyourself.track_cli": "applyourself.track",
     "applyourself.state_io": "applyourself.track",

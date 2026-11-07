@@ -100,7 +100,7 @@ uv run score show <job_id>
 ```
 
 Exit 0 → scored. Exit 1 (`not scored`) → `uv run score start --job-id <job_id>`. `--job-id` skips every drop
-except `no-lane`, so a deliberately chosen role gets real subscores and `keywords_to_mirror`.
+except `no-lane`, so a deliberately chosen role gets a real fit and `keywords_to_mirror`.
 - Exit 1 → report the error, stop.
 - `judge=0` → the `job_id` is not in `clean.parquet`; stop.
 - One `judge ...` line → spawn one `score-judge` agent whose prompt is the

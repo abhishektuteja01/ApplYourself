@@ -140,6 +140,8 @@ module = [
     "applyourself.score_filter",
     "applyourself.score_store",
     "applyourself.score_cli",
+    "applyourself.score_packet",
+    "applyourself.score_ab",
     "applyourself.lint",
     "applyourself.app_cli",
     "applyourself.material.*",

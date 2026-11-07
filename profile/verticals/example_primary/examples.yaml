@@ -1,0 +1,32 @@
+# Calibration examples for /score's judge: past roles in this lane and the
+# answer each should get. Optional. `uv run score examples --write` picks them
+# from past scores by a stable rule; edit freely. Fictional here.
+examples:
+  - title: Widget Engineer
+    company: Acme Widgets
+    asks: [widget assembly, line configuration, SQL]
+    in_lane: true
+    level: entry
+    fit: 93
+    reasoning: Daily line reconciliation and SQL tooling match; no gap named.
+  - title: Gizmo Systems Analyst
+    company: Gizmo Works
+    asks: [gizmo calibration, Postgres, Python]
+    in_lane: true
+    level: mid
+    fit: 81
+    reasoning: Gizmo ledger work matches; calibration tooling is new.
+  - title: Plant Operations Analyst
+    company: Sprocket Foundry
+    asks: [production planning, Excel, reporting]
+    in_lane: true
+    level: entry
+    fit: 66
+    reasoning: Plant reporting transfers; production planning tools are new.
+  - title: Widget Buyer
+    company: Doohickey Retail
+    asks: [procurement, supplier management]
+    in_lane: false
+    level: entry
+    fit: 20
+    reasoning: A buying role; widgets appear only as the product.

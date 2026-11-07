@@ -26,6 +26,7 @@ import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from applyourself import score_packet
 from applyourself.score_filter import (
     SPONSORSHIP_FACTS,
     CountryRule,
@@ -34,7 +35,6 @@ from applyourself.score_filter import (
     drop_reason,
     load_scoring,
     normalize,
-    seniority_cap,
     sponsorship_label,
     trim_jd,
     word_count,
@@ -47,8 +47,8 @@ from applyourself.state_io import load_state_index
 
 SCORED_COLUMNS: list[str] = [
     "job_id",
-    "fit_score",  # sum of fit_subscores, 0-100
-    "fit_subscores",  # JSON string: {title, skills, seniority, domain}
+    "fit_score",  # 0-100: the judge's fit less the lane's penalty, or 0
+    "fit_subscores",  # JSON: {fit, penalty, level, years}; older rows {title, skills, seniority, domain}
     "vertical",  # a profile/verticals.yaml name | "" (no lane)
     "sponsorship_label",
     "sponsorship_evidence",
@@ -72,8 +72,6 @@ DERIVED_COLUMNS = (
     "suggested_action",
 )
 VIEW_COLUMNS: list[str] = [c for c in SCORED_COLUMNS if not c.startswith("judge_")] + ["basis"]
-AXIS_MAXIMA = {"title": 30, "skills": 30, "seniority": 20, "domain": 20}
-ACTION_RANK = {"skip": 0, "manual-review": 1, "tailor": 2}
 
 YEARS_GAP_LOG = 3  # regex and judge years this far apart are printed by finish
 
@@ -106,19 +104,29 @@ def read_scored(scored_path: Path) -> pd.DataFrame:
     return df[SCORED_COLUMNS]
 
 
+def is_v2(answer: Any) -> bool:
+    """A stored judge answer of today's form (it grades `fit`)."""
+    return isinstance(answer, dict) and "fit" in answer
+
+
 def view(
     scored_path: Path | None = None,
     cfg: ScoringConfig | None = None,
     rule: CountryRule | None = None,
 ) -> pd.DataFrame:
-    """Every live score, the one way to read scored.parquet. A row holding the
-    judge's raw answer is derived again under today's rules (`basis` judged);
-    an older row keeps its stored score (`basis` legacy). Filter drops are not
-    scores and are left out."""
+    """Every live score, the one way to read scored.parquet. A row holding
+    today's judge answer is derived again under today's rules (`basis`
+    judged); an older answer keeps its stored score (`basis` v1), and so does
+    a row with none (`basis` legacy). Filter drops are not scores and are
+    left out."""
     df = read_scored(scored_path or paths.SCORED)
     df = df[~df["scored_by_model"].astype(str).str.startswith("filter:")].reset_index(drop=True)
-    raw = [isinstance(v, str) and v != "" for v in df["judge_answer"]]
-    basis = ["legacy"] * len(df)
+    answers = [json.loads(v) if isinstance(v, str) and v else None for v in df["judge_answer"]]
+    raw = [is_v2(a) for a in answers]
+    basis = [
+        "legacy" if a is None else "judged" if v2 else "v1"
+        for a, v2 in zip(answers, raw, strict=True)
+    ]
     if any(raw):
         cfg = cfg or load_scoring()
         if rule is None:
@@ -129,10 +137,13 @@ def view(
         cols = {c: df[c].astype(object).tolist() for c in DERIVED_COLUMNS}
         for i, r in enumerate(cast(list[dict[str, Any]], df.to_dict("records"))):
             lane = lanes.get(r["vertical"])
-            if not raw[i] or lane is None:
-                continue  # a lane no longer configured keeps its stored score
+            if not raw[i]:
+                continue
+            if lane is None:
+                basis[i] = "legacy"  # a lane no longer configured keeps its stored score
+                continue
             d = derive(
-                json.loads(r["judge_answer"]),
+                cast(dict[str, Any], answers[i]),
                 lane,
                 json.loads(r["judge_facts"]),
                 cfg,
@@ -142,7 +153,6 @@ def view(
             )
             for c in DERIVED_COLUMNS:
                 cols[c][i] = d[c]
-            basis[i] = "judged"
         df = df.assign(**{c: pd.Series(v, index=df.index, dtype=object) for c, v in cols.items()})
         df["fit_score"] = df["fit_score"].astype("float64")
     df["basis"] = basis
@@ -171,6 +181,7 @@ def merge_rows(scored_path: Path, rows: list[dict[str, Any]]) -> int:
 def _row(
     job_id: str,
     vertical: str,
+    score: float,
     subs: dict[str, Any],
     label: str,
     evidence: str,
@@ -182,7 +193,7 @@ def _row(
 ) -> dict[str, Any]:
     return {
         "job_id": job_id,
-        "fit_score": float(sum(subs.values())),
+        "fit_score": float(score),
         "fit_subscores": json.dumps(subs),
         "vertical": vertical,
         "sponsorship_label": label,
@@ -196,10 +207,6 @@ def _row(
         "judge_facts": "",
         "judge_input_hash": "",
     }
-
-
-def _zero() -> dict[str, Any]:
-    return dict.fromkeys(AXIS_MAXIMA, 0)
 
 
 def remove_rows(scored_path: Path, job_ids: set[str]) -> int:
@@ -226,52 +233,36 @@ def _judge_model() -> str:
     return f"score-judge:{meta.get('model', 'unknown')}"
 
 
-def _lane_resume(lane: verticals.Vertical) -> str:
-    """The lane's baseline resume, built from the profile sources by the same
-    assembler /tailor uses."""
-    from applyourself import resume_model
-
-    if lane.resume is None:
-        raise ValueError(
-            f"lane {lane.name} has no resume: block in profile/verticals/{lane.name}/lane.yaml"
-        )
-    return resume_model.baseline_markdown(lane.name)
-
-
 def input_hash(packet: str, jd: str) -> str:
     """What a judgment was made from: the lane's packet and the trimmed JD."""
     return hashlib.sha1(f"{packet}\0{jd}".encode()).hexdigest()[:16]
 
 
-def packet_text(lane: verticals.Vertical, cfg: ScoringConfig) -> str:
-    """What every judge of the lane reads first."""
-    parts = [
-        f"# Scoring packet — lane {lane.name}\n",
-        f"`keywords_to_mirror`: up to {cfg.keywords_max}.\n",
-        f"Languages the candidate speaks: {', '.join(cfg.languages)}.\n" if cfg.languages else "",
-        SHARED_RUBRIC.read_text(encoding="utf-8"),
-        (paths.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
-        "## Skill weights\n\n```yaml\n"
-        + yaml.safe_dump(lane.skill_weights, sort_keys=False).strip()
-        + "\n```\n",
-        "## Resume\n\n" + _lane_resume(lane),
+def schema_text(model: type[BaseModel]) -> str:
+    """The packet's answer-schema section for one answer model."""
+    return (
         "## Answer schema\n\nEach object in your JSON array matches this JSON Schema.\n\n```json\n"
-        + json.dumps(JudgeAnswer.model_json_schema(), indent=1)
-        + "\n```\n",
+        + json.dumps(model.model_json_schema(), indent=1)
+        + "\n```\n"
+    )
+
+
+def packet_text(lane: verticals.Vertical, cfg: ScoringConfig, digest: str | None = None) -> str:
+    """What every judge of the lane reads first, always in this order: the
+    shared rubric, the candidate digest, the lane, its calibration examples
+    and the answer schema. `digest`: `score_packet.digest(cfg)`, when the
+    caller already built it."""
+    parts = [
+        f"# Scoring packet — lane {lane.name} ({lane.display_name})\n",
+        SHARED_RUBRIC.read_text(encoding="utf-8"),
+        f"`keywords_to_mirror`: up to {cfg.keywords_max}.\n",
+        score_packet.digest(cfg) if digest is None else digest,
+        f"## Lane: {lane.display_name}\n\n"
+        + (paths.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
+        score_packet.examples_text(lane.name),
+        schema_text(JudgeAnswer),
     ]
-    if lane.focus:
-        f = lane.focus
-        parts.insert(
-            4,
-            "## Focus\n\n"
-            f"Add `focus`: true or false, and `focus_evidence`. {f.question}\n\n"
-            "Default false. Answer true only when the JD itself shows it, and put "
-            'that JD phrase, verbatim, in `focus_evidence`; leave it "" when false. '
-            "A strong fit is not a reason for true.\n\n"
-            f"Then `domain` is set for you: true lifts it to at least {f.yes_min}, "
-            f"false holds it at {f.no_max} or below.\n",
-        )
-    return "\n".join(parts)
+    return "\n".join(p for p in parts if p)
 
 
 def _slice_text(name: str, rows: list[dict[str, Any]], staging: Path) -> str:
@@ -491,6 +482,7 @@ def start(
     counts: dict[str, int] = {}
     codes: dict[str, str] = {}
     packets: dict[str, str] = {}
+    digest: str | None = None
     for row in cast(list[dict[str, Any]], clean.to_dict("records")):
         reason = drop_reason(row, cfg)
         if job_ids and reason and reason[0] != "no-lane":
@@ -503,7 +495,9 @@ def start(
         row["_jd"] = trim_jd(row.get("jd_text"), cfg)
         lane = row["vertical"]
         if lane not in packets:
-            packets[lane] = packet_text(vcfg.verticals[lane], cfg)
+            if digest is None:
+                digest = score_packet.digest(cfg)
+            packets[lane] = packet_text(vcfg.verticals[lane], cfg, digest)
         row["_hash"] = input_hash(packets[lane], row["_jd"])
         if stale_only and row["_hash"] == hashes.get(row["job_id"]):
             continue
@@ -543,19 +537,39 @@ def start(
             "lines": [],
             "resumed": False,
         }
+    run = stage_rows(staging, keep, packets, cfg, now)
+    return {
+        "dropped": counts,
+        "first_dropped": first,
+        "judge": len(keep),
+        "lines": judge_lines(run, staging),
+        "resumed": False,
+    }
+
+
+def stage_rows(
+    staging: Path,
+    rows: list[dict[str, Any]],
+    packets: dict[str, str],
+    cfg: ScoringConfig,
+    now: datetime,
+) -> dict[str, Any]:
+    """Write one packet per lane, the slices and run.json for `rows` (each
+    with its trimmed `_jd` and `_hash`, in judging order) into `staging`.
+    Returns the run."""
     staging.mkdir(parents=True, exist_ok=True)
-    run = {
+    run: dict[str, Any] = {
         "schema_version": schemas.SCORE_STAGING_SCHEMA_VERSION,
         "model": _judge_model(),
         "started": now.isoformat(),
         "slices": {},
     }
-    for lane in vcfg.verticals.values():
-        rows = [r for r in keep if r["vertical"] == lane.name]
-        if not rows:
+    for lane in verticals.get_config().verticals.values():
+        lane_rows = [r for r in rows if r["vertical"] == lane.name]
+        if not lane_rows:
             continue
         (staging / f"packet_{lane.name}.md").write_text(packets[lane.name], encoding="utf-8")
-        for n, part in enumerate(_slices(rows), 1):
+        for n, part in enumerate(_slices(lane_rows), 1):
             name = f"{lane.name}_{n:03d}"
             text = _slice_text(name, part, staging)
             (staging / f"slice_{name}.md").write_text(text, encoding="utf-8")
@@ -578,13 +592,7 @@ def start(
                 },
             }
     _save_run(staging, run)
-    return {
-        "dropped": counts,
-        "first_dropped": first,
-        "judge": len(keep),
-        "lines": judge_lines(run, staging),
-        "resumed": False,
-    }
+    return run
 
 
 # ---------------------------------------------------------------------
@@ -605,24 +613,22 @@ def _quote_ok(evidence: str, jd: str) -> bool:
 
 
 class JudgeAnswer(BaseModel):
-    """One role in a judge's answer file. The scoring rubric says what each field means."""
+    """One role in a judge's answer file, facts first and the grade after.
+    The scoring rubric says what each field means."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
     job_id: str
-    title: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["title"])]
-    skills: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["skills"])]
-    seniority: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["seniority"])]
-    domain: Annotated[int, Field(ge=0, le=AXIS_MAXIMA["domain"])]
+    in_lane: bool
+    level: Literal[verticals.LEVELS]  # type: ignore[valid-type]  # pydantic expands the tuple
     years: Annotated[int, Field(ge=0, le=50)]
     country: str
     sponsorship: Annotated[list[Literal[SPONSORSHIP_FACTS]], Field(min_length=1)]  # type: ignore[valid-type]  # pydantic expands the tuple
     evidence: str
+    blocker: str | None
+    fit: Annotated[int, Field(ge=0, le=100)]
     keywords_to_mirror: list[str]
     reasoning: Annotated[str, Field(pattern=r"\S")]
-    action: Literal["skip", "manual-review"] | None = None
-    focus: bool | None = None
-    focus_evidence: str | None = None
 
     @model_validator(mode="after")
     def _evidence(self) -> JudgeAnswer:
@@ -630,12 +636,16 @@ class JudgeAnswer(BaseModel):
             raise ValueError("sponsorship cannot mix silent with other statements")
         if self.sponsorship != ["silent"] and not self.evidence.strip():
             raise ValueError(f"evidence must quote the JD for {', '.join(self.sponsorship)}")
+        if self.blocker is not None and not self.blocker.strip():
+            raise ValueError("blocker must be null or a reason")
         return self
 
 
-def check_answer(answer: Any, meta: dict[str, Any], focus: bool = False) -> list[str]:
-    """Problems with one judge output file, [] if it can be merged. `focus`:
-    the lane has a focus question, so every answer must carry `focus`."""
+def check_answer(
+    answer: Any, meta: dict[str, Any], model: type[BaseModel] = JudgeAnswer
+) -> list[str]:
+    """Problems with one judge output file, [] if it can be merged. `model`:
+    the answer form the slice was staged for."""
     if not isinstance(answer, list):
         return ["not a JSON array"]
     errs = []
@@ -651,7 +661,7 @@ def check_answer(answer: Any, meta: dict[str, Any], focus: bool = False) -> list
             continue
         where = f"{a.get('job_id')}:"
         try:
-            JudgeAnswer.model_validate(a)
+            model.model_validate(a)
         except ValidationError as e:
             errs += [
                 f"{where} {'.'.join(map(str, x['loc'])) or 'answer'}: {x['msg']}"
@@ -662,14 +672,6 @@ def check_answer(answer: Any, meta: dict[str, Any], focus: bool = False) -> list
         ev = a["evidence"]
         if ev.strip() and jd is not None and not _quote_ok(ev, jd):
             errs.append(f"{where} evidence is not a quote from the JD: {ev[:100]!r}")
-        if focus and a.get("focus") is None:
-            errs.append(f"{where} focus must be true or false")
-        elif focus and a["focus"]:
-            fev = a.get("focus_evidence") or ""
-            if not fev.strip():
-                errs.append(f"{where} focus true must quote the JD in focus_evidence")
-            elif jd is not None and not _quote_ok(fev, jd):
-                errs.append(f"{where} focus_evidence is not a quote from the JD: {fev[:100]!r}")
     return errs
 
 
@@ -682,51 +684,50 @@ def derive(
     model: str,
     now: datetime,
 ) -> dict[str, Any]:
-    """The stored row for one judge answer. The judge reads the facts (years,
-    country, what the JD says about sponsorship); every rule is applied here."""
-    subs = {axis: a[axis] for axis in AXIS_MAXIMA}
+    """The stored row for one judge answer. The judge reads the facts and
+    grades fit; every rule is applied here. The score is 0 when the role is
+    out of lane, ineligible, outside the lane's countries, asks the lane's
+    `years_zero_at` years or more, or has a blocker; otherwise it is fit
+    (capped for a short JD) less the larger of the level and years penalties."""
+    rules = lane.score
     reasoning = a["reasoning"].strip()
     label = sponsorship_label(a["sponsorship"], a["country"], cfg)
-    forced_skip = False
-    years = a["years"]  # the regex only pre-filters; the judge's reading counts
-    if lane.years and years > max(lane.years):
+    years = a["years"]  # the regex only reports a gap; the judge's reading counts
+    zero = label == "ineligible"
+    if not a["in_lane"]:
+        reasoning += " [out of lane]"
+        zero = True
+    if years >= rules.years_zero_at:
         reasoning += f" [{years}+ yrs]"
-        forced_skip = True
-    else:
-        cap = seniority_cap(lane, years)
-        if cap is not None:
-            subs["seniority"] = min(subs["seniority"], cap)
+        zero = True
     if not country_allowed(a["country"], lane.name, rule):
         reasoning += f" [out of scope: {a['country']}]"
-        forced_skip = True
-    if lane.focus:
-        f = lane.focus
-        subs["domain"] = (
-            max(subs["domain"], f.yes_min) if a["focus"] else min(subs["domain"], f.no_max)
-        )
+        zero = True
+    if a["blocker"] is not None:
+        reasoning += f" [blocked: {a['blocker'].strip()}]"
+        zero = True
+    fit = a["fit"]
     if facts["words"] < cfg.min_words:
-        subs["skills"] = min(subs["skills"], cfg.skills_cap)
+        fit = min(fit, cfg.fit_cap)
         reasoning += " [vague JD]"
     if facts["contract"] and "[contract role]" not in reasoning:
         reasoning += " [contract role]"
-    if label == "ineligible" or forced_skip:
-        subs = _zero()  # a role you cannot apply to scores 0
-    total = sum(subs.values())
+    penalty = rules.penalty(a["level"], years)
+    total = 0 if zero else max(0, fit - penalty)
     action = (
         "skip"
-        if label == "ineligible" or forced_skip
+        if zero
         else "tailor"
         if total >= cfg.tailor_min
         else "manual-review"
         if total >= cfg.review_min
         else "skip"
     )
-    if a.get("action") and ACTION_RANK[a["action"]] < ACTION_RANK[action]:
-        action = a["action"]
     return _row(
         a["job_id"],
         lane.name,
-        subs,
+        total,
+        {"fit": fit, "penalty": penalty, "level": a["level"], "years": years},
         label,
         a["evidence"].strip(),
         reasoning,
@@ -770,7 +771,7 @@ def finish(
             bad[name] = [f"not valid JSON: {e}"]
             continue
         lane = lanes[meta["vertical"]]
-        errs = check_answer(answer, meta, focus=lane.focus is not None)
+        errs = check_answer(answer, meta)
         if errs:
             bad[name] = errs
             continue

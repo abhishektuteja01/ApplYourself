@@ -18,6 +18,7 @@ from typing import Any
 
 import yaml
 
+from applyourself.shared.config_schema import ScoringFile, validate
 from applyourself.shared.files import atomic_write_text
 
 BANK = "application_answers.yaml"
@@ -443,7 +444,7 @@ def _state(p: Profile) -> None:
 
 
 # Lane keys `defaults:` may take over when every lane holds the same value.
-LIFTABLE = ("years",)
+LIFTABLE = ("years", "score")
 
 
 def _dedent(lines: list[str], n: int) -> list[str]:
@@ -870,6 +871,200 @@ def _title_lists(p: Profile) -> None:
     )
 
 
+# The old judge's lane keys (four axes): read by nothing since scoring v2.
+OLD_JUDGE_KEYS = ("years", "skill_weights", "focus")
+
+
+def _drop_child(text: str, parent: str, key: str) -> str | None:
+    """text without `key:` (and the lines indented under it) inside the
+    top-level block `parent:`, or None when the block has no such key."""
+    lines = (text if text.endswith("\n") else text + "\n").splitlines(keepends=True)
+    at = next(
+        (i for i, ln in enumerate(lines) if re.match(rf"{re.escape(parent)}\s*:\s*$", ln)), None
+    )
+    if at is None:
+        return None
+    end = _block_end(lines, at)
+    for i in range(at + 1, end):
+        m = re.match(rf"(\s+){re.escape(key)}\s*:", lines[i])
+        if not m:
+            continue
+        j = i + 1
+        while j < end and (
+            not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip()) > len(m[1])
+        ):
+            j += 1
+        while j > i + 1 and not lines[j - 1].strip():
+            j -= 1
+        return "".join(lines[:i] + lines[j:])
+    return None
+
+
+def _old_rubric(text: str) -> bool:
+    """A lane rubric written for the old judge's four axes."""
+    return bool(re.search(r"`(?:title|skills|seniority|domain)` \(0-[23]0\)", text))
+
+
+def _scoring_v2(p: Profile) -> None:
+    """Scoring v2: `defaults:` gets the `score:` rules, with scoring.yaml's
+    `cutoffs.sheet` as their cutoff; the old judge's `years`, `skill_weights`
+    and `focus` leave `defaults:` and every lane.yaml; `jd_quality.skills_cap`
+    becomes the `fit_cap` it amounts to. Refused unless the loaded config
+    stays the same apart from `score`, and the sheet line with it."""
+    import dataclasses
+    import tempfile
+
+    from applyourself.score_filter import CUTOFF_DEFAULT
+    from applyourself.shared import verticals as V
+
+    data = p.data(VERTICALS)
+    scoring = p.data(SCORING)
+    if not isinstance(data, dict) or data.get("schema_version") != 2:
+        return
+    if not isinstance(scoring, dict):
+        return
+    names = [n for n in data.get("lanes") or [] if isinstance(n, str)]
+    rels = {n: f"verticals/{n}/lane.yaml" for n in names}
+
+    def sub(data: dict[str, Any], key: str) -> dict[str, Any]:
+        value = data.get(key)
+        return value if isinstance(value, dict) else {}
+
+    defaults, cutoffs = sub(data, "defaults"), sub(scoring, "cutoffs")
+    quality = sub(scoring, "jd_quality")
+    lane_old = {n: [k for k in OLD_JUDGE_KEYS if k in (p.data(rels[n]) or {})] for n in names}
+    todo = (
+        "score" not in defaults
+        or any(k in defaults for k in OLD_JUDGE_KEYS)
+        or any(lane_old.values())
+        or "sheet" in cutoffs
+        or "skills_cap" in quality
+    )
+    if not todo:
+        return
+    sheet = cutoffs.get("sheet")
+    top = p.text(VERTICALS) or ""
+    for key in OLD_JUDGE_KEYS:
+        if key in defaults:
+            cut = _drop_child(top, "defaults", key)
+            if cut is None:
+                p.problems.append(
+                    f"{VERTICALS}: could not remove defaults `{key}`; remove it by hand"
+                )
+                return
+            top = cut
+    if "score" not in defaults:
+        score = {**V.SCORE_DEFAULTS, "cutoff": sheet if type(sheet) is int else CUTOFF_DEFAULT}
+        block = [
+            "  # /score: fit less the larger of the level and years penalties; 0 from\n",
+            "  # years_zero_at years. cutoff: the sheet and retention line. A lane's\n",
+            "  # own `score:` keys replace these one by one.\n",
+            "  score:\n",
+            *(
+                "    " + ln
+                for ln in yaml.safe_dump(
+                    score, default_flow_style=None, sort_keys=False, width=200
+                ).splitlines(keepends=True)
+            ),
+        ]
+        lines = (top if top.endswith("\n") else top + "\n").splitlines(keepends=True)
+        at = next((i for i, ln in enumerate(lines) if re.match(r"defaults\s*:", ln)), None)
+        if at is None:
+            lines += ["\n", "defaults:\n", *block]
+        elif re.match(r"defaults\s*:\s*$", lines[at]):
+            lines[at + 1 : at + 1] = block
+        else:
+            p.problems.append(
+                f"{VERTICALS}: `defaults:` is not a block mapping; add `score:` by hand"
+            )
+            return
+        top = "".join(lines)
+    elif "sheet" in cutoffs and "cutoff" not in (defaults.get("score") or {}):
+        p.problems.append(
+            f"{VERTICALS}: defaults `score:` has no cutoff; set it to cutoffs.sheet ({sheet}) "
+            f"and remove `sheet` from {SCORING} by hand"
+        )
+        return
+    lane_texts = {}
+    for n, keys in lane_old.items():
+        out = p.text(rels[n]) or ""
+        for key in keys:
+            out = drop_top_key(out, key)
+        if keys:
+            lane_texts[rels[n]] = out
+    stext = p.text(SCORING) or ""
+    if "sheet" in cutoffs:
+        cut = _drop_child(stext, "cutoffs", "sheet")
+        if cut is None:
+            p.problems.append(f"{SCORING}: could not remove cutoffs.sheet; remove it by hand")
+            return
+        stext = cut.replace(
+            "# suggested_action from the fit total. The judge may only lower it.\n",
+            "# suggested_action from the score. The sheet line is each lane's score.cutoff\n"
+            "# (verticals.yaml); keep_long keeps roles in the live view from a lower score.\n",
+        )
+    cap = quality.get("skills_cap")
+    if "skills_cap" in quality:
+        lines = stext.splitlines(keepends=True)
+        hit = [i for i, ln in enumerate(lines) if re.match(r"\s+skills_cap\s*:", ln)]
+        if len(hit) != 1 or type(cap) is not int or "fit_cap" in quality:
+            p.problems.append(
+                f"{SCORING}: could not turn jd_quality.skills_cap into fit_cap by hand"
+            )
+            return
+        pad = lines[hit[0]][: len(lines[hit[0]]) - len(lines[hit[0]].lstrip())]
+        # The old cap held skills (of 30) at `cap`; title and domain (50) stayed whole.
+        lines[hit[0]] = f"{pad}fit_cap: {round(100 * (50 + cap) / 80)}\n"
+        stext = "".join(lines).replace(
+            "# A JD under min_words has its skills axis capped at skills_cap.",
+            "# A JD under min_words has its fit capped at fit_cap.",
+        )
+
+    def load(texts: dict[str, str]) -> Any:
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, body in texts.items():
+                (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(tmp) / rel).write_text(body, encoding="utf-8")
+            return V.load_verticals(Path(tmp) / VERTICALS)
+
+    before = {rel: p.text(rel) or "" for rel in (VERTICALS, *rels.values())}
+    try:
+        old = load(before)
+        new = load({**before, VERTICALS: top, **lane_texts})
+        validate(ScoringFile, yaml.safe_load(stext), p.root / SCORING)
+    except ValueError as exc:
+        p.problems.append(f"scoring v2: does not load after the move: {exc}")
+        return
+    same = V.ScoreRules({}, {}, 1)
+
+    def rest(cfg: Any) -> Any:
+        return {n: dataclasses.replace(v, score=same) for n, v in cfg.verticals.items()}
+
+    line = {n: v.score.cutoff for n, v in new.verticals.items()}
+    was = {
+        n: v.score.cutoff if v.score.cutoff is not None else sheet for n, v in old.verticals.items()
+    }
+    if rest(old) != rest(new) or (type(sheet) is int and line != was):
+        p.problems.append("scoring v2: the move would change the loaded config; move by hand")
+        return
+    p.texts[VERTICALS] = top
+    p.texts.update(lane_texts)
+    p.texts[SCORING] = stext
+    p.notes.append(
+        f"{VERTICALS}: defaults score: cutoff {line}; old judge keys removed "
+        f"{ {n: k for n, k in lane_old.items() if k} or 'none' }"
+        + (f"; {SCORING}: cutoffs.sheet -> score.cutoff" if "sheet" in cutoffs else "")
+        + (f"; jd_quality.skills_cap {cap} -> fit_cap" if "skills_cap" in quality else "")
+    )
+    for n in names:
+        rubric = p.root / "verticals" / n / "rubric.md"
+        if rubric.is_file() and _old_rubric(rubric.read_text(encoding="utf-8")):
+            p.notes.append(
+                f"verticals/{n}/rubric.md grades the old four axes: rewrite it for the "
+                "fit bands (keep the old one as rubric.v1.md for `score ab-stage`)"
+            )
+
+
 STEPS: tuple[Callable[[Profile], None], ...] = (
     _languages,
     _abroad,
@@ -879,6 +1074,7 @@ STEPS: tuple[Callable[[Profile], None], ...] = (
     _state,
     _split_lanes,
     _title_lists,
+    _scoring_v2,
 )
 
 

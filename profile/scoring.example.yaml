@@ -1,9 +1,10 @@
 # TEMPLATE — copy to profile/scoring.yaml and edit (/onboarding does both).
 #
 # Scoring policy for /score. Read by src/applyourself/score_filter.py, src/applyourself/score_store.py
-# and src/applyourself/shortlist.py. Per-lane rules (years, skill_weights)
-# live in profile/verticals/<lane>/lane.yaml; how to judge a role lives in
-# .claude/shared/scoring_rubric.md and profile/verticals/<lane>/rubric.md.
+# and src/applyourself/shortlist.py. Per-lane rules (`score:` penalties and
+# cutoff) live in profile/verticals.yaml `defaults:` and each lane.yaml; how to
+# judge a role lives in .claude/shared/scoring_rubric.md and
+# profile/verticals/<lane>/rubric.md.
 # Your sponsorship need in each country comes from
 # profile/application_answers.yaml's work_authorization.countries.
 schema_version: 1
@@ -43,20 +44,19 @@ no_sponsorship:
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
 
-# A JD under min_words has its skills axis capped at skills_cap.
+# A JD under min_words has its fit capped at fit_cap.
 jd_quality:
   min_words: 300
-  skills_cap: 12
+  fit_cap: 78
 
-# Fit-score cutoffs, each at or above the one before. review and tailor set
-# suggested_action (the judge may only lower it); keep_long keeps a role in
-# the live view retention.high_days (discovery.yaml), else low_days; sheet
-# puts it on the night's status sheet (settings.yaml table_path).
+# Score cutoffs, review at or below tailor. They set suggested_action. The
+# line for the night's status sheet (settings.yaml table_path) and for
+# keeping a role retention.high_days (discovery.yaml) is each lane's
+# `score.cutoff` in verticals.yaml. An optional keep_long keeps roles that
+# long from a lower score too.
 cutoffs:
   review: 50
   tailor: 60
-  keep_long: 80
-  sheet: 85
 
 # Sections cut from the judge's copy of a JD. A section starts at a heading
 # that begins with one of `headings` and runs to the next heading. A

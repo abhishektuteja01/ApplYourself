@@ -71,18 +71,20 @@ ban word, inside your location allowlist, one row per `job_id`.
 ### 2. Scoring
 
 Drops what your hard rules reject (no lane, an ineligibility phrase), then
-parallel judge agents score the rest on
-title, skills, seniority and domain. Python turns their facts into the
-sponsorship label, caps, total and action. The keeper list is
+parallel judge agents read each role's facts (lane, level, years, country,
+sponsorship, any blocker) and grade one fit, 0-100, against a digest of your
+bullets and skills. Python turns the facts into the sponsorship label, the
+zero rules and the lane's level and years penalties, and the score. The keeper list is
 `shortlist/<date>.md`: the top roles per lane. **Each lane ranks on its own**; a
 score in one lane is never compared with another.
 
 - Slash command: `/score` (`--all` re-judges, `--vertical V` one lane,
   `--stale-only` counts rows whose input changed). Re-judge after editing your
   bullets, a rubric or `scoring.yaml`.
-- CLI: `uv run score start|finish|show|lane`.
-- Config: `profile/scoring.yaml`, each lane's `rubric.md`, and
-  `.claude/shared/scoring_rubric.md`.
+- CLI: `uv run score start|finish|show|lane|examples|ab-stage|ab-compare`.
+- Config: `profile/scoring.yaml`, the `score:` rules in `verticals.yaml`
+  `defaults:` and each lane, each lane's `rubric.md` (and optional
+  `examples.yaml`), and `.claude/shared/scoring_rubric.md`.
 - Details: `.claude/rules/scoring.md`.
 
 ### 3. Application material

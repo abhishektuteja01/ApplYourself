@@ -31,10 +31,11 @@ class LaneResume(_Strict):
     summary: Any = None
 
 
-class Focus(_Strict):
-    question: Any = None
-    yes_min: Any = None
-    no_max: Any = None
+class LaneScore(_Strict):
+    level: Any = None
+    years: Any = None
+    years_zero_at: Any = None
+    cutoff: Any = None
 
 
 class Lane(_Strict):
@@ -46,9 +47,11 @@ class Lane(_Strict):
     linkedin_terms: Any = None
     abroad_terms: Any = None
     drop_phrases: Any = None
+    score: LaneScore | None = None
+    # The old judge's keys: accepted, never used (`config migrate` removes them).
     years: Any = None
     skill_weights: Any = None
-    focus: Focus | None = None
+    focus: Any = None
     title_exclude_terms: Any = None
     title_include_terms: Any = None
     title_strong_keep_terms: Any = None
@@ -86,24 +89,27 @@ Score = Annotated[int, Field(strict=True, ge=0)]
 
 
 class Cutoffs(_Strict):
-    """Fit-score cutoffs: review and tailor (suggested_action), keep_long
-    (discovery keeps a role high_days), sheet (the night's status sheet)."""
+    """Fit-score cutoffs: review and tailor (suggested_action). The sheet and
+    retention line is each lane's `score.cutoff`; `keep_long`, when set, keeps
+    a role in the live view from that lower score too. `sheet` is the older
+    shared line, read only by a lane with no `score.cutoff`."""
 
     review: Score
     tailor: Score
-    keep_long: Score
-    sheet: Score
+    keep_long: Score | None = None
+    sheet: Score | None = None
 
     @model_validator(mode="after")
     def _rising(self) -> Cutoffs:
-        if not self.review <= self.tailor <= self.keep_long <= self.sheet:
-            raise ValueError("must rise: review <= tailor <= keep_long <= sheet")
+        if not self.review <= self.tailor:
+            raise ValueError("must rise: review <= tailor")
         return self
 
 
 class JdQuality(_Strict):
     min_words: Any = None
-    skills_cap: Any = None
+    fit_cap: Any = None
+    skills_cap: Any = None  # the old judge's; accepted, never used
 
 
 class TrimJd(_Strict):

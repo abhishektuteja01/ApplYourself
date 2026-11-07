@@ -1,9 +1,9 @@
 """Every rule /score applies: the drops before judging, the JD trim, the
-seniority cap, the country rule and the sponsorship label.
+cutoffs, the country rule and the sponsorship label.
 
 Pure functions, driven by profile/scoring.yaml (shared policy), the answer
 bank (sponsorship needs) and each lane's profile/verticals/<lane>/lane.yaml
-(`years`). No LLM (R7). The judge reads facts; it never re-checks a rule.
+(`score:`). No LLM (R7). The judge reads facts; it never re-checks a rule.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from applyourself.discovery.config import DiscoveryConfig
 
 _SCHEMA_VERSION = 1
+FIT_CAP_DEFAULT = 78  # a short JD's fit cap when jd_quality.fit_cap is not set
+CUTOFF_DEFAULT = 76  # a lane's cutoff when neither it nor cutoffs.sheet sets one
 
 
 SPONSORSHIP_NEEDS = ("never", "later", "now")
@@ -52,7 +54,8 @@ class ScoringConfig:
     ineligible: tuple[str, ...]
     no_sponsorship: tuple[str, ...]
     min_words: int
-    skills_cap: int
+    fit_cap: int
+    """A JD under min_words has its fit capped here."""
     keywords_max: int
     tailor_min: int
     review_min: int
@@ -152,7 +155,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         ineligible=_phrases(data, "ineligible", path),
         no_sponsorship=_phrases(data, "no_sponsorship", path),
         min_words=_int(q, "min_words", "jd_quality", path),
-        skills_cap=_int(q, "skills_cap", "jd_quality", path),
+        fit_cap=_int(q, "fit_cap", "jd_quality", path) if "fit_cap" in q else FIT_CAP_DEFAULT,
         keywords_max=_int(data, "keywords_max", "top level", path),
         tailor_min=cutoffs.tailor,
         review_min=cutoffs.review,
@@ -174,6 +177,25 @@ def load_cutoffs(path: Path | None = None) -> Cutoffs:
     path = path or paths.SCORING
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return validate(ScoringFile, data, path).cutoffs
+
+
+def lane_cutoffs(path: Path | None = None) -> dict[str, int]:
+    """Each lane's sheet and retention line: its `score.cutoff`, else
+    scoring.yaml's older `cutoffs.sheet`, else CUTOFF_DEFAULT."""
+    old = load_cutoffs(path).sheet
+    fallback = old if old is not None else CUTOFF_DEFAULT
+    return {
+        name: lane.score.cutoff if lane.score.cutoff is not None else fallback
+        for name, lane in verticals.get_config().verticals.items()
+    }
+
+
+def retention_cutoff(path: Path | None = None) -> int:
+    """The live view keeps a role high_days from this score: the lowest lane
+    cutoff, or `cutoffs.keep_long` when lower, so no role above its lane's
+    line expires early."""
+    keep = load_cutoffs(path).keep_long
+    return min([*lane_cutoffs(path).values(), *([] if keep is None else [keep])])
 
 
 # ---------------------------------------------------------------------
@@ -350,13 +372,6 @@ def drop_reason(row: dict[str, Any], cfg: ScoringConfig) -> tuple[str, str] | No
     if hit is not None:
         return "ineligible", hit
     return None
-
-
-def seniority_cap(lane: verticals.Vertical, years: int) -> int | None:
-    """The lane's seniority cap for a JD asking `years`, None if uncapped:
-    the cap of the largest `years` key at or below it."""
-    keys = [k for k in lane.years if k <= years]
-    return lane.years[max(keys)] if keys else None
 
 
 # ---------------------------------------------------------------------

@@ -11,7 +11,7 @@ import pytest
 
 from applyourself import score_cli, score_store
 from applyourself.score_filter import CountryRule, load_scoring
-from applyourself.shared import paths, verticals
+from applyourself.shared import paths
 from tests.factories import scored_rows, write_clean, write_state
 
 NOW = datetime(2026, 9, 27, 12, 0)
@@ -59,20 +59,22 @@ def _clean(env, rows):
 
 
 def _answer(jid, **kw):
-    return {
+    """A v2 answer; a field given as ... is left out."""
+    a = {
         "job_id": jid,
-        "title": 25,
-        "skills": 25,
-        "seniority": 15,
-        "domain": 15,
+        "in_lane": True,
+        "level": "entry",
         "years": 0,
         "country": "United States",
         "sponsorship": ["silent"],
         "evidence": "",
+        "blocker": None,
+        "fit": 80,
         "keywords_to_mirror": ["python", "widgets"],
         "reasoning": "solid fit",
         **kw,
     }
+    return {k: v for k, v in a.items() if v is not ...}
 
 
 def _write_answers(env, run_slices, answers_by_id):
@@ -216,10 +218,17 @@ class TestStart:
         assert [len(m["job_ids"]) for m in run["slices"].values()] == [10, 10, 3]
         assert run["model"] == "score-judge:sonnet"
         packet = (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
-        assert "# shared rubric" in packet and "widget_assembly" in packet
-        # the baseline resume, built from the example sources
-        assert "**Alex Example**" in packet and "**WORK EXPERIENCE**" in packet
-        assert "Owned the daily widget assembly throughput report" in packet
+        # shared rubric, digest of the example sources, lane, examples, schema: in this order
+        heads = (
+            "# shared rubric",
+            "## Candidate profile digest",
+            "Owned the daily widget assembly throughput report",
+            "## Lane: Widget Engineering",
+            "## Calibration examples",
+            "## Answer schema",
+        )
+        assert [packet.index(h) for h in heads] == sorted(packet.index(h) for h in heads)
+        assert "skill_weights" not in packet and "**WORK EXPERIENCE**" not in packet
         assert len(res["lines"]) == 1 and res["lines"][0].count("slice_") == 3
         text = (env["staging"] / "slice_example_primary_001.md").read_text(encoding="utf-8")
         assert "out_example_primary_001.json" in text
@@ -266,7 +275,7 @@ class TestStart:
 
 
 class TestFinish:
-    def test_round_trip_derives_total_and_action(self, env, scfg):
+    def test_round_trip_derives_score_and_action(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}, {"job_id": "bbbbbbbb", "company": "Beta"}])
         _start(env, scfg)
         run = score_store.load_run(env["staging"])
@@ -275,7 +284,7 @@ class TestFinish:
             run["slices"],
             {
                 "aaaaaaaa": _answer("aaaaaaaa"),
-                "bbbbbbbb": _answer("bbbbbbbb", title=10, skills=10, action="skip"),
+                "bbbbbbbb": _answer("bbbbbbbb", blocker="requires fluent German"),
             },
         )
         res = _finish(env, scfg)
@@ -283,25 +292,12 @@ class TestFinish:
         s = _scored(env)
         assert s.loc["aaaaaaaa", "fit_score"] == 80
         assert s.loc["aaaaaaaa", "suggested_action"] == "tailor"
+        assert s.loc["bbbbbbbb", "fit_score"] == 0
         assert s.loc["bbbbbbbb", "suggested_action"] == "skip"
+        assert s.loc["bbbbbbbb", "reasoning"].endswith("[blocked: requires fluent German]")
         assert s.loc["aaaaaaaa", "vertical"] == "example_primary"
         assert s.loc["aaaaaaaa", "scored_by_model"] == "score-judge:sonnet"
         assert list(env["staging"].iterdir()) == []
-
-    def test_judge_can_only_lower_the_action(self, env, scfg):
-        _clean(env, [{"job_id": "aaaaaaaa"}])
-        _start(env, scfg)
-        _write_answers(
-            env,
-            score_store.load_run(env["staging"])["slices"],
-            {
-                "aaaaaaaa": _answer(
-                    "aaaaaaaa", title=5, skills=5, seniority=5, domain=5, action="manual-review"
-                )
-            },
-        )
-        _finish(env, scfg)
-        assert _scored(env).loc["aaaaaaaa", "suggested_action"] == "skip"
 
     def test_caps_and_tags(self, env, scfg):
         _clean(
@@ -318,12 +314,13 @@ class TestFinish:
         _write_answers(
             env,
             score_store.load_run(env["staging"])["slices"],
-            {"aaaaaaaa": _answer("aaaaaaaa", seniority=20, years=4)},
+            {"aaaaaaaa": _answer("aaaaaaaa", fit=95, years=4)},
         )
         _finish(env, scfg)
         row = _scored(env).loc["aaaaaaaa"]
         subs = json.loads(row["fit_subscores"])
-        assert subs["seniority"] == 10 and subs["skills"] == scfg.skills_cap
+        assert subs == {"fit": scfg.fit_cap, "penalty": 10, "level": "entry", "years": 4}
+        assert row["fit_score"] == scfg.fit_cap - 10
         assert row["reasoning"].endswith("[vague JD] [contract role]")
 
     def test_ineligible_label_zeroes_and_skips(self, env, scfg):
@@ -350,9 +347,14 @@ class TestFinish:
     @pytest.mark.parametrize(
         "bad",
         [
-            {"title": True},
-            {"title": 31},
-            {"skills": "20"},
+            {"fit": True},
+            {"fit": 101},
+            {"fit": "80"},
+            {"in_lane": "yes"},
+            {"level": "junior"},
+            {"blocker": ""},
+            {"blocker": ...},  # facts first: the blocker is always answered
+            {"title": 25},  # the old judge's four axes
             {"sponsorship": "maybe"},
             {"sponsorship": "offers", "evidence": ""},
             {"sponsorship": "offers", "evidence": "we love sponsoring"},
@@ -361,8 +363,7 @@ class TestFinish:
             {"country": None},
             {"keywords_to_mirror": [1]},
             {"reasoning": ""},
-            {"action": "tailor"},
-            {"acton": "skip"},  # a mistyped optional key would silently drop the skip
+            {"action": "skip"},
             {"job_id": "zzzzzzzz"},
         ],
     )
@@ -383,7 +384,7 @@ class TestFinish:
         run = score_store.load_run(env["staging"])
         answers = {j: _answer(j) for m in run["slices"].values() for j in m["job_ids"]}
         _first, second = list(run["slices"])
-        answers[run["slices"][second]["job_ids"][0]]["title"] = 99
+        answers[run["slices"][second]["job_ids"][0]]["fit"] = 999
         _write_answers(env, run["slices"], answers)
         res = _finish(env, scfg)
         assert res["merged"] == 10 and list(res["bad"]) == [second]
@@ -435,78 +436,6 @@ def test_extra_keywords_are_trimmed_not_rejected(env, scfg):
     )
     assert _finish(env, scfg)["merged"] == 1
     assert list(_scored(env).loc["aaaaaaaa", "keywords_to_mirror"]) == kws[: scfg.keywords_max]
-
-
-class TestFocus:
-    @pytest.fixture(autouse=True)
-    def _focus_lane(self, cfg):
-        lane = dataclasses.replace(
-            cfg.verticals["example_primary"],
-            focus=verticals.Focus("Is it for widget makers?", 18, 15),
-        )
-        verticals.set_config(
-            dataclasses.replace(cfg, verticals={**cfg.verticals, "example_primary": lane})
-        )
-
-    def _one(self, env, scfg, **answer):
-        _clean(env, [{"job_id": "aaaaaaaa"}])
-        _start(env, scfg)
-        _write_answers(
-            env,
-            score_store.load_run(env["staging"])["slices"],
-            {"aaaaaaaa": _answer("aaaaaaaa", **answer)},
-        )
-        return _finish(env, scfg)
-
-    @pytest.mark.parametrize(
-        "focus, domain, want", [(True, 10, 18), (True, 20, 20), (False, 19, 15), (False, 8, 8)]
-    )
-    def test_focus_bands_domain(self, env, scfg, focus, domain, want):
-        ev = "widget assembly tooling" if focus else ""
-        assert self._one(env, scfg, focus=focus, focus_evidence=ev, domain=domain)["merged"] == 1
-        assert json.loads(_scored(env).loc["aaaaaaaa", "fit_subscores"])["domain"] == want
-
-    @pytest.mark.parametrize(
-        "bad, err",
-        [
-            ({}, "focus must be true or false"),
-            ({"focus": "yes"}, "focus: Input should be a valid boolean"),
-        ],
-    )
-    def test_focus_lane_needs_a_yes_or_no(self, env, scfg, bad, err):
-        res = self._one(env, scfg, **bad)
-        assert res["merged"] == 0 and err in str(res["bad"])
-
-    @pytest.mark.parametrize(
-        "ev, err", [("", "must quote the JD"), ("we serve banks", "not a quote from the JD")]
-    )
-    def test_focus_true_needs_a_jd_quote(self, env, scfg, ev, err):
-        res = self._one(env, scfg, focus=True, focus_evidence=ev)
-        assert res["merged"] == 0 and err in str(res["bad"])
-
-    def test_focus_quote_may_come_from_the_company(self, env, scfg):
-        assert self._one(env, scfg, focus=True, focus_evidence="Acme")["merged"] == 1
-
-    def test_packet_asks_the_question(self, env, scfg):
-        _clean(env, [{"job_id": "aaaaaaaa"}])
-        _start(env, scfg)
-        text = (env["staging"] / "packet_example_primary.md").read_text(encoding="utf-8")
-        assert "Is it for widget makers?" in text and "at least 18" in text
-
-
-def test_lane_without_focus_ignores_it(env, scfg):
-    _clean(env, [{"job_id": "aaaaaaaa"}])
-    _start(env, scfg)
-    assert "## Focus" not in (env["staging"] / "packet_example_primary.md").read_text(
-        encoding="utf-8"
-    )
-    _write_answers(
-        env,
-        score_store.load_run(env["staging"])["slices"],
-        {"aaaaaaaa": _answer("aaaaaaaa", domain=19)},
-    )
-    assert _finish(env, scfg)["merged"] == 1
-    assert json.loads(_scored(env).loc["aaaaaaaa", "fit_subscores"])["domain"] == 19
 
 
 def test_packet_states_the_keyword_limit(env, scfg):
@@ -587,14 +516,23 @@ class TestFactsDriveTheRules:
         assert res["years_gaps"] == [("aaaaaaaa", 6, 2)]
         assert _scored(env).loc["aaaaaaaa", "suggested_action"] == "tailor"
 
-    def test_judge_years_above_lane_max_skip(self, env, scfg):
+    def test_judge_years_at_the_lane_zero_line_zero(self, env, scfg):
         row = self._one(env, scfg, years=8)
         assert row["suggested_action"] == "skip" and "[8+ yrs]" in row["reasoning"]
         assert row["fit_score"] == 0
 
-    def test_judge_years_within_max_cap_seniority(self, env, scfg):
-        row = self._one(env, scfg, years=3, seniority=20)
-        assert json.loads(row["fit_subscores"])["seniority"] == 14
+    @pytest.mark.parametrize(
+        "level, years, score",
+        [("entry", 3, 75), ("senior", 3, 65), ("lead", 0, 55), ("mid", 7, 65)],
+    )
+    def test_the_larger_of_the_level_and_years_penalty_comes_off(
+        self, env, scfg, level, years, score
+    ):
+        assert self._one(env, scfg, level=level, years=years)["fit_score"] == score
+
+    def test_out_of_lane_zeroes_whatever_the_fit(self, env, scfg):
+        row = self._one(env, scfg, in_lane=False, fit=95)
+        assert row["fit_score"] == 0 and row["reasoning"].endswith("[out of lane]")
 
     def test_country_outside_lane_skips(self, env, scfg):
         row = self._one(env, scfg, country="Switzerland")
@@ -620,7 +558,17 @@ class TestNeverPrune:
         _clean(env, [{"job_id": "aaaaaaaa"}])
         rows = [
             score_store._row(
-                j, "example_primary", score_store._zero(), "unknown", "", "r", [], "skip", "m", NOW
+                j,
+                "example_primary",
+                0,
+                {"title": 0, "skills": 0, "seniority": 0, "domain": 0},
+                "unknown",
+                "",
+                "r",
+                [],
+                "skip",
+                "m",
+                NOW,
             )
             for j in ("aaaaaaaa", "bbbbbbbb", "cccccccc")
         ]
@@ -662,6 +610,22 @@ class TestView:
         assert row["suggested_action"] == "manual-review"
         assert _scored(env).loc["aaaaaaaa", "suggested_action"] == "tailor"
 
+    def test_an_old_judges_answer_keeps_its_stored_score(self, env, scfg):
+        old = {"job_id": "aaaaaaaa", "title": 30, "skills": 30, "seniority": 20, "domain": 20}
+        scored_rows(
+            {
+                "job_id": "aaaaaaaa",
+                "fit_score": 77.0,
+                "suggested_action": "tailor",
+                "vertical": "example_primary",
+                "scored_by_model": "score-judge:sonnet",
+                "judge_answer": json.dumps(old),
+                "judge_facts": json.dumps({"years": 0, "words": 500, "contract": False}),
+            }
+        ).to_parquet(env["scored"], index=False)
+        row = score_store.view(env["scored"], scfg, RULE).iloc[0]
+        assert (row["basis"], row["fit_score"], row["suggested_action"]) == ("v1", 77, "tailor")
+
 
 class TestCli:
     @pytest.fixture
@@ -688,10 +652,12 @@ class TestCli:
         out = capsys.readouterr().out.splitlines()
         assert out[0] == "fit_score=80 action=tailor sponsorship=unknown basis=judged"
         assert out[1] == "reasoning: solid fit"
+        assert out[2] == "subscores: fit 80 / penalty 0 / level entry / years 0"
         assert score_cli.main(["show", "bbbbbbbb"]) == 1
         capsys.readouterr()
         assert score_cli.main(["lane", "example_primary"]) == 0
-        assert "== judged scores: 1" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "== judged scores: 1" in out and "== cutoff 80: 1 at or above" in out
 
     def test_finish_exit_1_prints_owed_judges(self, wired, capsys):
         _clean(wired, [{"job_id": "aaaaaaaa"}])

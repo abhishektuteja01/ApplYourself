@@ -234,9 +234,31 @@ class TestDropReason:
         assert sf.drop_reason(self._row(jd_text=jd), scfg) is None
 
 
-def test_seniority_cap(cfg):
-    lane = cfg.verticals["example_primary"]
-    assert [sf.seniority_cap(lane, y) for y in (0, 2, 3, 4)] == [None, None, 14, 10]
+def test_retention_never_expires_a_role_above_its_lane_line(cfg, tmp_path):
+    import dataclasses
+
+    import yaml
+
+    from applyourself.shared import verticals
+
+    def cuts(**extra):
+        s = tmp_path / "s.yaml"
+        s.write_text(
+            yaml.safe_dump({"cutoffs": {"review": 50, "tailor": 60, **extra}}), encoding="utf-8"
+        )
+        return sf.lane_cutoffs(s), sf.retention_cutoff(s)
+
+    lines = {"example_primary": 80, "example_secondary": 78, "example_tertiary": 80}
+    assert cuts() == (lines, 78)
+    assert cuts(keep_long=75) == (lines, 75)
+    assert cuts(keep_long=90, sheet=95) == (lines, 78)  # neither old key moves a lane line
+    plain = {
+        n: dataclasses.replace(v, score=dataclasses.replace(v.score, cutoff=None))
+        for n, v in cfg.verticals.items()
+    }
+    verticals.set_config(dataclasses.replace(cfg, verticals=plain))
+    assert cuts(sheet=85)[0] == dict.fromkeys(lines, 85)  # an unmigrated profile
+    assert cuts()[0] == dict.fromkeys(lines, sf.CUTOFF_DEFAULT)
 
 
 def _need(scfg, need):

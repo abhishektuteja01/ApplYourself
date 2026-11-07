@@ -1,8 +1,8 @@
 # Machine settings: the night run, writing limits and the /apply browser.
 #
 # Overnight chain run by scripts/nightly_pipeline.sh. `uv run apply sheet` reads
-# table_path (its cutoff is scoring.yaml cutoffs.sheet); the stage scripts read
-# the keys further down.
+# table_path (its cutoff is each lane's verticals.yaml `score.cutoff`); the
+# stage scripts read the keys further down.
 
 schema_version: 1
 table_path: top_scored_open.xlsx

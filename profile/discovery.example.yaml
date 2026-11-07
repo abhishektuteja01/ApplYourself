@@ -16,7 +16,7 @@ deadline_hours: 4
 # more than N days ago. Absent = no posted-age cut.
 live_days: 14
 # How long a job stays in the view from first seen: high_days at fit >=
-# scoring.yaml cutoffs.keep_long (or unscored), else low_days.
+# the lowest lane `score.cutoff` (or unscored), else low_days.
 retention: {high_days: 60, low_days: 15}
 # Optional: retention_from: newest counts that from the job's newest posting
 # that passes the view, so a repost restarts it. Absent = first.

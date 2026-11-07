@@ -1,17 +1,18 @@
-# example_tertiary vertical rubric (TEMPLATE)
+# example_tertiary lane rubric (TEMPLATE)
 
-See `../example_primary/rubric.md` for the full template notes. This file
-shows a third-lane shape: a lane whose titles collide with both other lanes,
-so its classifier rules sit below theirs and its rubric leans on stack
-evidence rather than title wording.
+See `../example_primary/rubric.md` for the template notes. This file shows a
+third-lane shape: a lane whose titles collide with both other lanes, so its
+classifier rules sit below theirs and its anchors lean on the stack named in
+the JD rather than on title wording.
 
-- `title` (0-30): in-lane build titles (28-30); adjacent platform or
-  tooling titles (18-22); out-of-lane → 0.
-- `skills` (0-30): this vertical's
-  `skill_weights` bands (≥30 → 25-30; 15-29 → 15-24; 5-14 → 5-14; <5 → 0-4).
-- `seniority` (0-20): identical heuristic to the primary vertical.
-- `domain` (0-20): top (16-20): the JD names the lane's own stack;
-  mid (8-12): generic adjacent tooling; none → 0.
-- **Example of an LLM-judged cap:** if the JD is a research role wearing a
-  build-role title, cap title ≤10 / skills ≤4 / domain ≤6 and note it in
-  `reasoning`.
+In lane: building cog-maintenance applications on hosted LLM APIs. Out of
+lane (`in_lane` false): cog research or model-training roles wearing a build
+title, and cog firmware work.
+
+- 90+: shipping LLM applications for cog teams, with prompt evaluation and a
+  Python or TypeScript service.
+- 75-89: LLM application work in another domain, or cog tooling without the
+  evaluation side.
+- 60-74: platform or tooling engineering next to cog applications.
+- 40-59: generic backend work where cogs or LLMs are a side topic.
+- 0-39: research, firmware or a different job.

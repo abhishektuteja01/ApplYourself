@@ -1,19 +1,22 @@
-# example_primary vertical rubric (TEMPLATE)
+# example_primary lane rubric (TEMPLATE)
 
-Copy this dir to `profile/verticals/<your_vertical>/` and rewrite every tier
-around YOUR attested experience. The four axes and their maxima are fixed in
-code (`score_store.AXIS_MAXIMA`): `title` 0-30, `skills` 0-30, `seniority`
-0-20, `domain` 0-20. Only the tiers below are this lane's.
+Copy this dir to `profile/verticals/<your_vertical>/` and rewrite it around
+YOUR attested experience. The packet puts it under the shared rubric
+(`.claude/shared/scoring_rubric.md`), whose fit bands are fixed; this file says
+what the lane is and where its roles fall in those bands. Keep it short:
+five anchors.
 
-- `title` (0-30): three tiers — niche spine (29-30): "Widget Engineer"
-  exact-lane titles; general spine (25-28): platform/consultant variants;
-  adjacent (15-22): operations/analyst titles; out-of-lane → 0.
-- `skills` (0-30): anchor on this vertical's `skill_weights` in the
-  packet:
-  weight sum ≥30 → 25-30; 15-29 → 15-24; 5-14 → 5-14; <5 → 0-4. Score only
-  what the JD explicitly demands.
-- `seniority` (0-20): Analyst/Associate/Junior → 18-20 (target level);
-  standalone Consultant/Specialist → 6-10; Senior anything → 6-10;
-  Lead/Principal/Manager/Director → 0-6.
-- `domain` (0-20): top (16-20): widget-supply-chain signals; mid
-  (8-12): generic manufacturing; none → 0.
+In lane: widget assembly and gizmo systems work, titled Widget Engineer,
+Widget Platform or Operations Analyst, Gizmo Systems Consultant. Out of lane
+(`in_lane` false): buyer, sourcing and procurement roles, and any role where
+widgets appear only in the company blurb. A standalone Consultant or
+Specialist title is `senior` here.
+
+- 90+: widget assembly or line configuration on production plants, with SQL
+  or Python tooling.
+- 75-89: widget or gizmo systems work missing one of the digest's tools.
+- 60-74: plant operations or reconciliation analyst work with some widget
+  detail.
+- 40-59: generic manufacturing or supply-chain reporting where widgets are a
+  side topic.
+- 0-39: a different job that only shares a word with the lane.

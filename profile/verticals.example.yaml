@@ -5,7 +5,7 @@
 #
 # Three fictional verticals demonstrate every feature:
 #   - `lanes:` order = shortlist section order; first = primary
-#   - `defaults:` sits under every lane.yaml (here the shared `years` table)
+#   - `defaults:` sits under every lane.yaml (here the shared `score:` rules)
 #   - classifier_rules order = ambiguity policy (first match wins; one vertical
 #     may own several rules at different priorities); a rule is a `pattern`
 #     regex, a `{match, require_any}` pair, or a `terms` list
@@ -25,7 +25,15 @@ lanes: [example_primary, example_secondary, example_tertiary]
 # Under every lane's lane.yaml: a lane's list comes first, then the list here;
 # any other key a lane sets replaces the one here.
 defaults:
-  years: {3: 14, 4: 10}
+  # /score: a role scores the judge's fit less the larger of its level and
+  # years penalties (years: the largest key at or below what the JD asks),
+  # and 0 from years_zero_at years. cutoff: the line for the night's sheet and
+  # for retention. A lane's own `score:` keys replace these one by one.
+  score:
+    level: {entry: 0, mid: 5, senior: 15, lead: 25}
+    years: {3: 5, 4: 10, 5: 15, 6: 20, 7: 25, 8: 30, 9: 35}
+    years_zero_at: 10
+    cutoff: 76
   # One title ban list for every lane: whole words, any case, matched as
   # written. Keep it to titles you would never take; level words (intern,
   # VP, senior, lead) are the judge's.

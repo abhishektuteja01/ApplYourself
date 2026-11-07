@@ -374,3 +374,48 @@ def test_title_lists_migration_refuses_when_a_title_would_change_lane(tmp_path, 
     out = capsys.readouterr().out
     assert "would drop or move 1 title" in out and "alpha -> beta" in out
     assert (prof / "verticals.yaml").read_text(encoding="utf-8") == before
+
+
+def test_scoring_v2_moves_the_sheet_line_to_the_lanes_and_drops_the_old_judge_keys(
+    tmp_path, capsys
+):
+    """An old profile: defaults `years`, a lane's skill_weights and focus,
+    scoring.yaml's cutoffs.sheet and skills_cap. The sheet and retention
+    lines stay where they were."""
+    from applyourself.shared import verticals as V
+
+    prof = _profile(tmp_path)
+    shutil.copytree(paths.example("verticals"), prof / "verticals")
+    top = paths.example("verticals.example.yaml").read_text(encoding="utf-8")
+    i, j = top.index("  # /score:"), top.index("    cutoff: 76\n") + len("    cutoff: 76\n")
+    (prof / "verticals.yaml").write_text(
+        top[:i] + "  years: {3: 14, 4: 10}\n" + top[j:], encoding="utf-8"
+    )
+    lane = prof / "verticals" / "example_primary" / "lane.yaml"
+    lane.write_text(
+        lane.read_text(encoding="utf-8")
+        + "# Skill weights.\nskill_weights:\n  widgets: {widget_assembly: 10}\n"
+        + "focus:\n  question: Widgets?\n  yes_min: 18\n  no_max: 17\n",
+        encoding="utf-8",
+    )
+    s = prof / "scoring.yaml"
+    s.write_text(
+        s.read_text(encoding="utf-8")
+        .replace("  fit_cap: 78\n", "  skills_cap: 12\n")
+        .replace("  tailor: 60\n", "  tailor: 60\n  keep_long: 80\n  sheet: 85\n"),
+        encoding="utf-8",
+    )
+    assert _run(prof, apply=True) == 0, capsys.readouterr().out
+    cfg = V.load_verticals(prof / "verticals.yaml")
+    assert {v.score.cutoff for v in cfg.verticals.values()} == {85}
+    assert cfg.verticals["example_primary"].score.level == V.SCORE_DEFAULTS["level"]
+    data = yaml.safe_load(s.read_text(encoding="utf-8"))
+    assert data["cutoffs"] == {"review": 50, "tailor": 60, "keep_long": 80}
+    assert data["jd_quality"] == {"min_words": 300, "fit_cap": 78}
+    text = lane.read_text(encoding="utf-8")
+    assert "skill_weights" not in text and "focus" not in text and "Skill weights" not in text
+    v = yaml.safe_load((prof / "verticals.yaml").read_text(encoding="utf-8"))
+    assert "years" not in v["defaults"]
+    capsys.readouterr()
+    assert _run(prof, apply=False) == 0
+    assert "nothing to migrate" in capsys.readouterr().out

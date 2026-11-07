@@ -21,10 +21,6 @@ search_terms:
 linkedin_terms:
   - Cog Engineer
   - Cog Deployment Engineer
-skill_weights:
-  cog_stack:
-    cog_agents: 9
-    cog_platform: 8
 # Dropped before judging when the JD holds one (whole words).
 drop_phrases:
   - phd required

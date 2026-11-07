@@ -17,7 +17,18 @@ show <job_id>
     role has no score (never judged, or a filter drop).
 lane <vertical>
     What a lane caught in clean.parquet, what the other lanes and no lane
-    caught, and the lane's judged scores. Read-only (/tune-vertical).
+    caught, and the lane's judged scores and cutoff. Read-only (/tune-vertical).
+examples [--vertical V] [--write [--force]]
+    Pick each lane's calibration examples from past scores by a stable rule
+    and print them; --write saves profile/verticals/<lane>/examples.yaml
+    (--force replaces one that exists).
+ab-stage --out DIR [--rows N] [--top K] [--repeat R] [--seed S] [--vertical V]
+    Stage the same rows with the old (v1) and the new (v2) packet into
+    DIR/v1 and DIR/v2, and R of them again into DIR/v2_repeat; print the
+    judge lines per arm. Runs no judge.
+ab-compare DIR [--v1-cutoff N]
+    Read both answer sets: rank correlation, top-k overlap, the rows that
+    cross the cutoff, and how far v2 moved on the rows judged twice.
 """
 
 from __future__ import annotations
@@ -28,7 +39,7 @@ import sys
 
 from applyourself import score_store, shortlist
 from applyourself.discovery.config import load_config
-from applyourself.score_filter import CountryRule, ScoringConfig, load_scoring
+from applyourself.score_filter import CountryRule, ScoringConfig, lane_cutoffs, load_scoring
 from applyourself.shared import clock, paths, verticals
 from applyourself.shared.logs import setup_logging
 
@@ -137,8 +148,97 @@ def _cmd_lane(args: argparse.Namespace) -> int:
     s = s[s["vertical"] == lane]
     print(f"== judged scores: {len(s)}")
     print(s["fit_score"].describe().to_string())
+    cut = lane_cutoffs()[lane]
+    print(f"== cutoff {cut}: {int((s['fit_score'] >= cut).sum())} at or above")
     top = s.sort_values("fit_score", ascending=False)
     print(top[["fit_score", "suggested_action", "keywords_to_mirror"]].head(15).to_string())
+    return 0
+
+
+def _cmd_examples(args: argparse.Namespace) -> int:
+    from applyourself import score_packet
+
+    cfg = load_scoring()
+    names = verticals.get_config().names
+    if args.vertical and args.vertical not in names:
+        print(f"ERROR: unknown vertical {args.vertical!r}")
+        return 1
+    scored = score_store.read_scored(paths.SCORED)
+    for lane in [args.vertical] if args.vertical else names:
+        picked = score_packet.choose(
+            score_packet.candidates(scored, lane, cfg, paths.STORE, paths.CLEAN)
+        )
+        text = score_packet.examples_yaml(picked)
+        path = score_packet.examples_path(lane)
+        print(f"== {lane}: {len(picked)} example(s)")
+        print(text, end="")
+        if not args.write or not picked:
+            continue
+        if path.exists() and not args.force:
+            print(f"kept {path}: it exists (--force replaces it)")
+            continue
+        path.write_text(text, encoding="utf-8")
+        score_packet.load_examples(lane)
+        print(f"wrote {path}")
+    return 0
+
+
+def _cmd_ab_stage(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from applyourself import score_ab
+
+    if not paths.CLEAN.exists():
+        print("ERROR: jobs/clean.parquet missing — run discovery first")
+        return 1
+    cfg = load_scoring()
+    if args.vertical and args.vertical not in verticals.get_config().names:
+        print(f"ERROR: unknown vertical {args.vertical!r}")
+        return 1
+    res = score_ab.stage(
+        Path(args.out),
+        cfg,
+        rows=args.rows,
+        top=args.top,
+        repeat=args.repeat,
+        seed=args.seed,
+        now=clock.now(),
+        vertical=args.vertical,
+    )
+    print(f"rows={res['rows']} out={args.out}")
+    for w in res["warnings"]:
+        print(f"warning {w}")
+    for arm, lines in res["lines"].items():
+        print(f"== {arm}: {len(lines)} judge(s)")
+        for line in lines:
+            print(line)
+    return 0
+
+
+def _cmd_ab_compare(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from applyourself import score_ab
+
+    cfg = load_scoring()
+    rule = CountryRule.from_discovery(load_config())
+    rep = score_ab.compare(Path(args.dir), cfg, rule, args.v1_cutoff)
+    for p in rep["problems"]:
+        print(f"missing {p}")
+    for r in rep["lanes"]:
+        print(
+            f"{r['lane']}: n={r['n']} rho(v1,v2)={r['rho_v1_v2']} "
+            f"rho(stored,v2)={r['rho_stored_v2']} top{r['top_k']} overlap={r['top_overlap']}"
+        )
+    print(f"crossing the cutoff: {len(rep['crossing'])}")
+    for c in rep["crossing"]:
+        print(f"- {c['job_id']} {c['lane']} v1={c['v1']:.0f} v2={c['v2']:.0f} {c['role']}")
+    c = rep["consistency"]
+    print(
+        f"v2 judged twice: n={c['n']} fit mean diff={c['fit_mean']} max={c['fit_max']} "
+        f"over 3={c['fit_over_3']}; score mean diff={c['score_mean']} max={c['score_max']}; "
+        + " ".join(f"same {k}={v}/{c['n']}" for k, v in c["same"].items())
+    )
     return 0
 
 
@@ -177,6 +277,25 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("lane", help="one lane's caught titles, neighbours and scores, read-only")
     p.add_argument("vertical")
     p.set_defaults(func=_cmd_lane)
+    p = sub.add_parser("examples", help="pick each lane's calibration examples from past scores")
+    p.add_argument("--vertical", metavar="V", help="only this lane")
+    p.add_argument(
+        "--write", action="store_true", help="save profile/verticals/<lane>/examples.yaml"
+    )
+    p.add_argument("--force", action="store_true", help="with --write: replace an existing file")
+    p.set_defaults(func=_cmd_examples)
+    p = sub.add_parser("ab-stage", help="stage the same rows with the v1 and the v2 packet")
+    p.add_argument("--out", required=True, metavar="DIR", help="a new, empty folder")
+    p.add_argument("--rows", type=int, default=200, help="rows in all (default 200)")
+    p.add_argument("--top", type=int, default=50, help="each lane's best-scored rows (default 50)")
+    p.add_argument("--repeat", type=int, default=50, help="rows the v2 packet judges twice")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--vertical", metavar="V", help="only this lane")
+    p.set_defaults(func=_cmd_ab_stage)
+    p = sub.add_parser("ab-compare", help="compare the v1 and v2 answers of an ab-stage folder")
+    p.add_argument("dir")
+    p.add_argument("--v1-cutoff", type=int, help="the v1 arm's line (default: the lane's cutoff)")
+    p.set_defaults(func=_cmd_ab_compare)
     args = parser.parse_args(argv)
     try:
         return int(args.func(args))

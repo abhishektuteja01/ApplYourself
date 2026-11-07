@@ -78,27 +78,61 @@ def _parse_lane_resume(raw: Any, path: Path, where: str) -> LaneResume:
     )
 
 
+LEVELS = ("entry", "mid", "senior", "lead")
+# Used where neither the lane nor `defaults:` sets a `score:` key.
+SCORE_DEFAULTS: dict[str, Any] = {
+    "level": {"entry": 0, "mid": 5, "senior": 15, "lead": 25},
+    "years": {3: 5, 4: 10, 5: 15, 6: 20, 7: 25, 8: 30, 9: 35},
+    "years_zero_at": 10,
+}
+
+
 @dataclass(frozen=True)
-class Focus:
-    """A lane's focus (verticals.yaml `focus:`). The judge answers `question`
-    yes or no; a yes lifts `domain` to at least `yes_min`, a no holds it at
-    `no_max` or below."""
+class ScoreRules:
+    """A lane's `score:` block: what /score takes off the judge's fit. The
+    score is fit minus the larger of the level and the years penalty, and 0
+    when the JD asks `years_zero_at` years or more. `cutoff` is the sheet and
+    retention line; None reads scoring.yaml's older `cutoffs.sheet`."""
 
-    question: str
-    yes_min: int
-    no_max: int
+    level: dict[str, int]
+    years: dict[int, int]
+    years_zero_at: int
+    cutoff: int | None = None
+
+    def penalty(self, level: str, years: int) -> int:
+        """The larger of the level's penalty and that of the largest `years`
+        key at or below `years`."""
+        keys = [k for k in self.years if k <= years]
+        return max(self.level[level], self.years[max(keys)] if keys else 0)
 
 
-def _parse_focus(raw: Any, path: Path, where: str) -> Focus:
+def _score_int(value: Any, path: Path, where: str, low: int, high: int) -> int:
+    if type(value) is not int or not low <= value <= high:
+        raise _fail(path, f"{where} must be a whole number {low}-{high}")
+    return value
+
+
+def _parse_score(raw: Any, path: Path, where: str) -> ScoreRules:
+    if raw is None:
+        raw = {}
     if not isinstance(raw, dict):
         raise _fail(path, f"{where} must be a mapping")
-    question = _require(raw, "question", path, where)
-    if not isinstance(question, str) or not question.strip():
-        raise _fail(path, f"{where}.question must be a nonempty string")
-    yes_min, no_max = _require(raw, "yes_min", path, where), _require(raw, "no_max", path, where)
-    if not (type(yes_min) is int and type(no_max) is int and 0 <= no_max < yes_min <= 20):
-        raise _fail(path, f"{where}: need whole numbers 0 <= no_max < yes_min <= 20")
-    return Focus(question=" ".join(question.split()), yes_min=yes_min, no_max=no_max)
+    got = {**SCORE_DEFAULTS, **raw}
+    level = got["level"]
+    if not isinstance(level, dict) or sorted(level) != sorted(LEVELS):
+        raise _fail(path, f"{where}.level must set each of {', '.join(LEVELS)}")
+    years = got["years"]
+    if not isinstance(years, dict) or not all(type(k) is int and k >= 0 for k in years):
+        raise _fail(path, f"{where}.years must map whole years to a penalty")
+    cutoff = got.get("cutoff")
+    return ScoreRules(
+        level={k: _score_int(level[k], path, f"{where}.level.{k}", 0, 100) for k in LEVELS},
+        years={
+            k: _score_int(v, path, f"{where}.years.{k}", 0, 100) for k, v in sorted(years.items())
+        },
+        years_zero_at=_score_int(got["years_zero_at"], path, f"{where}.years_zero_at", 1, 50),
+        cutoff=None if cutoff is None else _score_int(cutoff, path, f"{where}.cutoff", 0, 100),
+    )
 
 
 @dataclass(frozen=True)
@@ -117,15 +151,9 @@ class Vertical:
     resume: LaneResume | None = None
     # The terms a jobspy lane's `abroad` block queries per country.
     abroad_terms: tuple[str, ...] = ()
-    # `years` maps required years -> seniority cap; a JD the judge reads
-    # asking more than its largest key is forced to skip. `drop_phrases` is
-    # still read but drops nothing.
+    # `drop_phrases` is still read but drops nothing.
     drop_phrases: tuple[str, ...] = ()
-    years: dict[int, int] = field(default_factory=dict)
-    # Judge-only: printed into the lane's scoring packet as-is.
-    skill_weights: dict[str, Any] = field(default_factory=dict)
-    # Optional. Bands `domain` by the judge's yes/no to the focus question.
-    focus: Focus | None = None
+    score: ScoreRules = field(default_factory=lambda: _parse_score({}, Path(), "score"))
 
 
 @dataclass(frozen=True)
@@ -256,15 +284,8 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
         raise _fail(path, f"{where}.linkedin_terms is empty: leave it out to use search_terms")
 
     drop_phrases = _str_list(raw.get("drop_phrases", []), path, f"{where}.drop_phrases")
-    years = raw.get("years") or {}
-    if not isinstance(years, dict) or not all(
-        type(k) is int and type(v) is int and k >= 0 and 0 <= v <= 20 for k, v in years.items()
-    ):
-        raise _fail(path, f"{where}.years must map whole years to a seniority cap 0-20")
-    skill_weights = raw.get("skill_weights") or {}
-    if not isinstance(skill_weights, dict):
-        raise _fail(path, f"{where}.skill_weights must be a mapping")
-    focus = _parse_focus(raw["focus"], path, f"{where}.focus") if "focus" in raw else None
+    # `years`, `skill_weights` and `focus` are the old judge's: read, never used.
+    score = _parse_score(raw.get("score"), path, f"{where}.score")
 
     # The title lists (title_gate.lane_for). Blank terms are rejected, not
     # skipped: a blank ban term would match every title.
@@ -295,9 +316,7 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
         title_strong_keep_terms=tuple(strong_keep_terms),
         resume=resume,
         drop_phrases=drop_phrases,
-        years=dict(sorted(years.items())),
-        skill_weights=skill_weights,
-        focus=focus,
+        score=score,
     )
 
 
@@ -307,12 +326,17 @@ def lane_file(config: Path, name: str) -> Path:
 
 
 def merge_defaults(defaults: dict[str, Any], lane: dict[str, Any]) -> dict[str, Any]:
-    """lane over defaults: a list is the lane's then the default's; any other
-    key the lane sets replaces the default's."""
+    """lane over defaults: a list is the lane's then the default's; `score`
+    merges key by key; any other key the lane sets replaces the default's."""
     out = dict(defaults)
     for key, value in lane.items():
         base = out.get(key)
-        out[key] = value + base if isinstance(base, list) and isinstance(value, list) else value
+        if isinstance(base, list) and isinstance(value, list):
+            out[key] = value + base
+        elif key == "score" and isinstance(base, dict) and isinstance(value, dict):
+            out[key] = {**base, **value}
+        else:
+            out[key] = value
     return out
 
 

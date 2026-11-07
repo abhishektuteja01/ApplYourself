@@ -53,7 +53,8 @@ def _verticals(lane: str | None) -> list[str]:
         f"search: {len(v.search_terms)} linkedin: {len(v.linkedin_terms)}",
         f"title gate: ban {len(v.title_exclude_terms)} include {len(v.title_include_terms)}"
         f" strong_keep {len(v.title_strong_keep_terms)}",
-        f"years: {v.years}",
+        f"score: level {v.score.level} years {v.score.years} zero at "
+        f"{v.score.years_zero_at} cutoff {v.score.cutoff}",
         f"rules for this lane: {rules} of {len(c.classifier_rules)}",
     ]
 

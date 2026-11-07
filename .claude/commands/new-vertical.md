@@ -53,8 +53,9 @@ Marker file: `profile/verticals/<name>/.pass_a_only`, written by `pass-a`,
 deleted by `pass-b`.
 
 **Out of scope here — this is `/tune-vertical`'s entire reason to exist. Do not
-ask about it:** `skill_weights`, `title_variants`, the `defaults:` ban list,
-classifier rule priority and collisions, rubric tier boundaries.
+ask about it:** the `score:` penalties and cutoff, `title_variants`, the
+`defaults:` ban list, classifier rule priority and collisions, rubric anchors,
+calibration examples.
 
 A lane never gets its own `title_include_terms`, `title_exclude_terms` or
 `title_strong_keep_terms`: the title gate is lenient (a title passes when it
@@ -175,15 +176,14 @@ any other key the lane sets replaces the default's.
   first `terms_per_lane`) all search them.
 - `linkedin_terms` / `abroad_terms` — leave out; set one only to give LinkedIn
   or abroad a different list.
-- `years` — required years mapped to a seniority cap (0-20), largest key =
-  Step 3's cap, lower caps for higher asks (cap 5 → `{3: 14, 4: 10, 5: 6}`).
-  A JD the judge reads asking more than the largest key is forced to skip.
-  Leave it out when `defaults:` already holds the same table.
-- A `# Target level: <answer>` comment line right above `years` (or where it
+- `score: {years_zero_at: <cap + 1>}` — Step 3's years cap: a JD the judge
+  reads asking more scores 0. Leave it out when `defaults: score:` already has
+  that `years_zero_at`; every other `score:` key stays the default's.
+- A `# Target level: <answer>` comment line right above `score:` (or where it
   would be): Step 3's level answer, which item 3 turns into the rubric's
-  seniority tiers.
+  level note.
 
-Omit `skill_weights`, `drop_phrases` and the lane title lists entirely.
+Omit `drop_phrases` and the lane title lists entirely.
 
 **2. One `classifier_rules` entry**, appended last:
 
@@ -193,12 +193,11 @@ Omit `skill_weights`, `drop_phrases` and the lane title lists entirely.
   the other lanes is `/tune-vertical`'s.
 
 **3. `profile/verticals/<name>/rubric.md`** — example_primary's shape: the
-four axes with maxima fixed in code (`score_store.AXIS_MAXIMA`: `title` 0-30,
-`skills` 0-30, `seniority` 0-20, `domain` 0-20). State the tiers against this lane's
-spine titles and the profile's real evidence; the `seniority` tiers put the
-lane's `# Target level:` band on top and score titles above or below it down.
-Standard bands are fine — the boundaries are `/tune-vertical`'s. With no `skill_weights` in the config, anchor
-`skills` on how many of the profile's attested skills the JD demands.
+in-lane and out-of-lane titles, any level word this lane reads differently
+from the shared rubric (from the `# Target level:` answer), and five anchors,
+one per fit band of `.claude/shared/scoring_rubric.md`, stated against this
+lane's spine titles and the profile's real evidence. Plain anchors are fine —
+sharpening them is `/tune-vertical`'s.
 
 **4. `profile/verticals/<name>/tailoring.md`** — judgment only, in
 example_primary's shape: summary framing and when to change the baseline picks.
@@ -219,24 +218,23 @@ or skill ids here, because they belong in the sources.
 ## Step 3 — one confirm-or-edit (bare mode and `pass-a`; `pass-b` skips to Step 4)
 
 Show, in one message: the YAML block in full, the classifier rule in full, and —
-bare mode only — three or four lines summarizing each artifact (rubric tiers,
+bare mode only — three or four lines summarizing each artifact (rubric anchors,
 the tailoring framing, the resume shape's sections, budget, baseline picks and
 skill lines). Say in one line what
 you inferred and what you left for `/tune-vertical`. After the answers land,
-restate the locked decisions including the `years` table and the level answer.
+restate the locked decisions including the years cap and the level answer.
 
 Then one `AskUserQuestion` carrying all three questions, in this order — the
 confirm-or-edit stays last.
 
 "Skip jobs asking for more than how many years of experience?" — `3 years` /
 `5 years` / `8 years` / `12 years`. Say in one line that anything above the cap
-is skipped by the judge, and `/tune-vertical` can change it later.
+scores 0, fewer years asked cost a penalty, and `/tune-vertical` can change it later.
 
 "What level are you targeting?" — `Entry / associate` / `Mid-level` /
 `Senior / staff` / `Lead / director and up`. The answer becomes the lane's
-`# Target level:` line and the rubric's seniority tiers. Say in one line that
-no title is dropped for its level: the judge scores titles outside the band
-down.
+`# Target level:` line and the rubric's level note. Say in one line that
+no title is dropped for its level: a title above the band costs a penalty.
 
 "Use this lane as drafted?":
 
@@ -277,7 +275,7 @@ uv run config verticals <name>
 uv run config misclassified <name>
 ```
 
-`config verticals` loads the config, which is what catches a malformed `years` table or title
+`config verticals` loads the config, which is what catches a malformed `score:` block or title
 term before the scrape.
 
 Do not run `verticals-check` or `tests/repo/test_real_config_drift.py` here — both
@@ -301,14 +299,14 @@ it never saw the lane.
 
 ## Step 6a — report (`pass-a`)
 
-The lane block, the rule, the `years` table, the level answer, and the marker
+The lane block, the rule, the years cap, the level answer, and the marker
 path. State that the lane is scrape-ready but not yet scoreable: `uv run
 discover` can run now; scoring needs `pass-b`'s prose and resume shape. Name the single next
 step, `/new-vertical <name> pass-b`.
 
 ## Step 6b — report (bare mode and `pass-b`)
 
-Files written, the locked decisions (terms, rule, the `years` table, the level answer,
+Files written, the locked decisions (terms, rule, the years cap, the level answer,
 the resume shape),
 and:
 
@@ -316,5 +314,5 @@ and:
 - Board sources only reach boards listed in `data/universe/boards.csv`; if this lane's employers aren't there, LinkedIn and
   Indeed search terms are its only route.
 - One line: once a real shortlist exists, `/tune-vertical <name>` sharpens the
-  lane — skill weights, the title gate, rubric tiers — against postings you have
+  lane — score rules, the title gate, rubric anchors — against postings you have
   actually seen.

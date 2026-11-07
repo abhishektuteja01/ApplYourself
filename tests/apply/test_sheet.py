@@ -61,6 +61,7 @@ def test_a_derived_skip_keeps_a_new_role_out_but_not_a_legacy_one_or_one_with_a_
     scores = pd.DataFrame(
         {
             "job_id": ["aaaa1111", "bbbb2222", "cccc3333"],
+            "vertical": ["example_primary"] * 3,
             "fit_score": [90.0, 90.0, 90.0],
             "suggested_action": ["skip"] * 3,
             "basis": ["judged", "judged", "legacy"],
@@ -71,6 +72,21 @@ def test_a_derived_skip_keeps_a_new_role_out_but_not_a_legacy_one_or_one_with_a_
     (paths.APPLICATIONS / folder).mkdir(parents=True)
     _state(tmp_path, "aaaa1111", "saved")
     _state(tmp_path, "bbbb2222", "saved", folder)
+    assert [r["name"] for r in sheet.queue()] == ["bbbb2222", "cccc3333"]
+
+
+def test_each_lane_has_its_own_line_and_an_unknown_lane_the_lowest(tmp_path, monkeypatch):
+    _world(tmp_path, monkeypatch)  # fixture lines: primary 80, secondary 78
+    scores = pd.DataFrame(
+        {
+            "job_id": ["aaaa1111", "bbbb2222", "cccc3333"],
+            "vertical": ["example_primary", "example_secondary", "retired_lane"],
+            "fit_score": [79.0, 79.0, 78.0],
+            "suggested_action": ["tailor"] * 3,
+            "basis": ["judged"] * 3,
+        }
+    )
+    monkeypatch.setattr(sheet, "view", lambda _path: scores)
     assert [r["name"] for r in sheet.queue()] == ["bbbb2222", "cccc3333"]
 
 

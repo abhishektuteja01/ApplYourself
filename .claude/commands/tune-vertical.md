@@ -1,5 +1,5 @@
 ---
-description: Sharpen an existing lane against real postings: terms, title gate, classifier, rubric tiers, resume shape. Config only.
+description: Sharpen an existing lane against real postings: terms, title gate, classifier, rubric anchors, score rules, resume shape. Config only.
 model: opus
 effort: high
 disable-model-invocation: true
@@ -47,7 +47,7 @@ confirmed → run the round's verify → report → next round.**
 - **Never put a literal real search term in a test.**
   `tests/repo/test_real_config_drift.py` is committed. Add structural assertions
   there if the lane needs them; nothing quoted from `profile/`.
-- **NO-FAB** — read `.claude/shared/no_fab.md`. `skill_weights`, rubric anchors
+- **NO-FAB** — read `.claude/shared/no_fab.md`. Rubric anchors, calibration examples
   and the resume shape come only from the user's answers plus existing
   `profile/bullets.md` / `profile/skills_master.md` content. Never invent a
   skill; never add a new `SKILL-*` entry or bullet, only place existing ones. Gaps go to
@@ -155,9 +155,12 @@ other lanes' rules deliberately. Every row misfiled in Round 0's evidence is a
 rule-position bug — name the row, propose the move, have the user confirm the
 **ruling**, not the regex.
 
-**`years`** — required years mapped to a seniority cap; a JD the judge reads
-asking more than the largest key is forced to skip. Change only against
-observed JDs. Nothing else drops a JD before judging but scoring.yaml's
+**`score:`** (the lane's keys replace `defaults: score:` one by one) — `level`
+and `years` are the penalties taken off the judge's fit (the larger of the
+two), `years_zero_at` the years asked that score 0, `cutoff` the lane's line
+for the night's sheet and retention. Change only against observed JDs and
+scores (`uv run score lane <name>` prints the cutoff and how many sit above
+it). Nothing else drops a JD before judging but scoring.yaml's
 `ineligible` phrases, plus its `no_sponsorship` phrases when your home need is
 "now": `drop_phrases` no longer drops, so put what the lane must avoid in its
 rubric.
@@ -186,22 +189,23 @@ uv run config reclassify
 Rows only actually move on the next `discover`; `/score --all --vertical <name>`
 re-judges what is already there.
 
-## Round 3 — `skill_weights` and rubric tiers
+## Round 3 — rubric anchors and calibration examples
 
-- **`skill_weights`** — 0-10 integer blocks, grouped, anchored ONLY to attested
-  bullets and skills, each with an inline comment naming the evidence. Set them
-  from what the shortlist's JDs actually demanded: Round 0's
-  `keywords_to_mirror` column is the demand side, `profile/bullets.md` and
-  `profile/skills_master.md` are the supply side. A skill the JDs keep asking
-  for and the profile cannot attest is a `/suggest-synonyms` item, not a weight.
-- **`rubric.md` tier boundaries** — the four axes and their maxima are fixed in
-  code (`score_store.AXIS_MAXIMA`: `title` 0-30, `skills` 0-30, `seniority`
-  0-20, `domain` 0-20). Only the *tiers* are
-  tunable here. Retune them against the scored rows: if the top-scoring rows are
-  ones the user would not apply to, the title or domain tiers are too generous;
-  if roles they liked landed mid-pack, they are too tight. Once `skill_weights`
-  exist, re-anchor `skills` on the weight sum. Propose the top-band
-  and bottom-band boundaries and have them confirmed.
+The judge grades `fit` against the candidate digest (built from
+`profile/bullets.md` and `profile/skills_master.md` on every run) in the fixed
+bands of `.claude/shared/scoring_rubric.md`; the lane's `rubric.md` only says
+what is in lane and where its roles fall in those bands.
+
+- **`rubric.md`** — the in-lane and out-of-lane titles, any level word the lane
+  reads differently (`senior` here), and five anchors, one per band. Retune them
+  against the scored rows: if the top-scoring rows are ones the user would not
+  apply to, an anchor is too generous; if roles they liked landed mid-pack, too
+  tight. A skill the JDs keep asking for and the profile cannot attest is a
+  `/suggest-synonyms` item, not an anchor. Propose the changed anchors and have
+  them confirmed.
+- **`examples.yaml`** (optional) — `uv run score examples --vertical <name>`
+  prints the lane's calibration examples, picked from past scores by a stable
+  rule; `--write` saves them. The user may edit a fit or swap a role.
 
 Verify:
 
@@ -215,7 +219,7 @@ lane's window, so it costs a full scoring pass — their call.
 
 ## Round 4 — resume shape, tests, audit
 
-1. Propose changes to this lane's resume shape, driven by Round 3's weights and
+1. Propose changes to this lane's resume shape, driven by Round 3's anchors and
    the shortlist's `keywords_to_mirror`:
    - `show: {<name>: "<line label>"}` on existing `SKILL-*` entries in
      `profile/skills_master.md` that the shortlist keeps asking for; drop the
@@ -244,8 +248,8 @@ lane's window, so it costs a full scoring pass — their call.
    the lane.
 
 4. Completion summary: every file touched, every locked decision (terms, title
-   gate, rule positions and collision rulings, drop rules, weights, rubric
-   boundaries, resume shape), anything deliberately left alone, and the two follow-ups —
+   gate, rule positions and collision rulings, drop rules, score rules, rubric
+   anchors, resume shape), anything deliberately left alone, and the two follow-ups —
    `uv run discover` for the term and rule changes to take effect, and
-   `/score --all --vertical <name>` for the weight and rubric changes to reach rows
-   already scored.
+   `/score --all --vertical <name>` for the rubric and example changes to reach rows
+   already scored (a `score:` change applies on the next read).

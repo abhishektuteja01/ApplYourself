@@ -15,9 +15,12 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
 
 - Config lives in `profile/verticals.yaml` (gitignored user data: `lanes:` order,
   `defaults:`, `classifier_rules`, `title_variants`) and one `profile/verticals/<name>/` dir per
-  lane holding `lane.yaml` (its block), `rubric.md` and `tailoring.md`. The
+  lane holding `lane.yaml` (its block), `rubric.md`, `tailoring.md` and an
+  optional `examples.yaml` (the judge's calibration examples). The
   loader merges each `lane.yaml` over `defaults:`: a default list follows the
-  lane's own, any other key the lane sets replaces the default's. A lane is
+  lane's own, `score:` merges key by key, any other key the lane sets replaces
+  the default's. `years`, `skill_weights` and `focus` (the old judge's) are
+  still accepted and read by nothing; `config migrate` removes them. A lane is
   loaded only when `lanes:` lists it. `lane.yaml` sits in `verticals/` beside
   whichever verticals file names it, so the example and the fixture carry their
   own.
@@ -45,8 +48,9 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   where they appear, so deleting one is one edit, and `verticals-check`
   (`check_sources`) names every pointer that stops resolving. `tailoring.md` is
   prose only: ids there are rejected.
-- `/tailor` and `/score` build from the same assembler, so the judge scores the
-  lane's baseline resume and `/tailor` starts from it.
+- `/score`'s judge grades against a digest of every bullet and skill
+  (`score_packet.digest`), not a lane resume; `/tailor` starts from the lane's
+  baseline resume.
 - The loader is **strict**: every vertical block must have all current required
   keys or it raises `ValueError`. Because `tests/conftest.py` injects the config
   via an autouse fixture, a malformed block errors the *entire* test suite.
@@ -59,7 +63,7 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   `/tune-vertical` to sharpen one.
 
 > The fixture is **synthetic** — three fictional verticals
-> (`example_primary/secondary/tertiary`), no real search terms or skill weights.
+> (`example_primary/secondary/tertiary`), no real search terms or rubrics.
 > The real config is covered separately by `tests/repo/test_real_config_drift.py`,
 > which skips when `profile/verticals.yaml` is absent. Keep real strategy out of
 > the fixtures; add real-config assertions to the drift test instead,

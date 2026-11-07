@@ -129,6 +129,12 @@ def render(
             out.append("No keepers today.")
         for i, r in enumerate(rows, 1):
             subs = json.loads(r["fit_subscores"])
+            parts = (
+                f"fit {subs['fit']} less {subs['penalty']} ({subs['level']}, {subs['years']} yrs)"
+                if "fit" in subs
+                else f"title {subs['title']} / skills {subs['skills']} / seniority "
+                f"{subs['seniority']} / domain {subs['domain']}"
+            )
             star = "" if r["job_id"] in seen else " ★"
             extras = [n for n in [contacts.referral_note(r["company"], referrals)] if n]
             if r["sponsorship_label"] != "unknown":
@@ -143,8 +149,7 @@ def render(
                 f"### {i}. {r['fit_score']:.0f} — {r['company']} — {r['title']}{star}",
                 f"- `{r['job_id']}` · {_text(r.get('location'))} · posted {_date(r.get('posted_date'))}"
                 f" · {r['source']}",
-                f"- title {subs['title']} / skills {subs['skills']} / seniority "
-                f"{subs['seniority']} / domain {subs['domain']} — {r['reasoning']}",
+                f"- {parts} — {r['reasoning']}",
                 f"- mirror: {', '.join(list(r['keywords_to_mirror'])[:3])}",
             ]
             if extras:

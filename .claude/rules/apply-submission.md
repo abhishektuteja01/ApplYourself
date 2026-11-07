@@ -135,11 +135,13 @@ in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 ## The status sheet is derived
 
 The work queue is `sheet.queue()`, computed and never read back from the xlsx:
-every role scored at or above scoring.yaml `cutoffs.sheet` (`score_store.view`)
-that is in `clean.parquet`, whose state is not past `tailored` or closed, and
-whose status is not Applied or Closed; a role whose derived (`basis: judged`)
-`suggested_action` is skip only once it has `tailored_dirs` or is past `saved`
-(a legacy skip stays); highest score first, then job_id. Each status, note and submit command comes from `state.yaml`, the ledger,
+every role scored at or above its lane's cutoff (`score_filter.lane_cutoffs`:
+the lane's `score.cutoff`, else scoring.yaml's older `cutoffs.sheet`;
+`score_store.view`) that is in `clean.parquet`, whose state is not past
+`tailored` or closed, and whose status is not Applied or Closed; a role whose
+judged (`basis: judged` or `v1`) `suggested_action` is skip (on a v2 answer, a
+blocker or a zero rule) only once it has `tailored_dirs` or is past `saved` (a
+legacy skip stays); highest score first, then job_id. Each status, note and submit command comes from `state.yaml`, the ledger,
 the newest run record naming the role, and answers waiting for confirmation.
 Where a role is applied through is `apply_url.resolve()`, read by the sheet and
 `resolve_url` alike, with no network call: the `apply_url` stored in

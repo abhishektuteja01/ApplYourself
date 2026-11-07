@@ -42,6 +42,8 @@ title_exclude_terms:
   - sourcing
   - procurement
   - engineer
+# The old judge's keys: still accepted, never used.
+years: {3: 14, 4: 10}
 skill_weights:
   widgets:
     widget_assembly: 10

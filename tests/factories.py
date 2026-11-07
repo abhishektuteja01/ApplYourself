@@ -56,7 +56,17 @@ def scored_row(**over) -> dict:
     """One scored.parquet row, defaults from score_store's own row builder."""
     _check(over, SCORED_COLUMNS, "scored.parquet")
     base = score_store._row(
-        over.get("job_id", ""), "", score_store._zero(), "unknown", "", "", [], "skip", "", _NOW
+        over.get("job_id", ""),
+        "",
+        0,
+        {"title": 0, "skills": 0, "seniority": 0, "domain": 0},
+        "unknown",
+        "",
+        "",
+        [],
+        "skip",
+        "",
+        _NOW,
     )
     return {**base, **over}
 

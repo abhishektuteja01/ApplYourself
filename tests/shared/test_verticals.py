@@ -103,11 +103,11 @@ class TestLaneRules:
         )
         assert "phd required" in cfg.verticals["example_secondary"].drop_phrases
 
-    def test_years_table_sorted_by_years(self, cfg):
-        assert cfg.verticals["example_primary"].years == {3: 14, 4: 10}
-
-    def test_skill_weights_kept_as_is(self, cfg):
-        assert cfg.verticals["example_primary"].skill_weights["widgets"]["widget_assembly"] == 10
+    def test_score_rules_merge_key_by_key_over_defaults(self, cfg):
+        primary, secondary = cfg.verticals["example_primary"], cfg.verticals["example_secondary"]
+        assert (primary.score.cutoff, secondary.score.cutoff) == (80, 78)
+        assert secondary.score.level == primary.score.level  # the default, not the code's
+        assert secondary.score.years_zero_at == 8
 
 
 class TestValidation:
@@ -137,13 +137,13 @@ class TestValidation:
 
     def test_defaults_lists_follow_the_lane_and_other_keys_are_replaced(self, tmp_path):
         data = _load_raw()
-        data["defaults"] = {"years": {5: 6}, "drop_phrases": ["shared phrase"]}
+        data["defaults"] = {"display_name": "Shared", "drop_phrases": ["shared phrase"]}
         lane = data["verticals"]["example_primary"]
-        lane["years"] = {3: 12}
         cfg = _write_and_load(tmp_path, data)
         got = cfg.verticals["example_primary"]
-        assert got.years == {3: 12}
+        assert got.display_name == lane["display_name"]
         assert got.drop_phrases == (*lane["drop_phrases"], "shared phrase")
+        assert got.score == verticals._parse_score({}, tmp_path, "score")  # the code defaults
 
     def test_bad_default_vertical(self, tmp_path):
         data = _load_raw()
@@ -202,38 +202,27 @@ class TestValidation:
         with pytest.raises(ValueError, match=key):
             _write_and_load(tmp_path, data)
 
-    @pytest.mark.parametrize("years", [{"3": 14}, {3: 25}, {3: -1}, [3, 4]])
-    def test_bad_years_table(self, tmp_path, years):
-        data = _load_raw()
-        data["verticals"]["example_primary"]["years"] = years
-        with pytest.raises(ValueError, match="years"):
-            _write_and_load(tmp_path, data)
-
-    def test_focus_parsed(self, tmp_path):
-        data = _load_raw()
-        data["verticals"]["example_primary"]["focus"] = {
-            "question": "Is it  widgets?",
-            "yes_min": 18,
-            "no_max": 17,
-        }
-        lane = _write_and_load(tmp_path, data).verticals["example_primary"]
-        assert lane.focus == verticals.Focus("Is it widgets?", 18, 17)
-
     @pytest.mark.parametrize(
-        "focus",
+        "score, where",
         [
-            {"question": "Q?", "yes_min": 17, "no_max": 17},
-            {"question": "Q?", "yes_min": 21, "no_max": 17},
-            {"question": "", "yes_min": 18, "no_max": 17},
-            {"question": "Q?", "yes_min": 18},
-            {"question": "Q?", "yes_min": 18, "no_max": 17, "bonus": 2},
+            ({"level": {"entry": 0, "mid": 5}}, "score.level must set each"),
+            ({"years": {"3": 5}}, "score.years must map"),
+            ({"years": {3: 101}}, r"score.years.3 must be"),
+            ({"years_zero_at": 0}, "score.years_zero_at must be"),
+            ({"cutoff": "76"}, "score.cutoff must be"),
+            ({"cutof": 76}, "cutof"),
         ],
     )
-    def test_bad_focus(self, tmp_path, focus):
+    def test_bad_score_block(self, tmp_path, score, where):
         data = _load_raw()
-        data["verticals"]["example_primary"]["focus"] = focus
-        with pytest.raises(ValueError, match="focus"):
+        data["verticals"]["example_primary"]["score"] = score
+        with pytest.raises(ValueError, match=where):
             _write_and_load(tmp_path, data)
+
+    def test_old_judge_keys_are_still_read(self, tmp_path):
+        data = _load_raw()
+        data["verticals"]["example_primary"]["focus"] = {"question": "Q?", "yes_min": 18}
+        assert "example_primary" in _write_and_load(tmp_path, data).verticals
 
 
 class TestExampleTemplate:

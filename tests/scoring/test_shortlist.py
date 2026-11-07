@@ -55,7 +55,19 @@ def _seed(env, rows, states=None):
             "domain": max(fit - 80, 0),
         }
         scored.append(
-            score_store._row(jid, lane, subs, label, "", "why", ["kw1", "kw2"], action, "m", NOW)
+            score_store._row(
+                jid,
+                lane,
+                sum(subs.values()),
+                subs,
+                label,
+                "",
+                "why",
+                ["kw1", "kw2"],
+                action,
+                "m",
+                NOW,
+            )
         )
     write_clean(env["clean"], *clean)
     score_store.merge_rows(env["scored"], scored)
@@ -134,6 +146,7 @@ def test_scored_row_missing_from_clean_is_left_out(env, scfg):
             score_store._row(
                 "bbbbbbbb",
                 "example_primary",
+                90,
                 {"title": 30, "skills": 30, "seniority": 20, "domain": 10},
                 "unknown",
                 "",
@@ -157,6 +170,25 @@ def test_render_and_new_marker(env, scfg):
         ],
         states={},
     )
+    v2 = {"fit": 85, "penalty": 15, "level": "senior", "years": 3}
+    score_store.merge_rows(
+        env["scored"],
+        [
+            score_store._row(
+                "bbbbbbbb",
+                "example_primary",
+                70,
+                v2,
+                "sponsors",
+                "",
+                "why",
+                [],
+                "manual-review",
+                "m",
+                NOW,
+            )
+        ],
+    )
     env["shortlist"].mkdir()
     (env["shortlist"] / "2026-09-26.md").write_text("- `aaaaaaaa`", encoding="utf-8")
     path, keepers = shortlist.write(
@@ -168,6 +200,8 @@ def test_render_and_new_marker(env, scfg):
     assert "posted unknown" in md and "NaT" not in md
     assert "— Role aaaaaaaa\n" in md and "— Role bbbbbbbb ★" in md
     assert "suggested manual-review" in md and "sponsorship sponsors" in md
+    assert "- title 30 / skills 30 / seniority 20 / domain 0 — why" in md  # an old row
+    assert "- fit 85 less 15 (senior, 3 yrs) — why" in md
     assert "No keepers today." in md  # the other two lanes
     assert md.count(scfg.note) == 1
 

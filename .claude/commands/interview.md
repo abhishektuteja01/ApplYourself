@@ -157,8 +157,8 @@ Open gaps outrank fresh targets, always. Fill the rest of the session from the m
 - Bias hard toward ids absent from the coverage ledger. A never-drilled bullet or story
   outranks one that already held once.
 
-Read the lane's `rubric.md` in both modes for what that vertical weights and its target
-seniority band — it tells you the altitude to pitch at. A lane targeting analyst level
+Read the lane's `rubric.md` in both modes for what that vertical grades highest and
+which titles it reads as senior — it tells you the altitude to pitch at. A lane targeting analyst level
 gets asked how, not how-many-reports.
 
 Do not tell the user the target list. They should not know which claim you are walking

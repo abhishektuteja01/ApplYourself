@@ -40,12 +40,8 @@ title_exclude_terms:
   - developer
 title_strong_keep_terms:
   - sprocket risk management
-skill_weights:
-  sprocket_risk:
-    sprocket_validation: 9
-    sprocket_governance: 8
-  sprocket_quant:
-    sprocket_backtesting: 6
+score:
+  cutoff: 78
 # Dropped before judging when the JD holds one (whole words).
 drop_phrases:
   - phd required
