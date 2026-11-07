@@ -25,7 +25,8 @@ Three steps, one owner per rule:
    lane and slices of at most 10 roles, each row with its `judge_input_hash`
    (`input_hash` of the lane packet and the trimmed JD). Rows go newest
    first (the store's first_seen; the newest posting's with discovery.yaml
-   `retention_from: newest`), so each judge works its newest slices first.
+   `retention_from: newest`, over every stored posting, where the view counts
+   only postings that pass its gates; this sets order only), so each judge works its newest slices first.
 2. `score-judge` agents (the only model step): four subscores, the facts
    (years, country, the JD's sponsorship statements with literal JD quotes),
    keywords, a short reason, and an optional action that may only lower it.
@@ -46,9 +47,9 @@ field goes in `score_store.derive`.
 except roles whose state is past `shortlist.pipeline_states`; there is no
 separate rescore command. `--stale-only` takes only judged rows whose hash
 changed and prints the count without staging; `--yes` stages them. A row whose
-JD only reformats or reorders the judged one from the same source (the same
-words, boilerplate trimmed; `same_jd_copies`), such as a repost, is not stale;
-any added, dropped or changed word is. A row with
+JD only reformats the judged one from the same source or moves its sentences
+(the same sentences, boilerplate trimmed, `+`/`#` kept; `same_jd_copies`),
+such as a repost, is not stale; any added, dropped, changed or swapped word is. A row with
 no hash (legacy) is never stale, and a plain `score start` re-judges nothing.
 `--job-id` (for `/ingest`) skips every drop except no-lane.
 `scripts/dev/drop_filter_rows.py --dry-run|--apply` removes the old `filter:*`

@@ -157,10 +157,14 @@ class TestStart:
     def test_stale_only_skips_only_a_same_source_reformat_of_the_judged_jd(self, env, scfg):
         """A repost re-judges unless its JD is the judged one reformatted or
         reordered (same words), from the same source; any word change re-judges."""
-        base = JD + "Requires 3+ years of experience. Visa sponsorship is available."
+        base = (
+            JD
+            + "Requires 3+ years of experience. Python required. Java a plus. Visa sponsorship is available."
+        )
         stub = base[:300]
         judged = {"aaaaaaaa": base, "bbbbbbbb": base, "cccccccc": base, "dddddddd": base,
-                  "eeeeeeee": stub, "ffffffff": base}  # fmt: skip
+                  "eeeeeeee": stub, "ffffffff": base, "11111111": base,
+                  "22222222": base}  # fmt: skip
         _clean(env, [{"job_id": j, "company": j, "jd_text": jd} for j, jd in judged.items()])
         _start(env, scfg)
         _write_answers(
@@ -179,6 +183,8 @@ class TestStart:
             "dddddddd": base.replace("is available", "is not available"),
             "eeeeeeee": base,  # stub -> full JD
             "ffffffff": reformat,  # the same reformat, from another source
+            "11111111": base.replace("Python required. Java", "Java required. Python"),
+            "22222222": base.replace("3+ years", "3 years"),
         }
         _clean(
             env,
@@ -191,7 +197,7 @@ class TestStart:
         res = _start(env, scfg, stale_only=True, store_path=env["store"])
         staged = sorted(j for m in score_store.load_run(env["staging"])["slices"].values()
                         for j in m["job_ids"])  # fmt: skip
-        assert res["judge"] == 5 and staged == sorted(set(judged) - {"aaaaaaaa"})
+        assert res["judge"] == 7 and staged == sorted(set(judged) - {"aaaaaaaa"})
 
     def test_nothing_to_judge_stages_nothing(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa", "vertical": ""}])

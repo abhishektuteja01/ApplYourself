@@ -25,7 +25,6 @@ from typing import Annotated, Any, Literal, cast
 import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from rapidfuzz.utils import default_process
 
 from applyourself.score_filter import (
     SPONSORSHIP_FACTS,
@@ -378,8 +377,16 @@ def first_seen(
     return {str(j): t.timestamp() for j, t in first.items()}
 
 
-def _words(text: str) -> list[str]:
-    return sorted(default_process(text).split())
+_SENTENCE_END = re.compile(r"[.;\n]+")
+_NOT_TOKEN = re.compile(r"[^\w+#]+")
+
+
+def _sentences(text: str) -> list[str]:
+    """The JD's sentences, each lowercased with only its word tokens (+ and #
+    kept, so C++ and 3+ stay themselves), in sorted order: the same list means
+    the text was only reformatted or its sentences moved."""
+    out = (" ".join(_NOT_TOKEN.split(s.lower())).strip() for s in _SENTENCE_END.split(text))
+    return sorted(s for s in out if s)
 
 
 def same_jd_copies(
@@ -391,8 +398,9 @@ def same_jd_copies(
 ) -> set[str]:
     """The ids among changed `rows` whose JD only reformats the judged one: a
     stored posting from the row's own source whose JD gives the stored hash
-    under today's packet, with the same words once boilerplate is trimmed
-    (order, case, punctuation and whitespace aside). Any other change re-judges."""
+    under today's packet, with the same sentences once boilerplate is trimmed
+    (their order, case, punctuation and whitespace aside). Any other change,
+    such as words swapped inside a sentence, re-judges."""
     if not rows or store_path is None or not Path(store_path).exists():
         return set()
     ids = {r["job_id"] for r in rows}
@@ -412,7 +420,7 @@ def same_jd_copies(
                 or input_hash(packets[r["vertical"]], judged) != hashes[r["job_id"]]
             ):
                 continue
-            if _words(judged) == _words(r["_jd"]):
+            if _sentences(judged) == _sentences(r["_jd"]):
                 out.add(r["job_id"])
             break
     return out
