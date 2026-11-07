@@ -262,6 +262,7 @@ class Crawl:
         board_state: Path | None = None,
         boards_dir: Path | None = None,
         failed_reads: Path | None = None,
+        tracked_keys: frozenset[str] = frozenset(),
     ):
         self.cfg = cfg
         self.vcfg = vcfg
@@ -272,6 +273,8 @@ class Crawl:
         self.board_state = board_state or paths.BOARD_STATE
         self.boards_dir = boards_dir or paths.UNIVERSE
         self.failed_reads = failed_reads or paths.FEED_FAILED_READS
+        # Postings of tracked roles: a lane never lets them age out.
+        self.tracked_keys = tracked_keys
         self._lock = threading.Lock()
         self.board_results: list[BoardResult] = []
         self.listed: list[dict] = []

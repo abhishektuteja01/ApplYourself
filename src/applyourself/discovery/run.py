@@ -436,6 +436,7 @@ def main(argv=None) -> int:
         k: {"updated_at": u, "company": c}
         for k, u, c in zip(store["posting_key"], store["updated_at"], store["company"], strict=True)
     }
+    tracked_keys = frozenset(store.loc[store["job_id"].isin(tracked), "posting_key"])
     del store
     crawl = B.Crawl(
         cfg,
@@ -447,6 +448,7 @@ def main(argv=None) -> int:
         board_state=p.board_state,
         boards_dir=p.boards_dir,
         failed_reads=p.failed_reads,
+        tracked_keys=tracked_keys,
     )
     writer = Writer(crawl, p, today, tracked, cfg.live_days, trim=load_trim())
 

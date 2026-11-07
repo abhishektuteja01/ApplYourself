@@ -263,10 +263,11 @@ class StapplyLane(Lane):
             crawl.today.date(),
             src.page_read_max_failures,
             src.page_read_retry_days,
+            crawl.cfg.forget_after_days,
         )
         if failed.problem:
             stats.notes.append(failed.problem)
-        skipped = 0
+        skipped = gone = 0
         named = 0
         site_names: dict[str, str] = {}
         for posting in self.rows:
@@ -285,6 +286,16 @@ class StapplyLane(Lane):
                 posting = {**posting, "company": stored}
             stats.known += known is not None
             stats.new += known is None
+            reader = posting_api(posting["url"], crawl.deadline_ts or None)
+            if known is not None and key not in crawl.tracked_keys and reader and reader[2]:
+                # A stored posting its API calls gone is not seen again, so it ages out.
+                answer = "gone" if failed.gone(key) else pages.call(reader[0], reader[1])[1]
+                if answer == "gone":
+                    failed.mark_gone(key)
+                    gone += 1
+                    continue
+                if answer == "ok":
+                    failed.answered(key)
             needs_jd = known is None and len(posting["jd_text"].strip()) < parse.MIN_JD_CHARS
             needs_name = parse.looks_like_slug(posting["company"])
             employer = ""
@@ -310,12 +321,21 @@ class StapplyLane(Lane):
                 if payload is not None:
                     pages.result(posting["url"], bool(jd))
                 needs_jd = False
-            reader = posting_api(posting["url"], crawl.deadline_ts or None) if needs_jd else None
-            if reader is not None:
+            if needs_jd and reader is not None and reader[2] and failed.gone(key):
+                # Its API said gone: neither it nor the page is read again for now.
+                gone += 1
+                needs_jd = needs_name = False
+            elif needs_jd and reader is not None:
                 # A host with a JSON API: its JD is read there, else from the page.
-                found = pages.call(*reader) or ""
-                if len(found.strip()) >= parse.MIN_JD_CHARS:
-                    posting = {**posting, "jd_text": found}
+                found, answer = pages.call(reader[0], reader[1])
+                if answer == "gone" and reader[2]:
+                    failed.mark_gone(key)
+                    gone += 1
+                    needs_jd = needs_name = False
+                elif answer == "ok" and reader[2]:
+                    failed.answered(key)
+                if len((found or "").strip()) >= parse.MIN_JD_CHARS:
+                    posting = {**posting, "jd_text": found or ""}
                     needs_jd = False
             if needs_jd and failed.skip(key):
                 # Its page failed night after night: left for a later retry.
@@ -358,8 +378,13 @@ class StapplyLane(Lane):
                 f"{skipped} page reads skipped: failed {src.page_read_max_failures} nights, "
                 f"read again every {src.page_read_retry_days}d"
             )
+        if gone:
+            stats.notes.append(
+                f"{gone} postings their API calls gone: not read, not seen, for "
+                f"{crawl.cfg.forget_after_days}d"
+            )
         try:
-            failed.save(crawl.cfg.forget_after_days)
+            failed.save()
         except OSError as e:
             stats.notes.append(f"{crawl.failed_reads.name} not saved ({type(e).__name__}: {e})")
         if named:
@@ -372,30 +397,45 @@ class StapplyLane(Lane):
         return stats
 
 
-def posting_api(url: str, deadline_ts: float | None) -> tuple[str, Callable[[], str]] | None:
-    """(the API's give-up key, a call returning the posting's JD) for a url whose
-    host has a JSON API we read, else None."""
+def posting_api(url: str, deadline_ts: float | None) -> tuple[str, Callable[[], str], bool] | None:
+    """(the API's give-up key, a call returning the posting's JD, whether its
+    404 means the posting is gone) for a url whose host has a JSON API we read,
+    else None."""
     api = arbeitsagentur.detail_url(url)
     if api:
-        return "api:arbeitsagentur", lambda: arbeitsagentur.jd_text(
-            http_client.fetch_json(api, deadline_ts=deadline_ts, headers=arbeitsagentur.HEADERS)
+        return (
+            "api:arbeitsagentur",
+            lambda: arbeitsagentur.jd_text(
+                http_client.fetch_json(api, deadline_ts=deadline_ts, headers=arbeitsagentur.HEADERS)
+            ),
+            True,
         )
     api = workday.detail_api_url(url)
     if api:
-        return "api:workday", lambda: workday.jd_text(
-            http_client.fetch_json(api, deadline_ts=deadline_ts)
+        return (
+            "api:workday",
+            lambda: workday.jd_text(http_client.fetch_json(api, deadline_ts=deadline_ts)),
+            False,
         )
     hit = parse_posting_url(url)
     if hit is None or not hit.slug or not hit.posting_id:
         return None
     slug, pid = hit.slug, hit.posting_id
     if hit.source == "greenhouse":
-        return "api:greenhouse", lambda: _jd(greenhouse.fetch_posting(slug, pid, "", deadline_ts))
+        return (
+            "api:greenhouse",
+            lambda: _jd(greenhouse.fetch_posting(slug, pid, "", deadline_ts)),
+            False,
+        )
     if hit.source == "lever":
-        return "api:lever", lambda: _jd(lever.fetch_posting(slug, pid, "", hit.region))
+        return "api:lever", lambda: _jd(lever.fetch_posting(slug, pid, "", hit.region)), False
     if hit.source == "ashby":
-        return "api:ashby", lambda: parse.html_to_text(
-            (ashby.job_posting(slug, pid, deadline_ts) or {}).get("descriptionHtml")
+        return (
+            "api:ashby",
+            lambda: parse.html_to_text(
+                (ashby.job_posting(slug, pid, deadline_ts) or {}).get("descriptionHtml")
+            ),
+            False,
         )
     return None
 
@@ -438,28 +478,33 @@ class _PageReader:
             return ""
         return body if status == 200 else ""
 
-    def call(self, site: str, fetch: Callable[[], str]) -> str | None:
-        """`fetch()`'s JD, paced; "" when it gave none, None when not called (the
-        deadline, or `site` given up tonight). A 404 is that posting's answer,
-        so it never counts toward giving the site up."""
+    def call(self, site: str, fetch: Callable[[], str]) -> tuple[str | None, str]:
+        """(`fetch()`'s JD, paced, "" when it gave none, None when not called (the
+        deadline, or `site` given up tonight); "ok" for an answer, "gone" for a
+        404, else ""). A 404 is that posting's answer, so it never counts toward
+        giving the site up."""
         if self.crawl.deadline_reached() or (
             site not in self.worked and self.failures.get(site, 0) >= MAX_HOST_FAILURES
         ):
-            return None
+            return None, ""
         self.pacer.wait()
+        answer = ""
         try:
             jd = fetch() or ""
         except Exception as e:  # noqa: BLE001 -- one posting, not the lane
             jd = ""
-            if not (isinstance(e, CareersError) and e.status == 404):
+            if isinstance(e, CareersError) and e.status == 404:
+                answer = "gone"
+            else:
                 self.stats.errors.append(f"{site}: {type(e).__name__}: {e}")
                 self.failures[site] = self.failures.get(site, 0) + 1
         else:
+            answer = "ok"
             self.worked.add(site)
         ok = len(jd.strip()) >= parse.MIN_JD_CHARS
         self.stats.detail_ok += ok
         self.stats.detail_failed += not ok
-        return jd
+        return jd, answer
 
     def result(self, url: str, ok: bool) -> None:
         site = site_of(url)

@@ -587,26 +587,53 @@ def test_an_arbeitsagentur_row_reads_its_jd_from_the_detail_api(monkeypatch, cfg
     assert saved["jd_text"].startswith("## Aufgaben\n\nBuild and ship")
 
 
-def test_a_posting_the_api_no_longer_holds_falls_back_to_its_page(monkeypatch, cfg, tmp_path):
-    n = stapply.MAX_HOST_FAILURES + 2
-    path = tmp_path / "ba.parquet"
-    pd.DataFrame(_ba_rows(n)).assign(description=None).to_parquet(path)
-    api, pages = [], []
-
+def _ba_404(monkeypatch, api):
     def gone(url, deadline_ts=None, headers=None):
         api.append(url)
         raise stapply.CareersError("HTTP 404", status=404, permanent=True)
 
     monkeypatch.setattr(stapply.http_client, "fetch_json", gone)
-    monkeypatch.setattr(
-        stapply.http_client, "fetch_page", lambda url: pages.append(url) or (200, _page(JD))
-    )
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page"))
     monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
-    lane, crawl = read(cfg, tmp_path, path)
-    stats = lane.run(crawl)
+
+
+def test_a_posting_the_api_calls_gone_is_not_read_again_for_a_while(monkeypatch, cfg, tmp_path):
+    n = stapply.MAX_HOST_FAILURES + 2
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(n)).assign(description=None).to_parquet(path)
+    api: list[str] = []
+    _ba_404(monkeypatch, api)
+    stats, crawl = _night(cfg, tmp_path, path, 0)
     # A 404 is that posting's answer: the API is never given up over it.
-    assert len(api) == n and len(pages) == n and len(crawl.batch.rows) == n
-    assert stats.errors == []
+    assert len(api) == n and not crawl.batch.rows and stats.errors == []
+    _night(cfg, tmp_path, path, 1)
+    assert len(api) == n
+    # Once the mark is forgotten the API is asked again.
+    _night(cfg, tmp_path, path, DiscoveryConfig().forget_after_days)
+    assert len(api) == 2 * n
+
+
+def test_a_stored_posting_its_api_calls_gone_is_not_seen_again(monkeypatch, cfg, tmp_path):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(3)).assign(description=None).to_parquet(path)
+    gone, tracked, live = (
+        S.make_posting(url=BA.format(f"10000-{i}-S"))["posting_key"] for i in range(3)
+    )
+    known = {k: {"updated_at": "", "company": "Acme GmbH"} for k in (gone, tracked, live)}
+    live_api = arbeitsagentur.detail_url(BA.format("10000-2-S"))
+
+    def answer(url, deadline_ts=None, headers=None):
+        if url == live_api:
+            return {"stellenangebotsBeschreibung": JD}
+        raise stapply.CareersError("HTTP 404", status=404, permanent=True)
+
+    monkeypatch.setattr(stapply.http_client, "fetch_json", answer)
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    _, crawl = _night(cfg, tmp_path, path, 0, known=known, tracked_keys=frozenset({tracked}))
+    # A tracked role's posting is seen as before; a live one too; a gone one is not.
+    assert crawl.batch.touched == {tracked, live} and not crawl.batch.rows
+    record = json.loads((tmp_path / "failed.json").read_text(encoding="utf-8"))
+    assert list(record) == [gone] and record[gone]["gone"] is True
 
 
 def test_a_short_api_jd_still_reads_the_page(monkeypatch, cfg, tmp_path):
@@ -625,17 +652,18 @@ def test_a_short_api_jd_still_reads_the_page(monkeypatch, cfg, tmp_path):
     assert saved["jd_text"].startswith("Build and ship")
 
 
-def _night(cfg, tmp_path, path, day):
+def _night(cfg, tmp_path, path, day, known=None, tracked_keys=frozenset()):
     crawl = B.Crawl(
         DiscoveryConfig(),
         cfg,
         TODAY + pd.Timedelta(days=day),
         0.0,
-        {},
+        dict(known or {}),
         S.Batch(),
         board_state=tmp_path / "b.parquet",
         boards_dir=tmp_path,
         failed_reads=tmp_path / "failed.json",
+        tracked_keys=tracked_keys,
     )
     lane = stapply.StapplyLane()
     lane.read(path, crawl)
