@@ -606,3 +606,69 @@ def test_a_posting_the_api_no_longer_holds_falls_back_to_its_page(monkeypatch, c
     # A 404 is that posting's answer: the API is never given up over it.
     assert len(api) == n and len(pages) == n and len(crawl.batch.rows) == n
     assert stats.errors == []
+
+
+def _night(cfg, tmp_path, path, day):
+    crawl = B.Crawl(
+        DiscoveryConfig(),
+        cfg,
+        TODAY + pd.Timedelta(days=day),
+        0.0,
+        {},
+        S.Batch(),
+        board_state=tmp_path / "b.parquet",
+        boards_dir=tmp_path,
+        failed_reads=tmp_path / "failed.json",
+    )
+    lane = stapply.StapplyLane()
+    lane.read(path, crawl)
+    return lane.run(crawl), crawl
+
+
+def test_a_page_that_keeps_failing_is_skipped_then_retried(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(
+        tmp_path, url="https://dead.example/jobs/1", company="Dead Co", description="Short."
+    )
+    reads = []
+    monkeypatch.setattr(
+        stapply.http_client, "fetch_page", lambda url: reads.append(url) or (200, "<html/>")
+    )
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    src = DiscoveryConfig().sources["stapply"]
+    fails, retry = src.page_read_max_failures, src.page_read_retry_days
+    for day in range(fails):
+        _night(cfg, tmp_path, path, day)
+    stats, _ = _night(cfg, tmp_path, path, fails)
+    assert len(reads) == fails and "1 page reads skipped" in stats.notes[0]
+    # A fixed page comes back on the retry.
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, _page(JD)))
+    _, crawl = _night(cfg, tmp_path, path, fails - 1 + retry)
+    assert len(crawl.batch.rows) == 1
+    assert json.loads((tmp_path / "failed.json").read_text(encoding="utf-8")) == {}
+
+
+def test_the_record_never_skips_an_api_read(monkeypatch, cfg, tmp_path):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(1)).assign(description=None).to_parquet(path)
+    key = S.make_posting(url=BA.format("10000-0-S"))["posting_key"]
+    (tmp_path / "failed.json").write_text(
+        json.dumps({key: {"failures": 9, "last_try": str(TODAY.date())}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page"))
+    monkeypatch.setattr(
+        stapply.http_client,
+        "fetch_json",
+        lambda url, deadline_ts=None, headers=None: {"stellenangebotsBeschreibung": JD},
+    )
+    monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+    _, crawl = _night(cfg, tmp_path, path, 1)
+    assert [r["posting_key"] for r in crawl.batch.rows.values()] == [key]
+
+
+def test_an_unreadable_record_starts_afresh(monkeypatch, cfg, tmp_path):
+    path = _one_row_feed(tmp_path, company="DataDome")
+    (tmp_path / "failed.json").write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page"))
+    stats, crawl = _night(cfg, tmp_path, path, 0)
+    assert "unreadable" in stats.notes[0] and len(crawl.batch.rows) == 1
+    assert json.loads((tmp_path / "failed.json").read_text(encoding="utf-8")) == {}

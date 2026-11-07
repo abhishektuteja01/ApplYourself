@@ -30,6 +30,7 @@ from applyourself.discovery import parse
 from applyourself.discovery.config import pacing_for
 from applyourself.discovery.sources.boards.base import load_boards
 from applyourself.discovery.sources.feed import arbeitsagentur, oracle
+from applyourself.discovery.sources.feed.failed_reads import FailedReads
 from applyourself.discovery.sources.lane import Lane, LaneStats
 from applyourself.discovery.store import make_posting
 from applyourself.shared import http_client, identity, title_gate
@@ -255,6 +256,16 @@ class StapplyLane(Lane):
             raise self.failure
         stats = self.stats
         pages = _PageReader(pacing_for(crawl.cfg, self.name), crawl, stats)
+        src = crawl.cfg.sources[self.name]
+        failed = FailedReads(
+            crawl.failed_reads,
+            crawl.today.date(),
+            src.page_read_max_failures,
+            src.page_read_retry_days,
+        )
+        if failed.problem:
+            stats.notes.append(failed.problem)
+        skipped = 0
         named = 0
         site_names: dict[str, str] = {}
         for posting in self.rows:
@@ -276,6 +287,8 @@ class StapplyLane(Lane):
             needs_jd = known is None and len(posting["jd_text"].strip()) < parse.MIN_JD_CHARS
             needs_name = parse.looks_like_slug(posting["company"])
             employer = ""
+            # Whether tonight read this new posting's page for its JD.
+            tried = False
             site = oracle.site_url(posting["url"], posting["company"])
             if site:
                 # Named by its Oracle tenant code: the site's page names the employer.
@@ -303,8 +316,12 @@ class StapplyLane(Lane):
                 if found:
                     posting = {**posting, "jd_text": found}
                     needs_jd = False
-            if needs_jd or needs_name:
+            if needs_jd and failed.skip(key):
+                # Its page failed night after night: left for a later retry.
+                skipped += 1
+            elif needs_jd or needs_name:
                 page = pages.read(posting["url"])
+                tried = needs_jd and page is not None
                 jd = parse.jobposting_text(page) if needs_jd else ""
                 if needs_name:
                     employer = parse.jobposting_employer(page)
@@ -328,10 +345,22 @@ class StapplyLane(Lane):
                 continue
             if not has_jd:
                 stats.short_jd += 1
+                if tried:
+                    failed.failed(key)
                 continue
+            failed.read(key)
             crawl.known[key] = {"updated_at": "", "company": posting["company"]}
             crawl.batch.upsert(posting)
         self.rows = []
+        if skipped:
+            stats.notes.append(
+                f"{skipped} page reads skipped: failed {src.page_read_max_failures} nights, "
+                f"read again every {src.page_read_retry_days}d"
+            )
+        try:
+            failed.save(crawl.cfg.forget_after_days)
+        except OSError as e:
+            stats.notes.append(f"{crawl.failed_reads.name} not saved ({type(e).__name__}: {e})")
         if named:
             stats.notes.append(f"{named} company names read from job pages")
         if pages.given_up():

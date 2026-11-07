@@ -67,6 +67,8 @@ _SOURCE_KEYS = frozenset(
         "hours_old",
         "results_wanted",
         "max_snapshot_age_hours",
+        "page_read_max_failures",
+        "page_read_retry_days",
         "companies",
         "terms_per_lane",
     }
@@ -142,8 +144,12 @@ class SourceConfig:
     every_days: int = 1
     max_pages: int = 6
     terms_per_lane: int = DEFAULT_TERMS_PER_LANE
-    # Feed lanes: a snapshot older than this is skipped, not applied.
+    # Feed lanes: a snapshot older than this is skipped, not applied. A
+    # posting whose JD read failed this many nights is read again only every
+    # `page_read_retry_days`.
     max_snapshot_age_hours: int = 36
+    page_read_max_failures: int = 3
+    page_read_retry_days: int = 7
 
 
 @dataclass
@@ -320,6 +326,16 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
             f"{where}.max_snapshot_age_hours",
             1,
         ),
+        page_read_max_failures=_int(
+            v.get("page_read_max_failures", base.page_read_max_failures),
+            f"{where}.page_read_max_failures",
+            1,
+        ),
+        page_read_retry_days=_int(
+            v.get("page_read_retry_days", base.page_read_retry_days),
+            f"{where}.page_read_retry_days",
+            1,
+        ),
     )
     if out.page_delay_seconds < MIN_PAGE_DELAY_SECONDS:
         raise ValueError(
@@ -336,6 +352,9 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         raise ValueError(
             f"{where}.terms_per_lane is read only by {', '.join(TERMS_PER_LANE_SOURCES)}"
         )
+    for key in ("page_read_max_failures", "page_read_retry_days"):
+        if key in v and name not in FEED_SOURCES:
+            raise ValueError(f"{where}.{key} is read only by {', '.join(FEED_SOURCES)}")
     companies = v.get("companies") or {}
     if not isinstance(companies, dict):
         raise ValueError(f"{where}.companies must be a mapping")
@@ -527,7 +546,11 @@ def main() -> int:
             if s.company_ids:
                 bits.append(f"{len(s.company_ids)} companies x {len(s.company_terms)} terms")
         elif name in FEED_SOURCES:
-            bits = [f"snapshot within {s.max_snapshot_age_hours}h"]
+            bits = [
+                f"snapshot within {s.max_snapshot_age_hours}h",
+                f"a page failed {s.page_read_max_failures} nights is read every "
+                f"{s.page_read_retry_days}d",
+            ]
         else:
             bits.append(f"every {s.every_days}d")
         return f"{name} ({', '.join(bits)})"

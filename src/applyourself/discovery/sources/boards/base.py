@@ -261,6 +261,7 @@ class Crawl:
         batch,
         board_state: Path | None = None,
         boards_dir: Path | None = None,
+        failed_reads: Path | None = None,
     ):
         self.cfg = cfg
         self.vcfg = vcfg
@@ -270,6 +271,7 @@ class Crawl:
         self.batch = batch
         self.board_state = board_state or paths.BOARD_STATE
         self.boards_dir = boards_dir or paths.UNIVERSE
+        self.failed_reads = failed_reads or paths.FEED_FAILED_READS
         self._lock = threading.Lock()
         self.board_results: list[BoardResult] = []
         self.listed: list[dict] = []

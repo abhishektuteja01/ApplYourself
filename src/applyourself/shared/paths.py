@@ -20,6 +20,7 @@ _LAYOUT = {
     "BOARD_STATE": "jobs/boards.parquet",
     "CLEAN": "jobs/clean.parquet",
     "MAYBE_DUPES": "jobs/maybe_duplicates.jsonl",
+    "FEED_FAILED_READS": "jobs/feed_failed_reads.json",
     "JOB_IDS": "jobs/job_ids.parquet",
     "SCORED": "jobs/scored.parquet",
     "STAGING": "jobs/scored.staging",
@@ -63,6 +64,7 @@ STORE: Path
 BOARD_STATE: Path
 CLEAN: Path
 MAYBE_DUPES: Path
+FEED_FAILED_READS: Path
 JOB_IDS: Path
 SCORED: Path
 STAGING: Path

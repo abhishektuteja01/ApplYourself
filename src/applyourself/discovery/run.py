@@ -89,6 +89,10 @@ class Paths:
         return self.jobs / paths.BOARD_STATE.name
 
     @property
+    def failed_reads(self) -> Path:
+        return self.jobs / paths.FEED_FAILED_READS.name
+
+    @property
     def raw(self) -> Path:
         return self.jobs / paths.JOBS_RAW.name
 
@@ -442,6 +446,7 @@ def main(argv=None) -> int:
         S.Batch(),
         board_state=p.board_state,
         boards_dir=p.boards_dir,
+        failed_reads=p.failed_reads,
     )
     writer = Writer(crawl, p, today, tracked, cfg.live_days, trim=load_trim())
 

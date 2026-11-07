@@ -48,5 +48,7 @@ sources:
   # Ten postings a page.
   eightfold:     {enabled: true,  pacing_seconds: 1, every_days: 3, max_pages: 6}
   # The stapply.ai daily file of public ATS jobs (one download a night).
-  # A snapshot older than max_snapshot_age_hours is skipped.
+  # A snapshot older than max_snapshot_age_hours is skipped. A new posting
+  # whose JD read failed page_read_max_failures nights (default 3) has its page
+  # read again only every page_read_retry_days (default 7).
   stapply:       {enabled: true,  max_snapshot_age_hours: 36}
