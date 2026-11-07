@@ -319,9 +319,12 @@ class TestFinish:
         _finish(env, scfg)
         row = _scored(env).loc["aaaaaaaa"]
         subs = json.loads(row["fit_subscores"])
-        assert subs == {"fit": scfg.fit_cap, "penalty": 10, "level": "entry", "years": 4}
-        assert row["fit_score"] == scfg.fit_cap - 10
-        assert row["reasoning"].endswith("[vague JD] [contract role]")
+        assert scfg.fit_cap is None  # no cap by default: the judge's fit stands
+        assert subs == {"fit": 95, "penalty": 10, "level": "entry", "years": 4}
+        assert row["fit_score"] == 85
+        assert row["reasoning"].endswith("[short JD] [contract role]")
+        capped = score_store.view(env["scored"], dataclasses.replace(scfg, fit_cap=70), RULE)
+        assert capped.iloc[0]["fit_score"] == 60
 
     def test_ineligible_label_zeroes_and_skips(self, env, scfg):
         _clean(

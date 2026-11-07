@@ -44,10 +44,10 @@ no_sponsorship:
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
 
-# A JD under min_words has its fit capped at fit_cap.
+# A JD under min_words is tagged [short JD]. Optional: fit_cap caps its fit
+# (absent: the judge's fit stands).
 jd_quality:
   min_words: 300
-  fit_cap: 78
 
 # Score cutoffs, review at or below tailor. They set suggested_action. The
 # line for the night's status sheet (settings.yaml table_path) and for

@@ -401,7 +401,7 @@ def test_scoring_v2_moves_the_sheet_line_to_the_lanes_and_drops_the_old_judge_ke
     s = prof / "scoring.yaml"
     s.write_text(
         s.read_text(encoding="utf-8")
-        .replace("  fit_cap: 78\n", "  skills_cap: 12\n")
+        .replace("  min_words: 300\n", "  min_words: 300\n  skills_cap: 12\n")
         .replace("  tailor: 60\n", "  tailor: 60\n  keep_long: 80\n  sheet: 85\n"),
         encoding="utf-8",
     )
@@ -411,7 +411,7 @@ def test_scoring_v2_moves_the_sheet_line_to_the_lanes_and_drops_the_old_judge_ke
     assert cfg.verticals["example_primary"].score.level == V.SCORE_DEFAULTS["level"]
     data = yaml.safe_load(s.read_text(encoding="utf-8"))
     assert data["cutoffs"] == {"review": 50, "tailor": 60, "keep_long": 80}
-    assert data["jd_quality"] == {"min_words": 300, "fit_cap": 78}
+    assert data["jd_quality"] == {"min_words": 300}  # no fit_cap: no cap
     text = lane.read_text(encoding="utf-8")
     assert "skill_weights" not in text and "focus" not in text and "Skill weights" not in text
     v = yaml.safe_load((prof / "verticals.yaml").read_text(encoding="utf-8"))

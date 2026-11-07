@@ -688,7 +688,8 @@ def derive(
     grades fit; every rule is applied here. The score is 0 when the role is
     out of lane, ineligible, outside the lane's countries, asks the lane's
     `years_zero_at` years or more, or has a blocker; otherwise it is fit
-    (capped for a short JD) less the larger of the level and years penalties."""
+    (capped at `jd_quality.fit_cap` for a short JD, when set) less the larger
+    of the level and years penalties. A short JD is tagged either way."""
     rules = lane.score
     reasoning = a["reasoning"].strip()
     label = sponsorship_label(a["sponsorship"], a["country"], cfg)
@@ -708,8 +709,9 @@ def derive(
         zero = True
     fit = a["fit"]
     if facts["words"] < cfg.min_words:
-        fit = min(fit, cfg.fit_cap)
-        reasoning += " [vague JD]"
+        if cfg.fit_cap is not None:
+            fit = min(fit, cfg.fit_cap)
+        reasoning += " [short JD]"
     if facts["contract"] and "[contract role]" not in reasoning:
         reasoning += " [contract role]"
     penalty = rules.penalty(a["level"], years)

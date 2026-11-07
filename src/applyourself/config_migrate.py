@@ -909,7 +909,7 @@ def _scoring_v2(p: Profile) -> None:
     """Scoring v2: `defaults:` gets the `score:` rules, with scoring.yaml's
     `cutoffs.sheet` as their cutoff; the old judge's `years`, `skill_weights`
     and `focus` leave `defaults:` and every lane.yaml; `jd_quality.skills_cap`
-    becomes the `fit_cap` it amounts to. Refused unless the loaded config
+    goes (a short JD keeps its fit unless a `fit_cap` is set). Refused unless the loaded config
     stays the same apart from `score`, and the sheet line with it."""
     import dataclasses
     import tempfile
@@ -1007,17 +1007,15 @@ def _scoring_v2(p: Profile) -> None:
     if "skills_cap" in quality:
         lines = stext.splitlines(keepends=True)
         hit = [i for i, ln in enumerate(lines) if re.match(r"\s+skills_cap\s*:", ln)]
-        if len(hit) != 1 or type(cap) is not int or "fit_cap" in quality:
+        if len(hit) != 1:
             p.problems.append(
-                f"{SCORING}: could not turn jd_quality.skills_cap into fit_cap by hand"
+                f"{SCORING}: could not remove jd_quality.skills_cap; remove it by hand"
             )
             return
-        pad = lines[hit[0]][: len(lines[hit[0]]) - len(lines[hit[0]].lstrip())]
-        # The old cap held skills (of 30) at `cap`; title and domain (50) stayed whole.
-        lines[hit[0]] = f"{pad}fit_cap: {round(100 * (50 + cap) / 80)}\n"
+        del lines[hit[0]]
         stext = "".join(lines).replace(
             "# A JD under min_words has its skills axis capped at skills_cap.",
-            "# A JD under min_words has its fit capped at fit_cap.",
+            "# A JD under min_words is tagged [short JD]; an optional fit_cap caps its fit.",
         )
 
     def load(texts: dict[str, str]) -> Any:
@@ -1054,7 +1052,7 @@ def _scoring_v2(p: Profile) -> None:
         f"{VERTICALS}: defaults score: cutoff {line}; old judge keys removed "
         f"{ {n: k for n, k in lane_old.items() if k} or 'none' }"
         + (f"; {SCORING}: cutoffs.sheet -> score.cutoff" if "sheet" in cutoffs else "")
-        + (f"; jd_quality.skills_cap {cap} -> fit_cap" if "skills_cap" in quality else "")
+        + (f"; jd_quality.skills_cap {cap} removed" if "skills_cap" in quality else "")
     )
     for n in names:
         rubric = p.root / "verticals" / n / "rubric.md"

@@ -4,8 +4,8 @@ Your packet holds this file, the candidate profile digest, the lane (what it
 covers and its grade anchors), calibration examples when the lane has them,
 and the answer schema. You read facts and grade fit. Everything that follows
 from a fact is applied after you: the level and years penalties, where a lane
-may work, what a sponsorship statement means for the candidate, a short JD's
-cap and the final score. So never lower `fit` for level, years, country,
+may work, what a sponsorship statement means for the candidate and the
+final score. So never lower `fit` for level, years, country,
 sponsorship or salary.
 
 ## Per role: facts first, then the grade

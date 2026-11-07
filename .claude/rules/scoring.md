@@ -28,7 +28,8 @@ Three steps, one owner per rule:
    (`input_hash` of the lane packet and the trimmed JD). The packet, always
    in this order: `.claude/shared/scoring_rubric.md` (fixed fit bands,
    tie-breaks), the candidate digest (`score_packet.digest`: every bullet with
-   its tags, every skill, each context's span, education, the bank's
+   its tags, every skill with its aliases (no bullet rephrasings), each
+   context's span, education, the bank's
    sponsorship needs and languages; rebuilt every run, so an edit to those
    files changes the hash), the lane's `rubric.md`, its optional
    `examples.yaml` (`score examples` picks them from past scores by a stable
@@ -45,7 +46,8 @@ Three steps, one owner per rule:
    `judge_answer`), and writes the shortlist. The score is 0 when the role is
    out of lane, ineligible, outside the lane's countries, asks the lane's
    `score.years_zero_at` years or more, or has a blocker; otherwise fit
-   (capped at scoring.yaml `jd_quality.fit_cap` for a short JD) less the
+   (capped at scoring.yaml `jd_quality.fit_cap` for a short JD when set;
+   absent, no cap; a short JD is tagged `[short JD]` either way) less the
    larger of the lane's `score.level` and `score.years` penalties.
 
 Each lane's `score.cutoff` (verticals.yaml `defaults:` and lane.yaml, merged

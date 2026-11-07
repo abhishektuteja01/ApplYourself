@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from applyourself.discovery.config import DiscoveryConfig
 
 _SCHEMA_VERSION = 1
-FIT_CAP_DEFAULT = 78  # a short JD's fit cap when jd_quality.fit_cap is not set
 CUTOFF_DEFAULT = 76  # a lane's cutoff when neither it nor cutoffs.sheet sets one
 
 
@@ -54,8 +53,8 @@ class ScoringConfig:
     ineligible: tuple[str, ...]
     no_sponsorship: tuple[str, ...]
     min_words: int
-    fit_cap: int
-    """A JD under min_words has its fit capped here."""
+    fit_cap: int | None
+    """A JD under min_words has its fit capped here; None: no cap."""
     keywords_max: int
     tailor_min: int
     review_min: int
@@ -155,7 +154,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         ineligible=_phrases(data, "ineligible", path),
         no_sponsorship=_phrases(data, "no_sponsorship", path),
         min_words=_int(q, "min_words", "jd_quality", path),
-        fit_cap=_int(q, "fit_cap", "jd_quality", path) if "fit_cap" in q else FIT_CAP_DEFAULT,
+        fit_cap=_int(q, "fit_cap", "jd_quality", path) if q.get("fit_cap") is not None else None,
         keywords_max=_int(data, "keywords_max", "top level", path),
         tailor_min=cutoffs.tailor,
         review_min=cutoffs.review,

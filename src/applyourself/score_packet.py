@@ -49,7 +49,8 @@ def _months(dates: Any) -> set[int]:
 def digest(cfg: ScoringConfig) -> str:
     """The candidate profile digest: education, every context with its span,
     total work years, sponsorship need per country and languages, one line
-    per bullet with its tags, and every skill."""
+    per bullet with its tags, and every skill with its aliases. A bullet's
+    rephrasings stay out."""
     from applyourself import resume_model
 
     src = resume_model.load_sources()
@@ -95,8 +96,13 @@ def digest(cfg: ScoringConfig) -> str:
         )
         line = f"- [{where}] {' '.join(str(b.get('canonical') or '').split())}"
         out.append(line + (f" (tags: {', '.join(map(str, tags))})" if tags else ""))
-    names = [str(s.get("name") or "").strip() for s in src.skills.values()]
-    out += ["", "### Skills", "", "; ".join(n for n in names if n), ""]
+    names = []
+    for s in src.skills.values():
+        name = str(s.get("name") or "").strip()
+        aliases = [str(a).strip() for a in s.get("allowable_synonyms") or [] if str(a).strip()]
+        if name:
+            names.append(f"{name} ({', '.join(aliases)})" if aliases else name)
+    out += ["", "### Skills (aliases in brackets)", "", "; ".join(names), ""]
     return "\n".join(out)
 
 

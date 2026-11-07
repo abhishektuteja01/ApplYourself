@@ -23,6 +23,11 @@ def test_digest_holds_every_claim_and_skill_and_never_reads_the_date(scfg):
     text = score_packet.digest(scfg)
     assert all(" ".join(b["canonical"].split()) in text for b in src.bullets.values())
     assert all(s["name"] in text for s in src.skills.values())
+    assert (
+        "Widget Assembly Operations (widget assembly, assembly operations, line operations);"
+        in text
+    )
+    assert "throughput reporting" not in text  # a bullet's rephrasing stays out
     assert "- Project: Cog Assistant, maintenance question answering, Nov 2025 - Present\n" in text
     assert "- Work: Widget Operations Analyst, Widget Corp, Jan 2023 - Jun 2025 (2.5 years)" in text
     assert "- United States: authorized now, will need sponsorship later" in text
