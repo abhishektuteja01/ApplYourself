@@ -82,6 +82,19 @@ def test_404_raises_immediately_without_retrying(responses, sleeps):
     assert sleeps == []
 
 
+def test_custom_headers_never_follow_a_redirect(monkeypatch, sleeps):
+    seen = []
+
+    def fake_get(url, timeout=None, headers=None, **kw):
+        seen.append((headers["X-Key"], kw))
+        return FakeResponse(302)
+
+    monkeypatch.setattr(http, "_get", fake_get)
+    with pytest.raises(CareersError, match="HTTP 302"):
+        fetch_json("https://x/api", headers={"X-Key": "k"})
+    assert seen == [("k", {"allow_redirects": False})]
+
+
 def test_non_retryable_status_raises_immediately(responses, sleeps):
     calls = responses([FakeResponse(403)])
     with pytest.raises(CareersError, match="HTTP 403"):

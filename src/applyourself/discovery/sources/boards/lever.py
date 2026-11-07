@@ -57,8 +57,12 @@ def postings_from(payload, company: str) -> list[dict]:
     return [p for p in (posting_from(i, company) for i in payload if isinstance(i, dict)) if p]
 
 
-def fetch_posting(slug: str, posting_id: str, company: str, region: str = "") -> dict | None:
-    item = fetch_json(f"https://{api_host(region)}/v0/postings/{slug}/{posting_id}")
+def fetch_posting(
+    slug: str, posting_id: str, company: str, region: str = "", deadline_ts: float | None = None
+) -> dict | None:
+    item = fetch_json(
+        f"https://{api_host(region)}/v0/postings/{slug}/{posting_id}", deadline_ts=deadline_ts
+    )
     return posting_from(item, company) if isinstance(item, dict) else None
 
 

@@ -587,30 +587,76 @@ def test_an_arbeitsagentur_row_reads_its_jd_from_the_detail_api(monkeypatch, cfg
     assert saved["jd_text"].startswith("## Aufgaben\n\nBuild and ship")
 
 
-def _ba_404(monkeypatch, api):
-    def gone(url, deadline_ts=None, headers=None):
-        api.append(url)
+def _ba_api(monkeypatch, live=(), calls=None):
+    """The detail API: a JD for the listed reference numbers, 404 for the rest."""
+    up = {arbeitsagentur.detail_url(BA.format(r)) for r in live}
+
+    def fetch(url, deadline_ts=None, headers=None):
+        if calls is not None:
+            calls.append(url)
+        if url in up:
+            return {"stellenangebotsBeschreibung": JD}
         raise stapply.CareersError("HTTP 404", status=404, permanent=True)
 
-    monkeypatch.setattr(stapply.http_client, "fetch_json", gone)
-    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: pytest.fail("no page"))
+    monkeypatch.setattr(stapply.http_client, "fetch_json", fetch)
     monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
+
+
+def _ba_key(i):
+    return S.make_posting(url=BA.format(f"10000-{i}-S"))["posting_key"]
 
 
 def test_a_posting_the_api_calls_gone_is_not_read_again_for_a_while(monkeypatch, cfg, tmp_path):
     n = stapply.MAX_HOST_FAILURES + 2
     path = tmp_path / "ba.parquet"
-    pd.DataFrame(_ba_rows(n)).assign(description=None).to_parquet(path)
-    api: list[str] = []
-    _ba_404(monkeypatch, api)
+    pd.DataFrame(_ba_rows(n + 1)).assign(description=None).to_parquet(path)
+    api, pages = [], []
+    _ba_api(monkeypatch, live=[f"10000-{n}-S"], calls=api)
+    monkeypatch.setattr(
+        stapply.http_client, "fetch_page", lambda url: pages.append(url) or (200, "<html/>")
+    )
     stats, crawl = _night(cfg, tmp_path, path, 0)
     # A 404 is that posting's answer: the API is never given up over it.
-    assert len(api) == n and not crawl.batch.rows and stats.errors == []
+    assert len(api) == n + 1 and list(crawl.batch.rows) == [_ba_key(n)] and stats.errors == []
+    read_pages = len(pages)
     _night(cfg, tmp_path, path, 1)
-    assert len(api) == n
+    assert len(api) == n + 2 and len(pages) == read_pages
     # Once the mark is forgotten the API is asked again.
     _night(cfg, tmp_path, path, DiscoveryConfig().forget_after_days)
-    assert len(api) == 2 * n
+    assert len(api) == 2 * n + 3
+
+
+def test_a_stored_gone_mark_expires_and_an_answer_clears_it(monkeypatch, cfg, tmp_path):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(2)).assign(description=None).to_parquet(path)
+    gone, live = _ba_key(0), _ba_key(1)
+    known = {k: {"updated_at": "", "company": "Acme GmbH"} for k in (gone, live)}
+    api: list[str] = []
+    _ba_api(monkeypatch, live=["10000-1-S"], calls=api)
+    stats, crawl = _night(cfg, tmp_path, path, 0, known=known)
+    assert crawl.batch.touched == {live}
+    assert (stats.liveness_checked, stats.liveness_gone) == (2, 1)
+    _, crawl = _night(cfg, tmp_path, path, 1, known=known)
+    assert crawl.batch.touched == {live} and len(api) == 3
+    _ba_api(monkeypatch, live=["10000-0-S", "10000-1-S"], calls=api)
+    days = DiscoveryConfig().forget_after_days
+    _, crawl = _night(cfg, tmp_path, path, days, known=known)
+    assert crawl.batch.touched == {gone, live} and len(api) == 5
+    assert json.loads((tmp_path / "failed.json").read_text(encoding="utf-8")) == {}
+
+
+def test_404s_with_no_answer_tonight_mark_nothing_gone(monkeypatch, cfg, tmp_path):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(3)).assign(description=None).to_parquet(path)
+    known = {_ba_key(i): {"updated_at": "", "company": "Acme GmbH"} for i in (0, 1)}
+    _ba_api(monkeypatch)
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, "<html/>"))
+    stats, crawl = _night(cfg, tmp_path, path, 0, known=known)
+    # The endpoint may have moved: stored postings are seen as before.
+    assert crawl.batch.touched == set(known) and stats.liveness_gone == 0
+    assert "none marked gone" in stats.errors[-1]
+    record = json.loads((tmp_path / "failed.json").read_text(encoding="utf-8"))
+    assert not any(e.get("gone") for e in record.values())
 
 
 def test_a_stored_posting_its_api_calls_gone_is_not_seen_again(monkeypatch, cfg, tmp_path):
@@ -647,9 +693,10 @@ def test_a_short_api_jd_still_reads_the_page(monkeypatch, cfg, tmp_path):
     monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, _page(JD)))
     monkeypatch.setattr(stapply.http_client.time, "sleep", lambda s: None)
     lane, crawl = read(cfg, tmp_path, path)
-    lane.run(crawl)
+    stats = lane.run(crawl)
     [saved] = crawl.batch.rows.values()
     assert saved["jd_text"].startswith("Build and ship")
+    assert (stats.detail_ok, stats.detail_failed) == (1, 0)
 
 
 def _night(cfg, tmp_path, path, day, known=None, tracked_keys=frozenset()):

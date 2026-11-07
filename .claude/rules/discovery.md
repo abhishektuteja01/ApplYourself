@@ -157,10 +157,14 @@ first ten reads tonight give nothing is not read again tonight.
 new posting's page read gave no JD: after `page_read_max_failures` (default 3)
 its page is read again only every `page_read_retry_days` (default 7); a JD
 takes it off the record. Failures skip page reads only, never an API read.
-An arbeitsagentur.de 404 marks the posting `gone` there: neither its API nor
-its page is read, and a stored one is not seen (so it ages out of the view by
-`live_days`), until `forget_after_days` pass; an API answer clears the mark.
-The stored postings of tracked roles are never checked or held back.
+An arbeitsagentur.de 404 marks the posting `gone` there, but only on a night
+that API also answered: neither its API nor its page is read, and a stored one
+is not seen (so it ages out of the view by `live_days`), until
+`forget_after_days` pass; an API answer clears the mark. With no answer all
+night its 404s mark nothing and stored postings are seen as before. The stored
+postings of tracked roles are never checked or held back. `detail_ok` /
+`detail_failed` count postings that needed a JD; `liveness_checked` /
+`liveness_gone` count stored postings asked and held back.
 An Oracle Recruiting Cloud row's JD comes from its requisition-detail API
 (`feed/oracle.py`), since its job page is built in the browser; its key is tenant +
 requisition id. One named only by its tenant code ("Egug") is named from its

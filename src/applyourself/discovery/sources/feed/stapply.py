@@ -189,6 +189,24 @@ class StapplyLane(Lane):
         except Exception as e:  # noqa: BLE001 -- surfaced by run()
             self.failure = e
 
+    def _settle(self, held, pages, failed, crawl) -> int:
+        """Tonight's 404s: gone where their API answered tonight, else a host
+        failure, and a stored posting is seen as before. How many went gone."""
+        gone, unsure = 0, dict[str, int]()
+        for key, (site, stored) in held.items():
+            if site in pages.worked:
+                failed.mark_gone(key)
+                gone += 1
+                self.stats.liveness_gone += stored is not None
+            else:
+                unsure[site] = unsure.get(site, 0) + 1
+                if stored is not None:
+                    row = stored["row"]
+                    crawl.batch.upsert(row) if row is not None else crawl.batch.touch(key)
+        for site, n in sorted(unsure.items()):
+            self.stats.errors.append(f"{site}: {n} 404s and no answer tonight; none marked gone")
+        return gone
+
     def _company_names(self, manifest: dict, tmp: Path, crawl) -> dict:
         """The feed's company list, or {} with a note: without it rows keep
         the feed's own company text, which is no reason to lose the night."""
@@ -268,6 +286,9 @@ class StapplyLane(Lane):
         if failed.problem:
             stats.notes.append(failed.problem)
         skipped = gone = 0
+        # 404s tonight, {key: (api site, what a stored posting gets if not gone)}: a 404
+        # means gone only once that API has answered tonight.
+        held: dict[str, tuple[str, dict | None]] = {}
         named = 0
         site_names: dict[str, str] = {}
         for posting in self.rows:
@@ -289,14 +310,18 @@ class StapplyLane(Lane):
             reader = posting_api(posting["url"], crawl.deadline_ts or None)
             if known is not None and key not in crawl.tracked_keys and reader and reader[2]:
                 # A stored posting its API calls gone is not seen again, so it ages out.
-                answer = "gone" if failed.gone(key) else pages.call(reader[0], reader[1])[1]
-                if answer == "gone":
-                    failed.mark_gone(key)
+                if failed.gone(key):
+                    stats.liveness_gone += 1
                     gone += 1
                     continue
-                if answer == "ok":
+                stats.liveness_checked += 1
+                answer = pages.call(reader[0], reader[1])[1]
+                if answer == "gone":
+                    held[key] = (reader[0], None)
+                elif answer == "ok":
                     failed.answered(key)
             needs_jd = known is None and len(posting["jd_text"].strip()) < parse.MIN_JD_CHARS
+            wanted_jd, attempted = needs_jd, False
             needs_name = parse.looks_like_slug(posting["company"])
             employer = ""
             # Whether tonight read this new posting's page for its JD.
@@ -320,6 +345,7 @@ class StapplyLane(Lane):
                     posting = {**posting, "jd_text": jd}
                 if payload is not None:
                     pages.result(posting["url"], bool(jd))
+                    attempted = True
                 needs_jd = False
             if needs_jd and reader is not None and reader[2] and failed.gone(key):
                 # Its API said gone: neither it nor the page is read again for now.
@@ -328,10 +354,9 @@ class StapplyLane(Lane):
             elif needs_jd and reader is not None:
                 # A host with a JSON API: its JD is read there, else from the page.
                 found, answer = pages.call(reader[0], reader[1])
+                attempted = attempted or found is not None
                 if answer == "gone" and reader[2]:
-                    failed.mark_gone(key)
-                    gone += 1
-                    needs_jd = needs_name = False
+                    held[key] = (reader[0], None)
                 elif answer == "ok" and reader[2]:
                     failed.answered(key)
                 if len((found or "").strip()) >= parse.MIN_JD_CHARS:
@@ -343,6 +368,7 @@ class StapplyLane(Lane):
             elif needs_jd or needs_name:
                 page = pages.read(posting["url"])
                 tried = needs_jd and page is not None
+                attempted = attempted or tried
                 jd = parse.jobposting_text(page) if needs_jd else ""
                 if needs_name:
                     employer = parse.jobposting_employer(page)
@@ -358,8 +384,15 @@ class StapplyLane(Lane):
                 if known is None:
                     posting["company_normalized"] = identity.normalize_company(employer)
             has_jd = len(posting["jd_text"].strip()) >= parse.MIN_JD_CHARS
+            if wanted_jd and attempted:
+                stats.detail_ok += has_jd
+                stats.detail_failed += not has_jd
             if known is not None:
-                if has_jd or employer:
+                stored_as = posting if has_jd or employer else None
+                if key in held:
+                    # Decided once the night shows whether the API answers at all.
+                    held[key] = (held[key][0], {"row": stored_as})
+                elif stored_as is not None:
                     crawl.batch.upsert(posting)
                 else:
                     crawl.batch.touch(key)
@@ -369,10 +402,12 @@ class StapplyLane(Lane):
                 if tried:
                     failed.failed(key)
                 continue
+            held.pop(key, None)
             failed.read(key)
             crawl.known[key] = {"updated_at": "", "company": posting["company"]}
             crawl.batch.upsert(posting)
         self.rows = []
+        gone += self._settle(held, pages, failed, crawl)
         if skipped:
             stats.notes.append(
                 f"{skipped} page reads skipped: failed {src.page_read_max_failures} nights, "
@@ -428,7 +463,11 @@ def posting_api(url: str, deadline_ts: float | None) -> tuple[str, Callable[[], 
             False,
         )
     if hit.source == "lever":
-        return "api:lever", lambda: _jd(lever.fetch_posting(slug, pid, "", hit.region)), False
+        return (
+            "api:lever",
+            lambda: _jd(lever.fetch_posting(slug, pid, "", hit.region, deadline_ts)),
+            False,
+        )
     if hit.source == "ashby":
         return (
             "api:ashby",
@@ -501,18 +540,13 @@ class _PageReader:
         else:
             answer = "ok"
             self.worked.add(site)
-        ok = len(jd.strip()) >= parse.MIN_JD_CHARS
-        self.stats.detail_ok += ok
-        self.stats.detail_failed += not ok
         return jd, answer
 
     def result(self, url: str, ok: bool) -> None:
         site = site_of(url)
         if ok:
-            self.stats.detail_ok += 1
             self.worked.add(site)
         else:
-            self.stats.detail_failed += 1
             self.failures[site] = self.failures.get(site, 0) + 1
 
     def given_up(self) -> list[str]:

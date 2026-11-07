@@ -31,6 +31,9 @@ class LaneStats:
     detail_ok: int = 0
     detail_failed: int = 0
     short_jd: int = 0
+    # Stored postings whose API was asked whether they are still up, and those it called gone.
+    liveness_checked: int = 0
+    liveness_gone: int = 0
     errors: list[str] = field(default_factory=list)
     truncated: bool = False
     notes: list[str] = field(default_factory=list)

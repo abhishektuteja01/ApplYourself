@@ -168,19 +168,22 @@ def _fetch[T](
     headers: dict[str, str] | None = None,
 ) -> T:
     """GET (or, with `json_body`, POST) url, retrying 429/5xx, and hand the 200
-    response to `read`. `headers` are added to the default ones.
+    response to `read`. `headers` are added to the default ones; with them a
+    redirect is not followed, so a 3xx is a failure.
 
     `read` owns what a 200 body means: a body it cannot use is a wall or a wrong
     slug rather than a blip, so it raises instead of retrying.
     """
     sent = {**_HEADERS, **headers} if headers else _HEADERS
+    # A key sent to one host never follows a redirect to another.
+    extra: dict[str, Any] = {"allow_redirects": False} if headers else {}
     for attempt in range(1, MAX_RETRIES + 1):
         t0 = time.monotonic()
         try:
             resp = (
-                _post(url, json=json_body, timeout=timeout, headers=sent)
+                _post(url, json=json_body, timeout=timeout, headers=sent, **extra)
                 if json_body is not None
-                else _get(url, timeout=timeout, headers=sent)
+                else _get(url, timeout=timeout, headers=sent, **extra)
             )
         except requests.RequestException as exc:
             _notify(url=url, secs=time.monotonic() - t0, status=None)
