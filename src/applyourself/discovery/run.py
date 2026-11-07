@@ -5,9 +5,11 @@ the run report.
     uv run discover [--deadline-hours H] [--source NAME ...] [--max-terms N]
                     [--jobs-dir D] [--boards-dir D] [--profile-dir D]
 
-A `--jobs-dir` other than jobs/ is a shadow run: it never reads or moves inbox
-clips, and `--profile-dir` (which needs one) swaps in another verticals.yaml
-(lanes under D/verticals/) and discovery.yaml.
+A `--jobs-dir` other than jobs/ is a shadow run: it writes only there (store,
+boards.parquet, view, reports; copy jobs/ into it first), reads pipeline/ and
+jobs/scored.parquet, and never reads or moves inbox clips. `--profile-dir`
+(which needs one) swaps in another verticals.yaml (lanes under D/verticals/)
+and discovery.yaml; scoring.yaml and the answer bank stay profile/'s.
 
 Lanes run on their own threads; a writer saves the store every few minutes,
 so a killed run loses at most that much and the next run simply finds the
@@ -79,7 +81,8 @@ class Paths:
 
     @property
     def scored(self) -> Path:
-        return self.jobs / paths.SCORED.name
+        # Always the real scores, read only: a shadow view keeps what the real one would.
+        return paths.SCORED
 
     @property
     def board_state(self) -> Path:
@@ -333,7 +336,9 @@ def main(argv=None) -> int:
         "--jobs-dir",
         type=Path,
         default=paths.JOBS,
-        help="read and write the store, view and reports here",
+        help="read and write the store, boards.parquet, view and reports here (a shadow run "
+        "when not jobs/: copy jobs/ in first; scores are read from jobs/scored.parquet, "
+        "the inbox is skipped)",
     )
     parser.add_argument(
         "--boards-dir", type=Path, default=paths.UNIVERSE, help="where boards.csv lives"
@@ -343,7 +348,8 @@ def main(argv=None) -> int:
         type=Path,
         metavar="D",
         help="shadow run: read D/verticals.yaml (lanes in D/verticals/) and D/discovery.yaml "
-        "where present instead of profile/'s; needs a --jobs-dir other than jobs/",
+        "where present instead of profile/'s (scoring.yaml and the answer bank stay "
+        "profile/'s); needs a --jobs-dir other than jobs/",
     )
     args = parser.parse_args(argv)
     shadow = Path(args.jobs_dir).resolve() != Path(paths.JOBS).resolve()

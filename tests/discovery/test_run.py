@@ -370,6 +370,22 @@ def test_a_shadow_run_reads_its_own_lanes_and_leaves_the_inbox_alone(wired, monk
     assert "inbox skipped (shadow --jobs-dir)" in report["overrides"]
 
 
+def test_a_shadow_discovery_yaml_is_read_from_the_profile_dir(wired, monkeypatch):
+    read = []
+
+    def load(path=None):
+        read.append(path)
+        return DiscoveryConfig()
+
+    monkeypatch.setattr(R, "load_config", load)
+    shadow = wired / "shadow_profile"
+    shadow.mkdir()
+    (shadow / "discovery.yaml").write_text("schema_version: 2\n", encoding="utf-8")
+    args = ["--jobs-dir", str(wired / "j"), "--profile-dir", str(shadow), "--deadline-hours", "0"]
+    assert R.main(args + ["--boards-dir", str(wired)]) == 0
+    assert read == [shadow / "discovery.yaml"]
+
+
 def test_unknown_source_is_refused(wired):
     with pytest.raises(SystemExit):
         R.main(["--jobs-dir", str(wired), "--source", "monster"])
