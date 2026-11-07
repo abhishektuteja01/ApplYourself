@@ -161,10 +161,13 @@ An arbeitsagentur.de 404 marks the posting `gone` there, but only on a night
 that API also answered: neither its API nor its page is read, and a stored one
 is not seen (so it ages out of the view by `live_days`), until
 `forget_after_days` pass; an API answer clears the mark. With no answer all
-night its 404s mark nothing and stored postings are seen as before. The stored
-postings of tracked roles are never checked or held back. `detail_ok` /
-`detail_failed` count postings that needed a JD; `liveness_checked` /
-`liveness_gone` count stored postings asked and held back.
+night its 404s mark nothing and stored postings are seen as before. A new
+posting's 404 still reads its page that night, as a fallback. A posting listed
+twice is asked once a night. The stored postings of tracked roles are never
+checked or held back. `detail_ok` / `detail_failed` count postings that needed
+a JD; `liveness_checked` counts stored postings whose API was asked tonight,
+`liveness_gone` those of them held back as gone, and `liveness_gone_known` those
+an earlier night's mark held back.
 An Oracle Recruiting Cloud row's JD comes from its requisition-detail API
 (`feed/oracle.py`), since its job page is built in the browser; its key is tenant +
 requisition id. One named only by its tenant code ("Egug") is named from its

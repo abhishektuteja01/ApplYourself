@@ -289,6 +289,18 @@ class StapplyLane(Lane):
         # 404s tonight, {key: (api site, what a stored posting gets if not gone)}: a 404
         # means gone only once that API has answered tonight.
         held: dict[str, tuple[str, dict | None]] = {}
+        # Tonight's API answer per posting: a repeated listing is not asked again.
+        answers: dict[str, tuple[str | None, str]] = {}
+
+        def ask(key: str, reader) -> tuple[tuple[str | None, str], bool]:
+            """(the API's (JD, answer), whether it was asked just now)."""
+            if key in answers:
+                return answers[key], False
+            out = pages.call(reader[0], reader[1])
+            if out[0] is not None:
+                answers[key] = out
+            return out, out[0] is not None
+
         named = 0
         site_names: dict[str, str] = {}
         for posting in self.rows:
@@ -311,11 +323,11 @@ class StapplyLane(Lane):
             if known is not None and key not in crawl.tracked_keys and reader and reader[2]:
                 # A stored posting its API calls gone is not seen again, so it ages out.
                 if failed.gone(key):
-                    stats.liveness_gone += 1
+                    stats.liveness_gone_known += 1
                     gone += 1
                     continue
-                stats.liveness_checked += 1
-                answer = pages.call(reader[0], reader[1])[1]
+                (_, answer), asked = ask(key, reader)
+                stats.liveness_checked += asked
                 if answer == "gone":
                     held[key] = (reader[0], None)
                 elif answer == "ok":
@@ -353,7 +365,7 @@ class StapplyLane(Lane):
                 needs_jd = needs_name = False
             elif needs_jd and reader is not None:
                 # A host with a JSON API: its JD is read there, else from the page.
-                found, answer = pages.call(reader[0], reader[1])
+                (found, answer), _ = ask(key, reader)
                 attempted = attempted or found is not None
                 if answer == "gone" and reader[2]:
                     held[key] = (reader[0], None)

@@ -636,13 +636,38 @@ def test_a_stored_gone_mark_expires_and_an_answer_clears_it(monkeypatch, cfg, tm
     stats, crawl = _night(cfg, tmp_path, path, 0, known=known)
     assert crawl.batch.touched == {live}
     assert (stats.liveness_checked, stats.liveness_gone) == (2, 1)
-    _, crawl = _night(cfg, tmp_path, path, 1, known=known)
+    stats, crawl = _night(cfg, tmp_path, path, 1, known=known)
     assert crawl.batch.touched == {live} and len(api) == 3
+    assert (stats.liveness_checked, stats.liveness_gone, stats.liveness_gone_known) == (1, 0, 1)
     _ba_api(monkeypatch, live=["10000-0-S", "10000-1-S"], calls=api)
     days = DiscoveryConfig().forget_after_days
     _, crawl = _night(cfg, tmp_path, path, days, known=known)
     assert crawl.batch.touched == {gone, live} and len(api) == 5
     assert json.loads((tmp_path / "failed.json").read_text(encoding="utf-8")) == {}
+
+
+def test_a_posting_listed_twice_is_asked_once(monkeypatch, cfg, tmp_path):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(1) * 2).assign(description=None).to_parquet(path)
+    api: list[str] = []
+    _ba_api(monkeypatch, calls=api)
+    monkeypatch.setattr(stapply.http_client, "fetch_page", lambda url: (200, "<html/>"))
+    stats, _ = _night(cfg, tmp_path, path, 0, known={_ba_key(0): {"updated_at": ""}})
+    assert len(api) == 1 and stats.liveness_checked == 1
+
+
+def test_a_held_posting_named_from_its_page_is_saved_on_a_night_without_answers(
+    monkeypatch, cfg, tmp_path
+):
+    path = tmp_path / "ba.parquet"
+    pd.DataFrame(_ba_rows(1)).assign(description=None, company="acme").to_parquet(path)
+    _ba_api(monkeypatch)
+    monkeypatch.setattr(
+        stapply.http_client, "fetch_page", lambda url: (200, _employer_page("Acme GmbH"))
+    )
+    _, crawl = _night(cfg, tmp_path, path, 0, known={_ba_key(0): {"updated_at": ""}})
+    # Seen as before: the page's employer refreshes the stored row.
+    assert crawl.batch.rows[_ba_key(0)]["company"] == "Acme GmbH"
 
 
 def test_404s_with_no_answer_tonight_mark_nothing_gone(monkeypatch, cfg, tmp_path):
