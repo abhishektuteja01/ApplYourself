@@ -16,14 +16,16 @@ fi
 RETRIES="$(cfg retries)" || { stage_end 2 "config"; exit 2; }
 JUDGE_TOOLS="Read,Write"
 
-run_judges() {  # run_judges "<judge lines>"
-  local pids=() n=0 line
+run_judges() {  # run_judges "<judge lines>" [tag prefix]
+  local pids=() n=0 line lines=()
   while IFS= read -r line; do
-    [[ "$line" == judge\ * ]] || continue
-    n=$((n + 1))
-    run_claude "judge_$n" "$JUDGE_TOOLS" "${line#judge }" --agent score-judge &
-    pids+=($!)
+    [[ "$line" == judge\ * ]] && lines+=("${line#judge }")
   done <<< "$1"
+  for line in ${lines[@]+"${lines[@]}"}; do
+    n=$((n + 1))
+    run_claude "${2:-judge}_$n" "$JUDGE_TOOLS" "$line" --agent score-judge &
+    pids+=($!)
+  done
   local pid
   for pid in ${pids[@]+"${pids[@]}"}; do wait "$pid" || true; done
   echo "judges finished: $n"
@@ -53,5 +55,5 @@ while :; do
     stage_end 1 "still owed after $RETRIES retry: $(grep '^bad ' <<< "$FIN" | head -3 | tr '\n' ' ')"
     exit 1
   fi
-  run_judges "$FIN"
+  run_judges "$FIN" "retry${attempt}_judge"
 done

@@ -99,7 +99,7 @@ run_claude() {
     --permission-mode dontAsk --permission-prompts none \
     --allowedTools "$tools" --disallowedTools 'Bash(uv run python *)' \
     --output-format json --no-session-persistence \
-    --max-budget-usd "$budget" "$@" > "$out" 2>>"$LOG"
+    --max-budget-usd "$budget" "$@" < /dev/null > "$out" 2>>"$LOG"  # no stdin: claude -p appends it to the prompt
   local code=$?
   echo "claude $tag exit=$code -> $out"
   "$UV" run python - "$out" "$RUN_DIR/$STAGE.cost" "$tag" "$RUN_DIR/$STAGE.quota" <<'PY'

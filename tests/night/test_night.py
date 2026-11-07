@@ -152,6 +152,44 @@ def test_run_claude_logs_every_calls_cost_even_a_retry_that_reuses_the_result_fi
     assert M._cost(tmp_path / "run" / "tailor.cost") == 0.5
 
 
+def test_run_claude_gives_the_call_no_stdin(tmp_path):
+    # claude -p appends piped stdin to the prompt; a judge started inside a
+    # `while read` loop used to get every other judge's slice line too.
+    import subprocess
+    import sys
+
+    from applyourself.shared import paths
+
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "claude").write_text(
+        f'#!/bin/bash\nwc -c | tr -d " " > "{tmp_path}/stdin_bytes"\n'
+        'echo \'{"is_error": false, "total_cost_usd": 0.1}\'\n',
+        encoding="utf-8",
+    )
+    (fake / "uv").write_text(
+        f'#!/bin/bash\n[[ "$2" == python ]] && {{ shift 2; exec "{sys.executable}" "$@"; }}\n'
+        "echo 10\n",
+        encoding="utf-8",
+    )
+    for f in fake.iterdir():
+        f.chmod(0o755)
+    lib = paths.REPO_ROOT / "scripts" / "lib_pipeline.sh"
+    script = f'source "{lib}"; STAGE=score; LOG=/dev/null; run_claude j1 Read p'
+    env = {"PATH": "/usr/bin:/bin", "UV": str(fake / "uv"), "CLAUDE": str(fake / "claude")}
+    env["RUN_DIR"] = str(tmp_path / "run")
+    subprocess.run(
+        ["bash", "-c", script],
+        env=env,
+        input="judge other slices\n",
+        text=True,
+        encoding="utf-8",
+        check=True,
+        capture_output=True,
+    )
+    assert (tmp_path / "stdin_bytes").read_text(encoding="utf-8").strip() == "0"
+
+
 def test_a_usage_limit_is_a_run_json_field_and_a_stale_mark_is_cleared(logs, tmp_path):
     (tmp_path / "stages" / "score.sh").write_text(
         '#!/bin/bash\necho score >> "$RUN_DIR/../ran.txt"\n: > "$RUN_DIR/score.quota"\nexit 1\n',
