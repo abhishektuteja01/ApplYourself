@@ -167,6 +167,7 @@ class Settings(_Strict):
     schema_version: int | None = None
     table_path: str | None = None
     tailor_parallel: int | None = None
+    judge_parallel: Annotated[int, Field(ge=1)] | None = None
     tailor_stagger_seconds: int | None = None
     retries: int | None = None
     max_budget_usd_per_call: float | None = None

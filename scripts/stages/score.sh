@@ -15,6 +15,8 @@ fi
 
 RETRIES="$(cfg retries)" || { stage_end 2 "config"; exit 2; }
 JUDGE_TOOLS="Read,Write"
+JUDGE_PARALLEL="$(cfg judge_parallel 2>/dev/null)" || JUDGE_PARALLEL=8
+[[ "$JUDGE_PARALLEL" =~ ^[1-9][0-9]*$ ]] || JUDGE_PARALLEL=8
 
 run_judges() {  # run_judges "<judge lines>" [tag prefix]
   local pids=() n=0 line lines=()
@@ -22,6 +24,9 @@ run_judges() {  # run_judges "<judge lines>" [tag prefix]
     [[ "$line" == judge\ * ]] && lines+=("${line#judge }")
   done <<< "$1"
   for line in ${lines[@]+"${lines[@]}"}; do
+    # At most JUDGE_PARALLEL judges at once (an --all run stages hundreds).
+    while [[ $(jobs -rp | wc -l) -ge $JUDGE_PARALLEL ]]; do sleep 2; done
+    quota_hit && break  # past the usage limit: start no more; the rest stay owed
     n=$((n + 1))
     run_claude "${2:-judge}_$n" "$JUDGE_TOOLS" "$line" --agent score-judge &
     pids+=($!)

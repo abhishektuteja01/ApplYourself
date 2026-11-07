@@ -342,3 +342,40 @@ def test_a_reset_just_passed_is_not_read_as_tomorrow(tmp_path, monkeypatch):
     monkeypatch.setattr(M, "_sleep_until", slept.append)
     night = M.Night(run_dir, {"stages": {}}, False, tmp_path)
     assert night.wait("score", 0) and slept == [datetime(2026, 11, 7, 1, 23)]
+
+
+def test_score_runs_at_most_judge_parallel_judges_at_once(tmp_path):
+    import subprocess
+    import sys
+
+    from applyourself.shared import paths
+
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    log = tmp_path / "live.log"
+    (fake / "claude").write_text(
+        "#!/bin/bash\n"
+        f'echo start >> "{log}"; sleep 1; echo end >> "{log}"\n'
+        'echo \'{"is_error": false, "total_cost_usd": 0.1}\'\n',
+        encoding="utf-8",
+    )
+    lines = "\\n".join(f"judge s{i}.md" for i in range(5))
+    (fake / "uv").write_text(  # `config get` -> 2; `score start` -> 5 judge lines
+        f'#!/bin/bash\n[[ "$2" == python ]] && {{ shift 2; exec "{sys.executable}" "$@"; }}\n'
+        f'[[ "$2" == score && "$3" == start ]] && {{ printf "judge=5\\n{lines}\\n"; exit 0; }}\n'
+        '[[ "$2" == score && "$3" == finish ]] && { echo "merged"; exit 0; }\n'
+        "echo 2\n",
+        encoding="utf-8",
+    )
+    for f in fake.iterdir():
+        f.chmod(0o755)
+    env = {"PATH": "/usr/bin:/bin", "UV": str(fake / "uv"), "CLAUDE": str(fake / "claude")}
+    env["RUN_DIR"] = str(tmp_path / "run")
+    env["HOME"] = str(tmp_path)
+    script = paths.REPO_ROOT / "scripts" / "stages" / "score.sh"
+    subprocess.run(["bash", str(script)], env=env, check=True, capture_output=True)
+    live = peak = 0
+    for event in log.read_text(encoding="utf-8").split():
+        live += 1 if event == "start" else -1
+        peak = max(peak, live)
+    assert peak == 2
