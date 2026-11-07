@@ -68,9 +68,6 @@ class ScoringConfig:
     degree_rank: int | None = None
     """Your highest degree as a `degree_rank`, from the answer bank; None
     when it names none we know, so every years path counts."""
-    rejudge_jd_similarity: float = 0.9
-    """--stale-only: a JD at least this similar to the judged copy from the
-    same source is not a change."""
 
 
 def _phrases(data: dict[str, Any], key: str, path: Path) -> tuple[str, ...]:
@@ -168,16 +165,8 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         note=str(s.get("note") or ""),
         languages=bank_languages(Path(bank_path)),
         degree_rank=bank_degree_rank(Path(bank_path)),
-        rejudge_jd_similarity=_share(data, "rejudge_jd_similarity", 0.9, path),
     )
     return cfg
-
-
-def _share(data: dict[str, Any], key: str, default: float, path: Path) -> float:
-    value = data.get(key, default)
-    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 < value <= 1:
-        raise ValueError(f"{path}: {key} must be a number above 0 and at most 1")
-    return float(value)
 
 
 def load_cutoffs(path: Path | None = None) -> Cutoffs:

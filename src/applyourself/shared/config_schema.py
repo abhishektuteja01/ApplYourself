@@ -129,7 +129,6 @@ class ScoringFile(_Strict):
     no_sponsorship: Any = None
     keywords_max: Any = None
     years_margin: Any = None
-    rejudge_jd_similarity: Any = None
     jd_quality: JdQuality | None = None
     trim_jd: TrimJd | None = None
     shortlist: Shortlist | None = None

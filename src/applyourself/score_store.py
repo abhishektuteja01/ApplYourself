@@ -25,7 +25,6 @@ from typing import Annotated, Any, Literal, cast
 import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
 
 from applyourself.score_filter import (
@@ -375,6 +374,10 @@ def first_seen(store_path: Path | None, job_ids: set[str]) -> dict[str, float]:
     return {str(j): t.timestamp() for j, t in first.items()}
 
 
+def _words(text: str) -> list[str]:
+    return sorted(default_process(text).split())
+
+
 def same_jd_copies(
     rows: list[dict[str, Any]],
     hashes: dict[str, str],
@@ -382,10 +385,10 @@ def same_jd_copies(
     store_path: Path | None,
     cfg: ScoringConfig,
 ) -> set[str]:
-    """The ids among changed `rows` whose JD is only a near copy of the judged
-    one: a stored posting from the row's own source whose JD gives the stored
-    hash under today's packet, at least `rejudge_jd_similarity` alike (word
-    order, case, punctuation and a shorter copy aside)."""
+    """The ids among changed `rows` whose JD only reformats the judged one: a
+    stored posting from the row's own source whose JD gives the stored hash
+    under today's packet, with the same words once boilerplate is trimmed
+    (order, case, punctuation and whitespace aside). Any other change re-judges."""
     if not rows or store_path is None or not Path(store_path).exists():
         return set()
     ids = {r["job_id"] for r in rows}
@@ -405,8 +408,7 @@ def same_jd_copies(
                 or input_hash(packets[r["vertical"]], judged) != hashes[r["job_id"]]
             ):
                 continue
-            alike = fuzz.token_set_ratio(judged, r["_jd"], processor=default_process) / 100
-            if alike >= cfg.rejudge_jd_similarity:
+            if _words(judged) == _words(r["_jd"]):
                 out.add(r["job_id"])
             break
     return out

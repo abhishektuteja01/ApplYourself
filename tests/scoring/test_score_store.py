@@ -154,38 +154,44 @@ class TestStart:
         (meta,) = score_store.load_run(env["staging"])["slices"].values()
         assert meta["job_ids"] == ["aaaaaaaa"]
 
-    def test_stale_only_skips_a_same_source_near_copy_of_the_judged_jd(self, env, scfg):
-        """A repost re-judges only when its JD really changed, compared with the
-        judged copy from the same source; a reformatted copy is no change."""
-        ids = ("aaaaaaaa", "bbbbbbbb", "cccccccc")
-        _clean(env, [{"job_id": j, "company": j} for j in ids])
+    def test_stale_only_skips_only_a_same_source_reformat_of_the_judged_jd(self, env, scfg):
+        """A repost re-judges unless its JD is the judged one reformatted or
+        reordered (same words), from the same source; any word change re-judges."""
+        base = JD + "Requires 3+ years of experience. Visa sponsorship is available."
+        stub = base[:300]
+        judged = {"aaaaaaaa": base, "bbbbbbbb": base, "cccccccc": base, "dddddddd": base,
+                  "eeeeeeee": stub, "ffffffff": base}  # fmt: skip
+        _clean(env, [{"job_id": j, "company": j, "jd_text": jd} for j, jd in judged.items()])
         _start(env, scfg)
         _write_answers(
-            env, score_store.load_run(env["staging"])["slices"], {j: _answer(j) for j in ids}
+            env, score_store.load_run(env["staging"])["slices"], {j: _answer(j) for j in judged}
         )
         _finish(env, scfg)
         day = pd.Timestamp("2026-09-20")
         pd.DataFrame(
-            {"job_id": list(ids), "source": ["greenhouse"] * 3, "jd_text": [JD] * 3}
+            {"job_id": list(judged), "source": "greenhouse", "jd_text": list(judged.values())}
         ).assign(first_seen=day, last_seen=day).to_parquet(env["store"])
-        copy = "**" + JD.upper().replace(". ", ";\n- ")[: len(JD) // 2]
-        other = "Lead night shifts on the reactor floor; forklift licence a must. " * 40
+        reformat = "**" + "\n- ".join(reversed(base.upper().split(". ")))
+        now = {
+            "aaaaaaaa": reformat,
+            "bbbbbbbb": base + " Must relocate to Austin.",  # add-only
+            "cccccccc": base.replace("3+ years", "10+ years"),
+            "dddddddd": base.replace("is available", "is not available"),
+            "eeeeeeee": base,  # stub -> full JD
+            "ffffffff": reformat,  # the same reformat, from another source
+        }
         _clean(
             env,
             [
-                {"job_id": "aaaaaaaa", "company": "aaaaaaaa", "jd_text": copy},
-                {"job_id": "bbbbbbbb", "company": "bbbbbbbb", "jd_text": other},
-                {
-                    "job_id": "cccccccc",
-                    "company": "cccccccc",
-                    "jd_text": copy,
-                    "source": "linkedin",
-                },
+                {"job_id": j, "company": j, "jd_text": jd}
+                | ({"source": "linkedin"} if j == "ffffffff" else {})
+                for j, jd in now.items()
             ],
         )
         res = _start(env, scfg, stale_only=True, store_path=env["store"])
-        (meta,) = score_store.load_run(env["staging"])["slices"].values()
-        assert res["judge"] == 2 and meta["job_ids"] == ["bbbbbbbb", "cccccccc"]
+        staged = sorted(j for m in score_store.load_run(env["staging"])["slices"].values()
+                        for j in m["job_ids"])  # fmt: skip
+        assert res["judge"] == 5 and staged == sorted(set(judged) - {"aaaaaaaa"})
 
     def test_nothing_to_judge_stages_nothing(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa", "vertical": ""}])
