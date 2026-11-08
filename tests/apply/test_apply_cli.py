@@ -2097,15 +2097,6 @@ def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
     assert role_facts._jd_country("b") == ""
 
 
-def _has_libpostal() -> bool:
-    try:
-        import postal.parser  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
-@pytest.mark.skipif(not _has_libpostal(), reason="needs `uv sync --group discovery`")
 class TestTheJobsCountry:
     """Where a role is, read from discovery's location in every shape seen live."""
 
@@ -2119,8 +2110,12 @@ class TestTheJobsCountry:
             ("MH, IN", "India"),
             ("Wrocław, DO, PL", "Poland"),
             ("München, BY, DE", "Germany"),
-            ("SGP Work-at-Home", "Singapore"),
+            ("SGP Work-at-Home", "(unknown)"),  # 3-letter codes are not read: it parks
             ("Northern Virginia - On-site", "United States"),
+            ("Rotterdam, South Holland, Netherlands", "Netherlands"),
+            ("Boston, MA; Vancouver, British Columbia, Canada", "United States"),
+            ("DE-Ettlingen | PT-Porto", "(unknown)"),
+            ("South America", "(unknown)"),
             ("Hybrid", ""),
             ("Remote", ""),
         ],

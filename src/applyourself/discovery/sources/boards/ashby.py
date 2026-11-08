@@ -8,6 +8,7 @@ from urllib.parse import quote
 from applyourself.discovery import parse
 from applyourself.discovery.sources.boards.base import Board, BoardLane, job_items
 from applyourself.discovery.store import make_posting
+from applyourself.shared.countries import COUNTRY_TO_CC, canonical_country
 from applyourself.shared.http_client import CareersError, fetch_json, fetch_json_post
 
 API = "https://api.ashbyhq.com/posting-api/job-board"
@@ -41,6 +42,19 @@ def _salary(comp) -> tuple:
     return None, None, ""
 
 
+def _countries(item: dict) -> str:
+    """ISO codes of the posting's address and its secondary locations ("IE,US")."""
+    found = set()
+    for place in [item, *(item.get("secondaryLocations") or [])]:
+        address = place.get("address") if isinstance(place, dict) else None
+        postal = address.get("postalAddress") if isinstance(address, dict) else None
+        name = postal.get("addressCountry") if isinstance(postal, dict) else None
+        code = COUNTRY_TO_CC.get(canonical_country(name) or "", "") if isinstance(name, str) else ""
+        if code:
+            found.add(code)
+    return ",".join(sorted(found))
+
+
 def posting_from(item: dict, company: str) -> dict | None:
     title = item.get("title") or ""
     url = item.get("jobUrl") or item.get("applyUrl") or ""
@@ -54,6 +68,7 @@ def posting_from(item: dict, company: str) -> dict | None:
         url=url,
         jd_text=parse.html_to_text(item.get("descriptionHtml") or item.get("descriptionPlain")),
         location_raw=item.get("location") or "",
+        country=_countries(item),
         posted_date=parse.iso_date(item.get("publishedAt")),
         remote_flag=item.get("isRemote") is True,
         salary_min=lo,

@@ -147,37 +147,24 @@ output needs Microsoft Word on macOS. Without Word, pass
 ```bash
 git clone <this repo> && cd <repo>
 uv sync
-uv run pytest tests -q --ignore=tests/discovery   # should be fully green
+uv run pytest tests -q   # should be fully green
 ```
 
-**2. Install libpostal.** Discovery's location filter needs it, with no
-fallback.
-
-```bash
-brew install libpostal            # macOS. On Linux, build from source.
-uv sync --group discovery
-uv run python -c "import postal.parser"   # must exit 0
-```
-
-On Linux, build [openvenues/libpostal](https://github.com/openvenues/libpostal)
-from source (about 2GB of model data; needs `autoconf`, `automake`, `libtool`,
-`pkgconf` and a compiler). `.github/workflows/ci.yml` has a working recipe.
-
-**3. Install the `/apply` browser** (optional). Every other stage works without
+**2. Install the `/apply` browser** (optional). Every other stage works without
 it. It drives its own empty Chrome profile at `.apply_profile/`, never yours.
 
 ```bash
-uv sync --group discovery --group apply   # a plain `uv sync` drops both groups
+uv sync --group apply   # a plain `uv sync` drops the group
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome   # macOS
 ```
 
-**4. Fill in your profile.** In Claude Code, run `/onboarding`: five resumable
+**3. Fill in your profile.** In Claude Code, run `/onboarding`: five resumable
 steps and eight questions, with real scored jobs on screen by step 4. It drafts
 every `profile/` file. `/onboarding audit` checks an existing setup and changes
 nothing. By hand: `uv run onboard-scaffold --vertical <lane> --work-auth <status>`
 copies every template, then `/new-vertical <lane>` writes your first lane.
 
-**5. Check your config.**
+**4. Check your config.**
 
 ```bash
 uv run verticals-check     # your lanes, or what's missing
@@ -185,7 +172,7 @@ uv run config-check        # every profile/ file, OK or ERROR
 uv run config --help       # read-only views of the resolved config
 ```
 
-**6. Enable the git hooks** once per clone: `git config core.hooksPath .githooks`.
+**5. Enable the git hooks** once per clone: `git config core.hooksPath .githooks`.
 They run ruff, mypy, the R7 scan and the tests on commit, and the PII gate on
 push.
 
@@ -247,13 +234,11 @@ wake a few minutes earlier; the night itself holds off sleep with `caffeinate`.
 ## Tests
 
 ```bash
-uv run pytest tests -q --ignore=tests/discovery
+uv run pytest tests -q
 ```
 
-Drop the `--ignore` once libpostal is installed:
-`tests/discovery/test_stapply.py` errors without it. Tests run against a
-fictional three-lane config in `tests/fixtures/`, never your real one. CI runs
-the full suite with libpostal under `LC_ALL=C`, and the PII gate as its own job.
+Tests run against a fictional three-lane config in `tests/fixtures/`, never your
+real one. CI runs the full suite under `LC_ALL=C`, and the PII gate as its own job.
 
 ## Before you push: the PII gate
 

@@ -93,12 +93,6 @@ echo "--- optional (later menu) ---"
 for f in profile/discovery.yaml profile/application_answers.yaml \
          profile/voice_samples.md profile/contacts.yaml profile/pii_denylist.txt; do
   test -s "$f" && echo "ok   $f" || echo "absent  $f"; done
-# Probe the Python binding, not the C library: both ingestion paths import
-# `postal.parser`, and a system libpostal with no binding installed still dies
-# at run time.
-if uv run python -c "import postal.parser" >/dev/null 2>&1
-then echo "ok   libpostal binding"
-else echo "absent  libpostal binding (step 1's scrape needs it)"; fi
 echo "--- validity ---"
 uv run verticals-check 2>&1 | tail -5
 echo "--- progress ---"
@@ -109,36 +103,15 @@ Map each result to the step that fixes it, in a short checklist, and start
 there. If everything is present and `verticals-check` passes, report that and
 stop — that is the audit. `audit` mode always stops here.
 
-**libpostal is a hard prerequisite for the scrape at the end of step 1.** The
-location filter imports the `postal` binding (opt-in group
-`discovery`), compiled against the system `libpostal` C library. No fallback
-parser, and no way around it: `uv run discover` and `uv run ingest-url` both
-rebuild `clean.parquet` through it. Steps 2, 4 and 5 do not need it, and step 1 up to the scrape
-does not either.
-
-If the probe says absent, say so now and let 0b's `uv sync --group discovery`
-try. The wheel builds only against a system libpostal that is already there, so
-if that sync fails to compile, print these and have the user run the install in
-another terminal while step 1's questions continue:
-
-- macOS: `brew install libpostal`, then `uv sync --group discovery`
-- Linux: build from source (`github.com/openvenues/libpostal`) — no distro
-  packages it; install its dev headers, expect a ~2 GB data download. Then
-  `uv sync --group discovery`.
-
 ### 0b. Install, then one background test run
 
 ```bash
 uv sync
-uv run python -c "import postal.parser" >/dev/null 2>&1 || uv sync --group discovery
 git config core.hooksPath .githooks
 mkdir -p logs
-nohup uv run pytest tests -q --ignore=tests/discovery \
+nohup uv run pytest tests -q \
       --ignore=tests/repo/test_real_config_drift.py > logs/onboarding_tests.log 2>&1 &
 ```
-
-If the second line fails to compile, that is the C library missing — print the
-install block from 0a and carry on; step 1.5 is where it becomes blocking.
 
 `test_real_config_drift.py` is excluded because step 1.3 leaves `verticals.yaml`
 deliberately non-loading, and the lane is only complete once step 2's
@@ -218,16 +191,9 @@ the resume.
 
    ```bash
    mkdir -p logs jobs
-   uv run python -c "import postal.parser" || echo "BLOCKED: libpostal binding missing"
    nohup uv run discover --source linkedin --max-terms 2 --deadline-hours 0.1 \
          > logs/onboarding_scrape.log 2>&1 &
    ```
-
-   **libpostal is blocking here**, not later: the location filter runs on every
-   ingestion path, so the scrape cannot start without the binding. If it is missing, skip
-   the `nohup` line, say so in one line, print the install block from 0a, and
-   continue to step 2 — step 3 picks it up through the paste-URL fallback. Never
-   dead-end the user on it.
 
    Say what the scrape is before starting it: LinkedIn search only, two terms.
    No Indeed unless the fallback fires, no Greenhouse, Lever, Ashby or Workday
@@ -321,7 +287,7 @@ nohup uv run discover --source indeed --max-terms 2 --deadline-hours 0.1 \
       > logs/onboarding_scrape_indeed.log 2>&1 &
 ```
 
-Still zero after that, or libpostal never arrived: say so in one line with the
+Still zero after that: say so in one line with the
 likely cause — the first two search terms do not match how these boards title
 the role, the deadline cut the run short, or both boards rate-limited — then take
 the fallback. Have them paste two or three job URLs and run
@@ -436,9 +402,9 @@ Read the background test run first:
 tail -3 logs/onboarding_tests.log
 ```
 
-Green — one line, and note that `tests/discovery` and
-`tests/repo/test_real_config_drift.py` were excluded from that run; `uv run pytest
-tests -q` now covers both, since libpostal is installed and the lane is complete.
+Green — one line, and note that `tests/repo/test_real_config_drift.py` was
+excluded from that run; `uv run pytest tests -q` now covers it, since the lane is
+complete.
 Not green, or still running: report what failed and do not declare setup done.
 
 ```

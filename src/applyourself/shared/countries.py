@@ -149,6 +149,15 @@ def canonical_country(name: str) -> str | None:
     return COUNTRY_NAMES.get(_key(name or ""))
 
 
+def location_names() -> dict[str, str]:
+    """Folded spelling -> country, for a job location: pycountry's names and
+    every alias, no native names."""
+    names = _pycountry_names()
+    known = set(names.values())
+    aliases = {**_ALIASES, **_ADDRESS_ALIASES, **_LABEL_ALIASES}
+    return names | {k: v for k, v in aliases.items() if v in known}
+
+
 def label_names() -> dict[str, str]:
     """Folded spelling -> country, for the countries a form label can name."""
     names = {k: v for k, v in _pycountry_names().items() if k not in _NOT_A_COUNTRY_WORD}

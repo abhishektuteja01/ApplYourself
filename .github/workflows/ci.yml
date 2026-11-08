@@ -16,9 +16,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  LIBPOSTAL_REF: v1.1.4
-
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -38,42 +35,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-
-      # `postal` is optional (the `discovery` group) and the core sync no
-      # longer needs it — but the suite does: tests/shared/test_location.py
-      # and the store's location-filter tests exercise the real parser, with
-      # no stub. It compiles against the libpostal C library, which no
-      # Debian/Ubuntu package ships, so build it once and cache the install
-      # prefix (the ~2GB model data lives in it too).
-      - name: Cache libpostal
-        id: libpostal
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/libpostal
-          key: libpostal-${{ runner.os }}-${{ env.LIBPOSTAL_REF }}
-
-      - name: Build libpostal
-        if: steps.libpostal.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential autoconf automake libtool pkgconf curl
-          git clone --depth 1 --branch "$LIBPOSTAL_REF" \
-            https://github.com/openvenues/libpostal.git /tmp/libpostal
-          cd /tmp/libpostal
-          ./bootstrap.sh
-          ./configure --prefix="$HOME/libpostal" --datadir="$HOME/libpostal/data"
-          make -j"$(nproc)"
-          make install
-
-      - name: Expose libpostal to the build and to the tests
-        run: |
-          echo "LIBPOSTAL_PREFIX=$HOME/libpostal" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=$HOME/libpostal/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$HOME/libpostal/lib" >> "$GITHUB_ENV"
-
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: uv sync --frozen --group discovery
+      - run: uv sync --frozen
       # Also proves the suite runs in a non-UTF-8 locale, which is how a bare
       # container and a cron job both run it.
       - run: uv run pytest tests -q

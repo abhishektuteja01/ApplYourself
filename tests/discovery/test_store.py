@@ -597,7 +597,7 @@ def test_flush_round_trips(tmp_path):
 
 
 class AllowAll:
-    def check(self, raw, vertical="", title=""):
+    def check(self, raw, vertical="", country=""):
         if raw == "Paris, France":
             return Allowed(False, raw, True)
         return Allowed(True, raw or "", bool(raw))
@@ -669,6 +669,10 @@ def test_view_applies_the_location_allowlist():
     store, _ = fold(S.empty_store(), post(GH.format(1), location_raw="Paris, France"))
     out, funnel = view(store)
     assert out.empty and funnel["after_location"] == 0
+    # A tracked role never leaves on its location.
+    jid = store.at[0, "job_id"]
+    out, _ = view(store, state_index={jid: {"state": "skip"}})
+    assert list(out["job_id"]) == [jid]
 
 
 def test_view_retention_tiers():

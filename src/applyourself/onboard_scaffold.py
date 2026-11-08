@@ -4,7 +4,7 @@ One command for every mechanical step of a fresh install: copy each
 `profile/*.example.*` template to its real name, strip the shipped example
 lanes out of the copied `verticals.yaml`, set the home country's
 work-authorization row in `profile/application_answers.yaml` from the answer,
-probe for libpostal, and — behind `--with-apply` — set up the submission path.
+and — behind `--with-apply` — set up the submission path.
 
 Never destructive: an existing file is skipped and listed, `--force`
 overwrites, `--dry-run` prints the full plan and touches nothing.
@@ -61,14 +61,6 @@ WORK_AUTH_CHOICES = ("citizen", "needs_now", "time_limited")
 # The loader's own lane-name pattern. An invalid name here writes an
 # unloadable default_vertical, and the strip is not re-runnable to fix it.
 VERTICAL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-
-LIBPOSTAL_INSTALL = {
-    "darwin": "brew install libpostal",
-    "linux": (
-        "build libpostal from source (github.com/openvenues/libpostal) "
-        "— no distro packages it; install its dev headers, ~2 GB data download"
-    ),
-}
 
 
 @dataclass
@@ -298,21 +290,7 @@ def apply_work_auth(work_auth: str, dry_run: bool, rep: Report) -> None:
         )
 
 
-# --- advisory probes and the optional apply path --------------------------
-
-
-def probe_libpostal(rep: Report) -> None:
-    """Advisory only: never installs, never changes the exit code."""
-    try:
-        __import__("postal.parser")
-    except Exception:  # noqa: BLE001 - a broken native install raises anything
-        hint = LIBPOSTAL_INSTALL.get(sys.platform, LIBPOSTAL_INSTALL["linux"])
-        rep.notes.append(
-            f"libpostal not importable — `uv run discover` needs it. Install it "
-            f"({hint}), then `uv sync --group discovery`. Nothing else needs it."
-        )
-    else:
-        rep.notes.append("libpostal importable — `uv run discover` is ready")
+# --- the optional apply path ----------------------------------------------
 
 
 def setup_apply_path(dry_run: bool, rep: Report) -> bool:
@@ -397,7 +375,6 @@ def main(argv: list[str] | None = None) -> int:
     written = copy_templates(templates, args.force, args.dry_run, rep)
     reconcile_verticals(args.vertical, "verticals.yaml" in written, args.dry_run, rep)
     apply_work_auth(args.work_auth, args.dry_run, rep)
-    probe_libpostal(rep)
 
     ok = True
     if args.with_apply:

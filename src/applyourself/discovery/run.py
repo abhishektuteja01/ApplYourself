@@ -388,9 +388,6 @@ def main(argv=None) -> int:
             if "discovery.yaml" in shadow_files
             else load_config()
         )
-        from applyourself.shared.location.parser import require_libpostal
-
-        require_libpostal()
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         sys.exit(f"ERROR: {e}")
     problems = cfg.validate()

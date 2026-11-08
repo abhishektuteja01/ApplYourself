@@ -7,7 +7,6 @@ profile/ — it is a live install, and this CLI is a pile of cp example -> real.
 
 from __future__ import annotations
 
-import builtins
 import subprocess
 from pathlib import Path
 
@@ -226,22 +225,6 @@ class TestWorkAuth:
         assert run("--vertical", "my_lane", "--work-auth", "needs_now") == 0
         assert (prof / "application_answers.yaml").read_text(encoding="utf-8") == once
         assert "already says needs_now" in capsys.readouterr().out
-
-
-class TestLibpostalProbe:
-    def test_a_missing_libpostal_is_advisory_not_fatal(self, prof, monkeypatch, capsys):
-        real_import = builtins.__import__
-
-        def _no_postal(name, *args, **kwargs):
-            if name.startswith("postal"):
-                raise ImportError("no libpostal")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", _no_postal)
-        assert run("--vertical", "my_lane", "--work-auth", "citizen") == 0
-        out = capsys.readouterr().out
-        assert "libpostal not importable" in out
-        assert "uv sync --group discovery" in out
 
 
 class TestApplyPath:

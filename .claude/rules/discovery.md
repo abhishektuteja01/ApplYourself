@@ -114,8 +114,8 @@ newest sighting, then the longest JD. Retention runs from the job's earliest
 `first_seen`, or with `retention_from: newest` from the newest `first_seen`
 among its postings that passed the gates above (a repost restarts it): `high_days` at fit >= threshold or unscored, else `low_days`; an
 unscored row `score_filter.drop_reason` drops today gets `low_days`.
-Tracked roles skip the search-age cut and retention; `ACTIVE_STATES` roles are
-always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
+Tracked roles skip the search-age cut, the location gate and retention;
+`ACTIVE_STATES` roles are always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
 
 ## Boards (`sources/boards/base.py`)
 
@@ -147,7 +147,7 @@ deleted. A board whose postings the file carried is `crawl.covered`: the board
 lanes skip it without marking it checked, so it is first in line on a night
 the feed is missing. A company is named by our `boards.csv` name, then the
 feed's own company list (by slug, or site host for Phenom), then the row; the feed's
-`country_iso` is added to a location only when the parser finds no country. One
+`country_iso` is added to a location unless the text is one country for sure. One
 paced page read serves a new row with a short JD and any row whose company
 still `looks_like_slug`, read from the page's schema.org `JobPosting` block
 (`jobposting_text`, also `ingest-url`'s first try; `jobposting_employer`). A
@@ -184,13 +184,23 @@ Every source parses flags, salaries and placeholder company names through
 
 ## Locations
 
-`parse_location` is the one country reader; `apply.role_facts.job_country` falls back
-to it piece by piece. A country code closing an address names the country
-("Amsterdam, NH, NL"), and one that is also a US state code counts only when the
-address shows otherwise ("Pune, MH, IN", "Hamburg, DE"); a leading code
-("TUN - ARIANA") is the country unless the rest names another outright; a
-segment that is one region's own name ("Northern Virginia") is that region
-unless a same-country or major city has the name.
+`shared/location/parser.read_location` is the one country reader, from
+pycountry and geonamescache tables only (no libpostal); `apply.role_facts.job_country`
+reads it too. The text splits into parts (`, ; / | ( ) [ ] + : " - "`, dashes,
+" or "; and/&/hyphen only when the whole reads nothing), and each part keeps
+every reading: a country or alias, an uppercase 2-letter code, a state, every
+city namesake. Any allowed reading keeps; PR, GU, VI and MP count as the US; AS
+and UM never drop; a region or global word (EMEA, Worldwide) keeps. A city is
+foreign only with no allowed namesake and its biggest at 100k people or more. A
+leading code is a state only when a US state; a closing lowercase code in three
+or more parts is the country; two neighbours that fit one country decide it; a
+named country binds the places in it; a US state yields only to the country it
+names or a closing country. A location drops only when something reads clearly
+foreign and nothing reads allowed or doubtful. A source's own country codes (the
+store's `country`: Lever's `country`, Ashby's address countries) settle it when
+present: they keep it if any is allowed, else only an allowed country named in
+the text or a region word does. The abroad lane rule applies only when exactly
+one allowed-relevant country is certain. Cases: `tests/shared/location_cases.yaml`.
 
 ## Searching is not accepting
 
@@ -209,8 +219,7 @@ on each listed source, one query per other bank country x lane `abroad_terms`
 remote=False; those countries must be in the allowlist, and the view drops a
 row in an abroad country whose lane is not listed. `sources.*.abroad` is retired. A LinkedIn `companies` block (`terms`, `ids`) adds one home query per
 term x company id; those rows have no lane of their own and are classified by
-title. A location that is exactly a region acronym expands to its countries:
-overlap keeps it unresolved, no overlap drops it.
+title. A region word in a location keeps it; the judge reads it.
 
 ## Config
 

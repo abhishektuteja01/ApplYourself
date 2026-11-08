@@ -162,12 +162,15 @@ def build_view(
     funnel["after_title_gate"] = len(df_live)
 
     checks = [
-        allowlist.check(raw, v, t)
-        for raw, v, t in zip(
-            df_live["location_raw"], df_live["vertical"], df_live["title"], strict=True
+        allowlist.check(raw, v, c)
+        for raw, v, c in zip(
+            df_live["location_raw"], df_live["vertical"], df_live["country"], strict=True
         )
     ]
-    keep = pd.Series([c.keep for c in checks], index=df_live.index, dtype=bool)
+    # A tracked role never leaves on its location.
+    keep = pd.Series([c.keep for c in checks], index=df_live.index, dtype=bool) | df_live[
+        "job_id"
+    ].isin(tracked)
     df_live = df_live.assign(
         location=[c.location for c in checks], _resolved=[c.resolved for c in checks]
     )[keep]

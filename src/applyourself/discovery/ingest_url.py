@@ -141,7 +141,7 @@ def ingest(
             f"was given. Re-run with --vertical, one of: {names}"
         )
     cfg = load_config()
-    if not Allowlist(cfg).check(row["location_raw"], lane).keep:
+    if not Allowlist(cfg).check(row["location_raw"], lane, row.get("country", "")).keep:
         raise IngestError(
             f"ERROR: location {row['location_raw']!r} is outside location_allowlist "
             f"in profile/discovery.yaml — widen it there, or this row cannot enter "

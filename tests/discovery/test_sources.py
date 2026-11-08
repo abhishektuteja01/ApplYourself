@@ -94,6 +94,22 @@ def test_lever_parses_sections_salary_and_remote():
         lever.postings_from({"error": 1}, "Acme")
 
 
+def test_lever_and_ashby_keep_their_own_country_codes():
+    item = {"text": "ML Engineer", "hostedUrl": "https://jobs.lever.co/acme/1", "country": "GB"}
+    assert lever.postings_from([item], "Acme")[0]["country"] == "GB"
+    place = {"address": {"postalAddress": {"addressCountry": "Ireland"}}}
+    ad = {
+        "title": "ML Engineer",
+        "jobUrl": "https://jobs.ashbyhq.com/acme/1",
+        "address": {"postalAddress": {"addressCountry": "United States"}},
+        "secondaryLocations": [
+            place,
+            {"address": {"postalAddress": {"addressCountry": "Nowhere"}}},
+        ],
+    }
+    assert ashby.posting_from(ad, "Acme")["country"] == "IE,US"
+
+
 def test_an_hourly_salary_is_stored_yearly():
     payload = [
         {

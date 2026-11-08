@@ -14,6 +14,7 @@ from applyourself.apply.answers import (
     Answers,
 )
 from applyourself.shared import paths, schemas
+from applyourself.shared.countries import CC_TO_COUNTRY, COUNTRY_TO_CC, canonical_country
 from applyourself.shared.parquet_io import read_parquet
 
 
@@ -23,24 +24,23 @@ def job_country(state: dict | None, answers: Answers) -> str:
     qualifier ("(Germany)"), else the one country its JD names. A location that
     reads as no country is `UNKNOWN_COUNTRY`; no location at all, or "Remote",
     is "" (the candidate's own country applies)."""
+    from applyourself.shared.location.parser import allowed_codes, read_location
+
     state = state or {}
     job_id = str(state.get("job_id") or "")
-    try:
-        from applyourself.shared.location.allowlist import residency_countries
-        from applyourself.shared.location.parser import parse_location
-    except Exception:  # noqa: BLE001 - the parser is optional plumbing
-        return ""
+    home = COUNTRY_TO_CC.get(answers.home_country, "")
+    allowed = allowed_codes([*answers.countries, answers.home_country])
+    several = False
     for raw in (_clean_value(job_id, "location"), str(state.get("location") or "")):
-        try:
-            parsed = parse_location(raw)
-        except Exception:  # noqa: BLE001 - libpostal missing: no country, not a crash
-            continue
-        if parsed.country:
-            return parsed.country
-        if answers.home_country in parsed.candidate_countries:
-            return answers.home_country
+        found = _location_country(raw, home, allowed)
+        if found == _SEVERAL:
+            several = True
+        elif found:
+            return CC_TO_COUNTRY.get(found, "")
     raw = _clean_value(job_id, "location") or str(state.get("location") or "")
-    found = _pieces_country(raw, parse_location)
+    # A region word ("South America") names no one country: its pieces are not read.
+    several = several or read_location(raw, allowed).doubt
+    found = "" if several else _pieces_country(raw, lambda p: _piece_name(p, allowed))
     if found:
         return found
     named = residency_countries(str(state.get("title") or ""))
@@ -49,7 +49,7 @@ def job_country(state: dict | None, answers: Answers) -> str:
     found = _jd_country(job_id)
     if found:
         return found
-    if _US_STATE_START.match(raw.strip()):
+    if _US_STATE_START.match(raw.strip()) and not several:
         return "United States"
     # A place was given and nothing could read it: guessing home would answer
     # a Polish job's work-authorization questions as a US one.
@@ -74,7 +74,97 @@ _NO_PLACE = re.compile(
 )
 
 
-def _pieces_country(raw: str, parse_location) -> str:
+_SEVERAL = "several"
+
+
+def _location_country(raw: str, home: str, allowed: frozenset[str]) -> str:
+    """The ISO code a location names, "" for none, or `_SEVERAL`. A multi-site
+    list that holds home is home ("Boston, MA; Vancouver, Canada")."""
+    from applyourself.shared.location.parser import LIST_SEPARATOR_RE, read_location
+
+    segments = [s for s in LIST_SEPARATOR_RE.split(raw) if s.strip()]
+    if len(segments) > 1:
+        each = {c for s in segments if (c := _segment_country(s, home, allowed))}
+        if home in each or len(each) > 1:
+            return home if home in each else _SEVERAL
+        if each:
+            return next(iter(each))
+    found = _one_country(raw, allowed)
+    return found or (home if home in read_location(raw, allowed).alone else "")
+
+
+def _segment_country(segment: str, home: str, allowed: frozenset[str]) -> str:
+    """One segment of a multi-site list: its country, home when a part can only
+    be home ("New York, San Francisco, Munich"), else its biggest city's."""
+    from applyourself.shared.location.parser import read_location
+
+    if found := _one_country(segment, allowed):
+        return found
+    return (
+        home if home in read_location(segment, allowed).alone else _piece_country(segment, allowed)
+    )
+
+
+def _one_country(raw: str, allowed: frozenset[str]) -> str:
+    """One place for sure, then one country named in full ("Rotterdam, South
+    Holland, Netherlands"), then a closing code over its own region ("MH, IN"),
+    then a leading code its place agrees with ("CA-Ontario-Toronto")."""
+    from applyourself.shared.location.parser import read_location
+
+    r = read_location(raw, allowed)
+    named = r.spelled & r.countries
+    if r.sure or len(named) == 1:
+        return r.sure or next(iter(named))
+    return _closing_code(raw) or _leading_code(raw, allowed)
+
+
+def _piece_country(piece: str, allowed: frozenset[str]) -> str:
+    """One place for sure, else an allowed country's own region name
+    ("Virginia"), else the biggest city of that name ("Melbourne")."""
+    from applyourself.shared.location.parser import read_location
+    from applyourself.shared.location.places import CITY, MIN_FOREIGN_CITY, SUB_NAME, fold, saint
+
+    regions = set(SUB_NAME.get(fold(piece), {}))
+    cities = CITY.get(saint(fold(piece)), [])
+    big = cities[0].cc if cities and cities[0].population >= MIN_FOREIGN_CITY else ""
+    if found := read_location(piece, allowed).sure:
+        return found
+    return next(iter(regions)) if len(regions) == 1 and regions <= allowed else big
+
+
+_CLOSING_CODE = re.compile(r"(?:^|,)\s*([A-Z]{2})\s*,\s*([A-Za-z]{2})\s*$")
+
+
+def _closing_code(raw: str) -> str:
+    """The country a closing ISO code names when the part before it is one of
+    its own region codes ("Pune, MH, IN", "TN, IN"), or ""."""
+    from applyourself.shared.location.places import CODE2, SUB_CODE
+
+    m = _CLOSING_CODE.search(raw)
+    if not m:
+        return ""
+    cc = CODE2.get(m.group(2).upper(), "")
+    return cc if cc and cc in SUB_CODE.get(m.group(1), set()) else ""
+
+
+def _piece_name(piece: str, allowed: frozenset[str]) -> str:
+    return CC_TO_COUNTRY.get(_piece_country(piece, allowed), "")
+
+
+_LEADING_CODE = re.compile(r"^([A-Z]{2})-(\S.*)$")
+
+
+def _leading_code(raw: str, allowed: frozenset[str]) -> str:
+    """The country a leading ISO code names when a place after it is there."""
+    from applyourself.shared.location.places import CODE2
+
+    m = _LEADING_CODE.match(raw.strip())
+    cc = CODE2.get(m.group(1), "") if m else ""
+    words = re.split(r"[-\s,]+", m.group(2)) if m else []
+    return cc if cc and any(_piece_country(w, allowed) == cc for w in words if len(w) > 3) else ""
+
+
+def _pieces_country(raw: str, country_of) -> str:
     """The one country the pieces of a location name, when the whole string
     parses as none ("IN Pune", "USA-CA San Jose", "Wrocław, DO, PL")."""
     from applyourself.apply.answers import places_named
@@ -95,10 +185,7 @@ def _pieces_country(raw: str, parse_location) -> str:
             piece = " ".join(words[i : i + n])
             if len(piece) < 4:
                 continue
-            try:
-                country = parse_location(piece).country
-            except Exception:  # noqa: BLE001 - libpostal missing
-                return ""
+            country = country_of(piece)
             if country:
                 found.add(country)
     return found.pop() if len(found) == 1 else ""
@@ -151,3 +238,48 @@ def company_answers_for(out_dir: Path) -> dict[str, str]:
         for k, v in data.items()
         if isinstance(k, str) and isinstance(v, str) and v.strip()
     }
+
+
+# A residency qualifier in a title: a country list right before "only" or
+# "based" ("(Remote - ES/UK only)", "(UK Based)"). Nothing looser: a bare
+# country word in a title is too often something else ("CAD", "Columbia, MD").
+_RESIDENCY_RE = re.compile(r"\b(?:only|based)\b", re.IGNORECASE)
+_RESIDENCY_CUT_RE = re.compile(r"[(\[|:–—]|\s-\s")
+_RESIDENCY_SPLIT_RE = re.compile(r"\s*(?:/|,|&|\bor\b|\band\b)\s*", re.IGNORECASE)
+_TITLE_NOISE_RE = re.compile(r"\b(?:remote|hybrid|on-?site|fully|100%)\b", re.IGNORECASE)
+_CODE_ALIASES = {"UK": "GB", "EU": ""}
+
+
+def _residency_token(token: str) -> set[str]:
+    from applyourself.shared.location.places import REGION_TOKEN_COUNTRIES, fold
+
+    token = token.strip(" .-")
+    if not token:
+        return set()
+    if len(token) == 2 and token.isupper():
+        if token == "EU":
+            return set(REGION_TOKEN_COUNTRIES["europe"])
+        name = CC_TO_COUNTRY.get(_CODE_ALIASES.get(token, token))
+        return {name} if name else set()
+    region = REGION_TOKEN_COUNTRIES.get(fold(token))
+    if region:
+        return set(region)
+    name = canonical_country(token)
+    return {name} if name else set()
+
+
+def residency_countries(title: str) -> set[str]:
+    """Countries a title restricts the hire to, or an empty set. Every token
+    in the qualifier must name a country or region, or the title says
+    something else ("US Citizens only", "W2 only") and is left alone."""
+    out: set[str] = set()
+    for m in _RESIDENCY_RE.finditer(title or ""):
+        head = title[: m.start()]
+        cut = list(_RESIDENCY_CUT_RE.finditer(head))
+        chunk = _TITLE_NOISE_RE.sub(" ", head[cut[-1].end() :] if cut else head)
+        tokens = [t for t in _RESIDENCY_SPLIT_RE.split(chunk) if t.strip(" .-")]
+        found = [_residency_token(t) for t in tokens]
+        if tokens and all(found):
+            for f in found:
+                out |= f
+    return out

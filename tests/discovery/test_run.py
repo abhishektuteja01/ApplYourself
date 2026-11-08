@@ -244,15 +244,14 @@ class AllowAll:
     def __init__(self, cfg):
         pass
 
-    def check(self, raw, vertical="", title=""):
+    def check(self, raw, vertical="", country=""):
         return Allowed(True, raw or "", bool(raw))
 
 
 @pytest.fixture
 def wired(monkeypatch, tmp_path):
-    from applyourself.shared.location import allowlist, parser
+    from applyourself.shared.location import allowlist
 
-    monkeypatch.setattr(parser, "require_libpostal", lambda: None)
     monkeypatch.setattr(allowlist, "Allowlist", AllowAll)
     cfg = DiscoveryConfig()
     monkeypatch.setattr(R, "load_config", lambda: cfg)

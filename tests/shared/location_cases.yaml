@@ -1,8 +1,9 @@
 # The location gate's behaviour, one case per line.
 # loc: the location text. allow: the allowlist (below; default wide). lane: the
-# vertical (an abroad country keeps only abroad_lanes). keep: the verdict.
-# countries: the countries the text reads, where it matters. shown: the display form.
-# was/why: the verdict before the minimal gate, and why it changed.
+# vertical (an abroad country keeps only abroad_lanes). country: the source's own
+# country codes. title: documents the case (the gate does not read titles).
+# keep: the verdict. countries: the countries the verdict read, where it matters.
+# shown: the display form. was/why: the libpostal parser's answer, and why it changed.
 allowlists:
   us: [United States]
   us_in: [United States, India]
@@ -17,9 +18,9 @@ cases:
   - {loc: "Portland, OR", allow: us, keep: true, countries: ["United States"], shown: "Portland, OR"}
   - {loc: "Bend, OR, USA", allow: us, keep: true, countries: ["United States"], shown: "Bend, OR"}
   - {loc: "Berlin, Germany", allow: us, keep: false, countries: ["Germany"]}
-  - {loc: "New York, London or Singapore", allow: us, keep: true, countries: ["Singapore", "United Kingdom", "United States"]}
-  - {loc: "CA", allow: us, keep: true, countries: []}
-  - {loc: "San Francisco Bay Area", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA"}
+  - {loc: "New York, London or Singapore", allow: us, keep: true, countries: ["Canada", "Singapore", "United Kingdom", "United States"]}
+  - {loc: "CA", allow: us, keep: true, countries: ["Canada", "United States"]}
+  - {loc: "San Francisco Bay Area", allow: us, keep: true, countries: [], shown: "San Francisco Bay Area", was: "San Francisco, CA", why: "an area suffix is not read: the text shows"}
   - {loc: "Chicago; Dallas; Los Angeles; Minneapolis; New York; San Francisco; Seattle; Washington, D.C.", allow: us, keep: true, countries: ["United States"]}
   - {loc: "Raleigh-Cary, NC, Austin/Dallas, TX, Tampa Bay, FL, Greater Boston Area, MA, Denver, CO, Atlanta, GA, CA, NJ, TN, PA", allow: us, keep: true}
   - {loc: "New York, USA", allow: us, keep: true, countries: ["United States"]}
@@ -28,7 +29,7 @@ cases:
   - {loc: "Kinshasa, DRC", allow: us, keep: false, countries: ["Congo, The Democratic Republic of the"]}
   - {loc: "Yangon, Burma", allow: us, keep: false, countries: ["Myanmar"]}
   - {loc: "Abidjan, Ivory Coast", allow: us, keep: false, countries: ["Côte d'Ivoire"]}
-  - {loc: "London", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "London", allow: us, keep: false, countries: ["Canada", "United Kingdom"]}
   - {loc: "Stockholm", allow: us, keep: false, countries: ["Sweden"]}
   - {loc: "Lisbon", allow: us, keep: false, countries: ["Portugal"]}
   - {loc: "Kuala Lumpur", allow: us, keep: false, countries: ["Malaysia"]}
@@ -51,23 +52,23 @@ cases:
   - {loc: "London, United Kingdom", allow: us, keep: false, countries: ["United Kingdom"]}
   - {loc: "London, UK", allow: us, keep: false, countries: ["United Kingdom"]}
   - {loc: "Toronto, Canada", allow: us, keep: false, countries: ["Canada"]}
-  - {loc: "Paris", allow: us, keep: false, countries: ["France"]}
-  - {loc: "Vancouver", allow: us, keep: false, countries: ["Canada"]}
-  - {loc: "Manchester", allow: us, keep: false, countries: ["United Kingdom"]}
-  - {loc: "Cambridge", allow: us, keep: false, countries: ["United Kingdom"]}
-  - {loc: "Amsterdam", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Paris", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Vancouver", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Manchester", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Cambridge", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Amsterdam", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
   - {loc: "Paris, TX", allow: us, keep: true, countries: ["United States"], shown: "Paris, TX"}
   - {loc: "Cambridge, MA", allow: us, keep: true, countries: ["United States"], shown: "Cambridge, MA"}
   - {loc: "Vancouver, WA", allow: us, keep: true, countries: ["United States"], shown: "Vancouver, WA"}
   - {loc: "Manchester, NH", allow: us, keep: true, countries: ["United States"], shown: "Manchester, NH"}
   - {loc: "London, United Kingdom; Stockholm, Sweden", allow: us, keep: false, countries: ["Sweden", "United Kingdom"]}
-  - {loc: "London or Berlin", allow: us, keep: false, countries: ["Germany", "United Kingdom"]}
-  - {loc: "London, Stockholm, Lisbon, Berlin, Paris", allow: us, keep: false, countries: ["France"]}
-  - {loc: "Austin, TX or London", allow: us, keep: true, countries: ["United Kingdom", "United States"]}
+  - {loc: "London or Berlin", allow: us, keep: false, countries: ["Canada", "Germany", "United Kingdom"]}
+  - {loc: "London, Stockholm, Lisbon, Berlin, Paris", allow: us, keep: true, countries: ["Canada", "Germany", "Portugal", "Sweden", "United Kingdom", "United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Austin, TX or London", allow: us, keep: true, countries: ["Canada", "United Kingdom", "United States"]}
   - {loc: "remote", allow: us, keep: true, shown: "Remote"}
   - {loc: "Fully Remote", allow: us, keep: true, shown: "Remote"}
   - {loc: "Remote - US", allow: us, keep: true, shown: "Remote - United States"}
-  - {loc: "London or Remote", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "London or Remote", allow: us, keep: false, countries: ["Canada", "United Kingdom"]}
   - {loc: "   ", allow: us, keep: true, countries: []}
   - {loc: "Anywhere", allow: us, keep: true, countries: []}
   - {loc: "Multiple Locations", allow: us, keep: true, countries: []}
@@ -86,11 +87,11 @@ cases:
   - {loc: "Beirut, Lebanon", allow: us, keep: false, countries: ["Lebanon"]}
   - {loc: "Tbilisi, Georgia", allow: us, keep: false, countries: ["Georgia"]}
   - {loc: "Georgia", allow: us, keep: true, countries: ["Georgia", "United States"]}
-  - {loc: "Central Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
-  - {loc: "South Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
-  - {loc: "North Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
-  - {loc: "East Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
-  - {loc: "West Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
+  - {loc: "Central Jakarta", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "South Jakarta", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "North Jakarta", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "East Jakarta", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "West Jakarta", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "Rome, Italy", allow: us, keep: false, countries: ["Italy"]}
   - {loc: "Athens, Greece", allow: us, keep: false, countries: ["Greece"]}
   - {loc: "Cairo, Egypt", allow: us, keep: false, countries: ["Egypt"]}
@@ -99,7 +100,7 @@ cases:
   - {loc: "Rome, GA", allow: us, keep: true, countries: ["United States"], shown: "Rome, GA"}
   - {loc: "Birmingham, AL", allow: us, keep: true, countries: ["United States"], shown: "Birmingham, AL"}
   - {loc: "Dublin, OH", allow: us, keep: true, countries: ["United States"], shown: "Dublin, OH"}
-  - {loc: "Valencia, CA", allow: us, keep: true, countries: ["United States"], shown: "Valencia, CA"}
+  - {loc: "Valencia, CA", allow: us, keep: true, countries: ["Spain", "United States"], shown: "Valencia, CA"}
   - {loc: "York, PA", allow: us, keep: true, countries: ["United States"], shown: "York, PA"}
   - {loc: "Birmingham, UK", allow: us, keep: false, countries: ["United Kingdom"]}
   - {loc: "Dublin, Ireland", allow: us, keep: false, countries: ["Ireland"]}
@@ -118,14 +119,14 @@ cases:
   - {loc: "Trinidad and Tobago", allow: us, keep: false, countries: ["Trinidad and Tobago"]}
   - {loc: "Antigua and Barbuda", allow: us, keep: false, countries: ["Antigua and Barbuda"]}
   - {loc: "Bosnia and Herzegovina", allow: us, keep: false, countries: ["Bosnia and Herzegovina"]}
-  - {loc: "PA", allow: us, keep: true, countries: []}
-  - {loc: "WA", allow: us, keep: true, countries: []}
-  - {loc: "Asia", allow: us, keep: false, countries: ["Afghanistan", "Armenia", "Azerbaijan", "Bahrain", "Bangladesh", "Bhutan", "British Indian Ocean Territory", "Brunei Darussalam", "Cambodia", "China", "Cocos (Keeling) Islands", "Georgia", "Hong Kong", "India", "Indonesia", "Iran, Islamic Republic of", "Iraq", "Israel", "Japan", "Jordan", "Kazakhstan", "Korea, Democratic People's Republic of", "Korea, Republic of", "Kuwait", "Kyrgyzstan", "Lao People's Democratic Republic", "Lebanon", "Macao", "Malaysia", "Maldives", "Mongolia", "Myanmar", "Nepal", "Oman", "Pakistan", "Palestine, State of", "Philippines", "Qatar", "Saudi Arabia", "Singapore", "Sri Lanka", "Syrian Arab Republic", "Taiwan, Province of China", "Tajikistan", "Thailand", "Turkmenistan", "Türkiye", "United Arab Emirates", "Uzbekistan", "Viet Nam", "Yemen"]}
-  - {loc: "Warrington, PA", allow: us, keep: true, countries: []}
+  - {loc: "PA", allow: us, keep: true, countries: ["Panama", "United States"]}
+  - {loc: "WA", allow: us, keep: true, countries: ["United States"]}
+  - {loc: "Asia", allow: us, keep: true, countries: [], was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "Warrington, PA", allow: us, keep: true, countries: ["Panama", "United Kingdom", "United States"]}
   - {loc: "Austin, TX / Remote", allow: us, keep: true, countries: ["United States"], shown: "Remote - Austin, TX"}
   - {loc: "Chicago, Illinois or Austin, Texas", allow: us, keep: true, countries: ["United States"], shown: "Chicago, Illinois or Austin, Texas"}
-  - {loc: "US and Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
-  - {loc: "United States and Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
+  - {loc: "US and Canada", allow: us, keep: true, countries: []}
+  - {loc: "United States and Canada", allow: us, keep: true, countries: []}
   - {loc: "United States & Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
   - {loc: "San Francisco, CA | New York City, NY | Seattle, WA", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA | New York City, NY | Seattle, WA"}
   - {loc: "Netherlands - Alkmaar", allow: us, keep: false, countries: ["Netherlands"]}
@@ -134,27 +135,27 @@ cases:
   - {loc: "Sophia-Antipolis, France", allow: us, keep: false, countries: ["France"]}
   - {loc: "Sapien HQ — NYC", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
   - {loc: "Saint Petersburg, FL, US", allow: us, keep: true, countries: ["United States"], shown: "St. Petersburg, FL"}
-  - {loc: "Saint Petersburg", allow: us, keep: false, countries: ["Russian Federation"]}
-  - {loc: "Bruxelles", allow: us, keep: false, countries: ["Belgium"]}
+  - {loc: "Saint Petersburg", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Bruxelles", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "Bangalore", allow: us, keep: false, countries: ["India"]}
-  - {loc: "Ciudad de México", allow: us, keep: false, countries: ["Mexico"]}
-  - {loc: "Deutschland", allow: us, keep: false, countries: ["Germany"]}
-  - {loc: "España", allow: us, keep: false, countries: ["Spain"]}
-  - {loc: "Brasil", allow: us, keep: false, countries: ["Brazil"]}
-  - {loc: "Nederland", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Ciudad de México", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "Deutschland", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "España", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "Brasil", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "Nederland", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
   - {loc: "Bengaluru, India", allow: us, keep: false, countries: ["India"]}
   - {loc: "Lisbon, Portugal", allow: us, keep: false, countries: ["Portugal"]}
   - {loc: "Mumbai, Maharashtra", allow: us, keep: false, countries: ["India"]}
   - {loc: "Munich, Germany", allow: us, keep: false, countries: ["Germany"]}
-  - {loc: "EMEA", allow: us, keep: false}
-  - {loc: "EMEIA", allow: us, keep: false}
-  - {loc: "APAC", allow: us, keep: false}
-  - {loc: "LATAM", allow: us, keep: false}
-  - {loc: "ANZ", allow: us, keep: false}
-  - {loc: "apac", allow: us, keep: false}
-  - {loc: "Remote - EMEA", allow: us, keep: false}
+  - {loc: "EMEA", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "EMEIA", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "APAC", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "LATAM", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "ANZ", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "apac", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "Remote - EMEA", allow: us, keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
   - {loc: "EMEA or New York", allow: us, keep: true}
-  - {loc: "London; Manchester", allow: us_in, keep: false}
+  - {loc: "London; Manchester", allow: us_in, keep: true, was: drop, why: "an allowed-country namesake keeps a lone city"}
   - {loc: "Toronto, ON; Vancouver, BC", allow: us_in, keep: false}
   - {loc: "Seoul, Korea", allow: us_in, keep: false}
   - {loc: "Malta", allow: us_in, keep: false}
@@ -168,7 +169,7 @@ cases:
   - {loc: "Remote", allow: us_in, keep: true, shown: "Remote"}
   - {loc: "Bengaluru", allow: us_in, lane: "lane_a", keep: true}
   - {loc: "Bengaluru", allow: us_in, lane: "lane_b", keep: false}
-  - {loc: "Remote", allow: us_in, title: "AI Engineer Backend (Remote - ES/UK only)", keep: false}
+  - {loc: "Remote", allow: us_in, title: "AI Engineer Backend (Remote - ES/UK only)", keep: true, was: drop, why: "the gate no longer reads titles; residency moved to apply's role_facts"}
   - {loc: "Remote", allow: us_in, title: "AI Engineer (US or UK only)", keep: true}
   - {loc: "Remote", allow: us_in, title: "AI Engineer (US Citizens only)", keep: true}
   - {loc: "Amsterdam, NH, NL", allow: us, keep: false, countries: ["Netherlands"]}
@@ -180,13 +181,13 @@ cases:
   - {loc: "Madrid, MD, ES", allow: us, keep: false, countries: ["Spain"]}
   - {loc: "Schiltigheim, Grand Est, fr", allow: us, keep: false, countries: ["France"]}
   - {loc: "München, BY, DE", allow: us, keep: false, countries: ["Germany"]}
-  - {loc: "Wrocław, DO, PL", allow: us, keep: false, countries: ["Poland"]}
+  - {loc: "Wrocław, DO, PL", allow: us, keep: false, countries: ["Dominican Republic", "Poland"]}
   - {loc: "Hamburg, DE, 20095", allow: us, keep: false, countries: ["Germany"]}
   - {loc: "Toronto, ON, CA", allow: us, keep: false, countries: ["Canada"]}
   - {loc: "Bengaluru, KA, IN", allow: us, keep: false, countries: ["India"]}
   - {loc: "New York, United States, USA", allow: us, keep: true, countries: ["United States"]}
-  - {loc: "TUN - ARIANA", allow: us, keep: false, countries: ["Tunisia"]}
-  - {loc: "SGP Work-at-Home", allow: us, keep: false, countries: ["Singapore"]}
+  - {loc: "TUN - ARIANA", allow: us, keep: true, countries: [], was: drop, why: "3-letter codes are not read: keep"}
+  - {loc: "SGP Work-at-Home", allow: us, keep: true, countries: [], was: drop, why: "3-letter codes are not read: keep"}
   - {loc: "Chicago, IL", allow: us, keep: true, countries: ["United States"], shown: "Chicago, IL"}
   - {loc: "Indianapolis, IN", allow: us, keep: true, countries: ["United States"], shown: "Indianapolis, IN"}
   - {loc: "Wilmington, DE", allow: us, keep: true, countries: ["United States"], shown: "Wilmington, DE"}
@@ -264,10 +265,10 @@ cases:
   - {loc: "AUSTIN, TX OR REMOTE", keep: true}
   - {loc: "REMOTE IN INDIA", keep: true}
   - {loc: "REMOTE, USA", keep: true}
-  - {loc: "Remote (EST)", keep: false}
+  - {loc: "Remote (EST)", keep: true, was: drop, why: "3-letter codes are not read: keep"}
   - {loc: "Remote - PST", keep: true}
-  - {loc: "EST", keep: false}
-  - {loc: "PHL", keep: false}
+  - {loc: "EST", keep: true, was: drop, why: "3-letter codes are not read: keep"}
+  - {loc: "PHL", keep: true, was: drop, why: "3-letter codes are not read: keep"}
   - {loc: "Philadelphia, PA", keep: true}
   - {loc: "Paris, TX", keep: true}
   - {loc: "London, KY", keep: true}
@@ -284,8 +285,8 @@ cases:
   - {loc: "Columbia, SC", keep: true}
   - {loc: "Georgia", keep: true}
   - {loc: "Atlanta, Georgia", keep: true}
-  - {loc: "Florida", keep: false}
-  - {loc: "Remote - Florida", keep: false}
+  - {loc: "Florida", keep: true, was: drop, why: "a US state name is the US state, not Uruguay's Florida"}
+  - {loc: "Remote - Florida", keep: true, was: drop, why: "a US state name is the US state, not Uruguay's Florida"}
   - {loc: "Savannah, GA", keep: true}
   - {loc: "Jersey City, NJ", keep: true}
   - {loc: "New Jersey", keep: true}
@@ -305,17 +306,17 @@ cases:
   - {loc: "Melbourne, FL", keep: true}
   - {loc: "Victoria, TX", keep: true}
   - {loc: "Sydney, OH", keep: true}
-  - {loc: "Puerto Rico", keep: false}
-  - {loc: "San Juan, Puerto Rico", keep: false}
-  - {loc: "San Juan, PR", keep: false}
-  - {loc: "Guam", keep: false}
-  - {loc: "Hagatna, GU", keep: false}
+  - {loc: "Puerto Rico", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "San Juan, Puerto Rico", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "San Juan, PR", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "Guam", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "Hagatna, GU", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
   - {loc: "US Virgin Islands", keep: true}
   - {loc: "Virgin Islands, U.S.", keep: true}
-  - {loc: "Saipan, MP", keep: false}
-  - {loc: "Northern Mariana Islands", keep: false}
-  - {loc: "American Samoa", keep: false}
-  - {loc: "Pago Pago, AS", keep: false}
+  - {loc: "Saipan, MP", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "Northern Mariana Islands", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "American Samoa", keep: true, was: drop, why: "AS and UM never drop"}
+  - {loc: "Pago Pago, AS", keep: true, was: drop, why: "AS and UM never drop"}
   - {loc: "Washington, DC", keep: true}
   - {loc: "DC", keep: true}
   - {loc: "D.C.", keep: true}
@@ -347,7 +348,7 @@ cases:
   - {loc: "Hamburg, DE", keep: true}
   - {loc: "Amsterdam", keep: true}
   - {loc: "Amsterdam, NH", keep: true}
-  - {loc: "Utrecht, NL, 3584 AB", keep: false}
+  - {loc: "Utrecht, NL, 3584 AB", keep: true, was: drop, why: "a postcode is not read as a code: NL is the country"}
   - {loc: "Stockholm, SE, 111 22", keep: true}
   - {loc: "Warsaw, PL, 00-001", keep: true}
   - {loc: "Kraków", keep: true}
@@ -366,8 +367,8 @@ cases:
   - {loc: "Mexico City or Austin", keep: true}
   - {loc: "Toronto, ON / Austin, TX", keep: true}
   - {loc: "Toronto, Canada; Seattle, WA", keep: true}
-  - {loc: "LATAM", keep: false}
-  - {loc: "Latin America", keep: false}
+  - {loc: "LATAM", keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
+  - {loc: "Latin America", keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
   - {loc: "South America", keep: true}
   - {loc: "Bay Area", keep: true}
   - {loc: "West Coast (San Francisco/Bay Area)", keep: true}
@@ -411,30 +412,30 @@ cases:
   - {loc: "Paris, FR", keep: false}
   - {loc: "Berlin, Germany or London, UK", keep: true}
   - {loc: "Remote - UK", keep: false}
-  - {loc: "UK Remote", keep: true}
+  - {loc: "UK Remote", keep: false, was: keep, why: "work words are stripped: the UK alone"}
   - {loc: "Remote (UK)", keep: false}
   - {loc: "United Kingdom", keep: false}
   - {loc: "Untied Kingdom", keep: true}
   - {loc: "Canada", keep: false}
   - {loc: "Remote Canada", keep: false}
-  - {loc: "Anywhere in Canada", keep: true}
+  - {loc: "Anywhere in Canada", keep: false, was: keep, why: "work words are stripped: Canada alone"}
   - {loc: "CANADA (REMOTE)", keep: false}
   - {loc: "Brazil", keep: false}
-  - {loc: "Brasil", keep: false}
+  - {loc: "Brasil", keep: true, was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "São Paulo", keep: false}
   - {loc: "Sao Paulo, SP, Brazil", keep: false}
   - {loc: "Mexico", keep: false}
   - {loc: "México", keep: false}
   - {loc: "CDMX", keep: true}
-  - {loc: "Ciudad de México", keep: false}
+  - {loc: "Ciudad de México", keep: true, was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "Tokyo, Japan", keep: false}
   - {loc: "東京", keep: true}
   - {loc: "Singapore", keep: false}
-  - {loc: "SG", keep: true}
+  - {loc: "SG", keep: false, was: keep, why: "an uppercase code alone is its country"}
   - {loc: "Sydney, NSW", keep: false}
   - {loc: "Sydney, Australia", keep: false}
   - {loc: "Melbourne, VIC", keep: false}
-  - {loc: "Perth, WA", keep: false}
+  - {loc: "Perth, WA", keep: true, was: drop, why: "an allowed US state yields only to the country it names: unsure, keep"}
   - {loc: "Perth, WA, Australia", keep: false}
   - {loc: "Tbilisi, Georgia", keep: false}
   - {loc: "Bangkok, TH", keep: false}
@@ -481,7 +482,7 @@ cases:
   - {loc: "Kyiv, Ukraine", keep: false}
   - {loc: "Remote - Canada, Mexico", keep: false}
   - {loc: "Canada, Mexico", keep: false}
-  - {loc: "India, Pakistan", keep: false}
+  - {loc: "India, Pakistan", keep: true, was: drop, why: "any allowed country keeps; the closing one no longer wins"}
   - {loc: "Remote (US) - must be in EST", keep: true}
   - {loc: "Remote, US (EST/CST)", keep: true}
   - {loc: "US (Remote) | Canada", keep: true}
@@ -571,18 +572,18 @@ cases:
   - {loc: "Remote, Anywhere", keep: true}
   - {loc: "Remote - Worldwide", keep: true}
   - {loc: "Remote (Global)", keep: true}
-  - {loc: "Remote (EMEA, APAC)", keep: false}
+  - {loc: "Remote (EMEA, APAC)", keep: true, was: drop, why: "a region word is unsure: keep, the judge reads it"}
   - {loc: "EU / UK / US", keep: true}
   - {loc: "Europe or US", keep: true}
   - {loc: "Seattle, Washington, United States of America", keep: true}
   - {loc: "San Juan, Puerto Rico, United States", keep: true}
   - {loc: "Dorado, PR", keep: true}
-  - {loc: "Carolina, PR", keep: false}
-  - {loc: "Bayamón, Puerto Rico", keep: false}
-  - {loc: "Tamuning, Guam", keep: false}
-  - {loc: "Charlotte Amalie, VI", keep: false}
+  - {loc: "Carolina, PR", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "Bayamón, Puerto Rico", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "Tamuning, Guam", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
+  - {loc: "Charlotte Amalie, VI", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
   - {loc: "St. Thomas, USVI", keep: true}
-  - {loc: "Remote - Puerto Rico", keep: false}
+  - {loc: "Remote - Puerto Rico", keep: true, was: drop, why: "PR, GU, VI and MP count as the US"}
   - {loc: "Georgia, US", keep: true}
   - {loc: "Atlanta, GA, US", keep: true}
   - {loc: "Alpharetta, Georgia", keep: true}
@@ -603,15 +604,15 @@ cases:
   - {loc: "📍 London", keep: false}
   - {loc: "TORONTO, ON", keep: false}
   - {loc: "LONDON, UK", keep: false}
-  - {loc: "Toronto · Remote", keep: true}
-  - {loc: "Toronto + Remote", keep: true}
+  - {loc: "Toronto · Remote", keep: false, was: keep, why: "the separator or emoji is read now: clearly foreign"}
+  - {loc: "Toronto + Remote", keep: false, was: keep, why: "the separator or emoji is read now: clearly foreign"}
   - {loc: "Victoria, BC", keep: false}
   - {loc: "London, England", keep: false}
   - {loc: "Hyderabad, Sindh", keep: false}
   - {loc: "Islamabad", keep: false}
   - {loc: "Lahore, PK", keep: false}
   - {loc: "Karachi", keep: false}
-  - {loc: "Dhaka", keep: false}
+  - {loc: "Dhaka", keep: true, was: drop, why: "an allowed-country namesake keeps a lone city"}
   - {loc: "Kathmandu", keep: false}
   - {loc: "St. Petersburg, Russia", keep: false}
   - {loc: "San José, CR", keep: false}
@@ -622,15 +623,25 @@ cases:
   - {loc: "Kitchener-Waterloo", keep: true}
   - {loc: "Москва", keep: true}
   - {loc: "Remote — 🇨🇦 Canada", keep: false}
-  - {loc: "Toronto 🇨🇦", keep: true}
-  - {loc: "Remote (Canada only)", keep: true}
+  - {loc: "Toronto 🇨🇦", keep: false, was: keep, why: "the separator or emoji is read now: clearly foreign"}
+  - {loc: "Remote (Canada only)", keep: false, was: keep, why: "work words are stripped: Canada alone"}
   - {loc: "Remote - Canada & Mexico", keep: false}
   - {loc: "UK & Ireland", keep: true}
-  - {loc: "Ontario", keep: false}
-  - {loc: "British Columbia", keep: false}
+  - {loc: "Ontario", keep: true, was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "British Columbia", keep: true, was: drop, why: "a foreign state name alone is not read: keep"}
   - {loc: "EMEA (excl. Germany)", keep: true}
   - {loc: "Remote (Americas excluding US)", keep: true}
   - {loc: "US-based company, Remote in Canada", keep: true}
+  - {loc: "Cambridge", allow: us, country: "GB", keep: false}
+  - {loc: "Cambridge", allow: us, country: "US", keep: true, shown: "Cambridge"}
+  - {loc: "Paris", allow: us, country: "FR", keep: false}
+  - {loc: "Remote - US", allow: us, country: "GB", keep: true}
+  - {loc: "Remote - Worldwide", allow: us, country: "GB", keep: true}
+  - {loc: "London, UK", allow: us, country: "US,GB", keep: true}
+  - {loc: "Austin, TX", allow: us_in, lane: "lane_b", country: "IN", keep: false}
+  - {loc: "Austin, TX", allow: us_in, lane: "lane_b", country: "US", keep: true, shown: "Austin, TX"}
+  - {loc: "", allow: us, country: "US", keep: true, shown: "United States"}
+  - {loc: "Toronto", allow: us, country: "xx", keep: false}
 
 # The countries a title's residency qualifier limits the hire to. "europe": every
 # European country.

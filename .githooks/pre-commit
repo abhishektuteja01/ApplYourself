@@ -51,22 +51,13 @@ if [ -x scripts/r7_scan.sh ] && ! scripts/r7_scan.sh "$root"; then
   exit 1
 fi
 
-# tests/discovery/test_stapply.py needs libpostal (the opt-in `discovery` group);
-# test_location skips itself. Without it, narrow the run rather than fail the gate.
-IGNORE=""
-if ! uv run python -c "import postal.parser" >/dev/null 2>&1; then
-  IGNORE="--ignore=tests/discovery"
-fi
-
 RUNNER=(uv run pytest tests -q -x -n 3 --dist loadgroup)
-[ -n "$IGNORE" ] && RUNNER+=("$IGNORE")
 
 OUT="$("${RUNNER[@]}" 2>&1)"
 STATUS=$?
 if [ "$STATUS" -ne 0 ]; then
   {
     echo "pre-commit: FAIL — a watched path is staged and the suite is red."
-    [ -n "$IGNORE" ] && echo "(ran with $IGNORE: libpostal is not installed here)"
     echo
     printf '%s\n' "$OUT" | tail -30
     echo

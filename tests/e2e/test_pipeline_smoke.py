@@ -2,7 +2,7 @@
 clean.parquet -> score start / recorded judge answer / finish -> app new +
 build resume (docx only) -> track. No network, no LLM, no Word.
 
-The location allowlist is stubbed: the real one needs libpostal."""
+The location allowlist is stubbed."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ KEPT = "b1ccd805"  # hash of Acme Widgets | Widget Operations Analyst
 
 
 class _AllowAll:
-    def check(self, raw, vertical="", title=""):
+    def check(self, raw, vertical="", country=""):
         return Allowed(True, raw, True)
 
 

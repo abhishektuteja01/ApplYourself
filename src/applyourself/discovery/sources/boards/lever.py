@@ -42,6 +42,7 @@ def posting_from(item: dict, company: str) -> dict | None:
         url=url,
         jd_text=jd,
         location_raw=categories.get("location") or "",
+        country=item.get("country") if isinstance(item.get("country"), str) else "",
         posted_date=parse.ms_date(item.get("createdAt")),
         remote_flag=(item.get("workplaceType") or "").strip().lower() == "remote",
         salary_min=parse.yearly_salary(salary.get("min"), salary.get("interval")),

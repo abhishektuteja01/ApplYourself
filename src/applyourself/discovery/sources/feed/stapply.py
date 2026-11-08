@@ -38,7 +38,7 @@ from applyourself.shared import http_client, identity, title_gate
 from applyourself.shared.countries import CC_TO_COUNTRY
 from applyourself.shared.http_client import CareersError
 from applyourself.shared.job_boards import ATS_SOURCE_NAMES, board_key, parse_posting_url
-from applyourself.shared.location.parser import parse_location
+from applyourself.shared.location.parser import read_location
 
 log = logging.getLogger(__name__)
 
@@ -108,15 +108,14 @@ def company_names(companies: pd.DataFrame) -> dict[tuple[Any, str], str]:
 
 
 def located(location, country_iso) -> str:
-    """The feed's location, with its country code's name added when our own
-    parser finds no country in it ("DE (DE91C)" -> "DE (DE91C), Germany")."""
+    """The feed's location, with its country code's name added unless the text
+    is one country for sure ("DE (DE91C)" -> "DE (DE91C), Germany")."""
     text = location.strip() if isinstance(location, str) else ""
     code = (country_iso or "").strip().upper() if isinstance(country_iso, str) else ""
     country = CC_TO_COUNTRY.get("GB" if code == "UK" else code, "")
     if not country:
         return text
-    parsed = parse_location(text)
-    if parsed.country or parsed.candidate_countries:
+    if read_location(text).sure:
         return text
     return f"{text}, {country}" if text else country
 

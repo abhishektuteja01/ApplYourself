@@ -119,13 +119,7 @@ uv run night --resume                 # what that script runs: --resume reruns t
 ## Gotchas
 
 - Python is pinned `>=3.12,<3.13`; use `uv run` for everything (deps + venv).
-- `discover` needs `uv sync --group discovery` (libpostal); `apply` needs
-  `uv sync --group apply`. A plain `uv sync` removes both groups;
-  `uv sync --all-groups` keeps them.
-- The core `uv sync` needs no C toolchain. `postal` (libpostal) is imported lazily
-  in `src/applyourself/shared/location/parser.py`: discovery imports without it, and address
-  parsing raises a message telling you to install it. Only
-  `tests/discovery/test_stapply.py` needs it; `tests/shared/test_location.py` skips
-  itself.
+- `apply` needs `uv sync --group apply`. A plain `uv sync` removes the group;
+  `uv sync --all-groups` keeps it. The core `uv sync` needs no C toolchain.
 - `AUDIT.md` (gitignored) is the live backlog. Read it if it exists locally; a
   fresh clone won't have it.
