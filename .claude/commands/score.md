@@ -5,6 +5,7 @@ effort: low
 argument-hint: "[--all | --stale-only [--yes]] [--vertical <name>]"
 allowed-tools:
   - Bash(uv run score *)
+  - Bash(uv run config get settings judge_parallel)
   - Agent
 ---
 
@@ -13,7 +14,11 @@ allowed-tools:
 1. `uv run score start $ARGUMENTS`. Exit 1: report the error, stop.
    A `done` line: report it, stop.
 2. For each `judge ...` line, spawn one `score-judge` agent whose prompt is
-   the rest of that line. All in one message, in parallel.
+   the rest of that line, in parallel batches of at most
+   `uv run config get settings judge_parallel` agents; start the next batch
+   when one finishes. A run of more than about 50 lines (`--all`) is too long
+   for one session: tell the user to run `bash scripts/stages/score.sh --all`
+   instead, then stop.
 3. `uv run score finish`. Exit 0: report its first line, stop.
    Exit 1: spawn its `judge ...` lines once the same way, run `finish` again.
    Still exit 1: report its `bad` lines and stop.
