@@ -289,10 +289,29 @@ def test_keyword_coverage_is_traced(world):
         src,
         "example_primary",
         resume_model.baseline_plan(src, "example_primary"),
-        keywords=("SQL", "Kubernetes"),
+        keywords=("SQL", "Kubernetes", "SQLs"),
     )
     assert "- Kubernetes: not landed" in built.trace
     assert any(t.startswith("- SQL: L") for t in built.trace)
+    assert any(t.startswith("- SQLs: L") for t in built.trace)
+
+
+@pytest.mark.parametrize(
+    "line, keyword",
+    [
+        ("Built generative AI apps", "AI"),
+        ("Trained machine learning models", "learning"),
+        ("Deployed on Google Cloud", "Cloud"),
+        ("Scheduled GPUs", "gpus"),
+        ("Tracked KPIs", "KPIs"),
+        ("Sold SaaS", "SAAS"),
+        ("Ran KUBERNETES", "Kubernetes"),
+    ],
+)
+def test_a_keyword_written_as_is_always_lands(line, keyword):
+    """Alias folding may swallow a word ("AI" in "generative AI"): the
+    as-written match still counts it."""
+    assert resume_model._keyword_trace(line, (keyword,))[-1] == f"- {keyword}: L1"
 
 
 def test_a_summary_that_looks_like_a_header_stays_a_body_paragraph(world):

@@ -202,6 +202,22 @@ def test_keywords_count_only_roles_without_a_resume_and_skip_declined(world, mon
     assert got["keywords"][0]["company"] == "Acme"
 
 
+def test_keywords_count_spellings_of_one_keyword_once(world, monkeypatch):
+    monkeypatch.setattr(S, "_new_job_ids", lambda: ["a1", "b2", "c3"])
+    scored_rows(
+        {"job_id": "a1", "fit_score": 90, "keywords_to_mirror": ["LLM", "evals"]},
+        {"job_id": "b2", "fit_score": 80, "keywords_to_mirror": ["LLMs", "AI"]},
+        {"job_id": "c3", "fit_score": 70, "keywords_to_mirror": ["LLMs", "a"]},
+    ).to_parquet(paths.SCORED)
+    paths.SYNONYM_DECLINED.parent.mkdir(parents=True, exist_ok=True)
+    paths.SYNONYM_DECLINED.write_text(
+        yaml.safe_dump([{"keyword": "Evaluation", "reason": "", "approved": False}]),
+        encoding="utf-8",
+    )
+    got = [(k["keyword"], k["frequency"]) for k in S.keywords()["keywords"]]
+    assert got == [("LLMs", 3), ("AI", 1), ("a", 1)]
+
+
 def test_keywords_with_no_new_roles_is_empty(world, monkeypatch):
     monkeypatch.setattr(S, "_new_job_ids", lambda: [])
     assert S.keywords() == {"job_ids": [], "keywords": []}

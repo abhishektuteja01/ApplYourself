@@ -92,7 +92,8 @@ uv run synonyms keywords > jobs/synonyms_keywords.json
 ```
 
 `keywords` are the top 40 `keywords_to_mirror` of the roles with no resume yet,
-already without the keywords declined before. No roles or no keywords: say so and stop.
+already without the keywords declined before. Spellings of one keyword ("LLM",
+"LLMs", "large language models") count as one, shown in the most frequent spelling. No roles or no keywords: say so and stop.
 
 Then `Read` these files:
 - `jobs/synonyms_keywords.json`

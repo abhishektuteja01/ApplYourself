@@ -31,6 +31,7 @@ import yaml
 from applyourself.resume_model import parse_entries
 from applyourself.score_store import view
 from applyourself.shared import clock, paths, schemas
+from applyourself.shared import keywords as kw_norm
 from applyourself.shared.config_schema import load_settings
 from applyourself.shared.files import atomic_write_text
 from applyourself.shared.logs import setup_logging
@@ -112,9 +113,11 @@ def _write_open(open_items: list, closed: list) -> None:
 
 def keywords() -> dict:
     """The top keywords of the roles with no resume yet, minus every keyword
-    already declined."""
+    already declined. Spellings of one keyword (`shared.keywords`) count as
+    one, shown in their most frequent spelling."""
     ids = _new_job_ids()
-    skip = {_norm(d["keyword"]) for d in _read_yaml(paths.SYNONYM_DECLINED, [])}
+    fold = kw_norm.variants()
+    skip = {kw_norm.key(d["keyword"], fold) for d in _read_yaml(paths.SYNONYM_DECLINED, [])}
     if not ids or not paths.SCORED.exists():
         return {"job_ids": ids, "keywords": []}
     scored = view(paths.SCORED)
@@ -127,24 +130,29 @@ def keywords() -> dict:
         company = dict(zip(clean["job_id"], clean["company"], strict=True))
     seen: dict[str, dict] = {}
     freq: Counter = Counter()
+    spellings: dict[str, Counter] = {}
     for row in scored.sort_values("fit_score", ascending=False).itertuples():
         raw = row.keywords_to_mirror
         items = list(raw) if hasattr(raw, "__iter__") and not isinstance(raw, str) else [raw]
         for kw in items:
             kw = str(kw or "").strip()
-            if not kw or _norm(kw) in skip:
+            k = kw_norm.key(kw, fold)
+            if not k or k in skip:
                 continue
-            freq[_norm(kw)] += 1
+            freq[k] += 1
+            spellings.setdefault(k, Counter())[kw] += 1
             seen.setdefault(
-                _norm(kw),
+                k,
                 {
-                    "keyword": kw,
                     "job_id": row.job_id,
                     "company": company.get(row.job_id, ""),
                     "fit": float(row.fit_score),
                 },
             )
-    top = [{**seen[k], "frequency": n} for k, n in freq.most_common(TOP_KEYWORDS)]
+    top = [
+        {"keyword": spellings[k].most_common(1)[0][0], **seen[k], "frequency": n}
+        for k, n in freq.most_common(TOP_KEYWORDS)
+    ]
     return {"job_ids": ids, "keywords": top}
 
 

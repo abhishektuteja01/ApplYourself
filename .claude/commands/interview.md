@@ -128,7 +128,7 @@ Open gaps outrank fresh targets, always. Fill the rest of the session from the m
   - `source=SKILL-A,SKILL-B transformation=skills` — a Skills line. Every skill on it
     is a claim the interviewer can pick up. A skill the JD names is a target, and
     its `evidence:` in `profile/skills_master.md` names the bullets that must hold it.
-  - `## Keywords` — every `keywords_to_mirror` entry, with the lines it landed on or
+  - `## Keywords` — every `keywords_to_mirror` entry, with the lines it landed on (in any spelling) or
     `not landed`. **A keyword the JD demands that did not land is the highest-value
     target**: an interviewer reads the same JD, asks the obvious question, and the
     resume has nothing under it. Each becomes an `X-` `no-anchor` row keyed to the

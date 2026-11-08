@@ -1,0 +1,28 @@
+# Spellings of one keyword the keyword normalizer (src/applyourself/shared/keywords.py)
+# reads as the same. Plurals, case, hyphens and spaces fold on their own;
+# list only abbreviations and other spellings. A group joins any group sharing a member.
+variants:
+  - [eval, evaluation]
+  - [ai, a.i., artificial intelligence]
+  - [llm, large language model]
+  - [genai, gen ai, generative ai]
+  - [ml, machine learning]
+  - [nlp, natural language processing]
+  - [rag, retrieval augmented generation]
+  - [k8s, kubernetes]
+  - [infra, infrastructure]
+  - [db, database]
+  - [repo, repository]
+  - [postgres, postgresql]
+  - [js, javascript]
+  - [ci cd, cicd, continuous integration continuous delivery, continuous integration continuous deployment]
+  - [aws, amazon web services]
+  - [gcp, google cloud platform, google cloud]
+  - [mcp, model context protocol]
+  - [api, application programming interface]
+  - [sre, site reliability engineering]
+  - [modeling, modelling]
+  - [node.js, nodejs]
+  - [analysis, analyses]
+# Words whose final "s" is not a plural: never folded.
+keep_plural: [news, dynamics, atlas, series, species, windows]

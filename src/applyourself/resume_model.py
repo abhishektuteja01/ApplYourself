@@ -28,6 +28,7 @@ import yaml
 
 from applyourself import lint
 from applyourself.session_schema import ProblemCode
+from applyourself.shared import keywords as kw_norm
 from applyourself.shared import paths, schemas, verticals
 
 BULLET_KEYS = ("canonical", "tags", "default_for", "evidence", "allowable_synonyms")
@@ -800,15 +801,19 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
 
 
 def _keyword_trace(md: str, keywords: tuple[str, ...]) -> list[str]:
+    """Each keyword's lines: as written (any case), or in another spelling
+    (`shared.keywords`: "LLMs" lands on "LLM")."""
     if not keywords:
         return []
     md_lines = md.split("\n")
+    fold = kw_norm.variants()
     out = ["", "## Keywords"]
     for kw in keywords:
+        exact = re.compile(rf"(?<!\w){re.escape(kw.lower())}(?!\w)")
         hit = [
             f"L{i}"
             for i, line in enumerate(md_lines, start=1)
-            if re.search(rf"(?<!\w){re.escape(kw.lower())}(?!\w)", line.lower())
+            if exact.search(line.lower()) or kw_norm.contains(line, kw, fold)
         ]
         out.append(f"- {kw}: {', '.join(hit) if hit else 'not landed'}")
     return out
