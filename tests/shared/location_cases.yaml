@@ -1,0 +1,648 @@
+# The location gate's behaviour, one case per line.
+# loc: the location text. allow: the allowlist (below; default wide). lane: the
+# vertical (an abroad country keeps only abroad_lanes). keep: the verdict.
+# countries: the countries the text reads, where it matters. shown: the display form.
+# was/why: the verdict before the minimal gate, and why it changed.
+allowlists:
+  us: [United States]
+  us_in: [United States, India]
+  wide: [United States, India, Germany, Ireland, Netherlands, Poland, Sweden, United Arab Emirates]
+abroad: {india: [lane_a]}
+
+cases:
+  - {loc: "Austin, TX", allow: us, keep: true, countries: ["United States"], shown: "Austin, TX"}
+  - {loc: "Remote", allow: us, keep: true, countries: [], shown: "Remote"}
+  - {loc: "", allow: us, keep: true, countries: [], shown: ""}
+  - {loc: "Remote - Austin, TX", allow: us, keep: true, countries: ["United States"], shown: "Remote - Austin, TX"}
+  - {loc: "Portland, OR", allow: us, keep: true, countries: ["United States"], shown: "Portland, OR"}
+  - {loc: "Bend, OR, USA", allow: us, keep: true, countries: ["United States"], shown: "Bend, OR"}
+  - {loc: "Berlin, Germany", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "New York, London or Singapore", allow: us, keep: true, countries: ["Singapore", "United Kingdom", "United States"]}
+  - {loc: "CA", allow: us, keep: true, countries: []}
+  - {loc: "San Francisco Bay Area", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA"}
+  - {loc: "Chicago; Dallas; Los Angeles; Minneapolis; New York; San Francisco; Seattle; Washington, D.C.", allow: us, keep: true, countries: ["United States"]}
+  - {loc: "Raleigh-Cary, NC, Austin/Dallas, TX, Tampa Bay, FL, Greater Boston Area, MA, Denver, CO, Atlanta, GA, CA, NJ, TN, PA", allow: us, keep: true}
+  - {loc: "New York, USA", allow: us, keep: true, countries: ["United States"]}
+  - {loc: "Doha, Qatar ; Dubai, UAE", allow: us, keep: false, countries: ["Qatar", "United Arab Emirates"]}
+  - {loc: "Riyadh, KSA", allow: us, keep: false, countries: ["Saudi Arabia"]}
+  - {loc: "Kinshasa, DRC", allow: us, keep: false, countries: ["Congo, The Democratic Republic of the"]}
+  - {loc: "Yangon, Burma", allow: us, keep: false, countries: ["Myanmar"]}
+  - {loc: "Abidjan, Ivory Coast", allow: us, keep: false, countries: ["Côte d'Ivoire"]}
+  - {loc: "London", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "Stockholm", allow: us, keep: false, countries: ["Sweden"]}
+  - {loc: "Lisbon", allow: us, keep: false, countries: ["Portugal"]}
+  - {loc: "Kuala Lumpur", allow: us, keep: false, countries: ["Malaysia"]}
+  - {loc: "Iasi", allow: us, keep: false, countries: ["Romania"]}
+  - {loc: "Iași", allow: us, keep: false}
+  - {loc: "Zürich", allow: us, keep: false}
+  - {loc: "Zurich", allow: us, keep: false}
+  - {loc: "São Paulo", allow: us, keep: false}
+  - {loc: "Sao Paulo", allow: us, keep: false}
+  - {loc: "Berlin", allow: us, keep: false}
+  - {loc: "Toronto", allow: us, keep: false}
+  - {loc: "Tel Aviv", allow: us, keep: false}
+  - {loc: "Bengaluru", allow: us, keep: false}
+  - {loc: "Singapore", allow: us, keep: false}
+  - {loc: "Munich", allow: us, keep: false}
+  - {loc: "Tokyo", allow: us, keep: false}
+  - {loc: "Sydney", allow: us, keep: false}
+  - {loc: "Dubai", allow: us, keep: false}
+  - {loc: "Warsaw", allow: us, keep: false}
+  - {loc: "London, United Kingdom", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "London, UK", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "Toronto, Canada", allow: us, keep: false, countries: ["Canada"]}
+  - {loc: "Paris", allow: us, keep: false, countries: ["France"]}
+  - {loc: "Vancouver", allow: us, keep: false, countries: ["Canada"]}
+  - {loc: "Manchester", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "Cambridge", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "Amsterdam", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Paris, TX", allow: us, keep: true, countries: ["United States"], shown: "Paris, TX"}
+  - {loc: "Cambridge, MA", allow: us, keep: true, countries: ["United States"], shown: "Cambridge, MA"}
+  - {loc: "Vancouver, WA", allow: us, keep: true, countries: ["United States"], shown: "Vancouver, WA"}
+  - {loc: "Manchester, NH", allow: us, keep: true, countries: ["United States"], shown: "Manchester, NH"}
+  - {loc: "London, United Kingdom; Stockholm, Sweden", allow: us, keep: false, countries: ["Sweden", "United Kingdom"]}
+  - {loc: "London or Berlin", allow: us, keep: false, countries: ["Germany", "United Kingdom"]}
+  - {loc: "London, Stockholm, Lisbon, Berlin, Paris", allow: us, keep: false, countries: ["France"]}
+  - {loc: "Austin, TX or London", allow: us, keep: true, countries: ["United Kingdom", "United States"]}
+  - {loc: "remote", allow: us, keep: true, shown: "Remote"}
+  - {loc: "Fully Remote", allow: us, keep: true, shown: "Remote"}
+  - {loc: "Remote - US", allow: us, keep: true, shown: "Remote - United States"}
+  - {loc: "London or Remote", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "   ", allow: us, keep: true, countries: []}
+  - {loc: "Anywhere", allow: us, keep: true, countries: []}
+  - {loc: "Multiple Locations", allow: us, keep: true, countries: []}
+  - {loc: "Worldwide", allow: us, keep: true, countries: []}
+  - {loc: "Washington, DC", allow: us, keep: true, countries: ["United States"], shown: "Washington, DC"}
+  - {loc: "Kansas City, MO", allow: us, keep: true, countries: ["United States"], shown: "Kansas City, MO"}
+  - {loc: "Oklahoma City, OK", allow: us, keep: true, countries: ["United States"], shown: "Oklahoma City, OK"}
+  - {loc: "New York, NY", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
+  - {loc: "Atlanta, Georgia", allow: us, keep: true, countries: ["United States"], shown: "Atlanta, GA"}
+  - {loc: "Jamaica, NY", allow: us, keep: true, countries: ["United States"], shown: "Jamaica, NY"}
+  - {loc: "Jersey City, NJ", allow: us, keep: true, countries: ["United States"], shown: "Jersey City, NJ"}
+  - {loc: "Panama City, FL", allow: us, keep: true, countries: ["United States"], shown: "Panama City, FL"}
+  - {loc: "Boston, MA", allow: us, keep: true, countries: ["United States"], shown: "Boston, MA"}
+  - {loc: "Boston, Massachusetts", allow: us, keep: true, countries: ["United States"], shown: "Boston, MA"}
+  - {loc: "Hyderabad, India", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Beirut, Lebanon", allow: us, keep: false, countries: ["Lebanon"]}
+  - {loc: "Tbilisi, Georgia", allow: us, keep: false, countries: ["Georgia"]}
+  - {loc: "Georgia", allow: us, keep: true, countries: ["Georgia", "United States"]}
+  - {loc: "Central Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
+  - {loc: "South Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
+  - {loc: "North Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
+  - {loc: "East Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
+  - {loc: "West Jakarta", allow: us, keep: false, countries: ["Indonesia"]}
+  - {loc: "Rome, Italy", allow: us, keep: false, countries: ["Italy"]}
+  - {loc: "Athens, Greece", allow: us, keep: false, countries: ["Greece"]}
+  - {loc: "Cairo, Egypt", allow: us, keep: false, countries: ["Egypt"]}
+  - {loc: "Delhi, India", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Athens, OH", allow: us, keep: true, countries: ["United States"], shown: "Athens, OH"}
+  - {loc: "Rome, GA", allow: us, keep: true, countries: ["United States"], shown: "Rome, GA"}
+  - {loc: "Birmingham, AL", allow: us, keep: true, countries: ["United States"], shown: "Birmingham, AL"}
+  - {loc: "Dublin, OH", allow: us, keep: true, countries: ["United States"], shown: "Dublin, OH"}
+  - {loc: "Valencia, CA", allow: us, keep: true, countries: ["United States"], shown: "Valencia, CA"}
+  - {loc: "York, PA", allow: us, keep: true, countries: ["United States"], shown: "York, PA"}
+  - {loc: "Birmingham, UK", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "Dublin, Ireland", allow: us, keep: false, countries: ["Ireland"]}
+  - {loc: "Valencia, Spain", allow: us, keep: false, countries: ["Spain"]}
+  - {loc: "York, UK", allow: us, keep: false, countries: ["United Kingdom"]}
+  - {loc: "Paris, TX, USA", allow: us, keep: true, countries: ["United States"], shown: "Paris, TX"}
+  - {loc: "Vancouver, BC", allow: us, keep: false, countries: ["Canada"]}
+  - {loc: "Bengaluru, Karnataka", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Bangalore, KA", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Toronto, Ontario, Canada", allow: us, keep: false, countries: ["Canada"]}
+  - {loc: "Recife, PE, Brazil", allow: us, keep: false, countries: ["Brazil"]}
+  - {loc: "Albuquerque, New Mexico", allow: us, keep: true, countries: ["United States"], shown: "Albuquerque, NM"}
+  - {loc: "New Mexico", allow: us, keep: true, countries: ["United States"], shown: "NM"}
+  - {loc: "Mexico", allow: us, keep: false, countries: ["Mexico"]}
+  - {loc: "Mexico City, Mexico", allow: us, keep: false, countries: ["Mexico"]}
+  - {loc: "Trinidad and Tobago", allow: us, keep: false, countries: ["Trinidad and Tobago"]}
+  - {loc: "Antigua and Barbuda", allow: us, keep: false, countries: ["Antigua and Barbuda"]}
+  - {loc: "Bosnia and Herzegovina", allow: us, keep: false, countries: ["Bosnia and Herzegovina"]}
+  - {loc: "PA", allow: us, keep: true, countries: []}
+  - {loc: "WA", allow: us, keep: true, countries: []}
+  - {loc: "Asia", allow: us, keep: false, countries: ["Afghanistan", "Armenia", "Azerbaijan", "Bahrain", "Bangladesh", "Bhutan", "British Indian Ocean Territory", "Brunei Darussalam", "Cambodia", "China", "Cocos (Keeling) Islands", "Georgia", "Hong Kong", "India", "Indonesia", "Iran, Islamic Republic of", "Iraq", "Israel", "Japan", "Jordan", "Kazakhstan", "Korea, Democratic People's Republic of", "Korea, Republic of", "Kuwait", "Kyrgyzstan", "Lao People's Democratic Republic", "Lebanon", "Macao", "Malaysia", "Maldives", "Mongolia", "Myanmar", "Nepal", "Oman", "Pakistan", "Palestine, State of", "Philippines", "Qatar", "Saudi Arabia", "Singapore", "Sri Lanka", "Syrian Arab Republic", "Taiwan, Province of China", "Tajikistan", "Thailand", "Turkmenistan", "Türkiye", "United Arab Emirates", "Uzbekistan", "Viet Nam", "Yemen"]}
+  - {loc: "Warrington, PA", allow: us, keep: true, countries: []}
+  - {loc: "Austin, TX / Remote", allow: us, keep: true, countries: ["United States"], shown: "Remote - Austin, TX"}
+  - {loc: "Chicago, Illinois or Austin, Texas", allow: us, keep: true, countries: ["United States"], shown: "Chicago, Illinois or Austin, Texas"}
+  - {loc: "US and Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
+  - {loc: "United States and Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
+  - {loc: "United States & Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
+  - {loc: "San Francisco, CA | New York City, NY | Seattle, WA", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA | New York City, NY | Seattle, WA"}
+  - {loc: "Netherlands - Alkmaar", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "France - Paris", allow: us, keep: false, countries: ["France"]}
+  - {loc: "Winston-Salem, NC", allow: us, keep: true, countries: ["United States"]}
+  - {loc: "Sophia-Antipolis, France", allow: us, keep: false, countries: ["France"]}
+  - {loc: "Sapien HQ — NYC", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
+  - {loc: "Saint Petersburg, FL, US", allow: us, keep: true, countries: ["United States"], shown: "St. Petersburg, FL"}
+  - {loc: "Saint Petersburg", allow: us, keep: false, countries: ["Russian Federation"]}
+  - {loc: "Bruxelles", allow: us, keep: false, countries: ["Belgium"]}
+  - {loc: "Bangalore", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Ciudad de México", allow: us, keep: false, countries: ["Mexico"]}
+  - {loc: "Deutschland", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "España", allow: us, keep: false, countries: ["Spain"]}
+  - {loc: "Brasil", allow: us, keep: false, countries: ["Brazil"]}
+  - {loc: "Nederland", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Bengaluru, India", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Lisbon, Portugal", allow: us, keep: false, countries: ["Portugal"]}
+  - {loc: "Mumbai, Maharashtra", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Munich, Germany", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "EMEA", allow: us, keep: false}
+  - {loc: "EMEIA", allow: us, keep: false}
+  - {loc: "APAC", allow: us, keep: false}
+  - {loc: "LATAM", allow: us, keep: false}
+  - {loc: "ANZ", allow: us, keep: false}
+  - {loc: "apac", allow: us, keep: false}
+  - {loc: "Remote - EMEA", allow: us, keep: false}
+  - {loc: "EMEA or New York", allow: us, keep: true}
+  - {loc: "London; Manchester", allow: us_in, keep: false}
+  - {loc: "Toronto, ON; Vancouver, BC", allow: us_in, keep: false}
+  - {loc: "Seoul, Korea", allow: us_in, keep: false}
+  - {loc: "Malta", allow: us_in, keep: false}
+  - {loc: "Tel Aviv (Onsite)", allow: us_in, keep: false}
+  - {loc: "London Office", allow: us_in, keep: false}
+  - {loc: "Chennai, TN", allow: us_in, keep: true, shown: "Chennai, India"}
+  - {loc: "Mumbai, Maharashtra, India", allow: us_in, keep: true, shown: "Mumbai, India"}
+  - {loc: "New York, NY (HQ)", allow: us_in, keep: true, shown: "New York City, NY"}
+  - {loc: "Austin, TX; Seattle, WA", allow: us_in, keep: true, shown: "Austin, TX; Seattle, WA"}
+  - {loc: "Remote - US", allow: us_in, keep: true, shown: "Remote - United States"}
+  - {loc: "Remote", allow: us_in, keep: true, shown: "Remote"}
+  - {loc: "Bengaluru", allow: us_in, lane: "lane_a", keep: true}
+  - {loc: "Bengaluru", allow: us_in, lane: "lane_b", keep: false}
+  - {loc: "Remote", allow: us_in, title: "AI Engineer Backend (Remote - ES/UK only)", keep: false}
+  - {loc: "Remote", allow: us_in, title: "AI Engineer (US or UK only)", keep: true}
+  - {loc: "Remote", allow: us_in, title: "AI Engineer (US Citizens only)", keep: true}
+  - {loc: "Amsterdam, NH, NL", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Tilburg, NB, NL", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Abu Dhabi, AZ, AE", allow: us, keep: false, countries: ["United Arab Emirates"]}
+  - {loc: "Stockholm, Stockholm County, SE", allow: us, keep: false, countries: ["Sweden"]}
+  - {loc: "Amsterdam, NH, nl", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Pune, MH, in", allow: us, keep: false, countries: ["India"]}
+  - {loc: "Madrid, MD, ES", allow: us, keep: false, countries: ["Spain"]}
+  - {loc: "Schiltigheim, Grand Est, fr", allow: us, keep: false, countries: ["France"]}
+  - {loc: "München, BY, DE", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "Wrocław, DO, PL", allow: us, keep: false, countries: ["Poland"]}
+  - {loc: "Hamburg, DE, 20095", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "Toronto, ON, CA", allow: us, keep: false, countries: ["Canada"]}
+  - {loc: "Bengaluru, KA, IN", allow: us, keep: false, countries: ["India"]}
+  - {loc: "New York, United States, USA", allow: us, keep: true, countries: ["United States"]}
+  - {loc: "TUN - ARIANA", allow: us, keep: false, countries: ["Tunisia"]}
+  - {loc: "SGP Work-at-Home", allow: us, keep: false, countries: ["Singapore"]}
+  - {loc: "Chicago, IL", allow: us, keep: true, countries: ["United States"], shown: "Chicago, IL"}
+  - {loc: "Indianapolis, IN", allow: us, keep: true, countries: ["United States"], shown: "Indianapolis, IN"}
+  - {loc: "Wilmington, DE", allow: us, keep: true, countries: ["United States"], shown: "Wilmington, DE"}
+  - {loc: "San Francisco, CA", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA"}
+  - {loc: "Columbia, MD", allow: us, keep: true, countries: ["United States"], shown: "Columbia, MD"}
+  - {loc: "Pittsburgh, PA, 15222", allow: us, keep: true, countries: ["United States"], shown: "Pittsburgh, PA"}
+  - {loc: "Bengaluru KA", keep: true}
+  - {loc: "Bengaluru, KA", keep: true}
+  - {loc: "Bangalore, Karnataka", keep: true}
+  - {loc: "NCR", keep: true}
+  - {loc: "Delhi NCR", keep: true}
+  - {loc: "Gurugram", keep: true}
+  - {loc: "Gurugram, HR", keep: true}
+  - {loc: "Gurgaon, Haryana", keep: true}
+  - {loc: "Noida", keep: true}
+  - {loc: "Noida, UP", keep: true}
+  - {loc: "Dublin, CA", keep: true}
+  - {loc: "Dublin, OH", keep: true}
+  - {loc: "Dublin", keep: true}
+  - {loc: "Dublin, IE", keep: true}
+  - {loc: "Delhi, NY", keep: true}
+  - {loc: "Berlin, NH", keep: true}
+  - {loc: "Amsterdam, NY", keep: true}
+  - {loc: "Warsaw, IN", keep: true}
+  - {loc: "Hyderabad", keep: true}
+  - {loc: "Hyderabad, TS", keep: true}
+  - {loc: "Hyderabad, Telangana", keep: true}
+  - {loc: "Frankfurt", keep: true}
+  - {loc: "Frankfurt am Main", keep: true}
+  - {loc: "Remote India", keep: true}
+  - {loc: "Pan India", keep: true}
+  - {loc: "APAC incl India", keep: true}
+  - {loc: "India (Remote)", keep: true}
+  - {loc: "IN", keep: true}
+  - {loc: "IND", keep: true}
+  - {loc: "Pune, MH", keep: true}
+  - {loc: "Chennai, TN", keep: true}
+  - {loc: "Kolkata, WB", keep: true}
+  - {loc: "Ahmedabad, GJ", keep: true}
+  - {loc: "Kochi, KL", keep: true}
+  - {loc: "Chandigarh", keep: true}
+  - {loc: "Mumbai, Maharashtra, India", keep: true}
+  - {loc: "Untied States", keep: true}
+  - {loc: "USA-Remote", keep: true}
+  - {loc: "US/Remote", keep: true}
+  - {loc: "US-Remote", keep: true}
+  - {loc: "Remote: Anywhere in US", keep: true}
+  - {loc: "Remote - Anywhere in the U.S.", keep: true}
+  - {loc: "EMEA/US", keep: true}
+  - {loc: "North America", keep: true}
+  - {loc: "Americas", keep: true}
+  - {loc: "NA", keep: true}
+  - {loc: "NAMER", keep: true}
+  - {loc: "Within 50 miles of Austin", keep: true}
+  - {loc: "Within 50 miles of Austin, TX", keep: true}
+  - {loc: "Remote (US + Canada)", keep: true}
+  - {loc: "US or Canada", keep: true}
+  - {loc: "Canada or US", keep: true}
+  - {loc: "Toronto or New York", keep: true}
+  - {loc: "London or New York", keep: true}
+  - {loc: "London / NYC", keep: true}
+  - {loc: "London; Remote US", keep: true}
+  - {loc: "UK, US, India", keep: true}
+  - {loc: "Global", keep: true}
+  - {loc: "Worldwide", keep: true}
+  - {loc: "Anywhere", keep: true}
+  - {loc: "Remote", keep: true}
+  - {loc: "Hybrid", keep: true}
+  - {loc: "", keep: true}
+  - {loc: "🌎 Remote", keep: true}
+  - {loc: "🇺🇸 Remote", keep: true}
+  - {loc: "Remote 🇺🇸", keep: true}
+  - {loc: "NEW YORK, NY", keep: true}
+  - {loc: "SAN FRANCISCO BAY AREA", keep: true}
+  - {loc: "AUSTIN, TX OR REMOTE", keep: true}
+  - {loc: "REMOTE IN INDIA", keep: true}
+  - {loc: "REMOTE, USA", keep: true}
+  - {loc: "Remote (EST)", keep: false}
+  - {loc: "Remote - PST", keep: true}
+  - {loc: "EST", keep: false}
+  - {loc: "PHL", keep: false}
+  - {loc: "Philadelphia, PA", keep: true}
+  - {loc: "Paris, TX", keep: true}
+  - {loc: "London, KY", keep: true}
+  - {loc: "Athens, GA", keep: true}
+  - {loc: "Rome, GA", keep: true}
+  - {loc: "Manchester, NH", keep: true}
+  - {loc: "Cambridge, MA", keep: true}
+  - {loc: "Birmingham, AL", keep: true}
+  - {loc: "Vancouver, WA", keep: true}
+  - {loc: "Portland, OR", keep: true}
+  - {loc: "Portland, ME", keep: true}
+  - {loc: "Ontario, CA", keep: true}
+  - {loc: "Columbia, MD", keep: true}
+  - {loc: "Columbia, SC", keep: true}
+  - {loc: "Georgia", keep: true}
+  - {loc: "Atlanta, Georgia", keep: true}
+  - {loc: "Florida", keep: false}
+  - {loc: "Remote - Florida", keep: false}
+  - {loc: "Savannah, GA", keep: true}
+  - {loc: "Jersey City, NJ", keep: true}
+  - {loc: "New Jersey", keep: true}
+  - {loc: "New Mexico", keep: true}
+  - {loc: "Albuquerque, New Mexico", keep: true}
+  - {loc: "Las Cruces, New Mexico", keep: true}
+  - {loc: "Mexico, MO", keep: true}
+  - {loc: "Lebanon, PA", keep: true}
+  - {loc: "Peru, IN", keep: true}
+  - {loc: "Jordan, MN", keep: true}
+  - {loc: "Panama City, FL", keep: true}
+  - {loc: "Milan, MI", keep: true}
+  - {loc: "Naples, FL", keep: true}
+  - {loc: "Florence, SC", keep: true}
+  - {loc: "Moscow, ID", keep: true}
+  - {loc: "Toledo, OH", keep: true}
+  - {loc: "Melbourne, FL", keep: true}
+  - {loc: "Victoria, TX", keep: true}
+  - {loc: "Sydney, OH", keep: true}
+  - {loc: "Puerto Rico", keep: false}
+  - {loc: "San Juan, Puerto Rico", keep: false}
+  - {loc: "San Juan, PR", keep: false}
+  - {loc: "Guam", keep: false}
+  - {loc: "Hagatna, GU", keep: false}
+  - {loc: "US Virgin Islands", keep: true}
+  - {loc: "Virgin Islands, U.S.", keep: true}
+  - {loc: "Saipan, MP", keep: false}
+  - {loc: "Northern Mariana Islands", keep: false}
+  - {loc: "American Samoa", keep: false}
+  - {loc: "Pago Pago, AS", keep: false}
+  - {loc: "Washington, DC", keep: true}
+  - {loc: "DC", keep: true}
+  - {loc: "D.C.", keep: true}
+  - {loc: "Seattle, WA 98101", keep: true}
+  - {loc: "Austin TX 78701", keep: true}
+  - {loc: "1 Main St, Springfield, IL 62701", keep: true}
+  - {loc: "Wilmington, DE", keep: true}
+  - {loc: "Dover, DE", keep: true}
+  - {loc: "Indianapolis, IN", keep: true}
+  - {loc: "New Orleans, LA", keep: true}
+  - {loc: "Los Angeles, CA", keep: true}
+  - {loc: "LA", keep: true}
+  - {loc: "SF", keep: true}
+  - {loc: "NYC", keep: true}
+  - {loc: "NY or SF", keep: true}
+  - {loc: "Boston | Remote", keep: true}
+  - {loc: "Remote — US", keep: true}
+  - {loc: "Remote – United States", keep: true}
+  - {loc: "United States of America", keep: true}
+  - {loc: "U.S.A.", keep: true}
+  - {loc: "ESTADOS UNIDOS", keep: true}
+  - {loc: "Vereinigte Staaten", keep: true}
+  - {loc: "美国", keep: true}
+  - {loc: "アメリカ", keep: true}
+  - {loc: "Deutschland", keep: true}
+  - {loc: "München", keep: true}
+  - {loc: "Munich, BY", keep: true}
+  - {loc: "Berlin, BE", keep: true}
+  - {loc: "Hamburg, DE", keep: true}
+  - {loc: "Amsterdam", keep: true}
+  - {loc: "Amsterdam, NH", keep: true}
+  - {loc: "Utrecht, NL, 3584 AB", keep: false}
+  - {loc: "Stockholm, SE, 111 22", keep: true}
+  - {loc: "Warsaw, PL, 00-001", keep: true}
+  - {loc: "Kraków", keep: true}
+  - {loc: "Abu Dhabi, AZ", keep: true}
+  - {loc: "Dubai", keep: true}
+  - {loc: "Dubai, UAE", keep: true}
+  - {loc: "Dubai, DU", keep: true}
+  - {loc: "Cork, Ireland", keep: true}
+  - {loc: "Galway", keep: true}
+  - {loc: "Remote - EU", keep: true}
+  - {loc: "Europe", keep: true}
+  - {loc: "EMEA", keep: true}
+  - {loc: "Remote, Europe (CET +/- 2)", keep: true}
+  - {loc: "DACH", keep: true}
+  - {loc: "Berlin or Remote (EU)", keep: true}
+  - {loc: "Mexico City or Austin", keep: true}
+  - {loc: "Toronto, ON / Austin, TX", keep: true}
+  - {loc: "Toronto, Canada; Seattle, WA", keep: true}
+  - {loc: "LATAM", keep: false}
+  - {loc: "Latin America", keep: false}
+  - {loc: "South America", keep: true}
+  - {loc: "Bay Area", keep: true}
+  - {loc: "West Coast (San Francisco/Bay Area)", keep: true}
+  - {loc: "Hybrid - Bay Area", keep: true}
+  - {loc: "Greater Seattle Area", keep: true}
+  - {loc: "DFW", keep: true}
+  - {loc: "Dallas-Fort Worth", keep: true}
+  - {loc: "Minneapolis-St. Paul", keep: true}
+  - {loc: "Winston-Salem, NC", keep: true}
+  - {loc: "Salem, OR", keep: true}
+  - {loc: "Kingston, NY", keep: true}
+  - {loc: "Windsor, CT", keep: true}
+  - {loc: "Hamilton, NJ", keep: true}
+  - {loc: "Richmond, VA", keep: true}
+  - {loc: "London, Ohio", keep: true}
+  - {loc: "Paris, Kentucky", keep: true}
+  - {loc: "Moscow, Idaho", keep: true}
+  - {loc: "Berlin, Connecticut", keep: true}
+  - {loc: "Cairo, GA", keep: true}
+  - {loc: "Lima, OH", keep: true}
+  - {loc: "Manila, AR", keep: true}
+  - {loc: "Montevideo, MN", keep: true}
+  - {loc: "Bogota, NJ", keep: true}
+  - {loc: "Santiago, CA", keep: true}
+  - {loc: "Toronto, OH", keep: true}
+  - {loc: "PR", keep: true}
+  - {loc: "GU", keep: true}
+  - {loc: "VI", keep: true}
+  - {loc: "MP", keep: true}
+  - {loc: "AS", keep: true}
+  - {loc: "Toronto, ON", keep: false}
+  - {loc: "Toronto, Ontario", keep: false}
+  - {loc: "Toronto, Canada", keep: false}
+  - {loc: "Vancouver, BC", keep: false}
+  - {loc: "London, UK", keep: false}
+  - {loc: "London", keep: false}
+  - {loc: "LONDON, ENGLAND", keep: false}
+  - {loc: "London Area, United Kingdom", keep: false}
+  - {loc: "Greater London Area", keep: false}
+  - {loc: "Paris, France", keep: false}
+  - {loc: "Paris, FR", keep: false}
+  - {loc: "Berlin, Germany or London, UK", keep: true}
+  - {loc: "Remote - UK", keep: false}
+  - {loc: "UK Remote", keep: true}
+  - {loc: "Remote (UK)", keep: false}
+  - {loc: "United Kingdom", keep: false}
+  - {loc: "Untied Kingdom", keep: true}
+  - {loc: "Canada", keep: false}
+  - {loc: "Remote Canada", keep: false}
+  - {loc: "Anywhere in Canada", keep: true}
+  - {loc: "CANADA (REMOTE)", keep: false}
+  - {loc: "Brazil", keep: false}
+  - {loc: "Brasil", keep: false}
+  - {loc: "São Paulo", keep: false}
+  - {loc: "Sao Paulo, SP, Brazil", keep: false}
+  - {loc: "Mexico", keep: false}
+  - {loc: "México", keep: false}
+  - {loc: "CDMX", keep: true}
+  - {loc: "Ciudad de México", keep: false}
+  - {loc: "Tokyo, Japan", keep: false}
+  - {loc: "東京", keep: true}
+  - {loc: "Singapore", keep: false}
+  - {loc: "SG", keep: true}
+  - {loc: "Sydney, NSW", keep: false}
+  - {loc: "Sydney, Australia", keep: false}
+  - {loc: "Melbourne, VIC", keep: false}
+  - {loc: "Perth, WA", keep: false}
+  - {loc: "Perth, WA, Australia", keep: false}
+  - {loc: "Tbilisi, Georgia", keep: false}
+  - {loc: "Bangkok, TH", keep: false}
+  - {loc: "Hyderabad, Pakistan", keep: false}
+  - {loc: "Lahore", keep: false}
+  - {loc: "Karachi, PK", keep: false}
+  - {loc: "Manila, PH", keep: false}
+  - {loc: "Buenos Aires, AR", keep: false}
+  - {loc: "Córdoba, Argentina", keep: false}
+  - {loc: "Bogotá, CO", keep: false}
+  - {loc: "Libreville, GA", keep: false}
+  - {loc: "Remote - Spain", keep: false}
+  - {loc: "Spain / Portugal", keep: false}
+  - {loc: "Madrid, ES", keep: false}
+  - {loc: "Barcelona", keep: false}
+  - {loc: "Lisbon, Portugal", keep: false}
+  - {loc: "Zürich", keep: false}
+  - {loc: "ZURICH, CH", keep: false}
+  - {loc: "Tel Aviv, Israel", keep: false}
+  - {loc: "Tel Aviv, IL", keep: false}
+  - {loc: "Cape Town, South Africa", keep: false}
+  - {loc: "Nairobi, Kenya", keep: false}
+  - {loc: "Lagos, Nigeria", keep: false}
+  - {loc: "Seoul, South Korea", keep: false}
+  - {loc: "Taipei, Taiwan", keep: false}
+  - {loc: "Ho Chi Minh City, Vietnam", keep: false}
+  - {loc: "Kuala Lumpur, Malaysia", keep: false}
+  - {loc: "Jakarta, Indonesia", keep: false}
+  - {loc: "Riyadh, Saudi Arabia", keep: false}
+  - {loc: "Doha, Qatar", keep: false}
+  - {loc: "Cairo, Egypt", keep: false}
+  - {loc: "Istanbul, Türkiye", keep: false}
+  - {loc: "Prague, Czech Republic", keep: false}
+  - {loc: "Budapest, Hungary", keep: false}
+  - {loc: "Bucharest, Romania", keep: false}
+  - {loc: "Vienna, Austria", keep: false}
+  - {loc: "Copenhagen, Denmark", keep: false}
+  - {loc: "Oslo, Norway", keep: false}
+  - {loc: "Helsinki, Finland", keep: false}
+  - {loc: "Brussels, Belgium", keep: false}
+  - {loc: "Milan, Italy", keep: false}
+  - {loc: "Rome, Italy", keep: false}
+  - {loc: "Athens, Greece", keep: false}
+  - {loc: "Kyiv, Ukraine", keep: false}
+  - {loc: "Remote - Canada, Mexico", keep: false}
+  - {loc: "Canada, Mexico", keep: false}
+  - {loc: "India, Pakistan", keep: false}
+  - {loc: "Remote (US) - must be in EST", keep: true}
+  - {loc: "Remote, US (EST/CST)", keep: true}
+  - {loc: "US (Remote) | Canada", keep: true}
+  - {loc: "Bangalore/Remote", keep: true}
+  - {loc: "Paris, TX 75460", keep: true}
+  - {loc: "Washington", keep: true}
+  - {loc: "Jersey", keep: false}
+  - {loc: "IN-Bangalore", keep: true}
+  - {loc: "DE-Berlin", keep: true}
+  - {loc: "US-CA-San Jose", keep: true}
+  - {loc: "USA - Remote - Anywhere", keep: true}
+  - {loc: "Charlotte, NC / Toronto, ON", keep: true}
+  - {loc: "Hybrid: Dublin", keep: true}
+  - {loc: "Columbus, GA", keep: true}
+  - {loc: "Ottawa, KS", keep: true}
+  - {loc: "Ottawa, IL", keep: true}
+  - {loc: "Waterloo, IA", keep: true}
+  - {loc: "New London, CT", keep: true}
+  - {loc: "New Delhi", keep: true}
+  - {loc: "Delhi", keep: true}
+  - {loc: "Navi Mumbai", keep: true}
+  - {loc: "Bombay", keep: true}
+  - {loc: "Madras", keep: true}
+  - {loc: "Calcutta", keep: true}
+  - {loc: "Trivandrum", keep: true}
+  - {loc: "Remote - Pakistan or India", keep: true}
+  - {loc: "Pakistan / India", keep: true}
+  - {loc: "Bangladesh, India", keep: true}
+  - {loc: "Saint Petersburg, FL", keep: true}
+  - {loc: "St. Petersburg, FL", keep: true}
+  - {loc: "San Jose", keep: true}
+  - {loc: "Valencia, CA", keep: true}
+  - {loc: "Toledo", keep: true}
+  - {loc: "Indore, MP", keep: true}
+  - {loc: "Bhopal, MP", keep: true}
+  - {loc: "Lucknow, UP", keep: true}
+  - {loc: "Amsterdam-Zuidoost", keep: true}
+  - {loc: "Den Haag", keep: true}
+  - {loc: "The Hague", keep: true}
+  - {loc: "Eindhoven", keep: true}
+  - {loc: "Göteborg", keep: true}
+  - {loc: "Gothenburg", keep: true}
+  - {loc: "Malmö", keep: true}
+  - {loc: "Wrocław", keep: true}
+  - {loc: "Gdańsk", keep: true}
+  - {loc: "Kraków, Lesser Poland", keep: true}
+  - {loc: "Cork", keep: true}
+  - {loc: "Limerick", keep: true}
+  - {loc: "Abu Dhabi", keep: true}
+  - {loc: "Sharjah", keep: true}
+  - {loc: "Dubai Internet City", keep: true}
+  - {loc: "DIFC", keep: true}
+  - {loc: "Frankfurt (Oder)", keep: true}
+  - {loc: "Köln", keep: true}
+  - {loc: "Cologne", keep: true}
+  - {loc: "Düsseldorf", keep: true}
+  - {loc: "Munich", keep: true}
+  - {loc: "インド", keep: true}
+  - {loc: "बेंगलुरु", keep: true}
+  - {loc: "📍 Austin", keep: true}
+  - {loc: "BANGALORE", keep: true}
+  - {loc: "BERLIN", keep: true}
+  - {loc: "Unites States", keep: true}
+  - {loc: "Inida", keep: true}
+  - {loc: "Amercia", keep: true}
+  - {loc: "Bengalore", keep: true}
+  - {loc: "US • Remote", keep: true}
+  - {loc: "US · Remote", keep: true}
+  - {loc: "Austin | Toronto", keep: true}
+  - {loc: "Toronto | Austin", keep: true}
+  - {loc: "Toronto;Austin", keep: true}
+  - {loc: "Toronto, ON or Remote (US)", keep: true}
+  - {loc: "Canada (Remote) or United States (Remote)", keep: true}
+  - {loc: "Remote - North America (US/Canada)", keep: true}
+  - {loc: "North America - Remote", keep: true}
+  - {loc: "AMER", keep: true}
+  - {loc: "Remote, AMER", keep: true}
+  - {loc: "Remote - US & Canada", keep: true}
+  - {loc: "US & Canada", keep: true}
+  - {loc: "Canada & US", keep: true}
+  - {loc: "London & New York", keep: true}
+  - {loc: "Mexico & USA", keep: true}
+  - {loc: "Brazil, USA", keep: true}
+  - {loc: "Remote within the United States", keep: true}
+  - {loc: "United States - Remote; Canada - Remote", keep: true}
+  - {loc: "Remote (Must reside in US)", keep: true}
+  - {loc: "Remote, Anywhere", keep: true}
+  - {loc: "Remote - Worldwide", keep: true}
+  - {loc: "Remote (Global)", keep: true}
+  - {loc: "Remote (EMEA, APAC)", keep: false}
+  - {loc: "EU / UK / US", keep: true}
+  - {loc: "Europe or US", keep: true}
+  - {loc: "Seattle, Washington, United States of America", keep: true}
+  - {loc: "San Juan, Puerto Rico, United States", keep: true}
+  - {loc: "Dorado, PR", keep: true}
+  - {loc: "Carolina, PR", keep: false}
+  - {loc: "Bayamón, Puerto Rico", keep: false}
+  - {loc: "Tamuning, Guam", keep: false}
+  - {loc: "Charlotte Amalie, VI", keep: false}
+  - {loc: "St. Thomas, USVI", keep: true}
+  - {loc: "Remote - Puerto Rico", keep: false}
+  - {loc: "Georgia, US", keep: true}
+  - {loc: "Atlanta, GA, US", keep: true}
+  - {loc: "Alpharetta, Georgia", keep: true}
+  - {loc: "Columbia, Missouri", keep: true}
+  - {loc: "Lebanon, NH", keep: true}
+  - {loc: "Cuba, NY", keep: true}
+  - {loc: "Mexico, NY", keep: true}
+  - {loc: "Peru, IL", keep: true}
+  - {loc: "Poland, OH", keep: true}
+  - {loc: "Holland, MI", keep: true}
+  - {loc: "Sweden, ME", keep: true}
+  - {loc: "Ireland", keep: true}
+  - {loc: "Netherlands (Remote)", keep: true}
+  - {loc: "Remote - Germany", keep: true}
+  - {loc: "Remote, UAE", keep: true}
+  - {loc: "U.A.E", keep: true}
+  - {loc: "Amsterdam, Netherlands", keep: true}
+  - {loc: "📍 London", keep: false}
+  - {loc: "TORONTO, ON", keep: false}
+  - {loc: "LONDON, UK", keep: false}
+  - {loc: "Toronto · Remote", keep: true}
+  - {loc: "Toronto + Remote", keep: true}
+  - {loc: "Victoria, BC", keep: false}
+  - {loc: "London, England", keep: false}
+  - {loc: "Hyderabad, Sindh", keep: false}
+  - {loc: "Islamabad", keep: false}
+  - {loc: "Lahore, PK", keep: false}
+  - {loc: "Karachi", keep: false}
+  - {loc: "Dhaka", keep: false}
+  - {loc: "Kathmandu", keep: false}
+  - {loc: "St. Petersburg, Russia", keep: false}
+  - {loc: "San José, CR", keep: false}
+  - {loc: "Merida, Yucatan", keep: false}
+  - {loc: "Guadalajara, Jalisco", keep: false}
+  - {loc: "Monterrey, NL", keep: true}
+  - {loc: "Riyadh", keep: false}
+  - {loc: "Kitchener-Waterloo", keep: true}
+  - {loc: "Москва", keep: true}
+  - {loc: "Remote — 🇨🇦 Canada", keep: false}
+  - {loc: "Toronto 🇨🇦", keep: true}
+  - {loc: "Remote (Canada only)", keep: true}
+  - {loc: "Remote - Canada & Mexico", keep: false}
+  - {loc: "UK & Ireland", keep: true}
+  - {loc: "Ontario", keep: false}
+  - {loc: "British Columbia", keep: false}
+  - {loc: "EMEA (excl. Germany)", keep: true}
+  - {loc: "Remote (Americas excluding US)", keep: true}
+  - {loc: "US-based company, Remote in Canada", keep: true}
+
+# The countries a title's residency qualifier limits the hire to. "europe": every
+# European country.
+titles:
+  - {title: "AI Engineer Backend (Remote - ES/UK only)", countries: ["Spain", "United Kingdom"]}
+  - {title: "Forward Deployed Engineer (UK Based)", countries: ["United Kingdom"]}
+  - {title: "AI Engineer - US only", countries: ["United States"]}
+  - {title: "Engineer (Remote - EU only)", countries: "europe"}
+  - {title: "W2 only - SAP SD OTC Consultant", countries: []}
+  - {title: "AI Developer (US Citizens/ Green Cards only)", countries: []}
+  - {title: "AI Engineer (On-Site, Indiana Only)", countries: []}
+  - {title: "Credit Risk Analyst (UAE Nationals Only)", countries: []}
+  - {title: "Founding Engineer (AI + Geometry / CAD)", countries: []}
+  - {title: "SAP Specialist - Columbia, MD", countries: []}
+  - {title: "AI Engineer (in only one team)", countries: []}
