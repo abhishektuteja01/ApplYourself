@@ -78,6 +78,7 @@ class Reading:
     no region word. sure: the one country every reading can mean, so the text
     is one place. place: the country to show the location in. alone: the
     countries some part can only mean. spelled: the countries named in full.
+    name_or_town: a foreign country's name is also an allowed town ("Lebanon").
     named_allowed: a part names an allowed country outright. loose: a part
     reads nothing. city/state: the place in `place`."""
 
@@ -88,6 +89,7 @@ class Reading:
     place: str = ""
     alone: frozenset[str] = frozenset()
     spelled: frozenset[str] = frozenset()
+    name_or_town: bool = False
     doubt: bool = False
     named_allowed: bool = False
     remote: bool = False
@@ -125,8 +127,11 @@ def _classify(p: str, allowed: frozenset[str], closing: bool = False, first: boo
     elif _is_code(p, 2) and p in CODE2:
         named, kind = {CODE2[p]}, "code"
     subs = dict(SUB_NAME.get(f, {}))
-    # A country's name is never a city namesake ("Nederland", "Lebanon").
-    cities = [] if kind == "country" else CITY.get(saint(f), [])
+    cities = CITY.get(saint(f), [])
+    if kind == "country":
+        # A country's name is that country, unless it is also a town in an allowed
+        # country and the country is not: "Lebanon" (Lebanon, PA) is unsure, so it keeps.
+        cities = [c for c in cities if c.cc in allowed and not named & allowed]
     if (_is_code(p, 2) or _is_code(p, 3)) and kind != "country":
         # A leading code ("BE (BE100)", "CH") is a state only when a US state;
         # after a place, any state.
@@ -290,11 +295,14 @@ def read_location(raw: str, allowed: frozenset[str] = frozenset()) -> Reading:
         fits = (
             fits and cand in meaning and (n is not None or not d.cities or d.cities[0].cc == cand)
         )
+        fits = fits and (n is not None or not d.named or cand in d.named)  # "Lebanon" alone
     place = sure or (cand if fits else "")
     city, state = _where(ps, place, text) if place else ("", "")
     named_allowed = any(d.kind in ("country", "code", "amb") and d.named & allowed for d in ps)
     loose = any(not d.R and _NOISE_RE.sub(" ", d.text).strip(" .-") for d in ps)
     spelled = set().union(*(d.named for d in ps if d.kind == "country")) if ps else set()
+    # A foreign country's name that is also an allowed town ("Lebanon").
+    name_or_town = any(d.full and d.kind == "amb" and not d.named & allowed for d in ps)
     return Reading(
         keep,
         frozenset(found),
@@ -303,6 +311,7 @@ def read_location(raw: str, allowed: frozenset[str] = frozenset()) -> Reading:
         place,
         frozenset(alone),
         frozenset(spelled),
+        name_or_town,
         doubt,
         named_allowed,
         remote,

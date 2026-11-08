@@ -78,7 +78,7 @@ cases:
   - {loc: "Oklahoma City, OK", allow: us, keep: true, countries: ["United States"], shown: "Oklahoma City, OK"}
   - {loc: "New York, NY", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
   - {loc: "Atlanta, Georgia", allow: us, keep: true, countries: ["United States"], shown: "Atlanta, GA"}
-  - {loc: "Jamaica, NY", allow: us, keep: true, countries: ["Jamaica", "United States"], shown: "Jamaica, NY"}
+  - {loc: "Jamaica, NY", allow: us, keep: true, countries: ["United States"], shown: "Jamaica, NY"}
   - {loc: "Jersey City, NJ", allow: us, keep: true, countries: ["United States"], shown: "Jersey City, NJ"}
   - {loc: "Panama City, FL", allow: us, keep: true, countries: ["United States"], shown: "Panama City, FL"}
   - {loc: "Boston, MA", allow: us, keep: true, countries: ["United States"], shown: "Boston, MA"}
@@ -142,7 +142,7 @@ cases:
   - {loc: "Deutschland", allow: us, keep: false, countries: ["Germany"]}
   - {loc: "España", allow: us, keep: false, countries: ["Spain"]}
   - {loc: "Brasil", allow: us, keep: false, countries: ["Brazil"]}
-  - {loc: "Nederland", allow: us, keep: false, countries: ["Netherlands"]}
+  - {loc: "Nederland", allow: us, keep: true, countries: ["Netherlands", "United States"], was: drop, why: "a foreign country name that is also an allowed town is unsure: keep"}
   - {loc: "Bengaluru, India", allow: us, keep: false, countries: ["India"]}
   - {loc: "Lisbon, Portugal", allow: us, keep: false, countries: ["Portugal"]}
   - {loc: "Mumbai, Maharashtra", allow: us, keep: false, countries: ["India"]}
@@ -654,7 +654,9 @@ cases:
   - {loc: "Amsterdam", keep: true, shown: "Amsterdam, Netherlands"}
   - {loc: "Dublin", keep: true, shown: "Dublin, Ireland"}
   - {loc: "New York, NY", allow: us, country: "GB", keep: true, shown: "New York, NY"}
-  - {loc: "Lebanon", allow: us, keep: false, countries: ["Lebanon"]}
+  - {loc: "Lebanon", allow: us, keep: true, countries: ["Lebanon", "United States"]}
+  - {loc: "Lebanon", keep: true, shown: "Lebanon"}
+  - {loc: "Jamaica", allow: us, keep: true, shown: "Jamaica"}
   - {loc: "Lebanon, PA", allow: us, keep: true, shown: "Lebanon, PA"}
 
 # The countries a title's residency qualifier limits the hire to. "europe": every

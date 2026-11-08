@@ -189,7 +189,8 @@ pycountry and geonamescache tables only (no libpostal); `apply.role_facts.job_co
 reads it too. The text splits into parts (`, ; / | ( ) [ ] + : " - "`, dashes,
 " or "; and/&/hyphen only when the whole reads nothing), and each part keeps
 every reading: a country, alias or native name ("Deutschland"; a country's
-name is never a city namesake), an uppercase 2-letter code, a state, every city
+name is that country unless it is a foreign one that is also an allowed town,
+"Lebanon", which is unsure and keeps), an uppercase 2-letter code, a state, every city
 namesake. A part that reads nothing still keeps an allowed country it names in
 passing ("Remote US eligible"). Any allowed reading keeps; PR, GU, VI and MP count as the US; AS
 and UM never drop; a region or global word (EMEA, Worldwide) keeps. A city is

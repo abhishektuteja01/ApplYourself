@@ -117,7 +117,9 @@ def _one_country(raw: str, allowed: frozenset[str]) -> str:
         return found
     r = read_location(raw, allowed)
     named = r.spelled & r.countries
-    return r.sure or (next(iter(named)) if len(named) == 1 else "")
+    if r.sure or len(named) == 1:
+        return r.sure or next(iter(named))
+    return _SEVERAL if r.name_or_town else ""  # "Lebanon": the country or a US town
 
 
 def _piece_country(piece: str, allowed: frozenset[str]) -> str:
@@ -209,13 +211,15 @@ def _us_state_tail(raw: str) -> str:
     """The country of an address closing with a US state ("Delhi, NY", "Warsaw,
     IN"): the US, unless the state's letters or name are another country's and
     the city is there ("Hamburg, DE", "Chennai, TN"); `_SEVERAL` when the city
-    is in both ("Windsor, CA")."""
+    is in both ("Windsor, CA") or a longer address the tables lack ("El Agba, El
+    Hrairia, TN")."""
     from applyourself.shared.location.places import (
         CITY,
         CODE2,
         COUNTRY,
         SUB_CODE,
         SUB_NAME,
+        US_LIKE,
         city_countries,
         fold,
         saint,
@@ -240,16 +244,19 @@ def _us_state_tail(raw: str) -> str:
         # spelling, a city inside the part, or an earlier part.
         words = [w for w in re.split(r"[\s.\-/]+", part) if len(w) > 3]
         known = set(city_countries(part)).union(*(city_countries(w) - {"US"} for w in words))
-    if "US" not in known:
+    if known and "US" not in known:
         clash |= SUB_CODE.get(code, set())  # "Amersfoort, UT": no US city of that name
+    clash -= US_LIKE
     abroad = known & clash
-    if not known and clash and _ADDRESS_TAIL.search(raw.strip()) and re.search(r"\d", raw):
-        return _SEVERAL  # "Bargteheide, DE, 22941": an unknown town and a postcode
     if in_state and abroad:
         return _SEVERAL
     if abroad:
         return next(iter(abroad)) if len(abroad) == 1 else _SEVERAL
-    return "US"
+    if in_state or known or not clash:
+        return "US"  # a US place, a city no other reading fits, or letters only the US uses
+    # A town the tables lack, with letters another country shares: a plain "Town, ST"
+    # is the US; a longer address or a postcode parks ("El Agba, El Hrairia, TN").
+    return "US" if len(parts) == 2 and not re.search(r"\d", raw) else _SEVERAL
 
 
 def _pieces_country(raw: str, country_of) -> str:
