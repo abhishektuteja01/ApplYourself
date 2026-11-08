@@ -27,6 +27,11 @@ unlock_max_open: 5           # memory-unlock questions waiting for your yes/no a
 # Mail summary.html here after each night (through the Mail app). Leave it out to skip.
 # summary_email: you@example.com
 
+# summary.md lists, per lane, title words no search term or classifier rule
+# covers, from titles at or above the lane's cutoff scored in this many days.
+# Leave it out to skip. Nothing is written to config.
+uncovered_words_days: 14
+
 # Tracking and submission.
 ghosted_after_days: 30       # an `applied` role with no update this long shows as ghosted
 company_cooldown_days: 2     # no batch submit to a company applied to this recently

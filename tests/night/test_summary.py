@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from applyourself import summary as M
 from applyourself.shared import paths
-from tests.factories import scored_rows, write_clean, write_state
+from tests.factories import clean_rows, scored_rows, write_clean, write_state
 
 SINCE = datetime(2026, 9, 28, 15, 45)
 
@@ -811,3 +811,33 @@ def test_apply_section_counts_the_roles_it_cannot_submit():
     assert out.index("- 2: linkedin listing; the employer's posting is unknown") < out.index(
         "- 1: workday posting; /apply has no driver for it"
     )
+
+
+def test_uncovered_words_are_listed_for_the_owner_never_written():
+    """Covered words (search term, regex, terms and compound rules, a ban term
+    as written), a word a rule covers only partly ("Cogwheel" after "Applied
+    Cog"), the posting's location, one-off words and words as common below
+    the cutoff stay out; a phrase hides its own word at the same count. A
+    ban term's other endings are not banned, so not covered ("Distinguishing")."""
+    rows = [
+        ("h1", 90, "Cog Engineer, Harness Team", "Berlin"),
+        ("h2", 88, "Senior Applied Cogwheel - Harness Team", "Berlin"),
+        ("h3", 85, "Senior Distinguishing Flywheel Agents Thesis Berlin", "Berlin"),
+        ("h4", 84, "Distinguishing Flywheel Agents Thesis Founding", "Paris"),
+        ("l1", 40, "Senior Cog Engineer", "Paris"),
+        ("l2", 30, "Senior Cog Engineer", "Paris"),
+    ]
+    scored = scored_rows(
+        *(
+            {"job_id": j, "fit_score": f, "vertical": "example_tertiary", "scored_at": SINCE}
+            for j, f, _, _ in rows
+        )
+    )
+    clean = clean_rows(*({"job_id": j, "title": t, "location": loc} for j, _, t, loc in rows))
+    out = M.uncovered_section(scored, clean, SINCE, 14)
+    i = out.index("**example_tertiary** (4 titles at 80+)")
+    assert out[i + 1 :] == [
+        "- Harness Team (2): e.g. Cog Engineer, Harness Team",
+        "- Distinguishing (2): e.g. Senior Distinguishing Flywheel Agents Thesis Berlin",
+    ]
+    assert M.uncovered_section(scored, clean, SINCE, None)[0].startswith("Off:")

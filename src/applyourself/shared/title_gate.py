@@ -114,3 +114,23 @@ def lane_for(
         return Verdict(lane)
     hit = title_terms.first_exact(vcfg.verticals[lane].title_exclude_terms, title)
     return Verdict(lane, f"{BANNED}: {hit.lower()}" if hit else "")
+
+
+def covered_spans(
+    title: str, vcfg: verticals.VerticalsConfig | None = None
+) -> list[tuple[int, int]]:
+    """Where any lane's search, include or keep term, any classifier rule's
+    words, or a ban term as written (what the gate bans) are in
+    `title_terms.normalize(title)`."""
+    vcfg = vcfg or verticals.get_config()
+    text = title_terms.normalize(title)
+    lanes = vcfg.verticals.values()
+    loose = tuple(
+        t
+        for v in lanes
+        for t in (*_search_terms(v), *v.title_include_terms, *v.title_strong_keep_terms)
+    )
+    rx = title_terms.compile_terms(loose, vcfg.title_variants)
+    ban = title_terms.compile_exact(tuple(t for v in lanes for t in v.title_exclude_terms))
+    out = [m.span() for p in (rx, ban) if p for m in p.finditer(text)]
+    return out + [span for _, rule in vcfg.classifier_rules for span in rule.spans(text)]

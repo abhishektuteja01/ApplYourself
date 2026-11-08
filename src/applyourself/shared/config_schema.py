@@ -177,6 +177,7 @@ class Settings(_Strict):
     auto_add_synonyms: bool | None = None
     unlock_max_open: int | None = None
     summary_email: str | None = None
+    uncovered_words_days: Annotated[int, Field(ge=1)] | None = None
     tailor_max_per_night: int | None = None
     apply_prep_max_per_night: int | None = None
     ghosted_after_days: int | None = None

@@ -188,6 +188,10 @@ class ClassifierRule(Protocol):
 
     def matches(self, title: str, hinted: bool = False) -> bool: ...
 
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        """Where the rule's words are in `text`, whether or not it matches."""
+        ...
+
 
 class RegexRule:
     """A plain `pattern:` string, compiled case-insensitively."""
@@ -197,6 +201,9 @@ class RegexRule:
 
     def matches(self, title: str, hinted: bool = False) -> bool:
         return self.pattern.search(title) is not None
+
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        return [m.span() for m in self.pattern.finditer(text)]
 
     def __repr__(self) -> str:
         return f"RegexRule({self.pattern.pattern!r})"
@@ -238,6 +245,13 @@ class CompoundRule:
             for (a, b), word in hits
         )
 
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        rxs = (
+            title_terms.compile_terms(self.match, self.variants),
+            title_terms.compile_terms(self.require_any, self.variants, open_end=True),
+        )
+        return [m.span() for rx in rxs if rx for m in rx.finditer(text)]
+
     def __repr__(self) -> str:
         match = self.match[0] if len(self.match) == 1 else list(self.match)
         return f"CompoundRule({match!r}, require_any={list(self.require_any)!r})"
@@ -255,6 +269,10 @@ class TermsRule:
     def matches(self, title: str, hinted: bool = False) -> bool:
         rx = title_terms.compile_terms(self.terms, self.variants)
         return bool(rx and rx.search(title_terms.normalize(title)))
+
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        rx = title_terms.compile_terms(self.terms, self.variants)
+        return [m.span() for m in rx.finditer(text)] if rx else []
 
     def __repr__(self) -> str:
         return f"TermsRule({list(self.terms)!r}{', keep=True' if self.keep else ''})"

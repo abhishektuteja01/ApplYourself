@@ -13,21 +13,26 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import logging
 import re
 import sys
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import yaml
 
-from applyourself import night, state_io
+from applyourself import lint, night, state_io
 from applyourself.apply import sheet
 from applyourself.discovery import digest
 from applyourself.discovery.store import load_maybe_duplicates
 from applyourself.material import folders as app_folders
+from applyourself.score_filter import lane_cutoffs
 from applyourself.score_store import view
-from applyourself.shared import clock, paths
+from applyourself.shared import clock, paths, title_gate, title_terms
+from applyourself.shared import keywords as kw_norm
+from applyourself.shared.config_schema import setting
 from applyourself.shared.files import atomic_write_text
 from applyourself.shared.logs import setup_logging
 
@@ -70,6 +75,10 @@ CUES = {
         "→ Rejected by board: the board declined the application; clicking again will not change it. "
         "Read its message on the board."
     ),
+    "uncovered": (
+        "→ Show the user these words. Only with their OK, add a word to a lane's search terms or "
+        "a classifier rule in profile/verticals.yaml; nothing is added on its own."
+    ),
     "sheet": "→ If the posting is gone: `uv run track <id> skip`, and it leaves the sheet.",
     "answers": (
         '→ For each answer the user approves: `uv run apply teach --question-id <bank id> --label "<label>" '
@@ -89,6 +98,9 @@ CUES = {name: "**FIX:** " + text.removeprefix("→ ") for name, text in CUES.ite
 
 STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 ERRORS_SHOWN = 5
+UNCOVERED_SHOWN = 10
+_TITLE_WORD = re.compile(r"[^\W\d_](?:[\w+#&.'-]*[\w+#])?")
+_ROMAN = re.compile(r"[ivx]+", re.IGNORECASE)
 LABEL_CHARS = 110
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}_\d{6}")
 
@@ -368,6 +380,99 @@ def synonyms_section(added: list[dict], declined: list[dict], opened: list[dict]
         for o in opened
     ]
     return lines
+
+
+def _text(value) -> str:
+    return "" if value is None or pd.isna(value) else str(value)
+
+
+def _uncovered(title: str, location: str, stop: set[str], fold) -> dict[str, str]:
+    """The title's words and two-word phrases no lane term or rule covers, by
+    normalized key. A word a covered span touches at all, a one-letter word,
+    a stopword, a roman numeral and a word of the posting's location are left
+    out; a phrase is two such words with only spaces between them."""
+    text = title_terms.normalize(title)
+    covered = [False] * len(text)
+    for a, b in title_gate.covered_spans(title):
+        covered[a:b] = [True] * (b - a)
+    place = set(kw_norm.words(location, fold))
+    out: dict[str, str] = {}
+    prev: re.Match[str] | None = None
+    for m in _TITLE_WORD.finditer(text):
+        w = m.group(0)
+        ok = (
+            not any(covered[m.start() : m.end()])
+            and len(w) > 1
+            and w.lower() not in stop
+            and not _ROMAN.fullmatch(w)
+            and not set(kw_norm.words(w, fold)) & place
+        )
+        if not ok:
+            prev = None
+            continue
+        out.setdefault(kw_norm.key(w, fold), w)
+        if prev is not None and not text[prev.end() : m.start()].strip():
+            phrase = f"{prev.group(0)} {w}"
+            out.setdefault(kw_norm.key(phrase, fold), phrase)
+        prev = m
+    return {k: w for k, w in out.items() if k}
+
+
+def uncovered_section(
+    scored: pd.DataFrame | None, clean: pd.DataFrame, since: datetime, days: int | None
+) -> list[str]:
+    """Per lane, the words in titles at or above its cutoff, scored in the last
+    `days`, that no search term, rule or title term covers: found in two
+    titles or more, and more often above the cutoff than below. Read-only."""
+    if not days:
+        return ["Off: set `uncovered_words_days` in profile/settings.yaml to list them."]
+    if scored is None or not len(scored) or not len(clean):
+        return ["Nothing scored."]
+    cuts = lane_cutoffs()
+    stop = set(str(lint.load_de_ai_rules().get("stopwords") or "").lower().split())
+    fold = kw_norm.variants()
+    recent = scored[pd.to_datetime(scored["scored_at"]) >= since - timedelta(days=days)]
+    recent = recent.merge(clean[["job_id", "title", "location"]], on="job_id")
+    recent = recent[recent["title"].notna()].sort_values("fit_score", ascending=False)
+    lines = [
+        f"Title words no search term or rule covers, from titles at or above the lane's cutoff "
+        f"scored in the last {days} days. For your OK; nothing is added."
+    ]
+    for lane, cut in cuts.items():
+        rows = recent[recent["vertical"] == lane]
+        high = rows[rows["fit_score"] >= cut]
+        low = rows[~(rows["fit_score"] >= cut)]
+        if not len(high):
+            continue
+        count: Counter = Counter()
+        low_count: Counter = Counter()
+        spelled: dict[str, Counter] = {}
+        example: dict[str, str] = {}
+        for r in high.itertuples():
+            for k, w in _uncovered(str(r.title), _text(r.location), stop, fold).items():
+                count[k] += 1
+                spelled.setdefault(k, Counter())[w] += 1
+                example.setdefault(k, str(r.title))
+        for r in low.itertuples():
+            low_count.update(_uncovered(str(r.title), _text(r.location), stop, fold).keys())
+        ranked = [
+            (n, k)
+            for k, n in count.items()
+            if n >= 2 and n / len(high) > (low_count[k] / len(low) if len(low) else 0)
+        ]
+        shown: list[tuple[int, str, str]] = []
+        words = {k: spelled[k].most_common(1)[0][0] for _, k in ranked}
+        for n, k in sorted(ranked, key=lambda x: (-x[0], -len(words[x[1]].split()), x[1])):
+            word = words[k]
+            mine = set(kw_norm.words(word, fold))
+            if any(n == m and mine < set(kw_norm.words(w, fold)) for m, w, _ in shown):
+                continue  # a phrase holding it is already shown with the same count
+            shown.append((n, word, example[k]))
+            if len(shown) == UNCOVERED_SHOWN:
+                break
+        lines += ["", f"**{lane}** ({len(high)} titles at {cut}+)"]
+        lines += [f"- {w} ({n}): e.g. {_cut(e)}" for n, w, e in shown] or ["- none"]
+    return lines if len(lines) > 1 else [*lines, "", "No title at or above a cutoff."]
 
 
 def tailoring_section(
@@ -753,9 +858,9 @@ def build(run_dir: Path | None, since: datetime) -> str:
     reports = digest.load_reports()
     scored = view(paths.SCORED) if paths.SCORED.exists() else None
     clean = (
-        pd.read_parquet(paths.CLEAN, columns=["job_id", "company", "title"])
+        pd.read_parquet(paths.CLEAN, columns=["job_id", "company", "title", "location"])
         if paths.CLEAN.exists()
-        else pd.DataFrame(columns=["job_id", "company", "title"])
+        else pd.DataFrame(columns=["job_id", "company", "title", "location"])
     )
     names = {r.job_id: f"{r.company} — {r.title}" for r in clean.itertuples()}
     run_json = paths.STAGING / "run.json"
@@ -811,6 +916,11 @@ def build(run_dir: Path | None, since: datetime) -> str:
         bool(score.get("usage_limit")),
     )
     synonyms = synonyms_section(_tonight(log, since, "date"), declined, opened)
+    try:
+        uncovered = uncovered_section(scored, clean, since, setting("uncovered_words_days", None))
+    except Exception as exc:  # a suggestion never costs the rest of the summary
+        logging.getLogger(__name__).exception("uncovered title words failed")
+        uncovered = [f"Could not list them: {exc}"]
     tailoring = tailoring_section(
         len(tried), unresolved, names, tailor.get("detail", ""), tailor.get("code")
     )
@@ -833,6 +943,12 @@ def build(run_dir: Path | None, since: datetime) -> str:
         *scoring,
         *cue("scoring", scoring, bool(open_slices) and not score_limit),
         *cue("score_limit", scoring, score_limit),
+        "",
+        "## Uncovered title words",
+        *uncovered,
+        *cue(
+            "uncovered", uncovered, any(ln.startswith("- ") and ln != "- none" for ln in uncovered)
+        ),
         "",
         "## Synonyms",
         *synonyms,
