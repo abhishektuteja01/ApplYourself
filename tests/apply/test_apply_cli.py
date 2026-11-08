@@ -21,7 +21,7 @@ import pytest
 import yaml
 
 from applyourself import apply_cli
-from applyourself.apply import ashby, confirmation, detect, ledger, role_facts
+from applyourself.apply import ashby, confirmation, detect, ledger
 from applyourself.apply.bank_schema import AnswersError
 from applyourself.apply.greenhouse import BoardForm, Posting, PostingExpired
 from applyourself.apply.plan import PlanError
@@ -2080,78 +2080,64 @@ def test_an_optional_export_control_question_takes_no_override(answers, tailor_d
     assert not plan.fields and "export control" in plan.ignored_overrides[0]
 
 
-def test_the_jd_country_comes_from_where_the_hire_works(tmp_path, monkeypatch):
-    clean = tmp_path / "clean.parquet"
-    factories.write_clean(
-        clean,
-        {
-            "job_id": "a",
-            "url": "",
-            "jd_text": "Our team in India builds tools. "
-            "This role is remote and you must be based in the United States.",
-        },
-        {"job_id": "b", "url": "", "jd_text": "We have offices in India and Poland."},
-    )
-    monkeypatch.setitem(paths._overrides, "CLEAN", clean)
-    assert role_facts._jd_country("a") == "United States"
-    assert role_facts._jd_country("b") == ""
-
-
 class TestTheJobsCountry:
-    """Where a role is, read from discovery's location in every shape seen live."""
+    """The job's country is never read from place names: the session's, the
+    score judge's one country, the source's one code, else unknown (parks)."""
+
+    @pytest.fixture
+    def data(self, tmp_path, monkeypatch):
+        import json
+
+        import pandas as pd
+
+        from applyourself.shared.parquet_io import write_parquet
+        from applyourself.shared.schemas import SCORED_SCHEMA_VERSION, STORE_SCHEMA_VERSION
+
+        def answer(country):
+            return json.dumps({"fit": 80, "country": country})
+
+        scored = factories.scored_rows(
+            {"job_id": "judged", "judge_answer": answer("Germany")},
+            {"job_id": "several", "judge_answer": answer("India; Germany")},
+            {"job_id": "blank", "judge_answer": answer("")},
+        )
+        write_parquet(scored, tmp_path / "scored.parquet", schema_version=SCORED_SCHEMA_VERSION)
+        store = pd.DataFrame(
+            {
+                "job_id": ["several", "blank", "coded", "split", "split"],
+                "location_raw": ["Remote"] * 5,
+                "country": ["IE", "PR", "IN", "US", "DE"],
+            }
+        )
+        write_parquet(store, tmp_path / "jobs.parquet", schema_version=STORE_SCHEMA_VERSION)
+        monkeypatch.setitem(paths._overrides, "SCORED", tmp_path / "scored.parquet")
+        monkeypatch.setitem(paths._overrides, "STORE", tmp_path / "jobs.parquet")
 
     @pytest.mark.parametrize(
-        "location,country",
+        "job_id,country",
         [
-            ("VA - Tysons Corner", "United States"),
-            ("USA-CA San Jose Innovation Drive", "United States"),
-            ("US, CA, Santa Clara", "United States"),
-            ("IN Pune", "India"),
-            ("MH, IN", "India"),
-            ("Wrocław, DO, PL", "Poland"),
-            ("München, BY, DE", "Germany"),
-            ("SGP Work-at-Home", "(unknown)"),  # 3-letter codes are not read: it parks
-            ("Northern Virginia - On-site", "United States"),
-            ("Rotterdam, South Holland, Netherlands", "Netherlands"),
-            ("Boston, MA; Vancouver, British Columbia, Canada", "United States"),
-            ("DE-Ettlingen | PT-Porto", "(unknown)"),
-            ("South America", "(unknown)"),
-            ("Delhi, NY", "United States"),
-            ("Warsaw, IN", "United States"),
-            ("Berlin, NH", "United States"),
-            ("London, KY", "United States"),
-            ("Lisbon, ND", "United States"),
-            ("Florence, AL", "United States"),
-            ("Peru, IN", "United States"),
-            ("Valencia, CA", "United States"),
-            ("Toronto, OH", "United States"),
-            ("Bay Area, CA", "United States"),
-            ("Pune, MH, IN", "India"),
-            ("Chennai, TN", "India"),
-            ("Hamburg, DE, 20095", "Germany"),
-            ("Nederland", "(unknown)"),  # not in this bank, and a Texas town: unsure
-            ("CAN - Ontario - Toronto", "Canada"),
-            ("Windsor, CA", "(unknown)"),
-            ("Ontario", "(unknown)"),
-            ("Lebanon", "(unknown)"),
-            ("Jamaica", "(unknown)"),
-            ("Lebanon, PA", "United States"),
-            ("El Agba, El Hrairia, TN", "(unknown)"),
-            ("Hatfield, PA", "United States"),
-            ("Hybrid", ""),
-            ("Remote", ""),
+            ("judged", "Germany"),  # the judge's one country
+            ("several", "Ireland"),  # the judge named two: the source's one code
+            ("blank", "United States"),  # none named; PR counts as the US
+            ("coded", "India"),  # no answer: the source's code
+            ("split", "(unknown)"),  # two source codes: it parks
+            ("nowhere", "(unknown)"),  # nothing: it parks, never a guess from the text
         ],
     )
-    def test_a_location_names_its_country(self, answers, location, country):
-        assert apply_cli.job_country({"job_id": "", "location": location}, answers) == country
+    def test_the_country_is_read_never_guessed(self, data, answers, job_id, country):
+        state = {"job_id": job_id, "location": "Berlin, Germany"}
+        assert apply_cli.job_country(state, answers) == country
 
-    def test_a_location_nothing_reads_is_unknown(self, answers):
-        from applyourself.apply.answers import UNKNOWN_COUNTRY
+    def test_the_sessions_country_wins(self, data, answers, tmp_path):
+        from applyourself.apply.role_facts import session_country
 
+        file = tmp_path / "answers_override.json"
+        file.write_text('{"job_id": "judged", "country": "Poland"}', encoding="utf-8")
         assert (
-            apply_cli.job_country({"job_id": "", "location": "HLT-Hong Leong Tower"}, answers)
-            == UNKNOWN_COUNTRY
+            apply_cli.job_country({"job_id": "judged"}, answers, session_country(file)) == "Poland"
         )
+        file.write_text('{"job_id": "judged", "country": "unknown"}', encoding="utf-8")
+        assert session_country(file) == "(unknown)"
 
 
 def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path, monkeypatch):

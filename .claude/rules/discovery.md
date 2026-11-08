@@ -185,8 +185,9 @@ Every source parses flags, salaries and placeholder company names through
 ## Locations
 
 `shared/location/parser.read_location` is the one country reader, from
-pycountry and geonamescache tables only (no libpostal); `apply.role_facts.job_country`
-reads it too. The text splits into parts (`, ; / | ( ) [ ] + : " - "`, dashes,
+pycountry and geonamescache tables only (no libpostal); it decides keep or drop
+only, and clean.parquet shows the posting's own text, trimmed. A postcode after
+a state code is dropped first ("Peru, IN 46970"). The text splits into parts (`, ; / | ( ) [ ] + : " - "`, dashes,
 " or "; and/&/hyphen only when the whole reads nothing), and each part keeps
 every reading: a country, alias or native name ("Deutschland"; a country's
 name is that country unless it is a foreign one that is also an allowed town,

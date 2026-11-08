@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 SIDECAR_SUFFIX = ".confirmed"
-_NOT_ANSWERS = ("job_id", "confirmed")
+_NOT_ANSWERS = ("job_id", "confirmed", "country")
 
 
 def sidecar(path: Path) -> Path:
@@ -36,6 +36,8 @@ def digest(data: dict) -> str:
 def render(data: dict) -> str:
     """Every answer in the file, every key shown: what the user approves."""
     lines = [f"Answers for job_id {data.get('job_id', '(none)')}:"]
+    # The role's country, as the session read it: work-authorization answers follow it.
+    lines.append(f"Country: {data.get('country') or '(not set: the source field or unknown)'}")
     entries = [(k, v) for k, v in data.items() if k not in _NOT_ANSWERS]
     if not entries:
         lines.append("  (no answers)")

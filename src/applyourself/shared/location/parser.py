@@ -40,6 +40,7 @@ _DOUBT_WORD_RE = re.compile(r"(?i)\b(anywhere|global(ly)?|worldwide|internationa
 _SEP_RE = re.compile(r"[,;/|()\[\]{}+•·\n]|\s[-–—]\s|[–—]|\s(?:or|OR)\s|:")
 _SUB_SEP_RE = re.compile(r"(?i)\s+and\s+|\s*&\s*|-")
 _STRIP = " .-'\"*"
+_ZIP_RE = re.compile(r"\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b")
 # A multi-site listing's own separators ("Austin, TX; Seattle, WA"). `OR` stays a state.
 LIST_SEPARATOR_RE = re.compile(r";|(?-i:\bor\b)|/|\||\s-\s", re.IGNORECASE)
 
@@ -57,7 +58,6 @@ class Part:
     place: set[str] = field(default_factory=set)
     subs: dict[str, str] = field(default_factory=dict)
     cities: list[City] = field(default_factory=list)
-    full: bool = False  # names its country in full ("Germany", "Deutschland")
 
     @property
     def city(self) -> set[str]:
@@ -76,26 +76,16 @@ class Reading:
     """keep: the verdict. countries: the countries the verdict read (an allowed
     namesake hides the foreign ones). certain: the one country among them, with
     no region word. sure: the one country every reading can mean, so the text
-    is one place. place: the country to show the location in. alone: the
-    countries some part can only mean. spelled: the countries named in full.
-    name_or_town: a foreign country's name is also an allowed town ("Lebanon").
-    named_allowed: a part names an allowed country outright. loose: a part
-    reads nothing. city/state: the place in `place`."""
+    is one place. named_allowed: a part names an allowed country outright.
+    state_allowed: a part is a state or region of an allowed country ("OH")."""
 
     keep: bool
     countries: frozenset[str] = frozenset()
     certain: str = ""
     sure: str = ""
-    place: str = ""
-    alone: frozenset[str] = frozenset()
-    spelled: frozenset[str] = frozenset()
-    name_or_town: bool = False
     doubt: bool = False
     named_allowed: bool = False
-    remote: bool = False
-    loose: bool = False
-    city: str = ""
-    state: str = ""
+    state_allowed: bool = False
 
 
 def allowed_codes(names: Iterable[str]) -> frozenset[str]:
@@ -145,7 +135,7 @@ def _classify(p: str, allowed: frozenset[str], closing: bool = False, first: boo
         kind = "amb" if kind else "place"
     elif not kind and cities and cities[0].population >= MIN_FOREIGN_CITY:
         R, kind = set(place), "city"  # every namesake abroad and one is big: "Toronto"
-    return Part(p, R, kind, named, place, subs, list(cities), f in COUNTRY)
+    return Part(p, R, kind, named, place, subs, list(cities))
 
 
 def _parts(raw: str, allowed: frozenset[str]) -> list[Part]:
@@ -229,42 +219,15 @@ def _narrow(ps: list[Part], allowed: frozenset[str]) -> list[set[str] | None]:
     return out
 
 
-def _where(ps: list[Part], cc: str, text: str) -> tuple[str, str]:
-    """(city, state) of a location in country `cc`, each "" when not one place."""
-    city_parts = [i for i, d in enumerate(ps) if cc in d.city]
-    subs = {i: d.subs[cc] for i, d in enumerate(ps) if cc in d.subs}
-    city_i = city_parts[0] if city_parts else None
-    # A name that is a city and a state ("New York") is the state only right after the city.
-    after = f"{ps[city_i].text}, " if city_i is not None else "\0"
-    as_state = {
-        i for i in subs if i != city_i and (i not in city_parts or after + ps[i].text in text)
-    }
-    states = {subs[i] for i in as_state}
-    others = {fold(ps[i].text) for i in city_parts if i != city_i and i not in as_state}
-    if len(states) > 1 or (city_i is not None and others - {fold(ps[city_i].text)}):
-        return "", ""  # several states or cities: the country is certain, no one place
-    state = next(iter(states), "")
-    if city_i is None:
-        return "", state
-    there = [c for c in ps[city_i].cities if c.cc == cc]
-    if state:
-        # The named state settles the namesake; none there is a town the tables
-        # lack ("Knoxville, IA"), shown as written.
-        pick = next((c for c in there if c.admin1 == state), None) if cc == "US" else there[0]
-        return (pick.name if pick else ps[city_i].text), state
-    pick = there[0]
-    return pick.name, pick.admin1 if cc == "US" else ""
-
-
 @functools.lru_cache(maxsize=50_000)
 def read_location(raw: str, allowed: frozenset[str] = frozenset()) -> Reading:
     """What `raw` says about its country, against the allowed ISO codes."""
     if not isinstance(raw, str) or not raw.strip():
         return Reading(True)
-    remote = "remote" in raw.lower()
     text = "".join(  # emoji and flags
         c for c in unicodedata.normalize("NFKC", raw) if unicodedata.category(c) != "So"
     )
+    text = _ZIP_RE.sub(r"\1", text)  # "Salem, OR 97301" is "Salem, OR"
     ps = _parts(text, allowed)
     narrowed = _narrow(ps, allowed)
     R = [n if n is not None else set(d.R) for d, n in zip(ps, narrowed, strict=True)]
@@ -276,46 +239,10 @@ def read_location(raw: str, allowed: frozenset[str] = frozenset()) -> Reading:
     # What each read part can still mean, beyond the allowlist: "Paris" alone is
     # certain to an allowlist of one, but not one place.
     means: set[str] = set()
-    alone: set[str] = set()
     for d, n, r in zip(ps, narrowed, R, strict=True):
         if r:
-            part = (n if n is not None else (d.named | d.place or r)) - {"?"}
-            means |= part
-            if len(part) == 1:
-                alone |= part
+            means |= (n if n is not None else (d.named | d.place or r)) - {"?"}
     sure = next(iter(means)) if len(means) == 1 and not doubt else ""
-    # Shown as a place: the sure country, else the one read country where each
-    # lone city is biggest ("San Francisco", "Amsterdam"; not "Paris" to a US allowlist).
-    rows = [(d, n, r) for d, n, r in zip(ps, narrowed, R, strict=True) if r]
-    bigs = {d.cities[0].cc for d, n, _ in rows if n is None and d.cities}
-    cand = certain or (next(iter(bigs)) if len(bigs) == 1 else "")
-    fits = cand in found and not doubt
-    for d, n, r in rows:
-        meaning = n if n is not None else (d.named | d.place or r)
-        fits = (
-            fits and cand in meaning and (n is not None or not d.cities or d.cities[0].cc == cand)
-        )
-        fits = fits and (n is not None or not d.named or cand in d.named)  # "Lebanon" alone
-    place = sure or (cand if fits else "")
-    city, state = _where(ps, place, text) if place else ("", "")
     named_allowed = any(d.kind in ("country", "code", "amb") and d.named & allowed for d in ps)
-    loose = any(not d.R and _NOISE_RE.sub(" ", d.text).strip(" .-") for d in ps)
-    spelled = set().union(*(d.named for d in ps if d.kind == "country")) if ps else set()
-    # A foreign country's name that is also an allowed town ("Lebanon").
-    name_or_town = any(d.full and d.kind == "amb" and not d.named & allowed for d in ps)
-    return Reading(
-        keep,
-        frozenset(found),
-        certain,
-        sure,
-        place,
-        frozenset(alone),
-        frozenset(spelled),
-        name_or_town,
-        doubt,
-        named_allowed,
-        remote,
-        loose,
-        city,
-        state,
-    )
+    state_allowed = any(set(d.subs) & allowed for d in ps)
+    return Reading(keep, frozenset(found), certain, sure, doubt, named_allowed, state_allowed)

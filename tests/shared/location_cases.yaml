@@ -16,11 +16,11 @@ cases:
   - {loc: "", allow: us, keep: true, countries: [], shown: ""}
   - {loc: "Remote - Austin, TX", allow: us, keep: true, countries: ["United States"], shown: "Remote - Austin, TX"}
   - {loc: "Portland, OR", allow: us, keep: true, countries: ["United States"], shown: "Portland, OR"}
-  - {loc: "Bend, OR, USA", allow: us, keep: true, countries: ["United States"], shown: "Bend, OR"}
+  - {loc: "Bend, OR, USA", allow: us, keep: true, countries: ["United States"], shown: "Bend, OR, USA", was: "Bend, OR", why: "the display is the posting's own text"}
   - {loc: "Berlin, Germany", allow: us, keep: false, countries: ["Germany"]}
   - {loc: "New York, London or Singapore", allow: us, keep: true, countries: ["Canada", "Singapore", "United Kingdom", "United States"]}
   - {loc: "CA", allow: us, keep: true, countries: ["Canada", "United States"]}
-  - {loc: "San Francisco Bay Area", allow: us, keep: true, countries: [], shown: "San Francisco Bay Area", was: "San Francisco, CA", why: "an area suffix is not read: the text shows"}
+  - {loc: "San Francisco Bay Area", allow: us, keep: true, countries: [], shown: "San Francisco Bay Area", was: "San Francisco, CA", why: "the display is the posting's own text"}
   - {loc: "Chicago; Dallas; Los Angeles; Minneapolis; New York; San Francisco; Seattle; Washington, D.C.", allow: us, keep: true, countries: ["United States"]}
   - {loc: "Raleigh-Cary, NC, Austin/Dallas, TX, Tampa Bay, FL, Greater Boston Area, MA, Denver, CO, Atlanta, GA, CA, NJ, TN, PA", allow: us, keep: true}
   - {loc: "New York, USA", allow: us, keep: true, countries: ["United States"]}
@@ -65,9 +65,9 @@ cases:
   - {loc: "London or Berlin", allow: us, keep: false, countries: ["Canada", "Germany", "United Kingdom"]}
   - {loc: "London, Stockholm, Lisbon, Berlin, Paris", allow: us, keep: true, countries: ["Canada", "Germany", "Portugal", "Sweden", "United Kingdom", "United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
   - {loc: "Austin, TX or London", allow: us, keep: true, countries: ["Canada", "United Kingdom", "United States"]}
-  - {loc: "remote", allow: us, keep: true, shown: "Remote"}
-  - {loc: "Fully Remote", allow: us, keep: true, shown: "Remote"}
-  - {loc: "Remote - US", allow: us, keep: true, shown: "Remote - United States"}
+  - {loc: "remote", allow: us, keep: true, shown: "remote", was: "Remote", why: "the display is the posting's own text"}
+  - {loc: "Fully Remote", allow: us, keep: true, shown: "Fully Remote", was: "Remote", why: "the display is the posting's own text"}
+  - {loc: "Remote - US", allow: us, keep: true, shown: "Remote - US", was: "Remote - United States", why: "the display is the posting's own text"}
   - {loc: "London or Remote", allow: us, keep: false, countries: ["Canada", "United Kingdom"]}
   - {loc: "   ", allow: us, keep: true, countries: []}
   - {loc: "Anywhere", allow: us, keep: true, countries: []}
@@ -76,13 +76,13 @@ cases:
   - {loc: "Washington, DC", allow: us, keep: true, countries: ["United States"], shown: "Washington, DC"}
   - {loc: "Kansas City, MO", allow: us, keep: true, countries: ["United States"], shown: "Kansas City, MO"}
   - {loc: "Oklahoma City, OK", allow: us, keep: true, countries: ["United States"], shown: "Oklahoma City, OK"}
-  - {loc: "New York, NY", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
-  - {loc: "Atlanta, Georgia", allow: us, keep: true, countries: ["United States"], shown: "Atlanta, GA"}
+  - {loc: "New York, NY", allow: us, keep: true, countries: ["United States"], shown: "New York, NY", was: "New York City, NY", why: "the display is the posting's own text"}
+  - {loc: "Atlanta, Georgia", allow: us, keep: true, countries: ["United States"], shown: "Atlanta, Georgia", was: "Atlanta, GA", why: "the display is the posting's own text"}
   - {loc: "Jamaica, NY", allow: us, keep: true, countries: ["United States"], shown: "Jamaica, NY"}
   - {loc: "Jersey City, NJ", allow: us, keep: true, countries: ["United States"], shown: "Jersey City, NJ"}
   - {loc: "Panama City, FL", allow: us, keep: true, countries: ["United States"], shown: "Panama City, FL"}
   - {loc: "Boston, MA", allow: us, keep: true, countries: ["United States"], shown: "Boston, MA"}
-  - {loc: "Boston, Massachusetts", allow: us, keep: true, countries: ["United States"], shown: "Boston, MA"}
+  - {loc: "Boston, Massachusetts", allow: us, keep: true, countries: ["United States"], shown: "Boston, Massachusetts", was: "Boston, MA", why: "the display is the posting's own text"}
   - {loc: "Hyderabad, India", allow: us, keep: false, countries: ["India"]}
   - {loc: "Beirut, Lebanon", allow: us, keep: false, countries: ["Lebanon"]}
   - {loc: "Tbilisi, Georgia", allow: us, keep: false, countries: ["Georgia"]}
@@ -106,14 +106,14 @@ cases:
   - {loc: "Dublin, Ireland", allow: us, keep: false, countries: ["Ireland"]}
   - {loc: "Valencia, Spain", allow: us, keep: false, countries: ["Spain"]}
   - {loc: "York, UK", allow: us, keep: false, countries: ["United Kingdom"]}
-  - {loc: "Paris, TX, USA", allow: us, keep: true, countries: ["United States"], shown: "Paris, TX"}
+  - {loc: "Paris, TX, USA", allow: us, keep: true, countries: ["United States"], shown: "Paris, TX, USA", was: "Paris, TX", why: "the display is the posting's own text"}
   - {loc: "Vancouver, BC", allow: us, keep: false, countries: ["Canada"]}
   - {loc: "Bengaluru, Karnataka", allow: us, keep: false, countries: ["India"]}
   - {loc: "Bangalore, KA", allow: us, keep: false, countries: ["India"]}
   - {loc: "Toronto, Ontario, Canada", allow: us, keep: false, countries: ["Canada"]}
   - {loc: "Recife, PE, Brazil", allow: us, keep: false, countries: ["Brazil"]}
-  - {loc: "Albuquerque, New Mexico", allow: us, keep: true, countries: ["United States"], shown: "Albuquerque, NM"}
-  - {loc: "New Mexico", allow: us, keep: true, countries: ["United States"], shown: "NM"}
+  - {loc: "Albuquerque, New Mexico", allow: us, keep: true, countries: ["United States"], shown: "Albuquerque, New Mexico", was: "Albuquerque, NM", why: "the display is the posting's own text"}
+  - {loc: "New Mexico", allow: us, keep: true, countries: ["United States"], shown: "New Mexico", was: "NM", why: "the display is the posting's own text"}
   - {loc: "Mexico", allow: us, keep: false, countries: ["Mexico"]}
   - {loc: "Mexico City, Mexico", allow: us, keep: false, countries: ["Mexico"]}
   - {loc: "Trinidad and Tobago", allow: us, keep: false, countries: ["Trinidad and Tobago"]}
@@ -123,7 +123,7 @@ cases:
   - {loc: "WA", allow: us, keep: true, countries: ["United States"]}
   - {loc: "Asia", allow: us, keep: true, countries: [], was: drop, why: "a region word is unsure: keep, the judge reads it"}
   - {loc: "Warrington, PA", allow: us, keep: true, countries: ["Panama", "United Kingdom", "United States"]}
-  - {loc: "Austin, TX / Remote", allow: us, keep: true, countries: ["United States"], shown: "Remote - Austin, TX"}
+  - {loc: "Austin, TX / Remote", allow: us, keep: true, countries: ["United States"], shown: "Austin, TX / Remote", was: "Remote - Austin, TX", why: "the display is the posting's own text"}
   - {loc: "Chicago, Illinois or Austin, Texas", allow: us, keep: true, countries: ["United States"], shown: "Chicago, Illinois or Austin, Texas"}
   - {loc: "US and Canada", allow: us, keep: true, countries: ["United States"]}
   - {loc: "United States and Canada", allow: us, keep: true, countries: ["United States"]}
@@ -133,8 +133,8 @@ cases:
   - {loc: "France - Paris", allow: us, keep: false, countries: ["France"]}
   - {loc: "Winston-Salem, NC", allow: us, keep: true, countries: ["United States"]}
   - {loc: "Sophia-Antipolis, France", allow: us, keep: false, countries: ["France"]}
-  - {loc: "Sapien HQ — NYC", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
-  - {loc: "Saint Petersburg, FL, US", allow: us, keep: true, countries: ["United States"], shown: "St. Petersburg, FL"}
+  - {loc: "Sapien HQ — NYC", allow: us, keep: true, countries: ["United States"], shown: "Sapien HQ — NYC", was: "New York City, NY", why: "the display is the posting's own text"}
+  - {loc: "Saint Petersburg, FL, US", allow: us, keep: true, countries: ["United States"], shown: "Saint Petersburg, FL, US", was: "St. Petersburg, FL", why: "the display is the posting's own text"}
   - {loc: "Saint Petersburg", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
   - {loc: "Bruxelles", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "Bangalore", allow: us, keep: false, countries: ["India"]}
@@ -161,11 +161,11 @@ cases:
   - {loc: "Malta", allow: us_in, keep: false}
   - {loc: "Tel Aviv (Onsite)", allow: us_in, keep: false}
   - {loc: "London Office", allow: us_in, keep: false}
-  - {loc: "Chennai, TN", allow: us_in, keep: true, shown: "Chennai, India"}
-  - {loc: "Mumbai, Maharashtra, India", allow: us_in, keep: true, shown: "Mumbai, India"}
-  - {loc: "New York, NY (HQ)", allow: us_in, keep: true, shown: "New York City, NY"}
+  - {loc: "Chennai, TN", allow: us_in, keep: true, shown: "Chennai, TN", was: "Chennai, India", why: "the display is the posting's own text"}
+  - {loc: "Mumbai, Maharashtra, India", allow: us_in, keep: true, shown: "Mumbai, Maharashtra, India", was: "Mumbai, India", why: "the display is the posting's own text"}
+  - {loc: "New York, NY (HQ)", allow: us_in, keep: true, shown: "New York, NY (HQ)", was: "New York City, NY", why: "the display is the posting's own text"}
   - {loc: "Austin, TX; Seattle, WA", allow: us_in, keep: true, shown: "Austin, TX; Seattle, WA"}
-  - {loc: "Remote - US", allow: us_in, keep: true, shown: "Remote - United States"}
+  - {loc: "Remote - US", allow: us_in, keep: true, shown: "Remote - US", was: "Remote - United States", why: "the display is the posting's own text"}
   - {loc: "Remote", allow: us_in, keep: true, shown: "Remote"}
   - {loc: "Bengaluru", allow: us_in, lane: "lane_a", keep: true}
   - {loc: "Bengaluru", allow: us_in, lane: "lane_b", keep: false}
@@ -193,7 +193,7 @@ cases:
   - {loc: "Wilmington, DE", allow: us, keep: true, countries: ["United States"], shown: "Wilmington, DE"}
   - {loc: "San Francisco, CA", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA"}
   - {loc: "Columbia, MD", allow: us, keep: true, countries: ["United States"], shown: "Columbia, MD"}
-  - {loc: "Pittsburgh, PA, 15222", allow: us, keep: true, countries: ["United States"], shown: "Pittsburgh, PA"}
+  - {loc: "Pittsburgh, PA, 15222", allow: us, keep: true, countries: ["United States"], shown: "Pittsburgh, PA, 15222", was: "Pittsburgh, PA", why: "the display is the posting's own text"}
   - {loc: "Bengaluru KA", keep: true}
   - {loc: "Bengaluru, KA", keep: true}
   - {loc: "Bangalore, Karnataka", keep: true}
@@ -640,7 +640,7 @@ cases:
   - {loc: "London, UK", allow: us, country: "US,GB", keep: true}
   - {loc: "Austin, TX", allow: us_in, lane: "lane_b", country: "IN", keep: false}
   - {loc: "Austin, TX", allow: us_in, lane: "lane_b", country: "US", keep: true, shown: "Austin, TX"}
-  - {loc: "", allow: us, country: "US", keep: true, shown: "United States"}
+  - {loc: "", allow: us, country: "US", keep: true, shown: ""}
   - {loc: "Toronto", allow: us, country: "xx", keep: false}
   - {loc: "Remote - Paris", allow: us, keep: true, shown: "Remote - Paris"}
   - {loc: "Toronto, ON or Remote US", keep: true, shown: "Toronto, ON or Remote US"}
@@ -648,28 +648,13 @@ cases:
   - {loc: "Toronto, Canada (Remote US eligible)", keep: true, shown: "Toronto, Canada (Remote US eligible)"}
   - {loc: "UK (Remote US possible)", keep: true, shown: "UK (Remote US possible)"}
   - {loc: "Remote - Canada (US also)", keep: true, shown: "Remote - Canada (US also)"}
-  - {loc: "Deutschland", keep: true, shown: "Germany"}
-  - {loc: "Nederland", keep: true, shown: "Netherlands"}
+  - {loc: "Deutschland", keep: true, shown: "Deutschland"}
+  - {loc: "Nederland", keep: true, shown: "Nederland"}
   - {loc: "Remote, IN, US", keep: true, shown: "Remote, IN, US"}
-  - {loc: "Amsterdam", keep: true, shown: "Amsterdam, Netherlands"}
-  - {loc: "Dublin", keep: true, shown: "Dublin, Ireland"}
+  - {loc: "Amsterdam", keep: true, shown: "Amsterdam"}
+  - {loc: "Dublin", keep: true, shown: "Dublin"}
   - {loc: "New York, NY", allow: us, country: "GB", keep: true, shown: "New York, NY"}
   - {loc: "Lebanon", allow: us, keep: true, countries: ["Lebanon", "United States"]}
   - {loc: "Lebanon", keep: true, shown: "Lebanon"}
   - {loc: "Jamaica", allow: us, keep: true, shown: "Jamaica"}
   - {loc: "Lebanon, PA", allow: us, keep: true, shown: "Lebanon, PA"}
-
-# The countries a title's residency qualifier limits the hire to. "europe": every
-# European country.
-titles:
-  - {title: "AI Engineer Backend (Remote - ES/UK only)", countries: ["Spain", "United Kingdom"]}
-  - {title: "Forward Deployed Engineer (UK Based)", countries: ["United Kingdom"]}
-  - {title: "AI Engineer - US only", countries: ["United States"]}
-  - {title: "Engineer (Remote - EU only)", countries: "europe"}
-  - {title: "W2 only - SAP SD OTC Consultant", countries: []}
-  - {title: "AI Developer (US Citizens/ Green Cards only)", countries: []}
-  - {title: "AI Engineer (On-Site, Indiana Only)", countries: []}
-  - {title: "Credit Risk Analyst (UAE Nationals Only)", countries: []}
-  - {title: "Founding Engineer (AI + Geometry / CAD)", countries: []}
-  - {title: "SAP Specialist - Columbia, MD", countries: []}
-  - {title: "AI Engineer (in only one team)", countries: []}

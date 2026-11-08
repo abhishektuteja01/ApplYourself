@@ -36,21 +36,13 @@ def test_location_case(case):
         case["loc"], case.get("lane", ""), case.get("country", "")
     )
     assert got.keep is case["keep"]
+    if got.keep:
+        assert got.location == case["loc"].strip()  # the display is the raw text
     if "shown" in case:
         assert got.location == case["shown"]
     if "countries" in case:
         means = read_location(case["loc"].strip(), allowed_codes(names)).countries
         assert sorted(CC_TO_COUNTRY[c] for c in means) == case["countries"]
-
-
-@pytest.mark.parametrize("case", TABLE["titles"], ids=lambda c: c["title"])
-def test_residency_countries(case):
-    from applyourself.apply.role_facts import residency_countries
-    from applyourself.shared.location.places import REGION_TOKEN_COUNTRIES
-
-    want = case["countries"]
-    want = set(REGION_TOKEN_COUNTRIES["europe"]) if want == "europe" else set(want)
-    assert residency_countries(case["title"]) == want
 
 
 def test_a_primed_cache_entry_does_not_survive_into_the_next_test():

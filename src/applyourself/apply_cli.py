@@ -114,7 +114,7 @@ from applyourself.apply.report import (
     write_manifest,
     write_report,
 )
-from applyourself.apply.role_facts import company_answers_for, job_country
+from applyourself.apply.role_facts import company_answers_for, job_country, session_country
 from applyourself.apply.schema import SchemaError
 from applyourself.material import folders as app_folders
 from applyourself.score_store import view
@@ -285,7 +285,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
 
 def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]:
     """The /apply session's answers for one role:
-    `{"job_id": "...", "<field_id>": {"value": ..., "source": ..., "question": ...}}`.
+    `{"job_id": "...", "country": "...", "<field_id>": {"value": ..., "source": ..., "question": ...}}`.
 
     `value` is a string, or a list for a multi-select. `question` is the bank
     question the label asks, so a confirmed run saves it; `claim` is, for a
@@ -301,6 +301,7 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
         raise ApplyCliError(f"{path}: top level must be a JSON object")
 
     raw.pop("confirmed", None)
+    raw.pop("country", None)  # the role's country, read by role_facts.session_country
     declared = raw.pop("job_id", None)
     if declared is not None and job_id is not None and declared != job_id:
         raise ApplyCliError(
@@ -428,7 +429,7 @@ def build(
     answers = replace(
         answers,
         job_source=str((state or {}).get("source") or ""),
-        job_country=job_country(state, answers),
+        job_country=job_country(state, answers, session_country(answers_path)),
         company_answers=company_answers_for(target),
     )
     answers = replace(answers, salary_figure=salary_for(job_id, vertical, answers.country, answers))

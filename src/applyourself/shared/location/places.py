@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import re
 from collections import defaultdict
 from collections.abc import Iterable
@@ -80,22 +79,6 @@ for _name, _country in NATIVE_NAMES.items():
     )
     if _cc and len(_name) > 3 and _name.isascii() and not _clash:
         COUNTRY.setdefault(_name, _cc)
-
-
-@functools.cache
-def _alternate_names() -> dict[str, frozenset[str]]:
-    out: dict[str, set[str]] = defaultdict(set)
-    for c in geonamescache.GeonamesCache().get_cities().values():
-        for name in [c["name"], *c.get("alternatenames", [])]:
-            if name:
-                out[saint(fold(name))].add(c["countrycode"])
-    return {k: frozenset(v) for k, v in out.items()}
-
-
-def city_countries(name: str) -> frozenset[str]:
-    """Countries with a city of 15k or more known by `name` in any language
-    ("München", "Gurgaon"). Not read by the gate."""
-    return _alternate_names().get(saint(fold(name)), frozenset())
 
 
 # Region and global words: never a drop, the judge reads them.

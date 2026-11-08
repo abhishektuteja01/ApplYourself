@@ -109,6 +109,10 @@ same thing — then write one entry into `OVERRIDES_FILE` keyed by the field id:
 "<field_id>": {"value": "...", "question": "<bank id>", "source": "<where it came from>", "label": "<the board's label>"}
 ```
 
+Also set a top-level `"country"`: the role's country as the posting and JD
+state it, or `"unknown"` when they do not settle it; work-authorization answers
+follow it, and the plan's `work_authorization.job_country` shows what it was.
+
 `value` is a string, or a list for a multi-select. For a choice it must be one
 of the board's own options, verbatim. `question` is what makes the run learn:
 use the id of the bank question this label asks, or a new short id

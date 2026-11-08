@@ -70,11 +70,11 @@ option, else the decline option); work authorization by label shape and country;
 exact wording first and keyword second (`source` is `bank:<id>` or
 `bank:<id>~<keyword>`); else Tier C, which lists the closest bank questions. A
 question's country is the one its label names (`src/applyourself/shared/countries.py`,
-with US states and look-alikes masked), else the job's: discovery's location
-in `clean.parquet`, then `state.yaml`'s, then the title, then a JD phrase saying
-where the hire works. A location nothing can read is `UNKNOWN_COUNTRY`, and
-every answer that depends on the job's country parks. No location, or
-"Remote", means the candidate's own country.
+with US states and look-alikes masked), else the job's (`role_facts.job_country`,
+never read from place names): the session's optional `"country"` in the answers
+file, else the score judge's one country (`judge_answer.country`), else the one
+code the postings' source gave (the store's `country`), else `UNKNOWN_COUNTRY`,
+and every answer that depends on the job's country parks. `apply confirm` shows it.
 A label in `fact_wordings` is answered from its fact before any other
 work-authorization rule, unless the board's options are sentences (claims pick
 those). A yes/no authorization, sponsorship or "unrestricted" label not in
