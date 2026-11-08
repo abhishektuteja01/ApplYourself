@@ -295,12 +295,13 @@ def apply(proposals_path: Path | None = None) -> list[str]:
         out.append("auto_add_synonyms is off: nothing added")
 
     declined = _read_yaml(paths.SYNONYM_DECLINED, [])
-    known = {_norm(d["keyword"]) for d in declined}
+    fold = kw_norm.variants()
+    known = {kw_norm.key(d["keyword"], fold) for d in declined}
     new_declined = 0
     for item in data.get("declined") or []:
         kw = str(item.get("keyword") or "").strip()
-        if kw and _norm(kw) not in known:
-            known.add(_norm(kw))
+        if kw_norm.key(kw, fold) and kw_norm.key(kw, fold) not in known:
+            known.add(kw_norm.key(kw, fold))
             declined.append(
                 {
                     "keyword": kw,
@@ -364,9 +365,11 @@ def undo(target: str, phrase: str) -> str:
 
 def approve(words: list[str]) -> list[str]:
     declined = _read_yaml(paths.SYNONYM_DECLINED, [])
+    fold = kw_norm.variants()
     out = []
     for w in words:
-        hit = [d for d in declined if _norm(d["keyword"]) == _norm(w)]
+        k = kw_norm.key(w, fold)
+        hit = [d for d in declined if k and kw_norm.key(d["keyword"], fold) == k]
         for d in hit:
             d["approved"] = True
         out.append(f"approved {w!r}" if hit else f"no declined keyword {w!r}")

@@ -26,33 +26,54 @@ NAME = "keyword_variants.yaml"
 Groups = Iterable[Iterable[str]]
 
 _POSSESSIVE = re.compile(r"(?<=\w)['\u2019]s\b")
+# Letters written with dots ("A.I.", "U.S.A"): one word, the dots dropped.
+_DOTTED = re.compile(r"(?<![\w.])(?:[^\W\d_]\.){1,}[^\W\d_]\.?(?![\w.])")
+# Sentence punctuation: a keyword never runs across it.
+_CLAUSE = re.compile(r"[,;]|\.(?=\s|$)")
+# An all-caps word with a lowercase plural "s" ("GPUs", "IDs").
+_CAPS_PLURAL = re.compile(r"[A-Z0-9]*[A-Z]s")
 _TOKEN = re.compile(r"(?:(?<!\w)\.)?[^\W_](?:[\w+#]|&(?=[^\W_]))*")
 
 
 def _singular(word: str, keep: frozenset[str]) -> str:
-    """A lowercase ASCII word without its plural; never "-ss", "-us", "-is",
-    a word of three letters or fewer, or one the shipped `keep_plural` lists."""
+    """A lowercase ASCII word without its plural. Never "-ss", "-us" or "-is"
+    past four letters ("gpus" folds, "status" never), a word of three letters
+    or fewer, or a word the shipped `keep_plural` lists. "-che" and "-ie" read
+    as "-ch" and "-y" in every form: "cache" meets "caches", "cookie" "cookies"."""
     if len(word) <= 3 or word in keep:
         return word
     if word.endswith("ies") and len(word) >= 5:
-        return word[:-3] + "y"
-    if word.endswith(("sses", "xes", "ches", "shes")):
-        return word[:-2]
-    if word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        word = word[:-3] + "y"
+    elif word.endswith(("sses", "xes", "ches", "shes")):
+        word = word[:-2]
+    elif (
+        word.endswith("s")
+        and not word.endswith("ss")
+        and not (len(word) >= 5 and word.endswith(("us", "is")))
+    ):
+        word = word[:-1]
+    if word.endswith("che"):
         return word[:-1]
+    if word.endswith("ie") and len(word) >= 5:
+        return word[:-2] + "y"
     return word
 
 
 def _fold(tok: str) -> str:
+    if len(tok) >= 3 and _CAPS_PLURAL.fullmatch(tok):
+        return tok[:-1].casefold()
     low = tok.casefold()
     return _singular(low, _shipped()[1]) if low.isascii() and low.isalpha() else low
 
 
 def forms(text: str | None) -> tuple[str, ...]:
     """The text's words, each folded; no aliases."""
+    return tuple(_fold(t) for t in _TOKEN.findall(_clean(text)))
+
+
+def _clean(text: str | None) -> str:
     text = unicodedata.normalize("NFKC", str(text or "")).replace("_", " ")
-    text = _POSSESSIVE.sub("", text)
-    return tuple(_fold(t) for t in _TOKEN.findall(text))
+    return _DOTTED.sub(lambda m: m.group(0).replace(".", ""), _POSSESSIVE.sub("", text))
 
 
 @dataclass(frozen=True)
@@ -64,8 +85,8 @@ class Variants:
 
 
 def build(groups: Groups = ()) -> Variants:
-    """One table from alias groups. Groups sharing a member join, keyed by
-    the first group's first member."""
+    """One table from alias groups. Groups sharing a member join; every
+    member maps to the words of the first member of the first group seen."""
     parent: dict[tuple[str, ...], tuple[str, ...]] = {}
 
     def find(x: tuple[str, ...]) -> tuple[str, ...]:
@@ -112,40 +133,41 @@ def key(text: str | None, variants: Variants | None = None) -> str:
 
 def _splits_ok(want: tuple[str, ...], cuts: set[int]) -> bool:
     """Whether the text's word breaks `cuts` (offsets into the joined keyword)
-    split each keyword word only into one-letter pieces ("A.I.") or pieces of
-    three letters or more ("full stack"), never "re act"."""
+    split each keyword word only into pieces of three letters or more
+    ("full stack" for "fullstack"), never "re act" or "a i"."""
     start = 0
     for w in want:
         inner = sorted(c for c in cuts if start < c < start + len(w))
         if inner:
             edges = [start, *inner, start + len(w)]
-            sizes = {b - a for a, b in pairwise(edges)}
-            if sizes != {1} and min(sizes) < 3:
+            if min(b - a for a, b in pairwise(edges)) < 3:
                 return False
         start += len(w)
     return True
 
 
 def contains(text: str | None, keyword: str | None, variants: Variants | None = None) -> bool:
-    """Whether `keyword` appears in `text` as whole words, in any form. Words
-    may join or split only as `_splits_ok` allows."""
+    """Whether `keyword` appears in `text` as whole words, in any form, inside
+    one clause (never across ". , ;"). Words may join or split only as
+    `_splits_ok` allows."""
     want = words(keyword, variants)
     whole = "".join(want)
     if not whole:
         return False
-    hay = words(text, variants)
-    for i in range(len(hay)):
-        acc, cuts = "", set()
-        for j in range(i, len(hay)):
-            if acc:
-                cuts.add(len(acc))
-            acc += hay[j]
-            if not whole.startswith(acc):
-                break
-            if acc == whole:
-                if _splits_ok(want, cuts):
-                    return True
-                break
+    for clause in _CLAUSE.split(_clean(text)):
+        hay = words(clause, variants)
+        for i in range(len(hay)):
+            acc, cuts = "", set()
+            for j in range(i, len(hay)):
+                if acc:
+                    cuts.add(len(acc))
+                acc += hay[j]
+                if not whole.startswith(acc):
+                    break
+                if acc == whole:
+                    if _splits_ok(want, cuts):
+                        return True
+                    break
     return False
 
 

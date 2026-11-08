@@ -24,5 +24,9 @@ variants:
   - [modeling, modelling]
   - [node.js, nodejs]
   - [analysis, analyses]
-# Words whose final "s" is not a plural: never folded.
-keep_plural: [news, dynamics, atlas, series, species, windows]
+# Words whose final "s" is not a plural, or whose singular means something
+# else ("securities" / "security"): never folded.
+keep_plural:
+  [news, dynamics, atlas, series, species, windows, securities, customs, goods, mechanics,
+   logistics, options, futures, teams, financials, internals, robotics, econometrics,
+   electronics, economics, operations]

@@ -308,9 +308,9 @@ def test_keyword_coverage_is_traced(world):
         ("Ran KUBERNETES", "Kubernetes"),
     ],
 )
-def test_a_keyword_written_as_is_always_lands(line, keyword):
+def test_a_keyword_as_written_in_any_case_always_lands(line, keyword):
     """Alias folding may swallow a word ("AI" in "generative AI"): the
-    as-written match still counts it."""
+    as-written match, in any case, still counts it."""
     assert resume_model._keyword_trace(line, (keyword,))[-1] == f"- {keyword}: L1"
 
 
