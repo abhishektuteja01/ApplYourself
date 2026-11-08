@@ -82,6 +82,8 @@ def _location_country(raw: str, home: str, allowed: frozenset[str]) -> str:
     list that holds home is home ("Boston, MA; Vancouver, Canada")."""
     from applyourself.shared.location.parser import LIST_SEPARATOR_RE, read_location
 
+    if not re.search(r"[;/|]|\bor\b", raw) and (lead := _leading_code(raw, allowed)):
+        return lead  # "CAN - Ontario - Toronto": one place, not a list
     segments = [s for s in LIST_SEPARATOR_RE.split(raw) if s.strip()]
     if len(segments) > 1:
         each = {c for s in segments if (c := _segment_country(s, home, allowed))}
@@ -106,30 +108,35 @@ def _segment_country(segment: str, home: str, allowed: frozenset[str]) -> str:
 
 
 def _one_country(raw: str, allowed: frozenset[str]) -> str:
-    """One place for sure, then one country named in full ("Rotterdam, South
-    Holland, Netherlands"), then a closing code over its own region ("MH, IN"),
-    then a leading code its place agrees with ("CA-Ontario-Toronto")."""
+    """A closing code over its own region ("MH, IN"), then a US state closing
+    the address ("Delhi, NY"), then one place for sure, then one country named
+    in full ("Rotterdam, South Holland, Netherlands")."""
     from applyourself.shared.location.parser import read_location
 
+    if found := _closing_code(raw) or _us_state_tail(raw) or _country_tail(raw):
+        return found
     r = read_location(raw, allowed)
     named = r.spelled & r.countries
-    if r.sure or len(named) == 1:
-        return r.sure or next(iter(named))
-    return _closing_code(raw) or _leading_code(raw, allowed)
+    return r.sure or (next(iter(named)) if len(named) == 1 else "")
 
 
 def _piece_country(piece: str, allowed: frozenset[str]) -> str:
-    """One place for sure, else an allowed country's own region name
-    ("Virginia"), else the biggest city of that name ("Melbourne")."""
+    """One place for sure (no small town alone), else an allowed country's own
+    region name ("Virginia"), else the biggest city of that name ("Melbourne")."""
     from applyourself.shared.location.parser import read_location
     from applyourself.shared.location.places import CITY, MIN_FOREIGN_CITY, SUB_NAME, fold, saint
 
-    regions = set(SUB_NAME.get(fold(piece), {}))
-    cities = CITY.get(saint(fold(piece)), [])
+    name = " ".join(re.sub(r"\d+", " ", piece).split())  # "2 Holt" is Holt
+    regions = set(SUB_NAME.get(fold(name), {}))
+    cities = CITY.get(saint(fold(name)), [])
     big = cities[0].cc if cities and cities[0].population >= MIN_FOREIGN_CITY else ""
-    if found := read_location(piece, allowed).sure:
-        return found
-    return next(iter(regions)) if len(regions) == 1 and regions <= allowed else big
+    small = bool(cities) and cities[0].population < MIN_FOREIGN_CITY
+    if (found := read_location(piece, allowed).sure) and not small:
+        return found  # a small town alone ("Holt", "Garden City") names no country
+    if regions:
+        # A foreign region's name ("Ontario") is no city's: unknown, so it parks.
+        return next(iter(regions)) if len(regions) == 1 and regions <= allowed else ""
+    return big
 
 
 _CLOSING_CODE = re.compile(r"(?:^|,)\s*([A-Z]{2})\s*,\s*([A-Za-z]{2})\s*$")
@@ -151,17 +158,98 @@ def _piece_name(piece: str, allowed: frozenset[str]) -> str:
     return CC_TO_COUNTRY.get(_piece_country(piece, allowed), "")
 
 
-_LEADING_CODE = re.compile(r"^([A-Z]{2})-(\S.*)$")
+def _country_tail(raw: str) -> str:
+    """The country of an address closing with a 2-letter code that is no US
+    state: the city's own country when the code is one of its regions
+    ("Mumbai, MH", "Berlin, BE"), else the code's country ("Shaw Centre, sg")."""
+    from applyourself.shared.location.places import CODE2, SUB_CODE, city_countries
+
+    head, _, tail = _ADDRESS_TAIL.sub("", raw.strip()).rpartition(",")
+    code = tail.strip().upper()
+    if not head.strip() or len(code) != 2 or "US" in SUB_CODE.get(code, set()):
+        return ""
+    known = city_countries(head.rpartition(",")[2].strip())
+    regions = known & SUB_CODE.get(code, set())
+    if regions:
+        return next(iter(regions)) if len(regions) == 1 else ""
+    return CODE2.get(code, "") if not known or CODE2.get(code) in known else ""
+
+
+_LEADING_CODE = re.compile(r"^([A-Z]{2,3})(?:-|\s+-\s+|:\s*)(\S.*)$")
 
 
 def _leading_code(raw: str, allowed: frozenset[str]) -> str:
-    """The country a leading ISO code names when a place after it is there."""
+    """The country a leading ISO code names ("CA-Ontario-Toronto", "CAN - Ontario
+    - Toronto") when a place after it is there."""
+    import pycountry
+
     from applyourself.shared.location.places import CODE2
 
     m = _LEADING_CODE.match(raw.strip())
-    cc = CODE2.get(m.group(1), "") if m else ""
-    words = re.split(r"[-\s,]+", m.group(2)) if m else []
+    if not m:
+        return ""
+    code = m.group(1)
+    cc = (
+        CODE2.get(code, "")
+        if len(code) == 2
+        else getattr(pycountry.countries.get(alpha_3=code), "alpha_2", "")
+    )
+    words = re.split(r"[-\s,()]+", m.group(2))
     return cc if cc and any(_piece_country(w, allowed) == cc for w in words if len(w) > 3) else ""
+
+
+_ADDRESS_TAIL = re.compile(
+    r"(?:,\s*(?:USA?|U\.S\.A?\.?|United States(?: of America)?|[\d\s-]+))+\s*$", re.IGNORECASE
+)
+# Countries whose states an address writes as a bare code ("Chennai, TN").
+_ABBREVIATED_CC = frozenset({"AU", "BR", "CA", "IN", "MX"})
+
+
+def _us_state_tail(raw: str) -> str:
+    """The country of an address closing with a US state ("Delhi, NY", "Warsaw,
+    IN"): the US, unless the state's letters or name are another country's and
+    the city is there ("Hamburg, DE", "Chennai, TN"); `_SEVERAL` when the city
+    is in both ("Windsor, CA")."""
+    from applyourself.shared.location.places import (
+        CITY,
+        CODE2,
+        COUNTRY,
+        SUB_CODE,
+        SUB_NAME,
+        city_countries,
+        fold,
+        saint,
+    )
+
+    parts = [p.strip() for p in re.split(r",|\s-\s", _ADDRESS_TAIL.sub("", raw.strip()))]
+    if len(parts) < 2 or not parts[-2]:
+        return ""
+    head, tail = parts[-2], parts[-1]
+    code = tail if len(tail) == 2 and tail.isupper() else SUB_NAME.get(fold(tail), {}).get("US", "")
+    if "US" not in SUB_CODE.get(code, set()):
+        return ""
+    clash = {CODE2.get(tail) if len(tail) == 2 else COUNTRY.get(fold(tail))} - {None, "US"}
+    clash |= SUB_CODE.get(code, set()) & _ABBREVIATED_CC
+    cities = CITY.get(saint(fold(head)), [])
+    in_state = any(c.cc == "US" and c.admin1 == code for c in cities)
+    known = {c.cc for c in cities}
+    for part in parts[-2::-1]:
+        if known:
+            break
+        # "München, DE", "Jakarta Selatan, ID", "Gurgaon, UNAVAILABLE, IN": another
+        # spelling, a city inside the part, or an earlier part.
+        words = [w for w in re.split(r"[\s.\-/]+", part) if len(w) > 3]
+        known = set(city_countries(part)).union(*(city_countries(w) - {"US"} for w in words))
+    if "US" not in known:
+        clash |= SUB_CODE.get(code, set())  # "Amersfoort, UT": no US city of that name
+    abroad = known & clash
+    if not known and clash and _ADDRESS_TAIL.search(raw.strip()) and re.search(r"\d", raw):
+        return _SEVERAL  # "Bargteheide, DE, 22941": an unknown town and a postcode
+    if in_state and abroad:
+        return _SEVERAL
+    if abroad:
+        return next(iter(abroad)) if len(abroad) == 1 else _SEVERAL
+    return "US"
 
 
 def _pieces_country(raw: str, country_of) -> str:

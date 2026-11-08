@@ -50,8 +50,10 @@ class Allowlist:
         r = read_location(text, self.allowed)
         given = structured_codes(country)
         if given:
-            # The text keeps it only by naming an allowed country or a region outright.
+            # The text keeps it only by naming an allowed country or a region outright,
+            # or by being one place in an allowed country ("New York, NY").
             keep = bool(given & (self.allowed | DOUBT_CC)) or r.named_allowed or r.doubt
+            keep = keep or r.sure in self.allowed
             certain = next(iter(given)) if len(given) == 1 else ""
         else:
             keep, certain = r.keep, r.certain
@@ -65,7 +67,9 @@ class Allowlist:
             return Allowed(True, _shown(text, r), True)
         if len(given) == 1 and not text:
             return Allowed(True, CC_TO_COUNTRY[certain], True)
-        return Allowed(True, "Remote" if r.remote else text, len(given) == 1)
+        # "Remote" only when no part reads a place: "Remote - Paris" keeps its text.
+        shown = "Remote" if r.remote and not r.countries else text
+        return Allowed(True, shown, len(given) == 1)
 
 
 def _shown(text: str, r: Reading) -> str:
@@ -78,8 +82,8 @@ def _shown(text: str, r: Reading) -> str:
     elif city:
         canon = f"{city}, {country}"
     elif state and us:
-        if r.loose:
-            return text  # "Taylor, TX": a town the tables do not hold
+        if r.loose or state in CODE2:
+            return text  # "Taylor, TX": a town the tables lack; "IN, US" is no country
         canon = state
     elif (
         len([p for p in LIST_SEPARATOR_RE.split(text) if p.strip() and "remote" not in p.lower()])

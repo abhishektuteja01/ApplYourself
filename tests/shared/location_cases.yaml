@@ -78,7 +78,7 @@ cases:
   - {loc: "Oklahoma City, OK", allow: us, keep: true, countries: ["United States"], shown: "Oklahoma City, OK"}
   - {loc: "New York, NY", allow: us, keep: true, countries: ["United States"], shown: "New York City, NY"}
   - {loc: "Atlanta, Georgia", allow: us, keep: true, countries: ["United States"], shown: "Atlanta, GA"}
-  - {loc: "Jamaica, NY", allow: us, keep: true, countries: ["United States"], shown: "Jamaica, NY"}
+  - {loc: "Jamaica, NY", allow: us, keep: true, countries: ["Jamaica", "United States"], shown: "Jamaica, NY"}
   - {loc: "Jersey City, NJ", allow: us, keep: true, countries: ["United States"], shown: "Jersey City, NJ"}
   - {loc: "Panama City, FL", allow: us, keep: true, countries: ["United States"], shown: "Panama City, FL"}
   - {loc: "Boston, MA", allow: us, keep: true, countries: ["United States"], shown: "Boston, MA"}
@@ -125,8 +125,8 @@ cases:
   - {loc: "Warrington, PA", allow: us, keep: true, countries: ["Panama", "United Kingdom", "United States"]}
   - {loc: "Austin, TX / Remote", allow: us, keep: true, countries: ["United States"], shown: "Remote - Austin, TX"}
   - {loc: "Chicago, Illinois or Austin, Texas", allow: us, keep: true, countries: ["United States"], shown: "Chicago, Illinois or Austin, Texas"}
-  - {loc: "US and Canada", allow: us, keep: true, countries: []}
-  - {loc: "United States and Canada", allow: us, keep: true, countries: []}
+  - {loc: "US and Canada", allow: us, keep: true, countries: ["United States"]}
+  - {loc: "United States and Canada", allow: us, keep: true, countries: ["United States"]}
   - {loc: "United States & Canada", allow: us, keep: true, countries: ["Canada", "United States"]}
   - {loc: "San Francisco, CA | New York City, NY | Seattle, WA", allow: us, keep: true, countries: ["United States"], shown: "San Francisco, CA | New York City, NY | Seattle, WA"}
   - {loc: "Netherlands - Alkmaar", allow: us, keep: false, countries: ["Netherlands"]}
@@ -139,10 +139,10 @@ cases:
   - {loc: "Bruxelles", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "Bangalore", allow: us, keep: false, countries: ["India"]}
   - {loc: "Ciudad de México", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
-  - {loc: "Deutschland", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
-  - {loc: "España", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
-  - {loc: "Brasil", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
-  - {loc: "Nederland", allow: us, keep: true, countries: ["United States"], was: drop, why: "an allowed-country namesake keeps a lone city"}
+  - {loc: "Deutschland", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "España", allow: us, keep: false, countries: ["Spain"]}
+  - {loc: "Brasil", allow: us, keep: false, countries: ["Brazil"]}
+  - {loc: "Nederland", allow: us, keep: false, countries: ["Netherlands"]}
   - {loc: "Bengaluru, India", allow: us, keep: false, countries: ["India"]}
   - {loc: "Lisbon, Portugal", allow: us, keep: false, countries: ["Portugal"]}
   - {loc: "Mumbai, Maharashtra", allow: us, keep: false, countries: ["India"]}
@@ -421,7 +421,7 @@ cases:
   - {loc: "Anywhere in Canada", keep: false, was: keep, why: "work words are stripped: Canada alone"}
   - {loc: "CANADA (REMOTE)", keep: false}
   - {loc: "Brazil", keep: false}
-  - {loc: "Brasil", keep: true, was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
+  - {loc: "Brasil", keep: false}
   - {loc: "São Paulo", keep: false}
   - {loc: "Sao Paulo, SP, Brazil", keep: false}
   - {loc: "Mexico", keep: false}
@@ -642,6 +642,20 @@ cases:
   - {loc: "Austin, TX", allow: us_in, lane: "lane_b", country: "US", keep: true, shown: "Austin, TX"}
   - {loc: "", allow: us, country: "US", keep: true, shown: "United States"}
   - {loc: "Toronto", allow: us, country: "xx", keep: false}
+  - {loc: "Remote - Paris", allow: us, keep: true, shown: "Remote - Paris"}
+  - {loc: "Toronto, ON or Remote US", keep: true, shown: "Toronto, ON or Remote US"}
+  - {loc: "Remote (Canada, US)", keep: true, shown: "Remote (Canada, US)"}
+  - {loc: "Toronto, Canada (Remote US eligible)", keep: true, shown: "Toronto, Canada (Remote US eligible)"}
+  - {loc: "UK (Remote US possible)", keep: true, shown: "UK (Remote US possible)"}
+  - {loc: "Remote - Canada (US also)", keep: true, shown: "Remote - Canada (US also)"}
+  - {loc: "Deutschland", keep: true, shown: "Germany"}
+  - {loc: "Nederland", keep: true, shown: "Netherlands"}
+  - {loc: "Remote, IN, US", keep: true, shown: "Remote, IN, US"}
+  - {loc: "Amsterdam", keep: true, shown: "Amsterdam, Netherlands"}
+  - {loc: "Dublin", keep: true, shown: "Dublin, Ireland"}
+  - {loc: "New York, NY", allow: us, country: "GB", keep: true, shown: "New York, NY"}
+  - {loc: "Lebanon", allow: us, keep: false, countries: ["Lebanon"]}
+  - {loc: "Lebanon, PA", allow: us, keep: true, shown: "Lebanon, PA"}
 
 # The countries a title's residency qualifier limits the hire to. "europe": every
 # European country.

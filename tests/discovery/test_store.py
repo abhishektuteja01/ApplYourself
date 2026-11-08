@@ -673,6 +673,10 @@ def test_view_applies_the_location_allowlist():
     jid = store.at[0, "job_id"]
     out, _ = view(store, state_index={jid: {"state": "skip"}})
     assert list(out["job_id"]) == [jid]
+    # ...but a posting of it that passes is the one shown.
+    store, _ = fold(store, post(GH.format(2), location_raw="Austin, TX"))
+    out, _ = view(store, state_index={jid: {"state": "skip"}})
+    assert list(out["location"]) == ["Austin, TX"]
 
 
 def test_view_retention_tiers():

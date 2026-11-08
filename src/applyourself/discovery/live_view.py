@@ -167,10 +167,11 @@ def build_view(
             df_live["location_raw"], df_live["vertical"], df_live["country"], strict=True
         )
     ]
-    # A tracked role never leaves on its location.
-    keep = pd.Series([c.keep for c in checks], index=df_live.index, dtype=bool) | df_live[
-        "job_id"
-    ].isin(tracked)
+    # A tracked role never leaves on its location; its postings that pass still
+    # come first, so a foreign one is shown only when none passes.
+    passed = pd.Series([c.keep for c in checks], index=df_live.index, dtype=bool)
+    passing_jobs = set(df_live.loc[passed, "job_id"])
+    keep = passed | (df_live["job_id"].isin(tracked) & ~df_live["job_id"].isin(passing_jobs))
     df_live = df_live.assign(
         location=[c.location for c in checks], _resolved=[c.resolved for c in checks]
     )[keep]

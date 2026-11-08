@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from collections import defaultdict
 from collections.abc import Iterable
@@ -13,6 +14,7 @@ import pycountry
 from applyourself.shared.countries import (
     CC_TO_COUNTRY,
     COUNTRY_TO_CC,
+    NATIVE_NAMES,
     fold_accents,
     location_names,
 )
@@ -31,10 +33,6 @@ def saint(folded: str) -> str:
     return _ST_RE.sub("saint ", folded)
 
 
-# Folded country name or alias -> ISO code.
-COUNTRY: dict[str, str] = {
-    k: COUNTRY_TO_CC[v] for k, v in location_names().items() if v in COUNTRY_TO_CC
-}
 CODE2: dict[str, str] = {c.alpha_2: c.alpha_2 for c in pycountry.countries} | {"UK": "GB"}
 
 # Subdivisions: bare code ("TX") -> countries; folded name -> {country: code}.
@@ -68,6 +66,37 @@ CITY["geneva"] = sorted(CITY["geneva"] + CITY["geneve"], key=lambda c: c.populat
 
 # A city whose every namesake is abroad reads foreign only from this size up.
 MIN_FOREIGN_CITY = 100_000
+
+# Folded country name, alias or native name ("Deutschland") -> ISO code. A
+# native name that is also a state or a big city elsewhere ("Columbia",
+# "Salvador") is left out.
+COUNTRY: dict[str, str] = {
+    k: COUNTRY_TO_CC[v] for k, v in location_names().items() if v in COUNTRY_TO_CC
+}
+for _name, _country in NATIVE_NAMES.items():
+    _cc = COUNTRY_TO_CC.get(_country, "")
+    _clash = _name in SUB_NAME or any(
+        c.cc != _cc and c.population >= MIN_FOREIGN_CITY for c in CITY.get(_name, [])
+    )
+    if _cc and len(_name) > 3 and _name.isascii() and not _clash:
+        COUNTRY.setdefault(_name, _cc)
+
+
+@functools.cache
+def _alternate_names() -> dict[str, frozenset[str]]:
+    out: dict[str, set[str]] = defaultdict(set)
+    for c in geonamescache.GeonamesCache().get_cities().values():
+        for name in [c["name"], *c.get("alternatenames", [])]:
+            if name:
+                out[saint(fold(name))].add(c["countrycode"])
+    return {k: frozenset(v) for k, v in out.items()}
+
+
+def city_countries(name: str) -> frozenset[str]:
+    """Countries with a city of 15k or more known by `name` in any language
+    ("München", "Gurgaon"). Not read by the gate."""
+    return _alternate_names().get(saint(fold(name)), frozenset())
+
 
 # Region and global words: never a drop, the judge reads them.
 DOUBT = frozenset(

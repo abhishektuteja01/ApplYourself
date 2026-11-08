@@ -14,7 +14,7 @@ import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 
-from applyourself.shared.countries import COUNTRY_TO_CC, canonical_country
+from applyourself.shared.countries import COUNTRY_TO_CC, canonical_country, fold_accents
 from applyourself.shared.location.places import (
     CITY,
     CODE2,
@@ -57,6 +57,7 @@ class Part:
     place: set[str] = field(default_factory=set)
     subs: dict[str, str] = field(default_factory=dict)
     cities: list[City] = field(default_factory=list)
+    full: bool = False  # names its country in full ("Germany", "Deutschland")
 
     @property
     def city(self) -> set[str]:
@@ -124,7 +125,8 @@ def _classify(p: str, allowed: frozenset[str], closing: bool = False, first: boo
     elif _is_code(p, 2) and p in CODE2:
         named, kind = {CODE2[p]}, "code"
     subs = dict(SUB_NAME.get(f, {}))
-    cities = CITY.get(saint(f), [])
+    # A country's name is never a city namesake ("Nederland", "Lebanon").
+    cities = [] if kind == "country" else CITY.get(saint(f), [])
     if (_is_code(p, 2) or _is_code(p, 3)) and kind != "country":
         # A leading code ("BE (BE100)", "CH") is a state only when a US state;
         # after a place, any state.
@@ -138,7 +140,7 @@ def _classify(p: str, allowed: frozenset[str], closing: bool = False, first: boo
         kind = "amb" if kind else "place"
     elif not kind and cities and cities[0].population >= MIN_FOREIGN_CITY:
         R, kind = set(place), "city"  # every namesake abroad and one is big: "Toronto"
-    return Part(p, R, kind, named, place, subs, list(cities))
+    return Part(p, R, kind, named, place, subs, list(cities), f in COUNTRY)
 
 
 def _parts(raw: str, allowed: frozenset[str]) -> list[Part]:
@@ -159,8 +161,34 @@ def _parts(raw: str, allowed: frozenset[str]) -> list[Part]:
                     if h.strip():
                         out += _parts(h, allowed)
                 continue
+            if not d.read() and (inside := _named_inside(p, allowed)):
+                out += inside  # "Remote US eligible", "US also"
+                continue
         out.append(d)
     return out
+
+
+# Words that are a country's name but mean something else in a location.
+_NOT_COUNTRY_INSIDE = frozenset(
+    {"america", "jersey", "georgia", "chad", "jordan", "guinea", "niger", "turkey", "man"}
+)
+
+
+@functools.cache
+def _country_word_re() -> re.Pattern[str]:
+    names = sorted(
+        (k for k in COUNTRY if len(k) > 3 and k not in _NOT_COUNTRY_INSIDE), key=len, reverse=True
+    )
+    return re.compile(
+        r"\b(?:US|USA|UK|UAE)\b|(?i:\b(?:" + "|".join(re.escape(n) for n in names) + r")\b)"
+    )
+
+
+def _named_inside(p: str, allowed: frozenset[str]) -> list[Part]:
+    """The allowed countries a chunk that reads nothing names in passing, whole
+    words only. Only ever a keep: "Beth Israel Lahey Health" stays unread."""
+    words = (_classify(m.group(0), allowed) for m in _country_word_re().finditer(fold_accents(p)))
+    return [replace(d, text=p) for d in words if d.named & allowed]
 
 
 def _narrow(ps: list[Part], allowed: frozenset[str]) -> list[set[str] | None]:
@@ -251,13 +279,18 @@ def read_location(raw: str, allowed: frozenset[str] = frozenset()) -> Reading:
             if len(part) == 1:
                 alone |= part
     sure = next(iter(means)) if len(means) == 1 and not doubt else ""
-    # Shown as a place: the sure country, or the certain one when each lone city
-    # is biggest there ("San Francisco" yes, "Paris" to a US allowlist no).
-    biggest = all(
-        not r or n is not None or not d.cities or d.cities[0].cc == certain
-        for d, n, r in zip(ps, narrowed, R, strict=True)
-    )
-    place = sure or (certain if certain and biggest else "")
+    # Shown as a place: the sure country, else the one read country where each
+    # lone city is biggest ("San Francisco", "Amsterdam"; not "Paris" to a US allowlist).
+    rows = [(d, n, r) for d, n, r in zip(ps, narrowed, R, strict=True) if r]
+    bigs = {d.cities[0].cc for d, n, _ in rows if n is None and d.cities}
+    cand = certain or (next(iter(bigs)) if len(bigs) == 1 else "")
+    fits = cand in found and not doubt
+    for d, n, r in rows:
+        meaning = n if n is not None else (d.named | d.place or r)
+        fits = (
+            fits and cand in meaning and (n is not None or not d.cities or d.cities[0].cc == cand)
+        )
+    place = sure or (cand if fits else "")
     city, state = _where(ps, place, text) if place else ("", "")
     named_allowed = any(d.kind in ("country", "code", "amb") and d.named & allowed for d in ps)
     loose = any(not d.R and _NOISE_RE.sub(" ", d.text).strip(" .-") for d in ps)

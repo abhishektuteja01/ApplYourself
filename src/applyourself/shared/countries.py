@@ -58,6 +58,7 @@ _ADDRESS_ALIASES = {
     "ivory coast": "Côte d'Ivoire",
     "burma": "Myanmar",
     "macedonia": "North Macedonia",
+    "eire": "Ireland",
 }
 # Spellings only a form label reads.
 _LABEL_ALIASES = {
@@ -128,6 +129,7 @@ _MAJOR_LOCALES = (
 )
 
 COUNTRY_NAMES: dict[str, str] = _pycountry_names()
+NATIVE_NAMES: dict[str, str] = {}
 for _lang in _MAJOR_LOCALES:
     try:
         _cat = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=[_lang])
@@ -137,6 +139,8 @@ for _lang in _MAJOR_LOCALES:
         _native = _cat.gettext(_c.name)
         if _native != _c.name:
             COUNTRY_NAMES.setdefault(_key(_native), _c.name)
+            if COUNTRY_NAMES[_key(_native)] == _c.name:
+                NATIVE_NAMES.setdefault(_key(_native), _c.name)
 COUNTRY_NAMES.update(_ALIASES)
 COUNTRY_NAMES.update(_ADDRESS_ALIASES)
 

@@ -114,8 +114,8 @@ newest sighting, then the longest JD. Retention runs from the job's earliest
 `first_seen`, or with `retention_from: newest` from the newest `first_seen`
 among its postings that passed the gates above (a repost restarts it): `high_days` at fit >= threshold or unscored, else `low_days`; an
 unscored row `score_filter.drop_reason` drops today gets `low_days`.
-Tracked roles skip the search-age cut, the location gate and retention;
-`ACTIVE_STATES` roles are always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
+Tracked roles skip the search-age cut, the location gate (their postings that
+pass still come first) and retention; `ACTIVE_STATES` roles are always in. Output columns are exactly `CLEAN_COLUMNS`, sorted by `job_id`.
 
 ## Boards (`sources/boards/base.py`)
 
@@ -188,8 +188,10 @@ Every source parses flags, salaries and placeholder company names through
 pycountry and geonamescache tables only (no libpostal); `apply.role_facts.job_country`
 reads it too. The text splits into parts (`, ; / | ( ) [ ] + : " - "`, dashes,
 " or "; and/&/hyphen only when the whole reads nothing), and each part keeps
-every reading: a country or alias, an uppercase 2-letter code, a state, every
-city namesake. Any allowed reading keeps; PR, GU, VI and MP count as the US; AS
+every reading: a country, alias or native name ("Deutschland"; a country's
+name is never a city namesake), an uppercase 2-letter code, a state, every city
+namesake. A part that reads nothing still keeps an allowed country it names in
+passing ("Remote US eligible"). Any allowed reading keeps; PR, GU, VI and MP count as the US; AS
 and UM never drop; a region or global word (EMEA, Worldwide) keeps. A city is
 foreign only with no allowed namesake and its biggest at 100k people or more. A
 leading code is a state only when a US state; a closing lowercase code in three
@@ -199,7 +201,7 @@ names or a closing country. A location drops only when something reads clearly
 foreign and nothing reads allowed or doubtful. A source's own country codes (the
 store's `country`: Lever's `country`, Ashby's address countries) settle it when
 present: they keep it if any is allowed, else only an allowed country named in
-the text or a region word does. The abroad lane rule applies only when exactly
+the text, a region word, or text that is one place in an allowed country does. The abroad lane rule applies only when exactly
 one allowed-relevant country is certain. Cases: `tests/shared/location_cases.yaml`.
 
 ## Searching is not accepting
