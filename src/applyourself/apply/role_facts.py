@@ -18,43 +18,64 @@ from applyourself.shared import paths
 from applyourself.shared.countries import CC_TO_COUNTRY
 
 
-def job_country(state: dict | None, answers: Answers, session: str = "") -> str:
-    """The job's country, never read from place names here: the /apply
-    session's `country` in the answers file, else the score judge's one
-    country for the role, else the one country code its postings' source
-    gave (the jobs store's `country`), else `UNKNOWN_COUNTRY`, so every answer
-    that depends on it parks."""
-    if session:
-        return session
+def job_country(state: dict | None, answers: Answers | None = None, session: str = "") -> str:
+    """The job's country, never read from place names here (see `country_and_source`)."""
+    return country_and_source(str((state or {}).get("job_id") or ""), session)[0]
+
+
+def country_and_source(job_id: str, session: str = "") -> tuple[str, str]:
+    """(country, where it came from): the /apply session's `country` in the
+    answers file, else the score judge's one country for the role, else the one
+    code its postings' source gave (the jobs store's `country`), else
+    `UNKNOWN_COUNTRY`, so every answer that depends on it parks."""
     from applyourself.shared.location.allowlist import structured_codes
     from applyourself.shared.location.places import US_LIKE
 
-    job_id = str((state or {}).get("job_id") or "")
+    if session:
+        return session, "session"
     judged = _judge_countries(job_id)
     if len(judged) == 1:
-        return canonical_place(judged[0]) or UNKNOWN_COUNTRY
+        return country_name(judged[0]), "judge"
     codes = {
         "US" if c in US_LIKE else c for f in _store_countries(job_id) for c in structured_codes(f)
     }
     if len(codes) == 1:
-        return CC_TO_COUNTRY.get(next(iter(codes)), UNKNOWN_COUNTRY)
-    return UNKNOWN_COUNTRY
+        return CC_TO_COUNTRY.get(next(iter(codes)), UNKNOWN_COUNTRY), "site field"
+    return UNKNOWN_COUNTRY, "unknown"
+
+
+def country_name(value: str) -> str:
+    """The bank's key for a country the judge or the session named; Puerto Rico,
+    Guam, the US Virgin Islands and the Northern Marianas are the US; a region
+    ("Europe"), "default" or a name nothing reads is `UNKNOWN_COUNTRY`."""
+    from applyourself.apply.places import REGIONS
+    from applyourself.shared.location.places import US_LIKE
+
+    name = canonical_place(value)
+    if name in {CC_TO_COUNTRY[c] for c in US_LIKE}:
+        return "United States"
+    if not name or name == "default" or name in REGIONS:
+        return UNKNOWN_COUNTRY
+    return name
 
 
 def session_country(answers_path: Path | None) -> str:
-    """The country the /apply session wrote into the answers file (`"country"`):
-    its canonical name, `UNKNOWN_COUNTRY` for "unknown" or a name nothing
-    reads, or "" when the file sets none."""
+    """The country the /apply session wrote into the answers file (`"country"`),
+    or "" when the file sets none."""
     if answers_path is None or not Path(answers_path).is_file():
         return ""
     try:
         raw = json.loads(Path(answers_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return ""
-    value = str(raw.get("country") or "").strip() if isinstance(raw, dict) else ""
-    if not value:
-        return ""
-    return canonical_place(value) or UNKNOWN_COUNTRY
+    return session_country_of(raw)
+
+
+def session_country_of(data: object) -> str:
+    """`session_country` for a loaded answers file: its canonical country,
+    `UNKNOWN_COUNTRY` for "unknown" or a region, "" when unset."""
+    value = str(data.get("country") or "").strip() if isinstance(data, dict) else ""
+    return country_name(value) if value else ""
 
 
 @functools.cache
@@ -73,13 +94,14 @@ def _store_table(path: Path, mtime: float) -> dict[str, list[str]]:
 
 @functools.cache
 def _judged_table(path: Path, mtime: float) -> dict[str, str]:
-    from applyourself.score_store import is_v2, read_scored
+    from applyourself.score_store import read_scored
 
     out: dict[str, str] = {}
     scored = read_scored(path)
     for jid, raw in zip(scored["job_id"], scored["judge_answer"], strict=True):
         answer = json.loads(raw) if isinstance(raw, str) and raw else None
-        if isinstance(answer, dict) and is_v2(answer) and isinstance(answer.get("country"), str):
+        # Today's answers and the old judge's alike state the role's country.
+        if isinstance(answer, dict) and isinstance(answer.get("country"), str):
             out[str(jid)] = answer["country"]
     return out
 

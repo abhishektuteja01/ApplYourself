@@ -45,10 +45,10 @@ class Allowlist:
         r = read_location(text, self.allowed)
         given = structured_codes(country)
         if given:
-            # The text keeps it only by naming an allowed country, state or region
-            # outright, or by being one place in an allowed country ("Toronto, OH").
+            # The text keeps it only by naming an allowed country or a region
+            # outright, or by being one place in an allowed country ("New York, NY").
             keep = bool(given & (self.allowed | DOUBT_CC)) or r.named_allowed or r.doubt
-            keep = keep or r.sure in self.allowed or r.state_allowed
+            keep = keep or r.sure in self.allowed
             certain = next(iter(given)) if len(given) == 1 else ""
         else:
             keep, certain = r.keep, r.certain

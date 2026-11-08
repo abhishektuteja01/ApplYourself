@@ -76,8 +76,7 @@ class Reading:
     """keep: the verdict. countries: the countries the verdict read (an allowed
     namesake hides the foreign ones). certain: the one country among them, with
     no region word. sure: the one country every reading can mean, so the text
-    is one place. named_allowed: a part names an allowed country outright.
-    state_allowed: a part is a state or region of an allowed country ("OH")."""
+    is one place. named_allowed: a part names an allowed country outright."""
 
     keep: bool
     countries: frozenset[str] = frozenset()
@@ -85,7 +84,6 @@ class Reading:
     sure: str = ""
     doubt: bool = False
     named_allowed: bool = False
-    state_allowed: bool = False
 
 
 def allowed_codes(names: Iterable[str]) -> frozenset[str]:
@@ -244,5 +242,4 @@ def read_location(raw: str, allowed: frozenset[str] = frozenset()) -> Reading:
             means |= (n if n is not None else (d.named | d.place or r)) - {"?"}
     sure = next(iter(means)) if len(means) == 1 and not doubt else ""
     named_allowed = any(d.kind in ("country", "code", "amb") and d.named & allowed for d in ps)
-    state_allowed = any(set(d.subs) & allowed for d in ps)
-    return Reading(keep, frozenset(found), certain, sure, doubt, named_allowed, state_allowed)
+    return Reading(keep, frozenset(found), certain, sure, doubt, named_allowed)

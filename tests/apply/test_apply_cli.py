@@ -2100,6 +2100,9 @@ class TestTheJobsCountry:
             {"job_id": "judged", "judge_answer": answer("Germany")},
             {"job_id": "several", "judge_answer": answer("India; Germany")},
             {"job_id": "blank", "judge_answer": answer("")},
+            {"job_id": "pr", "judge_answer": answer("Puerto Rico")},
+            {"job_id": "eu", "judge_answer": answer("Europe")},
+            {"job_id": "old", "judge_answer": json.dumps({"country": "India"})},
         )
         write_parquet(scored, tmp_path / "scored.parquet", schema_version=SCORED_SCHEMA_VERSION)
         store = pd.DataFrame(
@@ -2122,6 +2125,9 @@ class TestTheJobsCountry:
             ("coded", "India"),  # no answer: the source's code
             ("split", "(unknown)"),  # two source codes: it parks
             ("nowhere", "(unknown)"),  # nothing: it parks, never a guess from the text
+            ("pr", "United States"),  # US territories are the US
+            ("eu", "(unknown)"),  # a region is no country: it parks, never the default row
+            ("old", "India"),  # the old judge's answer states it too
         ],
     )
     def test_the_country_is_read_never_guessed(self, data, answers, job_id, country):
@@ -2138,6 +2144,31 @@ class TestTheJobsCountry:
         )
         file.write_text('{"job_id": "judged", "country": "unknown"}', encoding="utf-8")
         assert session_country(file) == "(unknown)"
+        for value, want in (
+            ("default", "(unknown)"),
+            ("EMEA", "(unknown)"),
+            ("Guam", "United States"),
+        ):
+            file.write_text(f'{{"job_id": "judged", "country": "{value}"}}', encoding="utf-8")
+            assert session_country(file) == want
+
+    def test_confirm_shows_the_country_it_will_use_and_a_new_one_undoes_it(self, data, tmp_path):
+        import json
+
+        from applyourself.shared.parquet_io import write_parquet
+        from applyourself.shared.schemas import SCORED_SCHEMA_VERSION
+
+        file = tmp_path / "answers_override.json"
+        file.write_text('{"job_id": "judged"}', encoding="utf-8")
+        loaded = confirmation.load(file)
+        assert "Country: Germany (judge)" in confirmation.render(loaded)
+        confirmation.record(file, loaded)
+        assert confirmation.is_confirmed(file)
+        rescored = factories.scored_rows(
+            {"job_id": "judged", "judge_answer": json.dumps({"fit": 70, "country": "India"})}
+        )
+        write_parquet(rescored, tmp_path / "scored.parquet", schema_version=SCORED_SCHEMA_VERSION)
+        assert not confirmation.is_confirmed(file)
 
 
 def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path, monkeypatch):

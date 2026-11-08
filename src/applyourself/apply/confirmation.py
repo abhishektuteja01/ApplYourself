@@ -27,8 +27,18 @@ def load(path: Path) -> dict:
     return data
 
 
+def resolved_country(data: dict) -> tuple[str, str]:
+    """(country, source) the answers will use for this role (`role_facts`)."""
+    from applyourself.apply.role_facts import country_and_source, session_country_of
+
+    return country_and_source(str(data.get("job_id") or ""), session_country_of(data))
+
+
 def digest(data: dict) -> str:
+    # The country the answers follow is part of what was approved: a re-score
+    # that changes it undoes the confirmation.
     shown = {k: v for k, v in data.items() if k != "confirmed"}
+    shown["_country"] = list(resolved_country(data))
     text = json.dumps(shown, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -36,8 +46,9 @@ def digest(data: dict) -> str:
 def render(data: dict) -> str:
     """Every answer in the file, every key shown: what the user approves."""
     lines = [f"Answers for job_id {data.get('job_id', '(none)')}:"]
-    # The role's country, as the session read it: work-authorization answers follow it.
-    lines.append(f"Country: {data.get('country') or '(not set: the source field or unknown)'}")
+    # The country the work-authorization answers follow, and where it came from.
+    country, source = resolved_country(data)
+    lines.append(f"Country: {country} ({source})")
     entries = [(k, v) for k, v in data.items() if k not in _NOT_ANSWERS]
     if not entries:
         lines.append("  (no answers)")

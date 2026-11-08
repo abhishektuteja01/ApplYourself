@@ -658,3 +658,8 @@ cases:
   - {loc: "Lebanon", keep: true, shown: "Lebanon"}
   - {loc: "Jamaica", allow: us, keep: true, shown: "Jamaica"}
   - {loc: "Lebanon, PA", allow: us, keep: true, shown: "Lebanon, PA"}
+  - {loc: "Berlin, DE", allow: us, country: "DE", keep: false}
+  - {loc: "Mumbai, IN", allow: us, country: "IN", keep: false}
+  - {loc: "Chennai, TN", allow: us, country: "IN", keep: false}
+  - {loc: "Toronto, CA", allow: us, country: "CA", keep: false}
+  - {loc: "Georgia", allow: us, country: "GE", keep: false}
