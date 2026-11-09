@@ -17,6 +17,7 @@ argument-hint: <job_id>
 `$1` = the 8-hex `job_id`. Run every step through to done without pausing
 (unattended runs depend on it). Read `.claude/shared/no_fab.md` first; it holds
 the writing rules and the fix loop this command follows.
+Run each command line below as its own Bash call; never join commands with `;` or `echo`.
 
 You make four choices. Code does everything else: it copies the fixed lines
 (name, contact, headers, dates, education) from `profile/resume.yaml`, keeps
