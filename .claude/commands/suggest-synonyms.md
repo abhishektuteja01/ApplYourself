@@ -60,8 +60,11 @@ or `profile/skills_master.md` yourself.
 ## `--auto` (nightly, nobody to ask)
 
 Runs Steps 1, 2, the Track 3 gap-fill and the memory-unlock reasoning, then writes
-only `jobs/synonyms_proposals.yaml` and runs `uv run synonyms apply`. Skip Step 3's
-draft file, the tables and Step 4. Print apply's output and stop.
+only `jobs/synonyms_proposals.yaml` and stops. Step 1 runs no shell commands: the
+stage has already written `jobs/synonyms_keywords.json`; only `Read` the files.
+Always write the file, with empty lists when there is nothing to propose. Skip
+Step 3's draft file, the tables and Step 4. Never run `uv run synonyms apply`;
+the stage runs it.
 
 ```yaml
 ready:                      # Track 1 rephrasings + Track 3 aliases
@@ -84,6 +87,8 @@ cites NO-FAB and REPHRASE-LICENSE by name; their definitions live there,
 not in this file.
 
 ## Step 1 — the roles with no resume, and their keywords
+
+Not in `--auto` (the stage has run it):
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
