@@ -26,8 +26,8 @@ writes `trace.md`, and records the folder in `state.yaml`.
 ## 1. Open the folder
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run verticals-check && uv run app new $1
-cd "$(git rev-parse --show-toplevel)" && uv run app dupes $1
+uv run verticals-check && uv run app new $1
+uv run app dupes $1
 ```
 
 Stop on a nonzero exit of `app new` and show the error. The JSON gives
@@ -75,7 +75,7 @@ skills:                           # optional; a line left out keeps its default 
 ## 4. Build
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app build resume $1
+uv run app build resume $1
 ```
 
 Exit 2 lists `problems` (`where`, `code`, `detail`): fix the plan and re-run,

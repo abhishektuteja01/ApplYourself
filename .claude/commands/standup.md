@@ -22,7 +22,6 @@ state.yaml.
 ## Step 1 — read the digest
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 uv run track standup --digest
 ```
 

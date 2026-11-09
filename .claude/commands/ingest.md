@@ -36,7 +36,6 @@ transition; `/track` is the sole writer (R10).
 Everything that can fail late is checked here, before a fetch or a judge.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 test -n "$2" || { echo "ERROR: /ingest requires <url> <vertical>."; exit 1; }
 uv run verticals-check || exit 1
 test -f profile/scoring.yaml || { echo "ERROR: profile/scoring.yaml missing -- score start reads it."; exit 1; }
@@ -52,14 +51,12 @@ which would otherwise fail only after a fetch, a judge and a `scored.parquet`
 write (`verticals-check` above already checked the resume sources):
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
 test -f profile/resume_template.docx || { echo "ERROR: profile/resume_template.docx missing -- /tailor needs it."; exit 1; }
 ```
 
 If `cover-letter` was requested, also:
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
 test -f profile/cover_letter_template.docx || { echo "ERROR: profile/cover_letter_template.docx missing -- /cover-letter needs it. Add it or drop the cover-letter token."; exit 1; }
 ```
 

@@ -54,10 +54,6 @@ NO-DRIFT and REPHRASE-LICENSE by name; their definitions live there.
 
 ## Step 0 — resolve the argument
 
-```bash
-cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
-```
-
 An 8-hex-character argument is a job_id; anything else is a vertical name. No argument:
 read the configured lanes and ask which one with `AskUserQuestion`.
 
@@ -72,7 +68,7 @@ uv run config verticals
 **Role mode:**
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app dir <job_id>
+uv run app dir <job_id>
 sed -n '1,40p' "pipeline/<job_id>/state.yaml"
 ```
 

@@ -24,7 +24,6 @@ repeatable. With no flags, a full run.
 ## Step 1 — preflight
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 uv run discovery-check
 ```
 
@@ -34,7 +33,6 @@ do not start a scrape against a broken config.
 ## Step 2 — scrape
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
 uv run discover <the user's flags, verbatim>
 ```
 
@@ -45,7 +43,6 @@ boards still due.
 ## Step 3 — digest
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
 uv run discover-digest --json
 ```
 

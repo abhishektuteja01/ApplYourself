@@ -20,7 +20,7 @@ argument-hint: <job_id> [--refresh]
 ## 1. Find the folder
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app dir $1
+uv run app dir $1
 ```
 
 An empty `dir` means no resume is built yet: stop and tell the user to run
@@ -63,7 +63,7 @@ invented "why us".
 ## 4. Build
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app build answers $1
+uv run app build answers $1
 ```
 
 On exit 2, follow the fix loop in `no_fab.md`. Report which keys are answered

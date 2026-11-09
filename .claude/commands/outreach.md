@@ -28,7 +28,6 @@ Draft only -- the user sends.
 ## Step 1 — HARD-REFUSE prereqs (no silent generic-voice fallback)
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 test -s profile/voice_samples.md || {
     cat <<'ERR'
 ERROR: profile/voice_samples.md is missing or empty.
@@ -104,7 +103,7 @@ Read:
 - the work-authorization row for the job's country, which sets the disclosure:
 
   ```bash
-  cd "$(git rev-parse --show-toplevel)" && uv run config work-auth '<the country in state.yaml location>'
+  uv run config work-auth '<the country in state.yaml location>'
   # Leave the country out for a remote or unnamed one: the home country applies.
   ```
 
@@ -181,7 +180,7 @@ header or the JD; the build refuses one that is not.
 ## Step 4 — build the draft
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app build outreach <job_id>
+uv run app build outreach <job_id>
 ```
 
 It fixes mechanical slips, then checks the shape, the word limits (`length`),

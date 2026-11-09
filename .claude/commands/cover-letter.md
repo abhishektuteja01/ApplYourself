@@ -24,7 +24,7 @@ argument-hint: <job_id> [--to "Hiring Manager Name"]
 ## 1. Find the folder
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app dir $1
+uv run app dir $1
 ```
 
 An empty `dir` means no resume is built yet: stop and tell the user to run
@@ -74,7 +74,7 @@ may not add a claim, tool, number or scope. Write the edited text back into
 ## 6. Build
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app build letter $1
+uv run app build letter $1
 ```
 
 On exit 2, follow the fix loop in `no_fab.md`. A `pages` problem means cut the
@@ -83,7 +83,7 @@ body, or merge two paragraphs, and build again.
 ## 7. Move the role on
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run track $1 tailored --if saved --note "resume + cover letter on file"
+uv run track $1 tailored --if saved --note "resume + cover letter on file"
 ```
 
 This fires only from `saved`, so a re-run never drags an applied role back.

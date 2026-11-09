@@ -40,7 +40,7 @@ never a shell variable from an earlier call.
 ## 1. Prepare
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run apply prepare <job_id>
+uv run apply prepare <job_id>
 ```
 
 It checks the role (`saved` or `tailored`, a resume on file), the bank and
@@ -48,7 +48,7 @@ Playwright, and prints `OUT_DIR`, `VERTICAL`, `COMPANY_ANSWERS` and
 `OVERRIDES_FILE` (reset to `{"job_id": ...}`). Any error: stop and report it.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run app dupes <job_id>
+uv run app dupes <job_id>
 ```
 
 Each entry in `duplicates` is another job_id that may be this same role and is
@@ -59,8 +59,8 @@ on a no, stop and suggest `/track <job_id> skip`.
 ## 2. Plan
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run apply plan <job_id> --questions
-cd "$(git rev-parse --show-toplevel)" && uv run apply plan <job_id> --json > <OUT_DIR>/plan.json
+uv run apply plan <job_id> --questions
+uv run apply plan <job_id> --json > <OUT_DIR>/plan.json
 ```
 
 - Exit 2: the posting is gone. Report `EXPIRED` and suggest `/track <job_id> skip`.
@@ -92,7 +92,7 @@ stop. If either ran, re-run step 2: the bank's `why_company`, `why_role` and
 Then, only if the plan has no cover-letter park:
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run track <job_id> tailored --if saved --note "resume on file; board needs no cover letter, or one exists"
+uv run track <job_id> tailored --if saved --note "resume on file; board needs no cover letter, or one exists"
 ```
 
 ## 4. Answer what the bank does not know
@@ -172,7 +172,7 @@ or date. Write the edited text back into the same entries.
 ## 6. Check, then ask the user
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run apply plan <job_id> --questions --answers <OVERRIDES_FILE>
+uv run apply plan <job_id> --questions --answers <OVERRIDES_FILE>
 ```
 
 - Exit 1 with `OVERRIDES IGNORED`: an id not on the form, an identity/EEOC
@@ -214,7 +214,7 @@ drafted file waits, and `uv run apply sheet` marks the role "Needs your OK".
 ## 7. Fill, and submit only with `--submit`
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json [--submit]
+uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json [--submit]
 ```
 
 One browser, one fill. It saves the confirmed answers to the bank, fills the

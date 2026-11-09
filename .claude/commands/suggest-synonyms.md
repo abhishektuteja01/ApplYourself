@@ -91,7 +91,6 @@ not in this file.
 Not in `--auto` (the stage has run it):
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || { echo "ERROR: not inside the repo."; exit 1; }
 uv run apply sheet --add >/dev/null
 uv run synonyms keywords > jobs/synonyms_keywords.json
 ```
