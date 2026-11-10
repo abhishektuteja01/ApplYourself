@@ -1,0 +1,6 @@
+# Fake profile ids the eu_remote persona's prose cases may cite.
+B-EU-TRIAGE-01
+B-EU-TRIAGE-02
+B-EU-API-01
+S-EU-OUTAGE
+SKILL-PYTHON

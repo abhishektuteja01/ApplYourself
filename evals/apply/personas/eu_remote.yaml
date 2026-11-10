@@ -1,0 +1,80 @@
+# Eval persona: a German (EU) citizen in Berlin who works remote only.
+# Fictional. Loaded by applyourself.evals.cases.load_persona (never reads resume.yaml).
+schema_version: 3
+identity:
+  first_name: Robin
+  last_name: Muster
+  preferred_name: Robin
+  email: robin@example.com
+  phone: "+49 30 5550103"
+  location: Berlin, Germany
+  country: Germany
+education:
+  school: Beispiel Technical University
+  degree: Master's Degree
+  discipline: Informatics
+  start_year: 2015
+  end_year: 2018
+  start_month: October
+  end_month: September
+employment:
+  company_name: Sprocket Labs
+  title: Backend Engineer
+  start_month: January
+  start_year: 2020
+  end_month: August
+  end_year: 2026
+  current_role: true
+work_authorization:
+  us_person: "no"
+  nationalities: [Germany]
+  countries:
+    default: {authorized: false, requires_sponsorship: true}
+    Germany:
+      authorized: true
+      requires_sponsorship: false
+      unrestricted: true
+      status_label: German citizen
+      start_in_days: 30
+      salary: {amount: 85000, currency: EUR}
+    European Union: {authorized: true, requires_sponsorship: false, unrestricted: true}
+    France: {authorized: true, requires_sponsorship: false, unrestricted: true}
+    Netherlands: {authorized: true, requires_sponsorship: false, unrestricted: true}
+    Ireland: {authorized: true, requires_sponsorship: false, unrestricted: true}
+    Spain: {authorized: true, requires_sponsorship: false, unrestricted: true}
+    United States: {authorized: false, requires_sponsorship: true}
+facts:
+  F-CITIZENSHIP: German citizen (an EU citizen); holds no other citizenship.
+  F-SPONSORSHIP: Needs no sponsorship anywhere in the EU; would need a visa and sponsorship to work in the United States, the United Kingdom or anywhere else outside the EU.
+  F-RESIDENCE: Lives in Berlin, Germany.
+  F-ONSITE: Works fully remote only; will not work onsite or hybrid anywhere, not even in Berlin.
+  F-RELOCATION: Will not relocate.
+  F-PYTHON-YEARS: 6 years of professional Python.
+  F-SQL-YEARS: 8 years of professional SQL.
+  F-KUBERNETES-YEARS: 3 years of Kubernetes.
+  F-ADULT: Is over 18 years old.
+  F-LANGUAGES: Fluent in German, English and French.
+cover_letter: when_required
+questions:
+  linkedin:
+    answer: https://linkedin.com/in/robin-muster-example
+    wordings: ["LinkedIn Profile", "LinkedIn URL"]
+  salary:
+    answer: {computed: salary, fallback: ["85000"]}
+    wordings: ["What are your salary expectations?", "Desired salary"]
+  start_date:
+    answer: {computed: start_date}
+    wordings: ["When can you start?", "Earliest start date"]
+  languages_fluent:
+    answer: [German, English, French]
+    wordings: ["Which languages are you fluent in?"]
+  how_did_you_hear:
+    answer: {computed: how_heard, fallback: [Careers Page, Other]}
+    wordings: ["How did you hear about us?"]
+  llm_project:
+    answer: >-
+      At Sprocket Labs I built an LLM triage service for inbound bug reports
+      that routes eight in ten tickets to the right team without a human, with
+      a weekly labelled sample to catch drift.
+    wordings: ["Describe a project where you shipped an LLM feature to production."]
+    source: B-EU-TRIAGE-01

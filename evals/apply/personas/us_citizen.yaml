@@ -1,0 +1,74 @@
+# Eval persona: a US citizen who works onsite in the US only.
+# Fictional. Loaded by applyourself.evals.cases.load_persona (never reads resume.yaml).
+schema_version: 3
+identity:
+  first_name: Casey
+  last_name: Placeholder
+  preferred_name: Casey
+  email: casey@example.com
+  phone: "+1 555 0102"
+  location: Sampleville, Texas, United States
+  country: United States
+education:
+  school: Sample State University
+  degree: Bachelor's Degree
+  discipline: Electrical Engineering
+  start_year: 2010
+  end_year: 2014
+  start_month: August
+  end_month: May
+employment:
+  company_name: Gizmo Dynamics
+  title: Senior Software Engineer
+  start_month: March
+  start_year: 2019
+  end_month: September
+  end_year: 2026
+  current_role: true
+work_authorization:
+  us_person: "yes"
+  nationalities: [United States]
+  countries:
+    default: {authorized: false, requires_sponsorship: true}
+    United States:
+      authorized: true
+      requires_sponsorship: false
+      unrestricted: true
+      status_label: US Citizen
+      start_in_days: 21
+      salary: {amount: 185000, currency: USD}
+facts:
+  F-CITIZENSHIP: US citizen by birth; holds no other citizenship.
+  F-SPONSORSHIP: Needs no sponsorship in the United States, now or ever; would need a visa for any other country.
+  F-RESIDENCE: Lives in Texas, United States.
+  F-ONSITE: Will work onsite or hybrid anywhere in the United States, any number of days; will not work outside the United States.
+  F-RELOCATION: Willing to relocate within the United States; requires relocation assistance to move.
+  F-PYTHON-YEARS: 11 years of professional Python.
+  F-SQL-YEARS: 9 years of professional SQL.
+  F-KUBERNETES-YEARS: 5 years of Kubernetes.
+  F-ADULT: Is over 18 years old.
+  F-LANGUAGES: Fluent in English and Spanish.
+cover_letter: when_required
+questions:
+  linkedin:
+    answer: https://linkedin.com/in/casey-placeholder-example
+    wordings: ["LinkedIn Profile", "LinkedIn URL"]
+  salary:
+    answer: {computed: salary, fallback: ["185000"]}
+    wordings: ["What are your salary expectations?", "Desired salary"]
+  start_date:
+    answer: {computed: start_date}
+    wordings: ["When can you start?", "Earliest start date"]
+  languages_fluent:
+    answer: [English, Spanish]
+    wordings: ["Which languages are you fluent in?"]
+  how_did_you_hear:
+    answer: {computed: how_heard, fallback: [Careers Page, Other]}
+    wordings: ["How did you hear about us?"]
+  llm_project:
+    answer: >-
+      At Gizmo Dynamics I led the move of our search ranking to an LLM
+      re-ranker, shipped behind a shadow test, and lifted click-through by
+      nine percent while holding p95 latency under 300 ms.
+    wordings: ["Describe a project where you shipped an LLM feature to production."]
+    source: B-USC-RANK-01

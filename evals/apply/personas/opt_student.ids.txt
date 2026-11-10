@@ -1,0 +1,6 @@
+# Fake profile ids the opt_student persona's prose cases may cite.
+B-OPT-RAG-01
+B-OPT-RAG-02
+B-OPT-EVAL-01
+S-OPT-ONCALL
+SKILL-PYTHON

@@ -1,0 +1,6 @@
+# Fake profile ids the us_citizen persona's prose cases may cite.
+B-USC-RANK-01
+B-USC-RANK-02
+B-USC-PLATFORM-01
+S-USC-MIGRATION
+SKILL-PYTHON

@@ -60,6 +60,7 @@ TOP_LEVEL_KEYS = (
     "claims",
     "questions",
     "fact_wordings",
+    "facts",
     # Not an answer: whether an optional cover-letter upload gets a letter.
     "cover_letter",
 )
@@ -213,6 +214,9 @@ class Answers:
     classify (export control, a negated sponsorship question), judged once and
     answered from your facts on every later board."""
     cover_letter: str = "when_required"
+    facts: dict[str, str] = field(default_factory=dict)
+    """`F-<ID>` -> one plain sentence the user states about themself; a judged
+    answer cites these ids as its basis."""
 
     # Per role, set by the caller after loading (see apply_cli.build()).
     job_country: str = ""
@@ -541,6 +545,21 @@ def _parse_fact_wordings(data) -> dict[str, dict]:
     return out
 
 
+FACT_ID = re.compile(r"^F-[A-Z0-9-]+$")
+
+
+def _parse_facts(data) -> dict[str, str]:
+    raw = data.get("facts") or {}
+    if not isinstance(raw, dict):
+        raise AnswersError("facts: must map an F- id to one sentence")
+    out: dict[str, str] = {}
+    for fid, text in raw.items():
+        if not isinstance(fid, str) or not FACT_ID.match(fid):
+            raise AnswersError(f"facts[{fid!r}]: the id must match {FACT_ID.pattern}")
+        out[fid] = _require_str(text, f"facts[{fid!r}]")
+    return out
+
+
 def _fact_candidates(path: str, identity, education, employment, where: str) -> tuple[str, ...]:
     blocks = {"identity": identity, "education": education, "employment": employment or {}}
     head, _, key = path.partition(".")
@@ -778,6 +797,7 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
         demographic_answers=_parse_demographics(data),
         fact_wordings=_parse_fact_wordings(data),
         cover_letter=cover_letter,
+        facts=_parse_facts(data),
     )
 
 

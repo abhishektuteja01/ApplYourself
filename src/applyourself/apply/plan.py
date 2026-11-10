@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
 
+from applyourself.apply import judged
 from applyourself.apply.answers import (
     Answers,
     Resolution,
@@ -326,6 +327,14 @@ class Override:
     fact: dict | None = None
     """For a yes/no work-authorization or export-control label the code cannot
     classify: `{fact, yes_when}`. The answer is computed from your facts."""
+    decision: str = ""
+    """A judged answer's kind (`judged.DECISIONS`); `judged.render` turns it
+    into the value. Empty on a session's plain override."""
+    basis: tuple[str, ...] = ()
+    """For a judged option or text: the `F-`/`B-`/`S-`/`SKILL-` ids or words
+    (`jd`, `company_answers`, `option`) it rests on."""
+    ask: str = ""
+    """For a judged `ask`: what to ask the user."""
 
 
 # Fields no override may touch: identity and EEOC come from stated facts only.
@@ -458,6 +467,55 @@ def _unmapped(
     )
 
 
+# ------------------------------------------------------------------ override gate
+
+
+_FACT_ONLY_B0 = "a fact judgment is only for a work-authorization or export-control question"
+_EXPORT_US_PERSON = "export control takes only a us_person fact judgment"
+
+
+def apply_override(
+    field: MergedField,
+    resolution: Resolution,
+    override: Override,
+    answers: Answers,
+    company: str = "",
+    *,
+    known_ids: set[str] | None = None,
+) -> tuple[Resolution, str]:
+    """`(resolution, "")` once `override` replaces the code's own `resolution`,
+    or `(resolution, why)` unchanged when the gate refuses it. Identity and
+    EEOC take no override; a fact answers only a work-authorization field;
+    export control takes only a fact (a judged one only `us_person`).
+    `known_ids`: the profile ids a judged basis may cite (an eval persona's)."""
+    if resolution.tier in _CLOSED_TIERS:
+        return resolution, "identity and EEOC fields take no override"
+    export = resolution.source == "export_control"
+    fact = override.fact if override.decision in ("", "fact") else None
+    if override.decision == "fact" or fact is not None:
+        if resolution.tier != "B0":
+            return resolution, _FACT_ONLY_B0
+        if override.decision and export and (fact or {}).get("fact") != "us_person":
+            return resolution, _EXPORT_US_PERSON
+    elif export:
+        if override.decision:
+            return resolution, _EXPORT_US_PERSON
+        return (
+            resolution,
+            "export control takes a fact judgment ({fact, yes_when}), never a typed value",
+        )
+    if override.decision:
+        rendered = judged.render(
+            field, override, answers, company, tier=resolution.tier, known_ids=known_ids
+        )
+        return rendered, ""
+    if fact is not None:
+        return resolve_fact_wording(field, answers, fact), ""
+    return _override_resolution(
+        field, override.value, override.source, resolution.tier, company
+    ), ""
+
+
 # ------------------------------------------------------------------ build
 
 
@@ -540,28 +598,15 @@ def build_plan(
 
         resolution = resolve(field, answers)
         replaced = ""
+        judged_skip = False
         if override is not None and field.kind != "file":
-            if resolution.tier in _CLOSED_TIERS:
-                ignored.append(f"{field.id}: identity and EEOC fields take no override")
-            elif override.fact is not None:
-                if resolution.tier != "B0":
-                    ignored.append(
-                        f"{field.id}: a fact judgment is only for a "
-                        "work-authorization or export-control question"
-                    )
-                else:
-                    replaced = resolution.source
-                    resolution = resolve_fact_wording(field, answers, override.fact)
-            elif resolution.source == "export_control":
-                ignored.append(
-                    f"{field.id}: export control takes a fact judgment "
-                    "({fact, yes_when}), never a typed value"
-                )
+            applied, why = apply_override(field, resolution, override, answers, company)
+            if why:
+                ignored.append(f"{field.id}: {why}")
             else:
                 replaced = resolution.source
-                resolution = _override_resolution(
-                    field, override.value, override.source, resolution.tier, company
-                )
+                judged_skip = bool(override.decision) and applied.action == "skip"
+                resolution = applied
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution, answers=answers))
@@ -573,7 +618,7 @@ def build_plan(
                     f"{field.id!r} is required and resolved to skip "
                     f"({resolution.reason!r}) — a required field may only fill or park"
                 )
-            if resolution.tier == "C" and field.kind in DRAFTABLE_KINDS:
+            if resolution.tier == "C" and field.kind in DRAFTABLE_KINDS and not judged_skip:
                 # Optional and unmatched, but a human would answer it. /apply
                 # gets the chance; leaving it blank stays a valid outcome.
                 draftable.append(_unmapped(field, resolution, answers=answers))

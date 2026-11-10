@@ -1,0 +1,79 @@
+# Eval persona: an F-1 STEM OPT holder in the US who will need sponsorship later.
+# Fictional. Loaded by applyourself.evals.cases.load_persona (never reads resume.yaml).
+schema_version: 3
+identity:
+  first_name: Jordan
+  last_name: Sample
+  preferred_name: Jordan
+  email: jordan@example.com
+  phone: "+1 555 0101"
+  location: Exampletown, Massachusetts, United States
+  country: United States
+education:
+  school: Example University
+  degree: Master's Degree
+  discipline: Computer Science
+  start_year: 2023
+  end_year: 2025
+  start_month: September
+  end_month: May
+employment:
+  company_name: Widget Corp
+  title: Machine Learning Engineer
+  start_month: June
+  start_year: 2025
+  end_month: October
+  end_year: 2026
+  current_role: true
+work_authorization:
+  us_person: "no"
+  nationalities: [India]
+  countries:
+    default: {authorized: false, requires_sponsorship: true}
+    United States:
+      authorized: true
+      requires_sponsorship: true
+      status_label: F-1 STEM OPT
+      followup: Authorized under F-1 STEM OPT; will need H-1B sponsorship when it ends.
+      start_in_days: 14
+      salary: {amount: 120000, currency: USD}
+    India: {authorized: true, requires_sponsorship: false, unrestricted: true}
+facts:
+  F-CITIZENSHIP: Citizen of India only; not a US citizen or permanent resident.
+  F-VISA: Holds F-1 status with STEM OPT, authorized to work in the United States today.
+  F-SPONSORSHIP-NOW: Needs no visa sponsorship today; authorized to work in the United States without sponsorship under STEM OPT, so a question with no time frame ("authorized to work without sponsorship?") is Yes.
+  F-SPONSORSHIP-FUTURE: Will need H-1B sponsorship in the United States when OPT ends, so a question about the future ("now or in the future", "ever", "will you require") reflects that need.
+  F-RESIDENCE: Lives in Massachusetts, United States.
+  F-ONSITE: Will work onsite or hybrid anywhere in the United States, any number of days.
+  F-RELOCATION: Willing to relocate anywhere in the United States at own cost; does not require relocation assistance.
+  F-PYTHON-YEARS: 4 years of professional Python.
+  F-SQL-YEARS: 3 years of professional SQL.
+  F-KUBERNETES-YEARS: 1 year of Kubernetes.
+  F-ADULT: Is over 18 years old.
+  F-LANGUAGES: Fluent in English and Hindi.
+  F-CONSENT-AI-NOTETAKER: Consents to AI notetakers recording and transcribing interviews.
+  F-CONSENT-DATA-RETENTION: Consents to the employer keeping the application on file for future roles.
+cover_letter: when_required
+questions:
+  linkedin:
+    answer: https://linkedin.com/in/jordan-sample-example
+    wordings: ["LinkedIn Profile", "LinkedIn URL"]
+  salary:
+    answer: {computed: salary, fallback: ["120000"]}
+    wordings: ["What are your salary expectations?", "Desired salary"]
+  start_date:
+    answer: {computed: start_date}
+    wordings: ["When can you start?", "Earliest start date"]
+  languages_fluent:
+    answer: [English, Hindi]
+    wordings: ["Which languages are you fluent in?"]
+  how_did_you_hear:
+    answer: {computed: how_heard, fallback: [Careers Page, Other]}
+    wordings: ["How did you hear about us?"]
+  llm_project:
+    answer: >-
+      At Widget Corp I built a retrieval pipeline over support tickets that cut
+      median answer time from four hours to forty minutes, with an offline eval
+      set gating every prompt change.
+    wordings: ["Describe a project where you shipped an LLM feature to production."]
+    source: B-OPT-RAG-01

@@ -22,6 +22,7 @@ country: the same person is authorized in one country and not in another.
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
@@ -848,8 +849,43 @@ def _resolve_nationality(field: MergedField, answers: Answers) -> Resolution:
     return _fill(picked, "B0")
 
 
+@functools.cache
+def _us_place_patterns() -> tuple[re.Pattern, re.Pattern]:
+    """A US state, DC or a US-like territory by name ("California", "Puerto
+    Rico", "U.S. Virgin Islands"), and a state code after a comma ("San Jose,
+    CA"). A name that is also a country ("Georgia") is left out."""
+    import pycountry
+
+    from applyourself.shared.countries import canonical_country
+    from applyourself.shared.location.places import US_LIKE
+
+    subs = [
+        (code, s.name)
+        for s in pycountry.subdivisions.get(country_code="US")
+        if (code := s.code.split("-")[1]) in US_LIKE or s.type != "Outlying area"
+    ]
+    names = [
+        re.escape(name)
+        for code, name in subs
+        if "," not in name and (code in US_LIKE or not canonical_country(name))
+    ]
+    names.append(r"u\.?s\.?\s+virgin\s+islands|usvi")
+    codes = "|".join(code for code, _ in subs)
+    return (
+        re.compile(r"(?<![\w.])(?:" + "|".join(names) + r")(?![\w])", re.IGNORECASE),
+        re.compile(r",\s*(?:" + codes + r")\b"),
+    )
+
+
 def _question_countries(label: str, answers: Answers) -> list[str]:
+    """The countries a work-authorization label names, a US state or
+    territory counting as the United States; else the job's country."""
     named = places_named(label)
+    by_name, by_code = _us_place_patterns()
+    # A state code only in mixed case: in capitals ", OR" is a word.
+    us = by_name.search(label or "") or (not label.isupper() and by_code.search(label or ""))
+    if us and "United States" not in named:
+        named.append("United States")
     return named or [answers.country]
 
 
@@ -1167,6 +1203,14 @@ def _resolve_question(field: MergedField, answers: Answers) -> Resolution | None
     if found is None:
         return None
     question, source = found
+    return answer_question(question, field, answers, source)
+
+
+def answer_question(
+    question: Question, field: MergedField, answers: Answers, source: str
+) -> Resolution:
+    """`question`'s answer rendered for `field`: computed, role file, a board
+    option or its first spelling, tagged `source`."""
     if question.only_when_required and not field.required:
         return _skip(f"{question.id} is only_when_required and this field is optional", "B")
     if field.kind == "file":

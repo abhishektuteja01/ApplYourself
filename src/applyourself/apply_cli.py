@@ -132,9 +132,21 @@ def ledger_path() -> Path:
     return paths.APPLY_RUNS / ledger.LEDGER_NAME
 
 
-# What an `--answers` entry may carry. `label` is a record for the reader; the
-# rest is read.
-OVERRIDE_KEYS = ("value", "source", "question", "claim", "keyword", "fact", "label")
+# What an `--answers` entry may carry. `label` and `why` are records for the
+# reader; the rest is read.
+OVERRIDE_KEYS = (
+    "value",
+    "source",
+    "question",
+    "claim",
+    "keyword",
+    "fact",
+    "label",
+    "decision",
+    "basis",
+    "ask",
+    "why",
+)
 CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 
 
@@ -321,8 +333,8 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
                 f"{where} has unknown keys {sorted(unknown)}; allowed: {', '.join(OVERRIDE_KEYS)}"
             )
         fact = entry.get("fact")
-        if fact is not None:
-            if (
+        if fact is not None or "decision" in entry:
+            if fact is not None and (
                 not isinstance(fact, dict)
                 or set(fact) != {"fact", "yes_when"}
                 or fact["fact"] not in FACT_WORDING_FACTS
@@ -332,22 +344,15 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
                     f'{where} fact is {{"fact": one of '
                     f'{", ".join(FACT_WORDING_FACTS)}, "yes_when": true|false}}'
                 )
+            if "decision" in entry:
+                overrides[field_id] = _judged_override(entry, where)
+                continue
             overrides[field_id] = Override(
                 value="", source=str(entry.get("source") or ""), fact=dict(fact)
             )
             continue
-        value = entry.get("value")
-        if isinstance(value, list):
-            if not value or not all(isinstance(v, str) and v.strip() for v in value):
-                raise ApplyCliError(f"{where} value list must hold non-empty strings")
-            value = tuple(v.strip() for v in value)
-        elif isinstance(value, str) and value.strip():
-            value = value.strip()
-        else:
-            raise ApplyCliError(f"{where} value must be a non-empty string or list")
-        question = str(entry.get("question") or "").strip()
-        if question and not re.fullmatch(r"[a-z0-9_]+", question):
-            raise ApplyCliError(f"{where} question id is lowercase letters, digits and _")
+        value = _override_value(entry.get("value"), where)
+        question = _question_id(entry, where)
         claim = entry.get("claim")
         if claim is not None:
             if not isinstance(claim, dict) or not claim or set(claim) - set(CLAIM_KEYS):
@@ -364,6 +369,65 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
             keyword=keyword,
         )
     return overrides
+
+
+def _override_value(value, where: str) -> str | tuple[str, ...]:
+    if isinstance(value, list):
+        if not value or not all(isinstance(v, str) and v.strip() for v in value):
+            raise ApplyCliError(f"{where} value list must hold non-empty strings")
+        return tuple(v.strip() for v in value)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    raise ApplyCliError(f"{where} value must be a non-empty string or list")
+
+
+def _question_id(entry: dict, where: str) -> str:
+    question = str(entry.get("question") or "").strip()
+    if question and not re.fullmatch(r"[a-z0-9_]+", question):
+        raise ApplyCliError(f"{where} question id is lowercase letters, digits and _")
+    return question
+
+
+def _judged_override(entry: dict, where: str) -> Override:
+    """A judged entry (`judged.DECISIONS`): only `option` and `text` carry a
+    value, and theirs needs a basis."""
+    from applyourself.apply.judged import DECISIONS
+
+    decision = entry["decision"]
+    if decision not in DECISIONS:
+        raise ApplyCliError(f"{where} decision is one of {', '.join(DECISIONS)}")
+    if entry.get("claim") is not None or entry.get("keyword"):
+        raise ApplyCliError(f"{where} a judged entry takes no claim or keyword")
+    source = str(entry.get("source") or "")
+    if decision == "question":
+        question = _question_id(entry, where)
+        if not question:
+            raise ApplyCliError(f"{where} a question decision names a bank question")
+        return Override(value="", source=source, question=question, decision=decision)
+    if decision == "fact":
+        if entry.get("fact") is None:
+            raise ApplyCliError(f"{where} a fact decision needs a fact")
+        return Override(value="", source=source, fact=dict(entry["fact"]), decision=decision)
+    if decision == "ask":
+        ask = entry.get("ask")
+        if not isinstance(ask, str) or not ask.strip():
+            raise ApplyCliError(f"{where} an ask decision says what to ask")
+        return Override(value="", source=source, ask=ask.strip(), decision=decision)
+    if decision == "skip":
+        return Override(value="", source=source, decision=decision)
+    basis = entry.get("basis")
+    if (
+        not isinstance(basis, list)
+        or not basis
+        or not all(isinstance(b, str) and b.strip() for b in basis)
+    ):
+        raise ApplyCliError(f"{where} basis must be a non-empty list of ids")
+    return Override(
+        value=_override_value(entry.get("value"), where),
+        source=source or basis[0].strip(),
+        decision=decision,
+        basis=tuple(b.strip() for b in basis),
+    )
 
 
 def answers_confirmed(path: Path | None) -> bool:
@@ -1782,6 +1846,10 @@ def main(argv: list[str] | None = None) -> int:
     tch.add_argument("--source", default="user")
     tch.add_argument("--path", default=None, type=Path, help="bank path (tests)")
     tch.set_defaults(func=_cmd_teach)
+
+    from applyourself.apply import judge_cli
+
+    judge_cli.register(sub)
 
     args = parser.parse_args(argv)
     return args.func(args)
