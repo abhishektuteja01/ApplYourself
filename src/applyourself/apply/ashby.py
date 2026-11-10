@@ -301,8 +301,8 @@ def _education_history_fields(field: dict, path: str) -> list[MergedField]:
     fields = []
     for sub in _EDUCATION_SUBFIELD_ORDER:
         declared = field.get(sub)
-        if declared is None:
-            continue  # this board does not collect that sub-field
+        if declared is None or str(declared).lower() == "excluded":
+            continue  # this board does not collect (or render) that sub-field
         required = str(declared).lower() == "required"
         if sub not in _EDUCATION_SUBFIELDS and not required:
             # An unmapped sub-field is dropped while optional rather than

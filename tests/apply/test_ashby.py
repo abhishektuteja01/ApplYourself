@@ -467,6 +467,13 @@ class TestEducationHistoryIsExpandedNotRejected:
         field = {k: v for k, v in self.FIELD.items() if k != "degree"}
         assert "degree--0" not in self._fields(field)
 
+    def test_an_excluded_subfield_is_absent(self):
+        """Quora's shape: `"degree": "excluded"` renders no degree control, and
+        emitting one timed the fill out waiting for it."""
+        field = dict(self.FIELD, degree="excluded", major="excluded")
+        ids = {i for i in self._fields(field) if "--0" in i}
+        assert ids == {"school--0"}
+
     def test_the_required_school_resolves_from_config(self, answers, tailor_dir):
         plan = build_plan(
             fields_from_application_form(self._payload()), answers, tailor_dir, ats="ashby"
