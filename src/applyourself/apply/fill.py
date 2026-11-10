@@ -498,13 +498,11 @@ def _probe_parked_selects(
 def blocking_questions(plan: Plan, result: FillResult) -> tuple[str, ...]:
     """Required questions still unanswered after fill-time recovery.
 
-    `plan.unmapped` is required-only by construction — `answers.resolve`
-    demotes an unmatched *optional* question to skip/draftable before it can
-    ever reach `Plan.unmapped` (see `resolve()`'s `_park`/`_skip` call sites),
-    so nothing here has to re-check `.required`; it would always be true.
+    `Plan.required_parked`, not all of `plan.unmapped`: an optional field the
+    judge asked about parks too, and is never a reason to refuse the click.
     """
     recovered = set(result.recovered)
-    return tuple(u.id for u in plan.unmapped if u.id not in recovered)
+    return tuple(i for i in plan.required_parked if i not in recovered)
 
 
 def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
@@ -521,10 +519,10 @@ def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
     the plan's list: for a DOM-only select the plan's list is empty, and the
     real one only exists once the widget has been opened.
     """
-    recovered = set(result.recovered)
+    blocking = set(blocking_questions(plan, result))
     rows = []
     for u in plan.unmapped:
-        if u.id in recovered:
+        if u.id not in blocking:
             continue
         rows.append(
             {

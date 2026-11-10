@@ -531,6 +531,15 @@ class TestParkedProbe:
         result = fill_plan(self._plan_with(self._parked()), d)
         assert result.ok
 
+    def test_an_optional_parked_question_never_blocks(self):
+        """An optional field the judge asked about parks, but the role stays submittable."""
+        optional = self._parked(id="question_9", kind="textarea", required=False)
+        p = self._plan_with(optional)
+        result = fill_plan(p, FakeDriver())
+        assert not p.parked
+        assert F.blocking_questions(p, result) == ()
+        assert F.blocking_details(p, result) == ()
+
     def test_the_probe_does_not_overwrite_options_read_while_filling(self):
         d = FakeDriver(options={"country": ("United States +1",)})
         p = plan(fields=[field(id="country", kind="react_select", value="United States")])

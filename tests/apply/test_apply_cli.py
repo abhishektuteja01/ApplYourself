@@ -837,7 +837,7 @@ class TestRunQueue:
         ]
 
     def test_a_recovered_field_is_no_longer_blocking(self, monkeypatch):
-        u = type("U", (), {"id": "hispanic_ethnicity"})()
+        u = type("U", (), {"id": "hispanic_ethnicity", "required": True, "blocks": False})()
         monkeypatch.setattr(
             apply_cli, "build", lambda job_id, **kw: (_fake_plan(job_id, unmapped=[u]), None)
         )
