@@ -122,6 +122,7 @@ _DEMOGRAPHIC_IDS = {
 # label naming race is the race question even when it also says "Hispanic".
 _RACE_LABEL = re.compile(r"\brace\b|racial|ethnic", re.IGNORECASE)
 _DEMOGRAPHIC_LABELS = (
+    ("sexual_orientation", re.compile(r"sexual\s+orientation|\bsexuality\b", re.IGNORECASE)),
     ("veteran_status", re.compile(r"veteran|armed\s+forces|military\s+service", re.IGNORECASE)),
     ("disability_status", re.compile(r"disabilit", re.IGNORECASE)),
     ("hispanic_ethnicity", re.compile(r"hispanic|latin[oax]", re.IGNORECASE)),

@@ -76,8 +76,15 @@ COMPUTED = ("salary", "start_date", "how_heard")
 COVER_LETTER_POLICIES = ("when_required", "when_offered")
 
 # The demographic topics `demographics.answers` may state. Any other
-# demographic question (sexual orientation, transgender, pronouns) opts out.
-DEMOGRAPHIC_TOPICS = ("gender", "race", "hispanic_ethnicity", "veteran_status", "disability_status")
+# demographic question (transgender, pronouns) opts out.
+DEMOGRAPHIC_TOPICS = (
+    "gender",
+    "race",
+    "hispanic_ethnicity",
+    "veteran_status",
+    "disability_status",
+    "sexual_orientation",
+)
 
 
 # Anything work-authorization shaped. A label that lands in here parks for the

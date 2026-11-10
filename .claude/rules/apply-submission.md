@@ -21,7 +21,8 @@ report lists them under `manual`, not `failed`.
   name, mailto:/tel: contact, the first plain contact line, `education[0]`, the
   work context that ended last; employment only when the bank has the block),
   `demographics.answers` (topic -> spellings: `gender`, `race`,
-  `hispanic_ethnicity`, `veteran_status`, `disability_status`), and `work_authorization` (`us_person`, `nationalities`, and a
+  `hispanic_ethnicity`, `veteran_status`, `disability_status`,
+  `sexual_orientation`), and `work_authorization` (`us_person`, `nationalities`, and a
   per-country table of `authorized`, `requires_sponsorship`, `unrestricted`,
   `status_label`, `followup`, `start_in_days`, `visa_salary_floor`
   (`{amount, currency, per: year|month, note}`, the visa's lowest gross salary),

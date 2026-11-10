@@ -45,6 +45,7 @@ employment:
 #   answers:
 #     gender: ["Male", "Man"]
 #     hispanic_ethnicity: ["No", "Not Hispanic or Latino"]
+#     sexual_orientation: ["Heterosexual", "Straight"]
 
 # when_required: attach a cover letter only where the board requires one.
 # when_offered: wherever the board has a cover-letter upload (/apply writes one).

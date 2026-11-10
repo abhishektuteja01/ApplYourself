@@ -1225,6 +1225,19 @@ class TestOwnDemographicAnswers:
             )
             assert resolve(f, mine).value == expected, label
 
+    def test_sexual_orientation_is_its_own_topic(self, tmp_path):
+        """A sexual-orientation label is never the gender question, though both say sex."""
+        demo = {"answers": {**MY_DEMOGRAPHICS["answers"], "sexual_orientation": ["Heterosexual"]}}
+        mine = load_answers(write_config(tmp_path, demographics=demo))
+        f = field(
+            id="4011227007",
+            label="How would you describe your sexual orientation?",
+            section="demographic",
+            kind="react_select",
+            options=["Gay", "Heterosexual or straight", "Man", "I don't wish to answer"],
+        )
+        assert resolve(f, mine).value == "Heterosexual or straight"
+
     def test_asian_never_matches_inside_another_group(self, mine):
         f = field(
             id="race",
