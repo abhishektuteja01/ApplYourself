@@ -25,7 +25,10 @@
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(wc:*)",
-      "Bash(uv run config:*)"
+      "Bash(uv run config:*)",
+      "Bash(uv run apply judge-pack:*)",
+      "Bash(uv run apply judge-check:*)",
+      "Bash(uv run apply-eval:*)"
     ],
     "ask": [
       "Bash(uv run apply run *--submit*)"
