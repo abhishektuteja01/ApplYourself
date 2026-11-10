@@ -128,13 +128,16 @@ _EXPECTATIONS = ("value", "one_of", "question", "fact", "prose")
 
 class Expect(BaseModel):
     """`fill` takes exactly one of value / one_of / question / fact / prose;
-    `ask` and `skip` take none."""
+    `ask` and `skip` take none. `or_ask` marks a fill case where stopping for
+    the user is also right (two fair readings); a `one_of` entry may be a list
+    for a multi-select."""
 
     model_config = _STRICT
 
     action: Literal["fill", "ask", "skip"]
     value: str | list[str] | None = None
-    one_of: list[str] | None = None
+    one_of: list[str | list[str]] | None = None
+    or_ask: bool = False
     question: str | None = None
     fact: FactExpect | None = None
     prose: Literal[True] | None = None
@@ -148,6 +151,8 @@ class Expect(BaseModel):
             raise ValueError(f"{self.action} takes no expectation, got {given}")
         if self.one_of is not None and not self.one_of:
             raise ValueError("one_of must not be empty")
+        if self.or_ask and self.action != "fill":
+            raise ValueError("or_ask is only for a fill case")
         return self
 
 

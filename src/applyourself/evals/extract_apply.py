@@ -301,7 +301,8 @@ def relabel(cases: list[Case], path: Path) -> tuple[collections.Counter[str], in
         if case.field.kind in CHOICE_KINDS:
             offered = {_option_key(o) for o in case.field.options}
             value = expect.value
-            picked = expect.one_of or (value if isinstance(value, list) else [value or ""])
+            listed = expect.one_of or (value if isinstance(value, list) else [value or ""])
+            picked = [v for item in listed for v in (item if isinstance(item, list) else [item])]
             missing = [v for v in picked if v and _option_key(v) not in offered]
             if missing:
                 raise RelabelError(

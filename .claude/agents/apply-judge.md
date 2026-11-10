@@ -23,9 +23,13 @@ Your prompt is `judge <packet path> -> <out path>`.
    - `fact`: only a bare yes/no field (Yes/No options, a yes/no checkbox, or
      free text asking yes or no) on work authorization, sponsorship, visas,
      "unrestricted" right to work, or U.S. person. Pick the one fact whose true
-     value makes Yes correct; `yes_when: false` when the wording is negated
-     ("without sponsorship", "do not require", "Do you NOT require"). Never
-     type the Yes or No yourself.
+     value makes Yes correct; `yes_when: false` when the wording is negated.
+     `requires_sponsorship` means now or later, so it fits only future
+     wording. A today-only sponsorship question (no future word) uses
+     `authorized`: "Do you require sponsorship?" → `authorized`, yes_when
+     false; "Do you NOT require sponsorship?" or "authorized without
+     sponsorship?" → `authorized`, yes_when true. Never type the Yes or No
+     yourself.
    - `option`: a board option copied word for word, settled by a fact or bank
      answer; `basis` names the ids that settle it (`F-` facts, bank question
      ids, `option`). Sentence options ("I am authorized ... and do not
@@ -48,9 +52,10 @@ Your prompt is `judge <packet path> -> <out path>`.
      embargoed-country question. `ask` states the one question for the user.
      Never ask when a fact states the answer.
    - `skip`: optional junk (password, honeypot, unrelated test field), and an
-     optional box asking for detail nothing requires ("if not authorized,
-     what sponsorship would you need"). Never on a required field; a required
-     one is answered from the facts.
+     optional "if yes / if not" detail box whose condition does not apply to
+     you ("if not authorized, what sponsorship would you need" when you are
+     authorized). When the condition applies, answer it from the facts. Never
+     on a required field; a required one is answered from the facts.
 3. Reading the question:
    - Time frame: future wording ("will you require", "now or in the
      future", "ever", "at any point", "going forward", "someday") includes

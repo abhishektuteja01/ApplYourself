@@ -267,7 +267,11 @@ def grade_case(
     if want_problem:
         row.update(passed=False, problem=want_problem)
         return row
-    if want_action == "ask" and got_action == "park" and "country could not be read" in res.reason:
+    if case.expect.or_ask and got_action == "ask":
+        passed = True  # a declared second reading: stopping for the user
+    elif (
+        want_action == "ask" and got_action == "park" and "country could not be read" in res.reason
+    ):
         passed = True  # the code stopped it for the user, as an ask would
     elif got_action != want_action:
         passed = False
@@ -280,6 +284,10 @@ def grade_case(
     else:
         passed = got_value == want_value
     row["passed"] = passed
+    if case.expect.or_ask or len(case.expect.one_of or []) > 1:
+        # Two fair answers are declared: agreement asks only that both runs
+        # landed on an accepted one.
+        row["key"] = ["accepted" if passed else "miss"]
     return row
 
 

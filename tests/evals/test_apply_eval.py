@@ -183,3 +183,12 @@ def test_a_refused_judged_entry_fails_even_when_an_ask_was_expected():
     e = entry("c9b", decision="fact", fact=fact)
     row = grade(c, e, Override(value="", decision="fact", fact=fact))
     assert not row["passed"] and row["got"]["action"] == "ignored"
+
+
+def test_or_ask_accepts_a_stop_but_not_a_wrong_fill():
+    c = case("c9", YES_NO, {"action": "fill", "value": "No", "or_ask": True})
+    ask = entry("c9", decision="ask", ask="Will you relocate?")
+    assert grade(c, ask, Override(value="", decision="ask", ask="Will you relocate?"))["passed"]
+    wrong = entry("c9", decision="option", value="Yes", basis=["option"])
+    ov = Override(value="Yes", source="option", decision="option", basis=("option",))
+    assert not grade(c, wrong, ov)["passed"]
