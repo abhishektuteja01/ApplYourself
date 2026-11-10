@@ -457,7 +457,7 @@ def main(argv=None) -> int:
         lanes["manual"] = _run_lane(inbox, crawl)
     threaded = [_lane(n) for n in wanted if n != "manual"]
     for lane in threaded:
-        # Before any lane starts: the board lanes skip the boards the feed covered.
+        # Before any lane starts: the feed downloads and gates its file.
         lane.prepare(crawl)
     if threaded:
         with ThreadPoolExecutor(max_workers=len(threaded)) as pool:

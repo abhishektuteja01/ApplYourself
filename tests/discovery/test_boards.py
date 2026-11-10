@@ -223,15 +223,6 @@ def test_a_broken_parser_fails_the_lane(tmp_path, cfg):
         Broken({}).run(crawl)
 
 
-def test_a_board_the_feed_covered_is_not_crawled_and_stays_due(tmp_path, cfg):
-    lane = FakeLane({"acme": [post("acme", 1)], "beta": [post("beta", 1)]})
-    crawl = crawl_for(tmp_path, ["acme", "beta"])
-    crawl.vcfg, crawl.covered = cfg, frozenset({"greenhouse|acme"})
-    stats = lane.run(crawl)
-    assert [r.board.slug for r in crawl.take_board_results()] == ["beta"]
-    assert stats.boards_due == 1 and stats.notes == ["1 due boards left to the feed"]
-
-
 @pytest.mark.parametrize(
     "url,key",
     [

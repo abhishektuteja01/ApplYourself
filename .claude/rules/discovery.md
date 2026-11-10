@@ -141,11 +141,11 @@ detail fetching and board results live in `BoardLane` once.
 
 One nightly parquet of public postings from many ATSs and job sites. `prepare`
 runs before the other lanes: a snapshot older than `max_snapshot_age_hours` is
-skipped (an error in the report, every board crawled); otherwise the file is
+skipped (an error in the report); otherwise the file is
 downloaded, checked against its sha256, title-gated a row group at a time, and
-deleted. A board whose postings the file carried is `crawl.covered`: the board
-lanes skip it without marking it checked, so it is first in line on a night
-the feed is missing. A company is named by our `boards.csv` name, then the
+deleted. The board lanes crawl every due board whether or not the file carried
+its postings: the file misses many of a board's live postings. A company is
+named by our `boards.csv` name, then the
 feed's own company list (by slug, or site host for Phenom), then the row; the feed's
 `country_iso` is added to a location unless the text is one country for sure. One
 paced page read serves a new row with a short JD and any row whose company

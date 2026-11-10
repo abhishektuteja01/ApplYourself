@@ -37,7 +37,7 @@ from applyourself.discovery.store import make_posting
 from applyourself.shared import http_client, identity, title_gate
 from applyourself.shared.countries import CC_TO_COUNTRY
 from applyourself.shared.http_client import CareersError
-from applyourself.shared.job_boards import ATS_SOURCE_NAMES, board_key, parse_posting_url
+from applyourself.shared.job_boards import board_key, parse_posting_url
 from applyourself.shared.location.parser import read_location
 
 log = logging.getLogger(__name__)
@@ -60,8 +60,6 @@ COLUMNS = [
     "description",
     "posted_at",
 ]
-# Our own board lanes: rows of these ATSs say which boards the file covered.
-_BOARD_ATS = frozenset(ATS_SOURCE_NAMES)
 # A site whose first this-many page reads tonight all failed is not read again
 # tonight: its pages carry no JobPosting block, or it blocks us.
 MAX_HOST_FAILURES = 10
@@ -162,9 +160,8 @@ class StapplyLane(Lane):
     # -----------------------------------------------------------------
 
     def prepare(self, crawl) -> None:
-        """Read tonight's file into `self.rows` and set `crawl.covered`. A
-        failure is kept and re-raised by `run`, so the report shows it as
-        this lane's crash and the board lanes crawl everything."""
+        """Read tonight's file into `self.rows`. A failure is kept and
+        re-raised by `run`, so the report shows it as this lane's crash."""
         try:
             manifest = http_client.fetch_json(MANIFEST_URL, deadline_ts=crawl.deadline_ts or None)
             src = crawl.cfg.sources[self.name]
@@ -173,7 +170,7 @@ class StapplyLane(Lane):
                 self.stats.errors.append(
                     f"snapshot {manifest.get('generated_at')!r} is "
                     f"{'undated' if age is None else f'{age:.0f}h old'} "
-                    f"(max {src.max_snapshot_age_hours}h); skipped, every board crawled"
+                    f"(max {src.max_snapshot_age_hours}h); skipped"
                 )
                 return
             whole = manifest["all"]
@@ -223,24 +220,17 @@ class StapplyLane(Lane):
             return {}
 
     def read(self, path: Path, crawl, feed_names: dict | None = None) -> None:
-        """Gate every title, map the rows that pass, collect covered boards."""
+        """Gate every title and map the rows that pass."""
         names = board_names(crawl.boards_dir)
         pf = pq.ParquetFile(path)
         cols = [c for c in COLUMNS if c in pf.schema_arrow.names]
         gate: dict[str, title_gate.Verdict] = {}
-        covered: set[str] = set()
         for i in range(pf.metadata.num_row_groups):
             if crawl.deadline_reached():
                 self.stats.truncated = True
                 break
-            light = pf.read_row_group(i, columns=["title", "ats_type", "url"])
-            titles = light.column("title").to_pylist()
+            titles = pf.read_row_group(i, columns=["title"]).column("title").to_pylist()
             self.stats.listed += len(titles)
-            for url, ats in zip(
-                light.column("url").to_pylist(), light.column("ats_type").to_pylist(), strict=True
-            ):
-                if ats in _BOARD_ATS and (key := board_key(url or "")):
-                    covered.add(key)
             keep, verticals = [], []
             for t in titles:
                 v = gate.get(t)
@@ -262,8 +252,6 @@ class StapplyLane(Lane):
                     self.name, posting["title"], vertical, True, posting["posting_key"]
                 )
                 self.rows.append(posting)
-        if not self.stats.truncated:
-            crawl.covered = frozenset(covered)
 
     # -----------------------------------------------------------------
     # with the other lanes: the store

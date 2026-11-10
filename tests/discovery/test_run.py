@@ -227,17 +227,8 @@ class Crashing(B.BoardLane):
 class FakeFeed(Lane):
     name = "stapply"
 
-    def prepare(self, crawl):
-        crawl.covered = frozenset({"greenhouse|acme"})
-
     def run(self, crawl, tally=None):
         return B.LaneStats(listed=9, passed=0, notes=["snapshot x"])
-
-
-class SeesCovered(FakeLane):
-    def run(self, crawl, tally=None):
-        assert crawl.covered == {"greenhouse|acme"}, "the feed prepares before board lanes start"
-        return super().run(crawl)
 
 
 class AllowAll:
@@ -287,9 +278,9 @@ def test_main_saves_postings_writes_clean_and_contains_a_crash(wired):
     assert (wired / "runs" / f"{report['run_id']}.md").exists()
 
 
-def test_the_feed_prepares_before_the_board_lanes(wired, monkeypatch):
+def test_the_feed_has_no_row_in_the_boards_table(wired, monkeypatch):
     monkeypatch.setattr(
-        R, "_lane", lambda name: {"greenhouse": SeesCovered(), "stapply": FakeFeed()}[name]
+        R, "_lane", lambda name: {"greenhouse": FakeLane(), "stapply": FakeFeed()}[name]
     )
     assert (
         R.main(

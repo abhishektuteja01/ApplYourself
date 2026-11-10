@@ -278,8 +278,6 @@ class Crawl:
         self._lock = threading.Lock()
         self.board_results: list[BoardResult] = []
         self.listed: list[dict] = []
-        # Boards whose postings tonight's feed already carried: not crawled.
-        self.covered: frozenset[str] = frozenset()
 
     def deadline_reached(self) -> bool:
         return bool(self.deadline_ts) and time.time() > self.deadline_ts
@@ -379,13 +377,7 @@ class BoardLane(Lane):
             src.every_days,
             crawl.cfg.dead_every_days,
         )
-        # A covered board is not marked checked, so it is first in line on a
-        # night the feed is missing.
-        due = len(boards)
-        boards = [b for b in boards if b.key not in crawl.covered]
         stats = LaneStats(boards_due=len(boards))
-        if due > len(boards):
-            stats.notes.append(f"{due - len(boards)} due boards left to the feed")
         shape_errors = 0
         for board in boards:
             if crawl.deadline_reached():

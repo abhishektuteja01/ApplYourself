@@ -186,16 +186,6 @@ def test_the_country_code_fills_in_only_what_the_parser_cannot_read(cfg, tmp_pat
     assert stapply.located("Remote", "") == "Remote"
 
 
-def test_boards_with_postings_in_the_file_are_covered(cfg, tmp_path, feed):
-    _, crawl = read(cfg, tmp_path, feed)
-    assert crawl.covered == {
-        "greenhouse|ddome",
-        "lever|acme",
-        "workday|acme|wd5|external",
-        "ashby|other",
-    }
-
-
 def _manifest(tmp_path, feed, hours_old=2, sha=None):
     when = datetime.now(UTC) - timedelta(hours=hours_old)
     digest = sha or hashlib.sha256(feed.read_bytes()).hexdigest()
@@ -236,15 +226,14 @@ def test_a_stale_snapshot_is_skipped_and_said(monkeypatch, cfg, tmp_path, feed):
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
     lane.prepare(crawl)
     stats = lane.run(crawl)
-    assert downloads == [] and crawl.covered == frozenset() and len(crawl.batch) == 0
-    assert "50h old" in stats.errors[0] and "every board crawled" in stats.errors[0]
+    assert downloads == [] and len(crawl.batch) == 0
+    assert "50h old" in stats.errors[0] and "skipped" in stats.errors[0]
 
 
 def test_a_checksum_mismatch_is_the_lanes_crash(monkeypatch, cfg, tmp_path, feed):
     _wire(monkeypatch, _manifest(tmp_path, feed, sha="0" * 64), feed)
     lane, crawl = stapply.StapplyLane(), make_crawl(cfg, tmp_path)
     lane.prepare(crawl)
-    assert crawl.covered == frozenset()
     with pytest.raises(Exception, match="checksum"):
         lane.run(crawl)
 
