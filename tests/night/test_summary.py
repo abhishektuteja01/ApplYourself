@@ -246,31 +246,18 @@ def _plan(**kw):
     return {"draftable": [], "unmapped": [], "fields": [], **kw}
 
 
-def _guess(label, value, key):
-    return {"label": label, "value": value, "source": f"bank:{key}~{key}"}
-
-
-def test_open_items_sort_into_guesses_questions_and_missing_values_with_a_tally_per_role():
+def test_open_items_sort_into_questions_and_missing_values_with_a_tally_per_role():
     snaps = [
         (
             "a1",
             _plan(
-                fields=[
-                    _guess("LinkedIn URL", "https://li/a", "linkedin"),
-                    {"label": "Pronouns", "source": "bank:pronouns"},
-                ],
+                fields=[{"label": "Pronouns", "source": "bank:pronouns"}],
                 draftable=[{"label": "Tell us about AI use", "options": []}],
-                work_authorization={"job_country": "India"},
-                out_dir="applications/ai_eng/x",
             ),
         ),
         (
             "b2",
             _plan(
-                fields=[
-                    _guess("Linkedin Profile ✱", "https://li/a", "linkedin"),
-                    _guess("Your LinkedIn", "https://li/b", "linkedin"),
-                ],
                 unmapped=[
                     {
                         "label": "Salary",
@@ -280,49 +267,30 @@ def test_open_items_sort_into_guesses_questions_and_missing_values_with_a_tally_
                         "options": [],
                     },
                     {"label": "Old", "required": True, "tier": "C", "options": ["Y"]},
+                    {
+                        "label": "Notice?",
+                        "required": True,
+                        "tier": "B",
+                        "source": "judged:ask",
+                        "reason": "ask: How many weeks notice do you owe?",
+                    },
                     {"label": "Optional thing", "required": False},
                 ],
             ),
         ),
     ]
     got = M.open_items(snaps)
-    assert [g["label"] for g in got["guesses"]] == ["LinkedIn URL"]
-    assert list(got["guesses"][0]["values"]) == ["https://li/a", "https://li/b"]
-    assert got["guesses"][0]["values"]["https://li/a"]["roles"] == ["a1", "b2"]
-    assert {q["label"] for q in got["asks"]} == {"Tell us about AI use", "Old"}
+    assert {q["label"] for q in got["asks"]} == {"Tell us about AI use", "Old", "Notice?"}
     assert [f["roles"] for f in got["facts"]] == [["b2"]]
-    assert got["by_role"] == {
-        "a1": {"guesses": 1, "asks": 1, "facts": 0},
-        "b2": {"guesses": 2, "asks": 1, "facts": 1},
-    }
-    listed = M.open_items(
-        [
-            (
-                "c3",
-                _plan(
-                    fields=[
-                        {
-                            "label": "Pronouns",
-                            "value": ["He/him"],
-                            "source": "bank:pronouns~pronouns",
-                        }
-                    ]
-                ),
-            )
-        ]
-    )
-    assert list(listed["guesses"][0]["values"]) == ["He/him"]
+    assert got["by_role"] == {"a1": {"asks": 1, "facts": 0}, "b2": {"asks": 2, "facts": 1}}
+    asked = {a["label"]: a["question"] for a in got["roles"]["b2"]["asks"]}
+    assert asked == {"Old": "", "Notice?": "How many weeks notice do you owe?"}
 
 
 def test_why_a_role_needs_you_is_said_in_plain_counts():
-    why = M._why({"guesses": 1, "asks": 2, "facts": 1})
-    assert [p.split()[:2] for p in why.split(", ")] == [
-        ["1", "guess"],
-        ["2", "questions"],
-        ["1", "value"],
-    ]
-    assert M._why({"guesses": 0, "asks": 1, "facts": 0}).startswith("1 question")
-    assert "answers_override.json" in M._why({"guesses": 0, "asks": 0, "facts": 0})
+    why = M._why({"asks": 2, "facts": 1})
+    assert [p.split()[:2] for p in why.split(", ")] == [["2", "questions"], ["1", "value"]]
+    assert "answers_override.json" in M._why({"asks": 0, "facts": 0})
 
 
 def test_missing_values_are_worded_for_a_person():
@@ -344,7 +312,7 @@ def _row(job, status, note=""):
 
 
 def _items(**kw):
-    base = {"guesses": [], "asks": [], "facts": [], "by_role": {}, "roles": {}}
+    base = {"asks": [], "facts": [], "by_role": {}, "roles": {}}
     return {**base, **kw}
 
 
@@ -359,7 +327,7 @@ def test_apply_starts_with_the_ready_ids_then_plain_errors_then_who_needs_you():
         _row("f6", "Parked", "1 question"),
     ]
     items = _items(
-        by_role={"b2": {"guesses": 2, "asks": 0, "facts": 1}},
+        by_role={"b2": {"asks": 2, "facts": 1}},
         roles={"b2": {"company": "Beta", "title": "Eng", "url": "", "asks": [], "facts": []}},
     )
     out = M.apply_section(rows, items, {"g7": "could not re-read the form (PostingExpired)"})
@@ -374,7 +342,7 @@ def test_apply_starts_with_the_ready_ids_then_plain_errors_then_who_needs_you():
     assert M.CUES["apply_unsent"] not in out
     assert (
         "**Needs your OK (1)**" in out
-        and "- b2 Beta — Eng: 2 guesses to confirm, 1 value missing" in out
+        and "- b2 Beta — Eng: 2 questions to answer, 1 value missing" in out
     )
     assert "e5" not in text
     quiet = M.apply_section([_row("a1", "Resume ready")], _items(roles={}), {})
@@ -388,36 +356,16 @@ def test_apply_starts_with_the_ready_ids_then_plain_errors_then_who_needs_you():
 
 
 def test_the_answer_bank_section_lists_every_label_and_every_role_uncut():
-    label = "Are you currently subject to a non-compete agreement " + "x" * 200
     items = _items(
-        guesses=[
-            {
-                "qid": "linkedin",
-                "label": "LinkedIn",
-                "values": {
-                    "https://li": {
-                        "roles": ["a", "b", "c"],
-                        "countries": ["India", "United States"],
-                        "lanes": [],
-                        "labels": {"LinkedIn URL": ["a", "b"], "Linkedin": ["c"]},
-                    }
-                },
-            },
-            {
-                "qid": "non_disclosure",
-                "label": label,
-                "values": {
-                    "No": {"roles": ["a"], "countries": [], "lanes": [], "labels": {label: ["a"]}}
-                },
-            },
-        ],
+        prose=3,
+        asks=[{"label": "Twitter", "roles": ["a"], "options": []}],
         roles={
             "a": {
                 "company": "Acme",
                 "title": "Eng",
                 "url": "https://x/a",
                 "asks": [
-                    {"label": "Twitter", "options": []},
+                    {"label": "Twitter", "options": [], "question": "Your Twitter handle?"},
                     {"label": "Which office?", "options": ["SF", "NYC"]},
                 ],
                 "facts": [
@@ -431,13 +379,13 @@ def test_the_answer_bank_section_lists_every_label_and_every_role_uncut():
         },
     )
     out = M.apply_section([], items, {})
-    assert "**Guesses to confirm (2): the bank matched these by keyword**" in out
-    assert "- `linkedin` (LinkedIn) → https://li [India, United States]" in out
-    assert '    - "LinkedIn URL": a, b' in out and '    - "Linkedin": c' in out
-    assert f'    - "{label}": a' in out  # a long label is never cut
-    assert "**New questions and missing values, by role**" in out
+    assert "**Needs your answer**" in out
+    assert "**New written answers:** 3 answers to review" in out and M.CUES["prose"] in out
     assert "- **a Acme — Eng** — https://x/a" in out
-    assert '    - ask: "Twitter"' in out and '    - ask: "Which office?" (options: SF, NYC)' in out
+    assert (
+        '    - ask: "Twitter" — Your Twitter handle?' in out
+        and '    - ask: "Which office?" (options: SF, NYC)' in out
+    )
     assert any(
         ln.startswith("    - missing: Salary for a role in India") and '"Desired Salary"' in ln
         for ln in out
@@ -481,9 +429,9 @@ def test_every_waiting_role_is_listed():
 
 
 def test_a_waiting_role_re_read_tonight_with_nothing_open_says_so():
-    items = _items(by_role={"w0": {"guesses": 0, "asks": 0, "facts": 0}}, roles={})
+    items = _items(by_role={"w0": {"asks": 0, "facts": 0}}, roles={})
     out = M.apply_section([_row("w0", "Needs your OK", "n")], items, {})
-    assert "- w0: " + M._why({"guesses": 0, "asks": 0, "facts": 0}) in out
+    assert "- w0: " + M._why({"asks": 0, "facts": 0}) in out
 
 
 def test_an_error_from_an_earlier_night_is_listed_apart_with_its_date():
@@ -648,45 +596,6 @@ def test_the_html_nests_one_level_and_styles_cue_lines():
         '<li>"b": r3</li></ul></li><li>next</li></ul>'
     ) in out
     assert '<p class="cue"><strong>FIX:</strong> do this: <code>uv run x</code></p>' in out
-
-
-def test_a_yes_no_guess_on_a_follow_up_is_flagged_for_a_check():
-    assert M._follow_up_guess("If yes, please provide your Deloitte employment details", "Yes")
-    assert M._follow_up_guess("Please describe your experience", "No")
-    assert not M._follow_up_guess("If yes, please provide details", "Some real text")
-    assert not M._follow_up_guess("Are you currently employed by Deloitte?", "Yes")
-    assert M._follow_up_guess(
-        "If you replied yes to the question above, please provide details", "No"
-    )
-    assert not M._follow_up_guess(
-        "If you are not currently a resident of the location, would you be willing to relocate?",
-        "Yes",
-    )
-    items = _items(
-        guesses=[
-            {
-                "qid": "deloitte",
-                "label": "x",
-                "values": {
-                    "Yes": {
-                        "roles": ["a"],
-                        "countries": [],
-                        "lanes": [],
-                        "labels": {
-                            "If yes, please provide details": ["a"],
-                            "Were you employed by Deloitte?": ["a"],
-                        },
-                    }
-                },
-            }
-        ]
-    )
-    out = M.apply_section([], items, {})
-    assert (
-        '    - "If yes, please provide details": a — **CHECK:** a follow-up that needs text, not "Yes"'
-        in out
-    )
-    assert '    - "Were you employed by Deloitte?": a' in out
 
 
 def test_missing_values_of_one_kind_are_one_line_per_role_and_names_come_from_clean():

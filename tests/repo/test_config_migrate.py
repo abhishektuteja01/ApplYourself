@@ -151,7 +151,7 @@ def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
     assert _run(prof, apply=True) == 0
     assert "identity.location kept" in capsys.readouterr().out
     after = yaml.safe_load(b.read_text(encoding="utf-8"))
-    assert after["schema_version"] == 3 and "first_name" not in after["identity"]
+    assert after["schema_version"] == 4 and "first_name" not in after["identity"]
     assert after["employment"] == {"only_when_required": True}
     got = load_answers(b)
     assert (got.identity, got.education, got.employment) == (
@@ -159,6 +159,41 @@ def test_schema_2_bank_drops_what_the_resume_says(tmp_path, capsys):
         before.education,
         before.employment,
     )
+
+
+def test_schema_3_bank_keeps_every_answer_and_its_comments(tmp_path, capsys):
+    from applyourself.apply.bank_schema import load_answers
+
+    prof = _profile(tmp_path)
+    b = prof / "application_answers.yaml"
+    bank = yaml.safe_load(b.read_text(encoding="utf-8"))
+    bank["schema_version"] = 3
+    bank["claims"] = {"I have OPT": {"authorized": True}}
+    bank["fact_wordings"] = {
+        "Are you authorized to work?": {"fact": "authorized", "yes_when": True}
+    }
+    for qid, spec in bank["questions"].items():
+        spec["wordings"] = [f"{qid} wording", "two"]
+        spec["keywords"] = [qid]
+    bank["questions"]["linkedin"]["not"] = ["never this"]
+    text = yaml.safe_dump(bank, sort_keys=False).replace(
+        "questions:\n", "# my questions\nquestions:\n  # the profile links\n"
+    )
+    b.write_text(text, encoding="utf-8")
+
+    assert _run(prof, apply=True) == 0
+    assert "questions and" in capsys.readouterr().out
+    after = b.read_text(encoding="utf-8")
+    assert "# my questions" in after and "# the profile links" in after
+    got = yaml.safe_load(after)
+    assert got["schema_version"] == 4 and "claims" not in got and "fact_wordings" not in got
+    assert {q: s["answer"] for q, s in got["questions"].items()} == {
+        q: s["answer"] for q, s in bank["questions"].items()
+    }
+    assert got["facts"] == bank["facts"]
+    load_answers(b)
+    history = list((prof / ".state" / "bank_history").glob("application_answers.*.yaml"))
+    assert [yaml.safe_load(h.read_text(encoding="utf-8"))["schema_version"] for h in history] == [3]
 
 
 def test_automation_yaml_becomes_settings_with_the_bank_browser(tmp_path, capsys):

@@ -93,24 +93,32 @@ def test_an_optional_unmapped_field_does_not_hold_a_role_back(world):
 @pytest.mark.parametrize(
     "plan,want",
     [
-        (
-            _plan(fields=[_field(source="bank:linkedin~linkedin")]),
-            {"guesses": 1, "asks": 0, "facts": 0},
-        ),
-        (_plan(draftable=[_unmapped(tier="C")]), {"guesses": 0, "asks": 1, "facts": 0}),
-        (_plan(unmapped=[_unmapped(tier="C")]), {"guesses": 0, "asks": 1, "facts": 0}),
-        (_plan(unmapped=[_unmapped(tier="B")]), {"guesses": 0, "asks": 0, "facts": 1}),
-        (
-            _plan(unmapped=[_unmapped(required=False, blocks=True)]),
-            {"guesses": 0, "asks": 0, "facts": 1},
-        ),
-        (_plan(selector=None), {"guesses": 0, "asks": 0, "facts": 0}),
+        (_plan(draftable=[_unmapped(tier="C")]), {"asks": 1, "facts": 0}),
+        (_plan(unmapped=[_unmapped(tier="C")]), {"asks": 1, "facts": 0}),
+        (_plan(unmapped=[_unmapped(tier="B0")]), {"asks": 1, "facts": 0}),
+        (_plan(unmapped=[_unmapped(tier="B")]), {"asks": 0, "facts": 1}),
+        (_plan(unmapped=[_unmapped(required=False, blocks=True)]), {"asks": 0, "facts": 1}),
+        (_plan(selector=None), {"asks": 0, "facts": 0}),
     ],
 )
-def test_anything_new_guessed_or_missing_makes_a_role_open(world, plan, want):
+def test_anything_unanswered_or_missing_makes_a_role_open(world, plan, want):
     world.plans["aaaa1111"] = plan
     row = triage.classify("aaaa1111")
     assert row["kind"] == "open" and row["detail"] == want
+
+
+def test_a_judged_role_is_planned_with_its_answers_file(world, monkeypatch):
+    seen = {}
+
+    def build(job_id, **kw):
+        seen[job_id] = kw.get("answers_path")
+        return _plan(job_id, fields=[_field()]), None
+
+    monkeypatch.setattr(apply_cli, "build", build)
+    (world.tmp / "j").mkdir()
+    (world.tmp / "j" / "answers_override.json").write_text('{"job_id": "j"}', encoding="utf-8")
+    assert triage.classify("j")["kind"] == "ready" and triage.classify("n")["kind"] == "ready"
+    assert seen == {"j": world.tmp / "j" / "answers_override.json", "n": None}
 
 
 def test_expired_manual_and_broken_forms_are_named_not_raised(world, monkeypatch):
@@ -139,7 +147,7 @@ def test_fill_tracks_then_fills_each_ready_role_and_never_submits(world):
     world.plans.update(
         {
             "a": _plan("a", fields=[_field()]),
-            "b": _plan("b", fields=[_field(source="bank:x~x")]),
+            "b": _plan("b", unmapped=[_unmapped(tier="C")]),
             "c": _plan("c", fields=[_field()]),
         }
     )

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from applyourself.apply import judge_cli
+from applyourself.apply import judge_cli, report
 from applyourself.apply.bank_schema import load_answers
 from applyourself.apply.judge_packet import (
     JudgeEntry,
@@ -15,6 +15,8 @@ from applyourself.apply.judge_packet import (
     fields_for_judge,
     to_override,
 )
+from applyourself.apply.plan import build_plan
+from applyourself.apply.reconcile import MergedField, MergedOption, Reconciled
 
 BANK = Path(__file__).parent / "fixtures" / "application_answers.yaml"
 
@@ -153,6 +155,20 @@ def test_fields_for_judge_drops_structural_and_dupes():
     got = fields_for_judge(plan)
     assert [f["id"] for f in got] == ["q", "s"]
     assert got[0]["options"] == ["Yes", "No"] and "value" not in got[0]
+
+
+def test_a_skipped_optional_work_auth_select_reaches_the_judge_with_its_options(
+    answers, tailor_dir
+):
+    f = MergedField(
+        id="auth", name="auth", label="Will you now or in the future require visa sponsorship?",
+        required=False, kind="select", section="questions", multi=False,
+        options=(MergedOption(label="Yes"), MergedOption(label="No")),
+    )  # fmt: skip
+    plan = build_plan(Reconciled(fields=(f,), api_only=()), answers, tailor_dir)
+    assert [(s.id, s.tier) for s in plan.skipped] == [("auth", "B0")]
+    [got] = fields_for_judge(json.loads(json.dumps(report.as_dict(plan))))
+    assert (got["kind"], got["options"], got["required"]) == ("select", ["Yes", "No"], False)
 
 
 def test_packet_wrong_country_shows_default(answers):

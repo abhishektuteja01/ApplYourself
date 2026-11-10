@@ -21,7 +21,7 @@ from applyourself.apply.lever import (
     parse_posting,
     scan_lever_form,
 )
-from applyourself.apply.plan import build_plan, plan_for_board
+from applyourself.apply.plan import Override, build_plan, plan_for_board
 
 from .conftest import load_html
 
@@ -316,10 +316,14 @@ class TestEndToEndResolution:
     """The two fixtures resolved against the shared synthetic answers config —
     the same cross-check test_plan.py runs for every Greenhouse fixture."""
 
-    def test_minimal_fully_resolves(self, answers, tailor_dir):
+    def test_minimal_fully_resolves_once_the_judge_names_linkedin(self, answers, tailor_dir):
         reconciled = scan_lever_form(load_html("form_lever_minimal"))
-        plan = build_plan(reconciled, answers, tailor_dir, ats="lever")
-        assert plan.unmapped == ()
+        judged = {"urls[LinkedIn]": Override(value="", decision="question", question="linkedin")}
+        plan = build_plan(reconciled, answers, tailor_dir, ats="lever", overrides=judged)
+        assert plan.unmapped == () and not plan.ignored_overrides
+        assert {f.id: f.value for f in plan.fields}["urls[LinkedIn]"] == (
+            "https://linkedin.com/in/example"
+        )
         assert plan.files and plan.files[0].id == "resume"
 
     def test_full_parks_only_on_genuinely_unanswerable_customs(self, answers, tailor_dir):
@@ -331,16 +335,14 @@ class TestEndToEndResolution:
         for u in plan.unmapped:
             assert u.id.startswith("cards[")
 
-    def test_both_work_authorization_cards_resolve_truthfully(self, answers, tailor_dir):
-        """Card 1, "Are you permanently authorized to work for any employer in
-        the United States?", is No for an OPT holder (not unrestricted); card 2,
-        the plain sponsorship question, is Yes."""
+    def test_both_work_authorization_cards_park_for_the_judge(self, answers, tailor_dir):
+        """Code no longer reads work authorization: both optional cards are tier B0."""
         reconciled = scan_lever_form(load_html("form_lever_full"))
         plan = build_plan(reconciled, answers, tailor_dir, ats="lever")
         card = "cards[00000020-0000-0000-0000-000000000020]"
-        resolved = {f.label.casefold(): f.value for f in plan.fields if f.id.startswith(card)}
-        assert [v for k, v in resolved.items() if "permanently authorized" in k] == ["No"]
-        assert [v for k, v in resolved.items() if "sponsorship" in k] == ["Yes"]
+        parked = {u.label.casefold(): u.tier for u in plan.skipped if u.id.startswith(card)}
+        assert [t for k, t in parked.items() if "permanently authorized" in k] == ["B0"]
+        assert [t for k, t in parked.items() if "sponsorship" in k] == ["B0"]
 
     def test_eeoc_block_resolves_to_opt_outs(self, answers, tailor_dir):
         reconciled = scan_lever_form(load_html("form_lever_full"))

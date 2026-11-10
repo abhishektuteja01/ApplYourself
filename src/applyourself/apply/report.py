@@ -4,6 +4,7 @@ the fill summary, the run report and its path, and the post-fill manifest."""
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -58,7 +59,6 @@ def as_dict(plan: Plan) -> dict[str, Any]:
                 "options": list(f.options),
                 "source": f.source,
                 "reason": f.reason,
-                "replaced": f.replaced,
             }
             for f in plan.fields
         ],
@@ -85,7 +85,6 @@ def as_dict(plan: Plan) -> dict[str, Any]:
                 "description": u.description,
                 "multi": u.multi,
                 "source": u.source,
-                "similar": list(u.similar),
             }
             for u in plan.unmapped
         ],
@@ -102,12 +101,23 @@ def as_dict(plan: Plan) -> dict[str, Any]:
                 "reason": d.reason,
                 "multi": d.multi,
                 "source": d.source,
-                "similar": list(d.similar),
             }
             for d in plan.draftable
         ],
         "skipped": [
-            {"id": s.id, "label": s.label, "tier": s.tier, "reason": s.reason} for s in plan.skipped
+            {
+                "id": s.id,
+                "label": s.label,
+                "kind": s.kind,
+                "section": s.section,
+                "options": list(s.options),
+                "description": s.description,
+                "required": s.required,
+                "tier": s.tier,
+                "reason": s.reason,
+                "multi": s.multi,
+            }
+            for s in plan.skipped
         ],
         "api_only": list(plan.api_only),
         "ats": plan.ats,
@@ -195,48 +205,45 @@ def _offered(options: tuple[str, ...], limit: int = 6) -> str:
     return shown if len(options) <= limit else f"{shown}, +{len(options) - limit} more"
 
 
-def render_questions(plan: Plan) -> str:
-    """The form grouped by who answers it: known facts, keyword guesses to
-    confirm, questions the bank has never seen, and what blocks the submit."""
+def render_questions(plan: Plan, judged: Iterable[str] = ()) -> str:
+    """The form grouped by who answers it: KNOWN (code), JUDGED (the answers
+    file's entries, `judged` names their field ids), PARKED (an ask, a refused
+    entry, or a field nobody has answered yet, with the judge's question), and
+    what blocks the submit."""
+    judged = set(judged)
     lines = [
         f"{plan.company or '(unknown company)'} — {plan.title or '(unknown title)'}",
         f"job_id {plan.job_id}   {plan.ats}/{plan.board}   {len(plan.fields)} filled, "
         f"{len(plan.files)} attached, {len(plan.unmapped)} unanswered",
         "",
     ]
-    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
-    known = [f for f in plan.fields if f not in guesses]
+    by_judge = [f for f in plan.fields if f.id in judged]
+    known = [f for f in plan.fields if f.id not in judged]
 
-    lines.append(f"KNOWN — answered from the bank or your facts ({len(known)})")
-    for f in known:
-        flag = "*" if f.required else " "
-        via = f"  via {f.source}" if f.source else ""
-        lines.append(f"  {flag} [{f.tier}] {f.label}")
-        lines.append(f"      -> {_value(f.value)}{via}")
-        if f.options:
-            lines.append(f"      of {len(f.options)} offered: {_offered(f.options)}")
+    for title, group in (
+        ("KNOWN — answered by code from the bank or your facts", known),
+        ("JUDGED — answered from the answers file", by_judge),
+    ):
+        lines.append(f"{title} ({len(group)})")
+        for f in group:
+            flag = "*" if f.required else " "
+            via = f"  via {f.source}" if f.source else ""
+            lines.append(f"  {flag} [{f.tier}] {f.label}")
+            lines.append(f"      -> {_value(f.value)}{via}")
+            if f.options:
+                lines.append(f"      of {len(f.options)} offered: {_offered(f.options)}")
+        lines.append("")
 
-    lines.append("")
-    lines.append(f"GUESSED BY KEYWORD — confirm or correct ({len(guesses)})")
-    for f in guesses:
-        flag = "*" if f.required else " "
-        lines.append(f"  {flag} [{f.id}] {f.label}")
-        lines.append(f"      -> {_value(f.value)}  via {f.source}")
-        if f.options:
-            lines.append(f"      of {len(f.options)} offered: {_offered(f.options, limit=10)}")
-
-    new = [*plan.draftable, *(u for u in plan.unmapped if u.tier == "C")]
-    lines.append("")
-    lines.append(f"NEW — not in the bank yet ({len(new)})")
-    for q in new:
+    parked = [*plan.unmapped, *plan.draftable]
+    lines.append(f"PARKED — needs an answer ({len(parked)})")
+    for q in parked:
         flag = "*" if q.required else " "
         lines.append(f"  {flag} [{q.id}] {q.label}")
+        lines.append(f"      {q.reason}")
         if q.options:
             lines.append(f"      choose from: {_offered(q.options, limit=10)}")
         if q.description:
             lines.append(f"      note: {q.description}")
-        if q.similar:
-            lines.append(f"      closest in the bank: {', '.join(q.similar)}")
 
     blockers = [u for u in plan.unmapped if u.required or u.blocks]
     lines.append("")

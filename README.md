@@ -132,7 +132,7 @@ A batch takes the highest fit scores first.
 Workday, LinkedIn, Indeed and careers pages are always manual.
 
 - Slash command: `/apply <job_id> [--submit] [--letter]`.
-- CLI: `uv run apply prepare|plan|run|confirm|learn|teach|wordings|triage|sheet|resolve-urls`.
+- CLI: `uv run apply prepare|plan|judge-pack|judge-check|run|confirm|prose|learn|teach|triage|sheet|resolve-urls`.
 - Run reports and evidence: `applications/apply_runs/`.
 - Details: `.claude/rules/apply-submission.md`.
 

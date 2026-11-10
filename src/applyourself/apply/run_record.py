@@ -38,7 +38,6 @@ class ReasonCode(StrEnum):
     BOARD_REJECTED = "board_rejected"
     NO_SUBMIT_REQUEST = "no_submit_request"
     UNRESOLVED = "unresolved_questions"
-    UNCONFIRMED_GUESSES = "unconfirmed_guesses"
     POSTING_EXPIRED = "posting_expired"
     MANUAL_BOARD = "manual_board"
     NO_DRIVER = "no_driver"
@@ -90,9 +89,9 @@ def park_kind(row: dict) -> str:
         return str(row["kind"])
     if row.get("source") == "export_control" or "export control" in row.get("reason", ""):
         return "new question"
-    if "~" in row.get("source", ""):
-        return "guess to confirm"
-    if row.get("tier") == "C":
+    if row.get("source") == "judged:ask":
+        return "needs your answer"
+    if row.get("tier") in ("B0", "C"):
         return "new question"
     return "needs a fact"
 

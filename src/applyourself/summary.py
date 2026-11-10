@@ -81,9 +81,12 @@ CUES = {
     ),
     "sheet": "→ If the posting is gone: `uv run track <id> skip`, and it leaves the sheet.",
     "answers": (
-        '→ For each answer the user approves: `uv run apply teach --question-id <bank id> --label "<label>" '
-        '--value "<value>" --job <id>` (one per distinct label). Then `uv run apply triage --fill --job-id <id> '
-        "...` for the roles it unblocks (no model, never submits), then `uv run apply sheet`."
+        "→ Answer each role's questions in `/apply <id>`; a confirmed answer is saved to the bank as a "
+        "fact. Then `uv run apply sheet`."
+    ),
+    "prose": (
+        "→ `uv run apply prose --review`, set each row's decision, then `uv run apply prose --save "
+        "<file>` in your terminal."
     ),
     "missing": (
         "→ Set `salary` or `start_in_days` on the country's row in the answer bank "
@@ -514,25 +517,29 @@ def tailor_reason(job: str, run_dir: Path | None, live: set[str]) -> str:
     return "no resume built and no reason recorded"
 
 
+_ASK_TIERS = ("B0", "C")
+
+
 def open_items(snapshots: list[tuple[str, dict]]) -> dict:
-    """What is still open after tonight's /apply, in three kinds, plus a tally per role:
-    guesses (one yes covers a bank question), new questions, missing values."""
-    guesses: dict[str, dict] = {}
+    """What is still open after tonight's /apply, in two kinds, plus a tally per role:
+    questions for you (the judge's question when it asked one), missing values."""
     asks: dict[str, dict] = {}
     facts: dict[str, dict] = {}
     by_role: dict[str, dict] = {}
     roles: dict[str, dict] = {}
 
-    def ask(job, label, options):
+    def ask(job, u):
+        label, options = u["label"], u.get("options") or []
+        reason = str(u.get("reason") or "")
+        question = reason.removeprefix("ask: ") if u.get("source") == "judged:ask" else ""
         a = asks.setdefault(label, {"label": label, "roles": [], "options": options})
         if job not in a["roles"]:
             a["roles"].append(job)
         by_role[job]["asks"] += 1
-        roles[job]["asks"].append({"label": label, "options": options})
+        roles[job]["asks"].append({"label": label, "options": options, "question": question})
 
     for job, plan in snapshots:
-        country = (plan.get("work_authorization") or {}).get("job_country") or ""
-        by_role[job] = {"guesses": 0, "asks": 0, "facts": 0}
+        by_role[job] = {"asks": 0, "facts": 0}
         roles[job] = {
             "company": plan.get("company") or "",
             "title": plan.get("title") or "",
@@ -541,12 +548,12 @@ def open_items(snapshots: list[tuple[str, dict]]) -> dict:
             "facts": [],
         }
         for u in plan.get("draftable") or []:
-            ask(job, u["label"], u.get("options") or [])
+            ask(job, u)
         for u in plan.get("unmapped") or []:
             if not u.get("required"):
                 continue
-            if u.get("tier") == "C":
-                ask(job, u["label"], u.get("options") or [])
+            if u.get("tier") in _ASK_TIERS or u.get("source") == "judged:ask":
+                ask(job, u)
                 continue
             why = u.get("reason") or u["label"]
             f = facts.setdefault(why, {"reason": why, "roles": []})
@@ -554,33 +561,7 @@ def open_items(snapshots: list[tuple[str, dict]]) -> dict:
                 f["roles"].append(job)
             by_role[job]["facts"] += 1
             roles[job]["facts"].append({"label": u["label"], "reason": why})
-        for f in plan.get("fields") or []:
-            source = str(f.get("source", ""))
-            if "~" not in source:
-                continue
-            qid = source.removeprefix("bank:").split("~")[0]
-            raw = f.get("value")
-            value = ", ".join(map(str, raw)) if isinstance(raw, (list, tuple)) else str(raw)
-            label = " ".join(str(f["label"]).replace("✱", "").replace("*", "").split())
-            g = guesses.setdefault(qid, {"qid": qid, "label": label, "values": {}})
-            if label and len(label) < len(g["label"]):
-                g["label"] = label
-            v = g["values"].setdefault(
-                value, {"roles": [], "countries": [], "lanes": [], "labels": {}}
-            )
-            named = v["labels"].setdefault(label, [])
-            if job not in named:
-                named.append(job)
-            if job not in v["roles"]:
-                v["roles"].append(job)
-            if country and country not in v["countries"]:
-                v["countries"].append(country)
-            lane = Path(plan.get("out_dir") or "").parent.name
-            if lane and lane not in v["lanes"]:
-                v["lanes"].append(lane)
-            by_role[job]["guesses"] += 1
     return {
-        "guesses": list(guesses.values()),
         "asks": list(asks.values()),
         "facts": list(facts.values()),
         "by_role": by_role,
@@ -588,10 +569,20 @@ def open_items(snapshots: list[tuple[str, dict]]) -> dict:
     }
 
 
+def pending_prose() -> int:
+    """Written answers waiting for `apply prose --review`; 0 when the bank can't load."""
+    from applyourself.apply import pending
+    from applyourself.apply.bank_schema import AnswersError, load_answers
+
+    try:
+        return len(pending.collect(load_answers()))
+    except (AnswersError, OSError) as exc:
+        logging.getLogger(__name__).warning("pending written answers not counted: %s", exc)
+        return 0
+
+
 def _why(tally: dict) -> str:
     parts = []
-    if tally["guesses"]:
-        parts.append(_n(tally["guesses"], "guess", "guesses") + " to confirm")
     if tally["asks"]:
         parts.append(_n(tally["asks"], "question") + " to answer")
     if tally["facts"]:
@@ -656,49 +647,22 @@ def _who(items: dict, job: str) -> str:
     return f"{job} {r.get('company', '')} — {r.get('title', '')}".strip(" —") if r else job
 
 
-_FOLLOW_UP = re.compile(
-    r"^(if\s+(yes|so|applicable|you\s+(replied|answered|selected|said|checked|chose))"
-    r"|please\s+(provide|describe|explain|specify))",
-    re.I,
-)
-
-
-def _follow_up_guess(label: str, value: str) -> bool:
-    """A free-text follow-up ("If yes, please provide details") the bank answered with Yes/No."""
-    return bool(_FOLLOW_UP.match(label.strip())) and value.strip().lower() in ("yes", "no")
-
-
 def _answers(items: dict) -> list[str]:
-    """Everything still open, nothing cut, so a session needs no other file: every
-    guess with its exact form labels and roles; every new question and missing
-    value under its role."""
-    lines = ["", "**Questions to add to the answer bank**"]
-    guesses = items["guesses"]
-    if guesses:
-        lines += ["", f"**Guesses to confirm ({len(guesses)}): the bank matched these by keyword**"]
-        for g in guesses:
-            for value, d in g["values"].items():
-                where = f" [{', '.join(d['countries'])}]" if d["countries"] else ""
-                lines.append(f"- `{g['qid']}` ({_cut(g['label'], 60)}) → {value}{where}")
-                for label, jobs in d["labels"].items():
-                    flag = (
-                        f' — **CHECK:** a follow-up that needs text, not "{value}"'
-                        if _follow_up_guess(label, value)
-                        else ""
-                    )
-                    lines.append(f'    - "{label}": {", ".join(jobs)}{flag}')
+    """Everything still open, nothing cut, so a session needs no other file:
+    every question and missing value under its role."""
+    lines = ["", "**Needs your answer**"]
     per_role = {j: r for j, r in items["roles"].items() if r["asks"] or r["facts"]}
     if per_role:
         order = sorted(
             per_role, key=lambda j: (-(len(per_role[j]["asks"]) + len(per_role[j]["facts"])), j)
         )
-        lines += ["", "**New questions and missing values, by role**"]
         for job in order:
             r = per_role[job]
             lines.append(f"- **{_who(items, job)}**" + (f" — {r['url']}" if r["url"] else ""))
             for a in r["asks"]:
                 opts = f" (options: {', '.join(a['options'])})" if a["options"] else ""
-                lines.append(f'    - ask: "{a["label"]}"{opts}')
+                asked = f" — {a['question']}" if a.get("question") else ""
+                lines.append(f'    - ask: "{a["label"]}"{opts}{asked}')
             missing: dict[str, list[str]] = {}
             for f in r["facts"]:
                 missing.setdefault(_fact_text(f["reason"]), []).append(f'"{_cut(f["label"], 90)}"')
@@ -803,7 +767,15 @@ def apply_section(
         for r in waiting:
             lines.append(f"- {_who(items, r['name'])}: {_why_waiting(items, r['name'])}")
 
-    if not (items["guesses"] or items["asks"] or items["facts"]):
+    prose = items.get("prose", 0)
+    if prose:
+        lines += [
+            "",
+            f"**New written answers:** {_n(prose, 'answer')} to review",
+            "",
+            CUES["prose"],
+        ]
+    if not (items["asks"] or items["facts"]):
         return [*lines, "", "**Answer bank:** nothing to add"]
     return [*lines, *_answers(items)]
 
@@ -902,6 +874,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
 
     items = open_items(snaps)
     items["names"] = names
+    items["prose"] = pending_prose()
     discovery = discovery_section(reports, since)
     dupes = duplicates_section(
         _tonight(load_maybe_duplicates(paths.MAYBE_DUPES), since, "date"),

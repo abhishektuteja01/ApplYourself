@@ -255,8 +255,8 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    canonical place names, a phone with its country code, a board-style `degree`
    ("Master's Degree"); `work_authorization.countries` from step 1's question 2 (your home
    country's row as in the table above, `default` for everywhere else, a
-   citizen's row for each nationality); `claims`, `questions` and `fact_wordings`
-   as shipped — they grow with each confirmed `/apply`. Show the filled file once. A field the resume cannot
+   citizen's row for each nationality); `facts` and `questions` as shipped,
+   with the example facts replaced only where step 1 states them — both grow with each confirmed `/apply`. Show the filled file once. A field the resume cannot
    answer stays empty — `/apply` parks the role rather than inventing an answer.
 
 5. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`

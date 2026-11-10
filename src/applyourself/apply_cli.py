@@ -17,23 +17,18 @@ run [--job-id X] [--answers F] [--manifest F] [--submit] [--yes] [--limit N]
                       applications/apply_runs/<timestamp>.json and the
                       .md report rendered from it.
 confirm <answers-file>
-                      show the answers and the bank's keyword guesses they
-                      leave standing (offline, from the saved plan.json),
-                      take a typed yes on a terminal, and
+                      show the answers, take a typed yes on a terminal, and
                       store their hash beside the file; run and the bank honour
                       the file only while it still matches.
-wordings (--review [--out F] | --save F)
-                      list the work-authorization wordings saved plan.json
-                      files park on that fact_wordings lacks, each with the
-                      suggested fact, its answer and a decision to set; --save
-                      saves the decision: yes rows (typed yes on a terminal).
-learn [--job J] [--undo ID [--wording W | --keyword K]] [--undo-claim TEXT] [--undo-fact LABEL]
-                      review what the bank holds, or take one thing back.
+prose (--review [--out F] | --save F)
+                      list the judge's written answers from profile entries
+                      that no bank question holds yet, each with a proposed
+                      question id and a decision to set; --save saves the
+                      decision: yes rows (typed yes on a terminal).
+learn [--undo ID]     review what the bank holds, or remove one fact or question.
 triage [--fill] [--job-id J ...] [--limit N]
                       sort Resume ready roles into ready / open with no model; --fill
                       fills the ready ones (never submits) and writes a run report.
-teach --question-id Q --label L --value V [--offered O ...] [--keyword K] [--misfired Q2] [--job J]
-                      save one answer to the bank, for a question answered outside a run.
 sheet [--add | --list STATUS]
                       rebuild the status sheet's status/note/command from
                       state.yaml, the ledger and the run records; --add first
@@ -56,6 +51,7 @@ import re
 import shlex
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
 from pathlib import Path
@@ -78,7 +74,6 @@ from applyourself.apply import (
 from applyourself.apply.answers import (
     Answers,
     canonical_place,
-    find_question,
 )
 from applyourself.apply.bank_schema import (
     EXAMPLE_NAME,
@@ -104,7 +99,6 @@ from applyourself.apply.greenhouse import ApplyUrlError, PostingExpired, load_bo
 from applyourself.apply.plan import Override, Plan, PlanError, plan_for_board
 from applyourself.apply.reconcile import ReconcileError
 from applyourself.apply.report import (
-    _value,
     as_dict,
     render,
     render_fill,
@@ -138,8 +132,6 @@ OVERRIDE_KEYS = (
     "value",
     "source",
     "question",
-    "claim",
-    "keyword",
     "fact",
     "label",
     "decision",
@@ -147,7 +139,6 @@ OVERRIDE_KEYS = (
     "ask",
     "why",
 )
-CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 
 
 class ApplyCliError(Exception):
@@ -299,9 +290,9 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
     """The /apply session's answers for one role:
     `{"job_id": "...", "country": "...", "<field_id>": {"value": ..., "source": ..., "question": ...}}`.
 
-    `value` is a string, or a list for a multi-select. `question` is the bank
-    question the label asks, so a confirmed run saves it; `claim` is, for a
-    work-authorization option, the facts its text states. The `job_id` key binds
+    `value` is a string, or a list for a multi-select. An entry with
+    `source: "user"` is the user's answer to an ask; a confirmed run saves it
+    as a fact. The `job_id` key binds
     the file to one role: a "why us" answer sent to the wrong company is the
     failure it prevents.
     """
@@ -352,21 +343,10 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
             )
             continue
         value = _override_value(entry.get("value"), where)
-        question = _question_id(entry, where)
-        claim = entry.get("claim")
-        if claim is not None:
-            if not isinstance(claim, dict) or not claim or set(claim) - set(CLAIM_KEYS):
-                raise ApplyCliError(f"{where} claim keys are {', '.join(CLAIM_KEYS)}")
-            for k, v in claim.items():
-                if k != "country" and not isinstance(v, bool):
-                    raise ApplyCliError(f"{where} claim.{k} must be true or false")
-        keyword = str(entry.get("keyword") or "").strip()
         overrides[field_id] = Override(
             value=value,
             source=str(entry.get("source") or ""),
-            question=question,
-            claim=claim,
-            keyword=keyword,
+            question=_question_id(entry, where),
         )
     return overrides
 
@@ -396,8 +376,6 @@ def _judged_override(entry: dict, where: str) -> Override:
     decision = entry["decision"]
     if decision not in DECISIONS:
         raise ApplyCliError(f"{where} decision is one of {', '.join(DECISIONS)}")
-    if entry.get("claim") is not None or entry.get("keyword"):
-        raise ApplyCliError(f"{where} a judged entry takes no claim or keyword")
     source = str(entry.get("source") or "")
     if decision == "question":
         question = _question_id(entry, where)
@@ -432,8 +410,7 @@ def _judged_override(entry: dict, where: str) -> Override:
 
 def answers_confirmed(path: Path | None) -> bool:
     """Whether the user confirmed this answers file with `apply confirm` and it
-    has not changed since. Only a confirmed file teaches the bank or lets a
-    keyword guess through a submit."""
+    has not changed since. Only a confirmed file teaches the bank."""
     return confirmation.is_confirmed(path)
 
 
@@ -554,7 +531,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(as_dict(plan), indent=2))
     elif getattr(args, "questions", False):
-        print(render_questions(plan))
+        judged = load_overrides(Path(args.answers), args.job_id) if args.answers else {}
+        print(render_questions(plan, judged))
     else:
         print(render(plan))
     # An answer that cannot apply looks like one that did, unless this fails.
@@ -626,20 +604,7 @@ def _cmd_learn(args: argparse.Namespace) -> int:
     for looking and taking back."""
     path = Path(args.path) if args.path else None
     try:
-        if args.undo or args.undo_claim or args.undo_fact:
-            print(
-                bank.undo(
-                    args.undo or "",
-                    wording=args.wording or "",
-                    keyword=args.keyword or "",
-                    claim=args.undo_claim or "",
-                    fact=args.undo_fact or "",
-                    path=path,
-                )
-            )
-            return 0
-        for line in bank.review(path, since_job=args.job or ""):
-            print(line)
+        print(bank.undo(args.undo, path) if args.undo else bank.review(path))
     except (bank.BankError, AnswersError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -658,27 +623,16 @@ def _cmd_triage(args: argparse.Namespace) -> int:
         return 1
 
 
-def _cmd_teach(args: argparse.Namespace) -> int:
-    """Save one answer to the bank: a question the user answered outside a run."""
-    values = tuple(args.value)
-    lesson = bank.Lesson(
-        label=args.label,
-        question=args.question_id,
-        value=values[0] if len(values) == 1 else values,
-        offered=tuple(args.offered),
-        misfired=args.misfired or "",
-        source=args.source,
-        job_id=args.job or "",
-        keyword=args.keyword or "",
-    )
-    try:
-        changes = bank.learn([lesson], Path(args.path) if args.path else None)
-    except (bank.BankError, AnswersError, OSError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    for line in changes or ["nothing to change: the bank already answers this"]:
-        print(line)
-    return 1 if any(c.startswith("not saved:") for c in changes) else 0
+def _shown(value) -> str:
+    return ", ".join(map(str, value)) if isinstance(value, (list, tuple)) else str(value)
+
+
+def _learned_lines(kept: list, refusals: list[str]) -> list[str]:
+    """One line per saved lesson, then one per refusal."""
+    return [
+        *(f"saved {lesson.kind} {lesson.id}: {_shown(lesson.value)}" for lesson in kept),
+        *(f"not saved: {why}" for why in refusals),
+    ]
 
 
 # ------------------------------------------------------------------ queue
@@ -830,52 +784,56 @@ def _track_applied(job_id: str, plan) -> tuple[int, str]:
     return int(rc or 0), ""
 
 
-def lessons_from(plan: Plan, overrides: dict[str, Override], job_id: str) -> list:
-    """What a confirmed plan teaches the bank: every override that names a
-    question or states a claim, and every keyword guess that went unchallenged
-    (the user saw it and let it stand)."""
-    fields = {f.id: f for f in plan.fields}
+#: Longest slug in a learned fact's id, after `F-`.
+FACT_SLUG_MAX = 40
+
+
+def fact_id(label: str, taken: set[str]) -> str:
+    """`F-<SLUG>` for a label: its words, uppercase, `-`-joined, at most
+    `FACT_SLUG_MAX` characters; `-2`, `-3`, ... when `taken` already holds it."""
+    slug = ""
+    for word in re.findall(r"[A-Z0-9]+", label.upper()):
+        nxt = f"{slug}-{word}" if slug else word
+        if len(nxt) > FACT_SLUG_MAX:
+            break
+        slug = nxt
+    base = f"F-{slug or 'ANSWER'}"
+    fid, n = base, 2
+    while fid in taken:
+        fid, n = f"{base}-{n}", n + 1
+    return fid
+
+
+def lessons_from(
+    overrides: dict[str, Override], plan: Plan, known_facts: Mapping[str, str] | None = None
+) -> list[bank.Lesson]:
+    """What a confirmed plan teaches the bank: each of the user's own answers
+    to an ask (`source: "user"`) becomes a fact, one sentence of its label and
+    answer. Nothing else is learned at run time. `known_facts`: the bank's
+    facts (id -> sentence); a sentence already there is not learned again, and
+    a new id never collides with one."""
+    labels = {f.id: f.label for f in (*plan.fields, *plan.unmapped, *plan.draftable)}
+    known = dict(known_facts or {})
+    taken, said = set(known), set(known.values())
     lessons = []
     for field_id, override in overrides.items():
-        f = fields.get(field_id)
-        if f is None:
+        label = " ".join((labels.get(field_id) or "").split())
+        if override.source != "user" or override.decision or not label or not override.value:
             continue
-        if override.claim is not None:
-            lessons.append(
-                bank.Lesson(label=f.label, value=f.value, claim=override.claim, job_id=job_id)
-            )
+        sentence = f"{label} {_shown(override.value)}"
+        if sentence in said:
             continue
-        if override.fact is not None:
-            lessons.append(
-                bank.Lesson(label=f.label, value=f.value, fact=override.fact, job_id=job_id)
-            )
-            continue
-        if not override.question:
-            continue
-        misfired = f.replaced[5:].split("~", 1)[0] if f.replaced.startswith("bank:") else ""
+        fid = fact_id(label, taken)
+        taken.add(fid)
         lessons.append(
             bank.Lesson(
-                label=f.label,
-                question=override.question,
-                value=f.value,
-                offered=f.options,
-                misfired=misfired,
-                source=override.source,
-                job_id=job_id,
-                keyword=override.keyword,
+                kind="fact",
+                id=fid,
+                value=sentence,
+                source="user",
+                label=label,
             )
         )
-    for f in plan.fields:
-        if f.id not in overrides and f.source.startswith("bank:") and "~" in f.source:
-            lessons.append(
-                bank.Lesson(
-                    label=f.label,
-                    question=f.source[5:].split("~", 1)[0],
-                    value=f.value,
-                    offered=f.options,
-                    job_id=job_id,
-                )
-            )
     return lessons
 
 
@@ -925,36 +883,15 @@ def _run_role(
         )
 
     learned: tuple[str, ...] = ()
-    confirmed = answers_confirmed(answers_path)
-    if confirmed:
+    if answers_confirmed(answers_path):
         try:
-            lessons = lessons_from(plan, load_overrides(Path(answers_path), job_id), job_id)
-            learned = tuple(bank.learn(lessons))
+            overrides = load_overrides(Path(answers_path), job_id)
+            known = answers.facts if answers is not None else None
+            kept, refusals = bank.learn(lessons_from(overrides, plan, known))
+            learned = tuple(_learned_lines(kept, refusals))
         except (bank.BankError, AnswersError, ApplyCliError, OSError) as exc:
             print(f"WARNING: nothing saved to the answer bank: {exc}", file=sys.stderr)
 
-    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
-    if submit and not confirmed and guesses:
-        # A keyword guess is only an answer once someone has confirmed it, and
-        # only /apply's step 6 does that.
-        return RunOutcome(
-            job_id,
-            plan.company,
-            plan.title,
-            "parked",
-            detail=f"{len(guesses)} keyword guess(es) not confirmed — run /apply {job_id}",
-            reason=R.UNCONFIRMED_GUESSES,
-            unmapped=tuple(
-                {
-                    "id": f.id,
-                    "label": f.label,
-                    "tier": "B",
-                    "reason": f"guessed {f.value!r} {f.source}",
-                    "source": f.source,
-                }
-                for f in guesses
-            ),
-        )
     outcome = _attempt(
         job_id,
         plan,
@@ -1430,34 +1367,6 @@ def confirm_submission(job_ids: list[str], hold_company: bool = False) -> int:
     return 0
 
 
-def _standing_guesses(job_id: str, answers_file: Path, data: dict) -> str:
-    """The bank's keyword guesses this file leaves standing: confirming lets
-    them through a submit and saves each as a wording. Offline: read from the
-    role's saved `plan.json` beside the file, re-checked against the bank."""
-    plan_file = answers_file.parent / "plan.json"
-    try:
-        plan = json.loads(plan_file.read_text(encoding="utf-8"))
-        schemas.check(plan.get("schema_version"), schemas.PLAN_SCHEMA_VERSION, plan_file)
-        if not job_id or plan.get("job_id") != job_id:
-            raise ValueError(f"{plan_file} is not for job_id {job_id or '(none)'}")
-        bank_now = load_answers()
-    except (OSError, ValueError, AnswersError) as exc:
-        return f"\nWARNING: the bank's keyword guesses can't be listed offline ({exc})."
-    guesses = []
-    for f in plan.get("fields") or []:
-        if f.get("id") in data or "~" not in str(f.get("source") or ""):
-            continue
-        found = find_question(str(f.get("label") or ""), bank_now)
-        if found and "~" in found[1]:
-            guesses.append((f, found[1]))
-    lines = [f"\nGuessed by keyword from the bank, also confirmed ({len(guesses)}):"]
-    for f, source in guesses:
-        value = f.get("value")
-        lines.append(f'{f.get("id")} — "{f.get("label")}"')
-        lines.append(f"  {_value(tuple(value) if isinstance(value, list) else value)}  [{source}]")
-    return "\n".join(lines)
-
-
 def _cmd_confirm(args: argparse.Namespace) -> int:
     if bank.unattended():
         print(
@@ -1471,8 +1380,7 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
         print(f"ERROR: {args.answers_file}: not readable JSON ({exc})", file=sys.stderr)
         return 1
     print(confirmation.render(data))
-    print(_standing_guesses(str(data.get("job_id") or ""), Path(args.answers_file), data))
-    print("\nConfirming saves these to the answer bank and lets them through a submit.")
+    print("\nConfirming saves your own answers (source: user) to the answer bank as facts.")
     if not sys.stdin.isatty():
         print(
             "ERROR: apply confirm needs a typed yes and stdin is not a terminal.", file=sys.stderr
@@ -1489,56 +1397,56 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_wordings(args: argparse.Namespace) -> int:
-    from applyourself.apply import wordings
+def _cmd_prose(args: argparse.Namespace) -> int:
+    from applyourself.apply import pending
 
     bank_path = Path(args.path) if args.path else None
     if args.review:
         try:
-            out, rows = wordings.review(load_answers(bank_path), args.out)
+            out, rows = pending.review(load_answers(bank_path), args.out)
         except (AnswersError, OSError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
-        print(f"{len(rows)} wording(s) to decide: {out}")
+        print(f"{len(rows)} written answer(s) to decide: {out}")
         return 0
     if bank.unattended():
         print(
-            f"ERROR: {bank.UNATTENDED_ENV}=1: apply wordings --save needs you at a terminal.",
+            f"ERROR: {bank.UNATTENDED_ENV}=1: apply prose --save needs you at a terminal.",
             file=sys.stderr,
         )
         return 1
     try:
-        lessons = wordings.to_save(args.save)
-    except wordings.WordingsError as exc:
+        lessons = pending.to_save(args.save)
+    except pending.PendingError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     if not lessons:
         print("nothing to save: no row has decision: yes")
         return 0
-    print(f"Saving {len(lessons)} wording(s) to the answer bank's fact_wordings:")
+    print(f"Saving {len(lessons)} written answer(s) to the answer bank's questions:")
     for lesson in lessons:
-        print(f"  {lesson.label!r} -> Yes when {(lesson.fact or {}).get('fact')} is true")
+        print(f"  {lesson.id} [{lesson.source}]: {_shown(lesson.value)}")
     if not sys.stdin.isatty():
         print(
-            "ERROR: apply wordings --save needs a typed yes and stdin is not a terminal.",
+            "ERROR: apply prose --save needs a typed yes and stdin is not a terminal.",
             file=sys.stderr,
         )
         return 1
     try:
-        reply = input("Type 'yes' to save these wordings: ")
+        reply = input("Type 'yes' to save these answers: ")
     except EOFError:
         reply = ""
     if reply.strip().lower() not in _CONFIRM_YES:
         print("ABORTED: nothing saved.", file=sys.stderr)
         return 1
     try:
-        changes = bank.learn(lessons, bank_path)
+        kept, refusals = bank.learn(lessons, bank_path)
     except (bank.BankError, AnswersError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    for line in changes or ["nothing to change: the bank already holds these"]:
+    for line in _learned_lines(kept, refusals) or ["nothing to change"]:
         print(line)
-    return 1 if any(c.startswith("not saved:") for c in changes) else 0
+    return 1 if refusals else 0
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -1729,30 +1637,30 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("answers_file", type=Path)
     c.set_defaults(func=_cmd_confirm)
 
-    wd = sub.add_parser(
-        "wordings",
-        help="review the work-authorization wordings saved plans park on; save the approved ones",
+    pr = sub.add_parser(
+        "prose",
+        help="review the judge's written answers no bank question holds yet; save the approved ones",
     )
-    wmode = wd.add_mutually_exclusive_group(required=True)
-    wmode.add_argument(
+    pmode = pr.add_mutually_exclusive_group(required=True)
+    pmode.add_argument(
         "--review",
         action="store_true",
-        help='write each wording not yet in fact_wordings, with decision: "" to set',
+        help='write each pending written answer, with decision: "" to set',
     )
-    wmode.add_argument(
+    pmode.add_argument(
         "--save",
         type=Path,
         metavar="FILE",
-        help="save the decision: yes rows as exact fact_wordings (typed yes on a terminal)",
+        help="save the decision: yes rows as bank questions (typed yes on a terminal)",
     )
-    wd.add_argument(
+    pr.add_argument(
         "--out",
         type=Path,
         default=None,
-        help="with --review: where to write (default applications/apply_runs/wordings_review.yaml)",
+        help="with --review: where to write (default applications/apply_runs/prose_review.yaml)",
     )
-    wd.add_argument("--path", default=None, type=Path, help="bank path (tests)")
-    wd.set_defaults(func=_cmd_wordings)
+    pr.add_argument("--path", default=None, type=Path, help="bank path (tests)")
+    pr.set_defaults(func=_cmd_prose)
 
     sh = sub.add_parser(
         "sheet", help="rewrite the status sheet from the work queue (state, scores, ledger, runs)"
@@ -1787,26 +1695,8 @@ def main(argv: list[str] | None = None) -> int:
     ru.set_defaults(func=_cmd_resolve_urls)
 
     lrn = sub.add_parser("learn", help="review or undo what the answer bank holds")
-    lrn.add_argument("--job", default=None, help="only questions this job taught")
     lrn.add_argument(
-        "--undo",
-        default=None,
-        metavar="QUESTION_ID",
-        help="remove a question, or one wording of it with --wording",
-    )
-    lrn.add_argument("--wording", default=None, help="with --undo: one wording only")
-    lrn.add_argument("--keyword", default=None, help="with --undo: one keyword only")
-    lrn.add_argument(
-        "--undo-claim",
-        default=None,
-        metavar="OPTION_TEXT",
-        help="remove one work-authorization claim",
-    )
-    lrn.add_argument(
-        "--undo-fact",
-        default=None,
-        metavar="LABEL",
-        help="remove one judged work-authorization / export-control wording",
+        "--undo", default=None, metavar="ID", help="remove one fact (F-...) or one question"
     )
     lrn.add_argument("--path", default=None, type=Path, help="bank path (tests)")
     lrn.set_defaults(func=_cmd_learn)
@@ -1825,27 +1715,6 @@ def main(argv: list[str] | None = None) -> int:
     tri.add_argument("--job-id", action="append", default=[], help="only these roles; repeat")
     tri.add_argument("--limit", type=int, default=None)
     tri.set_defaults(func=_cmd_triage)
-
-    tch = sub.add_parser("teach", help="save one answer to the answer bank")
-    tch.add_argument("--question-id", required=True, help="the bank question, existing or new")
-    tch.add_argument("--label", required=True, help="the board's question text, in full")
-    tch.add_argument(
-        "--value", required=True, action="append", help="the answer; repeat for a multi-select"
-    )
-    tch.add_argument(
-        "--offered",
-        action="append",
-        default=[],
-        help="an option the board offers; repeat per option",
-    )
-    tch.add_argument("--keyword", default=None, help="words every wording of it shares")
-    tch.add_argument(
-        "--misfired", default=None, help="the question whose keyword wrongly answered this label"
-    )
-    tch.add_argument("--job", default=None)
-    tch.add_argument("--source", default="user")
-    tch.add_argument("--path", default=None, type=Path, help="bank path (tests)")
-    tch.set_defaults(func=_cmd_teach)
 
     from applyourself.apply import judge_cli
 

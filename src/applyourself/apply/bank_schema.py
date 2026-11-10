@@ -1,7 +1,7 @@
 """The answer bank's schema: loading and validating
 `profile/application_answers.yaml` into `Answers`, filling the facts it leaves
-out from resume.yaml, and the label normalization both wordings and labels are
-compared in. Fails loud on anything ambiguous."""
+out from resume.yaml, and the label normalization option matching uses. Fails
+loud on anything ambiguous."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from applyourself.shared import paths
 
 EXAMPLE_NAME = "application_answers.example.yaml"
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 IDENTITY_KEYS = (
     "first_name",
@@ -57,17 +57,15 @@ TOP_LEVEL_KEYS = (
     "education",
     "employment",
     "demographics",
-    "claims",
     "questions",
-    "fact_wordings",
     "facts",
     # Not an answer: whether an optional cover-letter upload gets a letter.
     "cover_letter",
 )
 
-# A keyword this short matches almost any label. Punctuation is stripped before
-# matching, so `C++` normalizes to the single character `c`.
-MIN_KEYWORD_LENGTH = 3
+# Keys schema 3 had and schema 4 drops (`config migrate` removes them).
+REMOVED_TOP_LEVEL_KEYS = ("claims", "fact_wordings")
+REMOVED_QUESTION_KEYS = ("wordings", "keywords", "not")
 
 # Answers a question may compute rather than state.
 COMPUTED = ("salary", "start_date", "how_heard")
@@ -82,9 +80,8 @@ COVER_LETTER_POLICIES = ("when_required", "when_offered")
 DEMOGRAPHIC_TOPICS = ("gender", "race", "hispanic_ethnicity", "veteran_status", "disability_status")
 
 
-# Anything work-authorization shaped. A question keyword or wording that lands
-# in here is a load error; a label that lands in here is answered by the
-# work-authorization resolver, or parked.
+# Anything work-authorization shaped. A label that lands in here parks for the
+# judge at tier B0, where a judged fact may answer it.
 WORK_AUTHORIZATION_DOMAIN = re.compile(
     r"sponsor|visa|work\s+authori[sz]|authou?ri[sz]\w*\s+to\s+work|citizenship|right\s+to\s+work"
     r"|eligib\w*\s+to\s+(?:work|live)|work\s+eligib|employment\s+eligib"
@@ -94,8 +91,7 @@ WORK_AUTHORIZATION_DOMAIN = re.compile(
     r"|u\.?\s?s\.?\s+person|export\s+control|deemed\s+export|\bitar\b",
     re.IGNORECASE,
 )
-# Caught by the domain above but NOT work authorization — these fall through to
-# the question bank. Positive shape match: the relocation-cities checkbox names
+# Caught by the domain above but NOT work authorization — these park at tier C. Positive shape match: the relocation-cities checkbox names
 # "visa sponsorship" in its own preamble.
 _NOT_WORK_AUTH = re.compile(
     r"relocation\s+support"
@@ -108,10 +104,6 @@ _NOT_WORK_AUTH = re.compile(
 )
 
 
-# Option labels too generic to carry a work-authorization claim of their own.
-_BARE_OPTIONS = frozenset({"yes", "no", "yes.", "no.", "other", "n/a"})
-
-
 _PUNCT = re.compile(r"[^\w\s]+")
 _WS = re.compile(r"\s+")
 
@@ -121,8 +113,7 @@ class AnswersError(Exception):
 
 
 def _norm(text: str) -> str:
-    """Casefolded, punctuation-free, single-spaced — the form both question
-    wordings and labels are compared in."""
+    """Casefolded, punctuation-free, single-spaced — the form labels are compared in."""
     text = unicodedata.normalize("NFKC", text or "").replace("’", "'")
     return _WS.sub(" ", _PUNCT.sub(" ", text.casefold())).strip()
 
@@ -138,17 +129,11 @@ norm_label = _norm
 
 @dataclass(frozen=True)
 class Question:
-    """One real question, however many ways boards word it."""
+    """One real question, however many ways boards word it; the judge picks it."""
 
     id: str
     answers: tuple[str, ...] = ()
     """Literal candidates, in preference order; the first the widget offers wins."""
-    wordings: tuple[str, ...] = ()
-    """Normalized whole labels. An exact hit here beats every keyword."""
-    keywords: tuple[str, ...] = ()
-    """Normalized substrings, tried only when no question claims the whole label."""
-    not_wordings: tuple[str, ...] = ()
-    """Whole labels this question must not answer, even when a keyword hits."""
     computed: str = ""
     role_file: str = ""
     mode: str = "exact"
@@ -203,16 +188,8 @@ class Answers:
     countries: dict[str, CountryFacts]
     nationalities: tuple[str, ...] = ()
     us_person: str = "park"
-    claims: dict[str, dict] = field(default_factory=dict)
-    """Normalized board option text -> the facts it states. A board's
-    full-sentence work-authorization option is true of you when every fact it
-    states matches the country's row."""
     demographic_answers: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Topic (`DEMOGRAPHIC_TOPICS`) -> your answer's spellings, best first."""
-    fact_wordings: dict[str, dict] = field(default_factory=dict)
-    """Normalized label -> `{fact, yes_when}`: a yes/no question the code cannot
-    classify (export control, a negated sponsorship question), judged once and
-    answered from your facts on every later board."""
     cover_letter: str = "when_required"
     facts: dict[str, str] = field(default_factory=dict)
     """`F-<ID>` -> one plain sentence the user states about themself; a judged
@@ -323,13 +300,9 @@ _SALARY_FLOOR_PER = ("year", "month")
 _SALARY_KEYS = ("amount", "currency", "markup_pct", "lanes")
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 _US_PERSON = ("park", "yes", "no")
-_CLAIM_KEYS = ("authorized", "requires_sponsorship", "holds", "country")
 _QID = re.compile(r"^[a-z0-9_]+$")
 _QUESTION_KEYS = (
     "answer",
-    "wordings",
-    "keywords",
-    "not",
     "mode",
     "only_when_required",
     "source",
@@ -463,36 +436,6 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
     return countries, tuple(n.strip() for n in nationalities), us_person
 
 
-def _parse_claims(data) -> dict[str, dict]:
-    raw = data.get("claims") or {}
-    if not isinstance(raw, dict):
-        raise AnswersError("claims: must be a mapping of option text to facts")
-    out: dict[str, dict] = {}
-    for option, facts in raw.items():
-        where = f"claims[{option!r}]"
-        key = _norm_option(str(option))
-        if key in _BARE_OPTIONS:
-            raise AnswersError(f"{where}: too generic to carry a claim of its own")
-        if not isinstance(facts, dict) or not facts:
-            raise AnswersError(f"{where}: must map to the facts it states")
-        unknown = set(facts) - set(_CLAIM_KEYS)
-        if unknown:
-            raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
-        claim = {}
-        for k in ("authorized", "requires_sponsorship", "holds"):
-            if k in facts:
-                claim[k] = _require_bool(facts[k], f"{where}.{k}")
-        if "country" in facts:
-            place = canonical_place(_require_str(facts["country"], f"{where}.country"))
-            if not place:
-                raise AnswersError(f"{where}.country: not a country this pipeline knows")
-            claim["country"] = place
-        if not set(claim) - {"country"}:
-            raise AnswersError(f"{where}: states no fact")
-        out[key] = claim
-    return out
-
-
 def _parse_demographics(data) -> dict[str, tuple[str, ...]]:
     block = data.get("demographics")
     if block is None:
@@ -514,35 +457,9 @@ def _parse_demographics(data) -> dict[str, tuple[str, ...]]:
     return out
 
 
-# The facts a judged wording may be answered from. `us_person` is the bank's
-# own; the rest are the question's country's row.
+# The facts a judged `fact` entry may be answered from. `us_person` is the
+# bank's own; the rest are the question's country's row.
 FACT_WORDING_FACTS = ("us_person", "authorized", "requires_sponsorship", "unrestricted")
-
-
-def _parse_fact_wordings(data) -> dict[str, dict]:
-    raw = data.get("fact_wordings") or {}
-    if not isinstance(raw, dict):
-        raise AnswersError("fact_wordings: must map a label to {fact, yes_when}")
-    out: dict[str, dict] = {}
-    for label, spec in raw.items():
-        where = f"fact_wordings[{label!r}]"
-        key = _norm(str(label))
-        if not key:
-            raise AnswersError(f"{where}: the label normalizes to nothing")
-        if not isinstance(spec, dict) or set(spec) != {"fact", "yes_when"}:
-            raise AnswersError(f"{where}: must be {{fact, yes_when}}")
-        if spec["fact"] not in FACT_WORDING_FACTS:
-            raise AnswersError(f"{where}.fact: one of {list(FACT_WORDING_FACTS)}")
-        _require_bool(spec["yes_when"], f"{where}.yes_when")
-        if not in_work_authorization_domain(str(label)):
-            raise AnswersError(
-                f"{where}: not a work-authorization or export-control question; "
-                "an ordinary question goes under questions:"
-            )
-        if key in out:
-            raise AnswersError(f"{where}: another label normalizes to the same wording")
-        out[key] = {"fact": spec["fact"], "yes_when": spec["yes_when"]}
-    return out
 
 
 FACT_ID = re.compile(r"^F-[A-Z0-9-]+$")
@@ -571,17 +488,6 @@ def _fact_candidates(path: str, identity, education, employment, where: str) -> 
     return (str(value), *(a for a in alternates if a != value))
 
 
-def _normed_list(raw, where: str) -> tuple[str, ...]:
-    if raw is None:
-        return ()
-    if not isinstance(raw, list):
-        raise AnswersError(f"{where}: must be a list")
-    out = tuple(_norm(_require_str(v, where)) for v in raw)
-    if any(not v for v in out):
-        raise AnswersError(f"{where}: an entry normalizes to nothing")
-    return out
-
-
 def _parse_questions(data, identity, education, employment) -> tuple[Question, ...]:
     raw = data.get("questions") or {}
     if not isinstance(raw, dict):
@@ -593,6 +499,12 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
             raise AnswersError(f"{where}: an id is lowercase letters, digits and _")
         if not isinstance(spec, dict):
             raise AnswersError(f"{where}: not a mapping")
+        removed = set(spec) & set(REMOVED_QUESTION_KEYS)
+        if removed:
+            raise AnswersError(
+                f"{where}: {sorted(removed)} are gone in schema {SCHEMA_VERSION}; "
+                "the judge picks the question"
+            )
         unknown = set(spec) - set(_QUESTION_KEYS)
         if unknown:
             raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
@@ -631,24 +543,6 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
         else:
             raise AnswersError(f"{where}: needs an answer")
 
-        wordings = _normed_list(spec.get("wordings"), f"{where}.wordings")
-        keywords = _normed_list(spec.get("keywords"), f"{where}.keywords")
-        not_wordings = _normed_list(spec.get("not"), f"{where}.not")
-        if not wordings and not keywords:
-            raise AnswersError(f"{where}: needs wordings or keywords to be found by")
-        for original, keyword in zip(spec.get("keywords") or [], keywords, strict=True):
-            if len(keyword) < MIN_KEYWORD_LENGTH:
-                raise AnswersError(
-                    f"{where}.keywords: {original!r} normalizes to {keyword!r}, under "
-                    f"{MIN_KEYWORD_LENGTH} characters — put the whole label in "
-                    f"`wordings:` instead"
-                )
-        for text in wordings + keywords:
-            if WORK_AUTHORIZATION_DOMAIN.search(text) and not _NOT_WORK_AUTH.search(text):
-                raise AnswersError(
-                    f"{where}: {text!r} is a work-authorization question. Those are "
-                    "answered from work_authorization, per country, never from a question"
-                )
         mode = spec.get("mode", "exact")
         if mode not in ("exact", "contains"):
             raise AnswersError(f"{where}.mode: must be 'exact' or 'contains', got {mode!r}")
@@ -658,9 +552,6 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
             Question(
                 id=qid,
                 answers=answers,
-                wordings=wordings,
-                keywords=keywords,
-                not_wordings=not_wordings,
                 computed=computed,
                 role_file=role_file,
                 mode=mode,
@@ -669,26 +560,6 @@ def _parse_questions(data, identity, education, employment) -> tuple[Question, .
             )
         )
 
-    # A wording claimed by two questions has no single answer.
-    owner: dict[str, str] = {}
-    for q in questions:
-        for w in q.wordings:
-            if w in owner and owner[w] != q.id:
-                raise AnswersError(
-                    f"questions.{owner[w]} and questions.{q.id} both claim the wording {w!r}"
-                )
-            owner[w] = q.id
-    # Keywords are substring tests in file order, so an overlap is a question
-    # silently shadowing another.
-    for i, q in enumerate(questions):
-        for other in questions[i + 1 :]:
-            for a in q.keywords:
-                for b in other.keywords:
-                    if a in b or b in a:
-                        raise AnswersError(
-                            f"questions.{q.id} keyword {a!r} overlaps questions."
-                            f"{other.id} keyword {b!r}: one would shadow the other"
-                        )
     return tuple(questions)
 
 
@@ -740,10 +611,9 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
 
     if not isinstance(data, dict):
         raise AnswersError(f"{where}: top level must be a mapping")
-    if data.get("schema_version") == 2:
+    if data.get("schema_version") in (2, 3):
         raise AnswersError(
-            f"{where}: schema_version 2: identity, education and employment now come from "
-            "resume.yaml (schema 3). Run `uv run config migrate --dry-run`, then --apply"
+            f"{where}: bank is schema {data['schema_version']}: run `uv run config migrate`"
         )
     if data.get("schema_version") != SCHEMA_VERSION:
         raise AnswersError(f"{where}: schema_version must be {SCHEMA_VERSION}")
@@ -752,6 +622,12 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
         raise AnswersError(
             f"{where}: browser: moved to profile/settings.yaml. Run "
             "`uv run config migrate --dry-run`, then --apply"
+        )
+    removed_top = set(data) & set(REMOVED_TOP_LEVEL_KEYS)
+    if removed_top:
+        raise AnswersError(
+            f"{where}: {sorted(removed_top)} are gone in schema {SCHEMA_VERSION}; "
+            "state the fact under facts:"
         )
     unknown_top = set(data) - set(TOP_LEVEL_KEYS)
     if unknown_top:
@@ -793,16 +669,14 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
         countries=countries,
         nationalities=nationalities,
         us_person=us_person,
-        claims=_parse_claims(data),
         demographic_answers=_parse_demographics(data),
-        fact_wordings=_parse_fact_wordings(data),
         cover_letter=cover_letter,
         facts=_parse_facts(data),
     )
 
 
 def in_work_authorization_domain(label: str) -> bool:
-    """Whether a label goes to the work-authorization resolver."""
+    """Whether a label parks at tier B0, where a judged fact may answer it."""
     return bool(
         WORK_AUTHORIZATION_DOMAIN.search(label or "") and not _NOT_WORK_AUTH.search(label or "")
     )

@@ -1,35 +1,30 @@
 """The one writer of the answer bank (`profile/application_answers.yaml`).
 
-`apply run --answers` calls `learn()` with what the user just confirmed, so the
-next form that asks the same thing is answered without anyone deciding again:
+It learns two things, each under the user's typed confirmation:
 
-- a label the session mapped to a question joins that question's `wordings`;
-- a label a keyword guessed right joins `wordings` too, so it is exact next time;
-- a keyword guess the user corrected joins the guessing question's `not:`;
-- a board's spelling of a known answer joins its candidates;
-- a confirmed answer to a new question becomes a question of its own;
-- a work-authorization option judged true or false becomes a `claims:` entry;
-- a yes/no work-authorization or export-control label judged against one of
-  your facts becomes a `fact_wordings:` entry.
+- a user's answer to an `ask` becomes a new `facts:` line;
+- an approved new prose answer becomes a new `questions:` entry, its `source`
+  the `B-`/`S-`/`SKILL-` ids it was written from.
 
-Facts about the user (identity, work authorization per country) are never
-written here: those change only when the user states them. Every write is
-validated by loading the whole bank first, and the previous file is kept in
-`.state/bank_history/` next to it (last 20).
+An existing fact or question is never overwritten: `undo` it first. Every write
+is validated by loading the whole bank, keeps the bank's text (comments
+included) where it can, and keeps the previous file in `.state/bank_history/`
+next to it (last 20). Nothing is written in an unattended run.
 
-R7: the session decides what each label means; this module only records it.
+R7: the session decides what each answer says; this module only records it.
 """
 
 from __future__ import annotations
 
 import copy
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
-from applyourself.apply import answers as A
 from applyourself.apply import bank_schema as BS
 from applyourself.shared import clock, paths
 from applyourself.shared.files import atomic_write_text
@@ -37,6 +32,13 @@ from applyourself.shared.parquet_io import locked
 
 # Set to 1 by the night run: no bank write and no submit without a person there.
 UNATTENDED_ENV = "APPLY_UNATTENDED"
+
+HISTORY_KEEP = 20
+
+# The profile ids an approved prose answer may be written from.
+PROSE_SOURCES = ("B-", "S-", "SKILL-")
+
+_QID = re.compile(r"^[a-z0-9_]+$")
 
 
 def unattended() -> bool:
@@ -51,24 +53,15 @@ class BankError(Exception):
 class Lesson:
     """One thing a confirmed run taught."""
 
-    label: str
-    question: str = ""
-    """The bank question the label asks, existing or new."""
-    value: str | tuple[str, ...] = ()
-    """The confirmed answer."""
-    offered: tuple[str, ...] = ()
-    """The options the board offered, if any."""
-    misfired: str = ""
-    """The question whose keyword answered this label wrongly."""
-    claim: dict | None = None
-    """For a work-authorization option: the facts its text states."""
+    kind: Literal["fact", "question"]
+    id: str
+    """`F-...` for a fact; a question id (`[a-z0-9_]+`)."""
+    value: str | list[str]
+    """The fact's sentence; the question's answer."""
     source: str = ""
-    job_id: str = ""
-    keyword: str = ""
-    """Words every wording of this question shares, so a new wording is guessed
-    (and shown for confirmation) instead of parking."""
-    fact: dict | None = None
-    """For a yes/no work-authorization or export-control label: `{fact, yes_when}`."""
+    """`user` for a fact; the comma-joined `B-`/`S-`/`SKILL-` ids for prose."""
+    label: str = ""
+    """The board label it came from (provenance only, not stored)."""
 
 
 def read(path: Path | None = None) -> dict:
@@ -76,16 +69,17 @@ def read(path: Path | None = None) -> dict:
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
 
 
-HISTORY_KEEP = 20
+def _dump(data: dict) -> str:
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
 
 
-def write(data: dict, path: Path | None = None) -> Path:
-    """Validate, keep the old file in `.state/bank_history/`, then replace atomically."""
+def save_text(text: str, path: Path | None = None) -> Path:
+    """Validate `text`, keep the old file in `.state/bank_history/`, then
+    replace atomically with `text` as it is."""
     if unattended():
         raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
     p = Path(path) if path is not None else paths.ANSWER_BANK
-    BS.answers_from(data, where=str(p), resume_path=BS.resume_for(p))
-    text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
+    BS.answers_from(yaml.safe_load(text), where=str(p), resume_path=BS.resume_for(p))
     if p.exists():
         history = p.parent / ".state" / "bank_history"
         history.mkdir(parents=True, exist_ok=True)
@@ -99,308 +93,179 @@ def write(data: dict, path: Path | None = None) -> Path:
     return p
 
 
-def _as_list(value) -> list[str]:
+def write(data: dict, path: Path | None = None) -> Path:
+    """`data` dumped, through `save_text` (comments are not kept)."""
+    return save_text(_dump(data), path)
+
+
+# ------------------------------------------------------------- text edits
+
+
+def _block(lines: list[str], key: str) -> tuple[int, int] | None:
+    """(the `key:` line, the end of its entries) for a top-level block key, or
+    None. The end stops before the comments and blanks above the next key."""
+    at = next((i for i, ln in enumerate(lines) if re.match(rf"{re.escape(key)}:\s*$", ln)), None)
+    if at is None:
+        return None
+    end = at + 1
+    while end < len(lines) and (not lines[end].strip() or lines[end][:1] in (" ", "\t", "#")):
+        end += 1
+    while end > at + 1 and (not lines[end - 1].strip() or lines[end - 1].startswith("#")):
+        end -= 1
+    return at, end
+
+
+def _with_entry(text: str, key: str, entry_id: str, value) -> str:
+    """text with `entry_id: value` appended to the top-level block `key`."""
+    body = "".join(f"  {ln}\n" for ln in _dump({entry_id: value}).splitlines())
+    lines = (text if text.endswith("\n") else text + "\n").splitlines(keepends=True)
+    found = _block(lines, key)
+    if found is None:
+        if any(ln.startswith(f"{key}:") for ln in lines):
+            return ""  # a flow-style block: `_save` dumps the data instead
+        return "".join(lines) + f"{key}:\n" + body
+    _, end = found
+    return "".join(lines[:end] + [body] + lines[end:])
+
+
+def _without_entry(text: str, key: str, entry_id: str) -> str:
+    """text without `entry_id:` (and the lines indented under it) in the block `key`."""
+    lines = (text if text.endswith("\n") else text + "\n").splitlines(keepends=True)
+    found = _block(lines, key)
+    if found is None:
+        return text
+    at, end = found
+    rx = re.compile(rf"  ['\"]?{re.escape(entry_id)}['\"]?\s*:")
+    i = next((i for i in range(at + 1, end) if rx.match(lines[i])), None)
+    if i is None:
+        return text
+    j = i + 1
+    while j < end and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip()) > 2):
+        j += 1
+    while j > i + 1 and not lines[j - 1].strip():
+        j -= 1
+    return "".join(lines[:i] + lines[j:])
+
+
+def _save(text: str, edited: str, data: dict, path: Path | None) -> None:
+    """Write the text edit when it parses to `data`, else `data` dumped."""
+    try:
+        same = yaml.safe_load(edited) == data
+    except yaml.YAMLError:
+        same = False
+    save_text(edited if same else _dump(data), path)
+
+
+# ------------------------------------------------------------- learning
+
+
+def _as_value(value) -> str | list[str] | None:
+    if isinstance(value, str):
+        return value.strip() or None
     if isinstance(value, (list, tuple)):
-        return [str(v) for v in value]
-    return [str(value)] if value not in (None, "") else []
+        items = [str(v).strip() for v in value if str(v).strip()]
+        return (items[0] if len(items) == 1 else items) or None
+    return None
 
 
-def _owner_of(questions: dict, wording: str) -> str:
-    for qid, spec in questions.items():
-        if wording in {BS.norm_label(w) for w in spec.get("wordings") or []}:
-            return qid
-    return ""
-
-
-def _add(spec: dict, key: str, value: str) -> bool:
-    values = spec.setdefault(key, [])
-    if value in values:
-        return False
-    values.append(value)
-    return True
-
-
-# Sources a new question's answer may come from. A drafted sentence about the
-# user (a bullet, a story), a board's own option, or the user's own words
-# answers any employer the same way. Anything else (the JD, a company's
-# answers) is about one employer and stays with that role.
-_REUSABLE_SOURCES = ("B-", "S-", "SKILL-", "bullets", "stories", "option", "user")
-
-# A new id this long that is the start of an existing one is a typo, not a
-# new question ("do_you_have_at_least_3_years_of_profession").
-_TYPO_PREFIX_MIN = 16
-
-
-def _reusable(source: str) -> bool:
-    return any(part.strip().startswith(_REUSABLE_SOURCES) for part in source.split(","))
-
-
-def _one(data: dict, lesson: Lesson) -> tuple[list[str], str]:
-    """Apply one lesson to `data` in place. Returns (changes, refusal)."""
-    questions = data.setdefault("questions", {})
-    wording = BS.norm_label(lesson.label)
-    changes: list[str] = []
-
-    if lesson.claim is not None:
-        claims = data.get("claims") or {}
-        data["claims"] = claims
-        for option in _as_list(lesson.value):
-            if (
-                A._norm_option(option) not in BS._BARE_OPTIONS
-                and claims.get(option) != lesson.claim
-            ):
-                claims[option] = dict(lesson.claim)
-                changes.append(f"claim: {option!r} -> {lesson.claim}")
-        return changes, ""
-    if lesson.fact is not None:
-        judged = data.get("fact_wordings") or {}
-        data["fact_wordings"] = judged
-        label = lesson.label.strip()
-        taken = next((k for k in judged if BS.norm_label(k) == wording), None)
-        if taken is not None and judged[taken] != lesson.fact:
-            return changes, (
-                f"{label!r} is already judged {judged[taken]}; "
-                f"undo it first (apply learn --undo-fact)"
-            )
-        if taken is None:
-            judged[label] = dict(lesson.fact)
-            changes.append(f"fact wording: {label!r} -> {lesson.fact}")
-        return changes, ""
-    if not wording or not lesson.question:
-        return [], ""
-
-    qid = lesson.question
-    if qid not in questions:
-        if not _reusable(lesson.source):
-            return changes, (
-                f"{qid}: an answer from {lesson.source or 'nowhere'} is about "
-                f"one employer, so it stays with this role"
-            )
-        near = [q for q in questions if len(qid) >= _TYPO_PREFIX_MIN and q.startswith(qid)]
-        if near:
-            return changes, f"{qid}: did you mean {near[0]!r}?"
-        values = _as_list(lesson.value)
-        if not values:
-            return changes, f"{qid}: a new question needs an answer"
-        owner = _owner_of(questions, wording)
-        if owner:
-            return changes, f"{wording!r} already belongs to {owner}"
-        spec = {
-            "answer": values[0] if len(values) == 1 else values,
-            "wordings": [lesson.label.strip()],
-        }
-        if lesson.source:
-            spec["source"] = lesson.source
-        if lesson.job_id:
-            spec["from"] = [lesson.job_id]
-        questions[qid] = spec
-        changes.append(f"new question {qid}: {lesson.label.strip()!r}")
-    else:
-        spec = questions[qid]
-        owner = _owner_of(questions, wording)
-        if owner and owner != qid:
-            return changes, f"{wording!r} already belongs to {owner}, not {qid}"
-        answer = spec.get("answer")
-        if lesson.offered and not isinstance(answer, dict):
-            candidates = _as_list(answer)
-            offered = {A._norm_option(o) for o in lesson.offered}
-            known_here = [c for c in candidates if A._norm_option(c) in offered]
-            for option in _as_list(lesson.value):
-                if A._norm_option(option) in {A._norm_option(c) for c in candidates}:
-                    continue
-                if known_here:
-                    # The board offered the bank's own answer and the user
-                    # chose another: a different question, or a wrong answer.
-                    return changes, (
-                        f"{qid} answers {known_here[0]!r}, this form was "
-                        f"answered {option!r}; give it its own question id"
-                    )
-                candidates.append(option)
-                changes.append(f"option -> {qid}: {option!r}")
-            spec["answer"] = candidates[0] if len(candidates) == 1 else candidates
-        if not owner and _add(spec, "wordings", lesson.label.strip()):
-            changes.append(f"wording -> {qid}: {lesson.label.strip()!r}")
-        if lesson.job_id:
-            _add(spec, "from", lesson.job_id)
-    if lesson.keyword:
-        changes.extend(_add_keyword(data, qid, lesson.keyword))
-    return changes, ""
-
-
-def _still_answers(data: dict, lesson: Lesson) -> str:
-    """ "" when the bank, with this lesson in, finds the lesson's question for
-    its label; else why not."""
-    if lesson.claim is not None or (not lesson.question and lesson.fact is None):
+def _refusal(data: dict, lesson: Lesson) -> str:
+    """Why `lesson` cannot go into `data`, or ""."""
+    if lesson.kind == "fact":
+        if not BS.FACT_ID.match(lesson.id):
+            return f"{lesson.id}: a fact id matches {BS.FACT_ID.pattern}"
+        if lesson.id in (data.get("facts") or {}):
+            return f"{lesson.id}: already a fact; undo it first (apply learn --undo {lesson.id})"
+        if not isinstance(lesson.value, str) or not lesson.value.strip():
+            return f"{lesson.id}: a fact is one sentence"
+        if "\n" in lesson.value.strip():
+            return f"{lesson.id}: a fact is one line"
         return ""
-    try:
-        bank = BS.answers_from(data)
-    except BS.AnswersError as exc:
-        return f"the bank would not load: {exc}"
-    if lesson.fact is not None:
-        return (
-            ""
-            if BS.norm_label(lesson.label) in bank.fact_wordings
-            else f"{lesson.label.strip()!r} would not be found"
-        )
-    found = A.find_question(lesson.label, bank)
-    if found is None or found[0].id != lesson.question:
-        got = found[0].id if found else "nothing"
-        return f"{lesson.label.strip()!r} would find {got}, not {lesson.question}"
-    return ""
+    if lesson.kind == "question":
+        if not _QID.match(lesson.id):
+            return f"{lesson.id}: a question id is lowercase letters, digits and _"
+        if lesson.id in (data.get("questions") or {}):
+            return (
+                f"{lesson.id}: already a question; undo it first (apply learn --undo {lesson.id})"
+            )
+        parts = [p.strip() for p in lesson.source.split(",") if p.strip()]
+        if not parts or not all(p.startswith(PROSE_SOURCES) for p in parts):
+            return (
+                f"{lesson.id}: a saved answer is written from profile ids "
+                f"({', '.join(PROSE_SOURCES)}), not {lesson.source or 'nowhere'}"
+            )
+        if _as_value(lesson.value) is None:
+            return f"{lesson.id}: a new question needs an answer"
+        return ""
+    return f"{lesson.id}: unknown lesson kind {lesson.kind!r}"
 
 
-def apply_lessons(data: dict, lessons: list[Lesson]) -> list[str]:
-    """Fold lessons into a raw bank mapping in place, one at a time. A lesson
-    is kept only if the bank still loads and still finds that lesson's question
-    for its label; a refused lesson is named and the others stand."""
-    changes: list[str] = []
-    for lesson in lessons:
-        wording = BS.norm_label(lesson.label)
-        trial = copy.deepcopy(data)
-        made, refusal = _one(trial, lesson)
-        refusal = refusal or (_still_answers(trial, lesson) if made else "")
-        if refusal:
-            changes.append(f"not saved: {refusal}")
-            continue
-        questions = trial.get("questions") or {}
-        if (  # noqa: SIM102
-            lesson.misfired
-            and lesson.misfired != lesson.question
-            and lesson.misfired in questions
-            and wording
-            and lesson.question in questions
-        ):
-            # Only once the right answer is saved: a "not" with nowhere else
-            # for the label to go would just park it.
-            if _add(questions[lesson.misfired], "not", wording):
-                made.append(f"not: {lesson.misfired} no longer answers {wording!r}")
-        data.clear()
-        data.update(trial)
-        changes.extend(made)
-    return changes
+def _entry(lesson: Lesson) -> tuple[str, object]:
+    """(top-level block, the entry's value) a lesson adds."""
+    if lesson.kind == "fact":
+        return "facts", str(lesson.value).strip()
+    return "questions", {"answer": _as_value(lesson.value), "source": lesson.source.strip()}
 
 
-def _add_keyword(data: dict, qid: str, keyword: str) -> list[str]:
-    """Add a keyword only if the bank still loads with it: a keyword that
-    shadows another question, or asks a work-authorization question, is
-    refused on its own and the rest of the lesson stands."""
-    spec = data["questions"][qid]
-    word = BS.norm_label(keyword)
-    if not word or word in [BS.norm_label(k) for k in spec.get("keywords") or []]:
-        return []
-    spec.setdefault("keywords", []).append(word)
-    try:
-        BS.answers_from(data)
-    except BS.AnswersError as exc:
-        spec["keywords"].remove(word)
-        if not spec["keywords"]:
-            spec.pop("keywords")
-        return [f"keyword refused for {qid}: {word!r} ({exc})"]
-    return [f"keyword -> {qid}: {word!r}"]
-
-
-def learn(lessons: list[Lesson], path: Path | None = None) -> list[str]:
-    """Write every lesson that holds into the bank; name the ones that do not."""
+def learn(lessons: list[Lesson], path: Path | None = None) -> tuple[list[Lesson], list[str]]:
+    """Write every lesson that holds into the bank. Returns (kept, refusals):
+    each lesson is tried alone and kept only if the bank still loads; a
+    refused one is named and the rest stand."""
     if not lessons:
-        return []
-    with locked(Path(path) if path is not None else paths.ANSWER_BANK):
-        data = read(path)
-        changes = apply_lessons(data, lessons)
-        if any(not c.startswith(("not saved:", "keyword refused")) for c in changes):
-            write(data, path)
-    return changes
+        return [], []
+    if unattended():
+        raise BankError(f"{UNATTENDED_ENV}=1: the answer bank is not written in an unattended run")
+    p = Path(path) if path is not None else paths.ANSWER_BANK
+    with locked(p):
+        text = p.read_text(encoding="utf-8")
+        data = yaml.safe_load(text) or {}
+        edited = text
+        kept: list[Lesson] = []
+        refusals: list[str] = []
+        for lesson in lessons:
+            refusal = _refusal(data, lesson)
+            if not refusal:
+                key, value = _entry(lesson)
+                trial = copy.deepcopy(data)
+                trial[key] = {**(trial.get(key) or {}), lesson.id: value}
+                try:
+                    BS.answers_from(trial, where=str(p), resume_path=BS.resume_for(p))
+                except BS.AnswersError as exc:
+                    refusal = f"{lesson.id}: the bank would not load: {exc}"
+            if refusal:
+                refusals.append(refusal)
+                continue
+            data = trial
+            edited = _with_entry(edited, key, lesson.id, value)
+            kept.append(lesson)
+        if kept:
+            _save(text, edited, data, p)
+    return kept, refusals
 
 
-def undo(
-    qid: str = "",
-    wording: str = "",
-    keyword: str = "",
-    claim: str = "",
-    fact: str = "",
-    path: Path | None = None,
-) -> str:
-    """`_undo` under the bank's lock, so it cannot interleave with a `learn`."""
-    with locked(Path(path) if path is not None else paths.ANSWER_BANK):
-        return _undo(qid, wording, keyword, claim, fact, path)
+def undo(item_id: str, path: Path | None = None) -> str:
+    """Remove one fact (`F-...`) or one question, under the bank's lock."""
+    p = Path(path) if path is not None else paths.ANSWER_BANK
+    key = "facts" if item_id.startswith("F-") else "questions"
+    with locked(p):
+        text = p.read_text(encoding="utf-8")
+        data = yaml.safe_load(text) or {}
+        block = data.get(key) or {}
+        if item_id not in block:
+            raise BankError(f"no {key[:-1]} {item_id!r}")
+        block.pop(item_id)
+        if not block:
+            data.pop(key, None)
+        _save(text, _without_entry(text, key, item_id), data, p)
+    return f"removed {key[:-1]} {item_id}"
 
 
-def _undo(
-    qid: str = "",
-    wording: str = "",
-    keyword: str = "",
-    claim: str = "",
-    fact: str = "",
-    path: Path | None = None,
-) -> str:
-    """Take one thing back: a whole question, one wording or keyword of it, one
-    claim, or one fact wording. A question left with no way to be found is
-    removed whole."""
+def review(path: Path | None = None) -> str:
+    """Every fact, then every question: one line each."""
     data = read(path)
-    if fact:
-        judged = data.get("fact_wordings") or {}
-        key = next((k for k in judged if BS.norm_label(k) == BS.norm_label(fact)), None)
-        if key is None:
-            raise BankError(f"no fact wording {fact!r}")
-        judged.pop(key)
-        if not judged:
-            data.pop("fact_wordings", None)
-        write(data, path)
-        return f"removed fact wording {key!r}"
-    if claim:
-        claims = data.get("claims") or {}
-        if claim not in claims:
-            raise BankError(f"no claim {claim!r}")
-        claims.pop(claim)
-        write(data, path)
-        return f"removed claim {claim!r}"
-    questions = data.get("questions") or {}
-    if qid not in questions:
-        raise BankError(f"no question {qid!r}")
-    spec = questions[qid]
-    if wording or keyword:
-        key, target = ("wordings", wording) if wording else ("keywords", keyword)
-        kept = [w for w in spec.get(key) or [] if BS.norm_label(w) != BS.norm_label(target)]
-        if len(kept) == len(spec.get(key) or []):
-            raise BankError(f"{qid} has no {key[:-1]} {target!r}")
-        spec[key] = kept
-        if not kept:
-            spec.pop(key)
-        done = f"removed {target!r} from {qid}"
-        if not spec.get("wordings") and not spec.get("keywords"):
-            questions.pop(qid)
-            done += f"; {qid} had no other way to be found, so it is removed"
-    else:
-        questions.pop(qid)
-        done = f"removed question {qid}"
-    write(data, path)
-    return done
-
-
-def review(path: Path | None = None, since_job: str = "") -> list[str]:
-    """Every question, its answer, and how it is found. `since_job` limits to
-    questions a given job taught."""
-    data = read(path)
-    lines = []
+    lines = [f"{fid}: {text}" for fid, text in (data.get("facts") or {}).items()]
     for qid, spec in (data.get("questions") or {}).items():
-        taught = spec.get("from") or []
-        if since_job and since_job not in taught:
-            continue
-        answer = spec.get("answer")
-        shown = answer if not isinstance(answer, list) else " | ".join(map(str, answer))
-        lines.append(f"{qid}: {str(shown)[:90]}")
-        for w in spec.get("wordings") or []:
-            lines.append(f"    = {w}")
-        for k in spec.get("keywords") or []:
-            lines.append(f"    ~ {k}")
-        for n in spec.get("not") or []:
-            lines.append(f"    ! {n}")
-        if taught:
-            lines.append(f"    from {', '.join(taught)}")
-    for option, claim in (data.get("claims") or {}).items():
-        lines.append(f"claim {option!r}: {claim}")
-    for label, judged in (data.get("fact_wordings") or {}).items():
-        lines.append(
-            f"fact wording {label!r}: Yes when {judged['fact']} is "
-            f"{str(judged['yes_when']).lower()}"
-        )
-    return lines
+        answer = (spec or {}).get("answer")
+        shown = " | ".join(map(str, answer)) if isinstance(answer, list) else str(answer)
+        source = (spec or {}).get("source")
+        lines.append(f"{qid}: {' '.join(shown.split())[:90]}" + (f"  ({source})" if source else ""))
+    return "\n".join(lines)

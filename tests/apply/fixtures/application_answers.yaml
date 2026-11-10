@@ -1,5 +1,5 @@
 # Synthetic answer bank for tests. Widget world, no real person.
-schema_version: 3
+schema_version: 4
 identity:
   first_name: Alex
   last_name: Example
@@ -35,45 +35,19 @@ work_authorization:
       authorized: true
       requires_sponsorship: true
       start_in_days: 14
-claims: {}
-fact_wordings:
-  Are you permanently authorized to work for any employer in the United States?:
-    fact: unrestricted
-    yes_when: true
-  If not, do you now or will you in the future need sponsorship for a work card, visa, or permanent resident status in the United States?:
-    fact: requires_sponsorship
-    yes_when: true
-  Are you legally authorized to work in the United States?:
-    fact: authorized
-    yes_when: true
-  Will you now or in the future require visa sponsorship?:
-    fact: requires_sponsorship
-    yes_when: true
 questions:
   linkedin:
     answer: https://linkedin.com/in/example
-    keywords:
-    - linkedin
   website:
     answer: https://example.com
-    keywords:
-    - website
-    - portfolio
   salary:
     answer:
       computed: salary
       fallback:
       - Open — targeting market rate for the level.
-    keywords:
-    - salary
-    - desired rate of pay
-    - compensation
   when_can_you_start:
     answer:
       computed: start_date
-    keywords:
-    - when can you start
-    - notice period
   how_did_you_hear:
     answer:
       computed: how_heard
@@ -81,11 +55,6 @@ questions:
       - Careers Page
       - Other Job Board
       - Other
-    keywords:
-    - how did you hear
-    - how did you learn
   pronouns:
     answer:
     - They/Them
-    keywords:
-    - pronouns

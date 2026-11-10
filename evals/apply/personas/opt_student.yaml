@@ -1,6 +1,6 @@
 # Eval persona: an F-1 STEM OPT holder in the US who will need sponsorship later.
 # Fictional. Loaded by applyourself.evals.cases.load_persona (never reads resume.yaml).
-schema_version: 3
+schema_version: 4
 identity:
   first_name: Jordan
   last_name: Sample
@@ -59,23 +59,17 @@ cover_letter: when_required
 questions:
   linkedin:
     answer: https://linkedin.com/in/jordan-sample-example
-    wordings: ["LinkedIn Profile", "LinkedIn URL"]
   salary:
     answer: {computed: salary, fallback: ["120000"]}
-    wordings: ["What are your salary expectations?", "Desired salary"]
   start_date:
     answer: {computed: start_date}
-    wordings: ["When can you start?", "Earliest start date"]
   languages_fluent:
     answer: [English, Hindi]
-    wordings: ["Which languages are you fluent in?"]
   how_did_you_hear:
     answer: {computed: how_heard, fallback: [Careers Page, Other]}
-    wordings: ["How did you hear about us?"]
   llm_project:
     answer: >-
       At Widget Corp I built a retrieval pipeline over support tickets that cut
       median answer time from four hours to forty minutes, with an offline eval
       set gating every prompt change.
-    wordings: ["Describe a project where you shipped an LLM feature to production."]
     source: B-OPT-RAG-01

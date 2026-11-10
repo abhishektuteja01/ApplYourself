@@ -42,7 +42,6 @@ from applyourself.apply.answers import (
     match_option,
     resolve,
     resolve_fact_wording,
-    similar_questions,
 )
 from applyourself.apply.reconcile import MergedField, Reconciled
 
@@ -94,15 +93,12 @@ class FieldPlan:
 
     options: tuple[str, ...] = ()
     """What the widget offered. Held on a *filled* field, not just a parked one:
-    an answer can only be audited against the alternatives it beat, and a
-    keyword guess that picked the wrong one of nine options looks identical to a
-    right one when all you can see is the value. Empty for free text and for
+    an answer can only be audited against the alternatives it beat. Empty for free text and for
     every DOM-only select, whose real list exists only once a browser has
     opened it (`fill.py`'s `observed_options`)."""
 
     source: str = ""
-    """`Resolution.source` — `bank:<id>[~keyword]`, or the resolver that
-    answered this."""
+    """`Resolution.source` — `bank:<id>`, or the resolver that answered this."""
 
     dom_path: str = ""
     """`MergedField.dom_path` — the real selector when `id` is an alias."""
@@ -112,10 +108,6 @@ class FieldPlan:
 
     reason: str = ""
     """`Resolution.reason`. A filled field can carry a caveat worth reading."""
-
-    replaced: str = ""
-    """The source an override replaced — `bank:<id>~<keyword>` when the session
-    corrected a keyword guess, which is how the bank learns not to guess it."""
 
     alternates: tuple[str, ...] = ()
     """`Resolution.alternates` — other values the read-back accepts as this answer."""
@@ -175,9 +167,6 @@ class Unmapped:
     """`Resolution.source`. On a Tier B park, the bank question whose answer
     the board did not offer."""
 
-    similar: tuple[str, ...] = ()
-    """For a question the bank does not know: the closest bank questions."""
-
     blocks: bool = False
     """Parks the role though the board marks it optional: a cover-letter upload
     with no letter, under `cover_letter: when_offered`."""
@@ -189,6 +178,13 @@ class Skipped:
     label: str
     tier: str
     reason: str
+    kind: str = ""
+    section: str = ""
+    options: tuple[str, ...] = ()
+    description: str = ""
+    required: bool = False
+    multi: bool = False
+    """The widget, carried so the apply-judge can answer an optional B0 field."""
 
 
 @dataclass(frozen=True)
@@ -321,10 +317,6 @@ class Override:
     `jd`, `option`, or a bank id."""
     question: str = ""
     """The bank question this label asks — the run saves the label under it."""
-    claim: dict | None = None
-    """For a work-authorization option: the facts its text states."""
-    keyword: str = ""
-    """Words every wording of the question shares; saved as a keyword."""
     fact: dict | None = None
     """For a yes/no work-authorization or export-control label the code cannot
     classify: `{fact, yes_when}`. The answer is computed from your facts."""
@@ -424,7 +416,6 @@ def _work_authorization_facts(answers: Answers) -> dict[str, object]:
             "status_label": None,
             "nationalities": list(answers.nationalities),
             "us_person": answers.us_person,
-            "known_claims": len(answers.claims),
         }
     facts = answers.facts_for(answers.country)
     return {
@@ -435,24 +426,31 @@ def _work_authorization_facts(answers: Answers) -> dict[str, object]:
         "status_label": facts.status_label,
         "nationalities": list(answers.nationalities),
         "us_person": answers.us_person,
-        "known_claims": len(answers.claims),
     }
+
+
+def _skipped(field: MergedField, tier: str, reason: str) -> Skipped:
+    return Skipped(
+        id=field.id,
+        label=field.label,
+        tier=tier,
+        reason=reason,
+        kind=field.kind,
+        section=field.section,
+        options=tuple(o.label for o in field.options),
+        description=field.description,
+        required=field.required,
+        multi=field.multi,
+    )
 
 
 def _unmapped(
     field: MergedField,
     resolution: Resolution,
     reason: str = "",
-    answers: Answers | None = None,
     blocks: bool = False,
 ) -> Unmapped:
-    similar = (
-        similar_questions(field.label, answers)
-        if answers is not None and resolution.tier == "C"
-        else ()
-    )
     return Unmapped(
-        similar=similar,
         id=field.id,
         label=field.label,
         required=field.required,
@@ -592,12 +590,10 @@ def build_plan(
     for field in reconciled.fields:
         if field.section == "employment" and not fill_employment:
             skipped.append(
-                Skipped(
-                    id=field.id,
-                    label=field.label,
-                    tier="A",
-                    reason="employment.only_when_required, and this board does not "
-                    "require the block",
+                _skipped(
+                    field,
+                    "A",
+                    "employment.only_when_required, and this board does not require the block",
                 )
             )
             continue
@@ -624,19 +620,17 @@ def build_plan(
             override = None
 
         resolution = resolve(field, answers)
-        replaced = ""
         judged_skip = False
         if override is not None and field.kind != "file":
             applied, why = apply_override(field, resolution, override, answers, company)
             if why:
                 ignored.append(f"{field.id}: {why}")
             else:
-                replaced = resolution.source
                 judged_skip = bool(override.decision) and applied.action == "skip"
                 resolution = applied
 
         if resolution.action == "park":
-            unmapped.append(_unmapped(field, resolution, answers=answers))
+            unmapped.append(_unmapped(field, resolution))
             continue
 
         if resolution.action == "skip":
@@ -648,16 +642,9 @@ def build_plan(
             if resolution.tier == "C" and field.kind in DRAFTABLE_KINDS and not judged_skip:
                 # Optional and unmatched, but a human would answer it. /apply
                 # gets the chance; leaving it blank stays a valid outcome.
-                draftable.append(_unmapped(field, resolution, answers=answers))
+                draftable.append(_unmapped(field, resolution))
             else:
-                skipped.append(
-                    Skipped(
-                        id=field.id,
-                        label=field.label,
-                        tier=resolution.tier,
-                        reason=resolution.reason,
-                    )
-                )
+                skipped.append(_skipped(field, resolution.tier, resolution.reason))
             continue
 
         if resolution.action == "defer":
@@ -669,14 +656,7 @@ def build_plan(
                         reason += " (cover_letter: when_offered)"
                     unmapped.append(_unmapped(field, resolution, reason, blocks=wanted))
                 else:
-                    skipped.append(
-                        Skipped(
-                            id=field.id,
-                            label=field.label,
-                            tier=resolution.tier,
-                            reason=reason,
-                        )
-                    )
+                    skipped.append(_skipped(field, resolution.tier, reason))
                 continue
             files.append(
                 FilePlan(
@@ -716,7 +696,6 @@ def build_plan(
                 reason=resolution.reason,
                 dom_path=field.dom_path,
                 dom_control=field.dom_control,
-                replaced=replaced,
                 alternates=resolution.alternates,
             )
         )

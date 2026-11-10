@@ -3,9 +3,10 @@
 For each role it reads the form and the answer bank (`apply_cli.build`) and says
 which pile it is in:
 
-  ready    every field is answered from the bank or from facts, nothing guessed
-  open     something is new, guessed, missing, or needs a cover letter or company
-           answers: a session (/apply) has to decide it
+  ready    every field is answered: by code, or by the role's judged
+           answers_override.json when it has one
+  open     something is unanswered, missing, or needs a cover letter or company
+           answers: the judge or a session (/apply) has to decide it
   expired  the posting is gone
   manual   the board has no submit path
   error    the form could not be read
@@ -25,17 +26,26 @@ from applyourself.apply import sheet
 from applyourself.shared import clock, paths, schemas
 from applyourself.shared.files import atomic_write_text
 
+_ASK_TIERS = ("B0", "C")
 
-def _open_detail(plan, guesses) -> dict:
-    asks = list(plan.draftable) + [u for u in plan.unmapped if u.tier == "C" and u.required]
-    facts = [u for u in plan.unmapped if (u.required or u.blocks) and u.tier != "C"]
-    return {"guesses": len(guesses), "asks": len(asks), "facts": len(facts)}
+
+def _open_detail(plan) -> dict:
+    asks = list(plan.draftable) + [u for u in plan.unmapped if u.tier in _ASK_TIERS and u.required]
+    facts = [u for u in plan.unmapped if (u.required or u.blocks) and u.tier not in _ASK_TIERS]
+    return {"asks": len(asks), "facts": len(facts)}
+
+
+def answers_file(job_id: str) -> Path | None:
+    """The role's answers_override.json, when its folder has one."""
+    path = apply_cli.resolve_out_dir(job_id) / "answers_override.json"
+    return path if path.is_file() else None
 
 
 def classify(job_id: str) -> dict:
-    """{"job_id", "kind", "detail"}. Never raises."""
+    """{"job_id", "kind", "detail"}. Never raises. The plan is built with the
+    role's answers_override.json when it has one, so a judged role is ready."""
     try:
-        plan, _ = apply_cli.build(job_id)
+        plan, _ = apply_cli.build(job_id, answers_path=answers_file(job_id))
     except apply_cli.PostingExpired as exc:
         return {"job_id": job_id, "kind": "expired", "detail": str(exc)}
     except apply_cli.ManualApplyOnly as exc:
@@ -48,10 +58,9 @@ def classify(job_id: str) -> dict:
             "kind": "error",
             "detail": f"unexpected {type(exc).__name__}: {exc}",
         }
-    guesses = [f for f in plan.fields if f.source.startswith("bank:") and "~" in f.source]
-    if plan.submittable and not guesses and not plan.draftable and not plan.ignored_overrides:
+    if plan.submittable and not plan.draftable and not plan.ignored_overrides:
         return {"job_id": job_id, "kind": "ready", "detail": ""}
-    return {"job_id": job_id, "kind": "open", "detail": _open_detail(plan, guesses)}
+    return {"job_id": job_id, "kind": "open", "detail": _open_detail(plan)}
 
 
 def _drift(manifest: Path) -> int:
@@ -80,7 +89,13 @@ def _fill(job_id: str, headless: bool) -> dict:
         return {"job_id": job_id, "kind": "error", "detail": f"track exited {rc}"}
     out_dir = apply_cli.resolve_out_dir(job_id)
     manifest = out_dir / "form_manifest.json"
-    outcome = apply_cli._run_role(job_id, submit=False, headless=headless, manifest_path=manifest)
+    outcome = apply_cli._run_role(
+        job_id,
+        submit=False,
+        headless=headless,
+        answers_path=answers_file(job_id),
+        manifest_path=manifest,
+    )
     row = {"job_id": job_id, "kind": "ready", "detail": "", "_outcome": outcome}
     if outcome.category != "ready":
         return {**row, "kind": "error", "detail": f"{outcome.category}: {outcome.detail}"}
@@ -90,7 +105,6 @@ def _fill(job_id: str, headless: bool) -> dict:
             **row,
             "kind": "open",
             "detail": {
-                "guesses": 0,
                 "asks": 0,
                 "facts": 0,
                 "form": f"{drift} field(s) the page disagrees with",

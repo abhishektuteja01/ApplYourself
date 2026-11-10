@@ -2,12 +2,14 @@
 current one. `--dry-run` prints the diff, `--apply` writes it. Idempotent: a
 migrated profile has nothing left to move.
 
-Text edits keep a YAML file's comments; the answer bank is rewritten through
-`bank.write`, which validates it and keeps the old file in `.state/bank_history/`.
+Text edits keep a YAML file's comments; the answer bank is written through
+`bank.save_text`, which validates it and keeps the old file in
+`.state/bank_history/`.
 """
 
 from __future__ import annotations
 
+import copy
 import difflib
 import json
 import os
@@ -107,10 +109,7 @@ def _languages(p: Profile) -> None:
     q = questions.get(LANGUAGES_QUESTION)
     if q is None:
         if spoken:
-            questions[LANGUAGES_QUESTION] = {
-                "answer": spoken,
-                "keywords": ["languages in which you are fluent"],
-            }
+            questions[LANGUAGES_QUESTION] = {"answer": spoken}
             p.set_bank(bank)
             p.notes.append(f"{BANK}: questions.{LANGUAGES_QUESTION} = {spoken}")
     else:
@@ -373,6 +372,69 @@ def _resume_facts(p: Profile) -> None:
     bank["schema_version"] = 3
     p.set_bank(bank)
     p.notes.append(f"{BANK}: schema_version 3; identity, education and employment read {RESUME}")
+
+
+def _drop_question_keys(text: str, keys: tuple[str, ...]) -> str:
+    """text without each question's `keys` (and the lines under them) inside
+    the top-level `questions:` block. Questions sit at indent 2, their keys at 4."""
+    lines = (text if text.endswith("\n") else text + "\n").splitlines(keepends=True)
+    at = next((i for i, ln in enumerate(lines) if re.match(r"questions:\s*$", ln)), None)
+    if at is None:
+        return text
+    end = _block_end(lines, at)
+    rx = re.compile(rf"    (?:{'|'.join(map(re.escape, keys))})\s*:")
+    out, i = lines[: at + 1], at + 1
+    while i < end:
+        if not rx.match(lines[i]):
+            out.append(lines[i])
+            i += 1
+            continue
+        i += 1
+        while i < end and (
+            not lines[i].strip()
+            or len(lines[i]) - len(lines[i].lstrip()) > 4
+            or lines[i].startswith("    - ")
+        ):
+            i += 1
+        # Give back the blank lines that separated this question from the next.
+        while not lines[i - 1].strip():
+            i -= 1
+    return "".join(out + lines[end:])
+
+
+def _bank_v4(p: Profile) -> None:
+    """Bank schema 3 -> 4: the judge picks the question, so every question's
+    wordings, keywords and `not` go, and claims and fact_wordings with them.
+    Every answer and fact stays."""
+    from applyourself.apply.bank_schema import REMOVED_QUESTION_KEYS, REMOVED_TOP_LEVEL_KEYS
+
+    bank = p.data(BANK)
+    if not isinstance(bank, dict) or bank.get("schema_version") != 3:
+        return
+    want = copy.deepcopy(bank)
+    want["schema_version"] = 4
+    dropped = {k: len(want.pop(k) or {}) for k in REMOVED_TOP_LEVEL_KEYS if k in want}
+    wordings = 0
+    for spec in (want.get("questions") or {}).values():
+        if isinstance(spec, dict):
+            for k in REMOVED_QUESTION_KEYS:
+                wordings += len(spec.pop(k, None) or [])
+    text = p.text(BANK) or ""
+    for key in REMOVED_TOP_LEVEL_KEYS:
+        text = drop_top_key(text, key)
+    text = _drop_question_keys(text, REMOVED_QUESTION_KEYS)
+    text = re.sub(r"(?m)^schema_version:\s*3\b", "schema_version: 4", text, count=1)
+    try:
+        kept_text = yaml.safe_load(text) == want
+    except yaml.YAMLError:
+        kept_text = False
+    p.texts[BANK] = text if kept_text else dump_bank(want)
+    gone = ", ".join(f"{k} ({n})" for k, n in dropped.items())
+    p.notes.append(
+        f"{BANK}: schema_version 4; {len(want.get('questions') or {})} questions and "
+        f"{len(want.get('facts') or {})} facts kept; dropped {wordings} wordings/keywords/not"
+        + (f", {gone}" if gone else "")
+    )
 
 
 def _settings(p: Profile) -> None:
@@ -1087,6 +1149,7 @@ STEPS: tuple[Callable[[Profile], None], ...] = (
     _abroad,
     _salary,
     _resume_facts,
+    _bank_v4,
     _settings,
     _state,
     _split_lanes,
@@ -1164,11 +1227,16 @@ def write(p: Profile) -> list[str]:
     if BANK in todo:
         path = p.root / BANK
         with locked(path):
-            bank_writer.write(yaml.safe_load(todo[BANK][1]), path)
+            bank_writer.save_text(todo[BANK][1], path)
         done.append(BANK)
     for name in p.deletes:
         (p.root / name).unlink()
     return done
+
+
+def _lost_comments(old: str, new: str) -> bool:
+    kept = {ln.strip() for ln in new.splitlines()}
+    return any(ln.lstrip().startswith("#") and ln.strip() not in kept for ln in old.splitlines())
 
 
 def main(args: Any) -> int:
@@ -1187,7 +1255,7 @@ def main(args: Any) -> int:
     if not (todo or p.moves or p.deletes):
         print("nothing to migrate")
         return 0
-    if BANK in todo and re.search(r"^\s*#", todo[BANK][0], re.MULTILINE):
+    if BANK in todo and _lost_comments(*todo[BANK]):
         print(
             f"note   {BANK} is rewritten without its comments; the old file stays in .state/bank_history/"
         )

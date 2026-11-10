@@ -3,7 +3,9 @@
 Every case is a label some saved `plan.json` showed, so its kind and options
 are the board's own. Sources: the bank's question wordings, `fact_wordings`
 and `claims`, confirmed `answers_override.json` files, and the yes rows of
-`apply_runs/wordings_review.yaml`. `relabel.yaml` beside the output, when
+`apply_runs/wordings_review.yaml`. Wordings, `fact_wordings` and `claims` are
+schema 3: on a schema 4 bank they are read from the newest schema 3 copy in
+`.state/bank_history/` beside it. `relabel.yaml` beside the output, when
 present, replaces the expectation of every case with a listed label. Writes
 `applications/evals/apply/private/cases.jsonl` (gitignored); prints counts only,
 never a value."""
@@ -19,7 +21,14 @@ from pathlib import Path
 
 import yaml
 
-from applyourself.apply.bank_schema import Answers, load_answers, norm_label
+from applyourself.apply.bank_schema import (
+    REMOVED_QUESTION_KEYS,
+    REMOVED_TOP_LEVEL_KEYS,
+    Answers,
+    answers_from,
+    norm_label,
+    resume_for,
+)
 from applyourself.evals.cases import REAL_PERSONA, Case, Expect, dump_case, private_dir
 from applyourself.shared import paths
 
@@ -160,16 +169,15 @@ def from_bank(b: Builder, raw: dict, answers: Answers, labels, by_dir) -> None:
         for pf in matches:
             b.add("work_auth_corpus", "factw", pf, {"action": "fill", "fact": fact})
     # A claim is a case only on a board whose full option list a plan saved.
+    claims = {_option_key(o): c for o, c in (raw.get("claims") or {}).items() if c}
     for fields in by_dir.values():
         for pf in fields.values():
             options = pf.field["options"]
-            claimed = [o for o in options if answers.claims.get(_option_key(o))]
+            claimed = [o for o in options if claims.get(_option_key(o))]
             if not claimed:
                 continue
             true = [
-                o
-                for o in claimed
-                if _claim_true(answers.claims[_option_key(o)], answers, pf.job_country)
+                o for o in claimed if _claim_true(claims[_option_key(o)], answers, pf.job_country)
             ]
             if not true:
                 b.skipped["claims: no claimed option true"] += 1
@@ -283,6 +291,37 @@ def relabel(cases: list[Case], path: Path) -> tuple[collections.Counter[str], in
     return changed, len(set(by_label) - used)
 
 
+def schema3_source(bank_path: Path, live: dict) -> dict | None:
+    """The bank mapping that still has wordings, `fact_wordings` and `claims`:
+    the live one while it is schema 3, else the newest schema 3 copy in
+    `.state/bank_history/`, else None."""
+    if live.get("schema_version") == 3:
+        return live
+    history = bank_path.parent / ".state" / "bank_history"
+    copies = sorted(history.glob(f"{bank_path.stem}.*.yaml"), key=lambda f: f.stat().st_mtime)
+    for copy in reversed(copies):
+        try:
+            data = yaml.safe_load(copy.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        if isinstance(data, dict) and data.get("schema_version") == 3:
+            return data
+    return None
+
+
+def as_schema4(data: dict) -> dict:
+    """A schema 3 bank mapping as schema 4 would hold it (what `config migrate` writes)."""
+    if data.get("schema_version") != 3:
+        return data
+    out = {k: v for k, v in data.items() if k not in REMOVED_TOP_LEVEL_KEYS}
+    out["schema_version"] = 4
+    out["questions"] = {
+        qid: {k: v for k, v in (spec or {}).items() if k not in REMOVED_QUESTION_KEYS}
+        for qid, spec in (data.get("questions") or {}).items()
+    }
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--bank", type=Path, help="answer bank (default: profile's)")
@@ -290,8 +329,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     bank_path = args.bank or paths.ANSWER_BANK
-    raw = yaml.safe_load(bank_path.read_text(encoding="utf-8")) or {}
-    answers = load_answers(bank_path)
+    live = yaml.safe_load(bank_path.read_text(encoding="utf-8")) or {}
+    answers = answers_from(
+        as_schema4(live), where=str(bank_path), resume_path=resume_for(bank_path)
+    )
+    raw = schema3_source(bank_path, live)
+    if raw is None:
+        print(f"note: no schema 3 copy of {bank_path.name} found; wordings, claims skipped")
+        raw = {"questions": {}}
     root = paths.APPLICATIONS
     by_dir, bad = read_plans(root)
     labels = _by_label(by_dir)

@@ -360,19 +360,12 @@ class TestPlanCommand:
     def test_a_filled_field_carries_what_was_offered_and_what_answered_it(
         self, repo, stub_board, capsys
     ):
-        """An answer can only be audited against the alternatives it beat.
-        `options` used to reach the JSON for parked fields only, so a keyword
-        guess that picked the wrong one of nine options was indistinguishable
-        from one that picked right."""
+        """An answer can only be audited against the alternatives it beat."""
         repo.write_clean(**{JOB_ID: GH_URL})
         repo.write_state()
         assert apply_cli.main(["plan", JOB_ID, "--json"]) == 0
         data = json.loads(capsys.readouterr().out)
         assert all("options" in f and "source" in f for f in data["fields"])
-        bank_answered = [f for f in data["fields"] if f["tier"] == "B" and f["source"]]
-        assert bank_answered, "no Tier B field in this fixture to check"
-        # The source names the bank question, and the keyword when it guessed.
-        assert all(f["source"].startswith("bank:") for f in bank_answered)
         # Ashby's real selector, dropped until now.
         assert all("name" in f for f in data["fields"])
 
@@ -390,9 +383,8 @@ class TestPlanCommand:
         repo.write_state()
         assert apply_cli.main(["plan", JOB_ID, "--questions"]) == 0
         out = capsys.readouterr().out
-        assert "KNOWN — answered from the bank or your facts" in out
-        assert "GUESSED BY KEYWORD — confirm or correct" in out
-        assert "NEW — not in the bank yet" in out
+        assert "KNOWN — answered by code" in out and "JUDGED — answered from" in out
+        assert "PARKED — needs an answer" in out
         assert "BLOCKING — required and unanswered" in out
         assert "alex@example.com" in out
 
@@ -1125,9 +1117,10 @@ class TestOverridesAreBoundToOneRole:
         with pytest.raises(apply_cli.ApplyCliError, match="unknown keys"):
             apply_cli.load_overrides(p, JOB_ID)
 
-    def test_a_claim_must_state_booleans(self, tmp_path):
-        p = self._write(tmp_path, {"q": {"value": "x", "claim": {"authorized": "yes"}}})
-        with pytest.raises(apply_cli.ApplyCliError, match="true or false"):
+    @pytest.mark.parametrize("key", ["claim", "keyword"])
+    def test_a_claim_or_keyword_is_an_unknown_key(self, tmp_path, key):
+        p = self._write(tmp_path, {"q": {"value": "x", key: "x"}})
+        with pytest.raises(apply_cli.ApplyCliError, match="unknown keys"):
             apply_cli.load_overrides(p, JOB_ID)
 
 
@@ -1537,7 +1530,7 @@ class TestLearnCommand:
     def test_review_lists_every_question(self, tmp_path, capsys):
         assert apply_cli.main(["learn", "--path", str(self._bank(tmp_path))]) == 0
         out = capsys.readouterr().out
-        assert "linkedin:" in out and "~ linkedin" in out
+        assert "linkedin:" in out
 
     def test_undo_removes_a_question(self, tmp_path, capsys):
         path = self._bank(tmp_path)
@@ -1595,34 +1588,10 @@ class TestApplyConfirm:
         assert apply_cli.main(["confirm", str(path)]) == 1
         assert not confirmation.sidecar(path).exists()
 
-    def test_the_banks_standing_keyword_guesses_are_shown(self, tmp_path, monkeypatch, capsys):
-        """Read offline from the saved plan.json; a field the file answers is not one."""
-        fields = [
-            {"id": "q", "label": "What's your LinkedIn?", "value": "https://x",
-             "source": "bank:linkedin~linkedin"},
-            {"id": "w", "label": "Your website", "value": "https://y",
-             "source": "bank:website~website"},
-        ]  # fmt: skip
-        (tmp_path / "plan.json").write_text(
-            json.dumps({"job_id": JOB_ID, "fields": fields}), encoding="utf-8"
-        )
-        path = self._file(tmp_path, {"job_id": JOB_ID, "w": {"value": "https://z"}})
-        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-        assert apply_cli.main(["confirm", str(path)]) == 1
-        out = capsys.readouterr().out
-        assert "What's your LinkedIn?" in out and "bank:linkedin~linkedin" in out
-        assert "(1):" in out and "bank:website~website" not in out
-
-    def test_no_saved_plan_says_so_in_one_line(self, tmp_path, monkeypatch, capsys):
-        path = self._file(tmp_path, {"job_id": JOB_ID})
-        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-        assert apply_cli.main(["confirm", str(path)]) == 1
-        assert "can't be listed offline" in capsys.readouterr().out
-
 
 class TestARunLearnsWhatWasConfirmed:
-    """`run --answers` saves every mapping the session made and every keyword
-    guess that went unchallenged, before the browser opens."""
+    """`run --answers` saves the user's own answers as facts, before the
+    browser opens, and nothing else."""
 
     def _bank(self, tmp_path, monkeypatch):
         import shutil
@@ -1637,7 +1606,7 @@ class TestARunLearnsWhatWasConfirmed:
 
         return replace(_fake_plan(JOB_ID), fields=tuple(fields))
 
-    def _field(self, fid, label, value, source="", options=(), replaced=""):
+    def _field(self, fid, label, value, source="", options=()):
         from applyourself.apply.plan import FieldPlan
 
         return FieldPlan(
@@ -1652,7 +1621,6 @@ class TestARunLearnsWhatWasConfirmed:
             tier="C",
             options=tuple(options),
             source=source,
-            replaced=replaced,
         )
 
     def _run(self, tmp_path, monkeypatch, plan, overrides):
@@ -1660,108 +1628,59 @@ class TestARunLearnsWhatWasConfirmed:
         data = {"job_id": JOB_ID, **overrides}
         answers_path.write_text(json.dumps(data), encoding="utf-8")
         confirmation.record(answers_path, data)
-        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, None))
+        from applyourself.apply.bank_schema import load_answers
+
+        monkeypatch.setattr(apply_cli, "build", lambda job_id, **kw: (plan, load_answers()))
         monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
         return apply_cli.run_queue(
             [JOB_ID], submit=False, sleeper=lambda s: None, answers_path=answers_path
         )[0]
 
-    def test_a_mapped_wording_joins_its_question(self, tmp_path, monkeypatch):
+    def test_a_users_answer_becomes_one_fact_and_is_not_learned_twice(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
+        label = "Do you have a\n non-compete?"
+        plan = self._plan([self._field("q", label, "No", source="override:user")])
+        overrides = {"q": {"value": "No", "source": "user"}}
+        out = self._run(tmp_path, monkeypatch, plan, overrides)
+        facts = yaml.safe_load(path.read_text(encoding="utf-8"))["facts"]
+        assert facts["F-DO-YOU-HAVE-A-NON-COMPETE"] == "Do you have a non-compete? No"
+        assert out.learned == (
+            "saved fact F-DO-YOU-HAVE-A-NON-COMPETE: Do you have a non-compete? No",
+        )
+        again = self._run(tmp_path, monkeypatch, plan, overrides)
+        assert again.learned == ()
+        assert yaml.safe_load(path.read_text(encoding="utf-8"))["facts"] == facts
+
+    def test_a_taken_fact_id_gets_a_suffix(self, tmp_path, monkeypatch):
+        plan = self._plan([self._field("q", "Notice period?", "4 weeks")])
+        lessons = apply_cli.lessons_from(
+            {"q": apply_cli.Override(value="4 weeks", source="user")},
+            plan,
+            {"F-NOTICE-PERIOD": "Notice period? 2 weeks"},
+        )
+        assert [(lesson.id, lesson.value) for lesson in lessons] == [
+            ("F-NOTICE-PERIOD-2", "Notice period? 4 weeks")
+        ]
+
+    def test_judged_and_drafted_answers_teach_nothing(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        before = path.read_text(encoding="utf-8")
         plan = self._plan(
-            [self._field("q", "Your LinkedIn URL please", "https://x", source="override")]
+            [
+                self._field("q", "Tell us about a project", "I built a widget."),
+                self._field("w", "Why Acme?", "Because Acme."),
+            ]
         )
         out = self._run(
-            tmp_path, monkeypatch, plan, {"q": {"value": "https://x", "question": "linkedin"}}
-        )
-        bank_data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        assert "Your LinkedIn URL please" in bank_data["questions"]["linkedin"]["wordings"]
-        assert out.learned
-
-    def test_a_new_question_is_created_with_its_answer(self, tmp_path, monkeypatch):
-        path = self._bank(tmp_path, monkeypatch)
-        label = "Tell us about a project you're proud of"
-        plan = self._plan([self._field("q", label, "I built a widget.", source="override")])
-        self._run(
             tmp_path,
             monkeypatch,
             plan,
             {
-                "q": {
-                    "value": "I built a widget.",
-                    "question": "project_proud",
-                    "source": "bullets:B-1",
-                }
+                "q": {"decision": "text", "value": "I built a widget.", "basis": ["B-1"]},
+                "w": {"value": "Because Acme.", "source": "company_answers"},
             },
         )
-        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["project_proud"]
-        assert q["answer"] == "I built a widget." and q["wordings"] == [label]
-        assert q["source"] == "bullets:B-1"
-
-    def test_a_why_us_answer_never_becomes_a_bank_answer(self, tmp_path, monkeypatch):
-        path = self._bank(tmp_path, monkeypatch)
-        plan = self._plan([self._field("q", "Why Acme?", "Because Acme.", source="override")])
-        self._run(
-            tmp_path,
-            monkeypatch,
-            plan,
-            {"q": {"value": "Because Acme.", "question": "why_acme", "source": "company_answers"}},
-        )
-        assert "why_acme" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
-
-    def test_an_unchallenged_keyword_guess_becomes_exact(self, tmp_path, monkeypatch):
-        path = self._bank(tmp_path, monkeypatch)
-        plan = self._plan(
-            [
-                self._field(
-                    "q",
-                    "What's your LinkedIn?",
-                    "https://linkedin.com/in/example",
-                    source="bank:linkedin~linkedin",
-                )
-            ]
-        )
-        self._run(tmp_path, monkeypatch, plan, {})
-        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"]
-        assert "What's your LinkedIn?" in q["wordings"]
-
-    def test_a_corrected_keyword_guess_is_never_guessed_again(self, tmp_path, monkeypatch):
-        path = self._bank(tmp_path, monkeypatch)
-        plan = self._plan(
-            [
-                self._field(
-                    "q",
-                    "Is LinkedIn required?",
-                    "No",
-                    source="override",
-                    replaced="bank:linkedin~linkedin",
-                )
-            ]
-        )
-        self._run(
-            tmp_path,
-            monkeypatch,
-            plan,
-            {"q": {"value": "No", "source": "user", "question": "linkedin_required"}},
-        )
-        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
-        assert "is linkedin required" in q["linkedin"]["not"]
-        assert q["linkedin_required"]["answer"] == "No"
-
-    def test_a_confirmed_claim_is_saved(self, tmp_path, monkeypatch):
-        path = self._bank(tmp_path, monkeypatch)
-        option = "Yes, I will require sponsorship in the future."
-        plan = self._plan(
-            [self._field("q", "Sponsorship?", option, source="override", options=[option, "No"])]
-        )
-        self._run(
-            tmp_path,
-            monkeypatch,
-            plan,
-            {"q": {"value": option, "claim": {"requires_sponsorship": True}}},
-        )
-        claims = yaml.safe_load(path.read_text(encoding="utf-8"))["claims"]
-        assert claims[option] == {"requires_sponsorship": True}
+        assert out.learned == () and path.read_text(encoding="utf-8") == before
 
     def test_answers_that_cannot_apply_fail_the_role(self, tmp_path, monkeypatch):
         self._bank(tmp_path, monkeypatch)
@@ -1856,195 +1775,6 @@ def test_tests_never_touch_the_real_applications_folder():
 
     assert paths.REPO_ROOT / "applications" != paths.APPLICATIONS
     assert paths.APPLY_RUNS.parent != paths.REPO_ROOT / "applications"
-
-
-class TestKeywordsGeneralize:
-    def _bank(self, tmp_path, monkeypatch):
-        import shutil
-
-        path = tmp_path / "bank.yaml"
-        shutil.copy(FIXTURES / "application_answers.yaml", path)
-        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
-        return path
-
-    def test_a_keyword_lets_the_next_wording_be_guessed(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-        from applyourself.apply.answers import find_question
-        from applyourself.apply.bank_schema import load_answers
-
-        path = self._bank(tmp_path, monkeypatch)
-        bank.learn(
-            [
-                bank.Lesson(
-                    label="Tell us about a project you're proud of",
-                    question="project_proud",
-                    value="I built a widget.",
-                    keyword="proud of",
-                    source="bullets:B-1",
-                )
-            ]
-        )
-        found = find_question("What are you most proud of building?", load_answers(path))
-        assert found and found[0].id == "project_proud" and "~" in found[1]
-
-    def test_a_keyword_that_shadows_another_question_is_refused_alone(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-
-        path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn(
-            [
-                bank.Lesson(
-                    label="Your personal LinkedIn page",
-                    question="linkedin_page",
-                    value="x",
-                    keyword="linkedin page",
-                    source="user",
-                )
-            ]
-        )
-        assert any("keyword refused" in c for c in changes)
-        assert "linkedin_page" in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
-
-
-def test_a_shortened_question_id_is_not_a_new_question(tmp_path, monkeypatch):
-    import shutil
-
-    from applyourself.apply import bank
-
-    path = tmp_path / "bank.yaml"
-    shutil.copy(FIXTURES / "application_answers.yaml", path)
-    monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
-    data = bank.read()
-    data["questions"]["years_of_professional_experience_total"] = {
-        "answer": "2",
-        "wordings": ["Years of professional experience"],
-    }
-    bank.write(data)
-    changes = bank.learn(
-        [
-            bank.Lesson(
-                label="How many years have you worked?",
-                question="years_of_professional_exp",
-                value="2",
-                source="user",
-            )
-        ]
-    )
-    assert changes == [
-        "not saved: years_of_professional_exp: did you mean "
-        "'years_of_professional_experience_total'?"
-    ]
-
-
-class TestEachLessonMustHold:
-    """A lesson is saved only if the bank, with it in, still answers what was
-    confirmed; a refused lesson never costs the others."""
-
-    def _bank(self, tmp_path, monkeypatch):
-        import shutil
-
-        path = tmp_path / "bank.yaml"
-        shutil.copy(FIXTURES / "application_answers.yaml", path)
-        monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
-        return path
-
-    def test_a_different_answer_under_the_same_id_is_refused(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-
-        path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn(
-            [
-                bank.Lesson(
-                    label="Pronouns, please",
-                    question="pronouns",
-                    value="He/Him",
-                    offered=("They/Them", "He/Him"),
-                )
-            ]
-        )
-        assert changes[0].startswith("not saved: pronouns answers 'They/Them'")
-        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["pronouns"]
-        assert q["answer"] == ["They/Them"]
-
-    def test_a_new_spelling_is_learned_when_the_board_offered_none_of_the_bank_s(
-        self, tmp_path, monkeypatch
-    ):
-        from applyourself.apply import bank
-
-        path = self._bank(tmp_path, monkeypatch)
-        bank.learn(
-            [
-                bank.Lesson(
-                    label="Pronouns",
-                    question="pronouns",
-                    value="they / them",
-                    offered=("they / them", "he / him"),
-                )
-            ]
-        )
-        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["pronouns"]
-        assert q["answer"] == ["They/Them", "they / them"]
-
-    def test_a_one_employer_answer_never_becomes_a_question(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-
-        path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn(
-            [
-                bank.Lesson(
-                    label="What excites you about this role?",
-                    question="excites_role",
-                    source="jd",
-                    value="Your fraud roadmap at Acme.",
-                )
-            ]
-        )
-        assert "stays with this role" in changes[0]
-        assert "excites_role" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
-
-    def test_one_bad_lesson_does_not_lose_the_rest(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-
-        path = self._bank(tmp_path, monkeypatch)
-        changes = bank.learn(
-            [
-                bank.Lesson(
-                    label="Will you require visa sponsorship?",
-                    question="clash",
-                    value="No",
-                    source="user",
-                ),
-                bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them"),
-            ]
-        )
-        q = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
-        assert "clash" not in q and "Your pronouns?" in q["pronouns"]["wordings"]
-        assert any(c.startswith("not saved") for c in changes)
-
-    def test_undo_of_the_last_wording_removes_the_question(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-
-        path = self._bank(tmp_path, monkeypatch)
-        bank.learn(
-            [
-                bank.Lesson(
-                    label="Why widgets?",
-                    question="why_widgets",
-                    value="I like them.",
-                    source="user",
-                )
-            ]
-        )
-        out = bank.undo("why_widgets", wording="Why widgets?")
-        assert "removed" in out
-        assert "why_widgets" not in yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]
-
-    def test_every_write_keeps_a_history(self, tmp_path, monkeypatch):
-        from applyourself.apply import bank
-
-        self._bank(tmp_path, monkeypatch)
-        bank.learn([bank.Lesson(label="Your pronouns?", question="pronouns", value="They/Them")])
-        assert list((tmp_path / ".state" / "bank_history").glob("bank.*.yaml"))
 
 
 def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
@@ -2171,7 +1901,7 @@ class TestTheJobsCountry:
         assert not confirmation.is_confirmed(file)
 
 
-def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path, monkeypatch):
+def test_an_unconfirmed_answers_file_teaches_nothing(tmp_path, monkeypatch):
     import shutil
     from dataclasses import replace
 
@@ -2179,105 +1909,36 @@ def test_an_unconfirmed_answers_file_teaches_nothing_and_blocks_guesses(tmp_path
 
     path = tmp_path / "bank.yaml"
     shutil.copy(FIXTURES / "application_answers.yaml", path)
+    before = path.read_text(encoding="utf-8")
     monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
-    guess = FieldPlan(
+    field = FieldPlan(
         id="q",
         name="q",
-        label="What's your LinkedIn?",
+        label="Notice period?",
         kind="text",
         section="questions",
         required=True,
         multi=False,
-        value="https://x",
-        tier="B",
-        source="bank:linkedin~linkedin",
+        value="4 weeks",
+        tier="C",
+        source="override:user",
     )
     monkeypatch.setattr(
         apply_cli,
         "build",
-        lambda job_id, **kw: (replace(_fake_plan(JOB_ID), fields=(guess,)), None),
+        lambda job_id, **kw: (replace(_fake_plan(JOB_ID), fields=(field,)), None),
     )
-    monkeypatch.setattr(apply_cli, "run_one", _raise(AssertionError("must not fill")))
+    monkeypatch.setattr(apply_cli, "run_one", lambda plan, answers, **kw: _fake_result())
     stale = tmp_path / "answers.json"
-    stale.write_text(json.dumps({"job_id": JOB_ID}), encoding="utf-8")
-    out = apply_cli.run_queue([JOB_ID], submit=True, sleeper=lambda s: None, answers_path=stale)
-    assert out[0].category == "parked" and not out[0].learned
-    assert "What's your LinkedIn?" not in (
-        yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"].get("wordings")
-        or []
+    stale.write_text(
+        json.dumps({"job_id": JOB_ID, "q": {"value": "4 weeks", "source": "user"}}),
+        encoding="utf-8",
     )
+    out = apply_cli.run_queue([JOB_ID], submit=False, sleeper=lambda s: None, answers_path=stale)
+    assert not out[0].learned and path.read_text(encoding="utf-8") == before
 
 
-def test_a_refused_lesson_leaves_no_not_on_the_guessing_question(tmp_path, monkeypatch):
-    import shutil
-
-    from applyourself.apply import bank
-
-    path = tmp_path / "bank.yaml"
-    shutil.copy(FIXTURES / "application_answers.yaml", path)
-    monkeypatch.setitem(paths._overrides, "ANSWER_BANK", path)
-    bank.learn(
-        [
-            bank.Lesson(
-                label="Is LinkedIn required?",
-                question="linkedin_required",
-                value="No",
-                source="jd",
-                misfired="linkedin",
-            )
-        ]
-    )
-    assert not yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["linkedin"].get("not")
-
-
-class TestAConfirmedFactJudgmentIsLearned:
-    LABEL = "Does the deemed export rule apply to you?"
-
-    def test_it_is_saved_answered_next_time_and_undone(self, tmp_path, monkeypatch):
-        import shutil
-
-        from applyourself.apply import bank
-        from applyourself.apply.answers import resolve
-        from applyourself.apply.bank_schema import load_answers
-        from applyourself.apply.reconcile import MergedField, MergedOption
-
-        path = tmp_path / "bank.yaml"
-        shutil.copy(FIXTURES / "application_answers.yaml", path)
-        changes = bank.learn(
-            [
-                bank.Lesson(
-                    label=self.LABEL, value="Yes", fact={"fact": "us_person", "yes_when": False}
-                )
-            ],
-            path=path,
-        )
-        assert any("fact wording" in c for c in changes)
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        data["work_authorization"]["us_person"] = "no"
-        path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        f = MergedField(
-            id="q",
-            name="q",
-            label=self.LABEL,
-            required=True,
-            kind="select",
-            section="questions",
-            multi=False,
-            options=(MergedOption(label="Yes"), MergedOption(label="No")),
-        )
-        assert resolve(f, load_answers(path)).value == "Yes"
-        refused = bank.learn(
-            [
-                bank.Lesson(
-                    label=self.LABEL, value="No", fact={"fact": "us_person", "yes_when": True}
-                )
-            ],
-            path=path,
-        )
-        assert refused and refused[0].startswith("not saved")
-        assert "removed" in bank.undo(fact=self.LABEL, path=path)
-        assert resolve(f, load_answers(path)).parked
-
+class TestAFactJudgmentInTheAnswersFile:
     def test_the_answers_file_takes_a_fact_without_a_value(self, tmp_path):
         p = tmp_path / "a.json"
         p.write_text(
@@ -2294,41 +1955,3 @@ class TestAConfirmedFactJudgmentIsLearned:
         p.write_text(json.dumps({"q": {"fact": {"fact": "us_person"}}}), encoding="utf-8")
         with pytest.raises(apply_cli.ApplyCliError, match="yes_when"):
             apply_cli.load_overrides(p, JOB_ID)
-
-
-def test_teach_saves_one_answer_and_a_keyword_finds_the_next_wording(tmp_path, capsys):
-    import shutil
-
-    from applyourself.apply.answers import find_question
-    from applyourself.apply.bank_schema import load_answers
-
-    path = tmp_path / "bank.yaml"
-    shutil.copy(FIXTURES / "application_answers.yaml", path)
-    argv = [
-        "teach",
-        "--question-id",
-        "background_check",
-        "--path",
-        str(path),
-        "--label",
-        "Do you consent to a background investigation and drug test?",
-        "--value",
-        "Yes",
-        "--offered",
-        "Yes",
-        "--offered",
-        "No",
-        "--keyword",
-        "background investigation",
-        "--job",
-        "aaaa1111",
-    ]
-    assert apply_cli.main(argv) == 0
-    saved = yaml.safe_load(path.read_text(encoding="utf-8"))["questions"]["background_check"]
-    assert saved["answer"] == "Yes"
-    found = find_question(
-        "Will you undergo a background investigation before you start?", load_answers(path)
-    )
-    assert found and found[0].id == "background_check" and "~" in found[1]
-    assert apply_cli.main(argv) == 0
-    assert "nothing to change" in capsys.readouterr().out

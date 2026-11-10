@@ -8,16 +8,14 @@ cannot resolve comes back parked, and a parked field stops the submission.
 Resolution order, keyed on the merged field's section and id before its prose:
 
     A   identity / education / employment / uploads -> the bank's fact blocks
-    A2  eeoc / demographic                          -> opt out, structurally
-    B0  work authorization                          -> work_authorization, per country
-    B   everything else                             -> questions: exact wording
-                                                       first, then keyword
-    C   anything left                               -> park if required, skip if not
+    A2  eeoc / demographic                          -> your answer, else opt out
+    B0  work authorization                          -> a "U.S. person" question from
+                                                       us_person; the rest, the judge
+    C   anything left                               -> the judge
 
-Work authorization is its own block because one answer cannot serve both halves
-of it: "are you authorized to work" and "will you require sponsorship" are Yes
-and Yes for an F-1 OPT holder, and Yes and No for a citizen. And it is per
-country: the same person is authorized in one country and not in another.
+Code answers only A, A2 and the U.S.-person question. Every other field parks
+"for the judge" (skipped when optional); a judged entry for it renders through
+`answer_question` and `resolve_fact_wording`, behind `plan.apply_override`.
 """
 
 from __future__ import annotations
@@ -28,10 +26,8 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from applyourself.apply.bank_schema import (
-    _NOT_WORK_AUTH,
     Answers,
     Question,
-    _norm,
     _norm_option,
     in_work_authorization_domain,
 )
@@ -41,6 +37,9 @@ from applyourself.apply.places import (
     canonical_place,
     places_named,
 )
+
+# Re-exported: role_facts, score_filter and the CLIs read places through here.
+__all__ = ["UNKNOWN_COUNTRY", "canonical_place", "places_named"]
 from applyourself.apply.reconcile import MergedField
 from applyourself.shared import clock
 
@@ -147,328 +146,20 @@ _OPT_OUT = (
 # "U.S. person" as ITAR/EAR defines it (citizen, permanent resident, refugee or
 # asylee). Not the same question as work authorization — a time-limited status
 # is authorized to work and is *not* a U.S. person. Answered only from an
-# explicit `us_person`, and no override may touch it.
+# explicit `us_person`; any other export-control question parks for the judge,
+# which may answer it only with a `us_person` fact.
 _EXPORT_CONTROL = re.compile(
     r"u\.?\s?s\.?\s+person|export\s+control|deemed\s+export|\bitar\b|\bear\b\s+regulat",
     re.IGNORECASE,
 )
-# The one export-control shape `us_person` answers. Every other one ("does the
-# deemed export rule affect you?") can flip polarity, so it always parks.
+# The one export-control shape code answers from `us_person`. Every other one
+# ("does the deemed export rule affect you?") can flip polarity.
 _US_PERSON_QUESTION = re.compile(r"u\.?\s?s\.?\s+person", re.IGNORECASE)
-
-_AUTHORIZED_FAMILY = re.compile(
-    r"authou?ri[sz]\w*\s+to\s+work|legally\s+authou?ri[sz]"
-    r"|right\s+to\s+work|eligib\w*\s+to\s+(?:work|live)"
-    r"|(?:have|hold)\s+(?:\S+\s+){0,3}work\s+authori[sz]"
-    r"|authou?ri[sz]\w*\s+\w{0,3}\s*to\s+work",
-    re.IGNORECASE,
-)
-# "Can you provide proof of your authorization?" — answerable by anyone who is
-# authorized at all.
-_PROOF_FAMILY = re.compile(
-    r"(?:proof|evidence|documentation)\s+of\s+(?:\w+\s+){0,3}"
-    r"(?:authoriz|eligib|right\s+to\s+work)"
-    r"|able\s+to\s+provide\s+(?:\w+\s+){0,3}(?:proof|documentation)",
-    re.IGNORECASE,
-)
-_SPONSORSHIP_FAMILY = re.compile(
-    r"(?:requir|need)\w*[^?]*sponsor|sponsor\w*[^?]*(?:requir|need)"
-    r"|(?:requir|need)\w*\s+(?:\S+\s+){0,4}(?:work\s+)?visa"
-    r"|(?:requir|need)\w*\s+(?:\S+\s+){0,3}work\s+authori[sz]",
-    re.IGNORECASE,
-)
-# "Are you able to work without sponsorship?" / "Do you not need sponsorship?"
-# invert the answer. Never guess them.
-_SPONSORSHIP_NEGATED = re.compile(
-    r"without\s+(?:\w+\s+){0,2}sponsor|not\s+(?:\w+\s+){0,2}(?:requir|need)\w*[^?]*sponsor",
-    re.IGNORECASE,
-)
-# When a label reads as both families, which one is actually being asked:
-# "Will you require sponsorship ... to maintain authorization to work in the US?"
-_SPONSORSHIP_GOVERNS = re.compile(
-    r"^\s*(?:will|do|would)\s+you\s+(?:\S+\s+){0,8}"
-    r"(?:requir|need)\w*\s+(?:\S+\s+){0,4}sponsor"
-    r"|(?:requir|need)\w*\s+(?:\w+\s+){0,3}sponsor\w*\s+(?:\w+\s+){0,4}"
-    r"(?:to|for)\s+(?:maintain|retain|extend|continue|obtain|remain|commence)",
-    re.IGNORECASE,
-)
-# An authorization question that narrows the scope — permanence,
-# employer-independence, freedom from sponsorship. Answered from the country's
-# `unrestricted` fact. "for any employer" is deliberately NOT a qualifier: OPT
-# is not employer-tied the way an H-1B is.
-_AUTHORIZED_QUALIFIED = re.compile(
-    r"permanent\w*"
-    r"|ongoing"
-    r"|indefinite\w*"
-    r"|unrestricted"
-    r"|without\s+(?:\S+\s+){0,8}(?:sponsor|restrict)"
-    r"|now\s+or\s+in\s+the\s+future"
-    r"|no\s+(?:\w+\s+){0,2}restrict",
-    re.IGNORECASE,
-)
-# The qualifier offered as one alternative rather than required ("on a permanent
-# or temporary basis") — the narrow reading is not the question, so these park.
-_QUALIFIER_OFFERED_AS_ALTERNATIVE = re.compile(
-    r"permanent\w*\s+or\s+\w+"
-    r"|\w+\s+or\s+permanent\w*"
-    r"|with\s+or\s+without",
-    re.IGNORECASE,
-)
-# A request to ELABORATE, not a yes/no. Answered from the country's `followup`
-# text in a free-text box, else parked.
-_FOLLOWUP = re.compile(
-    r"if\s+you\s+(?:answered|selected)"
-    r"|please\s+(?:share|provide|specify|elaborate|explain)"
-    r"|(?:what|which)\s+(?:\w+\s+){0,2}(?:sponsorship|visa|permit)\s+"
-    r"(?:would|do|will)"
-    r"|(?:what|which)\s+(?:\S+\s+){0,2}countr",
-    re.IGNORECASE,
-)
-# Asks WHICH status you hold, rather than yes/no. Answered from the country's
-# `status_label` (free text) or a known-true option (a picker).
-_STATUS_DISCLOSURE = re.compile(
-    r"^\s*work\s+(?:status|eligibility|authori[sz]\w*\s+status)"
-    r"|(?:confirm|indicate|update|select)\s+(?:\S+\s+){0,6}authori[sz]\w*\s+status"
-    r"|(?:what|which)\s+is\s+your\s+(?:visa|status)"
-    r"|(?:what|which)\s+type\s+of\s+(?:work\s+)?(?:authori[sz]\w*|visa)"
-    r"|(?:update|confirm|indicate|select)\s+(?:\w+\s+){0,3}employ\w*\s+status"
-    r"|currently\s+in\s+a\s+period\s+of",
-    re.IGNORECASE,
-)
-# Nationality and citizenship are a COUNTRY, not a visa status.
-_NATIONALITY = re.compile(
-    r"nationalit"
-    r"|citizenship\s+in|hold\s+citizenship|citizenship\s+of"
-    r"|(?:dual|second|another|other|additional)\s+citizenship"
-    r"|(?:what|which)\s+is\s+your\s+citizenship"
-    r"|are\s+you\s+(?:currently\s+)?an?\s+\w+\s+citizen"
-    r"|citizen\s+of\s+a\s+country"
-    r"|country\s+of\s+origin",
-    re.IGNORECASE,
-)
-# A second citizenship is a different fact from the primary one.
-_SECOND_NATIONALITY = re.compile(
-    r"second\s+(?:country|nationality|citizenship)"
-    r"|another\s+(?:country|nationality|citizenship)"
-    r"|other\s+citizenship|dual\s+citizenship|additional\s+citizenship",
-    re.IGNORECASE,
-)
-_NONE_CANDIDATES = ("None", "No", "N/A", "Not applicable")
-
-
-# Region membership for "are you a citizen of a country in <region>?" yes/no
-# questions. Extend as real boards surface a region this doesn't cover.
-_SOUTH_ASIA = frozenset(
-    {
-        "afghanistan",
-        "bangladesh",
-        "bhutan",
-        "india",
-        "maldives",
-        "nepal",
-        "pakistan",
-        "sri lanka",
-    }
-)
-_SOUTHEAST_ASIA = frozenset(
-    {
-        "brunei",
-        "cambodia",
-        "timor-leste",
-        "indonesia",
-        "laos",
-        "malaysia",
-        "myanmar",
-        "philippines",
-        "singapore",
-        "thailand",
-        "vietnam",
-    }
-)
-_EAST_ASIA = frozenset(
-    {
-        "china",
-        "hong kong",
-        "japan",
-        "macau",
-        "mongolia",
-        "north korea",
-        "south korea",
-        "taiwan",
-    }
-)
-_CENTRAL_ASIA = frozenset(
-    {
-        "kazakhstan",
-        "kyrgyzstan",
-        "tajikistan",
-        "turkmenistan",
-        "uzbekistan",
-    }
-)
-_WESTERN_ASIA = frozenset(
-    {
-        "armenia",
-        "azerbaijan",
-        "bahrain",
-        "cyprus",
-        "georgia",
-        "iraq",
-        "israel",
-        "jordan",
-        "kuwait",
-        "lebanon",
-        "oman",
-        "palestine",
-        "qatar",
-        "saudi arabia",
-        "syria",
-        "turkey",
-        "united arab emirates",
-        "yemen",
-    }
-)
-_ASIA = _SOUTH_ASIA | _SOUTHEAST_ASIA | _EAST_ASIA | _CENTRAL_ASIA | _WESTERN_ASIA
-_EU = frozenset(
-    {
-        "austria",
-        "belgium",
-        "bulgaria",
-        "croatia",
-        "cyprus",
-        "czechia",
-        "denmark",
-        "estonia",
-        "finland",
-        "france",
-        "germany",
-        "greece",
-        "hungary",
-        "ireland",
-        "italy",
-        "latvia",
-        "lithuania",
-        "luxembourg",
-        "malta",
-        "netherlands",
-        "poland",
-        "portugal",
-        "romania",
-        "slovakia",
-        "slovenia",
-        "spain",
-        "sweden",
-    }
-)
-_EFTA = frozenset({"iceland", "liechtenstein", "norway", "switzerland"})
-
-# Matched as whole words, longest first, so "south asia" is tried before "asia"
-# and "asia" never matches inside "asia-pacific" or "eurasia".
-_NATIONALITY_REGIONS: dict[str, frozenset[str]] = {
-    "eu/efta": _EU | _EFTA,
-    "eu / efta": _EU | _EFTA,
-    "european union": _EU,
-    "southeast asia": _SOUTHEAST_ASIA,
-    "south-east asia": _SOUTHEAST_ASIA,
-    "south east asia": _SOUTHEAST_ASIA,
-    "south asia": _SOUTH_ASIA,
-    "southern asia": _SOUTH_ASIA,
-    "east asia": _EAST_ASIA,
-    "eastern asia": _EAST_ASIA,
-    "central asia": _CENTRAL_ASIA,
-    "asia": _ASIA,
-}
-_REGION_PATTERNS = tuple(
-    (re.compile(rf"(?<![\w-]){re.escape(phrase)}(?![\w-])"), members)
-    for phrase, members in sorted(
-        _NATIONALITY_REGIONS.items(), key=lambda kv: len(kv[0]), reverse=True
-    )
-)
-# Demonym -> country, for "Are you currently an Indonesian citizen?".
-_DEMONYMS: dict[str, str] = {
-    "indonesian": "indonesia",
-    "indian": "india",
-    "pakistani": "pakistan",
-    "bangladeshi": "bangladesh",
-    "sri lankan": "sri lanka",
-    "nepali": "nepal",
-    "bhutanese": "bhutan",
-    "afghan": "afghanistan",
-    "filipino": "philippines",
-    "malaysian": "malaysia",
-    "singaporean": "singapore",
-    "thai": "thailand",
-    "vietnamese": "vietnam",
-    "burmese": "myanmar",
-    "cambodian": "cambodia",
-    "laotian": "laos",
-    "bruneian": "brunei",
-    "chinese": "china",
-    "japanese": "japan",
-    "mongolian": "mongolia",
-    "taiwanese": "taiwan",
-    "kazakh": "kazakhstan",
-    "uzbek": "uzbekistan",
-    "turkish": "turkey",
-    "israeli": "israel",
-    "emirati": "united arab emirates",
-    "saudi": "saudi arabia",
-}
-# Other spellings of a nationality, folded before any comparison, so "Czech
-# Republic" and "Czechia" can never answer the same question two ways.
-_COUNTRY_ALIASES = {
-    "czech republic": "czechia",
-    "holland": "netherlands",
-    "the netherlands": "netherlands",
-    "uae": "united arab emirates",
-    "türkiye": "turkey",
-    "turkiye": "turkey",
-    "usa": "united states",
-    "united states of america": "united states",
-    "us": "united states",
-    "uk": "united kingdom",
-    "great britain": "united kingdom",
-    "republic of korea": "south korea",
-    "korea": "south korea",
-}
-
-
-def _country_key(name: str) -> str:
-    key = _norm_option(name)
-    return _COUNTRY_ALIASES.get(key, key)
-
-
-def _nationality_region_match(label_norm: str, nationalities: tuple[str, ...]) -> bool | None:
-    """Whether any of your nationalities is inside the region/country a yes-no
-    label names, or None if the label names neither — the caller parks."""
-    keys = {_country_key(n) for n in nationalities}
-    for pattern, members in _REGION_PATTERNS:
-        if pattern.search(label_norm):
-            return bool(keys & members)
-    for demonym, country in _DEMONYMS.items():
-        if re.search(rf"(?<![\w-]){re.escape(demonym)}(?![\w-])", label_norm):
-            return country in keys
-    return None
-
 
 _YES_NO = {True: "Yes", False: "No"}
 # A board that renders "Yes." / "No." — safe because `_pick_option` matches
 # whole normalized labels.
 _YES_NO_VARIANTS = {True: ("Yes", "Yes."), False: ("No", "No.")}
-
-WORK_AUTH_CATEGORIES = (
-    "plain",
-    "qualified",
-    "alternation",
-    "sponsorship",
-    "compound_option",
-    "status_disclosure",
-    "nationality",
-    "export_control",
-    "proof",
-    "followup",
-    "not_work_auth",
-)
 
 
 def _offers_bare_yes_no(options: tuple[str, ...]) -> bool:
@@ -476,42 +167,6 @@ def _offers_bare_yes_no(options: tuple[str, ...]) -> bool:
     option carries a claim past the polarity."""
     bare = {"yes", "no"}
     return any(_norm_option(o).rstrip(".") in bare for o in options)
-
-
-def classify_work_authorization(label: str, options: tuple[str, ...] = ()) -> str | None:
-    """Which kind of work-authorization question this is, or None if the label
-    is in the domain but matches no category. Classification only — it reads
-    no config, so the same label always lands in the same category."""
-    text = label or ""
-    if _NOT_WORK_AUTH.search(text):
-        return "not_work_auth"
-    if _EXPORT_CONTROL.search(text):
-        return "export_control"
-    if _FOLLOWUP.search(text):
-        return "followup"
-    if _NATIONALITY.search(text):
-        return "nationality"
-    if _STATUS_DISCLOSURE.search(text):
-        return "status_disclosure"
-    if _PROOF_FAMILY.search(text):
-        return "proof"
-
-    authorized = bool(_AUTHORIZED_FAMILY.search(text))
-    sponsorship = bool(_SPONSORSHIP_FAMILY.search(text)) and not _SPONSORSHIP_NEGATED.search(text)
-    if authorized and sponsorship:
-        if _SPONSORSHIP_GOVERNS.search(text):
-            authorized = False
-        else:
-            sponsorship = False
-    if not (authorized or sponsorship):
-        return None
-    if options and not _offers_bare_yes_no(options):
-        return "compound_option"
-    if authorized and _AUTHORIZED_QUALIFIED.search(text):
-        if _QUALIFIER_OFFERED_AS_ALTERNATIVE.search(text):
-            return "alternation"
-        return "qualified"
-    return "sponsorship" if sponsorship else "plain"
 
 
 @dataclass(frozen=True)
@@ -525,9 +180,9 @@ class Resolution:
     tier: str = ""
     reason: str = ""
     source: str = ""
-    """What answered it: `bank:<id>` for an exact wording,
-    `bank:<id>~<keyword>` for a keyword guess, `override:<source>` for an
-    `--answers` entry. Empty where the tier is the whole story."""
+    """What answered it: `judged:<id>` for a judged bank question,
+    `override:<source>` for an `--answers` entry, `export_control` for that
+    field. Empty where the tier is the whole story."""
 
     alternates: tuple[str, ...] = ()
     """Other spellings the read-back may accept for this value: a chooser with
@@ -538,15 +193,8 @@ class Resolution:
     def parked(self) -> bool:
         return self.action == "park"
 
-    @property
-    def question_id(self) -> str:
-        if not self.source.startswith("bank:"):
-            return ""
-        return self.source[5:].split("~", 1)[0]
 
-    @property
-    def by_keyword(self) -> bool:
-        return self.source.startswith("bank:") and "~" in self.source
+FOR_THE_JUDGE = "for the judge"
 
 
 def _fill(value, tier: str, source: str = "") -> Resolution:
@@ -805,50 +453,6 @@ def _yes_no(field: MergedField, value: bool, tier: str = "B0") -> Resolution | N
     return _fill((picked,) if field.multi else picked, tier)
 
 
-def _resolve_nationality(field: MergedField, answers: Answers) -> Resolution:
-    """Nationality questions, split by shape so one fact never answers three
-    different questions: a second citizenship, a region/country yes-no, and
-    the direct ask."""
-    nationalities = answers.nationalities
-    label = field.label or ""
-    if not nationalities:
-        return _park("nationality: work_authorization.nationalities is not set", "B0")
-
-    if _SECOND_NATIONALITY.search(label):
-        second = nationalities[1] if len(nationalities) > 1 else ""
-        if _offers_bare_yes_no(tuple(o.label for o in field.options)):
-            answered = _yes_no(field, bool(second))
-            if answered is not None:
-                return answered
-        candidates = (second,) if second else _NONE_CANDIDATES
-        picked = _pick_option(field, candidates)
-        if picked is None:
-            return _park(
-                f"nationality: second-citizenship question offers no option "
-                f"matching {(second or 'None')!r}",
-                "B0",
-            )
-        return _fill(picked, "B0")
-
-    options = tuple(o.label for o in field.options)
-    region = _nationality_region_match(_norm_option(label), nationalities)
-    if region is not None and (not options or _offers_bare_yes_no(options)):
-        answered = _yes_no(field, region)
-        if answered is not None:
-            return answered
-    if options and _offers_bare_yes_no(options):
-        return _park(
-            "nationality: this yes/no question names a country or region not in "
-            "the lookup — extend it rather than guess",
-            "B0",
-        )
-
-    picked = _pick_option(field, nationalities)
-    if picked is None:
-        return _park(f"nationality: {list(nationalities)} not among the offered options", "B0")
-    return _fill(picked, "B0")
-
-
 @functools.cache
 def _us_place_patterns() -> tuple[re.Pattern, re.Pattern]:
     """A US state, DC or a US-like territory by name ("California", "Puerto
@@ -899,57 +503,9 @@ def _one_value(label: str, answers: Answers, fact) -> tuple[bool | None, str]:
     return all(values), ""
 
 
-def _true_options(
-    field: MergedField, answers: Answers, country: str, asked: str | None
-) -> list[str]:
-    """Options this board offers that are known to be true of you in `country`.
-
-    An option is true when the bank has a claim for its exact text and every
-    fact the claim states matches the country's row. `asked` names the fact
-    the question is about: an option that says nothing about it cannot answer
-    it, however true it is."""
-    facts = answers.facts_for(country)
-    out = []
-    for option in field.options:
-        claim = answers.claims.get(_norm_option(option.label))
-        if not claim:
-            continue
-        if claim.get("country") and canonical_place(claim["country"]) != canonical_place(country):
-            continue
-        if asked and asked not in claim and not claim.get("holds"):
-            continue
-        if any(
-            getattr(facts, k) != v
-            for k, v in claim.items()
-            if k in ("authorized", "requires_sponsorship")
-        ):
-            continue
-        if claim.get("holds") is False:
-            continue
-        out.append(option.label)
-    return out
-
-
-def _resolve_by_claims(
-    field: MergedField, answers: Answers, asked: str | None, why: str
-) -> Resolution:
-    countries = _question_countries(field.label, answers)
-    if len(countries) != 1:
-        return _park(f"work authorization: names {countries}; pick by hand", "B0")
-    true = _true_options(field, answers, countries[0], asked)
-    if true:
-        return _fill(tuple(true) if field.multi else true[0], "B0", source=f"claim:{countries[0]}")
-    offered = [o.label for o in field.options]
-    return _park(
-        f"work authorization: {why} No offered option is known to be true for "
-        f"{countries[0]}; add the true one under claims (offered: {offered})",
-        "B0",
-    )
-
-
 def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> Resolution:
-    """A wording judged once: Yes exactly when the fact it names equals
-    `yes_when`, so the answer follows your facts if they change."""
+    """A judged `{fact, yes_when}`: Yes exactly when the fact it names equals
+    `yes_when` for the question's country, so the answer follows your facts."""
     fact = judged["fact"]
     source = f"fact_wording:{fact}"
     if fact == "us_person":
@@ -976,113 +532,17 @@ def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> 
     return Resolution("fill", answered.value, "B0", source=source)
 
 
-# A yes/no family's label is only a suggestion: the fact it reads, Yes when true.
-# Confirmed in /apply, the wording becomes an exact `fact_wordings` entry.
-SUGGESTED_FACT = {
-    "plain": "authorized",
-    "proof": "authorized",
-    "qualified": "unrestricted",
-    "sponsorship": "requires_sponsorship",
-}
-
-
-def _resolve_work_authorization(field: MergedField, answers: Answers) -> Resolution:
-    label = field.label or ""
-    judged = answers.fact_wordings.get(_norm(label))
-    options = tuple(o.label for o in field.options)
-    # A board whose options are sentences is answered by claims, whatever the wording.
-    if judged is not None and (not options or _offers_bare_yes_no(options)):
-        return resolve_fact_wording(field, answers, judged)
-    category = classify_work_authorization(label, options)
-    countries = _question_countries(label, answers)
-    if UNKNOWN_COUNTRY in countries and category not in (
-        "nationality",
-        "export_control",
-        "not_work_auth",
-    ):
+def _resolve_export_control(field: MergedField, answers: Answers) -> Resolution:
+    """A "U.S. person" question from an explicit `us_person`; any other
+    export-control question, or an unset `us_person`, parks for the judge."""
+    if not _US_PERSON_QUESTION.search(field.label or "") or answers.us_person == "park":
         return _park(
-            "work authorization: the job's country could not be read from "
-            "its location, and this question depends on it",
-            "B0",
+            "export control: for the judge (a us_person fact only)", "B0", "export_control"
         )
-    facts = answers.facts_for(countries[0])
-
-    if category == "export_control":
-        if not _US_PERSON_QUESTION.search(label):
-            return _park(
-                "export control: yours to answer, every time", "B0", source="export_control"
-            )
-        if answers.us_person == "park":
-            return _park(
-                'export control: asks whether you are a "U.S. person", a legal '
-                "declaration distinct from work authorization. Set "
-                "work_authorization.us_person to answer it",
-                "B0",
-                source="export_control",
-            )
-        answered = _yes_no(field, answers.us_person == "yes")
-        if answered is not None:
-            return Resolution("fill", answered.value, "B0", source="export_control")
-        return _park("export control: no bare Yes/No offered", "B0", source="export_control")
-    if category == "nationality":
-        return _resolve_nationality(field, answers)
-    if category == "followup":
-        if facts.followup and not field.options and len(countries) == 1:
-            return _fill(facts.followup, "B0")
-        return _park(
-            f"work authorization: a follow-up asking for detail. Set "
-            f"countries.{countries[0]}.followup to answer it",
-            "B0",
-        )
-    if category == "status_disclosure":
-        if field.options:
-            return _resolve_by_claims(field, answers, None, "asks which status you hold.")
-        if facts.status_label and len(countries) == 1:
-            return _fill(facts.status_label, "B0")
-        return _park(
-            f"work authorization: asks which status you hold. Set "
-            f"countries.{countries[0]}.status_label",
-            "B0",
-        )
-    if category == "compound_option":
-        asked = (
-            "requires_sponsorship"
-            if _SPONSORSHIP_FAMILY.search(label) and not _SPONSORSHIP_NEGATED.search(label)
-            else "authorized"
-        )
-        return _resolve_by_claims(field, answers, asked, "every option carries its own claim.")
-    if category == "alternation":
-        return _park(
-            "work authorization: the scope qualifier is offered as an alternative "
-            '("permanent or temporary"), so it does not narrow the question',
-            "B0",
-        )
-    if category is None:
-        return _park("work authorization: label matches no answerable family", "B0")
-
-    if category == "qualified":
-        value, why = _one_value(label, answers, lambda f: f.authorized and f.unrestricted)
-        asked = "authorized"
-    elif category == "sponsorship":
-        value, why = _one_value(label, answers, lambda f: f.requires_sponsorship)
-        asked = "requires_sponsorship"
-    else:  # plain, proof
-        value, why = _one_value(label, answers, lambda f: f.authorized)
-        asked = "authorized"
-    if value is None:
-        return _park(f"work authorization: {why}", "B0")
-
-    answered = _yes_no(field, value)
+    answered = _yes_no(field, answers.us_person == "yes")
     if answered is not None:
-        fact = SUGGESTED_FACT[category]
-        return _park(
-            f"work authorization: new wording, confirm once. Suggested: Yes when {fact} "
-            f"is true (answers {answered.value!r} here)",
-            "B0",
-            source=f"suggest:{fact}",
-        )
-    # No bare Yes/No for this polarity — the answer is split across sentences.
-    return _resolve_by_claims(field, answers, asked, "the board offers no bare Yes/No.")
+        return Resolution("fill", answered.value, "B0", source="export_control")
+    return _park("export control: no bare Yes/No offered", "B0", source="export_control")
 
 
 # JobSpy-aggregator sources: the listing genuinely was seen there.
@@ -1153,59 +613,6 @@ def _computed(question: Question, field: MergedField, answers: Answers, source: 
     return _fill(str(figure), "B", source=source)
 
 
-def find_question(label: str, answers: Answers) -> tuple[Question, str] | None:
-    """The question a label asks, and the source tag naming how it was found:
-    `bank:<id>` for an exact wording, `bank:<id>~<keyword>` for a keyword."""
-    norm = _norm(label)
-    if not norm:
-        return None
-    for q in answers.questions:
-        if norm in q.wordings:
-            return q, f"bank:{q.id}"
-    for q in answers.questions:
-        if norm in q.not_wordings:
-            continue
-        for keyword in q.keywords:
-            if keyword in norm:
-                return q, f"bank:{q.id}~{keyword}"
-    return None
-
-
-_STOPWORDS = frozenset(
-    "a an and any are as at be by can do does did for from have has how i if in is it "
-    "of on or our please that the this to us we what when where which who why will with "
-    "would you your yours".split()
-)
-
-
-def _words(text: str) -> set[str]:
-    return {w for w in _norm(text).split() if w not in _STOPWORDS and len(w) > 2}
-
-
-def similar_questions(label: str, answers: Answers, n: int = 3) -> tuple[str, ...]:
-    """The bank questions whose wordings and keywords share the most words with
-    a label, best first — the ids a session should choose from before it
-    invents a new one."""
-    want = _words(label)
-    if not want:
-        return ()
-    scored = []
-    for q in answers.questions:
-        have = set().union(*(_words(t) for t in (*q.wordings, *q.keywords, q.id.replace("_", " "))))
-        shared = len(want & have)
-        if shared:
-            scored.append((shared / len(want | have), q.id))
-    return tuple(qid for _, qid in sorted(scored, reverse=True)[:n])
-
-
-def _resolve_question(field: MergedField, answers: Answers) -> Resolution | None:
-    found = find_question(field.label, answers)
-    if found is None:
-        return None
-    question, source = found
-    return answer_question(question, field, answers, source)
-
-
 def answer_question(
     question: Question, field: MergedField, answers: Answers, source: str
 ) -> Resolution:
@@ -1267,21 +674,16 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
 
     label = field.label or ""
     if in_work_authorization_domain(label):
-        resolution = _resolve_work_authorization(field, answers)
-        # Blank is never a false claim, and an optional free-text visa question
-        # is not worth parking a role over.
-        if resolution.parked and not field.required:
-            return Resolution("skip", tier="B0", reason=resolution.reason, source=resolution.source)
-        return resolution
-
-    question = _resolve_question(field, answers)
-    if question is not None:
-        return question
-
-    # Tier C: nothing in the bank asks this. The /apply session maps it to a
-    # question, and the run saves that mapping for next time.
-    return (
-        _park("no question in the bank asks this", "C")
-        if field.required
-        else _skip("optional, not in the bank", "C")
-    )
+        if _EXPORT_CONTROL.search(label):
+            resolution = _resolve_export_control(field, answers)
+        else:
+            resolution = _park(FOR_THE_JUDGE, "B0")
+    else:
+        resolution = _park(FOR_THE_JUDGE, "C")
+    # Blank is never a false claim: an optional field the judge does not
+    # answer is left alone.
+    if resolution.parked and not field.required:
+        return Resolution(
+            "skip", tier=resolution.tier, reason=resolution.reason, source=resolution.source
+        )
+    return resolution

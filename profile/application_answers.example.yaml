@@ -1,16 +1,16 @@
 # TEMPLATE — copy to profile/application_answers.yaml and replace every value.
 #
 # The answer bank: everything /apply puts on an application form. Read by
-# src/applyourself/apply/answers.py. DO NOT COMMIT YOUR COPY (profile/* is gitignored).
+# src/applyourself/apply/. DO NOT COMMIT YOUR COPY (profile/* is gitignored).
 #
-# You write `identity` through `work_authorization` — facts only you can state
-# (what resume.yaml already says is read from it).
-# `claims`, `fact_wordings` and `questions` grow on their own: every /apply run
-# you confirm saves what it learned here (a new wording, a board's option
-# spelling, a new answer), so the same question is never asked twice. Review or undo with
-# `uv run apply learn` and `uv run apply learn --undo <id>`.
+# You write `identity` through `facts` — things only you can state (what
+# resume.yaml already says is read from it). The apply-judge answers each
+# form field from `facts` and `questions`, and asks you when they don't cover it.
+# Your answer to an ask becomes a new fact, and an approved new written answer
+# becomes a new question, so the same thing is never asked twice. Review or undo
+# with `uv run apply learn` and `uv run apply learn --undo <id>`.
 
-schema_version: 3
+schema_version: 4
 
 # identity, education and employment read profile/resume.yaml for every key
 # left out here: first/last/preferred name from `name`, email and phone from the
@@ -82,64 +82,53 @@ work_authorization:
     #   requires_sponsorship: true
     #   visa_salary_floor: {amount: 48300, currency: EUR, per: year, note: "EU Blue Card"}
 
-# A board's full-sentence work-authorization option -> the facts it states. An
-# option is picked only when every fact it states is true for that country.
-claims:
-  "I am authorized to work in the United States and will require sponsorship in the future":
-    {authorized: true, requires_sponsorship: true, country: United States}
+# Facts about you, one plain sentence each, for the questions a form asks in
+# its own words. The id matches F-<UPPERCASE-WORDS>. Say what is true and when:
+# "today" and "later" are different answers.
+facts:
+  F-CITIZENSHIP: "Citizen of Exampleland only; not a US citizen or permanent resident."
+  F-VISA: "Holds F-1 status with STEM OPT, authorized to work in the United States today."
+  F-SPONSORSHIP-NOW: "Needs no visa sponsorship to start work in the United States today."
+  F-SPONSORSHIP-LATER: "Will need H-1B sponsorship in the United States when OPT ends."
+  F-ONSITE: "Will work onsite or hybrid anywhere in the United States, up to five days a week."
+  F-RELOCATION: "Willing to relocate within the United States; needs no relocation assistance."
+  F-WIDGET-CAD-YEARS: "4 years of professional Widget CAD."
+  F-GEARBOX-SIM-YEARS: "2 years of gearbox simulation."
+  F-ADULT: "Is over 18 years old."
+  F-CONSENT-DATA-RETENTION: "Consents to the employer keeping the application on file for future roles."
+  F-ATTESTATIONS: "Agrees to standard attestations: answers are accurate and complete, and completed the application myself."
+  F-AI-INTERVIEW: "Will not use AI tools during interviews unless the employer permits them."
 
-# A yes/no work-authorization or export-control label -> the fact that answers
-# it. The answer is "Yes" when the fact equals yes_when. Exact wording only.
-# Facts: us_person, authorized, requires_sponsorship, unrestricted.
-# fact_wordings:
-#   "Are you legally able to work here without a visa?":
-#     {fact: unrestricted, yes_when: true}
-
-# Every other question. `wordings` are whole labels (exact); `keywords` are
-# substrings, a guess the session confirms before it counts. `not` lists labels
-# a keyword must never answer. An answer is text, a list of spellings (the first
-# the board offers wins), or {fact: identity.first_name}, {computed: salary |
-# start_date | how_heard}, {role_file: why_company} (this role's
-# company_answers.yaml).
+# One entry per question you want answered the same way everywhere. An answer
+# is text, a list of spellings (the first the board offers wins), or
+# {fact: identity.first_name}, {computed: salary | start_date | how_heard},
+# {role_file: why_company} (this role's company_answers.yaml).
 questions:
   linkedin:
     answer: "https://linkedin.com/in/example"
-    keywords: [linkedin]
   website:
     answer: "https://example.com"
-    keywords: [website, portfolio, personal site]
   salary:
     # The `salary` on the role's country row (work_authorization). "Yes" answers
     # a Yes/No "is the posted range acceptable?".
     answer: {computed: salary, fallback: ["Yes"]}
-    keywords: [salary, compensation, desired rate of pay, pay expectation]
   start_date:
     answer: {computed: start_date}
-    keywords: [start date, when can you start, earliest]
   how_did_you_hear:
     answer: {computed: how_heard, fallback: ["Careers Page", "Company Website", "Other"]}
-    keywords: [how did you hear, where did you hear, how did you learn]
-    mode: contains
   pronouns:
     answer: ["They/Them"]
-    keywords: [pronouns]
   languages_fluent:
     # The languages you speak. /score also reads it: a JD requiring another is skipped.
     answer: ["English"]
-    keywords: [languages in which you are fluent]
   legal_first_name:
     answer: {fact: identity.first_name}
-    keywords: [legal first name]
   current_company:
     answer: {fact: employment.company_name}
-    wordings: [current company, current employer]
     only_when_required: true
   why_company:
     answer: {role_file: why_company}
-    keywords: [why do you want to work, why are you interested in joining]
   why_role:
     answer: {role_file: why_role}
-    keywords: [why this role, why are you interested in this role]
   what_interests_you_about_product:
     answer: {role_file: what_interests_you_about_product}
-    keywords: [what excites you about, what interests you about]

@@ -505,15 +505,14 @@ class TestApiEndToEndResolution:
         assert by_id["_systemfield_name"] == "Alex Example"
         assert by_id["_systemfield_email"] == answers.identity["email"]
 
-    def test_the_work_authorization_pair_resolves_from_status(self, answers, tailor_dir):
+    def test_the_work_authorization_pair_parks_for_the_judge(self, answers, tailor_dir):
         board_fields = fields_from_application_form(
             load_api("api_ashby_form")["data"]["jobPosting"]
         )
         plan = build_plan(board_fields, answers, tailor_dir, ats="ashby")
-        by_id = {f.id: f.value for f in plan.fields}
-        # time_limited: authorized today, will need sponsorship later.
-        assert by_id["20000000-0000-0000-0000-000000000005"] == "Yes"
-        assert by_id["20000000-0000-0000-0000-000000000006"] == "Yes"
+        tiers = {u.id: u.tier for u in plan.unmapped}
+        assert tiers["20000000-0000-0000-0000-000000000005"] == "B0"
+        assert tiers["20000000-0000-0000-0000-000000000006"] == "B0"
 
 
 def _form_with_files(*files):

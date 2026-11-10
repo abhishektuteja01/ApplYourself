@@ -1,11 +1,9 @@
 """What goes into a field, and what refuses to.
 
-The resolution cases run over the five reconciled DOM/API fixture pairs rather
-than hand-built fields, because the questions that break this module are the
-ones no one would think to invent: a sponsorship question next to an
-authorization question, a work-authorization dropdown whose options are three
-sentences, "How did you hear about this job?" with a different option list on
-every board.
+Code answers the structural blocks (identity, education, employment, EEOC) and
+the "U.S. person" question; every other field parks for the judge. A judged
+bank question renders through `answer_question`, a judged fact through
+`resolve_fact_wording`.
 """
 
 from __future__ import annotations
@@ -26,7 +24,8 @@ from applyourself.apply.reconcile import MergedField, MergedOption
 from applyourself.shared import paths
 
 from .conftest import FIXTURES
-from .conftest import resolve_confirmed as resolve
+
+resolve = A.resolve
 
 CONFIG = FIXTURES / "application_answers.yaml"
 
@@ -58,6 +57,13 @@ def by_label(reconciled, needle: str) -> MergedField:
     return hits[0]
 
 
+def ask(answers, qid: str, f: MergedField) -> Resolution:
+    """The bank question `qid` rendered for `f`, as a judged `question` entry is."""
+    question = answers.question(qid)
+    assert question is not None, qid
+    return A.answer_question(question, f, answers, f"judged:{qid}")
+
+
 def write_config(tmp_path, **overrides):
     data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     for key, value in overrides.items():
@@ -68,96 +74,6 @@ def write_config(tmp_path, **overrides):
     path = tmp_path / "application_answers.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return path
-
-
-class TestFindingAQuestion:
-    """An exact wording beats every keyword; a keyword is a guess, named as one;
-    a `not:` wording is never guessed again."""
-
-    def _answers(self, tmp_path, qs):
-        return load_answers(write_config(tmp_path, questions=qs))
-
-    def test_a_wording_matches_the_whole_label(self, tmp_path):
-        a = self._answers(tmp_path, {"q0": {"answer": ["California"], "wordings": ["state"]}})
-        assert resolve(field(label="State", options=["California"]), a).value == "California"
-
-    def test_a_wording_does_not_match_a_label_containing_it(self, tmp_path):
-        a = self._answers(tmp_path, {"q0": {"answer": ["California"], "wordings": ["state"]}})
-        for label in ("United States", "Please state their name", "Home state address"):
-            assert resolve(field(label=label), a).action == "skip"
-
-    def test_punctuation_and_case_do_not_break_a_wording(self, tmp_path):
-        a = self._answers(
-            tmp_path,
-            {
-                "q0": {"answer": "Teaching Assistant", "wordings": ["current position title"]},
-            },
-        )
-        assert resolve(field(label="Current Position/Title"), a).value == "Teaching Assistant"
-
-    def test_a_question_may_carry_both(self, tmp_path):
-        a = self._answers(
-            tmp_path,
-            {
-                "q0": {
-                    "answer": "Open",
-                    "keywords": ["pay expectation"],
-                    "wordings": ["expected pay"],
-                },
-            },
-        )
-        assert resolve(field(label="Expected pay"), a).value == "Open"
-        assert resolve(field(label="What is your pay expectation?"), a).value == "Open"
-
-    def test_an_exact_wording_beats_an_earlier_keyword(self, tmp_path):
-        a = self._answers(
-            tmp_path,
-            {
-                "city": {"answer": "San Francisco", "keywords": ["currently located"]},
-                "ny": {
-                    "answer": ["No"],
-                    "wordings": ["are you currently located in the new york area"],
-                },
-            },
-        )
-        r = resolve(
-            field(label="Are you currently located in the New York area?", options=["Yes", "No"]), a
-        )
-        assert r.value == "No" and r.source == "bank:ny"
-
-    def test_a_not_wording_is_never_guessed(self, tmp_path):
-        a = load_answers(
-            write_config(
-                tmp_path,
-                questions={
-                    "referral": {
-                        "answer": ["No"],
-                        "keywords": ["employee referral"],
-                        "not": ["If employee referral, referred by"],
-                    }
-                },
-            )
-        )
-        assert resolve(field(label="If employee referral, referred by"), a).action == "skip"
-        assert resolve(field(label="Employee referral?"), a).value == "No"
-
-    def test_a_question_needs_a_way_to_be_found(self, tmp_path):
-        with pytest.raises(AnswersError, match="wordings or keywords"):
-            self._answers(tmp_path, {"q0": {"answer": "x"}})
-
-    def test_two_questions_claiming_one_wording_is_an_error(self, tmp_path):
-        with pytest.raises(AnswersError, match="both claim the wording"):
-            self._answers(
-                tmp_path,
-                {
-                    "q0": {"answer": "California", "wordings": ["state"]},
-                    "q1": {"answer": "Massachusetts", "wordings": ["state"]},
-                },
-            )
-
-    def test_a_work_authorization_wording_is_rejected(self, tmp_path):
-        with pytest.raises(AnswersError, match="work-authorization question"):
-            self._answers(tmp_path, {"q0": {"answer": "x", "wordings": ["citizenship"]}})
 
 
 class TestLoad:
@@ -195,9 +111,23 @@ class TestLoad:
         assert got.employment["title"] == "Cog Fitter"
         assert got.employment["end_month"] == "June" and got.employment["current_role"] is False
 
-    def test_a_schema_2_bank_names_the_migration(self, tmp_path):
-        with pytest.raises(AnswersError, match="config migrate"):
-            load_answers(write_config(tmp_path, schema_version=2))
+    @pytest.mark.parametrize("version", [2, 3])
+    def test_an_older_bank_names_the_migration(self, tmp_path, version):
+        with pytest.raises(
+            AnswersError, match=f"bank is schema {version}: run `uv run config migrate`"
+        ):
+            load_answers(write_config(tmp_path, schema_version=version))
+
+    @pytest.mark.parametrize("key", ["claims", "fact_wordings"])
+    def test_a_removed_top_level_key_is_refused(self, tmp_path, key):
+        with pytest.raises(AnswersError, match=key):
+            load_answers(write_config(tmp_path, **{key: {}}))
+
+    @pytest.mark.parametrize("key", ["wordings", "keywords", "not"])
+    def test_a_removed_question_key_is_refused(self, tmp_path, key):
+        qs = {"q0": {"answer": "x", key: ["anything"]}}
+        with pytest.raises(AnswersError, match="judge picks the question"):
+            load_answers(write_config(tmp_path, questions=qs))
 
     def test_an_empty_identity_value_is_not_a_value(self, tmp_path, answers):
         identity = dict(answers.identity, phone="   ")
@@ -279,10 +209,6 @@ class TestWorkAuthorizationLoading:
         with pytest.raises(AnswersError, match="quote it"):
             load_answers(write_config(tmp_path, work_authorization=wa))
 
-    def test_a_bare_yes_is_too_generic_to_be_a_claim(self, tmp_path):
-        with pytest.raises(AnswersError, match="too generic"):
-            load_answers(write_config(tmp_path, claims={"Yes": {"authorized": True}}))
-
     def _floor(self, tmp_path, floor):
         return load_answers(
             write_config(
@@ -328,11 +254,11 @@ class TestWorkAuthorizationLoading:
 class TestQuestionValidation:
     def test_a_question_needs_an_answer(self, tmp_path):
         with pytest.raises(AnswersError, match="answer"):
-            load_answers(write_config(tmp_path, questions={"q": {"keywords": ["portfolio"]}}))
+            load_answers(write_config(tmp_path, questions={"q": {"source": "B-X"}}))
 
     def test_answer_may_be_a_list_of_candidates(self, tmp_path):
         qs = {
-            "q0": {"answer": ["Careers Page", "Other"], "keywords": ["how did you hear"]},
+            "q0": {"answer": ["Careers Page", "Other"]},
         }
         loaded = load_answers(write_config(tmp_path, questions=qs))
         assert loaded.questions[0].answers == ("Careers Page", "Other")
@@ -342,115 +268,33 @@ class TestQuestionValidation:
             write_config(
                 tmp_path,
                 questions={
-                    "legal_first_name": {
-                        "answer": {"fact": "identity.first_name"},
-                        "keywords": ["legal first name"],
-                    }
+                    "legal_first_name": {"answer": {"fact": "identity.first_name"}},
                 },
             )
         )
-        assert resolve(field(label="Legal first name"), loaded).value == "Alex"
+        assert ask(loaded, "legal_first_name", field(label="Legal first name")).value == "Alex"
 
     def test_a_fact_that_is_not_set_is_refused(self, tmp_path):
         with pytest.raises(AnswersError, match="not set"):
             load_answers(
                 write_config(
                     tmp_path,
-                    questions={
-                        "x": {"answer": {"fact": "identity.nickname"}, "keywords": ["nickname"]}
-                    },
+                    questions={"x": {"answer": {"fact": "identity.nickname"}}},
                 )
             )
-
-    def test_overlapping_keywords_across_questions_raise(self, tmp_path):
-        qs = {
-            "q0": {"answer": "Open", "keywords": ["salary"]},
-            "q1": {"answer": "150000", "keywords": ["desired salary"]},
-        }
-        with pytest.raises(AnswersError, match="overlaps"):
-            load_answers(write_config(tmp_path, questions=qs))
-
-    def test_a_short_keyword_is_refused(self, tmp_path):
-        with pytest.raises(AnswersError, match="under"):
-            load_answers(
-                write_config(tmp_path, questions={"q0": {"answer": "x", "keywords": ["C++"]}})
-            )
-
-    @pytest.mark.parametrize(
-        "keyword",
-        [
-            "sponsor",
-            "visa",
-            "work authorization",
-            "authorized to work",
-            "citizenship",
-            "u.s. person",
-        ],
-    )
-    def test_a_work_authorization_keyword_cannot_be_a_question(self, tmp_path, keyword):
-        qs = {"q0": {"answer": "Yes", "keywords": [keyword]}}
-        with pytest.raises(AnswersError, match="work-authorization question"):
-            load_answers(write_config(tmp_path, questions=qs))
-
-
-class TestResolutionProvenance:
-    """A resolution names what answered it: an exact wording, or a keyword guess
-    the session must confirm."""
-
-    def test_a_keyword_guess_names_its_keyword(self, tmp_path):
-        qs = {
-            "site": {"answer": "https://x.example", "keywords": ["portfolio", "personal site"]},
-        }
-        answers = load_answers(write_config(tmp_path, questions=qs))
-        resolution = resolve(field(label="Link to your personal site"), answers)
-        assert resolution.tier == "B"
-        assert resolution.source == "bank:site~personal site"
-        assert resolution.by_keyword and resolution.question_id == "site"
-
-    def test_an_exact_wording_names_its_question(self, tmp_path):
-        qs = {"state": {"answer": ["Example State"], "wordings": ["state"]}}
-        answers = load_answers(write_config(tmp_path, questions=qs))
-        resolution = resolve(field(label="State", options=["Example State"]), answers)
-        assert resolution.source == "bank:state"
-        assert not resolution.by_keyword
-
-    def test_a_parked_choice_still_names_its_question(self, tmp_path):
-        qs = {
-            "heard": {"answer": ["Careers Page"], "keywords": ["how did you hear"]},
-        }
-        answers = load_answers(write_config(tmp_path, questions=qs))
-        resolution = resolve(
-            field(
-                label="How did you hear about this job?",
-                required=True,
-                kind="select",
-                options=["Acme Careers Site", "LinkedIn"],
-            ),
-            answers,
-        )
-        assert resolution.action == "park"
-        assert resolution.source == "bank:heard~how did you hear"
-
-    def test_a_structural_tier_leaves_the_source_empty(self, answers, merged):
-        reconciled = merged("form_minimal")
-        email = next(f for f in reconciled.fields if f.id == "email")
-        resolution = resolve(email, answers)
-        assert resolution.tier == "A"
-        assert resolution.source == ""
 
 
 class TestMatchMode:
     """`mode: contains` — for short affirmations a board wraps in a full
-    sentence ("Yes" inside "Yes, I am able and willing to work..."). A learned
-    option spelling never changes the mode."""
+    sentence ("Yes" inside "Yes, I am able and willing to work...")."""
 
     def test_mode_defaults_to_exact(self, tmp_path):
-        qs = {"q0": {"answer": "https://x.example", "keywords": ["portfolio"]}}
+        qs = {"q0": {"answer": "https://x.example"}}
         loaded = load_answers(write_config(tmp_path, questions=qs))
         assert loaded.questions[0].mode == "exact"
 
     def test_an_invalid_mode_is_rejected(self, tmp_path):
-        qs = {"q0": {"answer": "x", "keywords": ["portfolio"], "mode": "fuzzy"}}
+        qs = {"q0": {"answer": "x", "mode": "fuzzy"}}
         with pytest.raises(AnswersError, match="mode"):
             load_answers(write_config(tmp_path, questions=qs))
 
@@ -458,7 +302,6 @@ class TestMatchMode:
         qs = {
             "q0": {
                 "answer": ["I acknowledge", "Yes"],
-                "keywords": ["acknowledge"],
                 "mode": "contains",
             },
         }
@@ -472,7 +315,7 @@ class TestMatchMode:
                 "No, I am unable and/or unwilling to work in the office location listed.",
             ],
         )
-        assert resolve(f, answers).value == (
+        assert ask(answers, "q0", f).value == (
             "Yes, I am able and willing to work in the office location listed."
         )
 
@@ -480,7 +323,6 @@ class TestMatchMode:
         qs = {
             "q0": {
                 "answer": ["I acknowledge", "Yes"],
-                "keywords": ["acknowledge"],
                 "mode": "contains",
             },
         }
@@ -491,11 +333,11 @@ class TestMatchMode:
             kind="select",
             options=["Agreed", "Declined"],
         )
-        assert resolve(f, answers).parked
+        assert ask(answers, "q0", f).parked
 
     def test_exact_mode_does_not_match_inside_a_full_sentence(self, tmp_path):
         qs = {
-            "q0": {"answer": ["I acknowledge", "Yes"], "keywords": ["acknowledge"]},
+            "q0": {"answer": ["I acknowledge", "Yes"]},
         }
         answers = load_answers(write_config(tmp_path, questions=qs))
         f = field(
@@ -507,7 +349,7 @@ class TestMatchMode:
                 "No, I am unable and/or unwilling to work in the office location listed.",
             ],
         )
-        assert resolve(f, answers).parked
+        assert ask(answers, "q0", f).parked
 
 
 class TestIdentity:
@@ -603,8 +445,7 @@ class TestIdentity:
 
 
 class TestDateFields:
-    """A date field is the start-date question only when its label says so;
-    "Date of birth" or "visa expiry" must never get the start date."""
+    """`{computed: start_date}` is the job country's `start_in_days` from today."""
 
     def _pin(self, monkeypatch):
         from datetime import date as _date
@@ -614,17 +455,12 @@ class TestDateFields:
     def test_a_start_date_field_gets_the_country_start_date(self, answers, monkeypatch):
         self._pin(monkeypatch)
         f = field(id="question_1", label="When can you start a new role?", kind="date")
-        r = resolve(f, answers)
+        r = ask(answers, "when_can_you_start", f)
         assert (r.action, r.value) == ("fill", "10/11/2026")  # fixture: 14 days
-
-    def test_another_date_question_is_not_the_start_date(self, answers):
-        for label in ("Date of birth", "When does your OPT/visa expire?"):
-            r = resolve(field(id="q", label=label, kind="date", required=True), answers)
-            assert r.action == "park", label
 
     def test_a_country_with_no_start_in_days_parks(self, answers):
         a = dc_replace(answers, job_country="Germany")
-        r = resolve(field(label="When can you start?", required=True), a)
+        r = ask(a, "when_can_you_start", field(label="When can you start?", required=True))
         assert r.action == "park" and "Germany" in r.reason
 
 
@@ -852,156 +688,26 @@ class TestDemographic:
         assert resolve(f, answers).action == "skip"
 
 
-class TestWorkAuthorization:
-    SPONSORSHIP = [
-        ("form_minimal", "require visa sponsorship"),
-        ("form_multiselect", "Will you now or in the future require sponsorship?"),
-        ("form_demographic", "require sponsorship for an employment"),
-    ]
-    AUTHORIZED = [
-        ("form_demographic", "legally authorized to work in the United States"),
-    ]
+class TestForTheJudge:
+    """Code answers no question of its own: work authorization parks at B0
+    (where a judged fact may answer), everything else at C."""
 
-    @pytest.mark.parametrize("fixture,needle", SPONSORSHIP)
-    def test_time_limited_will_require_sponsorship(self, merged, answers, fixture, needle):
-        assert resolve(by_label(merged(fixture), needle), answers).value == "Yes"
+    def test_a_question_the_bank_answers_still_parks_for_the_judge(self, merged, answers):
+        r = resolve(by_label(merged("form_minimal"), "How did you hear"), answers)
+        assert (r.action, r.tier, r.reason) == ("park", "C", A.FOR_THE_JUDGE)
 
-    @pytest.mark.parametrize("fixture,needle", AUTHORIZED)
-    def test_time_limited_is_authorized_today(self, merged, answers, fixture, needle):
-        assert resolve(by_label(merged(fixture), needle), answers).value == "Yes"
+    def test_a_work_authorization_question_parks_at_b0(self, answers):
+        r = resolve(_yes_no_field("Will you now or in the future require sponsorship?"), answers)
+        assert (r.action, r.tier, r.reason) == ("park", "B0", A.FOR_THE_JUDGE)
 
-    @pytest.mark.parametrize("fixture,needle", SPONSORSHIP + AUTHORIZED)
-    def test_a_citizen_answers_the_two_families_differently(
-        self, tmp_path, merged, answers, fixture, needle
-    ):
-        """The case one keyword cannot express: authorized yes,
-        sponsorship no, on boards that ask both."""
-        citizen = dc_replace(
-            answers,
-            countries={
-                **answers.countries,
-                "United States": BS.CountryFacts(
-                    authorized=True, requires_sponsorship=False, unrestricted=True
-                ),
-            },
-        )
-        expected = "Yes" if (fixture, needle) in self.AUTHORIZED else "No"
-        assert resolve(by_label(merged(fixture), needle), citizen).value == expected
+    def test_a_relocation_support_label_is_not_work_authorization(self, answers):
+        r = resolve(_yes_no_field("Do you need relocation support or visa sponsorship?"), answers)
+        assert r.tier == "C"
 
-    def test_an_authorization_question_naming_another_country_uses_its_row(self, merged, answers):
-        """'Are you legally authourized to work in South Africa?' — no row for
-        South Africa, so the default row answers: not authorized."""
-        f = by_label(merged("form_multiselect"), "authourized to work in South Africa")
-        assert resolve(f, answers).value == "No"
+    def test_an_optional_one_is_skipped_with_its_tier(self, answers):
+        r = resolve(_yes_no_field("What visa type do you hold?", required=False), answers)
+        assert (r.action, r.tier) == ("skip", "B0")
 
-    def test_a_dropdown_of_prose_options_parks(self, answers):
-        """A real board's 'Work Authorization' select offers three sentences,
-        not Yes/No. Picking one is judgment."""
-        f = field(
-            label="Work Authorization",
-            required=True,
-            kind="react_select",
-            options=[
-                "I am authorized to work without sponsorship or restrictions for any employer in the U.S.",
-                "I am ONLY allowed to work for my current employer in the U.S. and I will require "
-                "sponsorship now or in the future to work in the US",
-                "My status to work in the U.S. is unknown",
-            ],
-        )
-        assert resolve(f, answers).parked
-
-    def test_a_citizenship_dropdown_parks(self, merged, answers):
-        f = by_label(merged("form_multiselect"), "Citizenship")
-        assert resolve(f, answers).parked
-
-    @pytest.mark.parametrize("needle", ["What visa type do you hold", "When does your visa expire"])
-    def test_optional_visa_free_text_is_left_blank_not_parked(self, merged, answers, needle):
-        f = by_label(merged("form_multiselect"), needle)
-        assert not f.required
-        assert resolve(f, answers).action == "skip"
-
-    def test_a_negated_sponsorship_question_is_never_guessed(self, answers):
-        f = field(
-            label="Are you able to work without sponsorship, now or in the future?",
-            required=True,
-            kind="react_select",
-            options=["Yes", "No"],
-        )
-        assert resolve(f, answers).parked
-
-    def test_a_work_authorization_question_rendered_as_free_text_is_written_out(self, answers):
-        """A yes/no question in a text box is still a yes/no question, and
-        writing the word is the same answer as picking the option. This used to
-        park; 11 groups in the 237-board harvest are exactly this shape, every
-        one of them an ordinary sponsorship or authorization question."""
-        f = field(
-            label="Will you now or in the future require sponsorship?", required=True, kind="text"
-        )
-        r = resolve(f, answers)
-        assert r.action == "fill"
-        assert r.value == "Yes"  # time_limited requires it
-
-
-class TestBankQuestions:
-    def test_a_keyword_matches_the_normalized_label(self, merged, answers):
-        r = merged("form_minimal")
-        assert resolve(by_label(r, "LinkedIn"), answers).value == "https://linkedin.com/in/example"
-        assert resolve(by_label(r, "Website"), answers).value == "https://example.com"
-
-    def test_a_dropdown_answer_falls_through_to_an_option_the_board_offers(self, merged, answers):
-        """Eight sampled boards, eight disjoint option sets for the same
-        question. One string would miss almost all of them."""
-        assert (
-            resolve(by_label(merged("form_minimal"), "How did you hear"), answers).value == "Other"
-        )
-        assert (
-            resolve(by_label(merged("form_multiselect"), "How did you hear"), answers).value
-            == "Careers Page"
-        )
-        assert (
-            resolve(by_label(merged("form_employment"), "How did you hear"), answers).value
-            == "Other"
-        )
-
-    def test_the_same_question_fills_free_text_with_its_first_candidate(self, merged, answers):
-        f = by_label(merged("form_demographic"), "How did you hear")
-        assert f.kind == "text" and not f.options
-        assert resolve(f, answers).value == "Careers Page"
-
-    def test_an_answer_the_board_does_not_offer_parks_rather_than_guessing(self, answers):
-        f = field(
-            label="How did you hear about this job?",
-            required=True,
-            kind="react_select",
-            options=["Recruiter", "Conference"],
-        )
-        parked = resolve(f, answers)
-        assert parked.parked and "Careers Page" in parked.reason
-
-    def test_a_multi_answer_comes_back_as_a_list(self, answers):
-        f = field(
-            label="What pronouns do you prefer to go by?",
-            kind="react_select",
-            multi=True,
-            options=["She/Her", "He/Him", "They/Them"],
-        )
-        assert resolve(f, answers).value == ("They/Them",)
-
-    def test_a_question_never_fills_a_file_input(self, answers):
-        f = field(id="portfolio_upload", label="Portfolio", required=True, kind="file")
-        assert resolve(f, answers).parked
-
-    def test_question_order_is_the_precedence(self, tmp_path, merged):
-        qs = {
-            "q0": {"answer": "Two weeks.", "keywords": ["notice period"]},
-            "q1": {"answer": "Fallback.", "keywords": ["what is your"]},
-        }
-        loaded = load_answers(write_config(tmp_path, questions=qs))
-        f = by_label(merged("form_multiselect"), "What is your notice period?")
-        assert resolve(f, loaded).value == "Two weeks."
-
-
-class TestTierC:
     def test_an_unmatched_required_question_parks(self, merged, answers):
         f = by_label(merged("form_multiselect"), "why you're interested to work for")
         assert resolve(f, answers).parked
@@ -1040,8 +746,8 @@ class TestTheShippedTemplate:
         """A template whose questions match nothing teaches the wrong shape."""
         loaded = load_answers(paths.example(BS.EXAMPLE_NAME))
         r = merged("form_minimal")
-        assert resolve(by_label(r, "How did you hear"), loaded).action == "fill"
-        assert resolve(by_label(r, "LinkedIn"), loaded).action == "fill"
+        assert ask(loaded, "how_did_you_hear", by_label(r, "How did you hear")).action == "fill"
+        assert ask(loaded, "linkedin", by_label(r, "LinkedIn")).action == "fill"
 
 
 def _yes_no_field(label: str, *, required: bool = True):
@@ -1062,71 +768,14 @@ def _yes_no_field(label: str, *, required: bool = True):
     )
 
 
-class TestTheQualifiedFamily:
-    """A scope qualifier (permanence, freedom from sponsorship) is answered from
-    the country's `unrestricted` fact — No for an OPT holder, Yes for a citizen.
-    The plain question is answered from `authorized` alone."""
-
-    QUALIFIED = [
-        "Are you permanently authorized to work for any employer in the United States?",
-        "I am authorized to work without sponsorship or restrictions for any employer in the U.S.",
-        "Are you authorized to work in the United States on a permanent basis?",
-        "Are you legally authorized to work in the U.S., now or in the future, "
-        "without sponsorship?",
-        "Are you legally authorized to work in the United States without sponsorship?",
-        "Do you have unrestricted authorization to work in the United States?",
-    ]
-    PLAIN = [
-        "Are you legally authorized to work in the United States today?",
-        "Are you legally authorized to work in the U.S.?",
-        "Are you legally authorized to work in the United States of America?",
-        "Are you legally authorized to work in the United States for any employer?",
-    ]
-    OFFERED_AS_ALTERNATIVE = [
-        "Are you authorized to work in the United States on a permanent or temporary basis?",
-        "Are you authorized to work in the U.S. on a temporary or permanent basis?",
-        "Are you legally authorized to work in the United States, with or without sponsorship?",
-    ]
-
-    @pytest.mark.parametrize("label", QUALIFIED)
-    def test_an_opt_holder_answers_no(self, answers, label):
-        r = resolve(_yes_no_field(label), answers)
-        assert (r.action, r.value, r.tier) == ("fill", "No", "B0")
-
-    @pytest.mark.parametrize("label", QUALIFIED)
-    def test_a_citizen_answers_yes(self, answers, label):
-        citizen = dc_replace(
-            answers,
-            countries={
-                **answers.countries,
-                "United States": BS.CountryFacts(
-                    authorized=True, requires_sponsorship=False, unrestricted=True
-                ),
-            },
-        )
-        assert resolve(_yes_no_field(label), citizen).value == "Yes"
-
-    @pytest.mark.parametrize("label", PLAIN)
-    def test_the_plain_question_answers_from_authorized(self, answers, label):
-        assert resolve(_yes_no_field(label), answers).value == "Yes"
-
-    @pytest.mark.parametrize("label", OFFERED_AS_ALTERNATIVE)
-    def test_an_alternation_parks(self, answers, label):
-        r = resolve(_yes_no_field(label), answers)
-        assert (r.action, r.tier) == ("park", "B0")
-
-    def test_sponsorship_is_untouched_by_the_qualifier(self, answers):
-        r = resolve(
-            _yes_no_field(
-                "Will you now or in the future require sponsorship for employment visa status?"
-            ),
-            answers,
-        )
-        assert r.value == "Yes"
+def authorized(f: MergedField, answers) -> Resolution:
+    """`f` answered by a judged `{fact: authorized, yes_when: true}`."""
+    return A.resolve_fact_wording(f, answers, {"fact": "authorized", "yes_when": True})
 
 
 class TestTheJobsCountry:
-    """An unnamed country is the job's country; a named one is its own row."""
+    """A judged fact reads the country the label names, a US state counting as
+    the United States; else the job's country."""
 
     COUNTRY_RELATIVE = [
         "Are you authorized to work in the country where the job is located?",
@@ -1137,12 +786,13 @@ class TestTheJobsCountry:
 
     @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
     def test_a_us_role_answers_yes(self, answers, label):
-        assert resolve(_yes_no_field(label), answers).value == "Yes"
+        assert authorized(_yes_no_field(label), answers).value == "Yes"
 
     @pytest.mark.parametrize("label", COUNTRY_RELATIVE)
     def test_a_german_role_answers_from_the_default_row(self, answers, label):
         assert (
-            resolve(_yes_no_field(label), dc_replace(answers, job_country="Germany")).value == "No"
+            authorized(_yes_no_field(label), dc_replace(answers, job_country="Germany")).value
+            == "No"
         )
 
     @pytest.mark.parametrize(
@@ -1154,13 +804,26 @@ class TestTheJobsCountry:
         ],
     )
     def test_a_named_country_answers_from_its_own_row(self, answers, label):
-        assert resolve(_yes_no_field(label), answers).value == "No"
+        assert authorized(_yes_no_field(label), answers).value == "No"
 
     def test_either_country_is_enough(self, answers):
-        r = resolve(
+        r = authorized(
             _yes_no_field("Are you legally authorized to work in the US or Canada?"), answers
         )
         assert r.value == "Yes"
+
+    def test_a_us_state_is_the_united_states(self, answers):
+        f = _yes_no_field("Are you authorized to work in California?")
+        assert authorized(f, dc_replace(answers, job_country="Germany")).value == "Yes"
+
+    def test_an_unknown_job_country_parks(self, answers):
+        f = _yes_no_field("Are you authorized to work in the country of this role?")
+        assert authorized(f, dc_replace(answers, job_country=A.UNKNOWN_COUNTRY)).parked
+
+    def test_the_answer_follows_yes_when(self, answers):
+        f = _yes_no_field("Are you able to work here without sponsorship?")
+        judged = {"fact": "requires_sponsorship", "yes_when": False}
+        assert A.resolve_fact_wording(f, answers, judged).value == "No"
 
 
 class TestLoaderRejectsSilentMisconfiguration:
@@ -1193,12 +856,6 @@ class TestLoaderRejectsSilentMisconfiguration:
 
         assert load_answers(self._cfg(tmp_path, ok)).employment["only_when_required"] is True
 
-    def test_a_short_wording_is_still_allowed(self, tmp_path):
-        def ok(d):
-            d["questions"] = {"state": {"answer": "Massachusetts", "wordings": ["State"]}}
-
-        assert load_answers(self._cfg(tmp_path, ok)).questions[0].wordings == ("state",)
-
     def test_an_unknown_question_key_is_refused(self, tmp_path):
         def typo(d):
             d["questions"]["linkedin"]["keyword"] = ["x"]
@@ -1216,41 +873,31 @@ class TestSalary:
             write_config(
                 tmp_path,
                 questions={
-                    "salary": {
-                        "answer": {"computed": "salary", "fallback": ["Yes"]},
-                        "keywords": ["salary", "compensation"],
-                    }
+                    "salary": {"answer": {"computed": "salary", "fallback": ["Yes"]}},
                 },
             )
         )
         return dc_replace(base, salary_figure=figure)
 
     def test_a_text_field_takes_the_figure(self, tmp_path):
-        r = resolve(
-            field(label="What are your salary expectations?"), self._answers(tmp_path, 132000.0)
-        )
+        a = self._answers(tmp_path, 132000.0)
+        r = ask(a, "salary", field(label="What are your salary expectations?"))
         assert (r.action, r.value) == ("fill", "132000")
 
     def test_a_select_matches_the_figure_as_an_option(self, tmp_path):
-        r = resolve(
-            field(label="Desired compensation", options=["$132,000", "$150,000"]),
-            self._answers(tmp_path, 132000.0),
-        )
-        assert r.value == "$132,000"
+        a = self._answers(tmp_path, 132000.0)
+        f = field(label="Desired compensation", options=["$132,000", "$150,000"])
+        assert ask(a, "salary", f).value == "$132,000"
 
     def test_a_yes_no_money_question_is_not_a_figure(self, tmp_path):
-        r = resolve(
-            field(label="Are you comfortable with the salary range posted?", options=["Yes", "No"]),
-            self._answers(tmp_path, 132000.0),
-        )
-        assert r.value == "Yes"
+        a = self._answers(tmp_path, 132000.0)
+        f = field(label="Are you comfortable with the salary range posted?", options=["Yes", "No"])
+        assert ask(a, "salary", f).value == "Yes"
 
     def test_no_figure_parks(self, tmp_path):
-        r = resolve(
-            field(label="What are your salary expectations?", required=True),
-            self._answers(tmp_path, None),
-        )
-        assert r.action == "park"
+        a = self._answers(tmp_path, None)
+        f = field(label="What are your salary expectations?", required=True)
+        assert ask(a, "salary", f).action == "park"
 
 
 class TestRoleFileAnswers:
@@ -1261,10 +908,7 @@ class TestRoleFileAnswers:
             write_config(
                 tmp_path,
                 questions={
-                    "why_company": {
-                        "answer": {"role_file": "why_company"},
-                        "keywords": ["why do you want to work"],
-                    }
+                    "why_company": {"answer": {"role_file": "why_company"}},
                 },
             )
         )
@@ -1272,12 +916,13 @@ class TestRoleFileAnswers:
 
     def test_it_fills_from_the_role_file(self, tmp_path):
         a = self._answers(tmp_path, {"why_company": "Because widgets."})
-        r = resolve(field(label="Why do you want to work here?", kind="textarea"), a)
+        r = ask(a, "why_company", field(label="Why do you want to work here?", kind="textarea"))
         assert r.value == "Because widgets."
 
     def test_it_parks_without_one(self, tmp_path):
         a = self._answers(tmp_path, {})
-        r = resolve(field(label="Why do you want to work here?", kind="textarea", required=True), a)
+        f = field(label="Why do you want to work here?", kind="textarea", required=True)
+        r = ask(a, "why_company", f)
         assert r.action == "park" and "company-answers" in r.reason
 
 
@@ -1452,23 +1097,22 @@ class TestOnlyWhenRequired:
         qs = {
             "q0": {
                 "answer": "Widget Corp",
-                "wordings": ["current company"],
                 "only_when_required": True,
             },
         }
         return load_answers(write_config(tmp_path, questions=qs))
 
     def test_an_optional_field_is_skipped(self, tmp_path):
-        r = resolve(field(label="Current company", required=False), self._answers(tmp_path))
+        r = ask(self._answers(tmp_path), "q0", field(label="Current company", required=False))
         assert r.action == "skip"
 
     def test_a_required_field_still_fills(self, tmp_path):
-        r = resolve(field(label="Current company", required=True), self._answers(tmp_path))
+        r = ask(self._answers(tmp_path), "q0", field(label="Current company", required=True))
         assert (r.action, r.value) == ("fill", "Widget Corp")
 
     def test_a_non_bool_flag_is_refused(self, tmp_path):
         qs = {
-            "q0": {"answer": "X", "wordings": ["current company"], "only_when_required": "yes"},
+            "q0": {"answer": "X", "only_when_required": "yes"},
         }
         with pytest.raises(AnswersError, match="only_when_required"):
             load_answers(write_config(tmp_path, questions=qs))
@@ -1647,64 +1291,6 @@ class TestOwnDemographicAnswers:
             load_answers(write_config(tmp_path, demographics=block))
 
 
-class TestFactWordings:
-    """A yes/no work-authorization or export-control label, judged once against
-    one fact, answered from that fact on every later board."""
-
-    DEEMED = "Does the deemed export rule apply to you?"
-
-    def bank(self, tmp_path, us_person="no", **judged):
-        data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-        data["work_authorization"]["us_person"] = us_person
-        return load_answers(
-            write_config(
-                tmp_path,
-                work_authorization=data["work_authorization"],
-                fact_wordings=judged or {self.DEEMED: {"fact": "us_person", "yes_when": False}},
-            )
-        )
-
-    def yes_no(self, label):
-        return field(id="q", label=label, kind="react_select", required=True, options=["Yes", "No"])
-
-    def test_an_export_question_parks_until_judged(self, answers):
-        assert resolve(self.yes_no(self.DEEMED), answers).parked
-
-    def test_a_judged_export_wording_follows_us_person(self, tmp_path):
-        assert resolve(self.yes_no(self.DEEMED), self.bank(tmp_path, "no")).value == "Yes"
-        assert resolve(self.yes_no(self.DEEMED), self.bank(tmp_path, "yes")).value == "No"
-
-    def test_park_us_person_still_parks(self, tmp_path):
-        assert resolve(self.yes_no(self.DEEMED), self.bank(tmp_path, "park")).parked
-
-    def test_a_negated_sponsorship_question_follows_the_country(self, tmp_path):
-        label = "Are you able to work in the United States without sponsorship?"
-        bank = self.bank(tmp_path, **{label: {"fact": "requires_sponsorship", "yes_when": False}})
-        assert resolve(self.yes_no(label), bank).value == "No"
-
-    def test_only_the_exact_wording_is_answered(self, tmp_path):
-        other = "Does the deemed export rule apply to you in Canada?"
-        assert resolve(self.yes_no(other), self.bank(tmp_path)).parked
-
-    @pytest.mark.parametrize(
-        "spec,needle",
-        [
-            ({"fact": "us_person"}, "fact, yes_when"),
-            ({"fact": "salary", "yes_when": True}, "fact: one of"),
-        ],
-    )
-    def test_the_loader_refuses_a_bad_entry(self, tmp_path, spec, needle):
-        with pytest.raises(AnswersError, match=needle):
-            self.bank(tmp_path, **{self.DEEMED: spec})
-
-    def test_an_ordinary_question_is_refused(self, tmp_path):
-        with pytest.raises(AnswersError, match="ordinary question"):
-            self.bank(
-                tmp_path,
-                **{"Are you willing to relocate?": {"fact": "authorized", "yes_when": True}},
-            )
-
-
 class TestCoverLetterSetting:
     def test_default_is_when_required(self, answers):
         assert answers.cover_letter == "when_required"
@@ -1724,3 +1310,37 @@ def test_a_multi_select_question_picks_every_offered_candidate(answers):
     assert A.answer_question(q, f, answers, "bank:langs").value == ("English", "Hindi")
     single = dc_replace(f, kind="select", multi=False)
     assert A.answer_question(q, single, answers, "bank:langs").value == "English"
+
+
+class TestExportControl:
+    """A "U.S. person" question is answered from an explicit `us_person`; every
+    other export-control question parks for the judge, tagged so the gate
+    takes only a `us_person` fact for it."""
+
+    def yes_no(self, label, required=True):
+        return field(
+            id="q", label=label, kind="react_select", required=required, options=["Yes", "No"]
+        )
+
+    @pytest.mark.parametrize("us_person,expected", [("yes", "Yes"), ("no", "No")])
+    def test_a_us_person_question_follows_us_person(self, answers, us_person, expected):
+        a = dc_replace(answers, us_person=us_person)
+        r = resolve(self.yes_no("Are you a U.S. person as defined by ITAR?"), a)
+        assert (r.action, r.value, r.source) == ("fill", expected, "export_control")
+
+    def test_an_unset_us_person_parks_for_the_judge(self, answers):
+        r = resolve(self.yes_no("Are you a U.S. person?"), answers)
+        assert (r.action, r.tier, r.source) == ("park", "B0", "export_control")
+
+    def test_any_other_export_question_parks_even_with_us_person_set(self, answers):
+        a = dc_replace(answers, us_person="yes")
+        r = resolve(self.yes_no("Does the deemed export rule apply to you?"), a)
+        assert (r.action, r.tier, r.source) == ("park", "B0", "export_control")
+
+    def test_a_us_person_question_with_no_bare_yes_no_parks(self, answers):
+        a = dc_replace(answers, us_person="yes")
+        f = field(
+            id="q", label="U.S. person status", kind="select", required=True,
+            options=["I am a U.S. person", "I am not a U.S. person"],
+        )  # fmt: skip
+        assert resolve(f, a).parked

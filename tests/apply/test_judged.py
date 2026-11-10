@@ -135,7 +135,7 @@ def test_field_from_dict_renders_options():
         ({"decision": "text", "value": "Hi"}, "basis"),
         ({"decision": "ask"}, "what to ask"),
         ({"decision": "question"}, "names a bank question"),
-        ({"decision": "skip", "claim": {"authorized": True}}, "no claim"),
+        ({"decision": "skip", "claim": {"authorized": True}}, "unknown keys"),
     ],
 )
 def test_load_overrides_refuses_a_malformed_judged_entry(tmp_path, entry, needle):

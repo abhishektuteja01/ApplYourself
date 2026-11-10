@@ -52,8 +52,9 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 - `.claude/commands/*.md` hold the real orchestration; read one before running its
   slash command. `.claude/shared/no_fab.md` defines `NO-FAB`, `NO-DRIFT`,
   `REPHRASE-LICENSE`, `SKILLS-SOURCE`, the `uv run app build` problem codes and the
-  fix loop. The judge is `.claude/agents/score-judge.md`, spawned by `/score` and
-  `/ingest`, never invoked directly.
+  fix loop. The judges are `.claude/agents/score-judge.md`, spawned by `/score` and
+  `/ingest`, and `.claude/agents/apply-judge.md`, spawned by `/apply` and the
+  night's apply_prep; neither is invoked directly.
 
 ## Pipeline stages (data flow)
 
@@ -63,7 +64,7 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
 | 2 | Scoring | `/score` | `score_filter.py`, `score_store.py`, `shortlist.py`, `score_cli.py` |
 | 3 | Application material | `/tailor`, `/cover-letter`, `/company-answers`, `/outreach` | `app_cli.py`, `material/` (folders, new, checks, build), `resume_model.py`, `docx_render.py`, `docx_cover_letter.py`, `lint.py` |
 | 4 | Tracking | `/track`, `/standup` | `state_io.py`, `track_cli.py` |
-| 5 | Submission | `/apply` | `src/applyourself/apply/`, `apply_cli.py` |
+| 5 | Submission | `/apply` | `src/applyourself/apply/` (`judge_packet.py`, `judged.py`, `plan.py`), `apply_cli.py`; the apply-judge answers non-structural fields |
 
 `src/applyourself/shared/` holds what several stages use: paths, verticals, job identity, the
 title gate, locations, the job-board registry and the HTTP client.

@@ -1,6 +1,6 @@
 # Eval persona: a German (EU) citizen in Berlin who works remote only.
 # Fictional. Loaded by applyourself.evals.cases.load_persona (never reads resume.yaml).
-schema_version: 3
+schema_version: 4
 identity:
   first_name: Robin
   last_name: Muster
@@ -59,23 +59,17 @@ cover_letter: when_required
 questions:
   linkedin:
     answer: https://linkedin.com/in/robin-muster-example
-    wordings: ["LinkedIn Profile", "LinkedIn URL"]
   salary:
     answer: {computed: salary, fallback: ["85000"]}
-    wordings: ["What are your salary expectations?", "Desired salary"]
   start_date:
     answer: {computed: start_date}
-    wordings: ["When can you start?", "Earliest start date"]
   languages_fluent:
     answer: [German, English, French]
-    wordings: ["Which languages are you fluent in?"]
   how_did_you_hear:
     answer: {computed: how_heard, fallback: [Careers Page, Other]}
-    wordings: ["How did you hear about us?"]
   llm_project:
     answer: >-
       At Sprocket Labs I built an LLM triage service for inbound bug reports
       that routes eight in ten tickets to the right team without a human, with
       a weekly labelled sample to catch drift.
-    wordings: ["Describe a project where you shipped an LLM feature to production."]
     source: B-EU-TRIAGE-01

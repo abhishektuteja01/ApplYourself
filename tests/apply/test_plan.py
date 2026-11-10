@@ -208,8 +208,8 @@ class TestUnmapped:
         assert [s.id for s in plan.skipped] == ["question_9"]
 
 
-def ov(value, source="", question="", claim=None) -> Override:
-    return Override(value=value, source=source, question=question, claim=claim)
+def ov(value, source="", question="") -> Override:
+    return Override(value=value, source=source, question=question)
 
 
 class TestOverrides:
@@ -289,12 +289,6 @@ class TestOverrides:
         assert [u.id for u in plan.unmapped] == ["q"]
         assert "export control" in plan.ignored_overrides[0]
 
-    def test_an_override_replaces_a_bank_answer_and_records_it(self, answers, tailor_dir):
-        f = field(id="q", label="What is your LinkedIn?", kind="text")
-        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": ov("https://x")})
-        assert plan.fields[0].value == "https://x"
-        assert plan.fields[0].replaced == "bank:linkedin~linkedin"
-
     def test_an_override_supersedes_a_work_authorization_park(self, answers, tailor_dir):
         options = (
             "Yes, I will require sponsorship now or in the future.",
@@ -312,7 +306,7 @@ class TestOverrides:
             one([f]),
             answers,
             tailor_dir,
-            overrides={"visa": ov(options[0], claim={"requires_sponsorship": True})},
+            overrides={"visa": ov(options[0])},
         )
         assert plan.fields[0].value == options[0]
 
