@@ -58,7 +58,7 @@ on a no, stop and suggest `/track <job_id> skip`.
 
 ```bash
 uv run apply plan <job_id> --questions
-uv run apply plan <job_id> --json > <OUT_DIR>/plan.json
+uv run apply plan <job_id> --json --out <OUT_DIR>/plan.json
 ```
 
 - Exit 2: the posting is gone. Report `EXPIRED` and suggest `/track <job_id> skip`.
@@ -93,7 +93,7 @@ uv run track <job_id> tailored --if saved --note "resume on file; board needs no
 ## 4. Judge
 
 ```bash
-uv run apply plan <job_id> --json > <OUT_DIR>/plan.json
+uv run apply plan <job_id> --json --out <OUT_DIR>/plan.json
 uv run apply judge-pack <job_id>
 ```
 

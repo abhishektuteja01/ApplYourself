@@ -357,6 +357,18 @@ class TestPlanCommand:
         # react-selects are marked for the post-selection assert fill.py owes.
         assert all(f["assert_selected"] == (f["kind"] == "react_select") for f in data["fields"])
 
+    def test_out_writes_the_json_and_needs_json(self, repo, stub_board, capsys, tmp_path):
+        repo.write_clean(**{JOB_ID: GH_URL})
+        repo.write_state()
+        out = tmp_path / "plan.json"
+        assert apply_cli.main(["plan", JOB_ID, "--out", str(out)]) == 1
+        assert "--out needs --json" in capsys.readouterr().err
+        assert not out.exists()
+        assert apply_cli.main(["plan", JOB_ID, "--json", "--out", str(out)]) == 0
+        assert capsys.readouterr().out.strip() == f"wrote {out}"
+        assert apply_cli.main(["plan", JOB_ID, "--json"]) == 0
+        assert json.loads(out.read_text(encoding="utf-8")) == json.loads(capsys.readouterr().out)
+
     def test_a_filled_field_carries_what_was_offered_and_what_answered_it(
         self, repo, stub_board, capsys
     ):

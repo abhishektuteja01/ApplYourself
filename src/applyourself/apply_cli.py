@@ -3,8 +3,9 @@
 prepare <job_id>      check the role, the answer bank and Playwright; print
                       OUT_DIR / VERTICAL / COMPANY_ANSWERS / OVERRIDES_FILE and
                       reset that role's answers_override.json.
-plan <job_id> [--json] [--questions] [--answers F] [--url U] [--out-dir D]
-                      read the form, answer it from the bank, print the plan.
+plan <job_id> [--json [--out F]] [--questions] [--answers F] [--url U] [--out-dir D]
+                      read the form, answer it from the bank, print the plan
+                      (--out writes the JSON to F and prints `wrote F`).
                       No browser (Ashby opens one headless page for field
                       text). Exits 1 when an --answers entry of the session's
                       own cannot apply; a refused judged entry parks its field.
@@ -118,6 +119,7 @@ from applyourself.apply.schema import SchemaError
 from applyourself.material import folders as app_folders
 from applyourself.score_store import view
 from applyourself.shared import clock, paths, schemas
+from applyourself.shared.files import atomic_write_text
 from applyourself.shared.http_client import CareersError
 from applyourself.shared.identity import normalize_company
 from applyourself.shared.logs import setup_logging
@@ -524,6 +526,9 @@ BUILD_ERRORS = (
 
 
 def _cmd_plan(args: argparse.Namespace) -> int:
+    if args.out is not None and not args.json:
+        print("ERROR: --out needs --json", file=sys.stderr)
+        return 1
     try:
         plan, _ = build(args.job_id, url=args.url, out_dir=args.out_dir, answers_path=args.answers)
     except PostingExpired as exc:
@@ -533,7 +538,10 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    if args.json:
+    if args.json and args.out is not None:
+        atomic_write_text(args.out, json.dumps(as_dict(plan), indent=2) + "\n")
+        print(f"wrote {args.out}")
+    elif args.json:
         print(json.dumps(as_dict(plan), indent=2))
     elif getattr(args, "questions", False):
         judged = load_overrides(Path(args.answers), args.job_id) if args.answers else {}
@@ -1583,6 +1591,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("plan", help="print the fill plan for one role")
     p.add_argument("job_id")
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--out", default=None, type=Path, help="with --json: write the JSON here, not to stdout"
+    )
     p.add_argument(
         "--questions",
         action="store_true",
