@@ -88,11 +88,35 @@ class MergedField:
     """Selector for the one control inside `dom_path`, when the wrapper holds
     several. Empty means the driver's own default."""
 
+    max_length: int | None = None
+    """The input's own `maxlength`. The browser cuts a longer answer off."""
+
     @property
     def dom_only(self) -> bool:
         """No API counterpart, so no label, no required flag and no option list
         beyond what the rendered form itself carries."""
         return self.api_source is None
+
+
+def is_numeric(value: object) -> bool:
+    """What `input[type=number]` accepts. Deliberately not a currency or unit
+    parser: stripping "$" or "k" would submit a number the user never wrote."""
+    try:
+        float(str(value).strip())
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def input_problem(value: object, kind: str, max_length: int | None) -> str | None:
+    """Why a text answer cannot go into this input as written, or None."""
+    if not isinstance(value, str):
+        return None
+    if kind == "number" and not is_numeric(value):
+        return f"the board wants a number and the answer is text: {value!r}"
+    if max_length is not None and len(value) > max_length:
+        return f"the board takes at most {max_length} characters; the answer has {len(value)}"
+    return None
 
 
 @dataclass(frozen=True)
@@ -227,6 +251,7 @@ def reconcile(scan: FormScan, schema: BoardSchema) -> Reconciled:
                 api_source=api_source,
                 api_type=api_type,
                 description=description,
+                max_length=dom.max_length,
             )
         )
 

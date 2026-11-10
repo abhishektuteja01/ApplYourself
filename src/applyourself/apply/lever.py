@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 from lxml import html as lxml_html
 from lxml.etree import ParserError
 
-from applyourself.apply.domscan import DomScanError
+from applyourself.apply.domscan import DomScanError, max_length
 from applyourself.apply.greenhouse import ApplyUrlError, PostingExpired
 from applyourself.apply.reconcile import MergedField, MergedOption, Reconciled
 from applyourself.shared import job_boards
@@ -341,6 +341,7 @@ def _scan_question(question_el) -> MergedField | None:
         section=section,
         multi=False,
         options=opts,
+        max_length=max_length(control),
     )
 
 

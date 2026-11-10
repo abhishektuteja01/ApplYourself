@@ -383,3 +383,13 @@ def test_every_required_field_has_a_usable_selector(scan):
         for f in scan(name).fields:
             if f.required:
                 assert f.id and f.kind, f"{name}: {f}"
+
+
+def test_an_inputs_maxlength_is_carried():
+    """Greenhouse renders `maxLength="255"` on one-line questions; the browser
+    silently cuts a longer answer."""
+    s = scan_form(
+        '<form id="application-form"><label for="q">Q</label>'
+        '<input id="q" type="text" maxLength="255"/><input id="e" type="email"/></form>'
+    )
+    assert by_id(s, "q").max_length == 255 and by_id(s, "e").max_length is None

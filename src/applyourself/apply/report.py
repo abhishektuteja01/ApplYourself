@@ -84,6 +84,7 @@ def as_dict(plan: Plan) -> dict[str, Any]:
                 "options": list(u.options),
                 "description": u.description,
                 "multi": u.multi,
+                "max_length": u.max_length,
                 "source": u.source,
             }
             for u in plan.unmapped
@@ -100,6 +101,7 @@ def as_dict(plan: Plan) -> dict[str, Any]:
                 "tier": d.tier,
                 "reason": d.reason,
                 "multi": d.multi,
+                "max_length": d.max_length,
                 "source": d.source,
             }
             for d in plan.draftable
@@ -116,6 +118,7 @@ def as_dict(plan: Plan) -> dict[str, Any]:
                 "tier": s.tier,
                 "reason": s.reason,
                 "multi": s.multi,
+                "max_length": s.max_length,
             }
             for s in plan.skipped
         ],

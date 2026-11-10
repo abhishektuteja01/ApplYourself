@@ -275,13 +275,23 @@ def _select(
     return shown
 
 
+def _as_kind(field: FieldPlan, kind: str) -> FieldPlan:
+    """The field driven as the widget the page really drew, with its answer in
+    that widget's terms. A one-choice select drawn as a lone checkbox (Ashby's
+    acknowledgements) takes its only choice as a tick; any other answer is left
+    as is, for the checkbox rule to refuse."""
+    if kind == "checkbox" and len(field.options) == 1 and field.value == field.options[0]:
+        return replace(field, kind=kind, value=True)
+    return replace(field, kind=kind)
+
+
 def _apply_field(
     driver, field: FieldPlan, result: FillResult, answers: Answers | None = None
 ) -> FieldOutcome:
     before = driver.value_of(field.id)
     kind = driver.resolve_kind(field.id, field.kind)
     if kind != field.kind:
-        field = replace(field, kind=kind)
+        field = _as_kind(field, kind)
 
     if field.kind == "yesno":
         driver.set_yesno(field.id, str(field.value))
@@ -654,11 +664,11 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
     for s in plan.skipped:
         rows.append(row(s.id, s.label, "text", "", "skipped", tier=s.tier))
     for f in plan.files:
-        attached = None
-        try:
-            attached = driver.attached_files(f.id)
-        except Exception as exc:  # noqa: BLE001 - a read must never fail a run
-            log.debug("%s: attached files unreadable (%s)", f.id, exc)
+        # The fill-time verdict, not a fresh read: boards replace the file input
+        # after an upload, so re-reading it finds nothing even when the file
+        # landed. `_attach` already failed the run on a refused upload.
+        outcome = outcomes.get(f.id)
+        landed = outcome is not None and outcome.action == "attached"
         rows.append(
             {
                 "id": f.id,
@@ -666,8 +676,9 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
                 "kind": "file",
                 "group": "attached",
                 "planned": f.path.name,
-                "actual": ", ".join(attached) if attached else "",
-                "matches": bool(attached) and f.path.name in attached,
+                "actual": outcome.after if landed else "",
+                "matches": landed and not outcome.note,
+                "note": outcome.note if outcome is not None else "",
                 "prefilled": False,
                 "before": "",
                 "invalid": f.id in invalid,
@@ -795,7 +806,7 @@ def _reverify_fields(driver, plan: Plan) -> None:
             except FillError:
                 continue
 
-        elif kind in ("text", "textarea", "date"):
+        elif kind in ("text", "textarea", "number", "date"):
             want = str(field.value)
             shown = driver.value_of(field.id)
             if shown.strip() == want.strip():

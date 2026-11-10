@@ -655,6 +655,18 @@ def answer_question(
     return _fill(question.answers[0], "B", source=source)
 
 
+def _own_demographic(field: MergedField, answers: Answers) -> Resolution | None:
+    """A demographic question asked outside the EEOC section (Ashby asks them
+    as ordinary questions): your own answer when the board offers one of your
+    spellings. Never a decline here; anything else goes on to the judge."""
+    topic = demographic_topic(field)
+    own = answers.demographic_answers.get(topic) if topic else None
+    picked = _pick_own_answer(field, own) if own and field.options else None
+    if picked is None:
+        return None
+    return _fill((picked,) if field.multi else picked, "A2", source=f"demographics:{topic}")
+
+
 def resolve(field: MergedField, answers: Answers) -> Resolution:
     """Resolve one reconciled field. Never raises on content — an unanswerable
     field comes back parked (required) or skipped (optional)."""
@@ -672,6 +684,10 @@ def resolve(field: MergedField, answers: Answers) -> Resolution:
     identity = _resolve_identity(field, answers)
     if identity is not None:
         return identity
+
+    own = _own_demographic(field, answers)
+    if own is not None:
+        return own
 
     label = field.label or ""
     if in_work_authorization_domain(label):

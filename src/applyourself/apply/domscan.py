@@ -105,6 +105,13 @@ class DomField:
     section: str
     multi: bool = False
     options: tuple[DomOption, ...] = ()  # checkbox_group only
+    max_length: int | None = None
+
+
+def max_length(el) -> int | None:
+    """An input's `maxlength`, when it sets a usable one."""
+    raw = (el.get("maxlength") or el.get("maxLength") or "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else None
 
 
 @dataclass(frozen=True)
@@ -363,6 +370,7 @@ def scan_form(page_html: str) -> FormScan:
                 kind=kind,
                 section=_section(el),
                 multi=_is_multi_select(el) if kind == "react_select" else False,
+                max_length=max_length(el),
             )
         )
 

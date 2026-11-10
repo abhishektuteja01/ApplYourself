@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from applyourself.apply.plan import Plan
+from applyourself.apply.reconcile import is_numeric as _is_numeric
 
 log = logging.getLogger(__name__)
 
@@ -162,17 +163,6 @@ _OPTION_POLL_MS = 250
 
 class FillError(Exception):
     """A widget did not take the value, or the form is not what was planned."""
-
-
-def _is_numeric(value: str) -> bool:
-    """What `input[type=number]` will accept. Deliberately not a currency or
-    unit parser — stripping "$" or "k" off an answer would submit a number the
-    user never wrote."""
-    try:
-        float(str(value).strip())
-    except (TypeError, ValueError):
-        return False
-    return True
 
 
 def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
@@ -1047,9 +1037,8 @@ class AshbyBrowserDriver(BrowserDriver):
             # actually renders as `<input type="checkbox">` for an
             # acknowledgement question ("I have read and understood the
             # Arbitration Agreement..."). `select_option()` against it raises
-            # "Element is not a <select> element"; `checkbox`'s own
-            # `bool(field.value)` handles a truthy resolved string the same
-            # way a real Yes answer would.
+            # "Element is not a <select> element"; `fill._as_kind` turns the
+            # one choice into a tick.
             return "checkbox"
         return planned
 

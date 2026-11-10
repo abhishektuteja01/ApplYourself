@@ -77,7 +77,7 @@ _TYPE_KINDS = {
     "Email": "text",
     "Phone": "text",
     "Url": "text",
-    "Number": "text",
+    "Number": "number",
     # Not free text: the API says "Date" up front, and the rendered widget is
     # a `react-datepicker` `<input type="text">` that silently clears on blur
     # if it cannot parse what was typed — a Tier B sentence like "Immediately."

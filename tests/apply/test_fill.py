@@ -710,6 +710,17 @@ class TestOtherWidgets:
         assert not [c for c in d.calls if c[0] == "checkbox"]
         assert len(result.failures) == 1 and "only Yes" in result.failures[0]
 
+    def test_a_one_choice_select_drawn_as_a_checkbox_ticks_its_choice(self):
+        one = dict(id="ack", kind="select", options=("Acknowledge/ Confirm",))
+        d = FakeDriver(kinds={"ack": "checkbox"})
+        result = fill_plan(plan(fields=[field(**one, value="Acknowledge/ Confirm")]), d)
+        assert ("checkbox", "ack", True) in d.calls and not result.failures
+
+        d = FakeDriver(kinds={"ack": "checkbox"})
+        result = fill_plan(plan(fields=[field(**one, value="No")]), d)
+        assert not [c for c in d.calls if c[0] == "checkbox"]
+        assert "only Yes" in result.failures[0]
+
     def test_a_checkbox_group_ticks_every_label(self):
         d = FakeDriver()
         fill_plan(
@@ -2211,6 +2222,22 @@ class TestFormManifest:
         rows = F.form_manifest(driver, p, F.FillResult(form_url=""))
         assert rows[0]["matches"] is False
         assert rows[0]["actual"] == "September 2026"
+
+    def test_an_upload_row_carries_the_fill_time_verdict(self, resume):
+        """The board replaced the input after the upload, so a fresh read finds
+        nothing; the row still reports what the fill verified."""
+        upload = FilePlan(id="resume", label="Resume", required=True, path=resume)
+        d = FakeDriver()
+        result = fill_plan(plan(files=[upload]), d)
+        d.upload_readback = None
+        row = F.form_manifest(d, plan(files=[upload]), result)[0]
+        assert row["matches"] is True and row["actual"] == resume.name
+
+        d = FakeDriver()
+        d.upload_readback = None
+        result = fill_plan(plan(files=[upload]), d)
+        row = F.form_manifest(d, plan(files=[upload]), result)[0]
+        assert row["matches"] is False and "unverified" in row["note"]
 
     def test_it_reads_back_a_parked_question_too(self):
         """A parked question is still a live field. A board that prefills one

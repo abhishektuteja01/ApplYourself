@@ -934,3 +934,19 @@ class TestFactJudgmentOverride:
             overrides={"q": Override(value="", fact={"fact": "authorized", "yes_when": True})},
         )
         assert "fact judgment" in plan.ignored_overrides[0]
+
+
+class TestAnswersFitTheInput:
+    """An answer the input cannot hold as written parks, whoever wrote it."""
+
+    def test_text_past_maxlength_parks_naming_the_limit(self, answers, tailor_dir):
+        f = field(id="q", label="GitHub and projects", required=True, max_length=10)
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value="x" * 11)})
+        assert not plan.fields and "at most 10" in plan.unmapped[0].reason
+
+    def test_text_in_a_number_box_parks_and_a_number_fills(self, answers, tailor_dir):
+        f = field(id="q", label="Excitement, 1-5", kind="number", required=True)
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value="Very")})
+        assert not plan.fields and "wants a number" in plan.unmapped[0].reason
+        plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value="5")})
+        assert plan.fields[0].value == "5"

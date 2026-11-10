@@ -257,3 +257,12 @@ def test_packet_lists_every_country_row(answers):
     text = build_packet(FIELDS, answers, "Germany")
     assert "- United States: authorized=true" in text
     assert "- default: authorized=false" in text
+
+
+def test_a_text_answer_that_overruns_the_input_is_sent_back(answers):
+    fields = [{**FIELDS[0], "max_length": 5}]
+    entry = {"field_id": "f1", "decision": "text", "value": "longer", "basis": ["F-REMOTE"],
+             "why": "fact"}  # fmt: skip
+    assert check_entries([entry], fields, answers) == [
+        "f1: the board takes at most 5 characters; the answer has 6"
+    ]

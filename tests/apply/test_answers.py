@@ -1357,3 +1357,30 @@ class TestExportControl:
             options=["I am a U.S. person", "I am not a U.S. person"],
         )  # fmt: skip
         assert resolve(f, a).parked
+
+
+class TestDemographicsAskedAsQuestions:
+    """Ashby asks EEOC topics as ordinary questions; your answer still fills."""
+
+    @pytest.fixture
+    def mine(self, tmp_path):
+        return load_answers(write_config(tmp_path, demographics=MY_DEMOGRAPHICS))
+
+    def test_a_questions_section_veteran_question_takes_your_answer(self, mine):
+        f = field(
+            label="US candidates only: Are you a veteran/have you served in the military?",
+            kind="select",
+            options=["Yes", "No", "Not applicable", "I prefer not to say"],
+        )
+        r = resolve(f, mine)
+        assert (r.action, r.value, r.tier) == ("fill", "No", "A2")
+
+    def test_none_of_your_spellings_offered_goes_to_the_judge(self, mine):
+        f = field(
+            label="Are you a veteran?",
+            kind="select",
+            required=True,
+            options=["Served", "Did not serve"],
+        )
+        r = resolve(f, mine)
+        assert r.parked and r.tier == "C"

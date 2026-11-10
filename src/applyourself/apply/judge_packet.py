@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from applyourself.apply.answers import _offers_bare_yes_no
 from applyourself.apply.bank_schema import FACT_WORDING_FACTS, Answers, Question
 from applyourself.apply.judged import is_work_auth_basis
+from applyourself.apply.reconcile import input_problem
 from applyourself.shared import paths
 
 CLOSED_TIERS = ("A", "A2")
@@ -50,6 +51,7 @@ class JudgeField(BaseModel):
     description: str = ""
     required: bool = False
     multi: bool = False
+    max_length: int | None = None
 
 
 class FactRef(BaseModel):
@@ -102,6 +104,7 @@ def fields_for_judge(plan_json: dict[str, Any]) -> list[dict[str, Any]]:
                     description=str(f.get("description") or ""),
                     required=bool(f.get("required")),
                     multi=bool(f.get("multi")) or f.get("kind") in MULTI_KINDS,
+                    max_length=f.get("max_length"),
                 ).model_dump()
             )
     return out
@@ -268,6 +271,10 @@ def _entry_problems(
                 errs.append(f"{where} text on a field with options; use option")
             if not isinstance(entry.value, str) or not entry.value.strip():
                 errs.append(f"{where} text value is one non-empty string")
+            elif problem := input_problem(
+                entry.value, str(field.get("kind") or ""), field.get("max_length")
+            ):
+                errs.append(f"{where} {problem}")
     options = tuple(field.get("options") or ())
     if entry.decision == "fact" and options and not _offers_bare_yes_no(options):
         errs.append(f"{where} sentence options: use decision option, copying the true one")

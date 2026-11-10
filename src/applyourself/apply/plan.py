@@ -43,7 +43,7 @@ from applyourself.apply.answers import (
     resolve,
     resolve_fact_wording,
 )
-from applyourself.apply.reconcile import MergedField, Reconciled
+from applyourself.apply.reconcile import MergedField, Reconciled, input_problem
 
 # Artifact suffixes in upload preference order. Greenhouse accepts
 # .pdf,.doc,.docx,.txt,.rtf; these two are what /tailor writes.
@@ -68,7 +68,7 @@ _MULTI_KINDS = frozenset({"checkbox_group"})
 # are overwhelmingly these kinds — some genuinely belong blank ("If other,
 # please specify"), which is why this list never blocks a submission and /apply
 # is free to draft nothing.
-DRAFTABLE_KINDS = frozenset({"text", "textarea", "react_select"})
+DRAFTABLE_KINDS = frozenset({"text", "textarea", "number", "react_select"})
 
 
 class PlanError(Exception):
@@ -171,6 +171,9 @@ class Unmapped:
     """Parks the role though the board marks it optional: a cover-letter upload
     with no letter, under `cover_letter: when_offered`."""
 
+    max_length: int | None = None
+    """`MergedField.max_length`, so the judge writes to fit."""
+
 
 @dataclass(frozen=True)
 class Skipped:
@@ -185,6 +188,7 @@ class Skipped:
     required: bool = False
     multi: bool = False
     """The widget, carried so the apply-judge can answer an optional B0 field."""
+    max_length: int | None = None
 
 
 @dataclass(frozen=True)
@@ -441,6 +445,7 @@ def _skipped(field: MergedField, tier: str, reason: str) -> Skipped:
         description=field.description,
         required=field.required,
         multi=field.multi,
+        max_length=field.max_length,
     )
 
 
@@ -463,6 +468,7 @@ def _unmapped(
         description=field.description,
         source=resolution.source,
         blocks=blocks,
+        max_length=field.max_length,
     )
 
 
@@ -506,6 +512,19 @@ def _checkbox_yes_only(field: MergedField, resolution: Resolution) -> Resolution
         source=resolution.source,
         reason="a single checkbox takes only Yes; the answer here is No",
     )
+
+
+def _fits_input(field: MergedField, resolution: Resolution) -> Resolution:
+    """Every answer, whoever wrote it, must go into the input as written: a
+    number box takes only a number, and the browser cuts text past `maxlength`.
+    One that does not fit parks (blank if optional) with the reason."""
+    if resolution.action != "fill":
+        return resolution
+    problem = input_problem(resolution.value, field.kind, field.max_length)
+    if problem is None:
+        return resolution
+    action = "park" if field.required else "skip"
+    return Resolution(action, tier=resolution.tier, source=resolution.source, reason=problem)
 
 
 def apply_override(
@@ -655,7 +674,7 @@ def build_plan(
             else:
                 judged_skip = bool(override.decision) and applied.action == "skip"
                 resolution = applied
-        resolution = _checkbox_yes_only(field, resolution)
+        resolution = _fits_input(field, _checkbox_yes_only(field, resolution))
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))
