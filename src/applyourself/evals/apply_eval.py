@@ -284,10 +284,10 @@ def grade_case(
     else:
         passed = got_value == want_value
     row["passed"] = passed
-    if case.expect.or_ask or len(case.expect.one_of or []) > 1:
+    if passed and (case.expect.or_ask or len(case.expect.one_of or []) > 1):
         # Two fair answers are declared: agreement asks only that both runs
-        # landed on an accepted one.
-        row["key"] = ["accepted" if passed else "miss"]
+        # landed on an accepted one. A miss keeps its real outcome.
+        row["key"] = ["accepted"]
     return row
 
 

@@ -22,8 +22,9 @@ Your prompt is `judge <packet path> -> <out path>`.
      `text` with the `F-` basis) or `ask`.
    - `fact`: only a bare yes/no field (Yes/No options, a yes/no checkbox, or
      free text asking yes or no) on work authorization, sponsorship, visas,
-     "unrestricted" right to work, or U.S. person. Pick the one fact whose true
-     value makes Yes correct; `yes_when: false` when the wording is negated.
+     "unrestricted" right to work, or U.S. person. Pick the one fact whose
+     value settles the question; `yes_when` is the value of that fact that
+     makes Yes the true answer.
      `requires_sponsorship` means now or later, so it fits only future
      wording. A today-only sponsorship question (no future word) uses
      `authorized`: "Do you require sponsorship?" → `authorized`, yes_when

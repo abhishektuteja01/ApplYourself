@@ -529,6 +529,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     if args.out is not None and not args.json:
         print("ERROR: --out needs --json", file=sys.stderr)
         return 1
+    if args.out is not None:
+        args.out.unlink(missing_ok=True)  # a failed plan leaves no stale file behind
     try:
         plan, _ = build(args.job_id, url=args.url, out_dir=args.out_dir, answers_path=args.answers)
     except PostingExpired as exc:
