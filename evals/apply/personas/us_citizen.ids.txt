@@ -1,6 +1,14 @@
 # Fake profile ids the us_citizen persona's prose cases may cite.
+# One id per line; the "#:" line under each id is its attested text (fictional).
 B-USC-RANK-01
+#: Led the move of Gizmo Dynamics search ranking to an LLM re-ranker, shipped behind a shadow test, lifting click-through 9% at p95 under 300 ms.
 B-USC-RANK-02
+#: Cut ranking-service cost 35% by caching re-ranker scores for the top 10,000 gizmo queries.
 B-USC-PLATFORM-01
+#: Built the internal deploy platform that took Gizmo Dynamics from weekly releases to 40 deploys a day with automatic rollback.
 S-USC-MIGRATION
+#: Story: moved the gizmo catalog from a single Postgres box to a sharded cluster with zero downtime, running dual writes for two weeks and comparing every read before the cut-over.
+S-USC-DEBUG
+#: Story: a production checkout bug dropped one order in 500 with no error logged; added request tracing, found a race between two cache writers on the same order key, fixed it with a per-key lock, and the drops went to zero.
 SKILL-PYTHON
+#: Python (11 years professional).

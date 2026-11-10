@@ -30,6 +30,7 @@ happily upload.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
@@ -472,6 +473,22 @@ def _unmapped(
 
 _FACT_ONLY_B0 = "a fact judgment is only for a work-authorization or export-control question"
 _EXPORT_US_PERSON = "export control takes only a us_person fact judgment"
+_EXPORT_OPTION = (
+    "export control takes a judged option only once work_authorization.us_person is set"
+)
+
+# A label a judged fact may answer though the code's own resolver did not read
+# it as work authorization: a work word next to a permission word.
+_JUDGED_FACT_WORK = re.compile(r"\bwork|\bemploy", re.IGNORECASE)
+_JUDGED_FACT_PERMIT = re.compile(
+    r"authori[sz]|permit|eligib|right\s+to\s+work|visa|sponsor|immigra|legal",
+    re.IGNORECASE,
+)
+
+
+def _judged_fact_label(label: str) -> bool:
+    """Whether a judged fact may answer `label` outside tier B0."""
+    return bool(_JUDGED_FACT_WORK.search(label) and _JUDGED_FACT_PERMIT.search(label))
 
 
 def apply_override(
@@ -485,25 +502,35 @@ def apply_override(
 ) -> tuple[Resolution, str]:
     """`(resolution, "")` once `override` replaces the code's own `resolution`,
     or `(resolution, why)` unchanged when the gate refuses it. Identity and
-    EEOC take no override; a fact answers only a work-authorization field;
-    export control takes only a fact (a judged one only `us_person`).
+    EEOC take no override; a fact answers only a work-authorization field (a
+    judged one also any label `_judged_fact_label` reads as one); export
+    control takes only a fact (a judged one only `us_person`), or a judged
+    option once `us_person` is yes or no.
     `known_ids`: the profile ids a judged basis may cite (an eval persona's)."""
     if resolution.tier in _CLOSED_TIERS:
         return resolution, "identity and EEOC fields take no override"
     export = resolution.source == "export_control"
     fact = override.fact if override.decision in ("", "fact") else None
     if override.decision == "fact" or fact is not None:
-        if resolution.tier != "B0":
+        if resolution.tier != "B0" and not (
+            override.decision and _judged_fact_label(field.label or "")
+        ):
             return resolution, _FACT_ONLY_B0
         if override.decision and export and (fact or {}).get("fact") != "us_person":
             return resolution, _EXPORT_US_PERSON
     elif export:
-        if override.decision:
+        if override.decision == "option":
+            if answers.us_person not in ("yes", "no"):
+                return resolution, _EXPORT_OPTION
+            if any(o.label.strip().rstrip(".").casefold() in ("yes", "no") for o in field.options):
+                return resolution, _EXPORT_US_PERSON
+        elif override.decision:
             return resolution, _EXPORT_US_PERSON
-        return (
-            resolution,
-            "export control takes a fact judgment ({fact, yes_when}), never a typed value",
-        )
+        else:
+            return (
+                resolution,
+                "export control takes a fact judgment ({fact, yes_when}), never a typed value",
+            )
     if override.decision:
         rendered = judged.render(
             field, override, answers, company, tier=resolution.tier, known_ids=known_ids

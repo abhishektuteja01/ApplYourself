@@ -93,6 +93,8 @@ def test_check_entries_problems_fail_the_case(tmp_path):
     rows = {r["id"]: r for r in E.grade_slice(tmp_path, 1, meta)}
     assert not rows["c4"]["passed"] and rows["c4"]["got"]["action"] == "invalid"
     assert rows["c5"]["passed"]
+    (tmp_path / "meta_1.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert len(E.owed(tmp_path)) == 1  # one bad entry owes the whole slice
 
 
 def test_gate_fails_at_99_percent_when_a_gate_group_misses_one():
@@ -127,3 +129,44 @@ def test_a_persona_renders_a_computed_salary():
     e = entry("c10", decision="question", question="salary")
     row = grade(c, e, Override(value="", decision="question", question="salary"))
     assert row["passed"], row
+
+
+def test_one_picked_option_equals_the_same_scalar():
+    assert E.norm(("I am NOT authorized.",)) == E.norm("i am not authorized.")
+    assert E.norm(("a", "b")) != E.norm("a")
+
+
+def test_a_question_that_parks_without_a_role_passes_only_for_that_question():
+    answers = E.persona_answers(PERSONA, US)
+    answers = replace(
+        answers,
+        questions=answers.questions
+        + (
+            Question(id="why_co", role_file="why_company"),
+            Question(id="why_role", role_file="why_role"),
+        ),
+    )
+    c = case(
+        "c11", {"label": "Why us?", "kind": "textarea"}, {"action": "fill", "question": "why_co"}
+    )
+
+    def row(qid: str) -> dict:
+        e = entry("c11", decision="question", question=qid)
+        return grade(c, e, Override(value="", decision="question", question=qid), answers)
+
+    assert row("why_co")["passed"]
+    assert not row("why_role")["passed"]  # both park, for a different question
+
+
+def test_no_job_country_reads_as_unknown_never_home():
+    from applyourself.apply.answers import UNKNOWN_COUNTRY
+
+    assert E.persona_answers(PERSONA, "").country == UNKNOWN_COUNTRY
+
+
+def test_a_checkbox_expecting_its_affirmative_option_passes_on_yes():
+    f = {"label": "I acknowledge this.", "kind": "checkbox", "options": ["I acknowledge"]}
+    c = case("c12", f, {"action": "fill", "value": "I acknowledge"})
+    e = entry("c12", decision="option", value="I acknowledge", basis=["option"])
+    o = Override(value="I acknowledge", decision="option", basis=("option",))
+    assert grade(c, e, o)["passed"]

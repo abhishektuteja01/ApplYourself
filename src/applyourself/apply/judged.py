@@ -23,8 +23,43 @@ DECISIONS = ("question", "fact", "option", "text", "ask", "skip")
 # Basis words that name no profile entry.
 BASIS_WORDS = ("jd", "company_answers", "option")
 
+# Work-authorization keys a basis may cite, bare or as `work_authorization.<key>`.
+WORK_AUTH_KEYS = (
+    "us_person",
+    "nationalities",
+    "authorized",
+    "requires_sponsorship",
+    "unrestricted",
+    "status_label",
+)
+
+# What a single checkbox's judged value may say to tick it, besides its own label.
+CHECKBOX_YES = ("yes", "i acknowledge", "i agree", "i confirm")
+
 # Profile entry id prefixes, longest first so `SKILL-` is not read as `S-`.
 _ENTRY_PREFIXES = ("SKILL-", "B-", "S-")
+
+
+def is_work_auth_basis(item: str) -> bool:
+    """A basis naming a work-authorization key of the bank."""
+    return item.removeprefix("work_authorization.") in WORK_AUTH_KEYS
+
+
+def _checkbox_word(text: str) -> str:
+    return " ".join(text.split()).casefold().rstrip(".!")
+
+
+def checkbox_yes(field: MergedField, value) -> bool:
+    """A judged value that ticks a single checkbox: one affirmative, or the
+    checkbox's own label (or its one option)."""
+    values = [value] if isinstance(value, str) else list(value or ())
+    if len(values) != 1 or not isinstance(values[0], str):
+        return False
+    own = {_checkbox_word(field.label)}
+    if len(field.options) == 1:
+        own.add(_checkbox_word(field.options[0].label))
+    word = _checkbox_word(values[0])
+    return bool(word) and (word in CHECKBOX_YES or word in own)
 
 
 def _park(reason: str, tier: str, source: str) -> Resolution:
@@ -53,11 +88,12 @@ def missing_basis(
 ) -> list[str]:
     """Basis ids that name nothing: an `F-` id not in the bank's facts, a
     `B-`/`S-`/`SKILL-` id not in the profile (or in `known_ids` when given),
-    or an unknown word."""
+    or a word that is neither a basis word, a work-authorization key nor a
+    bank question id."""
     missing: list[str] = []
     profile: set[str] | None = known_ids
     for item in basis:
-        if item in BASIS_WORDS:
+        if item in BASIS_WORDS or is_work_auth_basis(item) or answers.question(item) is not None:
             continue
         if item.startswith("F-"):
             if item not in answers.facts:
@@ -113,7 +149,10 @@ def render(
             return _park(
                 f"judged {decision}: basis {missing} not found", tier, f"override:{source}"
             )
-        return _override_resolution(field, entry.value, source, tier, company)
+        value = entry.value
+        if field.kind == "checkbox" and checkbox_yes(field, value):
+            value = "Yes"
+        return _override_resolution(field, value, source, tier, company)
     return _park(f"judged: unknown decision {decision!r}", tier, "judged")
 
 

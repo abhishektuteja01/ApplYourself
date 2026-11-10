@@ -1,6 +1,14 @@
 # Fake profile ids the opt_student persona's prose cases may cite.
+# One id per line; the "#:" line under each id is its attested text (fictional).
 B-OPT-RAG-01
+#: Built a retrieval pipeline over Widget Corp support tickets that cut median answer time from four hours to forty minutes.
 B-OPT-RAG-02
+#: Added an offline eval set of 400 labelled tickets that gates every prompt change before it ships.
 B-OPT-EVAL-01
+#: Wrote a nightly regression report for the widget-search model that caught two silent accuracy drops before customers did.
 S-OPT-ONCALL
+#: Story: first on-call week at Widget Corp, the ticket-answer service started timing out at peak; traced it to an unbounded retry loop against the vector index, capped retries with backoff, and added a latency alert so it never paged silently again.
+S-OPT-HANDOFF
+#: Story: took over a half-finished gizmo-classifier project from a departing engineer, wrote down its open questions, shipped it in three weeks, and left a runbook the next owner used without asking.
 SKILL-PYTHON
+#: Python (4 years professional).

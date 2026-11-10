@@ -207,3 +207,37 @@ def test_check_refuses_and_keeps_rejected(tmp_path, monkeypatch, capsys):
     assert (out_dir / "judge" / "rejected_out.json").exists()
     assert not (out_dir / "answers_override.json").exists()
     assert "f1:" in capsys.readouterr().out
+
+
+SENTENCES = {"id": "s1", "label": "Your U.S. person status?", "kind": "select",
+             "options": ["I am a U.S. person", "None of the above"], "description": "",
+             "required": True, "multi": False}  # fmt: skip
+
+
+def test_a_fact_on_sentence_options_is_refused(answers):
+    entry = {"field_id": "s1", "decision": "fact", "why": "w",
+             "fact": {"fact": "us_person", "yes_when": True}}  # fmt: skip
+    [err] = check_entries([entry], [SENTENCES], answers)
+    assert "sentence options: use decision option" in err
+
+
+def test_a_bank_question_id_is_a_basis(answers):
+    entries = _ok()
+    entries[1]["basis"] = ["linkedin"]
+    assert check_entries(entries, FIELDS, answers) == []
+    entries[1]["basis"] = ["not_a_question"]
+    assert any("not_a_question" in e for e in check_entries(entries, FIELDS, answers))
+
+
+def test_a_work_authorization_key_is_a_basis(answers):
+    entries = _ok()
+    entries[1]["basis"] = ["us_person", "work_authorization.requires_sponsorship"]
+    assert check_entries(entries, FIELDS, answers) == []
+    entries[1]["basis"] = ["work_authorization.salary"]
+    assert any("work_authorization.salary" in e for e in check_entries(entries, FIELDS, answers))
+
+
+def test_packet_lists_every_country_row(answers):
+    text = build_packet(FIELDS, answers, "Germany")
+    assert "- United States: authorized=true" in text
+    assert "- default: authorized=false" in text

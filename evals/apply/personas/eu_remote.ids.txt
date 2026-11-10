@@ -1,6 +1,14 @@
 # Fake profile ids the eu_remote persona's prose cases may cite.
+# One id per line; the "#:" line under each id is its attested text (fictional).
 B-EU-TRIAGE-01
+#: Built an LLM triage service at Sprocket Labs that routes eight in ten inbound bug reports to the right team without a human.
 B-EU-TRIAGE-02
+#: Added a weekly labelled sample of 200 tickets to the triage service to catch drift; it flagged two model regressions in a year.
 B-EU-API-01
+#: Designed the sprocket-order public API, now serving 3 million calls a day at 99.95% uptime.
 S-EU-OUTAGE
+#: Story: led the response to a four-hour sprocket-order API outage caused by a bad config push; wrote the postmortem and added config validation in CI so the same push is now blocked.
+S-EU-QUEUE
+#: Story: in the triage project chose a hand-rolled job queue over a managed one to ship faster; it later needed two rewrites, and in hindsight a managed queue from day one would have saved about six weeks.
 SKILL-PYTHON
+#: Python (6 years professional).

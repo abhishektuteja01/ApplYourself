@@ -53,6 +53,8 @@ facts:
   F-LANGUAGES: Fluent in English and Hindi.
   F-CONSENT-AI-NOTETAKER: Consents to AI notetakers recording and transcribing interviews.
   F-CONSENT-DATA-RETENTION: Consents to the employer keeping the application on file for future roles.
+  F-ATTESTATIONS: "Agrees to standard application attestations: my answers are accurate and complete, I completed the application myself, and I have read the job description."
+  F-AI-INTERVIEW: Agrees not to use AI tools during interviews unless the employer explicitly permits them.
 cover_letter: when_required
 questions:
   linkedin:

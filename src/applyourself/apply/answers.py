@@ -1210,7 +1210,8 @@ def answer_question(
     question: Question, field: MergedField, answers: Answers, source: str
 ) -> Resolution:
     """`question`'s answer rendered for `field`: computed, role file, a board
-    option or its first spelling, tagged `source`."""
+    option (on a multi-select, every candidate the board offers) or its first
+    spelling, tagged `source`."""
     if question.only_when_required and not field.required:
         return _skip(f"{question.id} is only_when_required and this field is optional", "B")
     if field.kind == "file":
@@ -1231,6 +1232,14 @@ def answer_question(
                 source=source,
             )
         return _fill(text, "B", source=source)
+    if field.multi and field.options:
+        picked = tuple(
+            dict.fromkeys(
+                p for c in question.answers if (p := _pick_option(field, (c,), question.mode))
+            )
+        )
+        if picked:
+            return _fill(picked, "B", source=source)
     if field.options or field.kind == "react_select":
         return _resolve_choice(
             field, question.answers, "B", question.id, mode=question.mode, source=source

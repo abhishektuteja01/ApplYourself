@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from applyourself.apply.answers import (
+    UNKNOWN_COUNTRY,
     Answers,
     Resolution,
     answer_question,
@@ -29,7 +30,7 @@ from applyourself.apply.answers import (
 )
 from applyourself.apply.bank_schema import load_answers
 from applyourself.apply.judge_packet import JudgeEntry, build_packet, check_entries, to_override
-from applyourself.apply.judged import field_from_dict
+from applyourself.apply.judged import checkbox_yes, field_from_dict
 from applyourself.apply.plan import apply_override
 from applyourself.evals.cases import (
     CASES_DIR,
@@ -62,11 +63,12 @@ class EvalError(Exception):
 
 def persona_answers(name: str, job_country: str) -> Answers:
     """The persona's bank for one job country, with the salary figure /apply
-    would ask for there; `real` is the real bank."""
+    would ask for there; `real` is the real bank. No job country reads as
+    `UNKNOWN_COUNTRY`, as /apply does, never the home country."""
     from applyourself.apply_cli import salary_for
 
     answers = load_answers() if name == REAL_PERSONA else load_persona(persona_path(name))
-    answers = replace(answers, job_country=job_country)
+    answers = replace(answers, job_country=job_country or UNKNOWN_COUNTRY)
     return replace(answers, salary_figure=salary_for("", "", answers.country, answers))
 
 
@@ -155,11 +157,14 @@ def _slices(run: Path) -> list[tuple[int, dict[str, Any]]]:
 
 
 def norm(value: Any) -> Any:
-    """A rendered value for comparison: case and spacing folded; a multi-select sorted."""
+    """A rendered value for comparison: case and spacing folded; a multi-select
+    sorted; one picked option equals the same scalar."""
     if value is None:
         return ""
     if isinstance(value, bool):
         return "yes" if value else "no"
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        return norm(value[0])
     if isinstance(value, (list, tuple)):
         return sorted(norm(v) for v in value)
     return " ".join(str(value).split()).casefold()
@@ -171,28 +176,32 @@ def _action(res: Resolution, decision: str) -> str:
     return res.action
 
 
-def _expected(case: Case, field, answers: Answers) -> tuple[str, Any, str]:
-    """`(action, normalized value or values, problem)` the case wants."""
+def _expected(case: Case, field, answers: Answers) -> tuple[str, Any, str, str]:
+    """`(action, normalized value or values, problem, park reason)` the case
+    wants. The park reason is set when an expected question itself parks."""
     exp = case.expect
     if exp.action != "fill":
-        return exp.action, None, ""
+        return exp.action, None, "", ""
     if exp.value is not None:
-        return "fill", norm(exp.value), ""
+        if field.kind == "checkbox" and checkbox_yes(field, exp.value):
+            return "fill", norm("Yes"), "", ""  # a ticked checkbox renders Yes
+        return "fill", norm(exp.value), "", ""
     if exp.one_of is not None:
-        return "fill", [norm(v) for v in exp.one_of], ""
+        return "fill", [norm(v) for v in exp.one_of], "", ""
     if exp.prose:
-        return "fill", None, ""
+        return "fill", None, "", ""
     if exp.question is not None:
         q = answers.question(exp.question)
         if q is None:
-            return "fill", None, f"expected question {exp.question!r} is not in the bank"
+            return "fill", None, f"expected question {exp.question!r} is not in the bank", ""
         res = answer_question(q, field, answers, f"bank:{q.id}")
     else:
         assert exp.fact is not None
         res = resolve_fact_wording(field, answers, exp.fact.model_dump())
     if res.action != "fill":
-        return "fill", None, f"the expectation itself renders {res.action}: {res.reason}"
-    return "fill", norm(res.value), ""
+        parked = res.reason if res.action == "park" and exp.question is not None else ""
+        return "fill", None, f"the expectation itself renders {res.action}: {res.reason}", parked
+    return "fill", norm(res.value), "", ""
 
 
 def _overrides(run: Path, n: int, entries: dict[str, JudgeEntry], cases: list[Case]) -> dict:
@@ -217,7 +226,7 @@ def grade_case(
     """One case's result: pass, what it wanted, what the judge's entry renders to."""
     field_dict = _field(case)
     field = field_from_dict(field_dict)
-    want_action, want_value, want_problem = _expected(case, field, answers)
+    want_action, want_value, want_problem, want_park = _expected(case, field, answers)
     row: dict[str, Any] = {
         "id": case.id,
         "group": case.group,
@@ -239,11 +248,28 @@ def grade_case(
         return row
     got_action, got_value = _action(res, entry.decision), norm(res.value)
     row["got"] = {"action": got_action, "value": got_value, "reason": res.reason}
-    row["key"] = [entry.decision, got_value if got_action == "fill" else got_action]
+    # Repeat agreement compares outcomes, not the route: the same choice filled,
+    # or free text filled (wording varies), or the field stopped for the user.
+    if got_action != "fill":
+        row["key"] = ["stop" if got_action in ("ask", "park") else got_action]
+    elif field.options or field.kind == "checkbox":
+        row["key"] = ["fill", got_value]
+    else:
+        row["key"] = ["text"]
+    if want_park and got_action == "park" and res.reason == want_park:
+        # The question parks without a live role (no role file, no posting):
+        # right only when the judge named that question.
+        passed = entry.decision == "question" and entry.question == case.expect.question
+        row["passed"] = passed
+        if not passed:
+            row["problem"] = want_problem
+        return row
     if want_problem:
         row.update(passed=False, problem=want_problem)
         return row
-    if got_action != want_action:
+    if want_action == "ask" and got_action == "park" and "country could not be read" in res.reason:
+        passed = True  # the code stopped it for the user, as an ask would
+    elif got_action != want_action:
         passed = False
     elif want_action != "fill":
         passed = True

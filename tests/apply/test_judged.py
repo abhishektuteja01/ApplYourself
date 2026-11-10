@@ -188,3 +188,80 @@ def test_a_us_state_or_territory_reads_as_the_us(answers, label, value):
     f = field(label=label, kind="select", options=YES_NO)
     r = A.resolve_fact_wording(f, germany, {"fact": "authorized", "yes_when": True})
     assert (r.action, r.value) == ("fill", value)
+
+
+def test_a_fact_decision_on_a_permission_label_outside_b0_applies(answers, tailor_dir):
+    f = field(
+        label="Are you currently permitted to take up employment in the USA?",
+        kind="select",
+        options=YES_NO,
+    )
+    entry = Override(value="", decision="fact", fact={"fact": "authorized", "yes_when": True})
+    plan = plan_one(f, answers, tailor_dir, entry)
+    assert not plan.ignored_overrides
+
+
+US_PERSON_SENTENCES = (
+    MergedOption(label="I am a U.S. person"),
+    MergedOption(label="None of the above; I am a citizen of a different country"),
+)
+
+
+@pytest.mark.parametrize(("us_person", "ignored"), [("no", False), ("yes", False), ("park", True)])
+def test_export_control_takes_a_judged_option_once_us_person_is_set(
+    answers, tailor_dir, us_person, ignored
+):
+    f = field(
+        label="Which best describes your U.S. person status?",
+        kind="select",
+        options=US_PERSON_SENTENCES,
+    )
+    pick = Override(value="I am a U.S. person", decision="option", basis=("option",))
+    plan = plan_one(f, replace(answers, us_person=us_person), tailor_dir, pick)
+    assert bool(plan.ignored_overrides) is ignored
+    if not ignored:
+        assert plan.fields[0].value == "I am a U.S. person"  # polarity is the judge's
+
+
+def test_export_control_refuses_judged_text_even_with_us_person_set(answers, tailor_dir):
+    f = field(label="Are you a U.S. person?")
+    typed = Override(value="No", decision="text", basis=("option",))
+    plan = plan_one(f, replace(answers, us_person="no"), tailor_dir, typed)
+    assert "export control" in plan.ignored_overrides[0]
+
+
+def test_a_bank_question_id_is_a_basis(answers):
+    f = field(kind="select", options=YES_NO)
+    entry = Override(value="Yes", decision="option", basis=("linkedin",))
+    assert judged.render(f, entry, answers).action == "fill"
+
+
+@pytest.mark.parametrize(
+    "basis", ["us_person", "nationalities", "work_authorization.authorized", "status_label"]
+)
+def test_a_work_authorization_key_is_a_basis(answers, basis):
+    f = field(kind="select", options=YES_NO)
+    entry = Override(value="Yes", decision="option", basis=(basis,))
+    assert judged.render(f, entry, answers).action == "fill"
+    entry = Override(value="Yes", decision="option", basis=("work_authorization.salary",))
+    assert judged.render(f, entry, answers).action == "park"
+
+
+@pytest.mark.parametrize(
+    "value,action",
+    [
+        ("I acknowledge", "fill"),
+        ("I agree.", "fill"),
+        ("yes", "fill"),
+        ("I have read the privacy notice", "fill"),  # the checkbox's own label
+        ("No", "park"),
+        ("I decline", "park"),
+    ],
+)
+def test_a_single_checkbox_ticks_only_on_an_affirmative(answers, value, action):
+    f = field(kind="checkbox", label="I have read the privacy notice")
+    entry = Override(value=value, decision="text", basis=("option",))
+    r = judged.render(f, entry, answers)
+    assert r.action == action
+    if action == "fill":
+        assert r.value == "Yes"

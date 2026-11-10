@@ -48,6 +48,7 @@ facts:
   F-KUBERNETES-YEARS: 5 years of Kubernetes.
   F-ADULT: Is over 18 years old.
   F-LANGUAGES: Fluent in English and Spanish.
+  F-ATTESTATIONS: "Agrees to standard application attestations: my answers are accurate and complete, I completed the application myself, and I have read the job description."
 cover_letter: when_required
 questions:
   linkedin:

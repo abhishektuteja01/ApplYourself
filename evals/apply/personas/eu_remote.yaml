@@ -54,6 +54,7 @@ facts:
   F-KUBERNETES-YEARS: 3 years of Kubernetes.
   F-ADULT: Is over 18 years old.
   F-LANGUAGES: Fluent in German, English and French.
+  F-EMPLOYER: Currently employed at Sprocket Labs as a Backend Engineer since January 2020; has never worked for any other company.
 cover_letter: when_required
 questions:
   linkedin:

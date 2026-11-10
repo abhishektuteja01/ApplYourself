@@ -1712,3 +1712,15 @@ class TestCoverLetterSetting:
     def test_an_unknown_value_is_refused(self, tmp_path):
         with pytest.raises(AnswersError, match="cover_letter"):
             load_answers(write_config(tmp_path, cover_letter="always"))
+
+
+def test_a_multi_select_question_picks_every_offered_candidate(answers):
+    q = BS.Question(id="langs", answers=("English", "Hindi", "Klingon"))
+    opts = tuple(MergedOption(label=o) for o in ("English", "French", "Hindi"))
+    f = MergedField(
+        id="l", name="l", label="Languages?", required=True, kind="checkbox_group",
+        section="questions", multi=True, options=opts,
+    )  # fmt: skip
+    assert A.answer_question(q, f, answers, "bank:langs").value == ("English", "Hindi")
+    single = dc_replace(f, kind="select", multi=False)
+    assert A.answer_question(q, single, answers, "bank:langs").value == "English"
