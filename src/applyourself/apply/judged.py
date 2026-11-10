@@ -78,7 +78,7 @@ def _entry_ids(path: Path) -> set[str]:
 def _profile_ids() -> set[str]:
     """Every bullet, story and skill id the profile defines."""
     ids: set[str] = set()
-    for path in (paths.BULLETS, paths.SKILLS, paths.PROFILE / "stories.md"):
+    for path in (paths.BULLETS, paths.SKILLS, paths.STORIES):
         ids |= _entry_ids(path)
     return ids
 

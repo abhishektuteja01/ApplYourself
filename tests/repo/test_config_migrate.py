@@ -118,7 +118,7 @@ def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
         "    salary_expectation:\n"
         "      markup_pct: 10\n"
         "      fallback:\n"
-        "        United States: 110000\n"
+        "        United States: 150000\n"
         "\n"
         "  gizmos:\n"
         "    display_name: Gizmos\n",
@@ -130,7 +130,7 @@ def test_lane_salary_moves_onto_the_bank_rows(tmp_path):
     )
     bank = load_answers(prof / "application_answers.yaml")
     assert bank.facts_for("United States").salary.lanes == ("widgets",)
-    assert apply_cli.salary_for("x", "widgets", "United States", bank) == 110000.0
+    assert apply_cli.salary_for("x", "widgets", "United States", bank) == 150000.0
     assert apply_cli.salary_for("x", "gizmos", "United States", bank) is None
 
 

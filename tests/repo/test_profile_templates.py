@@ -207,7 +207,7 @@ class TestTemplateCoverage:
             from_ast |= _profile_filenames_from_ast(path)
         assert from_ast, "AST pass found no PROFILE-joined filenames"
         assert "resume_template.docx" in from_ast
-        assert "stories.md" in from_ast
+        assert "cover_letter_template.docx" in from_ast
 
     def test_an_unknown_extension_is_not_silently_exempt(self):
         """_template_for returns None for an unmapped suffix, and the coverage

@@ -12,7 +12,7 @@ stage_start apply_prep
 STAGE=apply_prep   # log/json names
 pdf_helper_up
 
-TOOLS='Agent,Bash(uv run apply prepare *),Bash(uv run apply plan *),Bash(uv run apply judge-pack *),Bash(uv run apply judge-check *),Bash(uv run apply run *),Bash(uv run apply learn *),Bash(uv run app *),Bash(uv run track *),Bash(cd *),Bash(git rev-parse *),Read,Write,Edit,Skill,WebSearch,WebFetch'
+TOOLS='Agent,Bash(uv run apply prepare *),Bash(uv run apply plan *),Bash(uv run apply judge-pack *),Bash(uv run apply judge-check *),Bash(uv run apply run *),Bash(uv run apply learn *),Bash(uv run app *),Bash(uv run track *),Read,Write,Edit,Skill,WebSearch,WebFetch'
 JUDGE_TOOLS='Read,Write'
 if [[ "$DRY_RUN" == 1 ]]; then echo "[dry-run] uv run apply sheet"; else
   "$UV" run apply sheet || { stage_end 1 "apply sheet failed"; exit 1; }

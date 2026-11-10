@@ -291,7 +291,13 @@ def _apply_field(
         return FieldOutcome(field.id, "filled", before, shown)
 
     if field.kind == "checkbox":
-        driver.set_checkbox(field.id, bool(field.value))
+        # Only True or an explicit Yes ticks; False unticks; any other value,
+        # "No" above all, is refused rather than read as truthy.
+        if not isinstance(field.value, bool) and (
+            str(field.value).strip().rstrip(".").casefold() != "yes"
+        ):
+            raise FillError(f"{field.id}: a single checkbox takes only Yes, got {field.value!r}")
+        driver.set_checkbox(field.id, field.value is True or isinstance(field.value, str))
         return FieldOutcome(field.id, "filled", before, str(bool(field.value)))
 
     if field.kind == "checkbox_group":

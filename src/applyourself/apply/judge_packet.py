@@ -206,7 +206,7 @@ def build_packet(
     )
     sources = [
         f"- bullets (B- ids): {paths.BULLETS}",
-        f"- stories (S- ids): {paths.PROFILE / 'stories.md'}",
+        f"- stories (S- ids): {paths.STORIES}",
         f"- skills (SKILL- ids): {paths.SKILLS}",
     ]
     if role_dir is not None:

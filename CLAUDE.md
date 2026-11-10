@@ -8,9 +8,9 @@ A personal, human-gated job-search pipeline, sponsorship-aware throughout (the
 scoring filter and the outreach disclosure rules both know about it). It scrapes
 jobs, scores them against a profile, and generates tailored application material.
 Outreach is always gated on the user. `/apply` submits only when every required
-field resolves, from the answer bank (`profile/application_answers.yaml`) or from
-answers the session drafts under NO-FAB and the user confirms. Every confirmed
-answer is saved to the bank. Anything still unresolved parks the role for review.
+field resolves, from the bank's (`profile/application_answers.yaml`) facts and
+answers through the apply-judge. Fields the facts don't settle park for the user,
+whose confirmed answers are saved as facts.
 
 ## Instructions
 

@@ -36,8 +36,12 @@ report lists them under `manual`, not `failed`.
 - **`questions`**: one canonical entry per question, `{answer, only_when_required?}`.
   `answer` is text, a list of spellings, `{fact: ...}`, `{computed: salary |
   start_date | how_heard}`, or `{role_file: ...}` (the role's
-  `company_answers.yaml`). An approved prose answer also has `source`, its
-  `B-`/`S-` ids. No wordings or keywords: the judge picks the question.
+  `company_answers.yaml`). `{computed: ..., fallback: [...]}` adds literal
+  spellings for when the computed value can't answer (salary's bare Yes/No
+  widget, how_heard with no source match). `mode: exact` (default) or
+  `contains` sets how a spelling matches an offered option: whole, or anywhere
+  inside it. An approved prose answer also has `source`, its `B-`/`S-` ids. No
+  wordings or keywords: the judge picks the question.
 
 Scoring reads the same table: `score_filter` derives never / later / now per
 country from `work_authorization.countries`, and refuses `sponsorship_need` or
@@ -88,8 +92,10 @@ Every `answers_override.json` entry, judged or the session's, passes
 - an option must be one the widget offers; a single checkbox takes only Yes;
 - free text is linted: mechanical fixes applied, a banned phrase parks the field
   naming it;
-- an id not on the form, a closed field, or a missing file lands in
-  `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
+- a judged entry the gate refuses parks its field, the refusal as the reason; one
+  whose field id is not on the form still lands in `Plan.ignored_overrides`;
+- a session entry it refuses (an id not on the form, a closed field, a missing
+  file) lands in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
 
 Judged answers that pass go straight through. Only parked fields (`ask`, a refused
 entry) reach the user.

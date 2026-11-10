@@ -6,7 +6,9 @@ and `claims`, confirmed `answers_override.json` files, and the yes rows of
 `apply_runs/wordings_review.yaml`. Wordings, `fact_wordings` and `claims` are
 schema 3: on a schema 4 bank they are read from the newest schema 3 copy in
 `.state/bank_history/` beside it. `relabel.yaml` beside the output, when
-present, replaces the expectation of every case with a listed label. Writes
+present, maps merged question ids to their canonical id (`merged:`) and
+replaces the expectation of every case with a listed label (`relabel:`). A
+case still expecting a question the bank lacks is dropped. Writes
 `applications/evals/apply/private/cases.jsonl` (gitignored); prints counts only,
 never a value."""
 
@@ -151,8 +153,11 @@ def _claim_true(claim: dict, answers: Answers, country: str) -> bool:
     return all(getattr(facts, k) == claim[k] for k in _CLAIM_FACTS if k in claim)
 
 
-def from_bank(b: Builder, raw: dict, answers: Answers, labels, by_dir) -> None:
-    for qid, spec in (raw.get("questions") or {}).items():
+def from_bank(
+    b: Builder, raw: dict, answers: Answers, labels, by_dir, merged: dict[str, str]
+) -> None:
+    for old_id, spec in (raw.get("questions") or {}).items():
+        qid = merged.get(old_id, old_id)
         for wording in (spec or {}).get("wordings") or []:
             matches = labels.get(norm_label(str(wording)))
             if not matches:
@@ -185,10 +190,13 @@ def from_bank(b: Builder, raw: dict, answers: Answers, labels, by_dir) -> None:
             b.add("sentence_option", "claim", pf, {"action": "fill", "one_of": true})
 
 
-def _override_expect(entry: dict, pf: PlanField, answers: Answers) -> dict | None:
+def _override_expect(
+    entry: dict, pf: PlanField, answers: Answers, merged: dict[str, str]
+) -> dict | None:
     if isinstance(entry.get("fact"), dict):
         return {"action": "fill", "fact": dict(entry["fact"])}
     qid = entry.get("question")
+    qid = merged.get(str(qid), qid) if qid else qid
     if qid and answers.question(str(qid)) is not None:
         return {"action": "fill", "question": str(qid)}
     value = entry.get("value")
@@ -202,7 +210,9 @@ def _override_expect(entry: dict, pf: PlanField, answers: Answers) -> dict | Non
     return {"action": "fill", "value": str(value)}
 
 
-def from_overrides(b: Builder, root: Path, answers: Answers, labels, by_dir) -> None:
+def from_overrides(
+    b: Builder, root: Path, answers: Answers, labels, by_dir, merged: dict[str, str]
+) -> None:
     for path in sorted(root.glob("*/*/answers_override.json")):
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -225,7 +235,7 @@ def from_overrides(b: Builder, root: Path, answers: Answers, labels, by_dir) -> 
                 continue
             if raw.get("country") and not pf.job_country:
                 pf = PlanField(pf.field, str(raw["country"]))
-            expect = _override_expect(entry, pf, answers)
+            expect = _override_expect(entry, pf, answers, merged)
             if expect is None:
                 b.skipped["override: no value"] += 1
                 continue
@@ -250,6 +260,17 @@ def from_review(b: Builder, path: Path, labels) -> None:
 
 class RelabelError(Exception):
     """A relabel entry is malformed or names a value the field does not offer."""
+
+
+def merged_ids(path: Path) -> dict[str, str]:
+    """`merged: {old_id: canonical_id}` from `path`; empty when absent."""
+    if not path.is_file():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    merged = data.get("merged") or {}
+    if not isinstance(merged, dict):
+        raise RelabelError(f"{path}: merged must map old id -> canonical id")
+    return {str(k): str(v) for k, v in merged.items()}
 
 
 def relabel(cases: list[Case], path: Path) -> tuple[collections.Counter[str], int]:
@@ -341,14 +362,24 @@ def main(argv: list[str] | None = None) -> int:
     by_dir, bad = read_plans(root)
     labels = _by_label(by_dir)
 
+    out = args.out or private_dir() / "cases.jsonl"
+    relabel_path = out.parent / "relabel.yaml"
+    merged = merged_ids(relabel_path)
+
     b = Builder()
     # Confirmed overrides first: on a duplicate label, what the user confirmed wins.
-    from_overrides(b, root, answers, labels, by_dir)
-    from_bank(b, raw, answers, labels, by_dir)
+    from_overrides(b, root, answers, labels, by_dir, merged)
+    from_bank(b, raw, answers, labels, by_dir, merged)
     from_review(b, paths.APPLY_RUNS / "wordings_review.yaml", labels)
 
-    out = args.out or private_dir() / "cases.jsonl"
-    changed, unmatched = relabel(b.cases, out.parent / "relabel.yaml")
+    changed, unmatched = relabel(b.cases, relabel_path)
+    kept = [
+        c
+        for c in b.cases
+        if c.expect.question is None or answers.question(c.expect.question) is not None
+    ]
+    gone = len(b.cases) - len(kept)
+    b.cases = kept
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("".join(dump_case(c) + "\n" for c in b.cases), encoding="utf-8")
 
@@ -360,6 +391,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  relabeled {group}: {n}")
     if unmatched:
         print(f"  relabel entries matching no case: {unmatched}")
+    if gone:
+        print(f"  dropped, expected question not in the bank: {gone}")
     for reason, n in sorted(b.skipped.items()):
         print(f"  skipped {reason}: {n}")
     return 0

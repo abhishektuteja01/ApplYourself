@@ -59,10 +59,17 @@ def test_a_missing_basis_id_parks_naming_it(answers):
     assert judged.render(f, entry, with_fact).action == "fill"
 
 
-def test_a_decision_on_an_identity_field_is_ignored(answers, tailor_dir):
+def test_a_decision_on_an_identity_field_parks_it(answers, tailor_dir):
     f = field(id="first_name", name="first_name", label="First Name")
     entry = Override(value="", decision="question", question="linkedin")
     plan = plan_one(f, answers, tailor_dir, entry)
+    assert not plan.fields and not plan.ignored_overrides
+    assert plan.unmapped[0].reason == "identity and EEOC fields take no override"
+
+
+def test_a_session_override_the_gate_refuses_is_ignored(answers, tailor_dir):
+    f = field(id="first_name", name="first_name", label="First Name")
+    plan = plan_one(f, answers, tailor_dir, Override(value="Sam"))
     assert plan.fields[0].value == "Alex"
     assert plan.ignored_overrides == ("first_name: identity and EEOC fields take no override",)
 
@@ -71,7 +78,8 @@ def test_export_control_takes_a_fact_not_a_typed_value(answers, tailor_dir):
     f = field(label="Are you a U.S. person?", kind="select", options=YES_NO)
     typed = Override(value="No", decision="option", basis=("option",))
     plan = plan_one(f, answers, tailor_dir, typed)
-    assert plan.parked and "export control" in plan.ignored_overrides[0]
+    assert plan.parked and not plan.ignored_overrides
+    assert "export control" in plan.unmapped[0].reason
     fact = Override(value="", decision="fact", fact={"fact": "us_person", "yes_when": True})
     plan = plan_one(f, replace(answers, us_person="no"), tailor_dir, fact)
     assert not plan.ignored_overrides and plan.fields[0].value == "No"
@@ -164,13 +172,13 @@ def test_load_overrides_reads_judged_entries_without_a_value(tmp_path):
     assert got["d"].decision == "skip"
 
 
-def test_a_fact_decision_outside_work_authorization_is_ignored(answers, tailor_dir):
+def test_a_fact_decision_outside_work_authorization_parks(answers, tailor_dir):
     f = field(label="Are you 18 or older?", kind="select", options=YES_NO)
     entry = Override(value="", decision="fact", fact={"fact": "authorized", "yes_when": True})
     plan = plan_one(f, answers, tailor_dir, entry)
-    assert plan.parked and not plan.fields
-    assert plan.ignored_overrides == (
-        "q: a fact judgment is only for a work-authorization or export-control question",
+    assert plan.parked and not plan.fields and not plan.ignored_overrides
+    assert plan.unmapped[0].reason == (
+        "a fact judgment is only for a work-authorization or export-control question"
     )
 
 
@@ -207,9 +215,9 @@ US_PERSON_SENTENCES = (
 )
 
 
-@pytest.mark.parametrize(("us_person", "ignored"), [("no", False), ("yes", False), ("park", True)])
+@pytest.mark.parametrize(("us_person", "refused"), [("no", False), ("yes", False), ("park", True)])
 def test_export_control_takes_a_judged_option_once_us_person_is_set(
-    answers, tailor_dir, us_person, ignored
+    answers, tailor_dir, us_person, refused
 ):
     f = field(
         label="Which best describes your U.S. person status?",
@@ -218,8 +226,10 @@ def test_export_control_takes_a_judged_option_once_us_person_is_set(
     )
     pick = Override(value="I am a U.S. person", decision="option", basis=("option",))
     plan = plan_one(f, replace(answers, us_person=us_person), tailor_dir, pick)
-    assert bool(plan.ignored_overrides) is ignored
-    if not ignored:
+    assert not plan.ignored_overrides
+    if refused:
+        assert "us_person is set" in plan.unmapped[0].reason
+    else:
         assert plan.fields[0].value == "I am a U.S. person"  # polarity is the judge's
 
 
@@ -227,7 +237,7 @@ def test_export_control_refuses_judged_text_even_with_us_person_set(answers, tai
     f = field(label="Are you a U.S. person?")
     typed = Override(value="No", decision="text", basis=("option",))
     plan = plan_one(f, replace(answers, us_person="no"), tailor_dir, typed)
-    assert "export control" in plan.ignored_overrides[0]
+    assert not plan.ignored_overrides and "export control" in plan.unmapped[0].reason
 
 
 def test_a_bank_question_id_is_a_basis(answers):
@@ -265,3 +275,37 @@ def test_a_single_checkbox_ticks_only_on_an_affirmative(answers, value, action):
     assert r.action == action
     if action == "fill":
         assert r.value == "Yes"
+
+
+@pytest.mark.parametrize("decision", ["fact", "question"])
+def test_a_single_checkbox_answered_no_parks_never_ticks(answers, tailor_dir, decision):
+    f = field(kind="checkbox", label="I am authorized to work in the United States")
+    no_bank = replace(
+        answers, questions=answers.questions + (Question(id="no_q", answers=("No",)),)
+    )
+    entry = Override(
+        value="",
+        decision=decision,
+        fact={"fact": "authorized", "yes_when": False},
+        question="no_q",
+    )
+    plan = plan_one(f, no_bank, tailor_dir, entry)
+    assert not plan.fields and not plan.ignored_overrides
+    assert plan.unmapped[0].reason == "a single checkbox takes only Yes; the answer here is No"
+
+
+@pytest.mark.parametrize(
+    "override",
+    [None, Override(value="", decision="fact", fact={"fact": "us_person", "yes_when": True})],
+)
+def test_a_lone_itar_checkbox_with_us_person_no_parks(answers, tailor_dir, override):
+    f = field(label="I certify that I am a U.S. person under ITAR", kind="checkbox")
+    a = replace(answers, us_person="no")
+    plan = build_plan(
+        Reconciled(fields=(f,), api_only=()),
+        a,
+        tailor_dir,
+        overrides={f.id: override} if override else None,
+    )
+    assert not plan.fields
+    assert "a single checkbox takes only Yes" in plan.unmapped[0].reason

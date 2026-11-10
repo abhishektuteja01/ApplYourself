@@ -695,6 +695,12 @@ class TestOtherWidgets:
         )
         assert ("checkbox", "current-role-0", False) in d.calls
 
+    def test_a_checkbox_planned_no_is_not_ticked(self):
+        d = FakeDriver()
+        result = fill_plan(plan(fields=[field(id="itar", kind="checkbox", value="No")]), d)
+        assert not [c for c in d.calls if c[0] == "checkbox"]
+        assert len(result.failures) == 1 and "only Yes" in result.failures[0]
+
     def test_a_checkbox_group_ticks_every_label(self):
         d = FakeDriver()
         fill_plan(

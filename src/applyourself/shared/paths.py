@@ -36,6 +36,7 @@ _LAYOUT = {
     "RESUME": "profile/resume.yaml",
     "BULLETS": "profile/bullets.md",
     "SKILLS": "profile/skills_master.md",
+    "STORIES": "profile/stories.md",
     "SETTINGS": "profile/settings.yaml",
     "CONTACTS": "profile/contacts.yaml",
     "SCORING": "profile/scoring.yaml",
@@ -80,6 +81,7 @@ PROFILE: Path
 RESUME: Path
 BULLETS: Path
 SKILLS: Path
+STORIES: Path
 SETTINGS: Path
 CONTACTS: Path
 SCORING: Path

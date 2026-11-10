@@ -489,6 +489,25 @@ def _judged_fact_label(label: str) -> bool:
     return bool(_JUDGED_FACT_WORK.search(label) and _JUDGED_FACT_PERMIT.search(label))
 
 
+def _checkbox_yes_only(field: MergedField, resolution: Resolution) -> Resolution:
+    """A single checkbox fills only with Yes or a bool (the employment block's
+    deliberate tick or untick); any other value, a No above all, parks."""
+    value = resolution.value
+    if (
+        field.kind != "checkbox"
+        or resolution.action != "fill"
+        or isinstance(value, bool)
+        or value == "Yes"
+    ):
+        return resolution
+    return Resolution(
+        "park",
+        tier=resolution.tier,
+        source=resolution.source,
+        reason="a single checkbox takes only Yes; the answer here is No",
+    )
+
+
 def apply_override(
     field: MergedField,
     resolution: Resolution,
@@ -533,9 +552,9 @@ def apply_override(
         rendered = judged.render(
             field, override, answers, company, tier=resolution.tier, known_ids=known_ids
         )
-        return rendered, ""
+        return _checkbox_yes_only(field, rendered), ""
     if fact is not None:
-        return resolve_fact_wording(field, answers, fact), ""
+        return _checkbox_yes_only(field, resolve_fact_wording(field, answers, fact)), ""
     return _override_resolution(
         field, override.value, override.source, resolution.tier, company
     ), ""
@@ -565,7 +584,9 @@ def build_plan(
 
     `overrides` maps a field id to the session's answer for it. One gate: an
     override answers anything except identity/EEOC fields and export control.
-    An override that cannot apply is listed in `ignored_overrides`.
+    A judged override the gate refuses parks its field with the refusal as
+    the reason; any other override that cannot apply is listed in
+    `ignored_overrides`.
     """
     overrides = overrides or {}
     out_dir = Path(out_dir)
@@ -623,11 +644,18 @@ def build_plan(
         judged_skip = False
         if override is not None and field.kind != "file":
             applied, why = apply_override(field, resolution, override, answers, company)
-            if why:
+            if why and override.decision:
+                # A judged entry the gate refuses parks the field for the user;
+                # only the session's own entries fail the plan.
+                resolution = Resolution(
+                    "park", tier=resolution.tier, source=f"judged:{override.decision}", reason=why
+                )
+            elif why:
                 ignored.append(f"{field.id}: {why}")
             else:
                 judged_skip = bool(override.decision) and applied.action == "skip"
                 resolution = applied
+        resolution = _checkbox_yes_only(field, resolution)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))

@@ -63,7 +63,7 @@ def _resume_sources() -> None:
 def _stories() -> None:
     from applyourself.resume_model import parse_entries
 
-    path = paths.PROFILE / "stories.md"
+    path = paths.STORIES
     parse_entries(path.read_text(encoding="utf-8"), path.name)
 
 

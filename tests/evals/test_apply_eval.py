@@ -170,3 +170,16 @@ def test_a_checkbox_expecting_its_affirmative_option_passes_on_yes():
     e = entry("c12", decision="option", value="I acknowledge", basis=["option"])
     o = Override(value="I acknowledge", decision="option", basis=("option",))
     assert grade(c, e, o)["passed"]
+
+
+def test_a_refused_judged_entry_fails_even_when_an_ask_was_expected():
+    c = case(
+        "c9b",
+        {"label": "Are you 18 or older?", "kind": "radio_group", "options": ["Yes", "No"]},
+        {"action": "ask"},
+        group="must_ask",
+    )
+    fact = {"fact": "authorized", "yes_when": True}
+    e = entry("c9b", decision="fact", fact=fact)
+    row = grade(c, e, Override(value="", decision="fact", fact=fact))
+    assert not row["passed"] and row["got"]["action"] == "ignored"

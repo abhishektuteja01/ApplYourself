@@ -6,7 +6,11 @@ prepare <job_id>      check the role, the answer bank and Playwright; print
 plan <job_id> [--json] [--questions] [--answers F] [--url U] [--out-dir D]
                       read the form, answer it from the bank, print the plan.
                       No browser (Ashby opens one headless page for field
-                      text). Exits 1 when an --answers entry cannot apply.
+                      text). Exits 1 when an --answers entry of the session's
+                      own cannot apply; a refused judged entry parks its field.
+judge-pack <job_id>   write the apply-judge's packet from the saved plan.json.
+judge-check <job_id>  refuse malformed judge output, naming each problem, and
+                      merge the rest into answers_override.json.
 run [--job-id X] [--answers F] [--manifest F] [--submit] [--yes] [--limit N]
     [--rate 4m] [--jitter 60s] [--headless]
                       fill, and click only with --submit. With --answers (the
@@ -29,11 +33,12 @@ learn [--undo ID]     review what the bank holds, or remove one fact or question
 triage [--fill] [--job-id J ...] [--limit N]
                       sort Resume ready roles into ready / open with no model; --fill
                       fills the ready ones (never submits) and writes a run report.
-sheet [--add | --list STATUS]
+sheet [--add | --list STATUS | --compare]
                       rebuild the status sheet's status/note/command from
-                      state.yaml, the ledger and the run records; --add first
-                      appends newly scored roles; --list prints the job_ids
-                      at one status and writes nothing.
+                      state.yaml, the ledger and the run records; --add is
+                      accepted and does nothing extra; --list prints the
+                      job_ids at one status and --compare how the sheet
+                      differs from the queue, both writing nothing.
 resolve-urls (--dry-run | --apply) [--limit N]
                       for Manual apply / No apply URL roles whose company has a
                       Greenhouse, Lever or Ashby board in boards.csv, look for

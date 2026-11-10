@@ -298,7 +298,7 @@ class TestSalaryFor:
             },
         )
 
-    US = {"amount": 110000, "currency": "USD", "markup_pct": 10}
+    US = {"amount": 150000, "currency": "USD", "markup_pct": 10}
 
     def test_a_home_role_marks_up_its_posted_minimum(self, tmp_path, monkeypatch):
         clean = tmp_path / "clean.parquet"
@@ -312,7 +312,7 @@ class TestSalaryFor:
         self._write_clean(clean, JOB_ID, 120000, "EUR")
         monkeypatch.setitem(paths._overrides, "CLEAN", clean)
         bank = _salary_bank(us=self.US)
-        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 110000.0
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 150000.0
 
     def test_no_row_salary_is_none_and_lanes_limit_it(self, tmp_path, monkeypatch):
         monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
@@ -1783,8 +1783,8 @@ def test_an_hourly_posted_minimum_is_not_a_salary(tmp_path, monkeypatch):
         clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": 40.0, "salary_currency": "USD"}
     )
     monkeypatch.setitem(paths._overrides, "CLEAN", clean)
-    bank = _salary_bank(us={"amount": 110000, "currency": "USD", "markup_pct": 10})
-    assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 110000.0
+    bank = _salary_bank(us={"amount": 150000, "currency": "USD", "markup_pct": 10})
+    assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 150000.0
 
 
 def test_an_optional_export_control_question_takes_no_override(answers, tailor_dir):
