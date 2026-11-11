@@ -148,8 +148,8 @@ def yearly_salary(amount, period) -> float | None:
 _NUMBER = r"\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?"
 _PAY_RANGE = re.compile(
     rf"(?P<sym>[$€£])\s*(?P<lo>{_NUMBER})\s*(?P<lok>[kK])?"
-    rf"\s*(?:-|–|—|to)\s*[$€£]?\s*(?P<hi>{_NUMBER})\s*(?P<hik>[kK])?\b"
-    r"(?:\s*(?P<code>USD|CAD|AUD|NZD|SGD|EUR|GBP|CHF)\b)?(?=(?P<tail>[^\n]{0,30}))"
+    rf"\s*(?:-|–|—|to)\s*[$€£]?\s*(?P<hi>{_NUMBER})[ \t]*(?P<hik>[kK])?\b"
+    r"(?:[ \t]*(?P<code>USD|CAD|AUD|NZD|SGD|EUR|GBP|CHF)\b)?(?=(?P<tail>[^\n]{0,30}))"
 )
 _NOT_YEARLY = re.compile(
     r"^\s*(?:/\s*|per\s+|an?\s+|)(?:hr|hour|hourly|h|mo|month|monthly|week|weekly|day|daily)\b",
