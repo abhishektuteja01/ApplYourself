@@ -20,27 +20,42 @@ from applyourself.shared.countries import CC_TO_COUNTRY
 
 def job_country(state: dict | None, answers: Answers | None = None, session: str = "") -> str:
     """The job's country, never read from place names here (see `country_and_source`)."""
-    return country_and_source(str((state or {}).get("job_id") or ""), session)[0]
+    state = state or {}
+    return country_and_source(
+        str(state.get("job_id") or ""), session, answers, str(state.get("location") or "")
+    )[0]
 
 
-def country_and_source(job_id: str, session: str = "") -> tuple[str, str]:
+def country_and_source(
+    job_id: str, session: str = "", answers: Answers | None = None, location: str = ""
+) -> tuple[str, str]:
     """(country, where it came from): the /apply session's `country` in the
-    answers file, else the score judge's one country for the role, else the one
-    code its postings' source gave (the jobs store's `country`), else
-    `UNKNOWN_COUNTRY`, so every answer that depends on it parks."""
+    answers file, else the score judge's one country for the role (or your own
+    country when the judge lists several and yours among them), else the one
+    code its postings' source gave (the jobs store's `country`), else your own
+    country when the judge named none and the job's location names a region
+    holding it, else `UNKNOWN_COUNTRY`, so every answer that depends on it parks."""
+    from applyourself.apply.places import REGION_COUNTRIES
     from applyourself.shared.location.allowlist import structured_codes
     from applyourself.shared.location.places import US_LIKE
 
     if session:
         return session, "session"
+    home = answers.home_country if answers is not None else ""
     judged = _judge_countries(job_id)
     if len(judged) == 1:
         return country_name(judged[0]), "judge"
+    if home and home in {country_name(c) for c in judged}:
+        return home, "judge (home listed)"
     codes = {
         "US" if c in US_LIKE else c for f in _store_countries(job_id) for c in structured_codes(f)
     }
     if len(codes) == 1:
         return CC_TO_COUNTRY.get(next(iter(codes)), UNKNOWN_COUNTRY), "site field"
+    if home and not judged:
+        for pattern, members in REGION_COUNTRIES.values():
+            if home in members and pattern.search(location):
+                return home, "location region (home listed)"
     return UNKNOWN_COUNTRY, "unknown"
 
 

@@ -16,9 +16,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from applyourself.apply.answers import _offers_bare_yes_no
-from applyourself.apply.bank_schema import FACT_WORDING_FACTS, Answers, Question
+from applyourself.apply.bank_schema import FACT_WORDING_FACTS, Answers, Question, _norm_option
 from applyourself.apply.judged import is_work_auth_basis
-from applyourself.apply.reconcile import input_problem
+from applyourself.apply.reconcile import input_problem, words_cap
 from applyourself.shared import paths
 
 CLOSED_TIERS = ("A", "A2")
@@ -52,6 +52,7 @@ class JudgeField(BaseModel):
     required: bool = False
     multi: bool = False
     max_length: int | None = None
+    max_words: int | None = None
 
 
 class FactRef(BaseModel):
@@ -105,6 +106,7 @@ def fields_for_judge(plan_json: dict[str, Any]) -> list[dict[str, Any]]:
                     required=bool(f.get("required")),
                     multi=bool(f.get("multi")) or f.get("kind") in MULTI_KINDS,
                     max_length=f.get("max_length"),
+                    max_words=words_cap(str(f.get("label") or ""), str(f.get("description") or "")),
                 ).model_dump()
             )
     return out
@@ -263,7 +265,8 @@ def _entry_problems(
                 errs.append(f"{where} a single-valued field takes one string")
             if not values:
                 errs.append(f"{where} value is empty")
-            off = [v for v in values if v not in options]
+            offered = {_norm_option(o) for o in options}
+            off = [v for v in values if _norm_option(str(v)) not in offered]
             if options and off:
                 errs.append(f"{where} {off!r} not among the field's options word for word")
         else:
@@ -272,7 +275,10 @@ def _entry_problems(
             if not isinstance(entry.value, str) or not entry.value.strip():
                 errs.append(f"{where} text value is one non-empty string")
             elif problem := input_problem(
-                entry.value, str(field.get("kind") or ""), field.get("max_length")
+                entry.value,
+                str(field.get("kind") or ""),
+                field.get("max_length"),
+                field.get("max_words"),
             ):
                 errs.append(f"{where} {problem}")
     options = tuple(field.get("options") or ())

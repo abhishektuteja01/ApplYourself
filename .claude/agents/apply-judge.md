@@ -42,7 +42,7 @@ Your prompt is `judge <packet path> -> <out path>`.
    - `text`: multi-sentence prose only from `B-`, `S-` and `SKILL-` entries in
      the files under Sources, under NO-FAB and REPHRASE-LICENSE; cite every id
      used in `basis`. Keep within any length the label or description states,
-     and within the field's `max_length` characters. A `number` field takes
+     and within the field's `max_length` characters and `max_words` words. A `number` field takes
      digits only.
      A sentence about the company may use `jd` or `company_answers`. Short
      factual text (a nationality, a country list, a status label such as

@@ -101,6 +101,48 @@ def resolve(
     return Resolved("", NO_URL, why + checked)
 
 
+def role_candidates(job_id: str, state: dict | None) -> tuple[list[tuple[str, str]], str]:
+    """(where, url) for every url on disk for this role, and its JD text:
+    clean.parquet's row, then state.yaml's url."""
+    from applyourself.shared import schemas
+    from applyourself.shared.parquet_io import read_parquet
+
+    candidates: list[tuple[str, str]] = []
+    jd = ""
+    if paths.CLEAN.exists():
+        clean = read_parquet(
+            paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id", "url", "jd_text"]
+        )
+        row = clean.loc[clean["job_id"] == job_id]
+        if not row.empty:
+            candidates.append(("clean.parquet", str(row.iloc[0]["url"] or "")))
+            jd = str(row.iloc[0]["jd_text"] or "")
+    if state:
+        candidates.append(("state.yaml", str(state.get("url") or "")))
+    return candidates, jd
+
+
+def form_key(job_id: str, state: dict | None) -> str:
+    """`ledger.url_key` of the form this role would be filled through, or ""
+    when it has none: a retitled role keeps its form but gets a new id."""
+    from applyourself.apply import ashby, greenhouse, ledger, lever
+    from applyourself.apply.detect import detect_ats
+    from applyourself.apply.greenhouse import ApplyUrlError
+
+    candidates, jd = role_candidates(job_id, state)
+    if not candidates:
+        return ""
+    found = resolve([u for _, u in candidates], jd, load().get(job_id))
+    if found.kind != SUBMITTABLE:
+        return ""
+    parsers = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby}
+    module = parsers.get(detect_ats(found.url) or "")
+    try:
+        return ledger.url_key(module.parse_posting(found.url).form_url) if module else ""
+    except ApplyUrlError:
+        return ""
+
+
 # ---------------------------------------------------------------------
 # apply resolve-urls: the opt-in network step
 # ---------------------------------------------------------------------

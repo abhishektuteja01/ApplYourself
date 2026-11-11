@@ -446,6 +446,24 @@ def test_dupes_stays_quiet_for_idle_partners_and_other_roles(repo, capsys, monke
     assert _run(capsys, "dupes", JOB) == (0, {"job_id": JOB, "duplicates": []})
 
 
+def test_dupes_names_the_same_form_sent_under_another_id(repo, capsys, monkeypatch):
+    """A retitled role keeps its form; the ledger stub has no title to match."""
+    from applyourself.apply import ashby, ledger
+
+    url = "https://jobs.ashbyhq.com/acme/0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d"
+    _dupes(repo, monkeypatch, [])
+    write_state(repo / "pipeline", JOB, "tailored", url=url)
+    monkeypatch.setitem(paths._overrides, "CLEAN", repo / "absent.parquet")
+    ledger.append(
+        repo / "submitted.jsonl", "ffff0000", "accepted", form_url=ashby.parse_posting(url).form_url
+    )
+    code, out = _run(capsys, "dupes", JOB)
+    assert code == 0
+    assert [(d["job_id"], d["submitted"], d["reason"]) for d in out["duplicates"]] == [
+        ("ffff0000", True, "same_form")
+    ]
+
+
 def test_lint_outreach_on_a_missing_draft_prints_one_line(repo, capsys):
     code = app_cli.main(["lint", "outreach", str(repo / "absent.md"), "--company", "Acme"])
     out = capsys.readouterr().out

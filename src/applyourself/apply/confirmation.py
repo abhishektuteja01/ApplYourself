@@ -29,9 +29,19 @@ def load(path: Path) -> dict:
 
 def resolved_country(data: dict) -> tuple[str, str]:
     """(country, source) the answers will use for this role (`role_facts`)."""
+    from applyourself import state_io
+    from applyourself.apply.bank_schema import AnswersError, load_answers
     from applyourself.apply.role_facts import country_and_source, session_country_of
+    from applyourself.shared import paths
 
-    return country_and_source(str(data.get("job_id") or ""), session_country_of(data))
+    job_id = str(data.get("job_id") or "")
+    try:
+        answers = load_answers()
+    except (AnswersError, OSError):
+        answers = None
+    state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, job_id)) if job_id else None
+    location = str((state or {}).get("location") or "")
+    return country_and_source(job_id, session_country_of(data), answers, location)
 
 
 def digest(data: dict) -> str:

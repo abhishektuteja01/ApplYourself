@@ -378,6 +378,7 @@ class TestIdentity:
             id="_systemfield_location",
             name="_systemfield_location",
             label="Preferred location",
+            api_type="Location",
             required=True,
             kind="react_select",
             section="basic",
@@ -392,6 +393,7 @@ class TestIdentity:
             id="_systemfield_location",
             name="_systemfield_location",
             label="Preferred location",
+            api_type="Location",
             required=True,
             kind="react_select",
             section="basic",
@@ -408,6 +410,7 @@ class TestIdentity:
             id="_systemfield_location",
             name="_systemfield_location",
             label="Preferred location",
+            api_type="Location",
             required=True,
             kind="react_select",
             section="basic",
@@ -416,13 +419,14 @@ class TestIdentity:
         )
         assert resolve(field, answers).parked is True
 
-    def test_the_fallback_is_keyed_on_the_dom_id_not_the_label(self, answers):
+    def test_the_fallback_is_keyed_on_the_api_type_not_the_label(self, answers):
         """`identity.country` also feeds Greenhouse's phone dial-code widget,
         which is not a country question."""
         from applyourself.apply.answers import _identity_candidates
 
-        assert len(_identity_candidates("_systemfield_location", "x", answers)) == 2
-        assert _identity_candidates("email", "x", answers) == ("x",)
+        located = field(id="_systemfield_location", api_type="Location")
+        assert len(_identity_candidates(located, "x", answers)) == 2
+        assert _identity_candidates(field(id="email"), "x", answers) == ("x",)
 
     def test_greenhouse_and_lever_location_fields_are_left_alone(self, answers):
         """They map to the same config key but carry no option list at plan
@@ -431,7 +435,12 @@ class TestIdentity:
         from applyourself.apply.answers import _identity_candidates
 
         for field_id in ("candidate-location", "location"):
-            assert _identity_candidates(field_id, "x", answers) == ("x",)
+            assert _identity_candidates(field(id=field_id), "x", answers) == ("x",)
+
+    def test_a_name_field_labelled_first_name_takes_the_first_name_only(self, answers):
+        """Ashby labels `_systemfield_name` "First Name" on some boards."""
+        name = field(id="_systemfield_name", name="_systemfield_name", label="First Name")
+        assert resolve(name, answers).value == answers.identity["first_name"]
 
     def test_the_two_file_inputs_are_deferred_to_the_planner(self, merged, answers):
         r = merged("form_minimal")
@@ -884,6 +893,21 @@ class TestSalary:
         r = ask(a, "salary", field(label="What are your salary expectations?"))
         assert (r.action, r.value) == ("fill", "132000")
 
+    def _ireland(self, tmp_path, salary):
+        wa = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))["work_authorization"]
+        wa["countries"]["Ireland"] = {
+            "authorized": False, "requires_sponsorship": True, "salary": salary,
+        }  # fmt: skip
+        return write_config(tmp_path, work_authorization=wa)
+
+    def test_a_salary_row_names_its_currency(self, tmp_path):
+        with pytest.raises(AnswersError, match=r"salary\.currency required"):
+            load_answers(self._ireland(tmp_path, {"amount": 70267}))
+        a = load_answers(self._ireland(tmp_path, {"amount": 70267, "currency": "EUR"}))
+        a = dc_replace(a, job_country="Ireland", salary_figure=70267.0)
+        assert ask(a, "salary", field(label="Expected salary")).value == "70267 EUR"
+        assert ask(a, "salary", field(label="Expected salary", kind="number")).value == "70267"
+
     def test_a_select_matches_the_figure_as_an_option(self, tmp_path):
         a = self._answers(tmp_path, 132000.0)
         f = field(label="Desired compensation", options=["$132,000", "$150,000"])
@@ -1013,7 +1037,7 @@ class TestLocationAlternates:
         from applyourself.apply.answers import _identity_candidates
 
         a = self._answers(tmp_path, [self.ALTERNATE])
-        assert _identity_candidates("email", a.identity["email"], a, "email") == (
+        assert _identity_candidates(field(id="email"), a.identity["email"], a, "email") == (
             a.identity["email"],
         )
 
@@ -1311,6 +1335,16 @@ class TestCoverLetterSetting:
     def test_an_unknown_value_is_refused(self, tmp_path):
         with pytest.raises(AnswersError, match="cover_letter"):
             load_answers(write_config(tmp_path, cover_letter="always"))
+
+
+def test_only_a_location_field_carries_alternates(answers):
+    """Read-back prefix-matches alternates, so a plain chooser carries none:
+    "Yes" must not accept a page showing "Yes, but I will require sponsorship"."""
+    q = BS.Question(id="ok", answers=("Yes", "No"))
+    f = field(kind="react_select", options=("Yes", "No"))
+    assert A.answer_question(q, f, answers, "bank:ok").alternates == ()
+    located = dc_replace(f, api_type="Location")
+    assert A.answer_question(q, located, answers, "bank:ok").alternates == ("Yes", "No")
 
 
 def test_a_multi_select_question_picks_every_offered_candidate(answers):

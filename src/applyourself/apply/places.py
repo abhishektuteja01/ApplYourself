@@ -18,6 +18,15 @@ REGIONS: dict[str, str] = {
     "Latin America": r"latin\s+america|\blatam\b|south\s+america|central\s+america",
     "Asia Pacific": r"\bapac\b|asia[\s-]pacific",
 }
+# Regions a job location can name, with the countries they hold: the job's
+# country is your own when it is one of them. Kept out of REGIONS, so a label
+# naming one still asks about the job's country.
+REGION_COUNTRIES: dict[str, tuple[re.Pattern, tuple[str, ...]]] = {
+    "North America": (
+        re.compile(r"north\s+america\b|\bnoram\b|\bnamer\b", re.IGNORECASE),
+        ("United States", "Canada", "Mexico"),
+    ),
+}
 # Places whose names contain a country's: masked before any country is looked
 # for, so "New Mexico" is never Mexico and "Bank of America" never the US.
 _NOT_COUNTRIES = (

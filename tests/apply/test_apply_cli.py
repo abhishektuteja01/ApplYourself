@@ -314,9 +314,23 @@ class TestSalaryFor:
         bank = _salary_bank(us=self.US)
         assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == 150000.0
 
+    @pytest.mark.parametrize(
+        ("jd", "figure"), [("Pay: $150,000 - $180,000.", 165000.0), ("$45/hour", 150000.0)]
+    )
+    def test_no_parsed_minimum_reads_the_jds_yearly_range(self, tmp_path, monkeypatch, jd, figure):
+        clean = tmp_path / "clean.parquet"
+        factories.write_clean(
+            clean, {"job_id": JOB_ID, "url": GH_URL, "salary_min": None, "jd_text": jd}
+        )
+        monkeypatch.setitem(paths._overrides, "CLEAN", clean)
+        bank = _salary_bank(us=self.US)
+        assert apply_cli.salary_for(JOB_ID, "example_primary", "United States", bank) == figure
+
     def test_no_row_salary_is_none_and_lanes_limit_it(self, tmp_path, monkeypatch):
         monkeypatch.setitem(paths._overrides, "CLEAN", tmp_path / "missing.parquet")
-        bank = _salary_bank(us=self.US, germany={"amount": 70000, "lanes": ["example_primary"]})
+        bank = _salary_bank(
+            us=self.US, germany={"amount": 70000, "currency": "EUR", "lanes": ["example_primary"]}
+        )
         assert apply_cli.salary_for(JOB_ID, "example_primary", "Germany", bank) == 70000.0
         assert apply_cli.salary_for(JOB_ID, "example_secondary", "Germany", bank) is None
         assert apply_cli.salary_for(JOB_ID, "example_primary", "Canada", bank) is None
@@ -696,6 +710,13 @@ class TestEligibleQueue:
         form = "https://boards.greenhouse.io/embed/job_app?token=1000003"
         ledger.append(apply_cli.ledger_path(), JOB_ID, "accepted", form_url=form)
         assert apply_cli.eligible_queue(repo.pipeline) == []
+
+    def test_a_retitled_role_run_by_id_names_the_id_it_was_sent_as(self, repo, capsys):
+        repo.write_state(job_id="eeee5555")
+        form = "https://boards.greenhouse.io/embed/job_app?token=1000003"
+        ledger.append(apply_cli.ledger_path(), JOB_ID, "accepted", form_url=form)
+        assert apply_cli.main(["run", "--job-id", "eeee5555"]) == 1
+        assert f"already sent as {JOB_ID}" in capsys.readouterr().err
 
     def test_ordering_is_deterministic_regardless_of_write_order(self, repo):
         for job_id in ("zzzz9999", "aaaa1111", "mmmm5555"):
@@ -1845,6 +1866,7 @@ class TestTheJobsCountry:
             {"job_id": "pr", "judge_answer": answer("Puerto Rico")},
             {"job_id": "eu", "judge_answer": answer("Europe")},
             {"job_id": "old", "judge_answer": json.dumps({"country": "India"})},
+            {"job_id": "usca", "judge_answer": answer("United States;Canada")},
         )
         write_parquet(scored, tmp_path / "scored.parquet", schema_version=SCORED_SCHEMA_VERSION)
         store = pd.DataFrame(
@@ -1874,6 +1896,21 @@ class TestTheJobsCountry:
     )
     def test_the_country_is_read_never_guessed(self, data, answers, job_id, country):
         state = {"job_id": job_id, "location": "Berlin, Germany"}
+        assert apply_cli.job_country(state, answers) == country
+
+    @pytest.mark.parametrize(
+        "job_id,location,country",
+        [
+            ("usca", "Berlin, Germany", "United States"),  # home among the judge's
+            ("na", "North America - Remote", "United States"),  # blank judge, home's region
+            ("europe", "Europe - Remote", "(unknown)"),  # a region without home
+            ("na", "North American Hub", "(unknown)"),  # "North American" is no region
+        ],
+    )
+    def test_your_own_country_when_the_role_lists_it(
+        self, data, answers, job_id, location, country
+    ):
+        state = {"job_id": job_id, "location": location}
         assert apply_cli.job_country(state, answers) == country
 
     def test_the_sessions_country_wins(self, data, answers, tmp_path):

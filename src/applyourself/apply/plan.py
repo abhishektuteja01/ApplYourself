@@ -520,7 +520,7 @@ def _fits_input(field: MergedField, resolution: Resolution) -> Resolution:
     One that does not fit parks (blank if optional) with the reason."""
     if resolution.action != "fill":
         return resolution
-    problem = input_problem(resolution.value, field.kind, field.max_length)
+    problem = input_problem(resolution.value, field.kind, field.max_length, field.max_words)
     if problem is None:
         return resolution
     action = "park" if field.required else "skip"

@@ -289,6 +289,11 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
         return Resolution("defer", tier="A", reason=field.id)
     if field.id in ("full_name", "name", "_systemfield_name"):
         first, last = answers.identity["first_name"], answers.identity["last_name"]
+        label = _norm_option(field.label or "")
+        wants_first = bool(_FIRST_NAME_LABEL.search(label))
+        wants_last = bool(_LAST_NAME_LABEL.search(label))
+        if wants_first != wants_last:
+            return _fill(first if wants_first else last, "A")
         return _fill(f"{first} {last}".strip(), "A")
     key = _IDENTITY_IDS.get(field.id)
     if key is None:
@@ -302,31 +307,40 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
                 "A",
             )
         return _fill(picked, "A")
-    if field.kind == "react_select":
-        candidates = _identity_candidates(field.id, value, answers, key)
+    if field.kind in _CHOOSER_KINDS:
+        candidates = _identity_candidates(field, value, answers, key)
         choice = _resolve_choice(field, candidates, "A", f"identity.{key}")
         return replace(choice, alternates=candidates) if choice.action == "fill" else choice
     return _fill(value, "A")
 
 
-#: Ashby's location field is city-level on some boards and country-only on
+# A name field whose label asks for one part only. Both or neither: the full name.
+_FIRST_NAME_LABEL = re.compile(r"\b(?:first|given)\s+name\b")
+_LAST_NAME_LABEL = re.compile(r"\b(?:last|family)\s+name\b|\bsurname\b")
+
+
+#: Ashby's Location type is city-level on some boards and country-only on
 #: others, and nothing in the payload says which.
-_COUNTRY_FALLBACK_IDS = frozenset({"_systemfield_location"})
+_COUNTRY_FALLBACK_TYPE = "Location"
+
+# Kinds typed into and picked from; Ashby's Location plans as `combobox`.
+_CHOOSER_KINDS = ("react_select", "combobox")
 
 
 def _identity_candidates(
-    field_id: str, value: str, answers: Answers, key: str = ""
+    field: MergedField, value: str, answers: Answers, key: str = ""
 ) -> tuple[str, ...]:
     """The values to offer a chooser for this identity field, best first.
-    Keyed on the DOM id, never the label: `identity.country` also feeds
-    Greenhouse's phone dial-code widget."""
+    The country fallback is keyed on the API type, never the label:
+    `identity.country` also feeds Greenhouse's phone dial-code widget."""
+    fallback = field.api_type == _COUNTRY_FALLBACK_TYPE
     if key == "location":
         alternates = answers.identity.get("location_alternates") or ()
         candidates = (value, *(a for a in alternates if a != value))
-        if field_id in _COUNTRY_FALLBACK_IDS:
+        if fallback:
             candidates = (*candidates, answers.identity["country"])
         return candidates
-    if field_id in _COUNTRY_FALLBACK_IDS:
+    if fallback:
         return (value, answers.identity["country"])
     return (value,)
 
@@ -608,10 +622,15 @@ def _computed(question: Question, field: MergedField, answers: Answers, source: 
             source=source,
         )
     figure = round(answers.salary_figure)
-    candidates = (str(figure), f"${figure:,}")
+    salary = answers.facts_for(country).salary
+    currency = salary.currency if salary is not None else ""
+    with_currency = f"{figure} {currency}" if currency else str(figure)
+    candidates = tuple(dict.fromkeys((str(figure), f"${figure:,}", with_currency)))
     if field.options or field.kind == "react_select":
         return _resolve_choice(field, candidates, "B", question.id, source=source)
-    return _fill(str(figure), "B", source=source)
+    if field.kind == "number":
+        return _fill(str(figure), "B", source=source)
+    return _fill(with_currency, "B", source=source)
 
 
 def answer_question(
@@ -648,10 +667,25 @@ def answer_question(
         )
         if picked:
             return _fill(picked, "B", source=source)
-    if field.options or field.kind == "react_select":
-        return _resolve_choice(
-            field, question.answers, "B", question.id, mode=question.mode, source=source
+    if field.options or field.kind in _CHOOSER_KINDS:
+        candidates = question.answers
+        # The user's own location on a Location-typed field: the country too,
+        # for a board whose suggestions are countries only.
+        country = answers.identity.get("country")
+        if (
+            field.api_type == _COUNTRY_FALLBACK_TYPE
+            and country
+            and candidates[:1] == (answers.identity.get("location"),)
+            and country not in candidates
+        ):
+            candidates = (*candidates, country)
+        choice = _resolve_choice(
+            field, candidates, "B", question.id, mode=question.mode, source=source
         )
+        # Read-back prefix-matches alternates: only a typeahead Location takes them.
+        if choice.action != "fill" or field.api_type != _COUNTRY_FALLBACK_TYPE:
+            return choice
+        return replace(choice, alternates=candidates)
     return _fill(question.answers[0], "B", source=source)
 
 

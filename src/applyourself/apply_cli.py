@@ -72,7 +72,6 @@ from applyourself.apply import (
     browser,
     confirmation,
     cooldown,
-    greenhouse,
     ledger,
     lever,
     run_record,
@@ -116,6 +115,7 @@ from applyourself.apply.report import (
 )
 from applyourself.apply.role_facts import company_answers_for, job_country, session_country
 from applyourself.apply.schema import SchemaError
+from applyourself.discovery.parse import MIN_ANNUAL_SALARY, posted_pay
 from applyourself.material import folders as app_folders
 from applyourself.score_store import view
 from applyourself.shared import clock, paths, schemas
@@ -168,19 +168,7 @@ def resolve_url(job_id: str, state: dict | None) -> str:
     JD, so the sheet and the run agree. ManualApplyOnly names why when none
     is a board /apply submits to.
     """
-    candidates: list[tuple[str, str]] = []
-    jd = ""
-    if paths.CLEAN.exists():
-        clean = read_parquet(
-            paths.CLEAN, schemas.CLEAN_SCHEMA_VERSION, columns=["job_id", "url", "jd_text"]
-        )
-        row = clean.loc[clean["job_id"] == job_id]
-        if not row.empty:
-            candidates.append(("clean.parquet", str(row.iloc[0]["url"] or "")))
-            jd = str(row.iloc[0]["jd_text"] or "")
-    if state:
-        candidates.append(("state.yaml", str(state.get("url") or "")))
-
+    candidates, jd = apply_url.role_candidates(job_id, state)
     if not candidates:
         raise ApplyCliError(
             f"{job_id} is in neither clean.parquet nor pipeline/{job_id}/state.yaml"
@@ -421,16 +409,13 @@ def answers_confirmed(path: Path | None) -> bool:
     return confirmation.is_confirmed(path)
 
 
-#: A posted minimum below this is a rate per hour or month, not per year.
-MIN_ANNUAL_SALARY = 20000
-
-
 def salary_for(
     job_id: str, vertical: str, country: str, answers: Answers | None = None
 ) -> float | None:
     """The figure to ask for, from the bank's `salary` on this country's
     work-authorization row: in your own country, this posting's minimum (in the
-    row's currency) times its `markup_pct`, else its `amount`.
+    row's currency, else the JD's stated yearly range) times its `markup_pct`,
+    else its `amount`.
 
     None when the row sets none for this lane: the question parks.
     """
@@ -446,6 +431,11 @@ def salary_for(
             if not row.empty:
                 salary_min = row.iloc[0]["salary_min"]
                 currency = str(row.iloc[0]["salary_currency"] or "").strip().upper()
+                # No parsed minimum (Greenhouse sends none): the JD's own range.
+                if pd.isna(salary_min) and "jd_text" in clean.columns:
+                    pay = posted_pay(row.iloc[0]["jd_text"])
+                    if pay is not None:
+                        salary_min, currency = pay[0], pay[2]
                 # Under this is an hourly or monthly rate, not a year's pay:
                 # the row's amount answers instead.
                 if (
@@ -678,7 +668,7 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
         if st.get("state") == "tailored"
         and _built_on_disk(st)
         and job_id not in sent
-        and not (sent_forms and _form_key(job_id, st) in sent_forms)
+        and not (sent_forms and apply_url.form_key(job_id, st) in sent_forms)
     ]
     fit: dict[str, float] = {}
     if queue and paths.SCORED.exists():
@@ -693,21 +683,6 @@ def eligible_queue(pipeline_dir: Path | None = None) -> list[str]:
 def _built_on_disk(state: dict) -> bool:
     folder = app_folders.built_folder(state)
     return folder is not None and folder.is_dir()
-
-
-def _form_key(job_id: str, state: dict) -> str:
-    """`ledger.url_key` of the form this role would be filled through, or ""
-    when it has none: a retitled role keeps its form but gets a new id."""
-    try:
-        url = resolve_url(job_id, state)
-    except ApplyCliError:
-        return ""
-    parsers = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby}
-    module = parsers.get(detect_ats(url) or "")
-    try:
-        return ledger.url_key(module.parse_posting(url).form_url) if module else ""
-    except ApplyUrlError:
-        return ""
 
 
 _DURATION = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)?$")
@@ -1503,9 +1478,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.job_id:
         queue = eligible_queue()
         if args.job_id not in queue:
-            sent = ledger.prior(ledger_path(), args.job_id)
+            state = state_io.load_state(state_io.state_path_for(paths.PIPELINE, args.job_id))
+            sent = ledger.prior(
+                ledger_path(), args.job_id, apply_url.form_key(args.job_id, state or {})
+            )
+            other = str((sent or {}).get("job_id") or "")
+            as_other = f" as {other}" if other and other != args.job_id else ""
             why = (
-                f"already sent {sent.get('at', '')} ({sent.get('status', '')}) per "
+                f"already sent{as_other} {sent.get('at', '')} ({sent.get('status', '')}) per "
                 f"{ledger.LEDGER_NAME}; delete that line to retry"
                 if sent
                 else "needs state == tailored with its tailored_dirs[-1] folder on disk"

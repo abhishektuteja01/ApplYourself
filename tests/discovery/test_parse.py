@@ -151,3 +151,16 @@ def test_no_block_no_employer():
 )
 def test_looks_like_slug(name, slug):
     assert parse.looks_like_slug(name) is slug
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("We raised $20 - $30 million. Salary $150k-$200k", (150000.0, 200000.0, "USD")),
+        ("$5,000 - $10,000 signing bonus", None),
+        ("$25,000 - $50,000 in equity. Base $120,000 - $140,000", (120000.0, 140000.0, "USD")),
+        ("$150k-$200k plus bonus", (150000.0, 200000.0, "USD")),
+    ],
+)
+def test_posted_pay_skips_ranges_that_are_not_salary(text, expected):
+    assert parse.posted_pay(text) == expected

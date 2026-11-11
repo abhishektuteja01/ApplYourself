@@ -239,8 +239,16 @@ def _select(
     if offered:
         result.observed_options.setdefault(field.id, offered)
 
-    if not driver.click_option(label):
-        # The planned string missed. The options are readable now, which they
+    missed = not driver.click_option(label)
+    # The planned string missed: the other spellings the plan listed first.
+    for alternate in field.alternates if missed else ():
+        if alternate != label:
+            driver.type_into(field.id, alternate)
+            if driver.click_option(alternate):
+                label, missed = alternate, False
+                break
+    if missed:
+        # The options are readable now, which they
         # were not when the plan was built, so ask the same rule again with the
         # real list before giving up — `country` is planned as "United States"
         # and offered as "United States +1" on every board that renders it.

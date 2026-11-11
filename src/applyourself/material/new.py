@@ -11,7 +11,7 @@ import pandas as pd
 import yaml
 
 from applyourself import resume_model, score_store, track_cli
-from applyourself.apply import ledger
+from applyourself.apply import apply_url, ledger
 from applyourself.discovery.store import load_maybe_duplicates
 from applyourself.material.folders import (
     SNAPSHOT,
@@ -140,4 +140,24 @@ def cmd_dupes(job_id: str) -> dict[str, Any]:
         }
         if other not in found or (hit["jd_score"] or 0) > (found[other]["jd_score"] or 0):
             found[other] = hit
+    # The same form sent under another id: a retitled role keeps its form.
+    key = apply_url.form_key(job_id, _state(job_id)) if submitted.exists() else ""
+    if key and key in ledger.sent_form_keys(submitted):
+        for rec in ledger.records(submitted):
+            other = str(rec.get("job_id") or "")
+            if not other or other == job_id or ledger.url_key(rec.get("form_url", "")) != key:
+                continue
+            if other in found:
+                found[other]["submitted"] = True
+                continue
+            state = _state(other)
+            found[other] = {
+                "job_id": other,
+                "company": state.get("company") or rec.get("company", ""),
+                "title": state.get("title") or rec.get("title", ""),
+                "state": str(state.get("state") or ""),
+                "submitted": True,
+                "reason": "same_form",
+                "jd_score": None,
+            }
     return {"job_id": job_id, "duplicates": sorted(found.values(), key=lambda h: h["job_id"])}

@@ -562,6 +562,12 @@ class BrowserDriver:
 
     def set_checkbox(self, field_id: str, checked: bool) -> None:
         el = self._locator(field_id).first
+        # A missing box would wait out Playwright's 30s and raise a plain
+        # TimeoutError, which escapes `fill_plan`'s per-field isolation.
+        try:
+            el.wait_for(state="attached", timeout=OPTION_TIMEOUT)
+        except Exception as exc:  # absent node
+            raise FillError(f"{field_id}: not on the page") from exc
         el.check() if checked else el.uncheck()
 
     def open_options(self, field_id: str) -> tuple[str, ...]:

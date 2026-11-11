@@ -77,8 +77,17 @@ def test_null_counts_as_present(answers):
 
 def test_option_not_verbatim(answers):
     entries = _ok()
-    entries[1]["value"] = "austin"
+    entries[1]["value"] = "Austin, TX"
     assert any("not among" in e for e in check_entries(entries, FIELDS, answers))
+
+
+def test_an_option_differing_only_in_a_no_break_space_passes(answers):
+    """The merge path matches normalized; the check did not, so a judge
+    copying "Yes, I agree" for "Yes,\xa0I agree" was sent back."""
+    fields = [{**FIELDS[1], "options": ["Yes,\xa0I agree", "No"]}]
+    entry = {"field_id": "f2", "decision": "option", "value": "Yes, I agree",
+             "basis": ["F-REMOTE"], "why": "fact"}  # fmt: skip
+    assert check_entries([entry], fields, answers) == []
 
 
 def test_multi_select_partial_mismatch(answers):
@@ -265,4 +274,15 @@ def test_a_text_answer_that_overruns_the_input_is_sent_back(answers):
              "why": "fact"}  # fmt: skip
     assert check_entries([entry], fields, answers) == [
         "f1: the board takes at most 5 characters; the answer has 6"
+    ]
+
+
+def test_a_word_cap_in_the_label_is_held_to(answers):
+    plan_json = {"fields": [{**FIELDS[0], "label": "Why us? (150 words maximum.)", "tier": "C"}]}
+    fields = fields_for_judge(plan_json)
+    assert fields[0]["max_words"] == 150
+    entry = {"field_id": "f1", "decision": "text", "basis": ["F-REMOTE"], "why": "fact"}
+    assert check_entries([{**entry, "value": "word " * 150}], fields, answers) == []
+    assert check_entries([{**entry, "value": "word " * 151}], fields, answers) == [
+        "f1: the board takes at most 150 words; the answer has 151"
     ]

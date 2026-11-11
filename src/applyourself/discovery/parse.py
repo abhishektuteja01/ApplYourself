@@ -145,6 +145,49 @@ def yearly_salary(amount, period) -> float | None:
     return float(value) * factor
 
 
+_NUMBER = r"\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?"
+_PAY_RANGE = re.compile(
+    rf"(?P<sym>[$€£])\s*(?P<lo>{_NUMBER})\s*(?P<lok>[kK])?"
+    rf"\s*(?:-|–|—|to)\s*[$€£]?\s*(?P<hi>{_NUMBER})\s*(?P<hik>[kK])?\b"
+    r"(?:\s*(?P<code>USD|CAD|AUD|NZD|SGD|EUR|GBP|CHF)\b)?(?=(?P<tail>[^\n]{0,30}))"
+)
+_NOT_YEARLY = re.compile(
+    r"^\s*(?:/\s*|per\s+|an?\s+|)(?:hr|hour|hourly|h|mo|month|monthly|week|weekly|day|daily)\b",
+    re.IGNORECASE,
+)
+_SYMBOL_CURRENCY = {"$": "USD", "€": "EUR", "£": "GBP"}
+# A range followed by one of these is not the salary.
+_NOT_SALARY = re.compile(
+    r"^\s*(?:(?:in|of|as|a|an|usd|annual|signing|sign-on|one-time|target|cash)\s+)*"
+    r"(?:million|billion|bonus|equity|stock|stipend|relocation)\b",
+    re.IGNORECASE,
+)
+#: A posted minimum below this is a rate per hour or month, not per year.
+MIN_ANNUAL_SALARY = 20000
+
+
+def posted_pay(text) -> tuple[float, float, str] | None:
+    """The first yearly pay range a JD states ("$150,000 - $180,000",
+    "$150K–$180K USD") as (min, max, currency), or None. A range stated per
+    hour, week or month, a funding round, a bonus or equity, or a minimum
+    under `MIN_ANNUAL_SALARY` is skipped."""
+    for m in _PAY_RANGE.finditer(str(text or "")):
+        if _NOT_YEARLY.match(m.group("tail")) or _NOT_SALARY.match(m.group("tail")):
+            continue
+        lo = float(m.group("lo").replace(",", ""))
+        hi = float(m.group("hi").replace(",", ""))
+        if m.group("hik"):
+            hi *= 1000
+            lo *= 1000 if (m.group("lok") or lo < 1000) else 1
+        elif m.group("lok"):
+            lo *= 1000
+        if lo < MIN_ANNUAL_SALARY:
+            continue
+        currency = m.group("code") or _SYMBOL_CURRENCY[m.group("sym")]
+        return lo, hi, currency
+    return None
+
+
 # ---------------------------------------------------------------------
 # dates -- always UTC, so the laptop's timezone never changes a row
 # ---------------------------------------------------------------------

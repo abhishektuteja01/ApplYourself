@@ -92,6 +92,11 @@ class MergedField:
     """The input's own `maxlength`. The browser cuts a longer answer off."""
 
     @property
+    def max_words(self) -> int | None:
+        """The word cap the label or description states, or None."""
+        return words_cap(self.label, self.description)
+
+    @property
     def dom_only(self) -> bool:
         """No API counterpart, so no label, no required flag and no option list
         beyond what the rendered form itself carries."""
@@ -108,7 +113,28 @@ def is_numeric(value: object) -> bool:
     return True
 
 
-def input_problem(value: object, kind: str, max_length: int | None) -> str | None:
+# "150 words max", "(150 words maximum)", "max 150 words", "150 words or
+# fewer", "150-word limit", "no more than 150 words".
+_WORD_CAP = re.compile(
+    r"(?:\bmax(?:imum)?\.?(?:\s+of)?|\bno\s+more\s+than|\bup\s+to)\s+(\d[\d,]*)\s*-?\s*words?\b"
+    r"|\b(\d[\d,]*)\s*-?\s*words?\s+(?:max(?:imum)?\b|or\s+(?:less|fewer)\b|limit\b)",
+    re.IGNORECASE,
+)
+
+
+def words_cap(*texts: str) -> int | None:
+    """The smallest word cap any of `texts` states, or None."""
+    caps = [
+        int((m.group(1) or m.group(2)).replace(",", ""))
+        for text in texts
+        for m in _WORD_CAP.finditer(text or "")
+    ]
+    return min(caps) if caps else None
+
+
+def input_problem(
+    value: object, kind: str, max_length: int | None, max_words: int | None = None
+) -> str | None:
     """Why a text answer cannot go into this input as written, or None."""
     if not isinstance(value, str):
         return None
@@ -116,6 +142,9 @@ def input_problem(value: object, kind: str, max_length: int | None) -> str | Non
         return f"the board wants a number and the answer is text: {value!r}"
     if max_length is not None and len(value) > max_length:
         return f"the board takes at most {max_length} characters; the answer has {len(value)}"
+    words = len(value.split())
+    if max_words is not None and words > max_words:
+        return f"the board takes at most {max_words} words; the answer has {words}"
     return None
 
 

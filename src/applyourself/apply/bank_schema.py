@@ -164,7 +164,7 @@ class Salary:
     """The figure a salary question asks for in one country."""
 
     amount: float
-    currency: str = ""
+    currency: str
     markup_pct: float | None = None
     """Your own country only: a posting's minimum in `currency` times this, ahead of `amount`."""
     lanes: tuple[str, ...] = ()
@@ -344,22 +344,23 @@ def _parse_salary(raw, where: str) -> Salary | None:
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        raise AnswersError(f"{where}: must be {{amount[, currency, markup_pct, lanes]}}")
+        raise AnswersError(f"{where}: must be {{amount, currency[, markup_pct, lanes]}}")
     unknown = set(raw) - set(_SALARY_KEYS)
     if unknown:
         raise AnswersError(f"{where}: unknown keys {sorted(unknown)}")
     amount = raw.get("amount")
     if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
         raise AnswersError(f"{where}.amount: must be a positive number")
-    currency = raw.get("currency", "")
-    if currency and (not isinstance(currency, str) or not _CURRENCY.match(currency)):
+    currency = raw.get("currency")
+    if currency is None:
+        raise AnswersError(f"{where}.currency required: a three-letter ISO code, e.g. EUR")
+    if not isinstance(currency, str) or not _CURRENCY.match(currency):
         raise AnswersError(f"{where}.currency: must be a three-letter ISO code, e.g. EUR")
     markup = raw.get("markup_pct")
-    if markup is not None:
-        if isinstance(markup, bool) or not isinstance(markup, (int, float)) or markup < 0:
-            raise AnswersError(f"{where}.markup_pct: must be a number >= 0")
-        if not currency:
-            raise AnswersError(f"{where}: markup_pct needs the posting currency it applies to")
+    if markup is not None and (
+        isinstance(markup, bool) or not isinstance(markup, (int, float)) or markup < 0
+    ):
+        raise AnswersError(f"{where}.markup_pct: must be a number >= 0")
     lanes = raw.get("lanes") or []
     if not isinstance(lanes, list) or not all(isinstance(x, str) and x.strip() for x in lanes):
         raise AnswersError(f"{where}.lanes: must be a list of lane names")

@@ -386,6 +386,7 @@ def _api_field(entry: dict, file_aliases: dict[str, str]) -> list[MergedField]:
             section="questions",
             multi=bool(field.get("isMany")),
             options=options,
+            api_type=raw_type,
         )
     ]
 

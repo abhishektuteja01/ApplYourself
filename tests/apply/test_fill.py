@@ -921,6 +921,48 @@ class TestLeverConsentCheckbox:
             self._driver([self.FakeInput("hidden", "0")]).set_checkbox("x", True)
 
 
+class TestCustomLocationField:
+    def test_a_country_only_location_combobox_fills_the_country(self, answers):
+        """A custom Ashby Location question got the first spelling typed and
+        nothing else tried; the country fallback knew only the system id."""
+        from applyourself.apply.answers import answer_question
+        from applyourself.apply.bank_schema import Question
+        from applyourself.apply.reconcile import MergedField
+
+        located = MergedField(
+            id="loc", name="loc", label="Where are you based?", required=True,
+            kind="combobox", section="questions", multi=False, api_type="Location",
+        )  # fmt: skip
+        own = (answers.identity["location"],)
+        r = answer_question(Question(id="where", answers=own), located, answers, "judged:where")
+        assert r.alternates[-1] == "United States"
+        planned = field(id="loc", kind="react_select", value=r.value, alternates=r.alternates)
+        d = FakeDriver(options={"loc": ("United States", "Canada")})
+        result = fill_plan(plan(fields=[planned]), d)
+        assert result.failures == [] and d._selected["loc"] == "United States"
+
+
+class TestMissingCheckbox:
+    def test_a_box_not_on_the_page_fails_that_field_and_the_rest_fill(self):
+        """Playwright's own wait raised a TimeoutError, not a FillError, and
+        took the whole role down."""
+
+        class AbsentBox:
+            def wait_for(self, state=None, timeout=None):
+                raise TimeoutError("waiting for locator to be attached")
+
+        class MissingBoxDriver(FakeDriver):
+            _locator = D.BrowserDriver._locator
+            set_checkbox = D.BrowserDriver.set_checkbox
+
+        d = MissingBoxDriver()
+        d._page = FakePage(lambda selector: Group([AbsentBox()]))
+        p = plan(fields=[field(id="consent", kind="checkbox", value=True), field(id="q2")])
+        result = fill_plan(p, d)
+        assert result.failures == ["consent: not on the page"]
+        assert ("fill", "q2", "v") in d.calls
+
+
 class TestCaptchaWait:
     def test_submit_waits_for_captcha_when_the_plan_requires_it(self):
         d = FakeDriver()

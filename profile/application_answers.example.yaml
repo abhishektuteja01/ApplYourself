@@ -62,7 +62,7 @@ cover_letter: when_required
 #   visa_salary_floor     optional: the lowest gross salary that country's work visa
 #                         allows, {amount, currency (ISO code), per: year | month, note}
 #   salary                optional: what a salary question asks for there, {amount,
-#                         currency, markup_pct, lanes}. markup_pct (your own country
+#                         currency (required), markup_pct, lanes}. markup_pct (own country
 #                         only): a posting's minimum in `currency` times it, ahead of
 #                         amount. lanes: the lanes it answers for (absent: every lane).
 # us_person: park | yes | no — the export-control "U.S. person" question. Quote it.

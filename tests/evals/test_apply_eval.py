@@ -125,7 +125,9 @@ def test_an_entry_plan_would_ignore_fails_as_ignored():
 
 
 def test_a_persona_renders_a_computed_salary():
-    c = case("c10", {"label": "Desired pay", "kind": "text"}, {"action": "fill", "value": "120000"})
+    c = case(
+        "c10", {"label": "Desired pay", "kind": "text"}, {"action": "fill", "value": "120000 USD"}
+    )
     e = entry("c10", decision="question", question="salary")
     row = grade(c, e, Override(value="", decision="question", question="salary"))
     assert row["passed"], row
