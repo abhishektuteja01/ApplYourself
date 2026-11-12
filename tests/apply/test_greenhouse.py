@@ -281,3 +281,22 @@ class TestLoadBoard:
         stub("form_minimal")
         board = load_board("https://job-boards.greenhouse.io/GasketWorks/jobs/1000001")
         assert board.slug == "gasketworks"
+
+    def test_embed_compliance_without_single_purpose_draws_no_demographic_box(self, monkeypatch):
+        # The question API omits `single_purpose_consent`; the embed page has
+        # it, and without it the board draws no demographic consent box.
+        compliance = (
+            '"data_compliance":{"type":"gdpr","requires_processing_consent":false,'
+            '"requires_retention_consent":false,"retention_period":null,'
+            '"demographic_data_consent_applies":true,"single_purpose_consent":false}'
+        )
+        payload = load_fixture("form_demographic")
+        payload["data_compliance"] = [{"type": "gdpr", "demographic_data_consent_applies": True}]
+        monkeypatch.setattr(
+            G, "fetch_text", lambda *a, **k: load_html("form_demographic") + compliance
+        )
+        monkeypatch.setattr(G, "fetch_questions", lambda *a, **k: parse_schema(payload))
+        assert parse_schema(payload).consent  # the API alone would plan the box
+        board = load_board("https://job-boards.greenhouse.io/bearingenergy/jobs/1000004")
+        assert board.schema.consent == ()
+        assert not any(f.id.startswith("gdpr_") for f in board.reconciled.fields)

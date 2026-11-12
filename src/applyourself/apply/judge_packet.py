@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from applyourself.apply.answers import _offers_bare_yes_no
 from applyourself.apply.bank_schema import FACT_WORDING_FACTS, Answers, Question, _norm_option
 from applyourself.apply.judged import is_work_auth_basis
-from applyourself.apply.reconcile import input_problem, words_cap
+from applyourself.apply.reconcile import input_problem, sentences_cap, words_cap
 from applyourself.shared import paths
 
 CLOSED_TIERS = ("A", "A2")
@@ -53,6 +53,7 @@ class JudgeField(BaseModel):
     multi: bool = False
     max_length: int | None = None
     max_words: int | None = None
+    max_sentences: int | None = None
 
 
 class FactRef(BaseModel):
@@ -96,17 +97,19 @@ def fields_for_judge(plan_json: dict[str, Any]) -> list[dict[str, Any]]:
             ):
                 continue
             seen.add(fid)
+            label, description = str(f.get("label") or ""), str(f.get("description") or "")
             out.append(
                 JudgeField(
                     id=fid,
-                    label=str(f.get("label") or ""),
+                    label=label,
                     kind=str(f.get("kind") or ""),
                     options=[str(o) for o in f.get("options") or []],
-                    description=str(f.get("description") or ""),
+                    description=description,
                     required=bool(f.get("required")),
                     multi=bool(f.get("multi")) or f.get("kind") in MULTI_KINDS,
                     max_length=f.get("max_length"),
-                    max_words=words_cap(str(f.get("label") or ""), str(f.get("description") or "")),
+                    max_words=words_cap(label, description),
+                    max_sentences=sentences_cap(label, description),
                 ).model_dump()
             )
     return out
@@ -230,6 +233,26 @@ def _multi(field: dict[str, Any]) -> bool:
     return bool(field.get("multi")) or field.get("kind") in MULTI_KINDS
 
 
+def _fit_problem(value: object, field: dict[str, Any]) -> str | None:
+    return input_problem(
+        value,
+        str(field.get("kind") or ""),
+        field.get("max_length"),
+        field.get("max_words"),
+        field.get("max_sentences"),
+    )
+
+
+def _bank_text(q: Question, answers: Answers) -> str | None:
+    """The text a bank question puts into a field with no options, when it is
+    known before the fill: a role-file answer or the first spelling."""
+    if q.computed:
+        return None
+    if q.role_file:
+        return (getattr(answers, "company_answers", {}) or {}).get(q.role_file)
+    return q.answers[0] if q.answers else None
+
+
 def _entry_problems(
     entry: JudgeEntry, field: dict[str, Any], answers: Answers, given: set[str]
 ) -> list[str]:
@@ -240,8 +263,15 @@ def _entry_problems(
     errs += [f"{where} {entry.decision} takes no {k}" for k in sorted(present - wanted)]
     if errs:
         return errs
-    if entry.decision == "question" and answers.question(str(entry.question)) is None:
-        errs.append(f"{where} question {entry.question!r} is not in the bank")
+    if entry.decision == "question":
+        q = answers.question(str(entry.question))
+        if q is None:
+            errs.append(f"{where} question {entry.question!r} is not in the bank")
+        elif not field.get("options") and (problem := _fit_problem(_bank_text(q, answers), field)):
+            errs.append(
+                f"{where} bank answer {q.id}: {problem}; write a `text` cut of that answer "
+                f"within the limit, adding nothing, basis {q.source or q.id}"
+            )
     if entry.decision in ("option", "text"):
         basis = entry.basis or []
         if not basis:
@@ -274,12 +304,7 @@ def _entry_problems(
                 errs.append(f"{where} text on a field with options; use option")
             if not isinstance(entry.value, str) or not entry.value.strip():
                 errs.append(f"{where} text value is one non-empty string")
-            elif problem := input_problem(
-                entry.value,
-                str(field.get("kind") or ""),
-                field.get("max_length"),
-                field.get("max_words"),
-            ):
+            elif problem := _fit_problem(entry.value, field):
                 errs.append(f"{where} {problem}")
     options = tuple(field.get("options") or ())
     if entry.decision == "fact" and options and not _offers_bare_yes_no(options):

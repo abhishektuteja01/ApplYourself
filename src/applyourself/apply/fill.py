@@ -114,6 +114,11 @@ class FillResult:
     submit guard has to subtract these from the plan's unmapped[], or a role
     parks over a question that is now answered."""
 
+    revealed: list[dict] = dc_field(default_factory=list)
+    """Required fields the page drew only once the fill answered another one
+    (race after "not Hispanic", "Which ones?" after "Yes") that nothing could
+    answer, as `blocking_details` rows. The submit guard refuses on these."""
+
     manifest: list[dict] = dc_field(default_factory=list)
     """`form_manifest()` — every question and what the page actually held for
     it, read after the fill and before any click. Published on the result (and
@@ -435,7 +440,94 @@ def fill_plan(
         driver.wait(FIELD_PACE_MS)
 
     _probe_parked_selects(driver, plan, result, answers)
+    _fill_revealed(driver, plan, result, answers)
     return result
+
+
+#: Rescans after filling a revealed field, which can reveal another.
+REVEAL_PASSES = 3
+
+
+def _plan_ids(plan: Plan) -> set[str]:
+    ids = {f.id for f in plan.fields} | {f.dom_path for f in plan.fields if f.dom_path}
+    ids |= {u.id for u in (*plan.unmapped, *plan.draftable)} | {s.id for s in plan.skipped}
+    ids |= {f.id for f in plan.files} | {f.name for f in plan.files}
+    return ids
+
+
+def _fill_revealed(driver, plan: Plan, result: FillResult, answers: Answers | None = None) -> None:
+    """Answer the required fields the fill itself revealed, or record them.
+
+    The plan is built before the page is touched, so a field another answer
+    reveals is in no list of it. Rescan for required fields the plan does not
+    name, resolve each through `answers.resolve` (a react-select's options
+    read first) and fill it; one nothing answers lands in `result.revealed`,
+    which `blocking_questions` refuses on, named by its label.
+    """
+    if not hasattr(driver, "required_fields"):
+        return
+    known = _plan_ids(plan)
+    for _ in range(REVEAL_PASSES):
+        try:
+            found = [f for f in driver.required_fields() if f.id not in known]
+        except Exception as exc:  # noqa: BLE001 - the browser's own check still guards the click
+            log.warning("rescan for revealed fields failed: %s", exc)
+            return
+        if not found:
+            return
+        for field in found:
+            known.add(field.id)
+            reason = _fill_one_revealed(driver, field, result, answers)
+            if reason:
+                result.revealed.append(
+                    {
+                        "id": field.id,
+                        "label": field.label or field.id,
+                        "tier": "",
+                        "reason": f"revealed after the fill; {reason}",
+                        "source": "",
+                        "options": [o.label for o in field.options],
+                        "description": field.description,
+                    }
+                )
+
+
+def _fill_one_revealed(
+    driver, field: MergedField, result: FillResult, answers: Answers | None
+) -> str:
+    """Fill one revealed field; "" when it took, else why not."""
+    if field.kind == "react_select" and not field.options:
+        try:
+            options = driver.open_options(field.id)
+            driver.close()
+        except Exception as exc:  # noqa: BLE001 - unreadable options park the field
+            return f"its options could not be read: {exc}"
+        result.observed_options[field.id] = options
+        field = replace(field, options=tuple(MergedOption(label=o) for o in options))
+    if answers is None:
+        return "no answer bank loaded"
+    resolution = resolve(field, answers)
+    if resolution.action != "fill":
+        return resolution.reason or "nothing answers it"
+    plan_field = FieldPlan(
+        id=field.id,
+        name=field.name,
+        label=field.label,
+        kind=field.kind,
+        section=field.section,
+        required=True,
+        multi=field.multi,
+        value=resolution.value,
+        tier=resolution.tier,
+        options=tuple(o.label for o in field.options),
+    )
+    try:
+        outcome = _apply_field(driver, plan_field, result, answers)
+    except FillError as exc:
+        return str(exc)
+    outcome.note = f"revealed after the fill ({resolution.tier})"
+    result.outcomes.append(outcome)
+    return ""
 
 
 def _probe_parked_selects(
@@ -518,9 +610,11 @@ def blocking_questions(plan: Plan, result: FillResult) -> tuple[str, ...]:
 
     `Plan.required_parked`, not all of `plan.unmapped`: an optional field the
     judge asked about parks too, and is never a reason to refuse the click.
+    A required field the fill revealed and nothing answered is named by label.
     """
     recovered = set(result.recovered)
-    return tuple(i for i in plan.required_parked if i not in recovered)
+    parked = tuple(i for i in plan.required_parked if i not in recovered)
+    return parked + tuple(r["label"] for r in result.revealed)
 
 
 def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
@@ -553,7 +647,7 @@ def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
                 "description": u.description,
             }
         )
-    return tuple(rows)
+    return (*rows, *result.revealed)
 
 
 def read_back(driver, field_id: str, planned_kind: str) -> str:

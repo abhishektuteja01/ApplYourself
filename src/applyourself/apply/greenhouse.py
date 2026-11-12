@@ -17,13 +17,14 @@ Network lives here; the parsing either side of it is pure and tested offline.
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import urlparse
 
 from applyourself.apply.domscan import FormScan, scan_form
 from applyourself.apply.reconcile import Reconciled, reconcile
-from applyourself.apply.schema import BoardSchema, fetch_questions
+from applyourself.apply.schema import BoardSchema, consent_boxes, fetch_questions
 from applyourself.shared import job_boards
 from applyourself.shared.http_client import CareersError, fetch_text
 
@@ -37,6 +38,9 @@ _FORM_ACTION = re.compile(
     r'<form[^>]*\baction="/embed/job_app\?for=(?P<slug>[^&"]+)&(?:amp;)?token=(?P<token>\d+)"',
     re.IGNORECASE,
 )
+# The embed page's own `data_compliance`, a flat object. Unlike the question
+# API's, it carries `single_purpose_consent`, which decides the boxes drawn.
+_EMBED_COMPLIANCE = re.compile(r'"data_compliance":(\{[^{}]*\})')
 
 
 class ApplyUrlError(Exception):
@@ -113,6 +117,18 @@ def slug_from_form(html: str, token: str) -> str:
     return match.group("slug")
 
 
+def embed_compliance(html: str) -> dict[str, object] | None:
+    """The embed page's `data_compliance` object, or None when it has none."""
+    match = _EMBED_COMPLIANCE.search(html or "")
+    if match is None:
+        return None
+    try:
+        parsed = json.loads(match.group(1))
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def fetch_form(posting: Posting, timeout: int = 30) -> tuple[str, str]:
     """(html, slug) for a posting. Raises PostingExpired on 404."""
     try:
@@ -138,6 +154,14 @@ def load_board(url: str, timeout: int = 30) -> BoardForm:
         )
     scan = scan_form(html)
     schema = fetch_questions(slug, posting.token, timeout=timeout)
+    compliance = embed_compliance(html)
+    if compliance is not None:
+        schema = replace(
+            schema,
+            consent=consent_boxes(
+                [compliance], schema.company_name, demographic=bool(schema.demographic)
+            ),
+        )
     return BoardForm(
         posting=posting,
         slug=slug,

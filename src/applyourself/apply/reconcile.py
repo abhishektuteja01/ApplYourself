@@ -14,7 +14,7 @@ clean label, the description and the option list for selects. A field the DOM
 renders is always planned, whether the API declared it or not — that is the
 regression this module exists to prevent. The one exception runs the other way:
 the GDPR consent boxes are drawn client-side only, so they come from the API's
-`data_compliance` (see `schema._CONSENT_BOXES`).
+`data_compliance` (see `schema.consent_boxes`).
 
 `MergedField` is also the shared field model: Lever and Ashby emit it directly.
 
@@ -97,6 +97,11 @@ class MergedField:
         return words_cap(self.label, self.description)
 
     @property
+    def max_sentences(self) -> int | None:
+        """The sentence cap the label or description states, or None."""
+        return sentences_cap(self.label, self.description)
+
+    @property
     def dom_only(self) -> bool:
         """No API counterpart, so no label, no required flag and no option list
         beyond what the rendered form itself carries."""
@@ -132,8 +137,47 @@ def words_cap(*texts: str) -> int | None:
     return min(caps) if caps else None
 
 
+# "in 2-5 sentences", "1–2 sentences", "3 sentences max": the upper bound.
+_SENTENCE_CAP = re.compile(r"\b(?:\d+\s*[-–—]\s*|\d+\s+to\s+)?(\d+)\s+sentences?\b", re.IGNORECASE)
+
+# A sentence ends at . ! or ? followed by whitespace or the end, unless the
+# full stop closes a common abbreviation. A decimal ("6.67 s", "p=0.109") has
+# no space after its point, so never ends one.
+_SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
+_ABBREVIATION = re.compile(r"\b(?:e\.g|i\.e|vs|approx|incl|cf|al|Dr|Mr|Mrs|Ms|U\.S|U\.K)$")
+# "at least 3 sentences" is a floor, not a cap.
+_SENTENCE_FLOOR = re.compile(r"(?:\bat\s+least|\bmin(?:imum)?\.?(?:\s+of)?)\s*$", re.IGNORECASE)
+
+
+def sentences_cap(*texts: str) -> int | None:
+    """The smallest sentence cap any of `texts` states, or None."""
+    caps = [
+        int(m.group(1))
+        for text in texts
+        for m in _SENTENCE_CAP.finditer(text or "")
+        if not _SENTENCE_FLOOR.search(text[: m.start()])
+    ]
+    return min(caps) if caps else None
+
+
+def count_sentences(text: str) -> int:
+    """Sentences in `text`; a trailing fragment with no end mark counts as one."""
+    count, start = 0, 0
+    for m in _SENTENCE_END.finditer(text):
+        if m.group() == "." and _ABBREVIATION.search(text[: m.start()]):
+            continue
+        if text[start : m.start()].strip():
+            count += 1
+        start = m.end()
+    return count + (1 if text[start:].strip() else 0)
+
+
 def input_problem(
-    value: object, kind: str, max_length: int | None, max_words: int | None = None
+    value: object,
+    kind: str,
+    max_length: int | None,
+    max_words: int | None = None,
+    max_sentences: int | None = None,
 ) -> str | None:
     """Why a text answer cannot go into this input as written, or None."""
     if not isinstance(value, str):
@@ -145,6 +189,9 @@ def input_problem(
     words = len(value.split())
     if max_words is not None and words > max_words:
         return f"the board takes at most {max_words} words; the answer has {words}"
+    sentences = count_sentences(value) if max_sentences is not None else 0
+    if max_sentences is not None and sentences > max_sentences:
+        return f"the board takes at most {max_sentences} sentences; the answer has {sentences}"
     return None
 
 

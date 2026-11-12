@@ -16,7 +16,14 @@ from applyourself.apply.judge_packet import (
     to_override,
 )
 from applyourself.apply.plan import build_plan
-from applyourself.apply.reconcile import MergedField, MergedOption, Reconciled
+from applyourself.apply.reconcile import (
+    MergedField,
+    MergedOption,
+    Reconciled,
+    count_sentences,
+    input_problem,
+    sentences_cap,
+)
 
 BANK = Path(__file__).parent / "fixtures" / "application_answers.yaml"
 
@@ -286,3 +293,36 @@ def test_a_word_cap_in_the_label_is_held_to(answers):
     assert check_entries([{**entry, "value": "word " * 151}], fields, answers) == [
         "f1: the board takes at most 150 words; the answer has 151"
     ]
+
+
+def test_a_bank_answer_over_the_limit_is_sent_back_as_a_cut(answers):
+    from applyourself.apply.bank_schema import Question
+
+    long = Question(id="why_ai", answers=("x" * 300,), source="B-AI-01")
+    answers = replace(answers, questions=(*answers.questions, long))
+    fields = [{**FIELDS[0], "max_length": 255}]
+    entry = {"field_id": "f1", "decision": "question", "question": "why_ai", "why": "bank"}
+    assert check_entries([entry], fields, answers) == [
+        "f1: bank answer why_ai: the board takes at most 255 characters; the answer has 300; "
+        "write a `text` cut of that answer within the limit, adding nothing, basis B-AI-01"
+    ]
+
+
+@pytest.mark.parametrize(
+    "label,cap",
+    [
+        ("Please describe in 2-5 sentences", 5),
+        ("In 1–2 sentences, why this role?", 2),
+        ("At least 3 sentences please", None),
+    ],
+)
+def test_a_sentence_cap_in_the_label(label, cap):
+    assert sentences_cap(label) == cap
+
+
+def test_decimals_and_abbreviations_end_no_sentence():
+    text = "Latency fell to 6.67 s, e.g. on p=0.109 runs vs. the baseline. Recall hit 0.831."
+    assert count_sentences(text) == 2
+    assert input_problem(text, "text", None, max_sentences=1) == (
+        "the board takes at most 1 sentences; the answer has 2"
+    )

@@ -33,26 +33,29 @@ _FLAT_SOURCES = ("questions", "location_questions")
 
 # GDPR consent boxes. Greenhouse draws them client-side only, so the served
 # form the DOM scan reads never has them, yet the browser refuses a submit
-# with a required one unticked. `data_compliance` flag -> the box's `name`,
-# whether it renders required, and its label as Greenhouse renders it
-# (`{company}` is the payload's `company_name`). The retention box is left
-# out: it renders optional, and disabled until processing consent is given.
-_CONSENT_BOXES = (
-    (
-        "demographic_data_consent_applies",
-        "gdpr_demographic_data_consent_given",
-        True,
-        "By checking this box, I consent to {company} collecting, storing, and "
-        "processing my responses to the demographic data surveys above.",
-    ),
-    (
-        "requires_processing_consent",
-        "gdpr_processing_consent_given",
-        True,
-        "By checking this box, I agree to allow {company} to store and process my "
-        "data for the purpose of considering my eligibility regarding my current "
-        "application for employment.",
-    ),
+# with a required one unticked. Labels as Greenhouse renders them (`{company}`
+# is the payload's `company_name`). The board's rule, from its JS: with
+# `single_purpose_consent`, a processing box per `requires_processing_consent`
+# and a demographic box per `demographic_data_consent_applies` when the form
+# has demographic questions; without it, one `gdpr_consent_given` box when a
+# `retention_period` is set. The retention box is left out: it renders
+# optional, and disabled until processing consent is given.
+_DEMOGRAPHIC_CONSENT = (
+    "gdpr_demographic_data_consent_given",
+    "By checking this box, I consent to {company} collecting, storing, and "
+    "processing my responses to the demographic data surveys above.",
+)
+_PROCESSING_CONSENT = (
+    "gdpr_processing_consent_given",
+    "By checking this box, I agree to allow {company} to store and process my "
+    "data for the purpose of considering my eligibility regarding my current "
+    "application for employment.",
+)
+_GDPR_CONSENT = (
+    "gdpr_consent_given",
+    "{company} has my consent to collect, store, and process my data for the "
+    "purpose of considering me for employment, and for up to {retention_period} "
+    "days thereafter.",
 )
 
 
@@ -185,7 +188,10 @@ def _parse_demographic(raw) -> DemographicQuestion:
     )
 
 
-def _parse_consent(raw, company: str) -> tuple[ConsentBox, ...]:
+def consent_boxes(raw, company: str, demographic: bool) -> tuple[ConsentBox, ...]:
+    """The consent boxes the board draws for a list of `data_compliance`
+    groups. The question API leaves `single_purpose_consent` out; a group
+    without it is read as single-purpose."""
     if raw is None:
         return ()
     if not isinstance(raw, list):
@@ -194,11 +200,25 @@ def _parse_consent(raw, company: str) -> tuple[ConsentBox, ...]:
     for group in raw:
         if not isinstance(group, dict):
             raise SchemaError(f"data_compliance entry is not an object: {group!r}")
-        for flag, name, required, label in _CONSENT_BOXES:
-            if group.get(flag) and name not in boxes:
-                boxes[name] = ConsentBox(
-                    name=name, label=label.format(company=company), required=required
-                )
+        drawn = []
+        if group.get("single_purpose_consent", True):
+            if group.get("demographic_data_consent_applies") and demographic:
+                drawn.append(_DEMOGRAPHIC_CONSENT)
+            if group.get("requires_processing_consent"):
+                drawn.append(_PROCESSING_CONSENT)
+        elif group.get("retention_period"):
+            drawn.append(_GDPR_CONSENT)
+        for name, label in drawn:
+            boxes.setdefault(
+                name,
+                ConsentBox(
+                    name=name,
+                    label=label.format(
+                        company=company, retention_period=group.get("retention_period")
+                    ),
+                    required=True,
+                ),
+            )
     return tuple(boxes.values())
 
 
@@ -242,7 +262,9 @@ def parse_schema(payload) -> BoardSchema:
         demographic=tuple(demographic),
         company_name=company_name,
         title=str(payload.get("title") or ""),
-        consent=_parse_consent(payload.get("data_compliance"), company_name),
+        consent=consent_boxes(
+            payload.get("data_compliance"), company_name, demographic=dq is not None
+        ),
     )
 
 

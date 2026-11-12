@@ -2398,6 +2398,12 @@ class TestRefusedFieldNames:
     def test_a_valid_form_reports_nothing(self):
         assert D.refused_field_names([row(name="q1"), box("q[]", checked=True)]) == ()
 
+    def test_a_nameless_hidden_input_is_named_by_its_wrappers_field(self):
+        """A react-select's `requiredInput` has no name or id; "INPUT" names
+        nothing a person can find."""
+        rows = [row(valueMissing=True, invalid=True, wrapper="race", tag="INPUT")]
+        assert D.refused_field_names(rows) == ("race",)
+
     def test_names_are_deduped_in_first_seen_order(self):
         rows = [
             row(name="b", valueMissing=True, invalid=True),
@@ -2494,3 +2500,32 @@ class TestTheReadBackComparison:
 
     def test_greenhouses_country_shows_its_dial_code(self):
         assert F._matches("country", "react_select", "United States", "+1")
+
+
+class TestRevealedFields:
+    """A required field another answer reveals is in no list of the plan."""
+
+    def test_a_revealed_field_nothing_answers_blocks_the_click_by_label(self, answers):
+        from applyourself.apply.reconcile import MergedField
+
+        class Reveals(FakeDriver):
+            def required_fields(self):
+                return (
+                    MergedField(
+                        id="6c459a25",
+                        name="6c459a25",
+                        label="Which ones?",
+                        required=True,
+                        kind="text",
+                        section="questions",
+                        multi=False,
+                    ),
+                )
+
+        p, d = plan(fields=[field()]), Reveals()
+        result = fill_plan(p, d, answers)
+        assert F.blocking_questions(p, result) == ("Which ones?",)
+        assert [r["label"] for r in F.blocking_details(p, result)] == ["Which ones?"]
+        with pytest.raises(F.SubmitGuardError, match="Which ones\\?"):
+            F.submit(p, result, d)
+        assert ("click_submit", p.submit_selector) not in d.calls

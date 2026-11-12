@@ -11,7 +11,9 @@ import re
 import time
 from pathlib import Path
 
+from applyourself.apply.domscan import scan_form
 from applyourself.apply.plan import Plan
+from applyourself.apply.reconcile import MergedField, MergedOption
 from applyourself.apply.reconcile import is_numeric as _is_numeric
 
 log = logging.getLogger(__name__)
@@ -169,8 +171,11 @@ def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
     """The field names to report from one `invalid_fields` DOM read.
 
     `rows` is every validating control in the form, each as
-    `{name, type, checked, valueMissing, invalid, fallback}`. Pure, so the
-    suite can cover the grouping the browser read cannot.
+    `{name, type, checked, valueMissing, invalid, fallback, wrapper, tag}`:
+    `fallback` is the control's id, `wrapper` the id (else label) of the field
+    its nearest wrapper holds — a react-select's hidden `requiredInput` has no
+    name or id of its own — and `tag` the last resort. Pure, so the suite can
+    cover the grouping the browser read cannot.
 
     A required checkbox *group* is satisfied by one tick, but Greenhouse marks
     every box in the group `required`, so the seven unticked siblings stay
@@ -213,7 +218,13 @@ def refused_field_names(rows: list[dict]) -> tuple[str, ...]:
         if satisfied_group:
             continue
         for member in members:
-            label = member.get("name") or member.get("fallback") or ""
+            label = (
+                member.get("name")
+                or member.get("fallback")
+                or member.get("wrapper")
+                or member.get("tag")
+                or ""
+            )
             if label and label not in out:
                 out.append(label)
     return tuple(out)
@@ -742,6 +753,19 @@ class BrowserDriver:
             """(sel) => {
                 const form = document.querySelector(sel);
                 if (!form) return [];
+                const FIELD = '[role="combobox"][id], input[id]:not([type="hidden"]), '
+                    + 'select[id], textarea[id]';
+                const wrapper = (el) => {
+                    let node = el.parentElement;
+                    for (let k = 0; k < 4 && node && node !== form; k++) {
+                        const inner = [...node.querySelectorAll(FIELD)].find(x => x !== el);
+                        if (inner) return inner.id;
+                        const label = node.querySelector("label");
+                        if (label && label.textContent.trim()) return label.textContent.trim();
+                        node = node.parentElement;
+                    }
+                    return "";
+                };
                 return [...form.elements]
                     .filter(el => el.willValidate)
                     .map(el => ({
@@ -750,12 +774,34 @@ class BrowserDriver:
                         checked: !!el.checked,
                         valueMissing: !!(el.validity && el.validity.valueMissing),
                         invalid: !el.checkValidity(),
-                        fallback: el.id || el.tagName,
+                        fallback: el.id || "",
+                        wrapper: el.id || el.name ? "" : wrapper(el),
+                        tag: el.tagName,
                     }));
             }""",
             FORM_SELECTOR,
         )
         return refused_field_names(rows)
+
+    def required_fields(self) -> tuple[MergedField, ...]:
+        """Every required field the page shows right now, read by the same DOM
+        scan the plan was built from. Labels and kinds only: no API enrichment,
+        and a react-select's options are read by opening it."""
+        return tuple(
+            MergedField(
+                id=f.id,
+                name=f.name,
+                label=f.label,
+                required=True,
+                kind=f.kind,
+                section=f.section,
+                multi=f.multi,
+                options=tuple(MergedOption(label=o.label, value=o.value) for o in f.options),
+                max_length=f.max_length,
+            )
+            for f in scan_form(self.page.content()).fields
+            if f.required
+        )
 
     def submit_disabled_now(self, selector: str) -> bool:
         """Re-read `aria-disabled` live — `plan.submit_disabled` is a scan-time
@@ -850,6 +896,11 @@ class LeverBrowserDriver(BrowserDriver):
                 return
         raise FillError(f"{field_id}: no checkbox input")
 
+    def required_fields(self) -> tuple[MergedField, ...]:
+        """Not read on Lever: its form is not the Greenhouse markup the scan
+        reads. The browser's own `invalid_fields` check still guards the click."""
+        return ()
+
     def goto(self, url: str) -> None:
         """Base navigation, then clear the cookie banner before anything is
         written. Its buttons render *over* the first questions, so a click on a
@@ -926,6 +977,42 @@ class LeverBrowserDriver(BrowserDriver):
         if not (hidden.first.input_value() or "").strip():
             return ""
         return shown
+
+
+#: Ashby's question title; a required one also carries a hashed `_required_` class.
+ASHBY_TITLE_CLASS = "ashby-application-form-question-title"
+ASHBY_REQUIRED_CLASS = "_required_"
+
+# One row per required field entry: its path, title, a kind where the control
+# names it ("select" where only `resolve_kind` can tell), and the labels of
+# its radio or checkbox options.
+_REQUIRED_ENTRIES_SCRIPT = """(entries, cls) => {
+    const out = [];
+    const seen = new Set();
+    for (const el of entries) {
+        const path = el.getAttribute('data-field-path');
+        const title = el.querySelector('.' + cls.title);
+        if (!path || seen.has(path) || !title) continue;
+        if (!(title.className || '').includes(cls.required)) continue;
+        seen.add(path);
+        let kind = 'select';
+        const text = el.querySelector('input:not([type="radio"]):not([type="checkbox"])');
+        if (el.querySelector('input[type="file"]')) kind = 'file';
+        else if (el.querySelector('textarea')) kind = 'textarea';
+        else if (text && !el.querySelector('[role="combobox"]')) {
+            const t = (text.getAttribute('type') || 'text').toLowerCase();
+            kind = t === 'number' ? 'number' : t === 'tel' ? 'tel' : 'text';
+        }
+        const options = [...el.querySelectorAll('input[type="radio"], input[type="checkbox"]')]
+            .map(box => {
+                const label = box.id && el.querySelector(`label[for="${box.id}"]`);
+                return (label ? label.textContent : box.name || '').trim();
+            })
+            .filter(Boolean);
+        out.push({path, label: title.textContent.trim(), kind, options});
+    }
+    return out;
+}"""
 
 
 class AshbyBrowserDriver(BrowserDriver):
@@ -1047,6 +1134,35 @@ class AshbyBrowserDriver(BrowserDriver):
             # one choice into a tick.
             return "checkbox"
         return planned
+
+    def required_fields(self) -> tuple[MergedField, ...]:
+        """Every field entry whose title is marked required, keyed by its
+        `data-field-path`. A choice widget's kind comes from `resolve_kind`;
+        radio and checkbox options are their labels."""
+        rows = self.page.eval_on_selector_all(
+            "[data-field-path]",
+            _REQUIRED_ENTRIES_SCRIPT,
+            {"title": ASHBY_TITLE_CLASS, "required": ASHBY_REQUIRED_CLASS},
+        )
+        out = []
+        for row in rows:
+            kind = row["kind"]
+            if kind == "select":
+                kind = self.resolve_kind(row["path"], kind)
+            options = ("Yes", "No") if kind == "yesno" else tuple(row["options"])
+            out.append(
+                MergedField(
+                    id=row["path"],
+                    name=row["path"],
+                    label=row["label"],
+                    required=True,
+                    kind=kind,
+                    section="questions",
+                    multi=kind == "checkbox_group",
+                    options=tuple(MergedOption(label=o) for o in options),
+                )
+            )
+        return tuple(out)
 
     # --- combobox -----------------------------------------------------------
 
