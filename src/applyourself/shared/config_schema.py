@@ -166,6 +166,7 @@ class Settings(_Strict):
     }
     schema_version: int | None = None
     table_path: str | None = None
+    sheet_submittable_cutoff: Annotated[int, Field(ge=0, le=100)] | None = None
     tailor_parallel: int | None = None
     judge_parallel: Annotated[int, Field(ge=1)] | None = None
     tailor_stagger_seconds: int | None = None

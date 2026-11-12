@@ -2,7 +2,8 @@
 `table_path`) that renders it.
 
 `queue()` is computed, never read back from the sheet: every role scored at or
-above its lane's cutoff (`score_filter.lane_cutoffs`, `score_store.view`) that is
+above its lane's cutoff (`score_filter.lane_cutoffs`, `score_store.view`), or at
+or above settings.yaml `sheet_submittable_cutoff` when /apply can fill it, that is
 in the live view (`clean.parquet`), whose state is not past tailored or closed,
 and whose status is not Applied or Closed; a role a judged (not legacy) score
 says skip (on a v2 answer: a blocker or a zero rule) only once it has a resume
@@ -152,6 +153,9 @@ class Snapshot:
     jd_links: dict[str, str]
     stored_urls: dict[str, dict]
     cool_days: int
+    # settings.yaml sheet_submittable_cutoff: a role /apply can fill joins from
+    # this score when below its lane's cutoff. None: the lane's cutoff only.
+    submittable_cutoff: int | None = None
 
 
 def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapshot:
@@ -186,6 +190,7 @@ def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapsh
         cool_days=cooldown.cooldown_days(config),
         jd_links=links,
         stored_urls=apply_url.load(),
+        submittable_cutoff=config.get("sheet_submittable_cutoff"),
     )
 
 
@@ -285,13 +290,18 @@ def queue(snap: Snapshot | None = None) -> list[dict[str, str]]:
     scored = view(paths.SCORED)[["job_id", "vertical", "fit_score", "suggested_action", "basis"]]
     cuts = lane_cutoffs()
     floor = min(cuts.values())  # a lane no longer configured: the lowest line
-    scored = scored[scored["fit_score"] >= scored["vertical"].map(cuts).fillna(floor)]
+    line = scored["vertical"].map(cuts).fillna(floor)
+    low = snap.submittable_cutoff
+    scored = scored.assign(line=line)
+    scored = scored[scored["fit_score"] >= (line if low is None else line.clip(upper=low))]
     out = []
     for r in scored.sort_values(["fit_score", "job_id"], ascending=[False, True]).itertuples():
         live = snap.live.get(r.job_id)
         stored = str((snap.states.get(r.job_id) or {}).get("state") or "")
         if live is None or stored in _DONE | _CLOSED:
             continue
+        if r.fit_score < r.line and route(r.job_id, snap).kind != apply_url.SUBMITTABLE:
+            continue  # below the lane's line, in only through sheet_submittable_cutoff
         if (
             r.suggested_action == "skip"
             and r.basis in ("judged", "v1")

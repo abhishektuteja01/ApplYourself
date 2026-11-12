@@ -90,6 +90,38 @@ def test_each_lane_has_its_own_line_and_an_unknown_lane_the_lowest(tmp_path, mon
     assert [r["name"] for r in sheet.queue()] == ["bbbb2222", "cccc3333"]
 
 
+def test_below_the_lane_line_only_a_submittable_role_joins_from_the_lower_line(
+    tmp_path, monkeypatch
+):
+    _world(tmp_path, monkeypatch)  # fixture line: primary 80
+    (tmp_path / "profile" / "settings.yaml").write_text(
+        yaml.safe_dump({"table_path": "sheet.xlsx", "sheet_submittable_cutoff": 72}),
+        encoding="utf-8",
+    )
+    write_clean(
+        tmp_path / "clean.parquet",
+        *(
+            {"job_id": j, "company": "Acme", "title": "Eng", "source": "manual", "url": u}
+            for j, u in (
+                ("aaaa1111", GH),
+                ("bbbb2222", "https://acme.example/careers/1"),
+                ("cccc3333", GH),
+            )
+        ),
+    )
+    scores = pd.DataFrame(
+        {
+            "job_id": ["aaaa1111", "bbbb2222", "cccc3333"],
+            "vertical": ["example_primary"] * 3,
+            "fit_score": [75.0, 75.0, 71.0],
+            "suggested_action": ["tailor"] * 3,
+            "basis": ["judged"] * 3,
+        }
+    )
+    monkeypatch.setattr(sheet, "view", lambda _path: scores)
+    assert [r["name"] for r in sheet.queue()] == ["aaaa1111"]
+
+
 def test_status_follows_the_records(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
     folder = "lane/2026-09-28_acme_eng_aaaa1111"
