@@ -461,8 +461,8 @@ def start(
     `stale_only` takes only judged rows whose input hash changed; a row with
     no hash is never stale; `profile_changed` counts the judged rows whose
     digest differs from today's. `count_only` returns the counts and writes
-    nothing. An open run is resumed when no selector is given, refused
-    otherwise. A run staged for the old judge is closed instead: its answered
+    nothing. An open run is resumed when no selector is given, only its
+    `vertical` slices when that is the one selector, refused otherwise. A run staged for the old judge is closed instead: its answered
     slices are kept (`basis: v1`), the rest restaged under today's packet
     (`restaged`)."""
     run = load_run(staging)
@@ -482,8 +482,13 @@ def start(
             f.unlink()
         run = None
     if run is not None:
-        if rescore or stale_only or vertical or job_ids:
+        if rescore or stale_only or job_ids:
             raise RunOpen("a /score run is still open: run `/score` to finish it first")
+        if vertical:
+            run = {
+                **run,
+                "slices": {n: m for n, m in run["slices"].items() if m["vertical"] == vertical},
+            }
         return {
             "dropped": {},
             "first_dropped": {},

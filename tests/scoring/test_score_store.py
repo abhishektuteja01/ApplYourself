@@ -263,6 +263,28 @@ class TestStart:
         with pytest.raises(score_store.RunOpen):
             _start(env, scfg, rescore=True)
 
+    def test_open_run_resumes_one_lane(self, env, scfg):
+        _clean(
+            env,
+            [
+                {"job_id": "aaaaaaaa"},
+                {
+                    "job_id": "bbbbbbbb",
+                    "title": "Sprocket Compliance Analyst",
+                    "company": "Beta",
+                    "vertical": "example_secondary",
+                },
+            ],
+        )
+        _start(env, scfg)
+        res = _start(env, scfg, vertical="example_secondary")
+        assert res["resumed"] and res["judge"] == 1
+        assert all("slice_example_secondary_" in line for line in res["lines"])
+        assert _start(env, scfg, vertical="example_tertiary")["lines"] == []
+        assert len(score_store.load_run(env["staging"])["slices"]) == 2  # nothing dropped
+        with pytest.raises(score_store.RunOpen):
+            _start(env, scfg, vertical="example_secondary", rescore=True)
+
     def test_already_scored_rows_skipped_unless_all(self, env, scfg):
         _clean(env, [{"job_id": "aaaaaaaa"}])
         _start(env, scfg)

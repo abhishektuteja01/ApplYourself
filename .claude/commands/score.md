@@ -18,9 +18,10 @@ allowed-tools:
    `uv run config get settings judge_parallel` agents; start the next batch
    when one finishes. A run of more than about 50 lines (`--all`) is too long
    for one session: tell the user to run `bash scripts/stages/score.sh --all`
-   instead, then stop.
+   instead, then stop. With `--vertical`, run every line here.
 3. `uv run score finish`. Exit 0: report its first line, stop.
-   Exit 1: spawn its `judge ...` lines once the same way, run `finish` again.
-   Still exit 1: report its `bad` lines and stop.
+   Exit 1: spawn its `judge ...` lines once the same way (with `--vertical V`,
+   the lines of `uv run score start --vertical V` instead), run `finish` again.
+   Still exit 1: report its `bad` lines (with `--vertical V`, only V's) and stop.
 
 Never read, edit or delete files in `jobs/scored.staging/`.

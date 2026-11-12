@@ -18,7 +18,7 @@ waits); each wait is in run.json `waits`, each earlier run in the stage's
 `passes`. A dry run never waits.
 
   DRY_RUN=1          same as --dry-run: the stages print what they would run
-  STAGE_LIMIT=N      passed to the stages: caps the roles tailor and apply_prep take
+  STAGE_LIMIT=N      passed to the stages: caps the roles tailor and apply_prep take, the judges score starts
   SKIP_STAGES="a b"  leave those stages out; run.json marks them `skipped`
   STAGES_DIR=D       run the stage scripts from D (tests)
 
