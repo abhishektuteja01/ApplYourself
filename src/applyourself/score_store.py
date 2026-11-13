@@ -133,17 +133,13 @@ def view(
 ) -> pd.DataFrame:
     """Every live score, the one way to read scored.parquet. A row holding
     today's judge answer is derived again under today's rules (`basis`
-    judged); an older answer keeps its stored score (`basis` v1), and so does
-    a row with none (`basis` legacy). Filter drops are not scores and are
-    left out."""
+    judged); any other row keeps its stored score (`basis` legacy). Filter
+    drops are not scores and are left out."""
     df = read_scored(scored_path or paths.SCORED)
     df = df[~df["scored_by_model"].astype(str).str.startswith("filter:")].reset_index(drop=True)
     answers = [json.loads(v) if isinstance(v, str) and v else None for v in df["judge_answer"]]
     raw = [is_v2(a) for a in answers]
-    basis = [
-        "legacy" if a is None else "judged" if v2 else "v1"
-        for a, v2 in zip(answers, raw, strict=True)
-    ]
+    basis = ["judged" if v2 else "legacy" for v2 in raw]
     if any(raw):
         cfg = cfg or load_scoring()
         if rule is None:
@@ -522,25 +518,10 @@ def start(
     no hash is never stale; `profile_changed` counts the judged rows whose
     digest differs from today's. `count_only` returns the counts and writes
     nothing. An open run is resumed when no selector is given, only its
-    `vertical` slices when that is the one selector, refused otherwise. A run staged for the old judge is closed instead: its answered
-    slices are kept (`basis: v1`), the rest restaged under today's packet
-    (`restaged`)."""
+    `vertical` slices when that is the one selector, refused otherwise. A run staged for the old judge is refused."""
     run = load_run(staging)
-    owed: set[str] = set()
-    kept = 0
     if run is not None and not is_current(run):
-        if count_only:
-            raise RunOpen("a /score run for the old judge is open: run `/score` to restage it")
-        from applyourself import score_ab
-        from applyourself.discovery.config import load_config
-
-        rows, owed = score_ab.close_v1_run(
-            run, staging, cfg, CountryRule.from_discovery(load_config()), now or clock.now()
-        )
-        kept = merge_rows(scored_path, rows)
-        for f in staging.glob("*"):
-            f.unlink()
-        run = None
+        raise RunOpen(f"{staging} holds a /score run for the old judge: clear it")
     if run is not None:
         if rescore or stale_only or job_ids:
             raise RunOpen("a /score run is still open: run `/score` to finish it first")
@@ -555,8 +536,6 @@ def start(
             "judge": sum(len(m["job_ids"]) for m in run["slices"].values()),
             "lines": judge_lines(run, staging),
             "resumed": True,
-            "restaged": 0,
-            "kept_v1": 0,
             "profile_changed": 0,
         }
     now = now or clock.now()
@@ -584,10 +563,6 @@ def start(
         clean = clean[clean["vertical"] == vertical]
     if job_ids:
         clean = clean[clean["job_id"].isin(job_ids)]
-    if owed:
-        whole = read_parquet(clean_path, schemas.CLEAN_SCHEMA_VERSION)
-        whole = whole[whole["job_id"].isin(owed - set(clean["job_id"]))]
-        clean = pd.concat([clean, whole], ignore_index=True) if len(whole) else clean
     profiles = {
         j: h
         for j, h in zip(stored["job_id"], stored["judge_profile_hash"], strict=True)
@@ -629,7 +604,7 @@ def start(
     if stale_only:
         copies = same_jd_copies(keep, hashes, hashed, store_path, cfg)
         keep = [r for r in keep if r["job_id"] not in copies]
-    extra = {"restaged": len(owed), "kept_v1": kept, "profile_changed": changed}
+    extra = {"profile_changed": changed}
     fresh = first_seen_last_run(store_path, dropped)
     first: dict[str, int] = {}
     for jid, code in codes.items():
@@ -683,16 +658,14 @@ def stage_rows(
     now: datetime,
     *,
     profile: str = "",
-    form: str = "v2",
 ) -> dict[str, Any]:
     """Write one packet per lane, the slices and run.json for `rows` (each
     with its trimmed `_jd` and `_hash`, in judging order) into `staging`.
-    `profile`: the digest's profile_hash; `form`: the answer form the packets
-    ask for. Returns the run."""
+    `profile`: the digest's profile_hash. Returns the run."""
     staging.mkdir(parents=True, exist_ok=True)
     run: dict[str, Any] = {
         "schema_version": schemas.SCORE_STAGING_SCHEMA_VERSION,
-        "form": form,
+        "form": "v2",
         "model": _judge_model(),
         "started": now.isoformat(),
         "slices": {},
@@ -792,11 +765,8 @@ class JudgeAnswer(BaseModel):
         return self
 
 
-def check_answer(
-    answer: Any, meta: dict[str, Any], model: type[BaseModel] = JudgeAnswer
-) -> list[str]:
-    """Problems with one judge output file, [] if it can be merged. `model`:
-    the answer form the slice was staged for."""
+def check_answer(answer: Any, meta: dict[str, Any]) -> list[str]:
+    """Problems with one judge output file, [] if it can be merged."""
     if not isinstance(answer, list):
         return ["not a JSON array"]
     errs = []
@@ -812,7 +782,7 @@ def check_answer(
             continue
         where = f"{a.get('job_id')}:"
         try:
-            model.model_validate(a)
+            JudgeAnswer.model_validate(a)
         except ValidationError as e:
             errs += [
                 f"{where} {'.'.join(map(str, x['loc'])) or 'answer'}: {x['msg']}"
@@ -927,11 +897,7 @@ def finish(
     if not is_current(run):
         return {
             "merged": 0,
-            "bad": {
-                "run": [
-                    "staged for the old judge: `score start` keeps its answers, restages the rest"
-                ]
-            },
+            "bad": {"run": [f"{staging} is staged for the old judge: clear it"]},
             "lines": [],
             "years_gaps": [],
         }

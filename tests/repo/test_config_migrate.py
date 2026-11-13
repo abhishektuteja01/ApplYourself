@@ -32,6 +32,24 @@ def test_old_languages_key_fails_with_where_it_moved(tmp_path):
         score_filter.load_scoring(s, prof / "application_answers.yaml")
 
 
+def test_v1_skills_cap_fails_loading_then_migrate_removes_it(tmp_path, monkeypatch, capsys):
+    from applyourself.shared import scoring_defaults
+
+    prof = _profile(tmp_path)
+    d = prof / "scoring_defaults.yaml"
+    shipped = paths.default("scoring_defaults.yaml").read_text(encoding="utf-8")
+    old = shipped.replace(
+        "\nschema_version: 1\n", "\nschema_version: 1\n\n# Old cap.\nv1_skills_cap: 12\n"
+    )
+    d.write_text(old, encoding="utf-8")
+    monkeypatch.setitem(paths._overrides, "SCORING_DEFAULTS", d)
+    with pytest.raises(ValueError, match="config migrate` removes it"):
+        scoring_defaults.load()
+    assert _run(prof, apply=True) == 0
+    assert d.read_text(encoding="utf-8") == shipped
+    assert scoring_defaults.load()["cutoff"]
+
+
 def test_languages_move_to_the_bank_once(tmp_path, capsys):
     prof = _profile(tmp_path)
     bank = yaml.safe_load((prof / "application_answers.yaml").read_text(encoding="utf-8"))
@@ -469,5 +487,5 @@ def test_scoring_v2_waits_for_an_old_judges_open_run(tmp_path, capsys):
     staging.mkdir(parents=True)
     (staging / "run.json").write_text('{"schema_version": 1, "slices": {}}', encoding="utf-8")
     assert _run(prof, apply=True) == 1
-    assert "run `score start` first" in capsys.readouterr().out
+    assert "clear it first" in capsys.readouterr().out
     assert "sheet: 85" in s.read_text(encoding="utf-8")

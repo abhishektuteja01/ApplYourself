@@ -1018,7 +1018,7 @@ def _scoring_v2(p: Profile) -> None:
         if old_run:
             p.problems.append(
                 f"{open_run} is a /score run for the old judge, which reads the keys this "
-                "step removes: run `score start` first"
+                "step removes: clear it first"
             )
             return
     sheet = cutoffs.get("sheet")
@@ -1139,9 +1139,19 @@ def _scoring_v2(p: Profile) -> None:
         rubric = p.root / "verticals" / n / "rubric.md"
         if rubric.is_file() and _old_rubric(rubric.read_text(encoding="utf-8")):
             p.notes.append(
-                f"verticals/{n}/rubric.md grades the old four axes: rewrite it for the "
-                "fit bands (keep the old one as rubric.v1.md for `score ab-stage`)"
+                f"verticals/{n}/rubric.md grades the old four axes: rewrite it for the fit bands"
             )
+
+
+SCORING_DEFAULTS = "scoring_defaults.yaml"
+
+
+def _scoring_defaults(p: Profile) -> None:
+    """A profile scoring_defaults.yaml loses `v1_skills_cap`."""
+    data = p.data(SCORING_DEFAULTS)
+    if isinstance(data, dict) and "v1_skills_cap" in data:
+        p.texts[SCORING_DEFAULTS] = drop_top_key(p.text(SCORING_DEFAULTS) or "", "v1_skills_cap")
+        p.notes.append(f"{SCORING_DEFAULTS}: v1_skills_cap removed")
 
 
 STEPS: tuple[Callable[[Profile], None], ...] = (
@@ -1154,6 +1164,7 @@ STEPS: tuple[Callable[[Profile], None], ...] = (
     _state,
     _split_lanes,
     _title_lists,
+    _scoring_defaults,
     _scoring_v2,
 )
 

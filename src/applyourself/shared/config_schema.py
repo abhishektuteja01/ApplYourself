@@ -229,11 +229,13 @@ class LintRule(_Strict):
 class ScoringDefaults(_Strict):
     """data/defaults/scoring_defaults.yaml, or the profile/ copy that replaces it."""
 
+    retired: ClassVar[dict[str, str]] = {
+        "v1_skills_cap": "retired: `uv run config migrate` removes it"
+    }
     schema_version: Literal[1]
     score: dict[str, Any]
     cutoff: Score
     example_targets: list[tuple[bool, Score]]
-    v1_skills_cap: Score
     no_sponsorship_when_later: Literal["ineligible", "opt_ok"]
 
 
@@ -346,7 +348,8 @@ def validate[M: BaseModel](model: type[M], data: Any, path: Path | str) -> M:
             where = _where(model, loc[:-1]) or "top level"
             retired = getattr(owner, "retired", {})
             if key in retired:
-                hint = f" (moved to {retired[key]})"
+                gone = retired[key].startswith("retired")
+                hint = f" ({retired[key]})" if gone else f" (moved to {retired[key]})"
             else:
                 close = difflib.get_close_matches(key, valid, n=1)
                 hint = f" (did you mean {close[0]!r}?)" if close else ""

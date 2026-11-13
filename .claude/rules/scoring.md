@@ -4,7 +4,6 @@ paths:
   - "src/applyourself/score_filter.py"
   - "src/applyourself/score_store.py"
   - "src/applyourself/score_packet.py"
-  - "src/applyourself/score_ab.py"
   - "src/applyourself/shortlist.py"
 ---
 
@@ -72,24 +71,16 @@ scoring.yaml's older `cutoffs.sheet`.
 
 Every reader of scored.parquet goes through `score_store.view()`: it derives
 each row holding today's answer (it has `fit`) again under today's rules
-(`basis: judged`), keeps an older judge's answer at its stored score (`basis:
-v1`) and a row with no raw answer too (`basis: legacy`), and leaves out
-`filter:*` rows. Nothing re-judges an old row by itself. Never
+(`basis: judged`), keeps any other row at its stored score (`basis:
+legacy`), and leaves out `filter:*` rows. Nothing re-judges an old row by itself. Never
 `pd.read_parquet` it for a score.
 
-run.json records its answer form (`schema_version` 2, `form`). A run left
-open from the old judge is closed by the next `score start`: its answered
-slices merge at their old score (`basis: v1`), the rest are staged again;
-`score finish` refuses it until then. Shipped defaults (the `score:`
+run.json records its answer form (`schema_version` 2, `form`). `score start`
+and `score finish` refuse a run left open from the old judge: clear
+`jobs/scored.staging/`. Shipped defaults (the `score:`
 penalties, the fallback cutoff, the example targets) live in
 `data/defaults/scoring_defaults.yaml`; a `profile/scoring_defaults.yaml`
 replaces it. A lane `score.cutoff` below `cutoffs.review` fails loading.
-
-`score ab-stage --out DIR` stages one sample with the old (v1) packet and the
-new one into `DIR/v1`, `DIR/v2` and a repeat subset into `DIR/v2_repeat`;
-`score ab-compare DIR` reads the answers. The v1 arm lives only in
-`score_ab.py`, read from a lane's old keys and `rubric.v1.md`; it goes once the
-A/B is done.
 
 Do not move a mechanical rule back into a rubric, or judgment into Python. A
 new hard rule goes in `score_filter.py` plus a `profile/` key; a new derived

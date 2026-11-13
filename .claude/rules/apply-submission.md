@@ -189,7 +189,7 @@ the lane's `score.cutoff`, else scoring.yaml's older `cutoffs.sheet`;
 `score_store.view`), or at or above settings.yaml `sheet_submittable_cutoff`
 when `apply_url.resolve()` finds a submittable board, that is in `clean.parquet`, whose state is not past
 `tailored` or closed, and whose status is not Applied or Closed; a role whose
-judged (`basis: judged` or `v1`) `suggested_action` is skip (on a v2 answer, a
+judged (`basis: judged`) `suggested_action` is skip (a
 blocker or a zero rule) only once it has `tailored_dirs` or is past `saved` (a
 legacy skip stays); highest score first, then job_id. Each status, note and submit command comes from `state.yaml`, the ledger,
 the newest run record naming the role, and answers waiting for confirmation.

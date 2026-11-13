@@ -81,7 +81,7 @@ score in one lane is never compared with another.
 - Slash command: `/score` (`--all` re-judges, `--vertical V` one lane,
   `--stale-only` counts rows whose input changed). Re-judge after editing your
   bullets, a rubric or `scoring.yaml`.
-- CLI: `uv run score start|finish|show|lane|examples|ab-stage|ab-compare`.
+- CLI: `uv run score start|finish|show|lane|examples`.
 - Config: `profile/scoring.yaml`, the `score:` rules in `verticals.yaml`
   `defaults:` and each lane, each lane's `rubric.md` (and optional
   `examples.yaml`), and `.claude/shared/scoring_rubric.md`.

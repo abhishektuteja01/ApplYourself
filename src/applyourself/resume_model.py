@@ -509,11 +509,6 @@ def baseline_plan(src: Sources, lane: str) -> dict:
     }
 
 
-def baseline_markdown(lane: str) -> str:
-    src = load_sources()
-    return build(src, lane, baseline_plan(src, lane)).markdown
-
-
 def _canonical_key(bid: str) -> tuple[str, int]:
     m = _BULLET_ID.match(bid)
     return (m.group(1), int(m.group(2))) if m else (bid, 0)

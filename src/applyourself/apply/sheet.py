@@ -318,7 +318,7 @@ def queue(snap: Snapshot | None = None) -> list[dict[str, str]]:
             continue  # below the lane's line, in only through sheet_submittable_cutoff
         if (
             r.suggested_action == "skip"
-            and r.basis in ("judged", "v1")
+            and r.basis == "judged"
             and _untouched(snap.states.get(r.job_id))
         ):
             continue  # a judged skip; a legacy score's skip, or a role with a resume, stays
