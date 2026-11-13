@@ -442,6 +442,21 @@ class TestIdentity:
         name = field(id="_systemfield_name", name="_systemfield_name", label="First Name")
         assert resolve(name, answers).value == answers.identity["first_name"]
 
+    def test_a_name_field_naming_first_and_last_takes_the_full_name(self, answers):
+        """A label naming both parts once got the last name only."""
+        ident = answers.identity
+        full = f"{ident['first_name']} {ident['last_name']}"
+        for label, want in (
+            ("(Legal) First and Last Name", full),
+            ("Legal First and Last Name", full),
+            ("First Name and Last Name", full),
+            ("Full Legal Name", full),
+            ("Last Name", ident["last_name"]),
+            ("Preferred first name", ident["first_name"]),
+        ):
+            name = field(id="_systemfield_name", name="_systemfield_name", label=label)
+            assert resolve(name, answers).value == want, label
+
     def test_the_two_file_inputs_are_deferred_to_the_planner(self, merged, answers):
         r = merged("form_minimal")
         for field_id in ("resume", "cover_letter"):

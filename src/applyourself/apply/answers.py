@@ -315,7 +315,10 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
 
 
 # A name field whose label asks for one part only. Both or neither: the full name.
-_FIRST_NAME_LABEL = re.compile(r"\b(?:first|given)\s+name\b")
+# "First and Last Name" names both: "first" counts when a last-name phrase follows.
+_FIRST_NAME_LABEL = re.compile(
+    r"\b(?:first|given)\b(?:\s+name\b|.*\b(?:last|family)\s+name\b|.*\bsurname\b)"
+)
 _LAST_NAME_LABEL = re.compile(r"\b(?:last|family)\s+name\b|\bsurname\b")
 
 

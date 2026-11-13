@@ -42,6 +42,9 @@ LEVER_SELECTED_LOCATION = "#selected-location"
 #: form's own fields. A warmed profile has already dismissed it; a fresh one
 #: has it sitting on top of the first few questions.
 COOKIE_ACCEPT = ".cc-window .cc-allow"
+#: Ashby's consent dialog blocks the fill the same way; its accept button is
+#: the one reading "Accept All".
+ASHBY_COOKIE_ACCEPT = ('div[role="dialog"][aria-label*="Cookie"] button', "Accept All")
 SELECT_SINGLE_VALUE = ".select__single-value"
 SELECT_MULTI_VALUE = ".select__multi-value__label"
 
@@ -266,14 +269,48 @@ class BrowserDriver:
         """
         return planned
 
+    #: The board's cookie-banner accept buttons, tried in order, as (selector,
+    #: button text); "" takes any button the selector finds. None: no banner.
+    cookie_accept: tuple[tuple[str, str], ...] = ()
+
+    def dismiss_cookie_banner(self) -> bool:
+        """Accept the consent banner if one is up. Returns whether it clicked.
+        No banner is the normal case on a warmed profile, not an error, and
+        costs no wait: `count()` and `is_visible()` return at once.
+
+        The visible button, not the first one: a board renders the banner's
+        markup more than once (a wide and a narrow variant), and only one copy
+        is displayed. `.first` resolved to a hidden copy and the click waited
+        out its whole timeout on an element that would never be visible.
+        """
+        for selector, text in self.cookie_accept:
+            buttons = self.page.locator(selector)
+            if text and buttons.count():
+                buttons = buttons.filter(has_text=text)
+            for i in range(buttons.count()):
+                button = buttons.nth(i)
+                try:
+                    if not button.is_visible():
+                        continue
+                    button.click(timeout=OPTION_TIMEOUT)
+                except Exception as exc:  # noqa: BLE001 - a banner we cannot click is not fatal
+                    log.debug("cookie banner button %d not clickable (%s)", i, exc)
+                    continue
+                return True
+        return False
+
     def set_yesno(self, field_id: str, label: str) -> None:
         """Boards that render a boolean as a two-button toggle rather than a
         checkbox. Only Ashby does; the base has no such widget."""
         raise FillError(f"{field_id}: this board has no yes/no toggle widget")
 
     def goto(self, url: str) -> None:
+        """Navigate, then clear the cookie banner before anything is written.
+        Its buttons render *over* the first questions, so a click on a field
+        underneath lands on the banner instead."""
         self.page.goto(url, wait_until="domcontentloaded")
         self.page.wait_for_selector(FORM_SELECTOR, timeout=FORM_TIMEOUT)
+        self.dismiss_cookie_banner()
 
     def settle(self, timeout: int = OPTION_TIMEOUT, floor_ms: int = 0) -> None:
         """Let an upload's XHR finish before anything is read back.
@@ -816,6 +853,8 @@ class LeverBrowserDriver(BrowserDriver):
     """Same sequence, different selector: Lever's fields carry no `id`
     attribute at all, so every lookup is by `name` instead."""
 
+    cookie_accept = ((COOKIE_ACCEPT, ""),)
+
     def _locator(self, field_id: str):
         return self.page.locator(FIELD_BY_NAME.format(form=FORM_SELECTOR, id=field_id))
 
@@ -900,35 +939,6 @@ class LeverBrowserDriver(BrowserDriver):
         """Not read on Lever: its form is not the Greenhouse markup the scan
         reads. The browser's own `invalid_fields` check still guards the click."""
         return ()
-
-    def goto(self, url: str) -> None:
-        """Base navigation, then clear the cookie banner before anything is
-        written. Its buttons render *over* the first questions, so a click on a
-        field underneath lands on the banner instead."""
-        super().goto(url)
-        self.dismiss_cookie_banner()
-
-    def dismiss_cookie_banner(self) -> bool:
-        """Accept the consent banner if one is up. Returns whether it clicked.
-        No banner is the normal case on a warmed profile, not an error.
-
-        The visible button, not the first one: a board renders the banner's
-        markup more than once (a wide and a narrow variant), and only one copy
-        is displayed. `.first` resolved to a hidden copy and the click waited
-        out its whole timeout on an element that would never be visible.
-        """
-        buttons = self.page.locator(COOKIE_ACCEPT)
-        for i in range(buttons.count()):
-            button = buttons.nth(i)
-            try:
-                if not button.is_visible():
-                    continue
-                button.click(timeout=OPTION_TIMEOUT)
-            except Exception as exc:  # noqa: BLE001 - a banner we cannot click is not fatal
-                log.debug("cookie banner button %d not clickable (%s)", i, exc)
-                continue
-            return True
-        return False
 
     # --- location autocomplete ------------------------------------------------
     # Lever's location field is a search box over a place taxonomy, not a text
@@ -1037,6 +1047,7 @@ class AshbyBrowserDriver(BrowserDriver):
     ENTRY = '[data-field-path="{id}"]'
     #: Controls that carry a value. Deliberately not `button` — the chevron.
     CONTROL = "input, textarea, select"
+    cookie_accept = (ASHBY_COOKIE_ACCEPT,)
     #: The chevron that opens a combobox. Its class hash changes on deploy, so
     #: it is found positionally: the only button inside a combobox's field.
     COMBOBOX = 'input[role="combobox"]'
@@ -1090,6 +1101,7 @@ class AshbyBrowserDriver(BrowserDriver):
         exists once the client-side render has run."""
         self.page.goto(url, wait_until="domcontentloaded")
         self.page.wait_for_selector("[data-field-path]", timeout=FORM_TIMEOUT)
+        self.dismiss_cookie_banner()
 
     def resolve_kind(self, field_id: str, planned: str) -> str:
         """What this field renders as right now, falling back to the plan.

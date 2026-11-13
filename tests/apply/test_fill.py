@@ -2089,7 +2089,7 @@ class TestLeverLocationAutocomplete:
         assert F.LeverBrowserDriver(page).selected_label("org") == "Example University"
 
 
-class TestLeverCookieBanner:
+class TestCookieBanner:
     """A consent banner's buttons render over the form's own first questions,
     so a click on a field underneath lands on the banner instead. A warmed
     profile has already dismissed it; a fresh one has not."""
@@ -2135,6 +2135,24 @@ class TestLeverCookieBanner:
     def test_an_all_hidden_banner_is_not_a_failure(self):
         hidden = self.Button(visible=False)
         assert F.LeverBrowserDriver(self._page([hidden])).dismiss_cookie_banner() is False
+
+    def test_each_board_looks_only_for_its_own_banner(self):
+        """Ashby's consent dialog blocked the fill; its accept button is picked
+        by text. Greenhouse has no banner and must not touch the page at all."""
+        reject, accept, seen = self.Button(), self.Button(), []
+
+        class Dialog(Group):
+            def filter(self, has_text):
+                seen.append(has_text)
+                return Group([accept])
+
+        page = FakePage(lambda selector: seen.append(selector) or Dialog([reject, accept]))
+        assert D.AshbyBrowserDriver(page).dismiss_cookie_banner() is True
+        assert seen == list(D.ASHBY_COOKIE_ACCEPT)
+        assert (reject.clicked, accept.clicked) == (False, True)
+        seen.clear()
+        assert D.BrowserDriver(page).dismiss_cookie_banner() is False
+        assert seen == []
 
 
 class TestLeverCheckboxGroupIgnoresNonCheckboxes:
