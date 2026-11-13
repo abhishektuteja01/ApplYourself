@@ -21,6 +21,8 @@ from applyourself.docx_render import TemplateError, TemplateMissingError
 # The placeholder contract this renderer fills.
 COVER_LETTER_REQUIRED_PLACEHOLDERS = ["{{SALUTATION}}", "{{BODY}}"]
 COVER_LETTER_OPTIONAL_PLACEHOLDERS = ["{{DATE}}"]
+# Replaced wherever it sits inside any paragraph's text, e.g. a contact line.
+COVER_LETTER_INLINE_PLACEHOLDERS = ["{{LOCATION}}"]
 
 
 def render_cover_letter(content: dict, template_path: Path, out_path: Path) -> None:
@@ -32,6 +34,7 @@ def render_cover_letter(content: dict, template_path: Path, out_path: Path) -> N
       salutation   (str, required)  -- e.g. "Dear Hiring Manager,"
       body         (list[str], required) -- one entry per body paragraph
       date         (str, optional)
+      location     (str, optional) -- fills an inline {{LOCATION}} token
 
     The template owns the sign-off: its closing and name are literal text.
 
@@ -156,7 +159,30 @@ def _fill_cover_letter_placeholders(doc, content: dict, path: Path) -> None:
             _set_paragraph_text(found[token], value or "")
 
     _expand_body_placeholder(found["{{BODY}}"], content["body"])
+    for p in _iter_paragraphs(doc):
+        _replace_inline(p, "{{LOCATION}}", content.get("location") or "")
     _blank_property_tokens(doc)
+
+
+def _replace_inline(paragraph, token: str, value: str) -> None:
+    """Every `token` in the paragraph's text becomes `value`, even when Word
+    split the token across runs; the text around it keeps its runs."""
+    ts = list(paragraph._p.iter(qn("w:t")))
+    value = value.replace(token, "")
+    while True:
+        texts = [t.text or "" for t in ts]
+        i = "".join(texts).find(token)
+        if i < 0:
+            return
+        j, pos, first = i + len(token), 0, True
+        for el, s in zip(ts, texts, strict=True):
+            a, b = pos, pos + len(s)
+            pos = b
+            if b <= i or a >= j:
+                continue
+            el.text = s[: max(i - a, 0)] + (value if first else "") + s[max(j - a, 0) :]
+            el.set(qn("xml:space"), "preserve")
+            first = False
 
 
 # A control character (tab, newline, vertical tab, ...) inside one paragraph's
@@ -175,12 +201,13 @@ def _check_content(content: dict) -> None:
         or not all(isinstance(p, str) and p.strip() for p in body)
     ):
         raise ValueError("content['body'] must be a non-empty list of non-empty paragraph strings.")
-    for key in ("salutation", "date"):
+    for key in ("salutation", "date", "location"):
         value = content.get(key)
         if value is not None and not isinstance(value, str):
             raise ValueError(f"content[{key!r}] must be a string.")
     for key, value in [
         ("salutation", salutation),
+        ("location", content.get("location") or ""),
         *((f"body[{i}]", p) for i, p in enumerate(body)),
     ]:
         if _CONTROL.search(value):

@@ -184,6 +184,8 @@ class CountryFacts:
     start_in_days: int | None = None
     visa_salary_floor: SalaryFloor | None = None
     salary: Salary | None = None
+    resume_location: str = ""
+    """The resume header's location for roles here; empty keeps resume.yaml's."""
 
 
 @dataclass(frozen=True)
@@ -303,6 +305,7 @@ _COUNTRY_ROW_KEYS = (
     "start_in_days",
     "visa_salary_floor",
     "salary",
+    "resume_location",
 )
 _SALARY_FLOOR_KEYS = ("amount", "currency", "per", "note")
 _SALARY_FLOOR_PER = ("year", "month")
@@ -424,9 +427,14 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
             isinstance(start, bool) or not isinstance(start, int) or start < 0
         ):
             raise AnswersError(f"{where}.start_in_days: must be a whole number of days")
-        for text_key in ("status_label", "followup"):
+        for text_key in ("status_label", "followup", "resume_location"):
             if not isinstance(row.get(text_key, ""), str):
                 raise AnswersError(f"{where}.{text_key}: must be a string")
+        if name == "default" and str(row.get("resume_location", "")).strip():
+            raise AnswersError(
+                f"{where}.resume_location: the default location is resume.yaml's "
+                "`location: true` contact line"
+            )
         floor = _parse_salary_floor(row.get("visa_salary_floor"), f"{where}.visa_salary_floor")
         key = canonical_place(str(name))
         if not key:
@@ -442,6 +450,7 @@ def _parse_work_authorization(data) -> tuple[dict[str, CountryFacts], tuple[str,
             start_in_days=start,
             visa_salary_floor=floor,
             salary=_parse_salary(row.get("salary"), f"{where}.salary"),
+            resume_location=str(row.get("resume_location", "")).strip(),
         )
     return countries, tuple(n.strip() for n in nationalities), us_person
 

@@ -28,6 +28,19 @@ sys.exit(0 if ok else 1)
 PY
 }
 
+rebuild() {  # re-render the saved plan; one failing only on its summary rebuilds with --final
+  local out rc
+  out="$("$UV" run app build resume "$ID" 2>>"$LOG")"; rc=$?
+  printf '%s\n' "$out" >>"$LOG"
+  if [[ $rc -eq 2 ]] && printf '%s' "$out" | "$UV" run python -c 'import json, sys
+p = json.load(sys.stdin).get("problems") or []
+sys.exit(0 if p and all(x.get("where") == "summary" for x in p) else 1)'; then
+    "$UV" run app build resume "$ID" --final >>"$LOG" 2>&1
+    return
+  fi
+  return "$rc"
+}
+
 RETRIES="$(cfg retries)" || { echo "$ID fail" >> "$RUN_DIR/tailor_results.txt"; exit 2; }
 if [[ "$DRY_RUN" == 1 ]]; then
   run_claude "$ID" "$TOOLS" "/tailor $ID"
@@ -38,7 +51,7 @@ RESULT=fail
 for attempt in $(seq 0 "$RETRIES"); do
   RC=0
   if has pdf_missing; then
-    "$UV" run app build resume "$ID" >>"$LOG" 2>&1 || echo "rebuild $ID attempt $attempt failed"
+    rebuild || echo "rebuild $ID attempt $attempt failed"
   else
     run_claude "$ID" "$TOOLS" "/tailor $ID"; RC=$?
     [[ $RC -eq 0 ]] || echo "tailor $ID attempt $attempt failed"
@@ -46,7 +59,7 @@ for attempt in $(seq 0 "$RETRIES"); do
   has built && { echo "$ID ok" >> "$RUN_DIR/tailor_results.txt"; exit 0; }
   [[ $RC -eq 5 ]] && { RESULT=deferred; break; }
 done
-"$UV" run app build resume "$ID" >>"$LOG" 2>&1 && has built \
+rebuild && has built \
   && { echo "$ID ok" >> "$RUN_DIR/tailor_results.txt"; exit 0; }
 echo "$ID $RESULT" >> "$RUN_DIR/tailor_results.txt"
 [[ $RESULT == deferred ]]

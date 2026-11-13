@@ -18,7 +18,7 @@ report lists them under `manual`, not `failed`.
 
 - **what the user states**: `identity`, `education`, `employment` (every key
   left out is read from `profile/resume.yaml` by `src/applyourself/apply/resume_facts.py`:
-  name, mailto:/tel: contact, the first plain contact line, `education[0]`, the
+  name, mailto:/tel: contact, the `location: true` contact line (else the first plain one), `education[0]`, the
   work context that ended last; employment only when the bank has the block),
   `demographics.answers` (topic -> spellings: `gender`, `race`,
   `hispanic_ethnicity`, `veteran_status`, `disability_status`,
@@ -28,7 +28,8 @@ report lists them under `manual`, not `failed`.
   (`{amount, currency, per: year|month, note}`, the visa's lowest gross salary),
   `salary` (`{amount, currency, markup_pct, lanes}`, what `{computed: salary}`
   answers there; `markup_pct`, home row only, scales a posting's minimum in
-  `currency`), with a required `default` row);
+  `currency`), `resume_location` (the resume and letter header's location for
+  roles there, not on `default`), with a required `default` row);
 - **`facts`**: `F-<ID>` (`^F-[A-Z0-9-]+$`) -> one plain sentence about the user
   (citizenship, visa, sponsorship now and later, onsite scope, years per skill,
   standing consents and attestations). The judge answers from these;

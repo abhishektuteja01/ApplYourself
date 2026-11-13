@@ -20,7 +20,8 @@ Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
   `de_ai_rules.yaml`.
 - **SKILLS-SOURCE** — a Skills line lists only `skills_master.md` entries whose
   `show` names that line. A skill is shown by its `name` or one of its
-  `allowable_synonyms`.
+  `allowable_synonyms` (any case; printed as written). Each skill, and each
+  printed text ignoring case, appears once on the resume.
 - **NO-SLOP** — every drafted text that leaves the machine (cover letters,
   company answers, outreach, `/apply` prose, the apply-judge's `text`
   answers) passes one `no_ai_slop` edit before its build or write. The edit
@@ -35,8 +36,8 @@ file may hold.
 
 | code | means |
 |---|---|
-| `unknown_id` | a bullet or skill id that does not exist |
-| `context`, `budget`, `layout` | the plan breaks the lane's shape: a context not on this lane, a bullet count outside `{min, max}`, a skill on the wrong line, or a missing or extra key |
+| `unknown_id` | a bullet or skill id that does not exist, or a summary `uses` bullet that is not in `entries` |
+| `context`, `budget`, `layout` | the plan breaks the lane's shape: a context not on this lane, a bullet count outside `{min, max}`, a skill on the wrong line or shown twice, or a missing or extra key |
 | `license` | a reworded bullet uses a word outside REPHRASE-LICENSE |
 | `number` | a number with no source: on a resume, the cited bullets, a context header or the baseline summary; in a letter or answers, the JD, a context header or a `uses` bullet |
 | `skill` | a summary names a skill no cited bullet backs, or an alias that is not an allowable synonym |

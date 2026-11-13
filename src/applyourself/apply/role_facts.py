@@ -59,6 +59,20 @@ def country_and_source(
     return UNKNOWN_COUNTRY, "unknown"
 
 
+def header_location(job_id: str) -> tuple[str, str, str]:
+    """(location, country, source) for the role's resume and letter header: the
+    bank's `resume_location` on the row of the role's country (`country_and_source`),
+    else "" so resume.yaml's line stands. No bank file is no override; a bank
+    that fails to load raises `AnswersError`."""
+    from applyourself.apply.bank_schema import load_answers
+
+    country, source = country_and_source(job_id)
+    if not paths.ANSWER_BANK.is_file():
+        return "", country, source
+    row = load_answers().countries.get(country)
+    return (row.resume_location if row else ""), country, source
+
+
 def country_name(value: str) -> str:
     """The bank's key for a country the judge or the session named; Puerto Rico,
     Guam, the US Virgin Islands and the Northern Marianas are the US; a region

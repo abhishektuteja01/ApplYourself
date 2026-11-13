@@ -5,6 +5,9 @@
 # build every lane's resume from this file, profile/bullets.md and
 # profile/skills_master.md; nothing retypes these lines.
 #
+# contact: `location: true` marks your location line (at most one, no url).
+#   A role's country can replace it (application_answers.yaml resume_location).
+#
 # contexts: keyed by the bullet prefix — B-WID-01 belongs to WID.
 #   section:   work | projects
 #   title, dates (all), org + location (work), subtitle (projects, optional)
@@ -17,6 +20,7 @@ schema_version: 1
 name: Alex Example
 contact:
   - text: "Exampletown, ST"
+    location: true
   - text: "alex@example.com"
     url: "mailto:alex@example.com"
   - text: Portfolio

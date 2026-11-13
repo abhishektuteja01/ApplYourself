@@ -905,3 +905,17 @@ def test_a_bad_request_gets_a_failed_result_and_the_helper_goes_on(monkeypatch, 
     import json
 
     assert json.loads((queue / "bad.res").read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_cover_letter_fills_a_location_token_split_across_runs(tmp_path):
+    doc = Document()
+    p = doc.add_paragraph()
+    for text in ("Home: {{LOC", "ATION}} | ", "me@example.com"):
+        p.add_run(text)
+    doc.add_paragraph("{{SALUTATION}}")
+    doc.add_paragraph("{{BODY}}")
+    t = tmp_path / "t.docx"
+    doc.save(str(t))
+    out = tmp_path / "cl.docx"
+    render_cover_letter(_content(location="Exampleburg, EX"), t, out)
+    assert _texts(out)[0] == "Home: Exampleburg, EX | me@example.com"

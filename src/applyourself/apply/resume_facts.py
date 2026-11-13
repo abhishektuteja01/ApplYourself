@@ -58,10 +58,11 @@ def identity(resume: dict) -> dict[str, str]:
     for key, scheme in (("email", "mailto:"), ("phone", "tel:")):
         if value := _contact(resume, scheme):
             out[key] = value
+    entries = [c for c in resume.get("contact") or [] if isinstance(c, dict)]
     plain = [
         str(c.get("text") or "").strip()
-        for c in resume.get("contact") or []
-        if isinstance(c, dict) and not c.get("url")
+        for c in sorted(entries, key=lambda c: c.get("location") is not True)
+        if not c.get("url")
     ]
     if plain and plain[0]:
         out["location"] = plain[0]

@@ -13,6 +13,9 @@ from typing import Any
 import yaml
 
 from applyourself import lint, resume_model, session_schema, state_io, track_cli
+from applyourself.apply import resume_facts
+from applyourself.apply.bank_schema import AnswersError
+from applyourself.apply.role_facts import header_location
 from applyourself.docx_cover_letter import render_cover_letter
 from applyourself.docx_render import PdfResult, TemplateError, export_pdf, render_resume
 from applyourself.material.checks import (
@@ -50,6 +53,13 @@ def _pdf(docx: Path, token: str, no_pdf: bool) -> PdfResult:
     return export_pdf(docx, token)
 
 
+def _location(job_id: str) -> tuple[str, str, str]:
+    try:
+        return header_location(job_id)
+    except AnswersError as exc:
+        raise AppError(f"header location: {exc}") from exc
+
+
 def cmd_build_resume(
     job_id: str, final: bool = False, no_pdf: bool = False
 ) -> tuple[dict[str, Any], int]:
@@ -63,6 +73,7 @@ def cmd_build_resume(
     if bad := session_schema.problems("resume", plan):
         return {"ok": False, "problems": bad}, 2
     src = resume_model.load_sources()
+    location, country, source = _location(job_id)
     built = resume_model.build(
         src,
         lane,
@@ -70,6 +81,7 @@ def cmd_build_resume(
         company=str(facts.get("company", "")),
         keywords=tuple(facts.get("keywords_to_mirror") or ()),
         final=final,
+        location=location,
     )
     if built.problems:
         return {"ok": False, "problems": [p.as_dict() for p in built.problems]}, 2
@@ -98,6 +110,7 @@ def cmd_build_resume(
         f"# trace — {folder.name}",
         "",
         f"job_id `{job_id}`, lane `{lane}`. Written by `uv run app build resume`.",
+        f"Header location: {location or 'resume.yaml'} (country {country}, from {source}).",
         "",
     ]
     _atomic_write(folder / "trace.md", "\n".join(header + built.trace) + "\n")
@@ -223,6 +236,7 @@ def cmd_build_letter(
         "salutation": salutation,
         "body": body,
         "date": f"{today:%B} {today.day}, {today.year}",
+        "location": _location(job_id)[0] or resume_facts.identity(src.resume).get("location", ""),
     }
     docx = folder / f"{slug}_Cover_Letter.docx"
     try:

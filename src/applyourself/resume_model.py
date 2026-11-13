@@ -177,6 +177,13 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
     for i, c in enumerate(r.get("contact") or []):
         if not isinstance(c, dict) or not isinstance(c.get("text"), str):
             problems.append(f"resume.yaml contact[{i}]: needs `text` (and optional `url`)")
+        elif "location" in c and (c["location"] is not True or c.get("url")):
+            problems.append(
+                f"resume.yaml contact[{i}].location: only `true`, on a line with no url"
+            )
+    marked = [c for c in r.get("contact") or [] if isinstance(c, dict) and c.get("location")]
+    if len(marked) > 1:
+        problems.append("resume.yaml contact: at most one entry has `location: true`")
     if not r.get("contact"):
         problems.append("resume.yaml: `contact` must list at least one item")
     for i, e in enumerate(r.get("education") or []):
@@ -520,12 +527,24 @@ def build(
     company: str = "",
     keywords: tuple[str, ...] = (),
     final: bool = False,
+    location: str = "",
 ) -> Built:
     """Assemble resume markdown from a plan. Problems are collected, never
     raised; with `final`, a failing rewording falls back to its canonical text
-    and a failing summary to the lane baseline, and the swap is recorded."""
+    and a failing summary to the lane baseline, and the swap is recorded.
+    `location` replaces the text of resume.yaml's `location: true` contact line."""
     shape = _shape(lane)
     problems: list[Problem] = []
+    if location and not any(
+        isinstance(c, dict) and c.get("location") for c in src.resume.get("contact") or []
+    ):
+        problems.append(
+            Problem(
+                "contact",
+                ProblemCode.LAYOUT,
+                f"no resume.yaml contact line has `location: true` to show {location!r}",
+            )
+        )
     swapped: list[str] = []
     warnings: list[dict] = []
     keep = keep_terms(src, company)
@@ -552,6 +571,16 @@ def build(
             Problem("summary", ProblemCode.UNKNOWN_ID, f"{u} is not in bullets.md")
             for u in s_uses
             if u not in src.bullets
+        ]
+        on_resume = {str((e or {}).get("id") or "") for e in plan.get("entries") or []}
+        sp += [
+            Problem(
+                "summary",
+                ProblemCode.UNKNOWN_ID,
+                f"{u} is cited by the summary but not on the resume",
+            )
+            for u in dict.fromkeys(s_uses)
+            if u in src.bullets and u not in on_resume
         ]
         grounds = " ".join(
             [shape.summary, context_text(src)] + [bullet_text(src, u) for u in s_uses]
@@ -657,57 +686,75 @@ def build(
                     f"skills.{label}", ProblemCode.LAYOUT, f"not one of lane {lane}'s skill_lines"
                 )
             )
+    # Each skill id and each printed text (ignoring case) shows once on the
+    # resume. A plan's picks claim first; the default-order fill skips repeats.
+    shown_ids: set[str] = set()
+    shown_texts: dict[str, str] = {}
+    picked: dict[str, list[tuple[str, str]]] = {}
     for label in shape.skill_lines:
-        picks = plan_skills.get(label)
         rendered: list[tuple[str, str]] = []
-        for item in picks if picks else lines.get(label, []):
+        for item in plan_skills.get(label) or []:
             sid, alias = (
                 (item, "")
                 if isinstance(item, str)
                 else (str(item.get("id")), str(item.get("alias") or ""))
             )
+            where = f"skills.{label}"
             s = src.skills.get(sid)
             if s is None:
                 problems.append(
-                    Problem(
-                        f"skills.{label}",
-                        ProblemCode.UNKNOWN_ID,
-                        f"{sid} is not in skills_master.md",
-                    )
+                    Problem(where, ProblemCode.UNKNOWN_ID, f"{sid} is not in skills_master.md")
                 )
                 continue
             if sid not in lines.get(label, []):
                 problems.append(
                     Problem(
-                        f"skills.{label}",
+                        where,
                         ProblemCode.LAYOUT,
                         f"{sid} does not show on this line for lane {lane}",
                     )
                 )
                 continue
-            if alias and alias not in (s.get("allowable_synonyms") or []):
+            synonyms = {str(a).lower() for a in s.get("allowable_synonyms") or []}
+            if alias and alias.lower() not in synonyms:
                 problems.append(
                     Problem(
-                        f"skills.{label}",
-                        ProblemCode.SKILL,
-                        f"{alias!r} is not an allowable synonym of {sid}",
+                        where, ProblemCode.SKILL, f"{alias!r} is not an allowable synonym of {sid}"
                     )
                 )
                 continue
-            rendered.append((sid, alias or str(s["name"])))
-        if picks:  # a plan reorders a line; the skills it leaves out follow in default order
-            listed = {sid for sid, _ in rendered}
-            rendered += [
-                (sid, str(src.skills[sid]["name"]))
-                for sid in lines.get(label, [])
-                if sid not in listed and sid in src.skills
-            ]
+            text = alias or str(s["name"])
+            if sid in shown_ids:
+                problems.append(Problem(where, ProblemCode.LAYOUT, f"{sid} is listed twice"))
+                continue
+            if text.lower() in shown_texts:
+                problems.append(
+                    Problem(
+                        where,
+                        ProblemCode.LAYOUT,
+                        f"{text!r} is shown twice (also on {shown_texts[text.lower()]})",
+                    )
+                )
+                continue
+            shown_ids.add(sid)
+            shown_texts[text.lower()] = label
+            rendered.append((sid, text))
+        picked[label] = rendered
+    for label in shape.skill_lines:
+        rendered = picked[label]
+        for sid in lines.get(label, []):  # the skills a plan leaves out, in default order
+            name = str(src.skills[sid]["name"]) if sid in src.skills else ""
+            if not name or sid in shown_ids or name.lower() in shown_texts:
+                continue
+            shown_ids.add(sid)
+            shown_texts[name.lower()] = label
+            rendered.append((sid, name))
         if rendered:
             skill_lines.append((label, rendered))
 
     # --- blocks + trace
     blocks, trace = _render(
-        src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines
+        src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines, location
     )
     built = Built(blocks=blocks, trace=trace, problems=problems, swapped=swapped, warnings=warnings)
     built.trace += _keyword_trace(built.markdown, keywords)
@@ -728,7 +775,7 @@ def context_text(src: Sources) -> str:
     )
 
 
-def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines):
+def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skill_lines, location):
     r = src.resume
     shape = _shape(lane)
     blocks: list[Block] = []
@@ -745,7 +792,10 @@ def _render(src, lane, s_text, s_source, s_uses, order, chosen, rewordings, skil
         _inline(
             "body",
             " | ".join(
-                f"[{c['text']}]({c['url']})" if c.get("url") else c["text"] for c in r["contact"]
+                f"[{c['text']}]({c['url']})"
+                if c.get("url")
+                else (location if location and c.get("location") else c["text"])
+                for c in r["contact"]
             ),
         )
     )

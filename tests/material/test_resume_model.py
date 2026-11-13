@@ -272,6 +272,55 @@ def test_a_skills_line_in_the_plan_reorders_and_keeps_the_rest(world):
     assert line.index(names[0]) < line.index(names[1])
 
 
+@pytest.mark.parametrize(
+    "picks, problem, shown",
+    [
+        ([{"id": "SKILL-GIT", "alias": "VERSION CONTROL"}], None, "VERSION CONTROL"),
+        (["SKILL-GIT", {"id": "SKILL-GIT", "alias": "Git"}], "SKILL-GIT is listed twice", None),
+        ([{"id": "SKILL-DOCKER", "alias": "postgresql"}, "SKILL-POSTGRES"], "shown twice", None),
+        ([{"id": "SKILL-DOCKER", "alias": "postgresql"}], None, "postgresql"),
+    ],
+)
+def test_skill_picks_show_each_skill_and_text_once(world, picks, problem, shown):
+    tmp, _ = world
+    _edit(tmp / "skills_master.md", '["containers", ', '["containers", "PostgreSQL", ')
+    src = resume_model.load_sources()
+    plan = _plan(src, "example_primary", skills={"Databases & Tools": picks})
+    built = resume_model.build(src, "example_primary", plan)
+    if problem:
+        assert any(problem in p.detail for p in built.problems), built.problems
+        return
+    assert built.problems == []
+    line = next(ln for ln in built.markdown.splitlines() if "Databases & Tools" in ln)
+    assert shown in line and line.lower().count(shown.lower()) == 1
+
+
+def test_a_summary_citing_a_bullet_left_off_the_resume_fails(world):
+    src = resume_model.load_sources()
+    summary = {"text": "Analyst who reconciles output across four plants.", "uses": ["B-SPR-02"]}
+    plan = _plan(src, "example_primary", summary=summary)
+    built = resume_model.build(src, "example_primary", plan)
+    assert [p.detail for p in built.problems] == [
+        "B-SPR-02 is cited by the summary but not on the resume"
+    ]
+    final = resume_model.build(src, "example_primary", plan, final=True)
+    assert final.problems == [] and final.swapped == ["summary -> lane baseline"]
+
+
+def test_a_role_location_replaces_only_the_marked_contact_line(world):
+    tmp, _ = world
+    src = resume_model.load_sources()
+    plan = resume_model.baseline_plan(src, "example_primary")
+    built = resume_model.build(src, "example_primary", plan, location="Exampleburg, EX")
+    contact = built.markdown.splitlines()[2]
+    assert contact.startswith("Exampleburg, EX | ") and "Exampletown" not in contact
+    _edit(tmp / "resume.yaml", "    location: true\n", "")
+    unmarked = resume_model.build(
+        resume_model.load_sources(), "example_primary", plan, location="Exampleburg, EX"
+    )
+    assert {p.code for p in unmarked.problems} == {"layout"}
+
+
 def test_company_name_is_never_linted(world):
     src = resume_model.load_sources()
     plan = _plan(

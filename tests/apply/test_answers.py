@@ -209,6 +209,12 @@ class TestWorkAuthorizationLoading:
         with pytest.raises(AnswersError, match="quote it"):
             load_answers(write_config(tmp_path, work_authorization=wa))
 
+    def test_resume_location_is_refused_on_the_default_row(self, tmp_path):
+        wa = self.wa()
+        wa["countries"]["default"]["resume_location"] = "Exampletown, ST"
+        with pytest.raises(AnswersError, match=r"default\.resume_location"):
+            load_answers(write_config(tmp_path, work_authorization=wa))
+
     def _floor(self, tmp_path, floor):
         return load_answers(
             write_config(

@@ -65,6 +65,9 @@ cover_letter: when_required
 #                         currency (required), markup_pct, lanes}. markup_pct (own country
 #                         only): a posting's minimum in `currency` times it, ahead of
 #                         amount. lanes: the lanes it answers for (absent: every lane).
+#   resume_location       optional, not on `default`: the resume and cover-letter header
+#                         location for roles there, in place of resume.yaml's
+#                         `location: true` contact line
 # us_person: park | yes | no — the export-control "U.S. person" question. Quote it.
 work_authorization:
   us_person: "park"
@@ -79,6 +82,7 @@ work_authorization:
       start_in_days: 14
       # salary: {amount: 110000, currency: USD, markup_pct: 10}
     # Germany:
+    #   resume_location: "Exampleburg, Germany"
     #   authorized: false
     #   requires_sponsorship: true
     #   visa_salary_floor: {amount: 48300, currency: EUR, per: year, note: "EU Blue Card"}

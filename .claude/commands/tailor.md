@@ -68,7 +68,8 @@ skills:                           # optional; a line left out keeps its default 
   within each context's `{min, max}` and the lane's total. Reword only when a
   synonym carries the JD's word for the same claim.
 - **Summary:** omit `summary` to keep the lane baseline. A written summary may
-  only state facts from its `uses` bullets. No tricolon ("X, Y, and Z"), no
+  only state facts from its `uses` bullets, and every `uses` bullet must be in
+  `entries`. No tricolon ("X, Y, and Z"), no
   "not only X but also Y".
 - **Skills:** reorder a line so JD-matching skills lead. A skill may appear
   only on the line its `show` names.

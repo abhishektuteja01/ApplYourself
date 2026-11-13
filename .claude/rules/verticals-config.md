@@ -42,7 +42,8 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   one word.
 - **One source per resume fact** (`src/applyourself/resume_model.py`): `profile/resume.yaml`
   holds name, contact, education and each context's header plus per-lane
-  `{min, max, order}`; `bullets.md` holds claims and `default_for`;
+  `{min, max, order}` (its `location: true` contact line gives way to the
+  answer bank's `resume_location` for the role's country, `role_facts.header_location`); `bullets.md` holds claims and `default_for`;
   `skills_master.md` holds skills and `show`; a lane's `resume:` block holds only
   shape (sections, bullet budget, skill lines, baseline summary). Things say
   where they appear, so deleting one is one edit, and `verticals-check`
