@@ -28,7 +28,7 @@ HEADER = (
     "# decision: yes saves the row's answer as bank question <question> (edit the\n"
     "# id or the answer first if you like); no or blank saves nothing.\n"
     "# Then run, in your terminal:\n"
-    "#   uv run apply prose --save <this file>\n"
+    "#   uv run ay apply prose --save <this file>\n"
 )
 
 _PROFILE_PREFIXES = ("B-", "S-", "SKILL-")

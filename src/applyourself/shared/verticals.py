@@ -331,7 +331,7 @@ def _parse_vertical(name: str, raw: dict[str, Any], path: Path) -> Vertical:
     strong_keep_terms = title_lists["title_strong_keep_terms"]
 
     # Optional to the loader so a lane can scrape before its resume shape
-    # exists (/new-vertical pass-a); verticals-check requires it.
+    # exists (/new-vertical pass-a); ay config check-verticals requires it.
     resume = _parse_lane_resume(raw["resume"], path, f"{where}.resume") if "resume" in raw else None
 
     return Vertical(
@@ -389,7 +389,7 @@ def load_verticals(path: Path | None = None) -> VerticalsConfig:
             p,
             "schema_version 1 holds every lane inline; each lane moved to "
             "verticals/<lane>/lane.yaml beside this file. Run "
-            "`uv run config migrate --dry-run`, then --apply",
+            "`uv run ay config migrate --dry-run`, then --apply",
         )
     if data.get("schema_version") != _SCHEMA_VERSION:
         raise _fail(p, f"schema_version must be {_SCHEMA_VERSION}")

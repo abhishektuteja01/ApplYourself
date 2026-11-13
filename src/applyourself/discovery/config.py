@@ -1,6 +1,6 @@
 """`profile/discovery.yaml`: every discovery setting, loaded and checked.
 
-`uv run discovery-check` prints what the file resolves to and every problem
+`uv run ay discover check` prints what the file resolves to and every problem
 with it; `discover` runs the same check before it starts. A key the loader
 does not know is reported by name, never ignored.
 """
@@ -518,7 +518,7 @@ def _keep_long(cfg: DiscoveryConfig) -> DiscoveryConfig:
 
 
 def main() -> int:
-    """`discovery-check`: what discovery.yaml resolves to, and every problem."""
+    """`ay discover check`: what discovery.yaml resolves to, and every problem."""
     setup_logging()
     try:
         cfg = load_config()

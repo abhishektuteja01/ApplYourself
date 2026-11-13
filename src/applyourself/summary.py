@@ -5,7 +5,7 @@ section is a pure function of records already on disk. "Tonight" is everything
 since the pipeline run started (the stamp in `logs/pipeline_<stamp>/`), not a
 calendar date, because a night crosses midnight.
 
-  uv run summary [--run-dir logs/pipeline_<stamp>] [--since ISO] [--out PATH]
+  uv run ay night summary [--run-dir logs/pipeline_<stamp>] [--since ISO] [--out PATH]
 """
 
 from __future__ import annotations
@@ -39,9 +39,9 @@ from applyourself.shared.logs import setup_logging
 # One short "what to do" line per section, written only into summary.md (the
 # session's copy) and only when the section has something to act on.
 CUES = {
-    "discovery": "→ Lane errors are in `jobs/runs/<run_id>.json`. Re-run one lane with `uv run discover --source <name>`.",
+    "discovery": "→ Lane errors are in `jobs/runs/<run_id>.json`. Re-run one lane with `uv run ay discover --source <name>`.",
     "dupes": (
-        "→ Open both postings; if they are one role, `uv run track <copy> skip` the one not in "
+        "→ Open both postings; if they are one role, `uv run ay track <copy> skip` the one not in "
         "play. Nothing was merged."
     ),
     "scoring": "→ Run `/score` to resume the open run.",
@@ -50,31 +50,31 @@ CUES = {
         "once the limit resets."
     ),
     "synonyms": (
-        "→ Per question id: `uv run synonyms answer <id> yes|no` (a yes means the user writes the bullet or "
-        'skill block). Approve a declined keyword: `uv run synonyms approve "<keyword>"`. Undo an added '
-        'phrase: `uv run synonyms undo <target> "<phrase>"`.'
+        "→ Per question id: `uv run ay synonyms answer <id> yes|no` (a yes means the user writes the bullet or "
+        'skill block). Approve a declined keyword: `uv run ay synonyms approve "<keyword>"`. Undo an added '
+        'phrase: `uv run ay synonyms undo <target> "<phrase>"`.'
     ),
     "tailoring": (
-        "→ PDF missing: `uv run app build resume <id>` (no model); if Word is stuck, ask the user to quit "
-        "Word. Posting gone: `uv run track <id> skip`."
+        "→ PDF missing: `uv run ay app build resume <id>` (no model); if Word is stuck, ask the user to quit "
+        "Word. Posting gone: `uv run ay track <id> skip`."
     ),
     "ready": (
-        "→ Show the role and its resume (`uv run app dir <id>`), then run its `uv_run_command` (`uv run apply "
+        "→ Show the role and its resume (`uv run ay app dir <id>`), then run its `uv_run_command` (`uv run ay apply "
         "sheet --list Submittable`; the sheet's column holds it). Only with the user's typed OK; one submit "
         "per company per run."
     ),
     "no_employer": (
         "→ No employer: the score judge found no hiring company in the posting "
-        "(`uv run apply sheet --list 'No employer'`). Check each posting, then "
+        "(`uv run ay apply sheet --list 'No employer'`). Check each posting, then "
         "`/tailor <id> --company NAME`, or skip it."
     ),
     "apply_paths": (
-        "→ Manual / No apply URL: apply by hand (`uv run apply sheet --list 'Manual apply'`). "
-        "`uv run apply resolve-urls --dry-run` lists roles whose company has a board /apply drives; "
+        "→ Manual / No apply URL: apply by hand (`uv run ay apply sheet --list 'Manual apply'`). "
+        "`uv run ay apply resolve-urls --dry-run` lists roles whose company has a board /apply drives; "
         "`--apply` looks the title up there (network, only with the user's OK)."
     ),
-    "apply_expired": "→ Expired: `uv run track <id> skip`.",
-    "apply_failed": "→ Failed: `uv run apply plan <id> --questions` shows what the form needs now.",
+    "apply_expired": "→ Expired: `uv run ay track <id> skip`.",
+    "apply_failed": "→ Failed: `uv run ay apply plan <id> --questions` shows what the form needs now.",
     "apply_unsent": "→ Unsent: the click fired no submit request or the board refused it; check the board by hand.",
     "apply_rejected": (
         "→ Rejected by board: the board declined the application; clicking again will not change it. "
@@ -84,18 +84,18 @@ CUES = {
         "→ Show the user these words. Only with their OK, add a word to a lane's search terms or "
         "a classifier rule in profile/verticals.yaml; nothing is added on its own."
     ),
-    "sheet": "→ If the posting is gone: `uv run track <id> skip`, and it leaves the sheet.",
+    "sheet": "→ If the posting is gone: `uv run ay track <id> skip`, and it leaves the sheet.",
     "answers": (
         "→ Answer each role's questions in `/apply <id>`; a confirmed answer is saved to the bank as a "
-        "fact. Then `uv run apply sheet`."
+        "fact. Then `uv run ay apply sheet`."
     ),
     "prose": (
-        "→ `uv run apply prose --review`, set each row's decision, then `uv run apply prose --save "
+        "→ `uv run ay apply prose --review`, set each row's decision, then `uv run ay apply prose --save "
         "<file>` in your terminal."
     ),
     "missing": (
         "→ Set `salary` or `start_in_days` on the country's row in the answer bank "
-        "(`work_authorization.countries`), then `uv run apply plan <id> --questions`."
+        "(`work_authorization.countries`), then `uv run ay apply plan <id> --questions`."
     ),
     "missing_other": (
         "→ Any other missing value: answer it in `/apply <id>`; the session writes the entry and the "
@@ -642,7 +642,7 @@ def _why_waiting(items: dict, job: str) -> str:
     if tally is None:
         return (
             "drafted answers wait in its folder (answers_override.json); not re-checked tonight: "
-            f"`uv run apply plan {job} --questions --answers <that file>`"
+            f"`uv run ay apply plan {job} --questions --answers <that file>`"
         )
     return _why(tally)
 
@@ -836,7 +836,7 @@ def sheet_line(check: dict[str, list[str]]) -> list[str]:
         "finished": "Applied or Closed rows still on it (should not happen)",
         "duplicates": "listed twice",
         "not_live": "no longer in the live listing, the posting may be gone",
-        "wrong_status": "status differs from the records (run `uv run apply sheet`)",
+        "wrong_status": "status differs from the records (run `uv run ay apply sheet`)",
     }
     problems = [f"{said[k]}: {', '.join(v)}" for k, v in check.items() if v]
     if not problems:
@@ -1080,7 +1080,7 @@ def to_html(md: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
-    ap = argparse.ArgumentParser(prog="summary", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="ay night summary", description=__doc__.split("\n\n")[0])
     ap.add_argument("--run-dir", type=Path, default=None)
     ap.add_argument(
         "--since", default=None, help="ISO time the run started (default: from the run dir)"

@@ -1,4 +1,4 @@
-"""`uv run score`: the deterministic halves of /score (R7: no LLM calls).
+"""`uv run ay score`: the deterministic halves of /score (R7: no LLM calls).
 
 start [--all | --stale-only [--yes]] [--vertical V] [--job-id ID ...]
     Drop what the hard rules reject (never stored), stage the rest for the
@@ -192,7 +192,7 @@ def _cmd_examples(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="score", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="ay score", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("start", help="drop, stage, print judge lines")

@@ -15,7 +15,7 @@ Two lines at hand-off. None is an interview, none blocks the daily loop.
   postings. It gets better as `shortlist/*.md` accumulates.
 - **The `/apply` path** — `application_answers.yaml` is already filled; what is
   missing is the browser:
-  `uv run onboard-scaffold --vertical <lane> --work-auth <status> --with-apply`
+  `uv run ay onboard scaffold --vertical <lane> --work-auth <status> --with-apply`
   installs the apply dependency group and Playwright's Chrome, and skips
   everything already present.
 - **The PII gate** — `profile/pii_denylist.txt`, which matters once

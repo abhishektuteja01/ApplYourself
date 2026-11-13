@@ -634,7 +634,7 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
         raise AnswersError(f"{where}: top level must be a mapping")
     if data.get("schema_version") in (2, 3):
         raise AnswersError(
-            f"{where}: bank is schema {data['schema_version']}: run `uv run config migrate`"
+            f"{where}: bank is schema {data['schema_version']}: run `uv run ay config migrate`"
         )
     if data.get("schema_version") != SCHEMA_VERSION:
         raise AnswersError(f"{where}: schema_version must be {SCHEMA_VERSION}")
@@ -642,7 +642,7 @@ def answers_from(data, where: str = "answer bank", resume_path: Path | None = No
     if "browser" in data:
         raise AnswersError(
             f"{where}: browser: moved to profile/settings.yaml. Run "
-            "`uv run config migrate --dry-run`, then --apply"
+            "`uv run ay config migrate --dry-run`, then --apply"
         )
     removed_top = set(data) & set(REMOVED_TOP_LEVEL_KEYS)
     if removed_top:

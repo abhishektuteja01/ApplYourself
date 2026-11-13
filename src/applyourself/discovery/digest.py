@@ -1,4 +1,4 @@
-"""`uv run discover-digest`: tonight's run against its own recent history.
+"""`uv run ay discover digest`: tonight's run against its own recent history.
 
 Reads `jobs/runs/*.json` (written by `run.py`) and `jobs/boards.parquet`.
 Every number the `/discover` digest shows is computed here; the command
@@ -138,7 +138,7 @@ def board_summary(path: Path | None = None) -> dict:
 
 def main(argv=None) -> int:
     setup_logging()
-    parser = argparse.ArgumentParser(prog="discover-digest")
+    parser = argparse.ArgumentParser(prog="ay discover digest")
     parser.add_argument("--runs-dir", type=Path, default=None)
     parser.add_argument("--window", type=int, default=DEFAULT_WINDOW)
     parser.add_argument("--run-id", default=None, help="digest this run instead of the newest")

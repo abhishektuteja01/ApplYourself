@@ -1,12 +1,14 @@
 ---
-description: Write a one-page cover letter for a job_id from the bullets on its resume; `uv run app build letter` checks and renders it. Moves saved -> tailored.
+description: Write a one-page cover letter for a job_id from the bullets on its resume; `uv run ay app build letter` checks and renders it. Moves saved -> tailored.
 model: opus
 effort: medium
 allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run app *)
+  - Bash(uv run ay app *)
   - Bash(uv run track *)
+  - Bash(uv run ay track *)
   - Read
   - Write
   - Skill
@@ -24,7 +26,7 @@ argument-hint: <job_id> [--to "Hiring Manager Name"]
 ## 1. Find the folder
 
 ```bash
-uv run app dir $1
+uv run ay app dir $1
 ```
 
 An empty `dir` means no resume is built yet: stop and tell the user to run
@@ -45,7 +47,7 @@ ground "why this role" in the JD's work, not in the company.
 
 ## 4. Write `<dir>/cover_letter.yaml`
 
-`uv run app schema letter` prints every key the file may hold; this is an example.
+`uv run ay app schema letter` prints every key the file may hold; this is an example.
 
 ```yaml
 salutation: "Dear Hiring Manager,"
@@ -74,7 +76,7 @@ may not add a claim, tool, number or scope. Write the edited text back into
 ## 6. Build
 
 ```bash
-uv run app build letter $1
+uv run ay app build letter $1
 ```
 
 On exit 2, follow the fix loop in `no_fab.md`. A `pages` problem means cut the
@@ -83,7 +85,7 @@ body, or merge two paragraphs, and build again.
 ## 7. Move the role on
 
 ```bash
-uv run track $1 tailored --if saved --note "resume + cover letter on file"
+uv run ay track $1 tailored --if saved --note "resume + cover letter on file"
 ```
 
 This fires only from `saved`, so a re-run never drags an applied role back.

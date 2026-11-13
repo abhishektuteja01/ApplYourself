@@ -1,5 +1,5 @@
-"""The checks `uv run app build` runs on session-written text: prose, pages,
-outreach lint. Part of `uv run app` (src/applyourself/app_cli.py)."""
+"""The checks `uv run ay app build` runs on session-written text: prose, pages,
+outreach lint. Part of `uv run ay app` (src/applyourself/app_cli.py)."""
 
 from __future__ import annotations
 

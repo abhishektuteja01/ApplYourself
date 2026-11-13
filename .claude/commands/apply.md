@@ -4,13 +4,21 @@ model: opus
 effort: medium
 allowed-tools:
   - Bash(uv run apply prepare *)
+  - Bash(uv run ay apply prepare *)
   - Bash(uv run apply plan *)
+  - Bash(uv run ay apply plan *)
   - Bash(uv run apply judge-pack *)
+  - Bash(uv run ay apply judge-pack *)
   - Bash(uv run apply judge-check *)
+  - Bash(uv run ay apply judge-check *)
   - Bash(uv run apply run *)
+  - Bash(uv run ay apply run *)
   - Bash(uv run apply learn *)
+  - Bash(uv run ay apply learn *)
   - Bash(uv run app *)
+  - Bash(uv run ay app *)
   - Bash(uv run track *)
+  - Bash(uv run ay track *)
   - Read
   - Write
   - Edit
@@ -38,7 +46,7 @@ never a shell variable from an earlier call.
 ## 1. Prepare
 
 ```bash
-uv run apply prepare <job_id>
+uv run ay apply prepare <job_id>
 ```
 
 It checks the role (`saved` or `tailored`, a resume on file), the bank and
@@ -46,7 +54,7 @@ Playwright, and prints `OUT_DIR`, `VERTICAL`, `COMPANY_ANSWERS` and
 `OVERRIDES_FILE` (reset to `{"job_id": ...}`). Any error: stop and report it.
 
 ```bash
-uv run app dupes <job_id>
+uv run ay app dupes <job_id>
 ```
 
 Each entry in `duplicates` is another job_id that may be this same role and is
@@ -57,8 +65,8 @@ on a no, stop and suggest `/track <job_id> skip`.
 ## 2. Plan
 
 ```bash
-uv run apply plan <job_id> --questions
-uv run apply plan <job_id> --json --out <OUT_DIR>/plan.json
+uv run ay apply plan <job_id> --questions
+uv run ay apply plan <job_id> --json --out <OUT_DIR>/plan.json
 ```
 
 - Exit 2: the posting is gone. Report `EXPIRED` and suggest `/track <job_id> skip`.
@@ -87,21 +95,21 @@ stop. If either ran, re-run step 2: the bank's `why_company`, `why_role` and
 Then, only if the plan has no cover-letter park:
 
 ```bash
-uv run track <job_id> tailored --if saved --note "resume on file; board needs no cover letter, or one exists"
+uv run ay track <job_id> tailored --if saved --note "resume on file; board needs no cover letter, or one exists"
 ```
 
 ## 4. Judge
 
 ```bash
-uv run apply plan <job_id> --json --out <OUT_DIR>/plan.json
-uv run apply judge-pack <job_id>
+uv run ay apply plan <job_id> --json --out <OUT_DIR>/plan.json
+uv run ay apply judge-pack <job_id>
 ```
 
 It prints one line, `judge <packet> -> <out>`. Spawn the `apply-judge` agent
 with that exact line as its prompt, then:
 
 ```bash
-uv run apply judge-check <job_id>
+uv run ay apply judge-check <job_id>
 ```
 
 Exit 0 merges the judged entries into `OVERRIDES_FILE`. Exit 1 prints the
@@ -118,7 +126,7 @@ through the `no_ai_slop` skill in edit mode before it enters `OVERRIDES_FILE`
 ## 6. Ask only what is parked
 
 ```bash
-uv run apply plan <job_id> --questions --answers <OVERRIDES_FILE>
+uv run ay apply plan <job_id> --questions --answers <OVERRIDES_FILE>
 ```
 
 - Exit 1 with `OVERRIDES IGNORED`: report it verbatim and stop.
@@ -144,17 +152,17 @@ uv run apply plan <job_id> --questions --answers <OVERRIDES_FILE>
   plus `"fact": "<one general first-person sentence>"`, or `"learn": false`
   for a one-role answer. Tell the user what will be saved to the bank. Re-run this step. Once
   nothing they can answer is left, tell them to run
-  `! uv run apply confirm <OVERRIDES_FILE>` and type yes; never run it yourself
+  `! uv run ay apply confirm <OVERRIDES_FILE>` and type yes; never run it yourself
   and never write `"confirmed"` into the file. Once it prints `Confirmed:`,
   step 7.
 - No, or no reply → stop. Report where `OVERRIDES_FILE` is. Nothing is saved.
-- Scheduled run with something parked → stop; `uv run apply sheet` marks the
+- Scheduled run with something parked → stop; `uv run ay apply sheet` marks the
   role "Needs your OK".
 
 ## 7. Fill, and submit only with `--submit`
 
 ```bash
-uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json [--submit]
+uv run ay apply run --job-id <job_id> --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json [--submit]
 ```
 
 One browser, one fill. It saves the confirmed answers to the bank, fills the
@@ -190,7 +198,7 @@ Read the run report the command printed and tell the user:
 Answered from the bank: <n> · saved to the bank: <n>
   <each "learned" line>
 Still parked: <label> — <why>, one per line
-Rerun: uv run apply run --job-id <job_id> --answers <OVERRIDES_FILE> --manifest <OUT_DIR>/form_manifest.json [--submit]
+Rerun: uv run ay apply run --job-id <job_id> --answers <OVERRIDES_FILE> --manifest <OUT_DIR>/form_manifest.json [--submit]
 ```
 
 Categories: `submitted` (accepted), `submitted_unconfirmed` (clicked, no

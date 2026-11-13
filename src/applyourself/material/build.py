@@ -1,5 +1,5 @@
-"""`uv run app build resume|letter|answers|outreach`: check, render and record
-what a session wrote. Part of `uv run app` (src/applyourself/app_cli.py)."""
+"""`uv run ay app build resume|letter|answers|outreach`: check, render and record
+what a session wrote. Part of `uv run ay app` (src/applyourself/app_cli.py)."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def cmd_build_resume(
 ) -> tuple[dict[str, Any], int]:
     info = role_info(job_id)
     if not info["work_dir"]:
-        raise AppError(f"{job_id} has no folder — run `uv run app new {job_id}` first.")
+        raise AppError(f"{job_id} has no folder — run `uv run ay app new {job_id}` first.")
     folder = paths.APPLICATIONS.parent / info["work_dir"]
     lane = folder.parent.name
     facts, _ = _read_snapshot(folder)
@@ -109,7 +109,7 @@ def cmd_build_resume(
     header = [
         f"# trace — {folder.name}",
         "",
-        f"job_id `{job_id}`, lane `{lane}`. Written by `uv run app build resume`.",
+        f"job_id `{job_id}`, lane `{lane}`. Written by `uv run ay app build resume`.",
         f"Header location: {location or 'resume.yaml'} (country {country}, from {source}).",
         "",
     ]

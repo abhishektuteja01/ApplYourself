@@ -1,6 +1,6 @@
 # Machine settings: the night run, writing limits and the /apply browser.
 #
-# Overnight chain run by scripts/nightly_pipeline.sh. `uv run apply sheet` reads
+# Overnight chain run by scripts/nightly_pipeline.sh. `uv run ay apply sheet` reads
 # table_path (its cutoff is each lane's verticals.yaml `score.cutoff`); the
 # stage scripts read the keys further down.
 
@@ -43,7 +43,7 @@ uncovered_words_days: 14
 ghosted_after_days: 30       # an `applied` role with no update this long shows as ghosted
 company_cooldown_days: 2     # no batch submit to a company applied to this recently
 
-# Outreach drafts (`uv run app build outreach`): most words in the body per
+# Outreach drafts (`uv run ay app build outreach`): most words in the body per
 # channel (recruiter per medium), and in an email subject line.
 outreach_word_limits:
   recruiter_linkedin: 90

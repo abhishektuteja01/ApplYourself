@@ -161,7 +161,7 @@ def register(sub: Any) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="apply", description=__doc__)
+    parser = argparse.ArgumentParser(prog="ay apply", description=__doc__)
     register(parser.add_subparsers(dest="command", required=True))
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     return int(args.func(args))

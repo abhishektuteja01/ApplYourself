@@ -1,7 +1,7 @@
 #!/bin/bash
-# The /apply eval: `apply-eval stage`, one headless apply-judge per slice
+# The /apply eval: `ay apply eval stage`, one headless apply-judge per slice
 # (throttled by judge_parallel), one retry of any slice with no valid answer
-# file, then `apply-eval grade`.
+# file, then `ay apply eval grade`.
 #
 # Usage: scripts/eval_apply.sh SET [MODEL] [REPEAT_RUN_DIR]
 #   SET     public | private
@@ -29,18 +29,18 @@ GRADE_FLAGS=()
 
 if [[ "$DRY_RUN" == 1 ]]; then
   LOG=/dev/null
-  echo "[dry-run] uv run apply-eval stage --set $SET"
+  echo "[dry-run] uv run ay apply eval stage --set $SET"
   echo "[dry-run] per judge line (at most $(cfg judge_parallel) at once):"
   run_claude "slice_<n>" "Read,Write" "judge <packet> -> <out>" --agent apply-judge ${MODEL_FLAGS[@]+"${MODEL_FLAGS[@]}"}
-  echo "[dry-run] uv run apply-eval owed <run_dir>; each owed line rerun once"
-  echo "[dry-run] uv run apply-eval grade <run_dir> ${GRADE_FLAGS[*]:-}"
+  echo "[dry-run] uv run ay apply eval owed <run_dir>; each owed line rerun once"
+  echo "[dry-run] uv run ay apply eval grade <run_dir> ${GRADE_FLAGS[*]:-}"
   exit 0
 fi
 
 PARALLEL="$(cfg judge_parallel)" || exit 2
 [[ "$PARALLEL" =~ ^[1-9][0-9]*$ ]] || { echo "judge_parallel must be a positive integer" >&2; exit 2; }
 
-OUT="$("$UV" run apply-eval stage --set "$SET" 2>&1)"; CODE=$?
+OUT="$("$UV" run ay apply eval stage --set "$SET" 2>&1)"; CODE=$?
 echo "$OUT"
 [[ $CODE -eq 0 ]] || exit "$CODE"
 RUN_DIR="$(sed -n 's/^run //p' <<< "$OUT" | head -1)"
@@ -64,9 +64,9 @@ run_judges() {  # run_judges "<judge lines>" TAG_PREFIX
 
 run_judges "$OUT" slice
 if ! quota_hit; then
-  OWED="$("$UV" run apply-eval owed "$RUN_DIR")"
+  OWED="$("$UV" run ay apply eval owed "$RUN_DIR")"
   [[ -n "$OWED" ]] && { echo "retrying:"; echo "$OWED"; run_judges "$OWED" retry; }
 fi
 quota_hit && echo "usage limit hit: unjudged slices grade as misses"
 
-"$UV" run apply-eval grade "$RUN_DIR" ${GRADE_FLAGS[@]+"${GRADE_FLAGS[@]}"}
+"$UV" run ay apply eval grade "$RUN_DIR" ${GRADE_FLAGS[@]+"${GRADE_FLAGS[@]}"}

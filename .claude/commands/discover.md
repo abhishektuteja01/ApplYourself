@@ -7,9 +7,13 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run discovery-check*)
+  - Bash(uv run ay discover check*)
   - Bash(uv run discover)
+  - Bash(uv run ay discover)
   - Bash(uv run discover --*)
+  - Bash(uv run ay discover --*)
   - Bash(uv run discover-digest*)
+  - Bash(uv run ay discover digest*)
   - Read
 ---
 
@@ -24,7 +28,7 @@ repeatable. With no flags, a full run.
 ## Step 1 — preflight
 
 ```bash
-uv run discovery-check
+uv run ay discover check
 ```
 
 Nonzero exit means the config does not resolve. Print the error and stop —
@@ -33,7 +37,7 @@ do not start a scrape against a broken config.
 ## Step 2 — scrape
 
 ```bash
-uv run discover <the user's flags, verbatim>
+uv run ay discover [--<the user's flags, verbatim>]
 ```
 
 A full run takes hours. Tell the user the run id as soon as `discover` prints
@@ -43,7 +47,7 @@ boards still due.
 ## Step 3 — digest
 
 ```bash
-uv run discover-digest --json
+uv run ay discover digest --json
 ```
 
 `--run-id <id>` digests an older run instead of the newest; `--window N`

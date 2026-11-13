@@ -9,7 +9,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 # shellcheck disable=SC2034  # read by lib_pipeline.sh
 STAGE=tailor; LOG="$RUN_DIR/tailor.log"
 ID="$1"
-TOOLS='Bash(uv run verticals-check *),Bash(uv run app *),Bash(cd *),Bash(git rev-parse *),Read,Write,Edit'
+TOOLS='Bash(uv run verticals-check *),Bash(uv run ay config check-verticals *),Bash(uv run app *),Bash(uv run ay app *),Bash(cd *),Bash(git rev-parse *),Read,Write,Edit'
 
 has() {  # built: the newest folder's build is recorded, with its pdf; pdf_missing: docx, no pdf
   "$UV" run python - "$ID" "$1" <<'PY'
@@ -30,12 +30,12 @@ PY
 
 rebuild() {  # re-render the saved plan; one failing only on its summary rebuilds with --final
   local out rc
-  out="$("$UV" run app build resume "$ID" 2>>"$LOG")"; rc=$?
+  out="$("$UV" run ay app build resume "$ID" 2>>"$LOG")"; rc=$?
   printf '%s\n' "$out" >>"$LOG"
   if [[ $rc -eq 2 ]] && printf '%s' "$out" | "$UV" run python -c 'import json, sys
 p = json.load(sys.stdin).get("problems") or []
 sys.exit(0 if p and all(x.get("where") == "summary" for x in p) else 1)'; then
-    "$UV" run app build resume "$ID" --final >>"$LOG" 2>&1
+    "$UV" run ay app build resume "$ID" --final >>"$LOG" 2>&1
     return
   fi
   return "$rc"
@@ -44,7 +44,7 @@ sys.exit(0 if p and all(x.get("where") == "summary" for x in p) else 1)'; then
 RETRIES="$(cfg retries)" || { echo "$ID fail" >> "$RUN_DIR/tailor_results.txt"; exit 2; }
 if [[ "$DRY_RUN" == 1 ]]; then
   run_claude "$ID" "$TOOLS" "/tailor $ID"
-  echo "[dry-run] check build + PDF; docx without PDF: uv run app build resume $ID, else /tailor; retry up to $RETRIES"
+  echo "[dry-run] check build + PDF; docx without PDF: uv run ay app build resume $ID, else /tailor; retry up to $RETRIES"
   exit 0
 fi
 RESULT=fail

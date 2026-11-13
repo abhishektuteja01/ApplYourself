@@ -67,11 +67,11 @@ names the site of exactly one URL answer in the bank (the word from that URL's o
 host, "linkedin" from linkedin.com) gets that URL at tier A, unless another question's id holds that word (`github_username`).
 
 The apply-judge (`.claude/agents/apply-judge.md`) answers every other field, on
-every role. `uv run apply judge-pack <id>` writes its packet from the saved
+every role. `uv run ay apply judge-pack <id>` writes its packet from the saved
 `plan.json` (the posting's company, title and location; facts and
 `demographics.answers`; questions, role-file answers shown with this role's
 text; the country's work-authorization row; a story index; the fields in form
-order); `uv run apply judge-check <id>` refuses malformed output, naming each
+order); `uv run ay apply judge-check <id>` refuses malformed output, naming each
 problem (`reconcile.text_problem`: input limits, then the lint, on judged text
 and on the bank prose a `question` picks), writes them into packet.md under
 "Refused last time (fix these)" (replaced each time), and merges the rest into
@@ -123,7 +123,7 @@ entry) reach the user.
 confirmation and never unattended. It writes two things: a user's answer to an
 `ask`, as a new `facts` line, once the answers file passes `apply confirm`; and
 an approved new prose answer, as a new `questions` entry with its `source`.
-New prose fills without waiting; `uv run apply prose --review` lists the pending
+New prose fills without waiting; `uv run ay apply prose --review` lists the pending
 ones and `--save` saves the approved rows, on a typed yes at a terminal only.
 Each lesson is tried alone and kept only if the bank still loads; a refused
 lesson is named and the rest stand. Every write keeps the previous file in
@@ -137,7 +137,7 @@ answer, or `"learn": false`, which saves nothing; `apply confirm` shows which.
 
 Run after any change to the judge prompt, the packet or the renderer:
 `scripts/eval_apply.sh public|private [MODEL] [REPEAT_RUN_DIR]`, which runs
-`uv run apply-eval stage`, one apply-judge per slice, `owed` retries, then
+`uv run ay apply eval stage`, one apply-judge per slice, `owed` retries, then
 `grade` (deterministic: each entry goes through `apply_override`). The public
 set is `evals/apply/` (synthetic personas and cases, tracked); the private set is
 `applications/evals/apply/` (from the real bank and past runs, gitignored). The
@@ -212,7 +212,7 @@ title matches when normalized, or when exactly one posting differs only in words
 intelligence" as "ai" and drops a trailing "at <the role's company>"; discovery
 merges stay strict); a miss stored under an older `apply_url.MATCHER`
 is looked up again. The night never runs it.
-`uv run apply sheet` rewrites `profile/settings.yaml`'s `table_path` from it
+`uv run ay apply sheet` rewrites `profile/settings.yaml`'s `table_path` from it
 (under a lock, tmp file then rename); `--list STATUS` prints the queue at a status
 (the night stages and triage read this); `--compare` prints how the xlsx differs
 from the queue. `--add` is accepted and does nothing extra. Bank writes

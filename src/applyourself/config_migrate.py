@@ -1284,5 +1284,5 @@ def main(args: Any) -> int:
         return 1
     for name in written:
         print(f"wrote  {root / name}")
-    print("now run: uv run config-check")
+    print("now run: uv run ay config check")
     return 0

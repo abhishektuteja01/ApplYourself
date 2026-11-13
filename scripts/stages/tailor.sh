@@ -11,9 +11,9 @@ pdf_helper_up
 PAR="$(cfg tailor_parallel)" || { stage_end 2 "config"; exit 2; }
 STAGGER="$(cfg tailor_stagger_seconds)" || { stage_end 2 "config"; exit 2; }
 if [[ "$DRY_RUN" == 1 ]]; then
-  echo "[dry-run] uv run apply sheet --add"
+  echo "[dry-run] uv run ay apply sheet --add"
 else
-  "$UV" run apply sheet --add || { stage_end 1 "apply sheet --add failed"; exit 1; }
+  "$UV" run ay apply sheet --add || { stage_end 1 "apply sheet --add failed"; exit 1; }
 fi
 RESULTS="$RUN_DIR/tailor_results.txt"
 if [[ "${NIGHT_RERUN:-0}" == 1 && -f "$RESULTS" ]]; then
@@ -28,10 +28,10 @@ LEFT=$(( ${STAGE_LIMIT:-100000} - PRIOR )); [[ $LEFT -gt 0 ]] || LEFT=0
 if [[ -n "${ONLY_IDS:-}" ]]; then
   IDS="$ONLY_IDS"
 else
-  NEW="$("$UV" run apply sheet --list New | grep -vxFf <(cut -d' ' -f1 "$RESULTS"))"
+  NEW="$("$UV" run ay apply sheet --list New | grep -vxFf <(cut -d' ' -f1 "$RESULTS"))"
   # Thin JDs, duplicates of a role in play and gone postings are left New (night tailor-pick).
   PICK_ARGS=(--run-dir "$RUN_DIR" --limit "$LEFT"); [[ "$DRY_RUN" == 1 ]] && PICK_ARGS+=(--dry-run)
-  IDS="$("$UV" run night tailor-pick "${PICK_ARGS[@]}" <<< "$NEW")" \
+  IDS="$("$UV" run ay night tailor-pick "${PICK_ARGS[@]}" <<< "$NEW")" \
     || { echo "night tailor-pick failed: taking every New role"; IDS="$(head -n "$LEFT" <<< "$NEW")"; }
 fi
 SKIPPED=$(grep -cE ' (thin|dupe|gone)$' "$RESULTS" || true); SKIPPED=${SKIPPED:-0}
@@ -57,7 +57,7 @@ if [[ $N -gt 0 ]]; then
   done
   for p in ${PIDS[@]+"${PIDS[@]}"}; do wait "$p"; done   # not the pdf helper
 fi
-[[ "$DRY_RUN" == 1 ]] || "$UV" run apply sheet
+[[ "$DRY_RUN" == 1 ]] || "$UV" run ay apply sheet
 N=$((N + PRIOR))
 OK=$(grep -c ' ok$' "$RUN_DIR/tailor_results.txt" 2>/dev/null || true); OK=${OK:-0}
 DEF=$(grep -c ' deferred$' "$RUN_DIR/tailor_results.txt" 2>/dev/null || true); DEF=${DEF:-0}

@@ -1,4 +1,4 @@
-"""discover-ids: the job_ids table and dedupe_key built from today's files."""
+"""ay discover ids: the job_ids table and dedupe_key built from today's files."""
 
 from __future__ import annotations
 

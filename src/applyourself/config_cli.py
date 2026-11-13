@@ -107,7 +107,7 @@ def _work_auth(country: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     ap = argparse.ArgumentParser(
-        prog="config", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="ay config", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("get")

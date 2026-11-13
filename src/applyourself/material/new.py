@@ -1,5 +1,5 @@
 """`app new` (open a role's folder and snapshot its JD) and `app dupes`.
-Part of `uv run app` (src/applyourself/app_cli.py)."""
+Part of `uv run ay app` (src/applyourself/app_cli.py)."""
 
 from __future__ import annotations
 

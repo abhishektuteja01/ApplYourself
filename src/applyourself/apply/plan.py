@@ -2,7 +2,7 @@
 
 The plan is the whole contract with the browser: fill.py executes it and never
 decides anything. So everything a submission depends on is settled here, offline
-and inspectable — `uv run apply plan <job_id>` prints exactly what would be
+and inspectable — `uv run ay apply plan <job_id>` prints exactly what would be
 typed into which selector before any browser exists.
 
 Three outcomes per field, and one list each:

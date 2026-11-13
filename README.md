@@ -45,7 +45,7 @@ pure config: `src/` names no lane, search term or company.
 
 Read a command's `.md` in `.claude/commands/` before running it. That is where
 the real orchestration lives. Two rules shape the code: no module in `src/`
-calls a model, and `uv run track` is the only writer of a role's state. Both are
+calls a model, and `uv run ay track` is the only writer of a role's state. Both are
 in `CLAUDE.md`.
 
 ### 1. Discovery
@@ -60,9 +60,9 @@ gets a stable `job_id`. The output everything downstream reads is
 ban word, inside your location allowlist, one row per `job_id`.
 
 - Slash command: `/discover` runs it and prints a short health digest.
-- CLIs: `uv run discover`, `uv run ingest-url <url>` (one posting),
-  `uv run discovery-check` (the resolved config), `uv run discover-digest`,
-  `uv run discover-dupes`, `uv run discover-ids`.
+- CLIs: `uv run ay discover`, `uv run ay ingest <url>` (one posting),
+  `uv run ay discover check` (the resolved config), `uv run ay discover digest`,
+  `uv run ay discover dupes`, `uv run ay discover ids`.
 - `uv run python scripts/dev/audit_slugs.py` says which boards are active, empty, stale or
   dead; a board that answers 200 with no postings never looks dead otherwise.
 - Config: `profile/discovery.yaml`.
@@ -81,7 +81,7 @@ score in one lane is never compared with another.
 - Slash command: `/score` (`--all` re-judges, `--vertical V` one lane,
   `--stale-only` counts rows whose input changed). Re-judge after editing your
   bullets, a rubric or `scoring.yaml`.
-- CLI: `uv run score start|finish|show|lane|examples`.
+- CLI: `uv run ay score start|finish|show|lane|examples`.
 - Config: `profile/scoring.yaml`, the `score:` rules in `verticals.yaml`
   `defaults:` and each lane, each lane's `rubric.md` (and optional
   `examples.yaml`), and `.claude/shared/scoring_rubric.md`.
@@ -99,10 +99,10 @@ nothing. Everything for a role lands in `applications/<lane>/<dir>/`.
   (never sends), `/ingest <url> <lane> resume cover-letter` (one URL through
   scoring, resume and letter; stops before applying). Also `/interview` (mock
   interviews on your own resume's claims), `/suggest-synonyms` and `/no_ai_slop`.
-- CLIs: `uv run app new|dir|build|dupes|schema|lint`, `uv run synonyms`,
-  `uv run profile-extract <file>`.
+- CLIs: `uv run ay app new|dir|build|dupes|schema|lint`, `uv run ay synonyms`,
+  `uv run ay onboard extract <file>`.
 - Lanes: `/new-vertical <name>` adds one, `/tune-vertical <name>` sharpens one;
-  `uv run verticals-check` validates them and the resume sources.
+  `uv run ay config check-verticals` validates them and the resume sources.
 - Details: `.claude/rules/verticals-config.md`, `.claude/rules/linting.md`,
   `.claude/shared/no_fab.md`.
 
@@ -115,8 +115,8 @@ Each role has a state (`saved`, `skip`, `tailored`, `applied`, `screen`,
 
 - Slash commands: `/track <job_id> <state>`, `/standup` (rebuilds
   `pipeline.md`).
-- CLIs: `uv run track` (also `states`, `cleanup`, `rebuild-states`),
-  `uv run doctor` (where folders, state and logs disagree; read-only).
+- CLIs: `uv run ay track` (also `states`, `cleanup`, `rebuild-states`),
+  `uv run ay doctor` (where folders, state and logs disagree; read-only).
 - Details: `.claude/rules/state-machine.md`.
 
 ### 5. Submission
@@ -132,7 +132,7 @@ A batch takes the highest fit scores first.
 Workday, LinkedIn, Indeed and careers pages are always manual.
 
 - Slash command: `/apply <job_id> [--submit] [--letter]`.
-- CLI: `uv run apply prepare|plan|judge-pack|judge-check|run|confirm|prose|learn|triage|sheet|resolve-urls`.
+- CLI: `uv run ay apply prepare|plan|judge-pack|judge-check|run|confirm|prose|learn|triage|sheet|resolve-urls`.
 - Run reports and evidence: `applications/apply_runs/`.
 - Details: `.claude/rules/apply-submission.md`.
 
@@ -140,7 +140,7 @@ Workday, LinkedIn, Indeed and careers pages are always manual.
 
 You need [uv](https://docs.astral.sh/uv/), Python 3.12 and Claude Code. PDF
 output needs Microsoft Word on macOS. Without Word, pass
-`uv run app build ... --no-pdf`, which writes only the `.docx`.
+`uv run ay app build ... --no-pdf`, which writes only the `.docx`.
 
 **1. Install.** The core install needs no C toolchain.
 
@@ -161,15 +161,15 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 uv run playwright install chrome   # macOS
 **3. Fill in your profile.** In Claude Code, run `/onboarding`: five resumable
 steps and eight questions, with real scored jobs on screen by step 4. It drafts
 every `profile/` file. `/onboarding audit` checks an existing setup and changes
-nothing. By hand: `uv run onboard-scaffold --vertical <lane> --work-auth <status>`
+nothing. By hand: `uv run ay onboard scaffold --vertical <lane> --work-auth <status>`
 copies every template, then `/new-vertical <lane>` writes your first lane.
 
 **4. Check your config.**
 
 ```bash
-uv run verticals-check     # your lanes, or what's missing
-uv run config-check        # every profile/ file, OK or ERROR
-uv run config --help       # read-only views of the resolved config
+uv run ay config check-verticals   # your lanes, or what's missing
+uv run ay config check             # every profile/ file, OK or ERROR
+uv run ay config --help            # read-only views of the resolved config
 ```
 
 **5. Enable the git hooks** once per clone: `git config core.hooksPath .githooks`.
@@ -216,8 +216,8 @@ The banned-phrase list ships in `data/defaults/de_ai_rules.yaml`; a copy in
 discover, score, synonyms, tailor, apply prep (fills, never submits), cleanup,
 then `summary.md`, mailed to you if `summary_email` is set in
 `profile/settings.yaml`. A failed discover or score stops the night.
-`uv run night --resume` reruns the stages that did not finish;
-`uv run night --only STAGE` runs one. `DRY_RUN=1` prints only. Each night's
+`uv run ay night --resume` reruns the stages that did not finish;
+`uv run ay night --only STAGE` runs one. `DRY_RUN=1` prints only. Each night's
 record is `logs/pipeline_<stamp>/run.json`. `max_spend_usd_per_night` caps what
 its `claude` calls cost. A stage that hits the `claude` usage limit waits for the
 reset and runs again, while the wait ends before `usage_limit_wait_until`. A

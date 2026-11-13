@@ -7,7 +7,9 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run config verticals*)
+  - Bash(uv run ay config verticals*)
   - Bash(uv run app dir *)
+  - Bash(uv run ay app dir *)
   - Bash(sed -n *)
   - Bash(ls *)
   - Read
@@ -60,7 +62,7 @@ read the configured lanes and ask which one with `AskUserQuestion`.
 Read the valid lane names from config — never hardcode them:
 
 ```bash
-uv run config verticals
+uv run ay config verticals
 ```
 
 **Vertical mode:** if the name is not a configured lane, print the lane list and stop.
@@ -68,7 +70,7 @@ uv run config verticals
 **Role mode:**
 
 ```bash
-uv run app dir <job_id>
+uv run ay app dir <job_id>
 sed -n '1,40p' "pipeline/<job_id>/state.yaml"
 ```
 

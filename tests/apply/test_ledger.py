@@ -50,7 +50,7 @@ def test_a_rejected_submit_blocks_registration_as_prior_does(tmp_path, capsys):
     ledger.append(path, "bbbb2222", "rejected", detail="duplicate")
     assert ledger.prior(path, "bbbb2222") is not None
     assert track_cli.main(["ensure", "bbbb2222"]) == 1
-    assert "uv run track bbbb2222 rejected" in capsys.readouterr().err
+    assert "uv run ay track bbbb2222 rejected" in capsys.readouterr().err
     assert not (tmp_path / "pipeline" / "bbbb2222").exists()
 
 

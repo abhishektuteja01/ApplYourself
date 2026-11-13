@@ -7,7 +7,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 stage_start cleanup
 
 MODE=--apply; [[ "$DRY_RUN" == 1 ]] && MODE=--dry-run
-OUT="$("$UV" run track cleanup "$MODE")"; CODE=$?
+OUT="$("$UV" run ay track cleanup "$MODE")"; CODE=$?
 echo "$OUT"
 stage_end "$CODE" "${OUT#OK: }"
 exit "$CODE"

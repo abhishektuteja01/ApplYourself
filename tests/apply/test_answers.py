@@ -114,7 +114,7 @@ class TestLoad:
     @pytest.mark.parametrize("version", [2, 3])
     def test_an_older_bank_names_the_migration(self, tmp_path, version):
         with pytest.raises(
-            AnswersError, match=f"bank is schema {version}: run `uv run config migrate`"
+            AnswersError, match=f"bank is schema {version}: run `uv run ay config migrate`"
         ):
             load_answers(write_config(tmp_path, schema_version=version))
 

@@ -1,5 +1,5 @@
-# Read by src/applyourself/lint.py: `uv run app build` (resume, letter, answers),
-# `verticals-check` (the sources, once), /apply and /outreach.
+# Read by src/applyourself/lint.py: `uv run ay app build` (resume, letter, answers),
+# `ay config check-verticals` (the sources, once), /apply and /outreach.
 #
 # Mechanical violations are auto-fixed. Banned phrases are FLAGGED and Claude
 # rewrites the offending line; linter re-runs until clean.

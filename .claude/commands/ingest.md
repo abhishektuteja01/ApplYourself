@@ -8,11 +8,17 @@ allowed-tools:
   - Bash(test *)
   - Bash(pgrep *)
   - Bash(uv run verticals-check*)
+  - Bash(uv run ay config check-verticals*)
   - Bash(uv run ingest-url *)
+  - Bash(uv run ay ingest *)
   - Bash(uv run score *)
+  - Bash(uv run ay score *)
   - Bash(uv run discover --*)
+  - Bash(uv run ay discover --*)
   - Bash(uv run app dir *)
+  - Bash(uv run ay app dir *)
   - Bash(uv run track *)
+  - Bash(uv run ay track *)
   - Read
   - WebFetch
   - Agent
@@ -37,18 +43,18 @@ Everything that can fail late is checked here, before a fetch or a judge.
 
 ```bash
 test -n "$2" || { echo "ERROR: /ingest requires <url> <vertical>."; exit 1; }
-uv run verticals-check || exit 1
+uv run ay config check-verticals || exit 1
 test -f profile/scoring.yaml || { echo "ERROR: profile/scoring.yaml missing -- score start reads it."; exit 1; }
 test ! -f jobs/scored.staging/run.json || { echo "ERROR: a /score run is open. Finish it with /score, then re-run /ingest."; exit 1; }
 # Step 2 writes the jobs store and rebuilds clean.parquet. It waits on the
 # store's lock, but a nightly run would rebuild clean.parquet again at its end,
 # so wait for it. The bracketed letters keep the pattern from matching itself.
-pgrep -f 'discovery[.]ru[n]|/discove[r]$' >/dev/null && { echo "ERROR: a discovery run is in flight. Re-run /ingest after it finishes."; exit 1; }
+pgrep -f 'discovery[.]ru[n]|/discove[r]$|/ay discove[r]$' >/dev/null && { echo "ERROR: a discovery run is in flight. Re-run /ingest after it finishes."; exit 1; }
 ```
 
 If `resume` was requested (or implied), also check `/tailor`'s prerequisites,
 which would otherwise fail only after a fetch, a judge and a `scored.parquet`
-write (`verticals-check` above already checked the resume sources):
+write (`ay config check-verticals` above already checked the resume sources):
 
 ```bash
 test -f profile/resume_template.docx || { echo "ERROR: profile/resume_template.docx missing -- /tailor needs it."; exit 1; }
@@ -63,7 +69,7 @@ test -f profile/cover_letter_template.docx || { echo "ERROR: profile/cover_lette
 ## Step 2 — ingest the URL
 
 ```bash
-uv run ingest-url "$1" --vertical "$2"
+uv run ay ingest "$1" --vertical "$2"
 ```
 
 On success it prints `job_id: <8-hex>` and `Ingested: <company> — <title>
@@ -77,9 +83,9 @@ On exit 1, match the message:
 
 | Message | Action |
 |---|---|
-| `not a recognized ATS posting` | `uv run ingest-url "$1" --dry-run` (writes nothing), read company and title off the printed text, re-run the step 2 command with `--company "..." --title "..."` added (keep `--vertical "$2"`). **One attempt.** They define the `job_id` hash. A wrong company spelling still merges against the board's own spelling if the JD matches, and the merge keeps the tracked id — but a wrong *title* does not, and mints a second id for the same role. |
-| `below the ... floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/`, run `uv run discover --source manual`, then `/score`. |
-| `does not exist yet` | Run `uv run discover --deadline-hours 0`, then re-run the step 2 command. |
+| `not a recognized ATS posting` | `uv run ay ingest "$1" --dry-run` (writes nothing), read company and title off the printed text, re-run the step 2 command with `--company "..." --title "..."` added (keep `--vertical "$2"`). **One attempt.** They define the `job_id` hash. A wrong company spelling still merges against the board's own spelling if the JD matches, and the merge keeps the tracked id — but a wrong *title* does not, and mints a second id for the same role. |
+| `below the ... floor` | `WebFetch` the URL; if the text is still short, stop — say to paste the JD into `inbox/`, run `uv run ay discover --source manual`, then `/score`. |
+| `does not exist yet` | Run `uv run ay discover --deadline-hours 0`, then re-run the step 2 command. |
 | `did not survive cleaning` | Stop. The job was saved but the view dropped it (its retention window has passed); report the `job_id`. |
 | `location_allowlist` | Stop. Report the location and that `profile/discovery.yaml` must allow it. |
 | `not configured` / `did not classify` | Stop. Report the configured vertical list. |
@@ -93,15 +99,15 @@ distinct `job_id`.
 Already scored? Then skip to step 4 (a re-tailor becomes `_v2`):
 
 ```bash
-uv run score show <job_id>
+uv run ay score show <job_id>
 ```
 
-Exit 0 → scored. Exit 1 (`not scored`) → `uv run score start --job-id <job_id>`. `--job-id` skips every drop
+Exit 0 → scored. Exit 1 (`not scored`) → `uv run ay score start --job-id <job_id>`. `--job-id` skips every drop
 except `no-lane`, so a deliberately chosen role gets a real fit and `keywords_to_mirror`.
 - Exit 1 → report the error, stop.
 - `judge=0` → the `job_id` is not in `clean.parquet`; stop.
 - One `judge ...` line → spawn one `score-judge` agent whose prompt is the
-  rest of that line, then `uv run score finish`. Exit 1 → spawn its `judge`
+  rest of that line, then `uv run ay score finish`. Exit 1 → spawn its `judge`
   line once, `finish` again; still exit 1 → stop before tailoring.
 
 ## Step 4 — resume
@@ -121,13 +127,13 @@ Strictly sequential: it writes into the folder `/tailor` built.
 ## Step 6 — report
 
 ```bash
-uv run score show <job_id>
+uv run ay score show <job_id>
 ```
 
 Report, concisely: company and title (flag them as derived if step 2 needed
 `--dry-run`), vertical (flag it if it is not `$2`), its first two lines, and each
-artifact path, and the role's state as `uv run app dir <job_id>` reports it
+artifact path, and the role's state as `uv run ay app dir <job_id>` reports it
 (`tailored` once a cover letter exists, else `saved`).
 
 Close by asking the user to say the word once they've applied, then run
-`uv run track <job_id> applied`. Do not transition before they say so.
+`uv run ay track <job_id> applied`. Do not transition before they say so.

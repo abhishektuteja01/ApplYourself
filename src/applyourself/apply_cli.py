@@ -1673,7 +1673,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging()
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
-        prog="apply",
+        prog="ay apply",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

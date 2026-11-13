@@ -325,6 +325,6 @@ def examples_yaml(picked: list[dict[str, Any]]) -> str:
     ids = ", ".join(c["job_id"] for c in picked)
     return (
         "# Calibration examples for /score's judge: past roles in this lane and the\n"
-        "# answer each should get. Written by `uv run score examples`; edit freely.\n"
+        "# answer each should get. Written by `uv run ay score examples`; edit freely.\n"
         f"# From job_ids: {ids}\n" + body
     )

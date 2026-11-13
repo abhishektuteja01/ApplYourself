@@ -29,7 +29,7 @@ written yet. `/new-vertical <name>` fills all three and writes the lane's
 `profile/verticals/<name>/lane.yaml`. That is the intended hand-off state, and
 the summary says so.
 
-Run: `uv run onboard-scaffold --vertical <name> --work-auth <status>`.
+Run: `uv run ay onboard scaffold --vertical <name> --work-auth <status>`.
 """
 
 from __future__ import annotations
@@ -178,7 +178,7 @@ def strip_example_lanes(text: str, lanes: list[str], default_vertical: str) -> s
 
     out: list[str] = [
         "# Your vertical registry, scaffolded from verticals.example.yaml by",
-        "# `uv run onboard-scaffold`. Names must match ^[a-z][a-z0-9_]*$.",
+        "# `uv run ay onboard scaffold`. Names must match ^[a-z][a-z0-9_]*$.",
         "",
     ]
     for i, line in enumerate(lines):
@@ -339,7 +339,7 @@ def _print_report(rep: Report, dry_run: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="onboard-scaffold",
+        prog="ay onboard scaffold",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

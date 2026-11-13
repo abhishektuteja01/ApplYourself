@@ -55,8 +55,8 @@
                               list (or rewrite) every state.yaml that differs
                               from the fold of pipeline/events.jsonl
 
-Run as `uv run track <job_id> <state>`, `uv run track outreach-sent ...` or
-`uv run track ensure <job_id>`.
+Run as `uv run ay track <job_id> <state>`, `uv run ay track outreach-sent ...` or
+`uv run ay track ensure <job_id>`.
 """
 
 from __future__ import annotations
@@ -225,17 +225,17 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
             if verdict is ledger.Verdict.UNKNOWN:
                 advice = (
                     "The click may not have reached the board: check it, then run "
-                    f"`uv run track {job_id} applied` if it did, or delete its "
+                    f"`uv run ay track {job_id} applied` if it did, or delete its "
                     "lines from the ledger if it did not"
                 )
             elif verdict is ledger.Verdict.REJECTED:
                 advice = (
-                    f"The board turned it down. Restore it with: uv run track {job_id} applied "
-                    f'--note "restored from the submit ledger", then uv run track {job_id} rejected'
+                    f"The board turned it down. Restore it with: uv run ay track {job_id} applied "
+                    f'--note "restored from the submit ledger", then uv run ay track {job_id} rejected'
                 )
             else:
                 advice = (
-                    f"Restore it with: uv run track {job_id} applied --note "
+                    f"Restore it with: uv run ay track {job_id} applied --note "
                     '"restored from the submit ledger"'
                 )
             print(
@@ -619,13 +619,13 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_states()
 
     if argv and argv[0] == "standup":
-        parser = argparse.ArgumentParser(prog="track standup")
+        parser = argparse.ArgumentParser(prog="ay track standup")
         parser.add_argument("--digest", action="store_true")
         parser.add_argument("--note-file", type=Path, default=None)
         return _cmd_standup(parser.parse_args(argv[1:]))
 
     if argv and argv[0] == "ensure":
-        parser = argparse.ArgumentParser(prog="track ensure")
+        parser = argparse.ArgumentParser(prog="ay track ensure")
         parser.add_argument("job_id")
         parser.add_argument(
             "--company", default="", help="the employer, when the posting names none"
@@ -634,7 +634,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_ensure(args)
 
     if argv and argv[0] in ("stamp-schema", "drop-score-copies"):
-        parser = argparse.ArgumentParser(prog=f"track {argv[0]}")
+        parser = argparse.ArgumentParser(prog=f"ay track {argv[0]}")
         mode = parser.add_mutually_exclusive_group(required=True)
         mode.add_argument("--dry-run", action="store_true")
         mode.add_argument("--apply", action="store_true")
@@ -645,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_stamp_schema(args)
 
     if argv and argv[0] == "cleanup":
-        parser = argparse.ArgumentParser(prog="track cleanup")
+        parser = argparse.ArgumentParser(prog="ay track cleanup")
         mode = parser.add_mutually_exclusive_group()
         mode.add_argument("--dry-run", action="store_true")
         mode.add_argument("--apply", action="store_true")
@@ -654,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_cleanup(args)
 
     if argv and argv[0] in ("migrate-events", "rebuild-states"):
-        parser = argparse.ArgumentParser(prog=f"track {argv[0]}")
+        parser = argparse.ArgumentParser(prog=f"ay track {argv[0]}")
         mode = parser.add_mutually_exclusive_group(required=True)
         mode.add_argument("--dry-run", action="store_true")
         mode.add_argument("--apply", action="store_true")
@@ -665,7 +665,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_rebuild_states(parser.parse_args(argv[1:]))
 
     if argv and argv[0] == "outreach-sent":
-        parser = argparse.ArgumentParser(prog="track outreach-sent")
+        parser = argparse.ArgumentParser(prog="ay track outreach-sent")
         parser.add_argument("job_id")
         parser.add_argument("--channel", required=True, choices=["recruiter", "referral", "alumni"])
         parser.add_argument("--to", required=True)
@@ -673,7 +673,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_outreach_sent(args)
 
     if argv and argv[0] == "outreach-draft":
-        parser = argparse.ArgumentParser(prog="track outreach-draft")
+        parser = argparse.ArgumentParser(prog="ay track outreach-draft")
         parser.add_argument("job_id")
         parser.add_argument("--channel", required=True, choices=["recruiter", "referral", "alumni"])
         parser.add_argument("--to", required=True)
@@ -684,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_outreach_draft(args)
 
     parser = argparse.ArgumentParser(
-        prog="track", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="ay track", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("job_id")
     parser.add_argument("state", choices=sorted(VALID_STATES))

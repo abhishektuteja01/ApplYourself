@@ -81,7 +81,7 @@ starts with the other; never a near-spelling), and the JDs, boilerplate trimmed
 by scoring.yaml's `trim_jd` and word order ignored, score `JD_MERGE`. A pair
 that misses on only one of these (`other_name`, `weak_jd` from `JD_MAYBE`,
 `other_title`) is never merged: `store.flush` appends it once to
-`jobs/maybe_duplicates.jsonl`. `discover-dupes` runs the same matcher over ids
+`jobs/maybe_duplicates.jsonl`. `ay discover dupes` runs the same matcher over ids
 already stored and records them there too; no id is ever rewritten.
 
 `job_id = sha1(company_normalized + "|" + title_normalized)[:8]`, inputs frozen.
@@ -91,12 +91,12 @@ held by a different pair is salted (title + `#2`, `#3`, ...) until free.
 `jobs/job_ids.parquet` holds every (job_id, pair) the store ever held and is
 never pruned: `_Index` reads it, so a pair `forget` dropped keeps its id and a
 forgotten id is never minted for another pair. `store.flush` adds to it once it
-exists; `discover-ids --dry-run|--apply` builds it (and the store's `dedupe_key`)
+exists; `ay discover ids --dry-run|--apply` builds it (and the store's `dedupe_key`)
 from jobs.parquet and pipeline/events.jsonl, `--dry-run` exiting 1 on a conflict.
 `dedupe_key` (`identity.dedupe_key`: `DEDUPE_SUFFIXES` dropped, spaces squashed)
 is for matching only: ids sharing it under another pair spelling are an
 `other_name` maybe, never a join. Widen `DEDUPE_SUFFIXES`, never the frozen
-id list, then re-run `discover-ids --apply` to refresh stored keys.
+id list, then re-run `ay discover ids --apply` to refresh stored keys.
 
 Writes go through `store.flush` / `live_view.write_view`, under `parquet_io.locked`. The
 store is saved before board state, so a board is never marked checked while
@@ -155,7 +155,7 @@ feed's own company list (by slug, or site host for Phenom), then the row; the fe
 `country_iso` is added to a location unless the text is one country for sure. One
 paced page read serves a new row with a short JD and any row whose company
 still `looks_like_slug`, read from the page's schema.org `JobPosting` block
-(`jobposting_text`, also `ingest-url`'s first try; `jobposting_employer`). A
+(`jobposting_text`, also `ay ingest`'s first try; `jobposting_employer`). A
 better stored name is never replaced by a slug; a site (across subdomains) whose
 first ten reads tonight give nothing is not read again tonight.
 `jobs/feed_failed_reads.json` (`feed/failed_reads.py`) counts the nights a

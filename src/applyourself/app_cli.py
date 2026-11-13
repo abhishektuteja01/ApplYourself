@@ -1,4 +1,4 @@
-"""`uv run app` — the deterministic half of /tailor, /cover-letter, /outreach and
+"""`uv run ay app` — the deterministic half of /tailor, /cover-letter, /outreach and
 /company-answers (R7: no LLM calls; R10: never writes `state:`).
 
 The role folder is the only state these commands share:
@@ -63,7 +63,7 @@ def _emit(obj: dict[str, Any], code: int = 0) -> int:
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="uv run app", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="ay app", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_new = sub.add_parser("new")

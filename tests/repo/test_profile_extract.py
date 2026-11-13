@@ -1,4 +1,4 @@
-"""profile-extract feeds /onboarding's resume ingest.
+"""ay onboard extract feeds /onboarding's resume ingest.
 
 The interesting cases are the ones that silently return nothing: a table-based
 resume (python-docx's .paragraphs list is empty for it) and contact details
@@ -125,7 +125,7 @@ class TestCLI:
     def test_prints_text_and_exits_zero(self, tmp_path, monkeypatch, capsys):
         p = tmp_path / "r.md"
         p.write_text("Jane Roe\n", encoding="utf-8")
-        monkeypatch.setattr("sys.argv", ["profile-extract", str(p)])
+        monkeypatch.setattr("sys.argv", ["ay onboard extract", str(p)])
         assert main() == 0
         assert "Jane Roe" in capsys.readouterr().out
 
@@ -134,13 +134,13 @@ class TestCLI:
         the onboarding session an empty string to interview against."""
         p = tmp_path / "r.md"
         p.write_text("   \n", encoding="utf-8")
-        monkeypatch.setattr("sys.argv", ["profile-extract", str(p)])
+        monkeypatch.setattr("sys.argv", ["ay onboard extract", str(p)])
         assert main() == 1
         assert "no text" in capsys.readouterr().err
 
     def test_unsupported_file_exits_nonzero(self, tmp_path, monkeypatch, capsys):
         p = tmp_path / "r.pdf"
         p.write_bytes(b"%PDF")
-        monkeypatch.setattr("sys.argv", ["profile-extract", str(p)])
+        monkeypatch.setattr("sys.argv", ["ay onboard extract", str(p)])
         assert main() == 1
         assert "ERROR" in capsys.readouterr().err

@@ -10,8 +10,11 @@ allowed-tools:
   - Bash(cat *)
   - Bash(echo *)
   - Bash(uv run config work-auth*)
+  - Bash(uv run ay config work-auth*)
   - Bash(uv run score show *)
+  - Bash(uv run ay score show *)
   - Bash(uv run app *)
+  - Bash(uv run ay app *)
   - Read
   - Write
   - Skill
@@ -85,9 +88,9 @@ Parse `$ARGUMENTS` for:
 
 Read:
 - `pipeline/${JOB_ID}/state.yaml` (company, title, existing outreach[])
-- `uv run score show ${JOB_ID}` (fit_score, sponsorship, reasoning, keywords) and the
+- `uv run ay score show ${JOB_ID}` (fit_score, sponsorship, reasoning, keywords) and the
   `jobs/clean.parquet` row (full JD body)
-- `<dir>/trace.md`, where `<dir>` is what `uv run app dir <job_id>` prints (so
+- `<dir>/trace.md`, where `<dir>` is what `uv run ay app dir <job_id>` prints (so
   the outreach knows which bullets your resume leads with). An empty `dir`
   means no resume is built yet: stop and tell the user to run `/tailor <job_id>`.
 - `profile/contacts.yaml` (schema in `profile/contacts.example.yaml`; PII;
@@ -104,7 +107,7 @@ Read:
 - the work-authorization row for the job's country, which sets the disclosure:
 
   ```bash
-  uv run config work-auth '<the country in state.yaml location>'
+  uv run ay config work-auth '<the country in state.yaml location>'
   # Leave the country out for a remote or unnamed one: the home country applies.
   ```
 
@@ -160,8 +163,8 @@ That is the whole rule. Reachability is not a judgment call to make here.
 
 ### Write `outreach.yaml`
 
-Write `<dir>/outreach.yaml` (`<dir>` from `uv run app dir <job_id>`).
-`uv run app schema outreach` prints every key it may hold:
+Write `<dir>/outreach.yaml` (`<dir>` from `uv run ay app dir <job_id>`).
+`uv run ay app schema outreach` prints every key it may hold:
 
 ```yaml
 channel: <the $CHANNEL arg>
@@ -184,7 +187,7 @@ Then run the `no_ai_slop` skill in edit mode over `subject` and `body`
 ## Step 4 — build the draft
 
 ```bash
-uv run app build outreach <job_id>
+uv run ay app build outreach <job_id>
 ```
 
 It fixes mechanical slips, then checks the shape, the word limits (`length`),
@@ -201,7 +204,7 @@ alternate phrasing. `warnings` never fail the build; mention them in the report.
 
 On exit 0 the build has written the draft to `pipeline/<job_id>/outreach/` (the
 path is `draft` in its JSON) and recorded it in `state.yaml`'s `outreach[]`
-through `uv run track outreach-draft`. A rebuild rewrites the same day's draft
+through `uv run ay track outreach-draft`. A rebuild rewrites the same day's draft
 and never records it twice.
 
 ## Step 5 — disclosure check

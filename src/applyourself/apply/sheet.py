@@ -137,7 +137,7 @@ def status_for(
             return (
                 "Cooldown" if cool else "Submittable",
                 cooldown.note(cool) if cool else "",
-                f"uv run apply run --job-id {job_id} --answers {answers} "
+                f"uv run ay apply run --job-id {job_id} --answers {answers} "
                 f"--manifest {folder / 'form_manifest.submit.json'} --submit",
             )
         if category == "expired":

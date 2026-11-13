@@ -7,7 +7,9 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run apply sheet *)
+  - Bash(uv run ay apply sheet *)
   - Bash(uv run synonyms *)
+  - Bash(uv run ay synonyms *)
   - Read
   - Write
 ---
@@ -54,7 +56,7 @@ The key distinction across tracks:
   confirmed Track 2/3 memory-unlock answer — never invent a skill with no anchor.
 
 Output is a draft file for the user to review (`--auto`: a proposals file that
-`uv run synonyms apply` checks and writes). You never write to `profile/bullets.md`
+`uv run ay synonyms apply` checks and writes). You never write to `profile/bullets.md`
 or `profile/skills_master.md` yourself.
 
 ## `--auto` (nightly, nobody to ask)
@@ -63,7 +65,7 @@ Runs Steps 1, 2, the Track 3 gap-fill and the memory-unlock reasoning, then writ
 only `jobs/synonyms_proposals.yaml` and stops. Step 1 runs no shell commands: the
 stage has already written `jobs/synonyms_keywords.json`; only `Read` the files.
 Always write the file, with empty lists when there is nothing to propose. Skip
-Step 3's draft file, the tables and Step 4. Never run `uv run synonyms apply`;
+Step 3's draft file, the tables and Step 4. Never run `uv run ay synonyms apply`;
 the stage runs it.
 
 ```yaml
@@ -91,8 +93,8 @@ not in this file.
 Not in `--auto` (the stage has run it):
 
 ```bash
-uv run apply sheet --add >/dev/null
-uv run synonyms keywords > jobs/synonyms_keywords.json
+uv run ay apply sheet --add >/dev/null
+uv run ay synonyms keywords > jobs/synonyms_keywords.json
 ```
 
 `keywords` are the top 40 `keywords_to_mirror` of the roles with no resume yet,
@@ -235,7 +237,7 @@ Tell the user:
 
 ## Summary session
 
-When the user answers in the morning session: an unlock question, `uv run synonyms
-answer <id> yes|no`; a declined keyword they agree with, `uv run synonyms approve
+When the user answers in the morning session: an unlock question, `uv run ay synonyms
+answer <id> yes|no`; a declined keyword they agree with, `uv run ay synonyms approve
 <keyword>`. A `yes` still means the user writes the bullet or skill block, or asks you
 to draft it for them to paste.

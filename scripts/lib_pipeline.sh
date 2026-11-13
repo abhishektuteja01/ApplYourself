@@ -21,7 +21,7 @@ export RUN_DIR DRY_RUN
 
 # cfg KEY: one value from profile/settings.yaml. A missing key is an error,
 # so the numbers live in the config, not here.
-cfg() { "$UV" run config get settings "$1"; }
+cfg() { "$UV" run ay config get settings "$1"; }
 
 now() { date +%Y-%m-%d_%H%M%S; }
 
@@ -44,14 +44,14 @@ stage_start() {
   notify "Pipeline: $STAGE" "started"
 }
 
-# pdf_helper_up: start `uv run pdf-broker` (src/applyourself/pdf_broker.py) for this stage, so
+# pdf_helper_up: start `uv run ay night pdf-broker` (src/applyourself/pdf_broker.py) for this stage, so
 # Word conversions run under this bash, not under a headless claude (a new app to
 # macOS on every update). Stops when the stage exits. No helper: conversions run in-process.
 pdf_helper_up() {
   [[ "$DRY_RUN" == 1 || -n "${PDF_BROKER_DIR:-}" ]] && return 0
   local dir="$RUN_DIR/pdf_helper_$STAGE"
   mkdir -p "$dir"
-  "$UV" run pdf-broker "$dir" --parent $$ >>"$RUN_DIR/pdf_helper.log" 2>&1 &
+  "$UV" run ay night pdf-broker "$dir" --parent $$ >>"$RUN_DIR/pdf_helper.log" 2>&1 &
   PDF_HELPER_PID=$!
   trap 'kill "$PDF_HELPER_PID" 2>/dev/null' EXIT
   for _ in $(seq 1 150); do
@@ -69,7 +69,7 @@ stage_end() {
   local code="$1" detail="${2:-}" status="${3:-}" deferred="${4:-0}" secs=$((SECONDS - STAGE_T0))
   [[ -n "$status" ]] || { status=ok; [[ "$code" -eq 0 ]] || status=fail; }
   echo "=== $STAGE end code=$code seconds=$secs $status $(now) ==="
-  "$UV" run night record "$STAGE" "$code" "$status" "$deferred" "$detail" --run-dir "$RUN_DIR" \
+  "$UV" run ay night record "$STAGE" "$code" "$status" "$deferred" "$detail" --run-dir "$RUN_DIR" \
     || echo "night record $STAGE failed"
   if [[ "$code" -eq 0 ]]; then
     notify "Pipeline: $STAGE" "done ${detail}"

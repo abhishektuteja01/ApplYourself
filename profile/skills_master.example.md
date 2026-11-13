@@ -23,7 +23,7 @@
 #                        skills print in this file's order until /tailor
 #                        reorders them for a JD.
 #
-# Deleting a skill is deleting its entry. `uv run verticals-check` names any
+# Deleting a skill is deleting its entry. `uv run ay config check-verticals` names any
 # pointer that no longer resolves.
 #
 # Add entries yourself as real skills surface. /suggest-synonyms proposes

@@ -1,4 +1,4 @@
-"""`uv run doctor`: list where the role folders, state.yaml files, the event
+"""`uv run ay doctor`: list where the role folders, state.yaml files, the event
 log, the submit ledger and the jobs store disagree. Read-only: it writes
 nothing and fixes nothing. It lists what needs you and counts the rest
 (--all lists those too). Exit 1 when anything needs you.
@@ -61,7 +61,7 @@ def problems() -> list[tuple[str, str, str, bool]]:
     folded = state_io.fold(state_io.read_events(state_io.events_path_for(paths.PIPELINE)))
     for job_id, data in folded.items():
         if states.get(job_id) != data:
-            out.append(("cache_drift", job_id, "uv run track rebuild-states --dry-run", True))
+            out.append(("cache_drift", job_id, "uv run ay track rebuild-states --dry-run", True))
     sent = ledger.sent_job_ids(paths.APPLY_RUNS / ledger.LEDGER_NAME)
     for job_id in sorted(sent):
         if job_id not in states:
@@ -77,7 +77,7 @@ def problems() -> list[tuple[str, str, str, bool]]:
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="doctor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="ay doctor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--all", action="store_true", help="also list what does not need you")
     args = parser.parse_args(argv)

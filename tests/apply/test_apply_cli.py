@@ -1,4 +1,4 @@
-"""`uv run apply plan <job_id>` — the read-only entry point.
+"""`uv run ay apply plan <job_id>` — the read-only entry point.
 
 The queue, the rate limiter and the run report land with fill.py; until then the
 CLI's whole job is picking the right posting URL and the right /tailor dir, and

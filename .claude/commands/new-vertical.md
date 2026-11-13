@@ -6,7 +6,9 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run verticals-check*)
+  - Bash(uv run ay config check-verticals*)
   - Bash(uv run config *)
+  - Bash(uv run ay config *)
   - Bash(uv run python -c *)
   - Bash(uv run pytest tests/repo/test_real_config_drift.py *)
   - Bash(ls *)
@@ -92,7 +94,7 @@ titles the user stated in plain text, and it is the primary source for
 Step 3 draft as part of what gets confirmed.
 
 ```bash
-uv run verticals-check
+uv run ay config check-verticals
 ls profile/verticals/<name>/lane.yaml 2>/dev/null
 ls -d profile/verticals/<name> 2>/dev/null
 ls profile/verticals/<name>/.pass_a_only 2>/dev/null
@@ -126,14 +128,14 @@ the user to `/onboarding step 2`.
 | absent | `pass-b` | stop; the lane block is not there to build on |
 | absent | any | ambiguous partial run — stop; ask resume vs rename |
 
-While the marker exists, `verticals-check` fails on the missing prose and resume shape.
+While the marker exists, `ay config check-verticals` fails on the missing prose and resume shape.
 That is the expected mid-state, not damage to repair.
 
 Two accepted starting states:
 
-- **Straight out of `onboard-scaffold`** — `lanes: []` and `classifier_rules:`
+- **Straight out of `ay onboard scaffold`** — `lanes: []` and `classifier_rules:`
   are empty, `default_vertical` is already
-  the new lane name, so `verticals-check` fails. That failure is the expected
+  the new lane name, so `ay config check-verticals` fails. That failure is the expected
   input, not a problem to repair: adding the block plus one rule is exactly what
   makes the file load.
 - **A config that already loads** — append the lane at the end of `lanes:`
@@ -147,7 +149,7 @@ Two accepted starting states:
 | another configured lane | leave it — appending a lane never changes the primary |
 | neither `<name>` nor a configured lane | stop; ask which lane should be default before writing anything |
 
-Any other `verticals-check` failure — unparsable YAML, wrong `schema_version`,
+Any other `ay config check-verticals` failure — unparsable YAML, wrong `schema_version`,
 or an *existing* lane missing its
 rubric/tailoring/resume — stops the command. Quick mode does not repair
 unrelated config.
@@ -201,7 +203,7 @@ sharpening them is `/tune-vertical`'s.
 
 **4. `profile/verticals/<name>/tailoring.md`** — judgment only, in
 example_primary's shape: summary framing and when to change the baseline picks.
-Name projects in words; `verticals-check` rejects bullet
+Name projects in words; `ay config check-verticals` rejects bullet
 or skill ids here, because they belong in the sources.
 
 **5. The resume shape** — what `/tailor` builds from and `/score`'s judges read:
@@ -271,14 +273,14 @@ rm -f profile/verticals/<name>/.pass_a_only
 ## Step 5a — verify (`pass-a`)
 
 ```bash
-uv run config verticals <name>
-uv run config misclassified <name>
+uv run ay config verticals <name>
+uv run ay config misclassified <name>
 ```
 
 `config verticals` loads the config, which is what catches a malformed `score:` block or title
 term before the scrape.
 
-Do not run `verticals-check` or `tests/repo/test_real_config_drift.py` here — both
+Do not run `ay config check-verticals` or `tests/repo/test_real_config_drift.py` here — both
 fail by design until pass-b writes the prose and resume shape.
 
 ## Step 5b — verify (bare mode and `pass-b`)
@@ -286,7 +288,7 @@ fail by design until pass-b writes the prose and resume shape.
 Both commands above, then:
 
 ```bash
-uv run verticals-check
+uv run ay config check-verticals
 uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
@@ -310,7 +312,7 @@ Files written, the locked decisions (terms, rule, the years cap, the level answe
 the resume shape),
 and:
 
-- `uv run discover` then `/score` — their call, it hits the network.
+- `uv run ay discover` then `/score` — their call, it hits the network.
 - Board sources only reach boards listed in `data/universe/boards.csv`; if this lane's employers aren't there, LinkedIn and
   Indeed search terms are its only route.
 - One line: once a real shortlist exists, `/tune-vertical <name>` sharpens the

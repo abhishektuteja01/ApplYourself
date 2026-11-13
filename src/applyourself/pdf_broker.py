@@ -104,7 +104,7 @@ def serve(queue: Path, parent: int) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
-    parser = argparse.ArgumentParser(prog="pdf-broker")
+    parser = argparse.ArgumentParser(prog="ay night pdf-broker")
     parser.add_argument("queue", type=Path)
     parser.add_argument("--parent", type=int, required=True)
     args = parser.parse_args(argv)

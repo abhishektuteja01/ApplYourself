@@ -8,7 +8,7 @@
 # form field from `facts` and `questions`, and asks you when they don't cover it.
 # Your answer to an ask becomes a new fact, and an approved new written answer
 # becomes a new question, so the same thing is never asked twice. Review or undo
-# with `uv run apply learn` and `uv run apply learn --undo <id>`.
+# with `uv run ay apply learn` and `uv run ay apply learn --undo <id>`.
 
 schema_version: 4
 

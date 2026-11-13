@@ -16,13 +16,20 @@ allowed-tools:
   - Bash(git config core.hooksPath .githooks)
   - Bash(uv run python -c *)
   - Bash(uv run verticals-check*)
+  - Bash(uv run ay config check-verticals*)
   - Bash(uv run onboard-scaffold *)
+  - Bash(uv run ay onboard scaffold *)
   - Bash(uv run profile-extract *)
+  - Bash(uv run ay onboard extract *)
   - Bash(uv run discover-digest*)
+  - Bash(uv run ay discover digest*)
   - Bash(uv run ingest-url *)
+  - Bash(uv run ay ingest *)
   - Bash(uv run score *)
+  - Bash(uv run ay score *)
   - Bash(nohup uv run pytest tests *)
   - Bash(nohup uv run discover *)
+  - Bash(nohup uv run ay discover --*)
   - Read
   - Write
   - Edit
@@ -62,7 +69,7 @@ under `profile/`; nothing tracked changes.
   delegate to. If a step seems to need it, stop and report — the config
   contract is wrong, not the setup.
 - You run only what a numbered step lists: the bootstrap in 0b, the scaffold in
-  1.3, `discover` in 1.5, scoring in 3.4 and 3.6, `verticals-check` in 4.
+  1.3, `discover` in 1.5, scoring in 3.4 and 3.6, `ay config check-verticals` in 4.
   Everything downstream is handed off.
 - Print the position line first in every numbered step, verbatim:
   - `Step 1 of 5 · ~18 min left · you'll see real scored jobs at step 4.`
@@ -94,13 +101,13 @@ for f in profile/discovery.yaml profile/application_answers.yaml \
          profile/voice_samples.md profile/contacts.yaml profile/pii_denylist.txt; do
   test -s "$f" && echo "ok   $f" || echo "absent  $f"; done
 echo "--- validity ---"
-uv run verticals-check 2>&1 | tail -5
+uv run ay config check-verticals 2>&1 | tail -5
 echo "--- progress ---"
 test -f profile/.onboarding.md && cat profile/.onboarding.md || echo "no progress file"
 ```
 
 Map each result to the step that fixes it, in a short checklist, and start
-there. If everything is present and `verticals-check` passes, report that and
+there. If everything is present and `ay config check-verticals` passes, report that and
 stop — that is the audit. `audit` mode always stops here.
 
 ### 0b. Install, then one background test run
@@ -121,7 +128,7 @@ full check itself.
 That is the only test run in this command. Do not wait for it and do not start a
 second one — step 5 reads the log at hand-off.
 
-`onboard-scaffold` does every remaining chore, but two of its flags are answers
+`ay onboard scaffold` does every remaining chore, but two of its flags are answers
 you do not have yet (`--vertical`, `--work-auth`), so it runs inside step 1.
 
 ## Step 1 — your lane, and the scrape starts (~4 min, 5 questions)
@@ -153,8 +160,8 @@ the resume.
    what `/new-vertical` confirms.
 
    ```bash
-   uv run onboard-scaffold --vertical <lane> --work-auth <citizen|needs_now|time_limited> --dry-run
-   uv run onboard-scaffold --vertical <lane> --work-auth <citizen|needs_now|time_limited>
+   uv run ay onboard scaffold --vertical <lane> --work-auth <citizen|needs_now|time_limited> --dry-run
+   uv run ay onboard scaffold --vertical <lane> --work-auth <citizen|needs_now|time_limited>
    ```
 
    Copies every `profile/*.example.*` to its real name including the two Word
@@ -167,7 +174,7 @@ the resume.
    `/cover-letter`: the letter's letterhead is literal placeholder text — `NAME`
    at the top, `City, ST | Num| Email` under it, `NAME` again after `Sincerely,`
    — and mails as written.
-   No Microsoft Word on this Mac: tell them every `uv run app build` needs `--no-pdf`.
+   No Microsoft Word on this Mac: tell them every `uv run ay app build` needs `--no-pdf`.
 
 4. Run **`/new-vertical <lane> pass-a "<their stated roles>"`** and let it drive.
    Pass A writes only the lane's `profile/verticals/<lane>/lane.yaml`, its `lanes:` entry and one classifier rule,
@@ -180,7 +187,7 @@ the resume.
    level; the title gate drops only the `defaults:` ban list.
 
    Pass A ends with the loader working and a marker at
-   `profile/verticals/<lane>/.pass_a_only`. `verticals-check` fails until step 2
+   `profile/verticals/<lane>/.pass_a_only`. `ay config check-verticals` fails until step 2
    runs pass B; that failure is expected here, not damage to repair.
 
    If that marker is already on disk when you reach 1.4, a previous session got
@@ -191,7 +198,7 @@ the resume.
 
    ```bash
    mkdir -p logs jobs
-   nohup uv run discover --source linkedin --max-terms 2 --deadline-hours 0.1 \
+   nohup uv run ay discover --source linkedin --max-terms 2 --deadline-hours 0.1 \
          > logs/onboarding_scrape.log 2>&1 &
    ```
 
@@ -201,7 +208,7 @@ the resume.
    and take far longer than this has). Expect a
    fraction of an overnight run. The view accepts the answer bank's countries
    (only your own, until you add rows); nothing here needs undoing, because tomorrow's
-   plain `uv run discover` runs the full config.
+   plain `uv run ay discover` runs the full config.
 
 ## Step 2 — your resume (~7 min, 0 questions)
 
@@ -213,7 +220,7 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    `profile/` for `.docx`, `.pdf` and `.md` files that are neither a known
    profile file nor a `*.example.*` template. One match, take it; several, name
    them and ask which; none, say what you looked for and ask again.
-   - `.docx` → `uv run profile-extract <file>`
+   - `.docx` → `uv run ay onboard extract <file>`
    - `.pdf` or `.md` → read it directly
 
 2. Print the assumed discovery block and move on; step 3 confirms it against real
@@ -261,7 +268,7 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
 
 5. Run **`/new-vertical <lane> pass-b`**. It writes `rubric.md`, `tailoring.md`
    and the lane's resume shape from the bullets just authored, removes the
-   `.pass_a_only` marker, and ends with `verticals-check` passing. It asks
+   `.pass_a_only` marker, and ends with `ay config check-verticals` passing. It asks
    nothing. If the check does not pass, stop and report.
 
    Score rules, rubric anchors, classifier collisions stay out of
@@ -279,11 +286,11 @@ tail -20 logs/onboarding_scrape.log
 ```
 
 `clean rows: 0`, or the `linkedin` lane zero or crashed in
-`uv run discover-digest` → re-run on
+`uv run ay discover digest` → re-run on
 Indeed, backgrounded the same way, and carry on with 3.2 while it runs:
 
 ```bash
-nohup uv run discover --source indeed --max-terms 2 --deadline-hours 0.1 \
+nohup uv run ay discover --source indeed --max-terms 2 --deadline-hours 0.1 \
       > logs/onboarding_scrape_indeed.log 2>&1 &
 ```
 
@@ -291,7 +298,7 @@ Still zero after that: say so in one line with the
 likely cause — the first two search terms do not match how these boards title
 the role, the deadline cut the run short, or both boards rate-limited — then take
 the fallback. Have them paste two or three job URLs and run
-`uv run ingest-url <url> --vertical <lane>` on each. Step 4 needs postings, not a
+`uv run ay ingest <url> --vertical <lane>` on each. Step 4 needs postings, not a
 scrape.
 
 ```bash
@@ -329,7 +336,7 @@ checked: the store keeps only rows that passed the gate.
 
 Follow `/score`'s steps from this session (a subagent cannot spawn judges):
 
-1. `uv run score start`. Exit 1: report the error and skip to 3.5. A `done`
+1. `uv run ay score start`. Exit 1: report the error and skip to 3.5. A `done`
    line: nothing to judge.
 2. For each `judge ...` line, spawn one background `score-judge` agent whose
    prompt is the rest of that line. All in one message.
@@ -361,7 +368,7 @@ Never judge a slice yourself, and never read, edit or delete files in
   its `# Target level:` line and the rubric's level note.
 - Ambiguity corrections go straight into `bullets.md` / `skills_master.md`.
 
-Then wait on the judges and run `/score`'s step 3: `uv run score finish`; on
+Then wait on the judges and run `/score`'s step 3: `uv run ay score finish`; on
 exit 1 spawn its `judge ...` lines once the same way and run `finish` again;
 still exit 1, report its `bad` lines. Then read the shortlist it wrote.
 
@@ -383,7 +390,7 @@ Apply what they said, in one pass, then stop. No second round.
   more than one, that is `/tune-vertical` — say so and leave the rubric alone.
 
 ```bash
-uv run verticals-check
+uv run ay config check-verticals
 ```
 
 If a rubric anchor changed, run `/score --all` and
@@ -408,7 +415,7 @@ complete.
 Not green, or still running: report what failed and do not declare setup done.
 
 ```
-Every morning        uv run discover      overnight scrape -> jobs/clean.parquet
+Every morning        uv run ay discover   overnight scrape -> jobs/clean.parquet
 Then                 /score               judges new rows, writes today's shortlist
 Per role you like    /tailor <job_id>     tailored resume
                      /cover-letter <job_id>

@@ -52,7 +52,7 @@ where it applies, by name (`NO-FAB`, `NO-DRIFT`) or in plain words.
   R7 scan and shellcheck.
 - `.claude/commands/*.md` hold the real orchestration; read one before running its
   slash command. `.claude/shared/no_fab.md` defines `NO-FAB`, `NO-DRIFT`,
-  `REPHRASE-LICENSE`, `SKILLS-SOURCE`, the `uv run app build` problem codes and the
+  `REPHRASE-LICENSE`, `SKILLS-SOURCE`, the `uv run ay app build` problem codes and the
   fix loop. The judges are `.claude/agents/score-judge.md`, spawned by `/score` and
   `/ingest`, and `.claude/agents/apply-judge.md`, spawned by `/apply` and the
   night's apply_prep; neither is invoked directly.
@@ -75,12 +75,12 @@ title gate, locations, the job-board registry and the HTTP client.
   through the title gate and location allowlist, one row per `job_id`. Boards are
   listed in `data/universe/boards.csv`.
 - Application material lands in `applications/<vertical>/<dir>/`, the only state
-  the material commands share: `uv run app dir <id>` resolves it from
+  the material commands share: `uv run ay app dir <id>` resolves it from
   `tailored_dirs[-1]`, and "has a letter / answers" means the file is there.
 - Each resume is built by `src/applyourself/resume_model.py` from one source per fact
   (`resume.yaml`, `bullets.md`, `skills_master.md`, the lane's `resume:` block);
   detail in `verticals-config`.
-- `saved -> tailored` is `uv run track <id> tailored --if saved`, fired by
+- `saved -> tailored` is `uv run ay track <id> tailored --if saved`, fired by
   `/cover-letter`, `/apply` and `apply triage --fill`; it is `/ingest`'s only
   transition. `/interview` writes only
   under `interview/`: never `profile/`, never `state.yaml`.
@@ -93,25 +93,25 @@ Changing the hash inputs would silently orphan `pipeline/<job_id>/state.yaml` an
 `applications/<dir>` keys. Do not add url/jd_text to the hash.
 Ids are stored, never recomputed; a hash already held by another pair gets a salt
 (title + `#2`, `#3`, ...). `jobs/job_ids.parquet` keeps every (id, pair) forever,
-so `forget` never makes a returning pair re-mint (`uv run discover-ids` builds it).
+so `forget` never makes a returning pair re-mint (`uv run ay discover ids` builds it).
 Matching uses the stored `dedupe_key` (`identity.DEDUPE_SUFFIXES`), never the id;
 widen that list, not `normalize_company`.
 
 ## Commands
 
-Run every command from the repo root. Every CLI is a `pyproject` `[project.scripts]`
-entry run with `uv run`; each has `--help`.
+Run every command from the repo root. Every CLI runs as `uv run ay <verb> ...`
+(`src/applyourself/cli.py` routes it; `uv run ay --help` lists them); each has `--help`.
 
 ```bash
 uv run pytest tests -q                # must be fully green after any src/ or fixture change
 ./scripts/nightly_pipeline.sh         # the whole night: discover, score, synonyms, tailor, apply_prep,
                                       # cleanup, summary. DRY_RUN=1 prints only; STAGE_LIMIT=N caps score/tailor/apply_prep
-uv run night --resume                 # what that script runs: --resume reruns the last night's stages not ok,
+uv run ay night --resume              # what that script runs: --resume reruns the last night's stages not ok,
                                       # --only STAGE runs one; one lock; logs/pipeline_<stamp>/run.json records each stage
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
 ```
 
-- `uv run app build` never writes `state:`.
+- `uv run ay app build` never writes `state:`.
 - `apply run` fills, and clicks only with `--submit`. `--submit` needs `--limit` (unless
   `--job-id`) and a typed confirmation unless `--yes`; it never clicks a role in
   `apply_runs/submitted.jsonl` unless its latest line is `refused`. `--rate` floors at 30s,

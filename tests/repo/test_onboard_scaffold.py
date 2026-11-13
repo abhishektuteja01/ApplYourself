@@ -1,4 +1,4 @@
-"""onboard-scaffold: the copies, the two YAML edits, and the safety contract.
+"""ay onboard scaffold: the copies, the two YAML edits, and the safety contract.
 
 Every test runs against a throwaway copy of the shipped templates in the
 test root's profile/. Nothing here may touch the real

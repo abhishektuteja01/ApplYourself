@@ -47,7 +47,7 @@ def test_writes_are_blocked(command):
         f"cp {F} /tmp/backup",
         f"cmp {F} /tmp/other 2>/dev/null",
         f"python3 -c \"print(open('{F}').read())\"",
-        "uv run apply confirm applications/x/v1/answers_override.json",
+        "uv run ay apply confirm applications/x/v1/answers_override.json",
         "echo hi > notes.txt",
     ],
 )
@@ -70,8 +70,8 @@ SUBMIT_ASK = HOOK.parent / "submit_ask.sh"
         ("uv run ay apply run --job-id x --submit", True),
         ("uv run --with rich apply run --limit 1 --submit --yes", True),
         ("uv run python -m applyourself.apply_cli run --submit", True),
-        ("uv run apply run --job-id x", False),
-        ("uv run apply plan x --json", False),
+        ("uv run ay apply run --job-id x", False),
+        ("uv run ay apply plan x --json", False),
         ("git commit -m 'no --submit-ish flag here'", False),
     ],
 )

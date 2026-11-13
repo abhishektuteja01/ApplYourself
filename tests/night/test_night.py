@@ -289,11 +289,11 @@ def test_a_rerun_after_a_wait_keeps_the_cap_and_skips_the_roles_done(tmp_path):
     uv = tmp_path / "uv"
     uv.write_text(
         '#!/bin/bash\ncase "$*" in\n'
-        '  "run config get settings tailor_parallel") echo 5;;\n'
-        '  "run config get settings "*_max_per_night) echo 2;;\n'
-        '  "run config get settings "*) echo 0;;\n'
-        '  "run apply sheet --list "*) printf "aaaa\\nbbbb\\ncccc\\n";;\n'
-        '  "run night tailor-pick "*) cat;;\n'
+        '  "run ay config get settings tailor_parallel") echo 5;;\n'
+        '  "run ay config get settings "*_max_per_night) echo 2;;\n'
+        '  "run ay config get settings "*) echo 0;;\n'
+        '  "run ay apply sheet --list "*) printf "aaaa\\nbbbb\\ncccc\\n";;\n'
+        '  "run ay night tailor-pick "*) cat;;\n'
         "esac\n",
         encoding="utf-8",
     )
@@ -332,10 +332,10 @@ def test_tailor_takes_every_new_role_when_the_pick_fails(tmp_path):
     uv = tmp_path / "uv"
     uv.write_text(
         '#!/bin/bash\ncase "$*" in\n'
-        '  "run config get settings tailor_parallel") echo 5;;\n'
-        '  "run config get settings "*) echo 0;;\n'
-        '  "run apply sheet --list "*) printf "aaaa\\nbbbb\\n";;\n'
-        '  "run night tailor-pick "*) echo aaaa; exit 1;;\n'
+        '  "run ay config get settings tailor_parallel") echo 5;;\n'
+        '  "run ay config get settings "*) echo 0;;\n'
+        '  "run ay apply sheet --list "*) printf "aaaa\\nbbbb\\n";;\n'
+        '  "run ay night tailor-pick "*) echo aaaa; exit 1;;\n'
         "esac\n",
         encoding="utf-8",
     )
@@ -394,8 +394,8 @@ def test_score_runs_at_most_judge_parallel_judges_at_once(tmp_path):
     lines = "\\n".join(f"judge s{i}.md" for i in range(5))
     (fake / "uv").write_text(  # `config get` -> 2; `score start` -> 5 judge lines
         f'#!/bin/bash\n[[ "$2" == python ]] && {{ shift 2; exec "{sys.executable}" "$@"; }}\n'
-        f'[[ "$2" == score && "$3" == start ]] && {{ printf "judge=5\\n{lines}\\n"; exit 0; }}\n'
-        '[[ "$2" == score && "$3" == finish ]] && { echo "merged"; exit 0; }\n'
+        f'[[ "$3" == score && "$4" == start ]] && {{ printf "judge=5\\n{lines}\\n"; exit 0; }}\n'
+        '[[ "$3" == score && "$4" == finish ]] && { echo "merged"; exit 0; }\n'
         "echo 2\n",
         encoding="utf-8",
     )

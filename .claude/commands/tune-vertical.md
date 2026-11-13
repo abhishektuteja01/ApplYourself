@@ -7,8 +7,11 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run verticals-check*)
+  - Bash(uv run ay config check-verticals*)
   - Bash(uv run config *)
+  - Bash(uv run ay config *)
   - Bash(uv run score lane *)
+  - Bash(uv run ay score lane *)
   - Bash(uv run pytest tests *)
   - Bash(grep *)
   - Read
@@ -62,8 +65,8 @@ confirmed → run the round's verify → report → next round.**
 `/new-vertical`'s job, not this command's.
 
 ```bash
-uv run verticals-check
-uv run config verticals <name>
+uv run ay config check-verticals
+uv run ay config verticals <name>
 ```
 
 Read the lane's `profile/verticals/<name>/lane.yaml`, the `defaults:` in
@@ -77,7 +80,7 @@ argues from. `jobs/clean.parquet` holds the 14-day window;
 # What the lane caught, what it did not (other lanes, out-of-lane titles), and its
 # judged scores. Drops are not stored: the last `/score` printed them as
 # dropped_<code>; the night's summary.md lists only first-time drops as Filtered.
-uv run score lane <name>
+uv run ay score lane <name>
 ```
 
 Report in five lines: lane volume, the title families that dominate it, the
@@ -105,7 +108,7 @@ only those.
   no job scored 70 or more may hold it. Level words (intern, senior, lead,
   VP) stay with the judge. A lane's own `title_include_terms`,
   `title_strong_keep_terms` and `title_exclude_terms` are retired: never add
-  them (`uv run config migrate` moves old ones out).
+  them (`uv run ay config migrate` moves old ones out).
 
 One self-collision trap, enforced by the Round 4 drift test — check it
 while drafting:
@@ -120,7 +123,7 @@ drops") counts every drop per reason with sample titles.
 Verify:
 
 ```bash
-uv run config verticals <name>
+uv run ay config verticals <name>
 uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
@@ -159,7 +162,7 @@ rule-position bug — name the row, propose the move, have the user confirm the
 and `years` are the penalties taken off the judge's fit (the larger of the
 two), `years_zero_at` the years asked that score 0, `cutoff` the lane's line
 for the night's sheet and retention. Change only against observed JDs and
-scores (`uv run score lane <name>` prints the cutoff and how many sit above
+scores (`uv run ay score lane <name>` prints the cutoff and how many sit above
 it). Nothing else drops a JD before judging but scoring.yaml's
 `ineligible` phrases, plus its `no_sponsorship` phrases when your home need is
 "now": `drop_phrases` no longer drops, so put what the lane must avoid in its
@@ -168,9 +171,9 @@ rubric.
 Verify:
 
 ```bash
-uv run config verticals <name>
-uv run config classify '<title1>' '<title2>' '...'
-uv run config misclassified <name>
+uv run ay config verticals <name>
+uv run ay config classify '<title1>' '<title2>' '...'
+uv run ay config misclassified <name>
 uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
 ```
 
@@ -183,7 +186,7 @@ Then replay the change over the rows already on disk, so the user sees what
 would move before the next scrape:
 
 ```bash
-uv run config reclassify
+uv run ay config reclassify
 ```
 
 Rows only actually move on the next `discover`; `/score --all --vertical <name>`
@@ -203,14 +206,14 @@ what is in lane and where its roles fall in those bands.
   tight. A skill the JDs keep asking for and the profile cannot attest is a
   `/suggest-synonyms` item, not an anchor. Propose the changed anchors and have
   them confirmed.
-- **`examples.yaml`** (optional) — `uv run score examples --vertical <name>`
+- **`examples.yaml`** (optional) — `uv run ay score examples --vertical <name>`
   prints the lane's calibration examples, picked from past scores by a stable
   rule; `--write` saves them. The user may edit a fit or swap a role.
 
 Verify:
 
 ```bash
-uv run verticals-check
+uv run ay config check-verticals
 ```
 
 Then have the user look at what changed:
@@ -238,7 +241,7 @@ lane's window, so it costs a full scoring pass — their call.
 3. Final audit:
 
    ```bash
-   uv run verticals-check
+   uv run ay config check-verticals
    uv run pytest tests -q
    uv run pytest tests/repo/test_real_config_drift.py -q -rs   # no SKIPPED line
    grep -c "<name>:" profile/skills_master.md
@@ -250,7 +253,7 @@ lane's window, so it costs a full scoring pass — their call.
 4. Completion summary: every file touched, every locked decision (terms, title
    gate, rule positions and collision rulings, drop rules, score rules, rubric
    anchors, resume shape), anything deliberately left alone, and the two follow-ups —
-   `uv run discover` for the term and rule changes to take effect, and
+   `uv run ay discover` for the term and rule changes to take effect, and
    `/score --all --vertical <name>` for the rubric and example changes to reach rows
    already scored (a `score:` change applies on the next read to rows the v2
    judge scored; older rows keep their stored score until re-judged).

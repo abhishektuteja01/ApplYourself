@@ -79,7 +79,7 @@ def _read_yaml(path: Path, default):
     old = paths.PROFILE / path.name
     if path == paths.SYNONYM_DECLINED and old.is_file():
         raise SynonymsError(
-            f"{old} moved to {path}: run `uv run config migrate --dry-run`, then --apply"
+            f"{old} moved to {path}: run `uv run ay config migrate --dry-run`, then --apply"
         )
     if not path.is_file():
         return default
@@ -394,7 +394,7 @@ def answer(item_id: str, reply: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
-    ap = argparse.ArgumentParser(prog="synonyms", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="ay synonyms", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("keywords")
     a = sub.add_parser("apply")

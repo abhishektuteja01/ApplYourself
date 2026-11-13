@@ -1,4 +1,4 @@
-"""`config-check` — load and validate every profile/ config file, one OK or
+"""`ay config check` — load and validate every profile/ config file, one OK or
 ERROR line per file. Exits 1 on any error. Read-only (R7: no LLM)."""
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
-"""`uv run ingest-url <url>`: one job description by url into the jobs store,
+"""`uv run ay ingest <url>`: one job description by url into the jobs store,
 then a clean.parquet rebuild. The same store, id rules and view the nightly
 run uses.
 
-    uv run ingest-url <url> [--vertical NAME] [--company "..."] [--title "..."]
-    uv run ingest-url <url> --dry-run
+    uv run ay ingest <url> [--vertical NAME] [--company "..."] [--title "..."]
+    uv run ay ingest <url> --dry-run
 
 Greenhouse, Lever and Ashby posting urls are read through their public JSON
 APIs. Any other url is fetched as a page and REQUIRES --company and --title:
@@ -120,7 +120,7 @@ def ingest(
     p = Paths(jobs=jobs_dir or paths.JOBS)
     if not p.store.exists():
         raise IngestError(
-            f"ERROR: {p.store} does not exist yet. Run `uv run discover --deadline-hours 0` first."
+            f"ERROR: {p.store} does not exist yet. Run `uv run ay discover --deadline-hours 0` first."
         )
     row = fetch_row(url, company=company, title=title)
     jd = row["jd_text"].strip()
@@ -181,7 +181,7 @@ def ingest(
 def main(argv: list[str] | None = None) -> int:
     setup_logging(logging.INFO, logging.BASIC_FORMAT)
     parser = argparse.ArgumentParser(
-        prog="ingest-url", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="ay ingest", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("url")
     parser.add_argument("--vertical", default=None)

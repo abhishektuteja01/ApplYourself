@@ -1,5 +1,5 @@
 # Calibration examples for /score's judge: past roles in this lane and the
-# answer each should get. Optional. `uv run score examples --write` picks them
+# answer each should get. Optional. `uv run ay score examples --write` picks them
 # from past scores by a stable rule; edit freely. Fictional here.
 examples:
   - title: Widget Engineer

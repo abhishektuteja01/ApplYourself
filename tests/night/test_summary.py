@@ -425,7 +425,7 @@ def test_every_waiting_role_is_listed():
     out = M.apply_section(rows, _items(roles={}), {})
     assert "**Needs your OK (8)**" in out and sum(ln.startswith("- w") for ln in out) == 8
     w0 = next(ln for ln in out if ln.startswith("- w0:"))
-    assert "`uv run apply plan w0 --questions --answers <that file>`" in w0
+    assert "`uv run ay apply plan w0 --questions --answers <that file>`" in w0
 
 
 def test_a_waiting_role_re_read_tonight_with_nothing_open_says_so():
@@ -554,9 +554,9 @@ def test_the_whole_summary_from_a_night_of_records(tmp_path, monkeypatch):
     page = paths.SUMMARY.with_suffix(".html").read_text(encoding="utf-8")
     assert "<h2>Discovery</h2>" in page and 'class="cue"' in page and "Why us?" in page
     for command in (
-        "uv run synonyms answer",
-        "uv run track <id> skip",
-        "uv run app build resume <id>",
+        "uv run ay synonyms answer",
+        "uv run ay track <id> skip",
+        "uv run ay app build resume <id>",
     ):
         assert command in text
     first = text

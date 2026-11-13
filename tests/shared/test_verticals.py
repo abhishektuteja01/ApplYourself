@@ -267,7 +267,7 @@ class TestFixture:
 
 
 class TestMainCli:
-    """`uv run verticals-check` — every slash command's one-line prerequisite
+    """`uv run ay config check-verticals` — every slash command's one-line prerequisite
     check, and the only thing standing between a half-onboarded vertical and a
     /score run that judges against the wrong resume."""
 

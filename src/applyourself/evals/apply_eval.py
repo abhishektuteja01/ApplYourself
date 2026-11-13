@@ -1,4 +1,4 @@
-"""`apply-eval`: stage the /apply eval for the apply-judge, and grade what it wrote.
+"""`ay apply eval`: stage the /apply eval for the apply-judge, and grade what it wrote.
 
 `stage` groups cases by (persona, job country) into slices, each a packet the
 judge reads. `grade` puts every judge entry through `plan.apply_override`,
@@ -152,7 +152,7 @@ def _slices(run: Path) -> list[tuple[int, dict[str, Any]]]:
         n = int(meta.stem.split("_")[1])
         out.append((n, json.loads(meta.read_text(encoding="utf-8"))))
     if not out:
-        raise EvalError(f"{run}: no meta_*.json; run apply-eval stage first")
+        raise EvalError(f"{run}: no meta_*.json; run ay apply eval stage first")
     return sorted(out, key=lambda t: t[0])
 
 
@@ -456,7 +456,7 @@ def grade(run: Path, repeat_run: Path | None = None) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="apply-eval", description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(prog="ay apply eval", description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("stage", help="write packets for one case set")
     s.add_argument("--set", dest="which", choices=("public", "private"), required=True)
@@ -477,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         report = grade(args.run_dir, args.repeat)
     except EvalError as exc:
-        print(f"apply-eval: {exc}", file=sys.stderr)
+        print(f"ay apply eval: {exc}", file=sys.stderr)
         return 2
     g = report["gate"]
     print(

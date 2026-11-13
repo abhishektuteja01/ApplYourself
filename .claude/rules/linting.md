@@ -29,4 +29,4 @@ rewrites until the linter returns empty (the fix loop in
   are never scanned.
 - `sentence_start` rules are checked at every sentence start.
 - Sources (`bullets.md`, `skills_master.md`, `resume.yaml`, lane summaries) are
-  linted once by `verticals-check`; builds lint only generated text.
+  linted once by `ay config check-verticals`; builds lint only generated text.

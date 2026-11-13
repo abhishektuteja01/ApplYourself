@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # /apply gate: a `<answers>.confirmed` file is the user's typed yes, written only
-# by `uv run apply confirm` on their own terminal. A session that writes one
+# by `uv run ay apply confirm` on their own terminal. A session that writes one
 # approves its own answers, so Edit/Write on it, and Bash that writes it, are
 # blocked. Reading it stays allowed. Pattern-based, so a soft guard: a path
 # built indirectly can get past it.
@@ -12,7 +12,7 @@ block() {
     echo "BLOCKED -- $1"
     echo
     echo "A .confirmed file is the user's approval. Only the user writes it, by"
-    echo "running \`uv run apply confirm <answers file>\` in their own terminal."
+    echo "running \`uv run ay apply confirm <answers file>\` in their own terminal."
   } >&2
   exit 2
 }

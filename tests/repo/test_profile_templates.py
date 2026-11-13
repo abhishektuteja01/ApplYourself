@@ -293,7 +293,7 @@ class TestExampleConfigsAreValid:
 
 class TestExampleSourcesResolve:
     """The shipped example world must pass the same source check
-    `verticals-check` runs on real config: every pointer between resume.yaml,
+    `ay config check-verticals` runs on real config: every pointer between resume.yaml,
     bullets.md, skills_master.md and the lane `resume:` blocks resolves, every
     budget can be met, and every example lane's baseline resume builds. The
     conftest already points resume_model at the example sources."""

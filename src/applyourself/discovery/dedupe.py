@@ -1,7 +1,7 @@
 """Which job_id a new posting gets: the same role seen elsewhere keeps its id,
 a close call is only recorded as a maybe duplicate.
 
-Also the `discover-dupes` command, which runs the same matcher over ids
+Also the `ay discover dupes` command, which runs the same matcher over ids
 already stored.
 
 Deterministic and LLM-free (R7). Reads pipeline/*/state.yaml, never writes it
@@ -429,7 +429,7 @@ class _Index:
 
 
 # ---------------------------------------------------------------------
-# discover-dupes: the same matcher over ids already stored
+# ay discover dupes: the same matcher over ids already stored
 # ---------------------------------------------------------------------
 
 
@@ -516,7 +516,7 @@ def _line(r: dict, states: dict) -> str:
 def main(argv=None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="discover-dupes",
+        prog="ay discover dupes",
         description="List stored job_ids that look like one role and record them in "
         "jobs/maybe_duplicates.jsonl. Never changes an id.",
     )

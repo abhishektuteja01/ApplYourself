@@ -11,7 +11,7 @@ Every fact has one home, and each thing says where it appears:
   verticals/<lane>/lane.yaml `resume:` shape: section order, total bullet budget,
                            skill line labels, baseline summary
 
-`check_sources` validates every pointer between them (run by verticals-check),
+`check_sources` validates every pointer between them (run by ay config check-verticals),
 so deleting a skill, bullet or project means deleting one block, and a stale
 pointer is named. `build` turns a plan (the model's choices) into typed resume
 blocks (docx_render renders them; `markdown` prints them) plus a trace, and

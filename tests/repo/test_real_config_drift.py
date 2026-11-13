@@ -48,7 +48,7 @@ def test_every_search_term_routes_a_board_title_to_its_own_lane(real_cfg):
 
 
 def test_every_vertical_has_its_prose_and_resume_on_disk(real_cfg):
-    """Same check `verticals-check` runs, so a half-onboarded lane fails here
+    """Same check `ay config check-verticals` runs, so a half-onboarded lane fails here
     rather than mid-/score."""
     for name, v in real_cfg.verticals.items():
         for fname in ("rubric.md", "tailoring.md"):
@@ -72,7 +72,7 @@ def test_title_gate_passes_the_lanes_own_search_terms(real_cfg):
 
 
 def test_real_resume_sources_check_clean_and_every_baseline_builds(real_cfg, monkeypatch):
-    """The same source check `verticals-check` runs, plus every lane's baseline
+    """The same source check `ay config check-verticals` runs, plus every lane's baseline
     resume (what /score's judge reads) assembling without a problem."""
     from applyourself import resume_model
 

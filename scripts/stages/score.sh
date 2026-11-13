@@ -9,9 +9,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib_pipeline.sh"
 stage_start score
 
 if [[ "$DRY_RUN" == 1 ]]; then
-  echo "[dry-run] uv run score start $*"
+  echo "[dry-run] uv run ay score start $*"
   echo "[dry-run] per judge line: claude -p \"<slice files>\" --agent score-judge  (parallel, then wait)"
-  echo "[dry-run] uv run score finish; owed lines rerun up to $(cfg retries) time(s)"
+  echo "[dry-run] uv run ay score finish; owed lines rerun up to $(cfg retries) time(s)"
   stage_end 0 "dry-run"; exit 0
 fi
 
@@ -46,7 +46,7 @@ run_judges() {  # run_judges "<judge lines>" [tag prefix]
   echo "judges finished: $n"
 }
 
-OUT="$("$UV" run score start "$@" 2>&1)"; CODE=$?
+OUT="$("$UV" run ay score start "$@" 2>&1)"; CODE=$?
 echo "$OUT"
 if [[ $CODE -ne 0 ]]; then stage_end "$CODE" "score start failed"; exit "$CODE"; fi
 DROPS="$(head -1 <<< "$OUT" | grep -oE 'filtered_[a-z-]+=[0-9]+' | tr '\n' ' ')"
@@ -57,7 +57,7 @@ run_judges "$OUT"
 
 attempt=0
 while :; do
-  FIN="$("$UV" run score finish 2>&1)"; FCODE=$?
+  FIN="$("$UV" run ay score finish 2>&1)"; FCODE=$?
   echo "$FIN"
   if [[ $FCODE -eq 0 ]]; then stage_end 0 "$(head -1 <<< "$FIN") ${DROPS% }"; exit 0; fi
   attempt=$((attempt + 1))
@@ -75,6 +75,6 @@ while :; do
     exit 1
   fi
   OWED="$FIN"
-  [[ -n "$LANE" ]] && OWED="$("$UV" run score start --vertical "$LANE" 2>&1)"
+  [[ -n "$LANE" ]] && OWED="$("$UV" run ay score start --vertical "$LANE" 2>&1)"
   run_judges "$OWED" "retry${attempt}_judge"
 done

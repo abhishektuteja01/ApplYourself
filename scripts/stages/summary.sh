@@ -7,12 +7,12 @@ stage_start summary
 
 if [[ "$DRY_RUN" == 1 ]]; then
   OUT_ARGS=(--out "$RUN_DIR/summary.md")   # a dry run never overwrites the real one
-  echo "[dry-run] uv run apply sheet (skipped)"
+  echo "[dry-run] uv run ay apply sheet (skipped)"
 else
   OUT_ARGS=()
-  "$UV" run apply sheet || echo "apply sheet failed: the summary reads the sheet as it is"
+  "$UV" run ay apply sheet || echo "apply sheet failed: the summary reads the sheet as it is"
 fi
-"$UV" run summary --run-dir "$RUN_DIR" ${OUT_ARGS[@]+"${OUT_ARGS[@]}"}
+"$UV" run ay night summary --run-dir "$RUN_DIR" ${OUT_ARGS[@]+"${OUT_ARGS[@]}"}
 CODE=$?
 stage_end "$CODE" ""
 exit "$CODE"

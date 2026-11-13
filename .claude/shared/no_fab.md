@@ -30,8 +30,8 @@ Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 
 ## What code checks
 
-`uv run app build ...` checks all of this and reports each break as a problem
-with a `code`. `uv run app schema resume|letter|answers|outreach` prints the keys each
+`uv run ay app build ...` checks all of this and reports each break as a problem
+with a `code`. `uv run ay app schema resume|letter|answers|outreach` prints the keys each
 file may hold.
 
 | code | means |
@@ -47,7 +47,7 @@ file may hold.
 
 Mechanical fixes (dashes, smart quotes, ellipses, odd spaces) are applied
 silently and never count as problems. Source files are checked once, by
-`uv run verticals-check`, so a build only checks the text you wrote.
+`uv run ay config check-verticals`, so a build only checks the text you wrote.
 
 ## The fix loop
 

@@ -1,12 +1,14 @@
 ---
-description: Tailor a one-page resume for a job_id: the session picks bullets, wording, summary and skills; `uv run app build resume` builds it.
+description: Tailor a one-page resume for a job_id: the session picks bullets, wording, summary and skills; `uv run ay app build resume` builds it.
 model: opus
 effort: medium
 allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run verticals-check *)
+  - Bash(uv run ay config check-verticals *)
   - Bash(uv run app *)
+  - Bash(uv run ay app *)
   - Read
   - Write
 argument-hint: <job_id> [--company NAME]
@@ -28,8 +30,8 @@ writes `trace.md`, and records the folder in `state.yaml`.
 ## 1. Open the folder
 
 ```bash
-uv run verticals-check && uv run app new $1 [--company "NAME"]
-uv run app dupes $1
+uv run ay config check-verticals && uv run ay app new $1 [--company "NAME"]
+uv run ay app dupes $1
 ```
 
 Stop on a nonzero exit of `app new` and show the error (a role whose
@@ -53,7 +55,7 @@ applied or submitted; carry them to the report and keep going.
 ## 3. Write `<work_dir>/resume_plan.yaml`
 
 Start from the lane's baseline and move toward the JD's `keywords_to_mirror`.
-`uv run app schema resume` prints every key the file may hold; this is an example.
+`uv run ay app schema resume` prints every key the file may hold; this is an example.
 
 ```yaml
 summary:
@@ -79,7 +81,7 @@ skills:                           # optional; a line left out keeps its default 
 ## 4. Build
 
 ```bash
-uv run app build resume $1
+uv run ay app build resume $1
 ```
 
 Exit 2 lists `problems` (`where`, `code`, `detail`): fix the plan and re-run,

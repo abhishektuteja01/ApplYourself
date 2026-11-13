@@ -6,7 +6,7 @@ leaves a truncated file that pandas cannot open, which takes the whole pipeline
 down until it is deleted by hand. state_io._write_state already writes through
 a temp file; this is the same guarantee for parquet.
 
-The temp name is unique per writer: an `ingest-url` concurrent with a nightly
+The temp name is unique per writer: an `ay ingest` concurrent with a nightly
 run would otherwise race on one shared `<name>.tmp`.
 """
 

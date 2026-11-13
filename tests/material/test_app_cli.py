@@ -1,4 +1,4 @@
-"""Tests for src/applyourself/app_cli.py — `uv run app`, the plumbing of /tailor,
+"""Tests for src/applyourself/app_cli.py — `uv run ay app`, the plumbing of /tailor,
 /cover-letter and /company-answers. Sources are the committed example world
 (conftest), the verticals config is the fixture, Word is never called."""
 

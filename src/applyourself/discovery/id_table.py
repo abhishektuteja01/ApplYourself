@@ -1,4 +1,4 @@
-"""`discover-ids`: build jobs/job_ids.parquet and the store's dedupe_key column
+"""`ay discover ids`: build jobs/job_ids.parquet and the store's dedupe_key column
 from what holds ids today: jobs.parquet, pipeline/events.jsonl, scored.parquet.
 
 `--dry-run` checks every id maps back to itself and prints the counts; it
@@ -126,7 +126,7 @@ def build(store: pd.DataFrame, known: pd.DataFrame, pipeline_dir: Path, jobs_dir
 def main(argv=None) -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="discover-ids",
+        prog="ay discover ids",
         description="Build jobs/job_ids.parquet and the store's dedupe_key column. "
         "Never changes an id.",
     )

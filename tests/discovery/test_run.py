@@ -1,5 +1,5 @@
 """run.py end to end with fake lanes, the search lane with jobspy faked, the
-inbox, the digest, and ingest-url. No network."""
+inbox, the digest, and ay ingest. No network."""
 
 from __future__ import annotations
 
@@ -443,7 +443,7 @@ def test_digest_cli_json(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["run_id"] == "2026-09-27_1630"
 
 
-# ---------- ingest-url ----------
+# ---------- ay ingest ----------
 
 
 def test_ingest_refuses_before_the_store_exists(tmp_path):

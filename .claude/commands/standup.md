@@ -1,5 +1,5 @@
 ---
-description: Regenerate pipeline.md from every state.yaml (`uv run track standup`) with a short note on top. Read-only on state.yaml.
+description: Regenerate pipeline.md from every state.yaml (`uv run ay track standup`) with a short note on top. Read-only on state.yaml.
 model: sonnet
 effort: medium
 disable-model-invocation: true
@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run track standup*)
+  - Bash(uv run ay track standup*)
   - Bash(mktemp*)
   - Read
   - Write
@@ -14,7 +15,7 @@ allowed-tools:
 
 # /standup — regenerate pipeline.md (read-only on state.yaml)
 
-`uv run track standup` writes `pipeline.md` (title, Active and Closed tables)
+`uv run ay track standup` writes `pipeline.md` (title, Active and Closed tables)
 from every `pipeline/<id>/state.yaml`, joined to `score_store.view()`. The
 session writes only the short note at the top. Nothing here writes a
 state.yaml.
@@ -22,7 +23,7 @@ state.yaml.
 ## Step 1 — read the digest
 
 ```bash
-uv run track standup --digest
+uv run ay track standup --digest
 ```
 
 It writes nothing and prints the active / closed / ghosted counts,
@@ -44,7 +45,7 @@ the note.
 Run `mktemp`, Write the note to the path it prints, then:
 
 ```bash
-uv run track standup --note-file <that path>
+uv run ay track standup --note-file <that path>
 ```
 
 ## Step 3 — report

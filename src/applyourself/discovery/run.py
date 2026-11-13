@@ -1,8 +1,8 @@
-"""`uv run discover`: check tonight's due boards and searches, save what they
+"""`uv run ay discover`: check tonight's due boards and searches, save what they
 find into the jobs store as it arrives, then rebuild clean.parquet and write
 the run report.
 
-    uv run discover [--deadline-hours H] [--source NAME ...] [--max-terms N]
+    uv run ay discover [--deadline-hours H] [--source NAME ...] [--max-terms N]
                     [--jobs-dir D] [--boards-dir D] [--profile-dir D]
 
 A `--jobs-dir` other than jobs/ is a shadow run: it writes only there (store,
@@ -320,7 +320,7 @@ def render_md(report: dict) -> str:
 
 def main(argv=None) -> int:
     setup_logging(logging.INFO, "%(asctime)s %(levelname)s %(message)s")
-    parser = argparse.ArgumentParser(prog="discover")
+    parser = argparse.ArgumentParser(prog="ay discover")
     parser.add_argument(
         "--deadline-hours",
         type=float,
@@ -393,7 +393,7 @@ def main(argv=None) -> int:
     problems = cfg.validate()
     if problems:
         sys.exit(
-            "ERROR: discovery config problems (run `uv run discovery-check`):\n"
+            "ERROR: discovery config problems (run `uv run ay discover check`):\n"
             + "\n".join(f"  {p}" for p in problems)
         )
 

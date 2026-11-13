@@ -1,6 +1,6 @@
 """`night` — the overnight runner: stage order, one lock, a per-night run.json.
 
-  uv run night [--resume] [--only STAGE] [--dry-run]
+  uv run ay night [--resume] [--only STAGE] [--dry-run]
 
 Each stage is its script in scripts/stages/; this only orders, locks and records
 (the stages call `claude`, never this). A failed discover or score stops the
@@ -172,7 +172,7 @@ def _sleep_until(until: datetime) -> None:
 
 def record(argv: list[str]) -> int:
     """Write <run_dir>/<stage>.result.json; a <stage>_results.txt of `<id> <status>` lines becomes items."""
-    ap = argparse.ArgumentParser(prog="night record")
+    ap = argparse.ArgumentParser(prog="ay night record")
     for name in ("stage", "rc", "status", "deferred", "detail"):
         ap.add_argument(name)
     ap.add_argument("--run-dir", type=Path, required=True)
@@ -200,7 +200,7 @@ def tailor_pick(argv: list[str]) -> int:
     tailor_skipped.json (material/pick.py)."""
     from applyourself.material import pick
 
-    ap = argparse.ArgumentParser(prog="night tailor-pick")
+    ap = argparse.ArgumentParser(prog="ay night tailor-pick")
     ap.add_argument("--run-dir", type=Path, required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry-run", action="store_true", help="ask no board")
@@ -406,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
         return record(argv[1:])
     if argv[:1] == ["tailor-pick"]:
         return tailor_pick(argv[1:])
-    ap = argparse.ArgumentParser(prog="night", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="ay night", description=__doc__.split("\n\n")[0])
     ap.add_argument("--resume", action="store_true", help="rerun the last run's stages not ok")
     ap.add_argument("--only", choices=STAGES + FINISH, help="run just this stage")
     ap.add_argument("--dry-run", action="store_true", help="the stages print only (DRY_RUN=1)")

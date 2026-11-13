@@ -1,4 +1,4 @@
-"""The shape of each YAML file a session writes for `uv run app build`, and the
+"""The shape of each YAML file a session writes for `uv run ay app build`, and the
 problem codes a build reports. Shape only; the grounding checks live in
 resume_model and app_cli."""
 

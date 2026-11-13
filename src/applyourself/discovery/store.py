@@ -346,9 +346,9 @@ def flush(
     trim: Trim = NO_TRIM,
 ) -> ApplyStats:
     """Empty `batch` into the store: read, fold in, write, under the store's
-    lock, so a concurrent `ingest-url` waits rather than being overwritten.
+    lock, so a concurrent `ay ingest` waits rather than being overwritten.
     New maybe duplicates are appended to the store's maybe_duplicates.jsonl.
-    The job_ids table beside it, once built (`discover-ids --apply`), is read
+    The job_ids table beside it, once built (`ay discover ids --apply`), is read
     for matching and gains the new ids."""
     path = Path(path or paths.STORE)
     ids_path = path.with_name(paths.JOB_IDS.name)

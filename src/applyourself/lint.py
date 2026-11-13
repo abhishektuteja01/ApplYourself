@@ -12,7 +12,7 @@ NEVER auto-rewritten. A `block` violation fails the build and the caller rewrite
 the offending line until none is left; a `warn` one is reported only.
 
 Sources (bullets.md, skills_master.md, resume.yaml) are linted once at the
-source by `verticals-check`; builds lint only the text a session wrote.
+source by `ay config check-verticals`; builds lint only the text a session wrote.
 """
 
 from __future__ import annotations

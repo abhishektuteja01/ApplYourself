@@ -12,18 +12,18 @@ stage_start apply_prep
 STAGE=apply_prep   # log/json names
 pdf_helper_up
 
-TOOLS='Agent,Bash(uv run apply prepare *),Bash(uv run apply plan *),Bash(uv run apply judge-pack *),Bash(uv run apply judge-check *),Bash(uv run apply run *),Bash(uv run apply learn *),Bash(uv run app *),Bash(uv run track *),Read,Write,Edit,Skill,WebSearch,WebFetch'
+TOOLS='Agent,Bash(uv run apply prepare *),Bash(uv run ay apply prepare *),Bash(uv run apply plan *),Bash(uv run ay apply plan *),Bash(uv run apply judge-pack *),Bash(uv run ay apply judge-pack *),Bash(uv run apply judge-check *),Bash(uv run ay apply judge-check *),Bash(uv run apply run *),Bash(uv run ay apply run *),Bash(uv run apply learn *),Bash(uv run ay apply learn *),Bash(uv run app *),Bash(uv run ay app *),Bash(uv run track *),Bash(uv run ay track *),Read,Write,Edit,Skill,WebSearch,WebFetch'
 JUDGE_TOOLS='Read,Write'
-if [[ "$DRY_RUN" == 1 ]]; then echo "[dry-run] uv run apply sheet"; else
-  "$UV" run apply sheet || { stage_end 1 "apply sheet failed"; exit 1; }
+if [[ "$DRY_RUN" == 1 ]]; then echo "[dry-run] uv run ay apply sheet"; else
+  "$UV" run ay apply sheet || { stage_end 1 "apply sheet failed"; exit 1; }
 fi
 # Roles with every answer known are filled here, no model; the rest stay Resume ready.
 if [[ "$DRY_RUN" == 1 ]]; then
-  echo "[dry-run] uv run apply triage --fill"
+  echo "[dry-run] uv run ay apply triage --fill"
 else
   LIMIT_ARGS=(); [[ -n "${STAGE_LIMIT:-}" ]] && LIMIT_ARGS=(--limit "$STAGE_LIMIT")
-  "$UV" run apply triage --fill ${LIMIT_ARGS[@]+"${LIMIT_ARGS[@]}"} || echo "apply triage failed: every role goes to the judge"
-  "$UV" run apply sheet >/dev/null
+  "$UV" run ay apply triage --fill ${LIMIT_ARGS[@]+"${LIMIT_ARGS[@]}"} || echo "apply triage failed: every role goes to the judge"
+  "$UV" run ay apply sheet >/dev/null
 fi
 # `<id> ok|fail` per role finished; a rerun after a usage-limit wait goes on from it.
 TRIED="$RUN_DIR/apply_prep.tried"
@@ -31,7 +31,7 @@ TRIED="$RUN_DIR/apply_prep.tried"
 touch "$TRIED"
 PRIOR=$(grep -c . "$TRIED" || true); PRIOR=${PRIOR:-0}
 LEFT=$(( ${STAGE_LIMIT:-100000} - PRIOR )); [[ $LEFT -gt 0 ]] || LEFT=0
-IDS="$("$UV" run apply sheet --list 'Resume ready' | grep -vxFf <(cut -d' ' -f1 "$TRIED") | head -n "$LEFT")"
+IDS="$("$UV" run ay apply sheet --list 'Resume ready' | grep -vxFf <(cut -d' ' -f1 "$TRIED") | head -n "$LEFT")"
 N=$(grep -c . <<< "$IDS"); DEF=0; STARTED=0
 FAILED=$(grep -c ' fail$' "$TRIED" || true); FAILED=${FAILED:-0}
 CAP="$(night_cap apply_prep_max_per_night)"
@@ -42,9 +42,9 @@ echo "Resume ready: $N, $PRIOR done in an earlier pass (cap ${CAP/#0/none})"
 snapshot() {
   [[ "$DRY_RUN" == 1 ]] && { echo "[dry-run] snapshot plan_after.json for $1"; return 0; }
   local dir ans=()
-  dir="$("$UV" run app dir "$1" | "$UV" run python -c 'import json,sys; print(json.load(sys.stdin)["dir"])')" || return 0
+  dir="$("$UV" run ay app dir "$1" | "$UV" run python -c 'import json,sys; print(json.load(sys.stdin)["dir"])')" || return 0
   [[ -n "$dir" && -f "$dir/answers_override.json" ]] && ans=(--answers "$dir/answers_override.json")
-  "$UV" run apply plan "$1" --json ${ans[@]+"${ans[@]}"} > "$dir/plan_after.json" 2> "$dir/plan_after.err" || true
+  "$UV" run ay apply plan "$1" --json ${ans[@]+"${ans[@]}"} > "$dir/plan_after.json" 2> "$dir/plan_after.err" || true
 }
 
 # needs FILE KIND: 0 when the plan JSON parks on KIND (letter | company).
@@ -69,12 +69,12 @@ parked() {
 # judge ID: judge-pack, one apply-judge, judge-check; one retry. 5 = usage limit.
 judge() {
   local line rc attempt
-  line="$("$UV" run apply judge-pack "$1")" || return 1
+  line="$("$UV" run ay apply judge-pack "$1")" || return 1
   echo "$line"
   for attempt in 1 2; do
     run_claude "${1}_judge$attempt" "$JUDGE_TOOLS" "$line" --agent apply-judge; rc=$?
     [[ $rc -eq 5 ]] && return 5
-    "$UV" run apply judge-check "$1" && return 0
+    "$UV" run ay apply judge-check "$1" && return 0
   done
   return 1
 }
@@ -83,24 +83,24 @@ judge() {
 prep_role() {
   local id="$1" out ovr rc
   if [[ "$DRY_RUN" == 1 ]]; then
-    echo "[dry-run] uv run apply prepare $id"
-    echo "[dry-run] uv run apply plan $id --json > <OUT_DIR>/plan.json"
+    echo "[dry-run] uv run ay apply prepare $id"
+    echo "[dry-run] uv run ay apply plan $id --json > <OUT_DIR>/plan.json"
     echo "[dry-run] cover_letter parked: claude -p \"/apply $id\" instead"
-    echo "[dry-run] uv run apply judge-pack $id"
+    echo "[dry-run] uv run ay apply judge-pack $id"
     run_claude "${id}_judge1" "$JUDGE_TOOLS" "judge <packet> -> <out>" --agent apply-judge
-    echo "[dry-run] uv run apply judge-check $id  (one retry of the judge on exit 1)"
-    echo "[dry-run] uv run apply plan $id --json --answers <OVERRIDES_FILE> > <OUT_DIR>/plan_judged.json"
+    echo "[dry-run] uv run ay apply judge-check $id  (one retry of the judge on exit 1)"
+    echo "[dry-run] uv run ay apply plan $id --json --answers <OVERRIDES_FILE> > <OUT_DIR>/plan_judged.json"
     echo "[dry-run] company_answers.yaml parked: claude -p \"/apply $id\" instead"
-    echo "[dry-run] nothing parked: uv run apply run --job-id $id --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json"
+    echo "[dry-run] nothing parked: uv run ay apply run --job-id $id --answers <OVERRIDES_FILE> --yes --manifest <OUT_DIR>/form_manifest.json"
     return 0
   fi
   local prep
-  prep="$("$UV" run apply prepare "$id")" || { echo "apply prepare $id failed"; return 1; }
+  prep="$("$UV" run ay apply prepare "$id")" || { echo "apply prepare $id failed"; return 1; }
   out="$("$UV" run python -c 'import shlex,sys
 d=dict(l.split("=",1) for l in sys.stdin.read().splitlines() if "=" in l)
 print(shlex.split(d[sys.argv[1]])[0])' OUT_DIR <<< "$prep")" || return 1
   ovr="$out/answers_override.json"
-  "$UV" run apply plan "$id" --json > "$out/plan.json"; rc=$?
+  "$UV" run ay apply plan "$id" --json > "$out/plan.json"; rc=$?
   if [[ $rc -eq 2 ]]; then echo "apply $id: posting expired"; return 0; fi
   [[ $rc -eq 0 ]] || { echo "apply plan $id failed"; return 1; }
   if needs "$out/plan.json" letter; then
@@ -109,7 +109,7 @@ print(shlex.split(d[sys.argv[1]])[0])' OUT_DIR <<< "$prep")" || return 1
   fi
   judge "$id"; rc=$?
   [[ $rc -eq 0 ]] || { echo "apply $id: judge failed"; return "$rc"; }
-  "$UV" run apply plan "$id" --json --answers "$ovr" > "$out/plan_judged.json" \
+  "$UV" run ay apply plan "$id" --json --answers "$ovr" > "$out/plan_judged.json" \
     || { echo "apply plan $id --answers failed"; return 1; }
   if needs "$out/plan_judged.json" company; then
     echo "apply $id: company answers needed, full /apply session"
@@ -118,7 +118,7 @@ print(shlex.split(d[sys.argv[1]])[0])' OUT_DIR <<< "$prep")" || return 1
   if parked "$out/plan_judged.json"; then
     echo "apply $id: parked, needs your OK"; return 0
   fi
-  "$UV" run apply run --job-id "$id" --answers "$ovr" --yes --manifest "$out/form_manifest.json"
+  "$UV" run ay apply run --job-id "$id" --answers "$ovr" --yes --manifest "$out/form_manifest.json"
 }
 
 for id in $IDS; do
@@ -131,7 +131,7 @@ for id in $IDS; do
   else echo "$id ok" >> "$TRIED"; fi
   snapshot "$id"
 done
-[[ "$DRY_RUN" == 1 ]] || "$UV" run apply sheet
+[[ "$DRY_RUN" == 1 ]] || "$UV" run ay apply sheet
 N=$((N + PRIOR))
 DONE=$((N - FAILED - DEF))
 DETAIL="$DONE/$N prepared"; [[ $DEF -gt 0 ]] && DETAIL="$DETAIL, $DEF deferred"

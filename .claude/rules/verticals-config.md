@@ -30,7 +30,7 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   title_exclude_terms`. A lane's own `title_include_terms` /
   `title_strong_keep_terms` / `title_exclude_terms` are still read (include
   and strong-keep count as fits for the lane's own search rows, strong-keep
-  beats a ban). `uv run config migrate` moves them out: multi-word terms into
+  beats a ban). `uv run ay config migrate` moves them out: multi-word terms into
   `terms` rules, most words first (strong-keep ones `keep: true`), each lane's
   single words into one `{match, require_any, search_is_context: true}` rule
   needing another of its words; every exclude term all lanes share into
@@ -46,7 +46,7 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   answer bank's `resume_location` for the role's country, `role_facts.header_location`); `bullets.md` holds claims and `default_for`;
   `skills_master.md` holds skills and `show`; a lane's `resume:` block holds only
   shape (sections, bullet budget, skill lines, baseline summary). Things say
-  where they appear, so deleting one is one edit, and `verticals-check`
+  where they appear, so deleting one is one edit, and `ay config check-verticals`
   (`check_sources`) names every pointer that stops resolving. `tailoring.md` is
   prose only: ids there are rejected.
 - `/score`'s judge grades against a digest of every bullet and skill

@@ -1,6 +1,6 @@
 """Dump a resume's text so /onboarding can read it.
 
-    uv run profile-extract <file>
+    uv run ay onboard extract <file>
 
 Deterministic (R7): plain text extraction, no judgment, no LLM. The onboarding
 session reads the output and drafts the profile from it; nothing here decides
@@ -135,7 +135,7 @@ def extract(path: Path) -> str:
 def main() -> int:
     setup_logging()
     parser = argparse.ArgumentParser(
-        prog="profile-extract",
+        prog="ay onboard extract",
         description="Dump a resume's text (.docx, .md, .txt) to stdout.",
     )
     parser.add_argument("file", type=Path, help="resume file to extract")

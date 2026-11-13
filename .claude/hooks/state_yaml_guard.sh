@@ -16,7 +16,7 @@ case "$FILE" in
       echo "R10 VIOLATION -- do not edit $FILE directly."
       echo
       echo "/track is the sole writer of state transitions:"
-      echo "  uv run track <job_id> <state> [--note \"...\"]"
+      echo "  uv run ay track <job_id> <state> [--note \"...\"]"
       echo
       echo "Side lists (tailored_dirs[], outreach[]) are"
       echo "appended through src/applyourself/state_io.py helpers, also via Bash."

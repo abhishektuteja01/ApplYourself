@@ -1,4 +1,4 @@
-"""uv run doctor lists every kind of disagreement and writes nothing."""
+"""uv run ay doctor lists every kind of disagreement and writes nothing."""
 
 from __future__ import annotations
 

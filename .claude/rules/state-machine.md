@@ -34,14 +34,14 @@ job_id, kind, from, to, note, forced, data`; kinds `created`, `transition`,
 fold (`state_io.apply_event`), rewritten under the role's lock right after
 the event is appended with fsync; readers keep reading `state.yaml`. A write
 to a role whose `state.yaml` is gone rebuilds it from the log first, as does listing roles (`state_io.iter_states`), and
-`uv run track rebuild-states --dry-run|--apply` remakes any that drifted. `uv run doctor` (read-only) lists where role folders, state.yaml, the log, the submit ledger and the jobs store disagree.
-Until `uv run track migrate-events --apply` creates the log, writes update
+`uv run ay track rebuild-states --dry-run|--apply` remakes any that drifted. `uv run ay doctor` (read-only) lists where role folders, state.yaml, the log, the submit ledger and the jobs store disagree.
+Until `uv run ay track migrate-events --apply` creates the log, writes update
 `state.yaml` alone. The migration turns every `state_history` into events and
 restores the submit ledger's sent roles that have no `state.yaml`; `--dry-run`
 exits 1 if the fold differs from any file.
 
 A state.yaml holds no score: readers join `score_store.view()` on `job_id`
-(`track states` does). `uv run track drop-score-copies --dry-run|--apply`
+(`track states` does). `uv run ay track drop-score-copies --dry-run|--apply`
 removes the old `fit_score` / `sponsorship_label` copies, one
 `fields_dropped` event per role.
 
@@ -49,12 +49,12 @@ R10: `src/applyourself/track_cli.py` is the only module that appends state event
 (`created`, `transition`, through `state_io.transition` or `ensure_state`);
 `/track`, `app_cli`, `apply_cli` and `apply/triage` call `track_cli.main`, and
 `tests/tracking/test_state_io.py` fails on any other caller. `/tailor` (through
-`uv run app build resume`) and `/outreach` (through `uv run app build outreach`)
+`uv run ay app build resume`) and `/outreach` (through `uv run ay app build outreach`)
 only append side-list events (`tailored_dirs[]`, `outreach[]`). Whether a role has a cover letter or company
 answers is whatever files its `tailored_dirs[-1]` folder holds. `/standup` is
 read-only and is the sole regenerator of `pipeline.md`.
 
-`uv run track cleanup [--apply]` (`src/applyourself/cleanup.py`, the night's cleanup stage)
+`uv run ay track cleanup [--apply]` (`src/applyourself/cleanup.py`, the night's cleanup stage)
 deletes the folders of `skip` and never-applied `withdrawn` roles, and of
 `rejected`, applied-then-`withdrawn` and `ghosted` roles after writing one
 `applications/_archive/<lane>/<folder>.md`: the resume text, then a `## Job
@@ -72,8 +72,8 @@ goes through Bash.
 
 All route through `track_cli` and are guarded to fire only from `saved`:
 
-- `/cover-letter` fires it after `uv run app build letter` succeeds, with
-  `uv run track <id> tailored --if saved`.
+- `/cover-letter` fires it after `uv run ay app build letter` succeeds, with
+  `uv run ay track <id> tailored --if saved`.
 - `/apply` fires it itself, on a `saved` role, once its plan shows no
   cover-letter park (the board has no letter upload, or the letter now exists).
 - `apply triage --fill` fires it before filling a ready role.

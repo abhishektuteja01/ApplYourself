@@ -1,5 +1,5 @@
 """Where a role's material lives (applications/<lane>/<dir>), its JD snapshot,
-and `app new`, `app dir`, `app dupes`. Part of `uv run app` (src/applyourself/app_cli.py)."""
+and `app new`, `app dir`, `app dupes`. Part of `uv run ay app` (src/applyourself/app_cli.py)."""
 
 from __future__ import annotations
 

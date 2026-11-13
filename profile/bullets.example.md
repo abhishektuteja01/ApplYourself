@@ -28,7 +28,7 @@
 #                        JD keywords. A synonym that widens the claim is a
 #                        fabrication with extra steps.
 #
-# `uv run verticals-check` lints every canonical sentence once, here at the
+# `uv run ay config check-verticals` lints every canonical sentence once, here at the
 # source; builds lint only the text a session wrote.
 #
 # The entries below are fictional, and match the widget/sprocket/cog world of

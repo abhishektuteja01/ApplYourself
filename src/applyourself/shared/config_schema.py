@@ -73,7 +73,7 @@ class ClassifierRule(_Strict):
 
 class VerticalsFile(_Strict):
     retired: ClassVar[dict[str, str]] = {
-        "verticals": "verticals/<lane>/lane.yaml, one file per lane (uv run config migrate)"
+        "verticals": "verticals/<lane>/lane.yaml, one file per lane (uv run ay config migrate)"
     }
     schema_version: Any = None
     default_vertical: Any = None
@@ -230,7 +230,7 @@ class ScoringDefaults(_Strict):
     """data/defaults/scoring_defaults.yaml, or the profile/ copy that replaces it."""
 
     retired: ClassVar[dict[str, str]] = {
-        "v1_skills_cap": "retired: `uv run config migrate` removes it"
+        "v1_skills_cap": "retired: `uv run ay config migrate` removes it"
     }
     schema_version: Literal[1]
     score: dict[str, Any]
@@ -367,7 +367,9 @@ def moved_hint(path: Path) -> ValueError | None:
     old = path.with_name("automation.yaml")
     if path.is_file() or not old.is_file():
         return None
-    return ValueError(f"{old} moved to {path}: run `uv run config migrate --dry-run`, then --apply")
+    return ValueError(
+        f"{old} moved to {path}: run `uv run ay config migrate --dry-run`, then --apply"
+    )
 
 
 def load_settings(path: Path) -> dict[str, Any]:

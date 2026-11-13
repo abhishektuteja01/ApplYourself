@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(cd *)
   - Bash(git rev-parse *)
   - Bash(uv run app *)
+  - Bash(uv run ay app *)
   - Read
   - Write
   - Skill
@@ -21,7 +22,7 @@ argument-hint: <job_id> [--refresh]
 ## 1. Find the folder
 
 ```bash
-uv run app dir $1
+uv run ay app dir $1
 ```
 
 An empty `dir` means no resume is built yet: stop and tell the user to run
@@ -47,7 +48,7 @@ show you looked, never its tagline:
 
 ## 3. Write `<dir>/company_answers.yaml`
 
-`uv run app schema answers` prints every key the file may hold; this is an example.
+`uv run ay app schema answers` prints every key the file may hold; this is an example.
 
 ```yaml
 researched_at: YYYY-MM-DD
@@ -69,7 +70,7 @@ Write the edited text back into `company_answers.yaml`.
 ## 5. Build
 
 ```bash
-uv run app build answers $1
+uv run ay app build answers $1
 ```
 
 On exit 2, follow the fix loop in `no_fab.md`. Report which keys are answered
