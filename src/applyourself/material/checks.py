@@ -51,15 +51,15 @@ def _prose_problems(
         }
         for n in resume_model.ungrounded_numbers(text, allowed)
     ]
-    found = lint.find_phrase_violations(text, context=context, rules=src.rules, keep=keep)
-    warnings += [resume_model.lint_warning(where, v) for v in found if v["level"] == "warn"]
+    _, blocked, warned = lint.gate(text, context, keep, src.rules)
+    warnings += [resume_model.lint_warning(where, v) for v in warned]
     out += [
         {
             "where": where,
             "code": ProblemCode.LINT,
             "detail": f"banned phrase {v['phrase']!r} ({v['category']})",
         }
-        for v in lint.blocking(found)
+        for v in blocked
     ]
     return out
 

@@ -11,6 +11,7 @@ import re
 import time
 from pathlib import Path
 
+from applyourself.apply.ashby import widget_kind as ashby_widget_kind
 from applyourself.apply.domscan import scan_form
 from applyourself.apply.plan import Plan
 from applyourself.apply.reconcile import MergedField, MergedOption
@@ -618,6 +619,17 @@ class BrowserDriver:
             raise FillError(f"{field_id}: not on the page") from exc
         el.check() if checked else el.uncheck()
 
+    def checkbox_checked(self, field_id: str) -> bool:
+        """Whether the field's lone checkbox is ticked. The first real
+        checkbox under the field, past Lever's hidden decoy and Ashby's
+        sibling controls; no box reads as unticked."""
+        boxes = self._locator(field_id)
+        for i in range(boxes.count()):
+            box = boxes.nth(i)
+            if (box.get_attribute("type") or "") == "checkbox":
+                return box.is_checked()
+        return False
+
     def open_options(self, field_id: str) -> tuple[str, ...]:
         """Click a react-select open and read its full, unfiltered option list.
 
@@ -1104,48 +1116,20 @@ class AshbyBrowserDriver(BrowserDriver):
         self.dismiss_cookie_banner()
 
     def resolve_kind(self, field_id: str, planned: str) -> str:
-        """What this field renders as right now, falling back to the plan.
-
-        Reinterpretation only ever applies to `planned in ("select",
-        "combobox")` — the two API types Ashby is documented to render
-        ambiguously: `select` as a radio group at 1/3/5 options, a combobox
-        at 11/24/194, or a lone checkbox for a single acknowledgement;
-        `combobox` (the Location field) as either the enumerated or the
-        server-backed flavour, both driven the same way. Every other planned
-        kind is trusted as-is: a `text`-planned field can carry unrelated
-        nested controls in the same entry — e.g. a `Phone` field with an
-        SMS-consent Yes/No radio pair bolted onto its own `data-field-path`
-        — and those must never override the field's real, unambiguous kind.
-        A field not on the page (a conditional question, say) also keeps its
-        planned kind and fails later in the ordinary way rather than being
-        silently reinterpreted here.
-        """
+        """What this field renders as right now, falling back to the plan,
+        by the rule the plan uses too (`ashby.widget_kind`). A field not on
+        the page (a conditional question) keeps its planned kind and fails
+        later in the ordinary way."""
         entry = self._entry(field_id)
         if entry.count() == 0 or planned not in ("select", "combobox"):
             return planned
-        if entry.locator(self.COMBOBOX).count():
-            # Both flavours — the enumerated one and the server-backed location
-            # autocomplete — are driven by typing and picking, which is exactly
-            # what the react_select path does.
-            return "react_select"
-        if entry.locator('input[type="radio"]').count():
-            return "radio_group"
-        boxes = entry.locator('input[type="checkbox"]')
-        if boxes.count() > 1:
-            return "checkbox_group"
-        if boxes.count() == 1 and entry.locator("button").count() >= 2:
-            return "yesno"
-        if boxes.count() == 1:
-            # A lone checkbox with no companion toggle buttons is a consent
-            # tick, not the widget its API type implied. Observed live: a
-            # single-option `ValueSelect` (-> planned "select") that Ashby
-            # actually renders as `<input type="checkbox">` for an
-            # acknowledgement question ("I have read and understood the
-            # Arbitration Agreement..."). `select_option()` against it raises
-            # "Element is not a <select> element"; `fill._as_kind` turns the
-            # one choice into a tick.
-            return "checkbox"
-        return planned
+        counts = {
+            "combobox": entry.locator(self.COMBOBOX).count(),
+            "radio": entry.locator('input[type="radio"]').count(),
+            "checkbox": entry.locator('input[type="checkbox"]').count(),
+            "button": entry.locator("button").count(),
+        }
+        return ashby_widget_kind(planned, counts)
 
     def required_fields(self) -> tuple[MergedField, ...]:
         """Every field entry whose title is marked required, keyed by its

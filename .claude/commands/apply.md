@@ -110,8 +110,10 @@ exit 1: stop and report the problems.
 
 ## 5. Prose
 
-The judge drafts new prose under NO-FAB, and `apply plan` lints it. Do not edit
-it.
+The judge drafts new prose under NO-FAB and NO-SLOP, and `apply plan` lints
+it; leave the judge's text as written. Prose this session drafts itself goes
+through the `no_ai_slop` skill in edit mode before it enters `OVERRIDES_FILE`
+(NO-SLOP). The user's own words are saved as given.
 
 ## 6. Ask only what is parked
 
@@ -120,6 +122,10 @@ uv run apply plan <job_id> --questions --answers <OVERRIDES_FILE>
 ```
 
 - Exit 1 with `OVERRIDES IGNORED`: report it verbatim and stop.
+- A park reason says "form says no sponsorship": run `/track <job_id> skip`
+  and stop.
+- A park reason says `company_answers.yaml has no`: run the `company-answers`
+  skill with `<job_id>`, then redo this step. Once per run.
 - Nothing parked: go to step 7. No confirmation.
 - Something parked (a judge `ask`, or a field the code parks): show the user,
   in full, each parked field with its reason, and for an `ask` the judge's
@@ -134,8 +140,9 @@ uv run apply plan <job_id> --questions --answers <OVERRIDES_FILE>
   block. **Stop and wait for the reply.**
 
 - The user answers an `ask` → write it into `OVERRIDES_FILE` keyed by the field
-  id, `{"value": "...", "source": "user", "label": "<the board's label>"}`, and
-  tell the user this fact will be saved to the bank. Re-run this step. Once
+  id, `{"value": "...", "source": "user", "label": "<the board's label>"}`,
+  plus `"fact": "<one general first-person sentence>"`, or `"learn": false`
+  for a one-role answer. Tell the user what will be saved to the bank. Re-run this step. Once
   nothing they can answer is left, tell them to run
   `! uv run apply confirm <OVERRIDES_FILE>` and type yes; never run it yourself
   and never write `"confirmed"` into the file. Once it prints `Confirmed:`,

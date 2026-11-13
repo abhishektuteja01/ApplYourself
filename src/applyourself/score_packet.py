@@ -49,6 +49,34 @@ def _months(dates: Any, today: date) -> set[int]:
     return set(range(first, last + 1))
 
 
+_DATE_RE = re.compile(r"\b([a-z]{3})[a-z]*\.?\s+(\d{4})\b|\b(present|current)\b")
+_US_PERSON = {"yes": "yes", "no": "no", "park": "not stated"}
+
+
+def enrolled_line(education: list[Any], today: date) -> str | None:
+    """The "Currently enrolled: yes/no (last degree ended Mon YYYY)" line from the
+    education entries' dates: enrolled while any entry is open or ends this
+    month or later. None when no entry has a readable date."""
+    ends: list[int] = []
+    for e in education:
+        found = _DATE_RE.findall(str((e or {}).get("dates") or "").lower())
+        if not found:
+            continue
+        mon, year, word = found[-1]
+        if word:
+            ends.append(10**6)
+        elif mon in _MONTHS:
+            ends.append(int(year) * 12 + _MONTHS[mon])
+    if not ends:
+        return None
+    last = max(ends)
+    if last >= today.year * 12 + today.month:
+        return "- Currently enrolled: yes"
+    year, month = divmod(last - 1, 12)
+    name = list(_MONTHS)[month].capitalize()
+    return f"- Currently enrolled: no (last degree ended {name} {year})"
+
+
 def _open(dates: Any) -> bool:
     m = _RANGE_RE.match(str(dates or "").lower())
     return bool(m and m[3] is None)
@@ -72,9 +100,13 @@ def digest(cfg: ScoringConfig, today: date | None = None, open_lengths: bool = T
         "### Education",
         "",
     ]
-    for e in src.resume.get("education") or []:
+    education = src.resume.get("education") or []
+    for e in education:
         parts = [str(e.get(k) or "").strip() for k in ("degree", "detail", "dates")]
         out.append("- " + ". ".join(p for p in parts if p))
+    enrolled = enrolled_line(education, today)
+    if enrolled:
+        out.append(enrolled)
     out += ["", "### Experience", ""]
     worked: set[int] = set()
     for ctx in src.contexts.values():
@@ -95,6 +127,10 @@ def digest(cfg: ScoringConfig, today: date | None = None, open_lengths: bool = T
     out += ["", "### Work authorization and languages", ""]
     out += [f"- {country}: {_NEED[need]}" for country, need in cfg.country_needs]
     out.append(f"- Anywhere else: {_NEED[cfg.default_need]}")
+    out.append(
+        f"- Citizenship: {', '.join(cfg.nationalities) or 'not listed'}; "
+        f"U.S. person: {_US_PERSON[cfg.us_person]}"
+    )
     out.append(
         f"- Languages: {', '.join(cfg.languages)}"
         if cfg.languages

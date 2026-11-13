@@ -21,3 +21,7 @@ example_targets: [[true, 93], [true, 82], [true, 67], [false, 0]]
 
 # `score ab-stage`'s v1 arm: the old short-JD skills cap when scoring.yaml has none.
 v1_skills_cap: 12
+
+# The label of a "we do not sponsor" statement where you need sponsorship only
+# later: opt_ok or ineligible. A scoring.yaml no_sponsorship_when_later replaces it.
+no_sponsorship_when_later: opt_ok

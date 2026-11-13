@@ -18,6 +18,7 @@ whose confirmed answers are saved as facts.
 1. Config, personal decisions, should not be hardcoded into commands or code. Stop if that is the direction.
 2. No dated references if not needed, no extra verbose paragraphs explaining why the decision was made. If absolutely needed (in case of A/B tests and similar), a concise one liner is enough.
 3. Explain code changes and tests before updating or implementing. Start post confirmation.
+4. Every drafted public text passes through `/no_ai_slop` (NO-SLOP in `.claude/shared/no_fab.md`).
 
 ## The two rule codes
 

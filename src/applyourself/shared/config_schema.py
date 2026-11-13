@@ -133,6 +133,7 @@ class ScoringFile(_Strict):
     schema_version: Any = None
     ineligible: Any = None
     no_sponsorship: Any = None
+    no_sponsorship_when_later: Any = None
     keywords_max: Any = None
     years_margin: Any = None
     jd_quality: JdQuality | None = None
@@ -230,6 +231,7 @@ class ScoringDefaults(_Strict):
     cutoff: Score
     example_targets: list[tuple[bool, Score]]
     v1_skills_cap: Score
+    no_sponsorship_when_later: Literal["ineligible", "opt_ok"]
 
 
 class DeAiRules(_Strict):

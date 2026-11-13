@@ -199,16 +199,16 @@ class TestDomEnrichment:
         monkeypatch.setattr(
             ashby,
             "require_playwright",
-            lambda: self._fake_playwright({"q1": "Please explain briefly."}),
+            lambda: self._fake_playwright({"q1": {"description": "Please explain briefly."}}),
         )
         result = ashby.fetch_dom_enrichment(ASHBY_URL)
-        assert result == {"q1": "Please explain briefly."}
+        assert result == {"q1": {"description": "Please explain briefly."}}
 
     def test_load_board_merges_descriptions_into_matching_fields(self, monkeypatch):
         monkeypatch.setattr(
             ashby,
             "fetch_dom_enrichment",
-            lambda url, timeout=30: {"_systemfield_name": "Legal name as on ID."},
+            lambda url, timeout=30: {"_systemfield_name": {"description": "Legal name as on ID."}},
         )
         with patch(
             "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
@@ -226,7 +226,7 @@ class TestDomEnrichment:
         monkeypatch.setattr(
             ashby,
             "fetch_dom_enrichment",
-            lambda url, timeout=30: {"_systemfield_resume": "PDF only, 5MB max."},
+            lambda url, timeout=30: {"_systemfield_resume": {"description": "PDF only, 5MB max."}},
         )
         with patch(
             "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
@@ -299,11 +299,21 @@ class TestApiFieldMapping:
         assert [o.label for o in field.options] == ["Job board", "Referral", "Company website"]
         assert [o.value for o in field.options] == ["1001", "1002", "1003"]
 
-    def test_multi_comes_from_is_many_not_from_the_type_name(self):
-        """`MultiValueSelect` means "choose among several values", not "choose
-        several" — `isMany` was false on all 39 occurrences across 150 boards,
-        and no board in the sample had `isMany: true` at all."""
-        assert self._fields()["20000000-0000-0000-0000-00000000000b"].multi is False
+    def test_checkbox_count_from_the_page_load_sets_multi(self, monkeypatch):
+        """The API never marks a field multi; more than one checkbox in its
+        page entry does. A lone checkbox stays a select until fill time."""
+        group, lone = "20000000-0000-0000-0000-00000000000b", "20000000-0000-0000-0000-00000000000a"
+        monkeypatch.setattr(
+            ashby,
+            "fetch_dom_enrichment",
+            lambda url, timeout=30: {group: {"checkbox": 3}, lone: {"checkbox": 1}},
+        )
+        with patch(
+            "applyourself.apply.ashby.fetch_json_post", return_value=load_api("api_ashby_form")
+        ):
+            by_id = {f.id: f for f in load_board(ASHBY_URL).reconciled.fields}
+        assert (by_id[group].kind, by_id[group].multi) == ("checkbox_group", True)
+        assert (by_id[lone].kind, by_id[lone].multi) == ("select", False)
 
     def test_the_resume_aliases_to_the_id_tailor_defers_to(self):
         assert "resume" in self._fields()

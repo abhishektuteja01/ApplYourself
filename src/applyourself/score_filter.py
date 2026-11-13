@@ -69,6 +69,13 @@ class ScoringConfig:
     degree_rank: int | None = None
     """Your highest degree as a `degree_rank`, from the answer bank; None
     when it names none we know, so every years path counts."""
+    no_sponsorship_when_later: str = "opt_ok"
+    """The label of a "we do not sponsor" statement where you need
+    sponsorship only later: scoring.yaml's key, else scoring_defaults.yaml's."""
+    nationalities: tuple[str, ...] = ()
+    """Your citizenships, from the answer bank."""
+    us_person: str = "park"
+    """The answer bank's export-control U.S. person answer: yes, no or park."""
 
 
 def _phrases(data: dict[str, Any], key: str, path: Path) -> tuple[str, ...]:
@@ -119,6 +126,27 @@ def bank_languages(bank_path: Path) -> tuple[str, ...]:
     return q.answers if q is not None else ()
 
 
+WHEN_LATER_LABELS = ("ineligible", "opt_ok")
+
+
+def _when_later(data: dict[str, Any], path: Path) -> str:
+    from applyourself.shared import scoring_defaults
+
+    key = "no_sponsorship_when_later"
+    value = data.get(key) or scoring_defaults.load()[key]
+    if value not in WHEN_LATER_LABELS:
+        raise ValueError(f"{path}: {key} must be one of {list(WHEN_LATER_LABELS)}")
+    return str(value)
+
+
+def bank_citizenship(bank_path: Path) -> tuple[tuple[str, ...], str]:
+    """Your citizenships and U.S. person answer, from the answer bank."""
+    from applyourself.apply.bank_schema import load_answers
+
+    bank = load_answers(bank_path)
+    return bank.nationalities, bank.us_person
+
+
 def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> ScoringConfig:
     """Parse and validate profile/scoring.yaml. Missing file or bad key fails loud.
 
@@ -144,6 +172,7 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
             else paths.ANSWER_BANK
         )
     home_need, country_needs, default_need = sponsorship_needs(Path(bank_path))
+    nationalities, us_person = bank_citizenship(Path(bank_path))
     q = data.get("jd_quality") or {}
     t, s = data.get("trim_jd") or {}, data.get("shortlist") or {}
     cfg = ScoringConfig(
@@ -166,6 +195,9 @@ def load_scoring(path: Path | None = None, bank_path: Path | None = None) -> Sco
         note=str(s.get("note") or ""),
         languages=bank_languages(Path(bank_path)),
         degree_rank=bank_degree_rank(Path(bank_path)),
+        no_sponsorship_when_later=_when_later(data, path),
+        nationalities=nationalities,
+        us_person=us_person,
     )
     low = {
         n: v.score.cutoff
@@ -455,6 +487,8 @@ def _fact_label(fact: str, country: Any, cfg: ScoringConfig) -> str:
     if fact == "no_opt_support":
         return "ineligible" if need == "later" else "opt_ok"
     if fact == "no_sponsorship":
+        if need == "later":
+            return cfg.no_sponsorship_when_later
         return "ineligible" if need == "now" else "opt_ok"
     if fact == "right_to_work":
         return "ineligible" if need == "now" else "unknown"

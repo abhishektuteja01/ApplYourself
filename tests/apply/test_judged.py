@@ -90,7 +90,7 @@ def test_a_question_renders_a_computed_start_date(answers, monkeypatch):
     f = field(label="Earliest day you could join us", kind="date")
     entry = Override(value="", decision="question", question="when_can_you_start")
     r = judged.render(f, entry, answers)
-    assert (r.action, r.value, r.source) == ("fill", "10/11/2026", "judged:when_can_you_start")
+    assert (r.action, r.value, r.source) == ("fill", "10/11/2026", "bank:when_can_you_start")
 
 
 def test_a_question_renders_a_role_file_answer(answers):

@@ -1695,6 +1695,33 @@ class TestARunLearnsWhatWasConfirmed:
             ("F-NOTICE-PERIOD-2", "Notice period? 4 weeks")
         ]
 
+    def test_a_fact_sentence_is_saved_and_learn_false_saves_nothing(self, tmp_path, monkeypatch):
+        path = self._bank(tmp_path, monkeypatch)
+        plan = self._plan(
+            [
+                self._field("q", "Willing to relocate?", "Yes", source="override:user"),
+                self._field("s", "Salary expectations", "83671", source="override:user"),
+            ]
+        )
+        overrides = {
+            "q": {"value": "Yes", "source": "user", "fact": "I will relocate within the US."},
+            "s": {"value": "83671", "source": "user", "learn": False},
+        }
+        self._run(tmp_path, monkeypatch, plan, overrides)
+        facts = yaml.safe_load(path.read_text(encoding="utf-8"))["facts"]
+        assert facts["F-WILLING-TO-RELOCATE"] == "I will relocate within the US."
+        assert not any(k.startswith("F-SALARY") for k in facts)
+
+    def test_learn_add_refuses_without_a_terminal(self, tmp_path, monkeypatch, capsys):
+        path = self._bank(tmp_path, monkeypatch)
+        before = path.read_text(encoding="utf-8")
+        add = tmp_path / "add.yaml"
+        add.write_text('facts:\n  F-MILITARY: "I have never served."\n', encoding="utf-8")
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        assert apply_cli.main(["learn", "--add", str(add), "--path", str(path)]) == 1
+        assert "F-MILITARY" in capsys.readouterr().out
+        assert path.read_text(encoding="utf-8") == before
+
     def test_judged_and_drafted_answers_teach_nothing(self, tmp_path, monkeypatch):
         path = self._bank(tmp_path, monkeypatch)
         before = path.read_text(encoding="utf-8")

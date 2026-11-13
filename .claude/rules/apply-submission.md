@@ -36,7 +36,7 @@ report lists them under `manual`, not `failed`.
   any cover-letter upload the folder has no letter for;
 - **`questions`**: one canonical entry per question, `{answer, only_when_required?}`.
   `answer` is text, a list of spellings, `{fact: ...}`, `{computed: salary |
-  start_date | how_heard}`, or `{role_file: ...}` (the role's
+  start_date | how_heard | cover_letter}` (the role's letter as text), or `{role_file: ...}` (the role's
   `company_answers.yaml`). `{computed: ..., fallback: [...]}` adds literal
   spellings for when the computed value can't answer (salary's bare Yes/No
   widget, how_heard with no source match). `mode: exact` (default) or
@@ -50,8 +50,8 @@ country from `work_authorization.countries`, and refuses `sponsorship_need` or
 
 ## Who answers what
 
-Code answers identity, uploads, education and employment by DOM id (tiers A/A2),
-and EEOC and demographic fields by section (your `demographics.answers` for the
+Code answers identity, uploads, education and employment by DOM id (tiers A/A2;
+Ashby's phone by API type `Phone`), and EEOC and demographic fields by section (your `demographics.answers` for the
 topic, exact or as the start of a longer option, else the decline option).
 Export control is answered by code only for a "U.S. person" question from an
 explicit `us_person`. A question's country is the one its label names
@@ -61,13 +61,21 @@ session's optional `"country"` in the answers file, else the score judge's one
 country (`judge_answer.country`), else the one code the postings' source gave
 (the store's `country`), else `UNKNOWN_COUNTRY`, and every answer that depends on
 the job's country parks. `apply confirm` shows it.
+The one exception to "no keywords": a free-text field with no options whose label
+names the site of exactly one URL answer in the bank (the word from that URL's own
+host, "linkedin" from linkedin.com) gets that URL at tier A, unless another question's id holds that word (`github_username`).
 
 The apply-judge (`.claude/agents/apply-judge.md`) answers every other field, on
 every role. `uv run apply judge-pack <id>` writes its packet from the saved
-`plan.json` (fields, facts, questions, the country's work-authorization row);
-`uv run apply judge-check <id>` refuses malformed output, naming each problem,
-and merges the rest into `answers_override.json`, never over an entry without a
-`decision`. One entry per field, one decision:
+`plan.json` (the posting's company, title and location; facts and
+`demographics.answers`; questions, role-file answers shown with this role's
+text; the country's work-authorization row; a story index; the fields in form
+order); `uv run apply judge-check <id>` refuses malformed output, naming each
+problem (`reconcile.text_problem`: input limits, then the lint, on judged text
+and on the bank prose a `question` picks), writes them into packet.md under
+"Refused last time (fix these)" (replaced each time), and merges the rest into
+`answers_override.json`, never over an entry without a `decision`. One entry
+per field, one decision:
 
 - `question`: code renders that bank question (computed and role-file answers too);
 - `fact`: `{fact: authorized|requires_sponsorship|unrestricted|us_person, yes_when}`;
@@ -77,9 +85,9 @@ and merges the rest into `answers_override.json`, never over an entry without a
 - `ask`: parks the field with the question for the user;
 - `skip`: optional junk only; a skip on a required field parks.
 
-`option` and `text` need a `basis`: `F-` facts, `B-`/`S-`/`SKILL-` profile ids,
-bank question ids, work-authorization keys, `jd`, `company_answers` or
-`option`. Every id must exist, or the field parks.
+`option` and `text` need a `basis`: `F-` facts, `demographics.<topic>`,
+`B-`/`S-`/`SKILL-` profile ids, bank question ids, work-authorization keys,
+`jd`, `company_answers` or `option`. Every id must exist, or the field parks.
 
 ## One gate
 
@@ -91,8 +99,11 @@ Every `answers_override.json` entry, judged or the session's, passes
 - export control takes only a `us_person` fact, or an `option` once `us_person`
   is yes or no (never on Yes/No options), never a typed value;
 - an option must be one the widget offers; a single checkbox takes only Yes;
-- free text is linted: mechanical fixes applied, a banned phrase parks the field
-  naming it;
+- free text is linted (`lint.gate`): mechanical fixes applied, a banned phrase
+  parks the field naming it. This holds for every value filled into a text box
+  outside tiers A/A2 (bank prose, role-file answers, fallbacks), not only overrides;
+- a sponsorship fact saying you need it, on a field whose label holds a
+  scoring.yaml `no_sponsorship` phrase, parks: "form says no sponsorship";
 - a judged entry the gate refuses parks its field, the refusal as the reason; one
   whose field id is not on the form still lands in `Plan.ignored_overrides`;
 - a session entry it refuses (an id not on the form, a closed field, a missing
@@ -111,7 +122,11 @@ New prose fills without waiting; `uv run apply prose --review` lists the pending
 ones and `--save` saves the approved rows, on a typed yes at a terminal only.
 Each lesson is tried alone and kept only if the bank still loads; a refused
 lesson is named and the rest stand. Every write keeps the previous file in
-`profile/.state/bank_history/` (last 20). `apply learn` reviews and undoes.
+`profile/.state/bank_history/` (last 20). `apply learn` reviews and undoes;
+`apply learn --add FILE` saves a YAML `facts:` map (and `questions:` with a
+profile `source`), on a typed yes at a terminal, never over an existing id.
+A user's answer may carry `"fact": "<one sentence>"`, saved in place of label +
+answer, or `"learn": false`, which saves nothing; `apply confirm` shows which.
 
 ## Evals
 

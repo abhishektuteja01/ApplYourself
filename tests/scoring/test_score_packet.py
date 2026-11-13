@@ -45,6 +45,21 @@ def test_the_profile_form_does_not_move_with_the_month(scfg):
     assert same[0] == same[1] and "Nov 2025 - Present\n" in same[0]
 
 
+@pytest.mark.parametrize(
+    "dates, line",
+    [
+        (["Sep 2024 - May 2026", "Jul 2018 - Jul 2022"], "no (last degree ended May 2026)"),
+        (["Sep 2024 - Nov 2026"], "yes"),  # ends this month
+        (["Expected Dec 2027"], "yes"),
+        (["Sep 2025 - Present"], "yes"),
+        (["2020"], None),
+    ],
+)
+def test_enrolled_reads_the_latest_education_end(dates, line):
+    got = score_packet.enrolled_line([{"dates": d} for d in dates], date(2026, 11, 12))
+    assert got == (f"- Currently enrolled: {line}" if line else None)
+
+
 def test_no_languages_listed_is_said_so(scfg):
     import dataclasses
 

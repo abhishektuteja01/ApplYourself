@@ -257,17 +257,20 @@ def outcomes_from(recs: Iterable[tuple[str, dict]]) -> dict[str, tuple[str, str,
     return out
 
 
-def trend(runs_dir: Path, limit: int = 10) -> list[str]:
-    """One line per recent run that recorded its totals, oldest first."""
+def trend(runs_dir: Path, job_ids: Iterable[str] = (), limit: int = 10) -> list[str]:
+    """One line per recent run that recorded its totals and tried one of
+    `job_ids` (any run when none are given), oldest first."""
     if not runs_dir.is_dir():
         return []
+    wanted = set(job_ids)
     rows = []
-    for path in sorted(runs_dir.glob("*.json"), key=lambda p: _order_key(p.stem))[-limit:]:
+    for path in sorted(runs_dir.glob("*.json"), key=lambda p: _order_key(p.stem)):
         rec = load(path)
         t = (rec or {}).get("totals")
-        if t:
+        tried = {str(r.get("job_id")) for r in (rec or {}).get("roles") or []}
+        if t and (not wanted or wanted & tried):
             rows.append(
                 f"  {path.stem}: parked {t['parked']} of {t['roles']} · "
                 f"from bank {t['bank']} · learned {t['learned']}"
             )
-    return rows
+    return rows[-limit:]

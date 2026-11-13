@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(uv run app *)
   - Read
   - Write
+  - Skill
   - WebSearch
   - WebFetch
 argument-hint: <job_id> [--refresh]
@@ -60,7 +61,12 @@ what_interests_you_about_product: null               # or 2-4 sentences
 `null` means "no research". /apply parks a question rather than send an
 invented "why us".
 
-## 4. Build
+## 4. De-slop
+
+Run the `no_ai_slop` skill in edit mode over every non-null answer (NO-SLOP).
+Write the edited text back into `company_answers.yaml`.
+
+## 5. Build
 
 ```bash
 uv run app build answers $1

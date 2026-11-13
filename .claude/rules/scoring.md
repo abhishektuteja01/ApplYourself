@@ -30,8 +30,10 @@ Three steps, one owner per rule:
    in this order: `.claude/shared/scoring_rubric.md` (fixed fit bands,
    tie-breaks), the candidate digest (`score_packet.digest`: every bullet with
    its tags, every skill with its aliases (no bullet rephrasings), each
-   context's span (an open "Present" one up to the staging day), education,
-   the bank's sponsorship needs and languages, rebuilt every run), the lane's
+   context's span (an open "Present" one up to the staging day), education
+   with a "Currently enrolled" line from resume.yaml's education dates, the
+   bank's sponsorship needs, citizenship, U.S. person answer and languages,
+   rebuilt every run), the lane's
    `rubric.md`, its optional
    `examples.yaml` (`score examples` picks them from past scores by a stable
    rule), and the answer schema. Rows go newest
@@ -43,7 +45,9 @@ Three steps, one owner per rule:
    statements with literal JD quotes, a `blocker` or null), then one `fit`
    0-100, keywords and a reason of at most 15 words.
 3. `score finish` (Python): checks each answer against its slice, derives the
-   sponsorship label, tags, score and action, merges (with the raw answer in
+   sponsorship label (a `no_sponsorship` where the need is `later` takes
+   scoring.yaml `no_sponsorship_when_later`, else scoring_defaults.yaml's),
+   tags, score and action, merges (with the raw answer in
    `judge_answer`), and writes the shortlist. The score is 0 when the role is
    out of lane, ineligible, outside the lane's countries, asks the lane's
    `score.years_zero_at` years or more, or has a blocker; otherwise fit

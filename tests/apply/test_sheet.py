@@ -367,3 +367,14 @@ def test_a_refresh_reads_settings_and_the_ledger_once(tmp_path, monkeypatch):
     sheet.refresh()
     assert len(_rows(tmp_path)) == 2
     assert calls == {"settings": 1, "ledger": 1}
+
+
+def test_trend_keeps_only_runs_sharing_a_role(tmp_path):
+    from applyourself.apply import run_record
+
+    totals = {"parked": 0, "roles": 1, "bank": 0, "learned": 0}
+    for stem, job_id in (("2026-11-01_0900", "aaaa1111"), ("2026-11-02_0900", "bbbb2222")):
+        record = {"totals": totals, "roles": [{"job_id": job_id}]}
+        run_record.write(record, tmp_path / f"{stem}.json")
+    rows = run_record.trend(tmp_path, ["aaaa1111"])
+    assert len(rows) == 1 and "2026-11-01_0900" in rows[0]

@@ -164,6 +164,10 @@ def test_looks_like_slug(name, slug):
             "USD Salary Range: $160,000 - $210,000\nCAD Salary Range: $140,000 - $180,000",
             (160000.0, 210000.0, "USD"),
         ),
+        (
+            "Total cash compensation: $298,000 - $358,000\nBase salary: $240,000 - $300,000",
+            (240000.0, 300000.0, "USD"),
+        ),
     ],
 )
 def test_posted_pay_skips_ranges_that_are_not_salary(text, expected):

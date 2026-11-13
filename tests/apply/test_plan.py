@@ -843,6 +843,43 @@ class TestDraftedTextIsLinted:
         plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": Override(value=option)})
         assert plan.fields[0].value == option
 
+    def test_bank_prose_picked_by_the_judge_is_linted_at_fill(self, answers, tailor_dir):
+        from dataclasses import replace
+
+        from applyourself.apply.bank_schema import Question
+
+        old = Question(id="old_prose", answers=("I orchestrated the launch.",), source="B-X")
+        answers = replace(answers, questions=(*answers.questions, old))
+        f = field(id="q", label="Tell us more", kind="textarea", required=False)
+        plan = build_plan(
+            one([f]),
+            answers,
+            tailor_dir,
+            overrides={"q": Override(value="", decision="question", question="old_prose")},
+        )
+        assert plan.unmapped and "orchestrated" in plan.unmapped[0].reason
+        assert not plan.parked  # optional: shown, never blocks
+
+
+def test_a_form_only_sponsorship_bar_parks(answers, tailor_dir, tmp_path, monkeypatch):
+    from applyourself.shared import paths
+
+    scoring = tmp_path / "scoring.yaml"
+    scoring.write_text("no_sponsorship:\n  - do not sponsor\n", encoding="utf-8")
+    monkeypatch.setitem(paths._overrides, "SCORING", scoring)
+    f = field(
+        id="q",
+        label="We do not sponsor visas. Will you now or in the future require sponsorship?",
+        kind="select",
+        required=True,
+        options=(MergedOption(label="Yes"), MergedOption(label="No")),
+    )
+    fact = Override(
+        value="", decision="fact", fact={"fact": "requires_sponsorship", "yes_when": True}
+    )
+    plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": fact})
+    assert plan.parked and "form says no sponsorship" in plan.unmapped[0].reason
+
 
 class TestCoverLetterWhenOffered:
     """`cover_letter: when_offered`: an optional letter upload with no letter
@@ -926,7 +963,7 @@ class TestFactJudgmentOverride:
         assert plan.parked and not plan.ignored_overrides
 
     def test_it_is_refused_on_an_ordinary_question(self, answers, tailor_dir):
-        f = field(id="q", label="What is your LinkedIn?", kind="text")
+        f = field(id="q", label="What is your favorite color?", kind="text")
         plan = build_plan(
             one([f]),
             answers,

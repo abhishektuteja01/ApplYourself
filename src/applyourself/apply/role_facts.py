@@ -1,5 +1,5 @@
-"""What /apply reads about one role besides its form: the job's country and
-the role's company_answers.yaml."""
+"""What /apply reads about one role besides its form: the job's country, the
+role's company_answers.yaml and its cover letter's text."""
 
 from __future__ import annotations
 
@@ -146,3 +146,39 @@ def company_answers_for(out_dir: Path) -> dict[str, str]:
         for k, v in data.items()
         if isinstance(k, str) and isinstance(v, str) and v.strip()
     }
+
+
+def cover_letter_for(out_dir: Path) -> str:
+    """The role's cover_letter.yaml as the text a cover-letter box takes: the
+    salutation, each body paragraph, then the template's own sign-off (its
+    text after `{{BODY}}`), blank lines between. "" with no letter."""
+    path = out_dir / "cover_letter.yaml"
+    if not path.is_file():
+        return ""
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        return ""
+    body = [str(p).strip() for p in data.get("body") or [] if str(p).strip()]
+    if not body:
+        return ""
+    salutation = str(data.get("salutation") or "").strip()
+    closing = _template_closing(paths.PROFILE / "cover_letter_template.docx")
+    return "\n\n".join(part for part in (salutation, *body, closing) if part)
+
+
+def _template_closing(template: Path) -> str:
+    """The template's text after its `{{BODY}}` paragraph, one line per
+    paragraph, leaving out placeholders; "" with no template."""
+    if not template.is_file():
+        return ""
+    from docx import Document
+
+    lines: list[str] = []
+    seen_body = False
+    for paragraph in Document(str(template)).paragraphs:
+        text = paragraph.text.strip()
+        if text == "{{BODY}}":
+            seen_body = True
+        elif seen_body and text and not text.startswith("{{"):
+            lines.append(text)
+    return "\n".join(lines)

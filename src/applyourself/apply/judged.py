@@ -36,6 +36,9 @@ WORK_AUTH_KEYS = (
 # What a single checkbox's judged value may say to tick it, besides its own label.
 CHECKBOX_YES = ("yes", "i acknowledge", "i agree", "i confirm")
 
+# A basis citing one `demographics.answers` topic: `demographics.<topic>`.
+DEMOGRAPHICS_PREFIX = "demographics."
+
 # Profile entry id prefixes, longest first so `SKILL-` is not read as `S-`.
 _ENTRY_PREFIXES = ("SKILL-", "B-", "S-")
 
@@ -88,12 +91,17 @@ def missing_basis(
 ) -> list[str]:
     """Basis ids that name nothing: an `F-` id not in the bank's facts, a
     `B-`/`S-`/`SKILL-` id not in the profile (or in `known_ids` when given),
+    a `demographics.<topic>` the bank's demographics do not answer,
     or a word that is neither a basis word, a work-authorization key nor a
     bank question id."""
     missing: list[str] = []
     profile: set[str] | None = known_ids
     for item in basis:
         if item in BASIS_WORDS or is_work_auth_basis(item) or answers.question(item) is not None:
+            continue
+        if item.startswith(DEMOGRAPHICS_PREFIX):
+            if item.removeprefix(DEMOGRAPHICS_PREFIX) not in answers.demographic_answers:
+                missing.append(item)
             continue
         if item.startswith("F-"):
             if item not in answers.facts:
@@ -129,7 +137,7 @@ def render(
             return _park(
                 f"judged: no bank question {entry.question!r}", tier, f"judged:{entry.question}"
             )
-        return answer_question(question, field, answers, f"judged:{question.id}")
+        return answer_question(question, field, answers, f"bank:{question.id}")
     if decision == "fact":
         return resolve_fact_wording(field, answers, entry.fact)
     if decision == "ask":

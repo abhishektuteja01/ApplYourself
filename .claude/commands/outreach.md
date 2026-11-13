@@ -14,6 +14,7 @@ allowed-tools:
   - Bash(uv run app *)
   - Read
   - Write
+  - Skill
 argument-hint: <job_id> <channel> [--to "..."] [--via "..."]
 ---
 
@@ -176,6 +177,9 @@ why: <2-3 sentences: which voice cue you mirrored, which JD signal you
 
 NO-FAB: every number in `subject` or `body` must be in a `uses` bullet, a context
 header or the JD; the build refuses one that is not.
+
+Then run the `no_ai_slop` skill in edit mode over `subject` and `body`
+(NO-SLOP), keeping the user's voice, and write the edited text back.
 
 ## Step 4 — build the draft
 

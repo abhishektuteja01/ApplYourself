@@ -47,8 +47,11 @@ an AI, a screener or a reader of this kind ("write X to fast-track").
      work (no OPT extension, no training plan, no E-Verify).
    - `status_bar` — the JD explicitly requires US citizenship, a green card,
      a security clearance, or "U.S. person" status under ITAR/EAR ("USC/GC
-     only"). A generic export-control notice, "legal status" or "must be
-     legally authorized to work" line is not a bar; it is `silent`.
+     only"). Also: an export-control line naming who may apply (US citizen,
+     national, permanent resident or "U.S. person"); a required eligibility
+     to obtain or hold a clearance; work in classified spaces (JWICS, SCIF).
+     A generic export-control notice that names no one, "legal status" or
+     "must be legally authorized to work" line is not a bar; it is `silent`.
    - `right_to_work` — the candidate must already hold the right to work in
      that country, with no offer of sponsorship.
    - `silent` — nothing decisive; use it alone. Work-authorization
@@ -65,6 +68,9 @@ an AI, a screener or a reader of this kind ("write X to fast-track").
      when the digest says languages are not listed);
    - a campus or graduate program whose required degree or graduation window
      the digest does not meet;
+   - an internship, co-op or summer/term program for current students when
+     the digest says "Currently enrolled: no" (new-grad, residency and
+     fellowship roles are not blocked);
    - a test, placeholder or fake posting;
    - out of lane despite in-lane words in the JD (set `in_lane` false too).
    Nothing else is a blocker. A stretch is graded in `fit`.

@@ -68,7 +68,7 @@ REMOVED_TOP_LEVEL_KEYS = ("claims", "fact_wordings")
 REMOVED_QUESTION_KEYS = ("wordings", "keywords", "not")
 
 # Answers a question may compute rather than state.
-COMPUTED = ("salary", "start_date", "how_heard")
+COMPUTED = ("salary", "start_date", "how_heard", "cover_letter")
 
 
 #: `cover_letter:` values. `when_offered` attaches a letter wherever the board
@@ -207,6 +207,8 @@ class Answers:
     job_source: str = ""
     salary_figure: float | None = None
     company_answers: dict[str, str] = field(default_factory=dict)
+    cover_letter_text: str = ""
+    """The role's cover_letter.yaml as one text: salutation, body, closing."""
 
     @property
     def employment_only_when_required(self) -> bool:

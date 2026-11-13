@@ -41,6 +41,10 @@ no_sponsorship:
   - do not sponsor
   - does not sponsor
 
+# A judged "we do not sponsor" where you need sponsorship only later (OPT):
+# opt_ok keeps the role, ineligible scores it 0. Absent: scoring_defaults.yaml's.
+# no_sponsorship_when_later: ineligible
+
 # How many keywords_to_mirror a role keeps for /tailor; extras are dropped.
 keywords_max: 5
 

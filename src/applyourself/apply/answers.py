@@ -24,12 +24,14 @@ import functools
 import re
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from urllib.parse import urlparse
 
 from applyourself.apply.bank_schema import (
     Answers,
     Question,
     _norm_option,
     in_work_authorization_domain,
+    norm_label,
 )
 from applyourself.apply.places import (
     UNKNOWN_COUNTRY,
@@ -57,6 +59,9 @@ _IDENTITY_IDS = {
     "_systemfield_email": "email",  # Ashby's raw systemfield id
     "_systemfield_location": "location",
 }
+
+# Ashby's API type for a field the identity block fills, whatever its id.
+_IDENTITY_API_TYPES = {"Phone": "phone"}
 
 # Handled by plan.py, which knows the role's /tailor output dir.
 FILE_IDS = frozenset({"resume", "cover_letter"})
@@ -295,9 +300,9 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
         if wants_first != wants_last:
             return _fill(first if wants_first else last, "A")
         return _fill(f"{first} {last}".strip(), "A")
-    key = _IDENTITY_IDS.get(field.id)
+    key = _IDENTITY_IDS.get(field.id) or _IDENTITY_API_TYPES.get(field.api_type or "")
     if key is None:
-        return None
+        return _resolve_link(field, answers)
     value = answers.identity[key]
     if field.id == "country":
         picked = _pick_country(field, value)
@@ -312,6 +317,40 @@ def _resolve_identity(field: MergedField, answers: Answers) -> Resolution | None
         choice = _resolve_choice(field, candidates, "A", f"identity.{key}")
         return replace(choice, alternates=candidates) if choice.action == "fill" else choice
     return _fill(value, "A")
+
+
+def _host_word(url: str) -> str:
+    """The site name of an http(s) URL ("linkedin" for linkedin.com/in/x), or ""."""
+    try:
+        parts = urlparse(url.strip())
+    except ValueError:
+        return ""
+    labels = (parts.hostname or "").split(".") if parts.scheme in ("http", "https") else []
+    return labels[-2] if len(labels) >= 2 else ""
+
+
+def _resolve_link(field: MergedField, answers: Answers) -> Resolution | None:
+    """A free-text field whose label names the site of exactly one URL answer
+    in the bank (the word comes from that answer's own host) gets that URL.
+    A label naming two sites, a site another bank question's id also holds
+    (`github_username`), a field with options and a textarea are left for the
+    judge."""
+    if field.kind != "text" or field.options:
+        return None
+    label = norm_label(field.label or "")
+    named: dict[str, str] = {}
+    shared = False
+    for q in answers.questions:
+        if q.computed or q.role_file or not q.answers:
+            continue
+        word = _host_word(q.answers[0])
+        if word and re.search(rf"\b{re.escape(word)}\b", label):
+            named.setdefault(q.answers[0], q.id)
+            shared |= any(o.id != q.id and word in o.id for o in answers.questions)
+    if shared or len(named) != 1:
+        return None
+    url, qid = next(iter(named.items()))
+    return _fill(url, "A", source=f"bank:{qid}")
 
 
 # A name field whose label asks for one part only. Both or neither: the full name.
@@ -521,6 +560,12 @@ def _one_value(label: str, answers: Answers, fact) -> tuple[bool | None, str]:
     return all(values), ""
 
 
+def fact_holds(field: MergedField, answers: Answers, fact: str) -> bool:
+    """Whether a work-authorization fact is true for the countries `field`'s
+    label names (else the job's)."""
+    return bool(_one_value(field.label, answers, lambda f: getattr(f, fact))[0])
+
+
 def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> Resolution:
     """A judged `{fact, yes_when}`: Yes exactly when the fact it names equals
     `yes_when` for the question's country, so the answer follows your facts."""
@@ -587,6 +632,14 @@ def _computed(question: Question, field: MergedField, answers: Answers, source: 
             "B",
             source=source,
         )
+    if question.computed == "cover_letter":
+        if not answers.cover_letter_text:
+            return _park(
+                "cover letter: this role has no cover_letter.yaml (run /cover-letter)",
+                "B",
+                source=source,
+            )
+        return _fill(answers.cover_letter_text, "B", source=source)
     if question.computed == "start_date":
         days = answers.facts_for(country).start_in_days
         if days is None:

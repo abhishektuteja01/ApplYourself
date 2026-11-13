@@ -21,6 +21,11 @@ Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
 - **SKILLS-SOURCE** — a Skills line lists only `skills_master.md` entries whose
   `show` names that line. A skill is shown by its `name` or one of its
   `allowable_synonyms`.
+- **NO-SLOP** — every drafted text that leaves the machine (cover letters,
+  company answers, outreach, `/apply` prose, the apply-judge's `text`
+  answers) passes one `no_ai_slop` edit before its build or write. The edit
+  may not add a claim, tool, number or scope. Resume bullets get the detect
+  mode only: flag, then fix under REPHRASE-LICENSE.
 
 ## What code checks
 

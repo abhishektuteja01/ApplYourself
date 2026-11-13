@@ -78,7 +78,12 @@ def render(data: dict) -> str:
         if entry.get("question"):
             tail += f" -> saved as {entry['question']}"
         lines.append(f"  {value}{tail}")
-        for key in sorted(set(entry) - {"label", "value", "fact", "source", "question"}):
+        if entry.get("learn") is False:
+            lines.append("  saved to the bank: nothing (learn: false)")
+        elif isinstance(fact, str):
+            lines.append(f"  saved to the bank as a fact: {fact}")
+        shown = {"label", "value", "fact", "source", "question", "learn"}
+        for key in sorted(set(entry) - shown):
             lines.append(f"  {key}: {json.dumps(entry[key], ensure_ascii=False)}")
     return "\n".join(lines)
 

@@ -23,6 +23,7 @@ is the only module in `src/` that names the driver.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from dataclasses import dataclass, replace
@@ -663,6 +664,8 @@ def read_back(driver, field_id: str, planned_kind: str) -> str:
     """
     try:
         kind = driver.resolve_kind(field_id, planned_kind)
+        if kind == "checkbox":
+            return str(driver.checkbox_checked(field_id))
         if kind == "yesno":
             return driver.selected_label(field_id)
         if kind == "radio_group":
@@ -801,18 +804,39 @@ def _planned_text(value) -> str:
 _CHOICE_KINDS = frozenset({"select", "react_select", "yesno", "radio_group", "checkbox_group"})
 
 
+def _wants_tick(planned: str) -> bool:
+    """A lone checkbox's planned state from its planned text: anything but
+    blank, False or No (an acknowledgement's one option, Yes, True) is a tick."""
+    return planned.strip().rstrip(".").casefold() not in ("", "false", "no")
+
+
+_SCHEME = re.compile(r"^https?://")
+
+
+def _url_key(text: str) -> str | None:
+    """A URL without its scheme, a leading `www.` and a trailing `/`, or None
+    when `text` is not one."""
+    if not _SCHEME.match(text) or " " in text:
+        return None
+    rest = _SCHEME.sub("", text).removeprefix("www.").rstrip("/")
+    return rest if "." in rest.split("/", 1)[0] else None
+
+
 def _matches(field_id: str, kind: str, planned: str, actual: str) -> bool:
     """Whether the page holds what was planned, read the way each widget shows
-    it: a single checkbox has no text to compare; Greenhouse's country field
+    it: a single checkbox reads ticked or not (`read_back`); two URLs compare
+    without scheme, `www.` and a trailing slash; Greenhouse's country field
     shows its dial code ("+1"); a phone box may reformat the number; a
     multi-select lists its picks in any order; a chooser may show a longer
     label that starts with the one picked (Ashby stacks name, country and
     domain). "Male" never matches "Female"."""
     if kind == "checkbox":
-        return True
+        return _wants_tick(planned) == (actual.strip() == "True")
     if field_id == "country" and actual.strip().startswith("+"):
         return True
     p, a = " ".join(planned.casefold().split()), " ".join(actual.casefold().split())
+    if (pu := _url_key(p)) is not None and (au := _url_key(a)) is not None:
+        return pu == au
     if "phone" in field_id.casefold():
         return re.sub(r"\D", "", p).endswith(re.sub(r"\D", "", a)[-10:]) if a else not p
     if kind == "checkbox_group":
@@ -833,9 +857,10 @@ def form_check(manifest: list[dict]) -> list[str]:
     ]
 
 
-def _reverify_fields(driver, plan: Plan) -> None:
+def _reverify_fields(driver, plan: Plan) -> list[str]:
     """Re-check every field immediately before the click, and re-apply any
-    that drifted since `fill_plan` set it.
+    that drifted since `fill_plan` set it. Returns the lone checkboxes still
+    not holding their planned tick, which refuse the click.
 
     A toggle can read back correctly when `_apply_field` sets it and be
     cleared again by submit time — a different field each retry, so not one
@@ -858,16 +883,27 @@ def _reverify_fields(driver, plan: Plan) -> None:
     failures ("LinkedIn Profile", plain text) were never covered at all
     before this, which left every free-text answer with no safety net.
 
-    `checkbox` (a lone consent tick) and `react_select` are deliberately left
+    A lone checkbox is re-ticked when it came undone (Ashby re-renders one
+    after the fill). `react_select` is deliberately left
     out — re-driving a react-select this close to the click means reopening
     and re-typing into a live widget, a bigger and riskier action than a
     single click or fill, and neither has been observed drifting. Nothing
     rules it out either, but the trade isn't worth it without evidence.
     """
+    unticked: list[str] = []
     for field in plan.fields:
         kind = driver.resolve_kind(field.id, field.kind)
 
-        if kind == "yesno":
+        if kind == "checkbox":
+            want = _wants_tick(_planned_text(field.value))
+            if driver.checkbox_checked(field.id) == want:
+                continue
+            with contextlib.suppress(FillError):
+                driver.set_checkbox(field.id, want)
+            if driver.checkbox_checked(field.id) != want:
+                unticked.append(field.label or field.id)
+
+        elif kind == "yesno":
             want = str(field.value)
             shown = driver.selected_label(field.id)
             if shown.strip().casefold() == want.strip().casefold():
@@ -923,6 +959,7 @@ def _reverify_fields(driver, plan: Plan) -> None:
                     driver.close()
             except FillError:
                 continue
+    return unticked
 
 
 def submit(
@@ -962,7 +999,12 @@ def submit(
         # happens during the wait it is meant to guard against. Repeated on
         # every retry attempt too — a drift caught and fixed on attempt 1 is
         # not evidence attempt 2 is still safe.
-        _reverify_fields(driver, plan)
+        unticked = _reverify_fields(driver, plan)
+        if unticked:
+            raise SubmitGuardError(
+                f"checkbox not holding its planned tick: {', '.join(unticked)}. "
+                "Nothing was clicked."
+            )
         # Asked of the browser, immediately before the click, because this is
         # the one refusal that leaves no trace: constraint validation blocks
         # the form before the board's own script runs, so the click fires no

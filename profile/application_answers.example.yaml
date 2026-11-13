@@ -102,7 +102,7 @@ facts:
 
 # One entry per question you want answered the same way everywhere. An answer
 # is text, a list of spellings (the first the board offers wins), or
-# {fact: identity.first_name}, {computed: salary | start_date | how_heard},
+# {fact: identity.first_name}, {computed: salary | start_date | how_heard | cover_letter},
 # {role_file: why_company} (this role's company_answers.yaml).
 questions:
   linkedin:
@@ -133,3 +133,6 @@ questions:
     answer: {role_file: why_role}
   what_interests_you_about_product:
     answer: {role_file: what_interests_you_about_product}
+  cover_letter_text:
+    # A cover-letter text box: this role's cover_letter.yaml as text.
+    answer: {computed: cover_letter}

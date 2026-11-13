@@ -760,6 +760,44 @@ class TestForTheJudge:
                 assert not (r.action == "skip" and f.required)
 
 
+class TestIdentityByStructure:
+    """Phone by Ashby's API type; a link by the host of the bank's own URL."""
+
+    def test_an_ashby_phone_with_a_uuid_id_is_identity(self, answers):
+        r = resolve(field(id="58e24ea1", label="Phone", api_type="Phone"), answers)
+        assert (r.action, r.tier, r.value) == ("fill", "A", answers.identity["phone"])
+
+    def test_a_label_naming_one_bank_host_gets_that_url(self, answers):
+        r = resolve(field(label="Linkedin Profile", required=True), answers)
+        assert (r.action, r.tier, r.value) == ("fill", "A", "https://linkedin.com/in/example")
+
+    def test_a_host_another_question_id_holds_goes_to_the_judge(self, tmp_path):
+        a = load_answers(
+            write_config(
+                tmp_path,
+                questions={
+                    "github": {"answer": "https://github.com/example"},
+                    "github_username": {"answer": "example"},
+                    "linkedin": {"answer": "https://linkedin.com/in/example"},
+                },
+            )
+        )
+        assert resolve(field(label="GitHub Username", required=True), a).reason == A.FOR_THE_JUDGE
+        r = resolve(field(label="LinkedIn Profile", required=True), a)
+        assert (r.tier, r.value) == ("A", "https://linkedin.com/in/example")
+
+    @pytest.mark.parametrize(
+        "f",
+        [
+            field(label="LinkedIn or Example site", required=True),
+            field(label="Do you have a LinkedIn profile?", options=("Yes", "No"), required=True),
+            field(label="Tell us about your LinkedIn activity", kind="textarea", required=True),
+        ],
+    )
+    def test_two_hosts_options_or_a_textarea_go_to_the_judge(self, answers, f):
+        assert resolve(f, answers).reason == A.FOR_THE_JUDGE
+
+
 class TestTheShippedTemplate:
     def test_it_loads_through_the_real_loader(self):
         loaded = load_answers(paths.example(BS.EXAMPLE_NAME))
@@ -963,6 +1001,21 @@ class TestRoleFileAnswers:
         f = field(label="Why do you want to work here?", kind="textarea", required=True)
         r = ask(a, "why_company", f)
         assert r.action == "park" and "company-answers" in r.reason
+
+
+class TestCoverLetterText:
+    def test_a_role_with_no_letter_parks_naming_the_command(self, tmp_path):
+        a = load_answers(
+            write_config(
+                tmp_path, questions={"cover_letter_text": {"answer": {"computed": "cover_letter"}}}
+            )
+        )
+        f = field(label="Cover Letter", kind="textarea", required=True)
+        r = ask(a, "cover_letter_text", f)
+        assert r.action == "park" and "/cover-letter" in r.reason
+        assert ask(dc_replace(a, cover_letter_text="Dear team,"), "cover_letter_text", f).value == (
+            "Dear team,"
+        )
 
 
 class TestLocationAlternates:

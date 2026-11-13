@@ -30,7 +30,9 @@ prose (--review [--out F] | --save F)
                       that no bank question holds yet, each with a proposed
                       question id and a decision to set; --save saves the
                       decision: yes rows (typed yes on a terminal).
-learn [--undo ID]     review what the bank holds, or remove one fact or question.
+learn [--undo ID | --add FILE]
+                      review what the bank holds, remove one fact or question, or
+                      save a file's facts: (typed yes on a terminal; never overwrites).
 triage [--fill] [--job-id J ...] [--limit N]
                       sort Resume ready roles into ready / open with no model; --fill
                       fills the ready ones (never submits) and writes a run report.
@@ -63,6 +65,7 @@ from dataclasses import field as dc_field
 from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from applyourself import state_io, track_cli
 from applyourself.apply import (
@@ -113,7 +116,12 @@ from applyourself.apply.report import (
     write_manifest,
     write_report,
 )
-from applyourself.apply.role_facts import company_answers_for, job_country, session_country
+from applyourself.apply.role_facts import (
+    company_answers_for,
+    cover_letter_for,
+    job_country,
+    session_country,
+)
 from applyourself.apply.schema import SchemaError
 from applyourself.discovery.parse import MIN_ANNUAL_SALARY, posted_pay
 from applyourself.material import folders as app_folders
@@ -145,6 +153,7 @@ OVERRIDE_KEYS = (
     "basis",
     "ask",
     "why",
+    "learn",
 )
 
 
@@ -319,6 +328,15 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
                 f"{where} has unknown keys {sorted(unknown)}; allowed: {', '.join(OVERRIDE_KEYS)}"
             )
         fact = entry.get("fact")
+        learn_fact = ""
+        if isinstance(fact, str) and "decision" not in entry:
+            # The user's answer as one general sentence: what a confirmed run saves.
+            learn_fact, fact = " ".join(fact.split()), None
+            if not learn_fact:
+                raise ApplyCliError(f"{where} fact sentence is empty")
+        learn = entry.get("learn", True)
+        if not isinstance(learn, bool):
+            raise ApplyCliError(f"{where} learn is true or false")
         if fact is not None or "decision" in entry:
             if fact is not None and (
                 not isinstance(fact, dict)
@@ -342,6 +360,8 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
             value=value,
             source=str(entry.get("source") or ""),
             question=_question_id(entry, where),
+            learn_fact=learn_fact,
+            learn=learn,
         )
     return overrides
 
@@ -469,10 +489,21 @@ def build(
         job_source=str((state or {}).get("source") or ""),
         job_country=job_country(state, answers, session_country(answers_path)),
         company_answers=company_answers_for(target),
+        cover_letter_text=cover_letter_for(target),
     )
     answers = replace(answers, salary_figure=salary_for(job_id, vertical, answers.country, answers))
     overrides = load_overrides(Path(answers_path), job_id) if answers_path else None
+    plan, answers = _board_plan(job_id, posting_url, target, answers, overrides)
+    return replace(plan, location=str((state or {}).get("location") or "")), answers
 
+
+def _board_plan(
+    job_id: str,
+    posting_url: str,
+    target: Path,
+    answers: Answers,
+    overrides: dict[str, Override] | None,
+) -> tuple[Plan, Answers]:
     ats = detect_ats(posting_url)
     if ats not in SUBMITTABLE_ATS:
         raise ApplyCliError(f"{posting_url}: not a Greenhouse, Lever or Ashby posting URL")
@@ -604,10 +635,84 @@ def _sheet_compare(got: dict[str, list[str]]) -> int:
     return 1 if got["missing"] or got["extra"] else 0
 
 
+def lessons_from_file(path: Path) -> list[bank.Lesson]:
+    """The lessons a `learn --add` file states: `facts:` (id -> one sentence)
+    and `questions:` (id -> `{answer, source}`, source its B-/S- ids)."""
+    try:
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise ApplyCliError(f"{path}: not readable YAML ({exc})") from exc
+    if not isinstance(data, dict) or set(data) - {"facts", "questions"}:
+        raise ApplyCliError(f"{path}: top level holds only facts: and questions:")
+    facts, questions = data.get("facts") or {}, data.get("questions") or {}
+    if not isinstance(facts, dict) or not isinstance(questions, dict):
+        raise ApplyCliError(f"{path}: facts: and questions: are maps")
+    lessons = [
+        bank.Lesson(kind="fact", id=str(k), value=str(v), source="user") for k, v in facts.items()
+    ]
+    for qid, entry in questions.items():
+        if not isinstance(entry, dict) or set(entry) - {"answer", "source"}:
+            raise ApplyCliError(f"{path}: questions.{qid} is {{answer, source}}")
+        answer = entry.get("answer")
+        value = [str(a) for a in answer] if isinstance(answer, list) else str(answer or "")
+        lessons.append(
+            bank.Lesson(
+                kind="question", id=str(qid), value=value, source=str(entry.get("source") or "")
+            )
+        )
+    return lessons
+
+
+def _cmd_learn_add(file: Path, bank_path: Path | None) -> int:
+    """Save the facts (and simple questions) in `file`, on a typed yes at a
+    terminal. Never unattended; an id the bank already holds is refused."""
+    if bank.unattended():
+        print(
+            f"ERROR: {bank.UNATTENDED_ENV}=1: apply learn --add needs you at a terminal.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        lessons = lessons_from_file(file)
+    except ApplyCliError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not lessons:
+        print("nothing to save: the file has no facts or questions")
+        return 0
+    print(f"Saving {len(lessons)} entr(ies) to the answer bank:")
+    for lesson in lessons:
+        tail = f" [{lesson.source}]" if lesson.kind == "question" else ""
+        print(f"  {lesson.kind} {lesson.id}{tail}: {_shown(lesson.value)}")
+    if not sys.stdin.isatty():
+        print(
+            "ERROR: apply learn --add needs a typed yes and stdin is not a terminal.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        reply = input("Type 'yes' to save these: ")
+    except EOFError:
+        reply = ""
+    if reply.strip().lower() not in _CONFIRM_YES:
+        print("ABORTED: nothing saved.", file=sys.stderr)
+        return 1
+    try:
+        kept, refusals = bank.learn(lessons, bank_path)
+    except (bank.BankError, AnswersError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    for line in _learned_lines(kept, refusals) or ["nothing to change"]:
+        print(line)
+    return 1 if refusals else 0
+
+
 def _cmd_learn(args: argparse.Namespace) -> int:
-    """Review or undo what the bank holds. Runs learn on their own; this is
-    for looking and taking back."""
+    """Review or undo what the bank holds, or add facts from a file. Runs
+    learn on their own; this is for looking, adding and taking back."""
     path = Path(args.path) if args.path else None
+    if args.add is not None:
+        return _cmd_learn_add(args.add, path)
     try:
         print(bank.undo(args.undo, path) if args.undo else bank.review(path))
     except (bank.BankError, AnswersError, OSError) as exc:
@@ -798,8 +903,9 @@ def lessons_from(
     overrides: dict[str, Override], plan: Plan, known_facts: Mapping[str, str] | None = None
 ) -> list[bank.Lesson]:
     """What a confirmed plan teaches the bank: each of the user's own answers
-    to an ask (`source: "user"`) becomes a fact, one sentence of its label and
-    answer. Nothing else is learned at run time. `known_facts`: the bank's
+    to an ask (`source: "user"`) becomes a fact: its `fact` sentence, else one
+    sentence of its label and answer; `learn: false` saves nothing. Nothing
+    else is learned at run time. `known_facts`: the bank's
     facts (id -> sentence); a sentence already there is not learned again, and
     a new id never collides with one."""
     labels = {f.id: f.label for f in (*plan.fields, *plan.unmapped, *plan.draftable)}
@@ -808,9 +914,15 @@ def lessons_from(
     lessons = []
     for field_id, override in overrides.items():
         label = " ".join((labels.get(field_id) or "").split())
-        if override.source != "user" or override.decision or not label or not override.value:
+        if (
+            override.source != "user"
+            or override.decision
+            or not override.learn
+            or not label
+            or not override.value
+        ):
             continue
-        sentence = f"{label} {_shown(override.value)}"
+        sentence = override.learn_fact or f"{label} {_shown(override.value)}"
         if sentence in said:
             continue
         fid = fact_id(label, taken)
@@ -1692,9 +1804,17 @@ def main(argv: list[str] | None = None) -> int:
     ru.add_argument("--limit", type=int, default=None)
     ru.set_defaults(func=_cmd_resolve_urls)
 
-    lrn = sub.add_parser("learn", help="review or undo what the answer bank holds")
-    lrn.add_argument(
+    lrn = sub.add_parser("learn", help="review, add to or undo what the answer bank holds")
+    how = lrn.add_mutually_exclusive_group()
+    how.add_argument(
         "--undo", default=None, metavar="ID", help="remove one fact (F-...) or one question"
+    )
+    how.add_argument(
+        "--add",
+        default=None,
+        type=Path,
+        metavar="FILE",
+        help="save a YAML file's facts: (and questions: {answer, source}), on a typed yes",
     )
     lrn.add_argument("--path", default=None, type=Path, help="bank path (tests)")
     lrn.set_defaults(func=_cmd_learn)

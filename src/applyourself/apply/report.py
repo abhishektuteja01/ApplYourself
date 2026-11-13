@@ -37,6 +37,7 @@ def as_dict(plan: Plan) -> dict[str, Any]:
         "form_url": plan.form_url,
         "company": plan.company,
         "title": plan.title,
+        "location": plan.location,
         "out_dir": str(plan.out_dir),
         "submit_selector": plan.submit_selector,
         "submit_disabled": plan.submit_disabled,
@@ -126,6 +127,7 @@ def as_dict(plan: Plan) -> dict[str, Any]:
         "ats": plan.ats,
         "requires_captcha": plan.requires_captcha,
         "ignored_overrides": list(plan.ignored_overrides),
+        "order": list(plan.order),
     }
 
 
@@ -320,7 +322,8 @@ def render_report(
 ) -> str:
     """The markdown report, rendered from the run's JSON record."""
     record = run_record.build(outcomes, started_at.isoformat(timespec="seconds"), None)
-    trend = run_record.trend(runs_dir) if runs_dir is not None else []
+    job_ids = [o.job_id for o in outcomes]
+    trend = run_record.trend(runs_dir, job_ids) if runs_dir is not None else []
     return run_record.render(record, trend)
 
 
@@ -344,7 +347,10 @@ def write_report(
         clock.now().isoformat(timespec="seconds"),
     )
     run_record.write(record, path.with_suffix(".json"))
-    path.write_text(run_record.render(record, run_record.trend(out_dir)), encoding="utf-8")
+    path.write_text(
+        run_record.render(record, run_record.trend(out_dir, [o.job_id for o in outcomes])),
+        encoding="utf-8",
+    )
     return path
 
 

@@ -420,19 +420,49 @@ def fields_from_application_form(job_posting: dict) -> Reconciled:
 
 _DOM_ENRICHMENT_SCRIPT = """(elements, descriptionClass) => {
     const out = {};
+    const count = (el, sel) => el.querySelectorAll(sel).length;
     for (const el of elements) {
         const path = el.getAttribute('data-field-path');
         if (!path || out[path]) continue;
         const desc = el.querySelector('.' + descriptionClass);
-        const text = desc ? desc.textContent.trim() : '';
-        if (text) out[path] = text;
+        out[path] = {
+            description: desc ? desc.textContent.trim() : '',
+            combobox: count(el, 'input[role="combobox"]'),
+            radio: count(el, 'input[type="radio"]'),
+            checkbox: count(el, 'input[type="checkbox"]'),
+            button: count(el, 'button'),
+        };
     }
     return out;
 }"""
 
 
-def fetch_dom_enrichment(url: str, timeout: int = 30) -> dict[str, str]:
-    """`data-field-path` -> its sibling description text, read off the live,
+def widget_kind(planned: str, counts: dict) -> str:
+    """What an Ashby field renders as, from the controls in its entry
+    (`combobox`, `radio`, `checkbox`, `button` counts), else `planned`.
+
+    Only `select` and `combobox` are reread: Ashby draws a `select` as a radio
+    group, a combobox, a checkbox group, or a lone checkbox (an
+    acknowledgement); any other kind can carry unrelated nested controls (a
+    `Phone` field with an SMS-consent radio pair) and is trusted as planned.
+    """
+    if planned not in ("select", "combobox"):
+        return planned
+    if counts.get("combobox"):
+        return "react_select"
+    if counts.get("radio"):
+        return "radio_group"
+    boxes = counts.get("checkbox", 0)
+    if boxes > 1:
+        return "checkbox_group"
+    if boxes == 1:
+        return "yesno" if counts.get("button", 0) >= 2 else "checkbox"
+    return planned
+
+
+def fetch_dom_enrichment(url: str, timeout: int = 30) -> dict[str, dict]:
+    """`data-field-path` -> its sibling description text (`description`) and
+    the count of each control kind `widget_kind` reads, read off the live,
     client-rendered form — the same instructional copy a person sees under a
     label but the question API never returns (a sponsorship follow-up, a "no
     AI slop" prompt). Generalized to any field on any board, never matched by
@@ -463,22 +493,30 @@ def fetch_dom_enrichment(url: str, timeout: int = 30) -> dict[str, str]:
 
 def _with_dom_descriptions(reconciled: Reconciled, form_url: str, timeout: int) -> Reconciled:
     """Fold `fetch_dom_enrichment` into an already-built `Reconciled`, field by
-    field. Never raises: a missing browser, a timeout, or a layout this was
-    never written for all just mean no descriptions get added, same as the
-    API-only plan this sits on top of.
+    field: its description, and `checkbox_group`/multi where `widget_kind`
+    reads more than one checkbox (the API never marks a field multi). Every
+    other widget, a lone checkbox included, stays decided at fill time.
+    Never raises: a missing browser, a timeout, or a layout this was never
+    written for all just mean nothing gets added, same as the API-only plan
+    this sits on top of.
     """
     try:
-        descriptions = fetch_dom_enrichment(form_url, timeout=timeout)
+        rows = fetch_dom_enrichment(form_url, timeout=timeout)
     except (Exception, SystemExit) as exc:  # noqa: BLE001 - enrichment only, never fatal
         log.warning("Ashby DOM enrichment skipped for %s: %s", form_url, exc)
         return reconciled
-    if not descriptions:
+    if not rows:
         return reconciled
-    fields = tuple(
-        replace(f, description=descriptions[f.name]) if f.name in descriptions else f
-        for f in reconciled.fields
-    )
-    return replace(reconciled, fields=fields)
+    fields = []
+    for f in reconciled.fields:
+        row = rows.get(f.name)
+        if isinstance(row, dict):
+            if row.get("description"):
+                f = replace(f, description=row["description"])
+            if widget_kind(f.kind, row) == "checkbox_group":
+                f = replace(f, kind="checkbox_group", multi=True)
+        fields.append(f)
+    return replace(reconciled, fields=tuple(fields))
 
 
 def load_board(url: str, timeout: int = 30) -> AshbyBoard:

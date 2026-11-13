@@ -326,6 +326,18 @@ class TestSponsorshipLabel:
     def test_strictest_statement_wins(self, scfg, facts, label):
         assert sf.sponsorship_label(facts, "United States", _need(scfg, "later")) == label
 
+    def test_no_sponsorship_when_later_follows_the_scoring_key(self, scfg, tmp_path):
+        text = REAL_SCORING.read_text(encoding="utf-8")
+        (tmp_path / "s.yaml").write_text(
+            text + "\nno_sponsorship_when_later: ineligible\n", encoding="utf-8"
+        )
+        cfg = sf.load_scoring(tmp_path / "s.yaml", EXAMPLE_BANK)
+        got = [
+            sf.sponsorship_label(["no_sponsorship"], "United States", _need(cfg, n))
+            for n in ("never", "later", "now")
+        ]
+        assert got == ["opt_ok", "ineligible", "ineligible"]
+
     def test_offer_cancels_right_to_work_abroad(self, scfg):
         assert (
             sf.sponsorship_label(["right_to_work", "offers"], "Germany", _need(scfg, "never"))

@@ -7,17 +7,20 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from applyourself.apply.bank_schema import AnswersError, load_answers
+from applyourself.apply.bank_schema import Answers, AnswersError, load_answers
 from applyourself.apply.judge_packet import (
     JudgeEntry,
     build_packet,
     check_entries,
     fields_for_judge,
     to_override,
+    with_refusals,
 )
+from applyourself.apply.role_facts import company_answers_for
 
 
 class JudgeCliError(Exception):
@@ -45,6 +48,15 @@ def _job_country(plan: dict[str, Any]) -> str | None:
     return (plan.get("work_authorization") or {}).get("job_country") or None
 
 
+def _answers(out_dir: Path) -> Answers:
+    """The bank with this role's company answers, as the plan reads it."""
+    return replace(load_answers(), company_answers=company_answers_for(out_dir))
+
+
+def _posting(plan: dict[str, Any]) -> dict[str, str]:
+    return {k: str(plan.get(k) or "") for k in ("company", "title", "location")}
+
+
 def merge(
     overrides: dict[str, Any], entries: list[JudgeEntry], labels: dict[str, str]
 ) -> dict[str, Any]:
@@ -68,7 +80,10 @@ def _cmd_pack(args: argparse.Namespace) -> int:
     (judge / "out.json").unlink(missing_ok=True)  # never a leftover answer
     packet = judge / "packet.md"
     packet.write_text(
-        build_packet(fields, load_answers(), _job_country(plan), role_dir=out_dir), encoding="utf-8"
+        build_packet(
+            fields, _answers(out_dir), _job_country(plan), role_dir=out_dir, posting=_posting(plan)
+        ),
+        encoding="utf-8",
     )
     (judge / "fields.json").write_text(json.dumps(fields, indent=1) + "\n", encoding="utf-8")
     print(f"judge {packet} -> {judge / 'out.json'}")
@@ -86,7 +101,14 @@ def _cmd_check(args: argparse.Namespace) -> int:
         problems = [f"{out_file}: not readable JSON ({exc})"]
         raw = None
     else:
-        problems = check_entries(raw, fields, load_answers())
+        problems = check_entries(raw, fields, _answers(out_dir), str(plan.get("company") or ""))
+    packet = judge / "packet.md"
+    if packet.is_file():
+        # The retry reads the same packet: it carries this refusal's problems.
+        old = packet.read_text(encoding="utf-8")
+        new = with_refusals(old, problems)
+        if new != old:
+            packet.write_text(new, encoding="utf-8")
     if problems:
         if raw is not None:
             (judge / "rejected_out.json").write_text(

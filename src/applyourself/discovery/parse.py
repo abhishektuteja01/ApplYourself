@@ -166,12 +166,19 @@ _NOT_SALARY = re.compile(
 MIN_ANNUAL_SALARY = 20000
 
 
+# A line naming base pay, which wins over a total-cash or OTE range.
+_BASE_LINE = re.compile(r"\bbase\b", re.IGNORECASE)
+
+
 def posted_pay(text) -> tuple[float, float, str] | None:
     """The first yearly pay range a JD states ("$150,000 - $180,000",
-    "$150K–$180K USD") as (min, max, currency), or None. A range stated per
-    hour, week or month, a funding round, a bonus or equity, or a minimum
-    under `MIN_ANNUAL_SALARY` is skipped."""
-    for m in _PAY_RANGE.finditer(str(text or "")):
+    "$150K–$180K USD") as (min, max, currency), or None; a range on a line
+    naming base pay wins over one on any other line (total cash, OTE). A
+    range stated per hour, week or month, a funding round, a bonus or equity,
+    or a minimum under `MIN_ANNUAL_SALARY` is skipped."""
+    text = str(text or "")
+    found: list[tuple[float, float, str, bool]] = []
+    for m in _PAY_RANGE.finditer(text):
         if _NOT_YEARLY.match(m.group("tail")) or _NOT_SALARY.match(m.group("tail")):
             continue
         lo = float(m.group("lo").replace(",", ""))
@@ -184,8 +191,14 @@ def posted_pay(text) -> tuple[float, float, str] | None:
         if lo < MIN_ANNUAL_SALARY:
             continue
         currency = m.group("code") or _SYMBOL_CURRENCY[m.group("sym")]
-        return lo, hi, currency
-    return None
+        start = text.rfind("\n", 0, m.start()) + 1
+        end = text.find("\n", m.end())
+        line = text[start : end if end >= 0 else len(text)]
+        found.append((lo, hi, currency, bool(_BASE_LINE.search(line))))
+    if not found:
+        return None
+    lo, hi, currency, _ = next((f for f in found if f[3]), found[0])
+    return lo, hi, currency
 
 
 # ---------------------------------------------------------------------

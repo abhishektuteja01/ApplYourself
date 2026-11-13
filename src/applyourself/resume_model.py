@@ -265,9 +265,7 @@ def check_sources(src: Sources, cfg: verticals.VerticalsConfig) -> list[str]:
         problems += _check_lane(src, lane, shape)
 
     for text, where in _source_texts(src, shapes):
-        for viol in lint.blocking(
-            lint.find_phrase_violations(text, context="resume", rules=src.rules)
-        ):
+        for viol in lint.gate(text, "resume", rules=src.rules)[1]:
             problems.append(f"{where}: banned phrase {viol['phrase']!r} ({viol['category']})")
     return problems
 
@@ -536,11 +534,11 @@ def build(
         return lint.fix_mechanical(t, src.rules)[0]
 
     def lint_problems(text: str, where: str) -> list[Problem]:
-        found = lint.find_phrase_violations(text, context="resume", rules=src.rules, keep=keep)
-        warnings.extend(lint_warning(where, x) for x in found if x["level"] == "warn")
+        _, blocked, warned = lint.gate(text, "resume", keep, src.rules)
+        warnings.extend(lint_warning(where, x) for x in warned)
         return [
             Problem(where, ProblemCode.LINT, f"banned phrase {x['phrase']!r} ({x['category']})")
-            for x in lint.blocking(found)
+            for x in blocked
         ]
 
     # --- summary

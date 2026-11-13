@@ -31,7 +31,7 @@ happily upload.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
 from pathlib import Path
 
@@ -39,11 +39,18 @@ from applyourself.apply import judged
 from applyourself.apply.answers import (
     Answers,
     Resolution,
+    fact_holds,
     match_option,
     resolve,
     resolve_fact_wording,
 )
-from applyourself.apply.reconcile import MergedField, Reconciled, input_problem
+from applyourself.apply.reconcile import (
+    PROSE_KINDS,
+    MergedField,
+    Reconciled,
+    input_problem,
+    text_problem,
+)
 
 # Artifact suffixes in upload preference order. Greenhouse accepts
 # .pdf,.doc,.docx,.txt,.rtf; these two are what /tailor writes.
@@ -225,6 +232,13 @@ class Plan:
     """The facts for this job's country, so the session can judge a board's
     full-sentence work-authorization option against them."""
 
+    order: tuple[str, ...] = ()
+    """Every field id in the form's own order, so the judge reads a follow-up
+    right after the question it follows."""
+
+    location: str = ""
+    """The posting's location, from the role's state.yaml."""
+
     @property
     def parked(self) -> bool:
         return bool(self.required_parked)
@@ -332,6 +346,11 @@ class Override:
     (`jd`, `company_answers`, `option`) it rests on."""
     ask: str = ""
     """For a judged `ask`: what to ask the user."""
+    learn_fact: str = ""
+    """For the user's answer: the one general sentence a confirmed run saves
+    as a fact, in place of label + answer."""
+    learn: bool = True
+    """False: a one-role answer; a confirmed run saves nothing from it."""
 
 
 # Fields no override may touch: identity and EEOC come from stated facts only.
@@ -339,27 +358,11 @@ class Override:
 _CLOSED_TIERS = frozenset({"A", "A2"})
 
 
-# Free text a person types. A drafted answer here gets the same lint every
-# other drafted text does; an option string never does, since the board wrote it.
-_PROSE_KINDS = frozenset({"text", "textarea"})
-
-
-def _linted(text: str, company: str) -> tuple[str, str]:
+def _linted(text: str, kind: str, company: str) -> tuple[str, str]:
     """`(text with mechanical fixes, problem)`. A banned phrase is a problem:
     the field parks naming it, and the session rewrites that sentence."""
-    from applyourself.lint import blocking, find_phrase_violations, fix_mechanical, load_de_ai_rules
-
-    rules = load_de_ai_rules()
-    fixed, _ = fix_mechanical(text, rules)
-    found = blocking(
-        find_phrase_violations(
-            fixed, context="resume", rules=rules, keep=[company] if company else []
-        )
-    )
-    if found:
-        phrases = sorted({v["phrase"] for v in found})
-        return fixed, f"lint: banned phrase(s) {phrases}"
-    return fixed, ""
+    fixed, problem = text_problem(text, kind, None, company=company)
+    return str(fixed), problem or ""
 
 
 def _override_resolution(
@@ -386,8 +389,8 @@ def _override_resolution(
             "park", tier=tier, source=tag, reason="a single checkbox takes only a Yes override"
         )
     if not field.options:
-        if field.kind in _PROSE_KINDS and not multi:
-            text, problem = _linted(candidates[0], company)
+        if field.kind in PROSE_KINDS and not multi:
+            text, problem = _linted(candidates[0], field.kind, company)
             if problem:
                 return Resolution("park", tier=tier, source=tag, reason=problem)
             return Resolution("fill", value=text, tier=tier, source=tag)
@@ -514,19 +517,67 @@ def _checkbox_yes_only(field: MergedField, resolution: Resolution) -> Resolution
     )
 
 
-def _fits_input(field: MergedField, resolution: Resolution) -> Resolution:
+def _fits_input(field: MergedField, resolution: Resolution, company: str = "") -> Resolution:
     """Every answer, whoever wrote it, must go into the input as written: a
     number box takes only a number, and the browser cuts text past `maxlength`.
-    One that does not fit parks (blank if optional) with the reason."""
+    One that does not fit parks (blank if optional) with the reason. Free text
+    outside identity and EEOC (bank prose, role-file answers, fallbacks,
+    overrides) also passes the lint: its mechanical fixes are what is typed,
+    and a banned phrase parks the field."""
     if resolution.action != "fill":
         return resolution
-    problem = input_problem(
-        resolution.value, field.kind, field.max_length, field.max_words, field.max_sentences
-    )
+    caps = (field.kind, field.max_length, field.max_words, field.max_sentences)
+    if resolution.tier in _CLOSED_TIERS:
+        value, problem = resolution.value, input_problem(resolution.value, *caps)
+    else:
+        value, problem = text_problem(resolution.value, *caps, company=company)
     if problem is None:
-        return resolution
-    action = "park" if field.required else "skip"
+        return resolution if value == resolution.value else replace(resolution, value=value)
+    lint = problem.startswith("lint:")
+    action = "park" if field.required or lint else "skip"
     return Resolution(action, tier=resolution.tier, source=resolution.source, reason=problem)
+
+
+# Says the user needs sponsorship, from the facts.
+_NEEDS_SPONSORSHIP_SOURCE = "fact_wording:requires_sponsorship"
+
+
+def no_sponsorship_phrases() -> tuple[str, ...]:
+    """scoring.yaml's `no_sponsorship` phrases; none when it is absent or
+    unreadable (`score_filter.load_scoring` is what validates it)."""
+    import yaml
+
+    from applyourself.shared import paths
+
+    try:
+        data = yaml.safe_load(paths.SCORING.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return ()
+    phrases = data.get("no_sponsorship") if isinstance(data, dict) else None
+    return tuple(str(p) for p in phrases or () if str(p).strip())
+
+
+def _form_bars_sponsorship(
+    field: MergedField, resolution: Resolution, answers: Answers, phrases: tuple[str, ...]
+) -> Resolution:
+    """A sponsorship answer saying you need it, on a field whose label says the
+    employer will not sponsor, parks: the bar is on the form, not the JD."""
+    from applyourself.score_filter import find_phrase
+
+    if (
+        resolution.action != "fill"
+        or resolution.source != _NEEDS_SPONSORSHIP_SOURCE
+        or not phrases
+        or find_phrase(phrases, f"{field.label} {field.description}") is None
+        or not fact_holds(field, answers, "requires_sponsorship")
+    ):
+        return resolution
+    return Resolution(
+        "park",
+        tier=resolution.tier,
+        source=resolution.source,
+        reason="form says no sponsorship; /track this role skip",
+    )
 
 
 def apply_override(
@@ -546,6 +597,9 @@ def apply_override(
     option once `us_person` is yes or no.
     `known_ids`: the profile ids a judged basis may cite (an eval persona's)."""
     if resolution.tier in _CLOSED_TIERS:
+        # A link the bank's own URL answers: that URL stands over any entry.
+        if resolution.source.startswith("bank:"):
+            return resolution, ""
         return resolution, "identity and EEOC fields take no override"
     export = resolution.source == "export_control"
     fact = override.fact if override.decision in ("", "fact") else None
@@ -622,6 +676,7 @@ def build_plan(
         f.required for f in reconciled.fields if f.section == "employment"
     )
 
+    bar_phrases = no_sponsorship_phrases()
     fields: list[FieldPlan] = []
     files: list[FilePlan] = []
     unmapped: list[Unmapped] = []
@@ -676,7 +731,8 @@ def build_plan(
             else:
                 judged_skip = bool(override.decision) and applied.action == "skip"
                 resolution = applied
-        resolution = _fits_input(field, _checkbox_yes_only(field, resolution))
+        resolution = _form_bars_sponsorship(field, resolution, answers, bar_phrases)
+        resolution = _fits_input(field, _checkbox_yes_only(field, resolution), company)
 
         if resolution.action == "park":
             unmapped.append(_unmapped(field, resolution))
@@ -774,6 +830,7 @@ def build_plan(
         requires_captcha=requires_captcha,
         work_authorization=_work_authorization_facts(answers),
         ignored_overrides=tuple(ignored),
+        order=tuple(f.id for f in reconciled.fields),
     )
     _assert_accounted_for(reconciled, plan)
     return plan

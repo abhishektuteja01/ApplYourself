@@ -195,6 +195,34 @@ def input_problem(
     return None
 
 
+# Free text a person types: what the wording lint covers. An option string
+# never gets it, since the board wrote it.
+PROSE_KINDS = frozenset({"text", "textarea"})
+
+
+def text_problem[V](
+    value: V,
+    kind: str,
+    max_length: int | None,
+    max_words: int | None = None,
+    max_sentences: int | None = None,
+    company: str = "",
+) -> tuple[V | str, str | None]:
+    """`(value as it would be typed, why it cannot go in or None)`. Free text
+    gets the lint's mechanical fixes first; then `input_problem`, then the
+    banned-phrase lint (the company name never counts). The judge's check and
+    the plan share it."""
+    if not isinstance(value, str) or kind not in PROSE_KINDS:
+        return value, input_problem(value, kind, max_length, max_words, max_sentences)
+    from applyourself.lint import gate
+
+    fixed, blocked, _ = gate(value, "resume", keep=[company] if company else [])
+    problem = input_problem(fixed, kind, max_length, max_words, max_sentences)
+    if problem is None and blocked:
+        problem = f"lint: banned phrase(s) {sorted({v['phrase'] for v in blocked})}"
+    return fixed, problem
+
+
 @dataclass(frozen=True)
 class Reconciled:
     fields: tuple[MergedField, ...]

@@ -326,3 +326,73 @@ def test_decimals_and_abbreviations_end_no_sentence():
     assert input_problem(text, "text", None, max_sentences=1) == (
         "the board takes at most 1 sentences; the answer has 2"
     )
+
+
+def test_two_refusals_leave_one_section_with_the_second_problems(tmp_path, monkeypatch):
+    out_dir = tmp_path / "role"
+    (out_dir / "judge").mkdir(parents=True)
+    plan = {"unmapped": [{**FIELDS[0], "tier": "C", "section": "questions"}]}
+    (out_dir / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    monkeypatch.setattr("applyourself.apply_cli.resolve_out_dir", lambda job_id: out_dir)
+    monkeypatch.setattr(judge_cli, "load_answers", lambda: load_answers(BANK))
+    assert judge_cli.main(["judge-pack", "abc"]) == 0
+    packet = out_dir / "judge" / "packet.md"
+    out = out_dir / "judge" / "out.json"
+    first = {"field_id": "f1", "decision": "ask", "ask": " ", "why": "w"}
+    second = {"field_id": "f1", "decision": "text", "value": "x", "why": "w"}
+    for bad in (first, second):
+        out.write_text(json.dumps([bad]), encoding="utf-8")
+        assert judge_cli.main(["judge-check", "abc"]) == 1
+    text = packet.read_text(encoding="utf-8")
+    assert text.count("## Refused last time (fix these)") == 1
+    assert "- f1: text needs basis" in text and "ask is empty" not in text
+    assert text.index("## Refused last time") < text.index("## Fields")
+    ok = [{"field_id": "f1", "decision": "question", "question": "linkedin", "why": "bank"}]
+    out.write_text(json.dumps(ok), encoding="utf-8")
+    assert judge_cli.main(["judge-check", "abc"]) == 0
+    assert "## Refused last time" not in packet.read_text(encoding="utf-8")
+
+
+def test_a_banned_phrase_is_refused_at_check_but_not_in_the_company_name(answers):
+    entry = {"field_id": "f1", "decision": "text", "value": "I orchestrated the rollout.",
+             "basis": ["F-REMOTE"], "why": "w"}  # fmt: skip
+    [err] = check_entries([entry], FIELDS[:1], answers)
+    assert "banned phrase" in err and "orchestrated" in err
+    entry["value"] = "I want to join Orchestrated Labs."
+    assert check_entries([entry], FIELDS[:1], answers, company="Orchestrated Labs") == []
+
+
+def test_a_role_file_answer_over_the_sentence_cap_is_sent_back(answers):
+    from applyourself.apply.bank_schema import Question
+
+    why = Question(id="why_company", role_file="why_company")
+    answers = replace(
+        answers,
+        questions=(*answers.questions, why),
+        company_answers={"why_company": "One. Two. Three."},
+    )
+    fields = [{**FIELDS[0], "max_sentences": 2}]
+    entry = {"field_id": "f1", "decision": "question", "question": "why_company", "why": "w"}
+    [err] = check_entries([entry], fields, answers)
+    assert "at most 2 sentences" in err
+
+
+def test_fields_for_judge_keep_the_form_order():
+    plan = {
+        "unmapped": [{**FIELDS[0], "tier": "C", "section": "questions"}],
+        "skipped": [{**FIELDS[1], "id": "detail", "tier": "C", "section": "questions"},
+                    {**FIELDS[2], "tier": "C", "section": "questions"}],
+        "order": ["f3", "detail", "f1"],
+    }  # fmt: skip
+    assert [f["id"] for f in fields_for_judge(plan)] == ["f3", "detail", "f1"]
+
+
+def test_a_demographics_basis_must_name_a_stated_topic(answers):
+    answers = replace(answers, demographic_answers={"veteran_status": ("Not a veteran",)})
+    field = {**FIELDS[1], "options": ["Not a veteran", "Veteran"]}
+    entry = {"field_id": "f2", "decision": "option", "value": "Not a veteran",
+             "basis": ["demographics.veteran_status"], "why": "w"}  # fmt: skip
+    assert check_entries([entry], [field], answers) == []
+    entry["basis"] = ["demographics.gender"]
+    [err] = check_entries([entry], [field], answers)
+    assert "demographics.gender" in err

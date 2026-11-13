@@ -350,3 +350,19 @@ def find_phrase_violations(
 def blocking(violations: Iterable[Violation]) -> list[Violation]:
     """The violations that fail a build; the rest are warnings."""
     return [v for v in violations if v["level"] == "block"]
+
+
+def gate(
+    text: str,
+    scope: Literal["resume", "outreach"],
+    keep: Iterable[str] = (),
+    rules: dict[str, Any] | None = None,
+) -> tuple[str, list[Violation], list[Violation]]:
+    """The one lint every written text passes: `(fixed, problems, warnings)`.
+    Mechanical fixes applied, then the phrase scan of the fixed text; `problems`
+    are the `block` hits, `warnings` the rest. `keep` terms are never scanned."""
+    if rules is None:
+        rules = load_de_ai_rules()
+    fixed, _ = fix_mechanical(text, rules)
+    found = find_phrase_violations(fixed, context=scope, rules=rules, keep=keep)
+    return fixed, blocking(found), [v for v in found if v["level"] != "block"]

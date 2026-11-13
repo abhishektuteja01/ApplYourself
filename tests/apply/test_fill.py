@@ -148,6 +148,9 @@ class FakeDriver:
         self.calls.append(("checkbox", field_id, checked))
         self.values[field_id] = str(checked)
 
+    def checkbox_checked(self, field_id):
+        return self.values.get(field_id) == "True"
+
     def check_group_option(self, field_id, label):
         self.calls.append(("check_group", field_id, label))
         self._checked_groups.setdefault(field_id, set()).add(label)
@@ -1412,6 +1415,23 @@ class TestToggleFieldsAreReverifiedBeforeTheClick:
         assert ("check_group", "q1", "Go") in d.calls
         assert ("check_group", "q1", "Python") not in d.calls
 
+    def test_a_lone_checkbox_that_came_undone_is_reticked(self):
+        d = FakeDriver(kinds={"ack": "checkbox"}, values={"ack": "False"})
+        p = plan(fields=[field(id="ack", kind="select", value="I agree", options=("I agree",))])
+        F.submit(p, FillResult(form_url="x"), d)
+        assert ("checkbox", "ack", True) in d.calls
+
+    def test_a_tick_that_will_not_hold_refuses_the_click(self):
+        class Unticks(FakeDriver):
+            def set_checkbox(self, field_id, checked):
+                self.calls.append(("checkbox", field_id, checked))
+
+        d = Unticks(values={"ack": "False"})
+        p = plan(fields=[field(id="ack", label="Privacy", kind="checkbox", value=True)])
+        with pytest.raises(F.SubmitGuardError, match="Privacy"):
+            F.submit(p, FillResult(form_url="x"), d)
+        assert not [c for c in d.calls if c[0] == "click_submit"]
+
     def test_an_already_correct_checkbox_group_is_left_alone(self, tmp_path, monkeypatch):
         d = FakeDriver()
         d._checked_groups["q1"] = {"Python", "Go"}
@@ -2506,7 +2526,11 @@ class TestTheReadBackComparison:
             ("checkbox_group", "Python, SQL", "SQL, Python", True),
             ("checkbox_group", "Python, SQL", "Python", False),
             ("text", "Hello ", "Hello", True),
-            ("checkbox", "True", "on", True),
+            ("checkbox", "True", "True", True),
+            ("checkbox", "I acknowledge", "False", False),
+            ("checkbox", "False", "False", True),
+            ("text", "https://linkedin.com/in/x", "https://www.linkedin.com/in/x/", True),
+            ("text", "https://linkedin.com/in/x", "https://www.linkedin.com/in/y", False),
         ],
     )
     def test_it_compares_the_way_each_widget_shows_a_value(self, kind, planned, actual, same):
