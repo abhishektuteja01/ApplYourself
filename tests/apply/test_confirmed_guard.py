@@ -67,6 +67,7 @@ SUBMIT_ASK = HOOK.parent / "submit_ask.sh"
     ("command", "asks"),
     [
         ("uv run apply run --job-id x --submit", True),
+        ("uv run ay apply run --job-id x --submit", True),
         ("uv run --with rich apply run --limit 1 --submit --yes", True),
         ("uv run python -m applyourself.apply_cli run --submit", True),
         ("uv run apply run --job-id x", False),

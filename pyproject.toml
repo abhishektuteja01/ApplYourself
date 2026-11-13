@@ -63,6 +63,7 @@ config-check = "applyourself.config_check:main"
 pdf-broker = "applyourself.pdf_broker:main"
 doctor = "applyourself.doctor:main"
 apply-eval = "applyourself.evals.apply_eval:main"
+ay = "applyourself.cli:main"
 
 [dependency-groups]
 dev = [
