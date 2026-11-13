@@ -32,7 +32,7 @@ from applyourself import state_io
 from applyourself.apply import apply_url, confirmation, cooldown, ledger, run_record
 from applyourself.material.folders import built_folder
 from applyourself.score_filter import lane_cutoffs
-from applyourself.score_store import view
+from applyourself.score_store import judged_employers, view
 from applyourself.shared import paths, schemas
 from applyourself.shared.config_schema import load_settings, settings_data
 from applyourself.shared.parquet_io import locked, read_parquet
@@ -40,6 +40,7 @@ from applyourself.shared.parquet_io import locked, read_parquet
 COLUMNS = ("score", "name", "company", "title", "source", "url", "status", "note", "uv_run_command")
 _DONE = frozenset({"applied", "screen", "interview", "offer"})
 _CLOSED = frozenset({"skip", "withdrawn", "rejected", state_io.GHOSTED})
+NO_EMPLOYER = "No employer"  # parked before /tailor: the posting names no hiring company
 
 
 def latest_outcomes(runs_dir: Path) -> dict[str, tuple[str, str, str]]:
@@ -85,11 +86,14 @@ def status_for(
     cool: date | None = None,
     days: int | None = None,
     route: apply_url.Resolved | None = None,
+    no_employer: bool = False,
 ) -> tuple[str, str, str]:
     """(status, note, uv_run_command) for one row. `cool`: the day the
     company cooldown ends, which shows in place of Submittable. `days`:
     ghosted_after_days, read once by the caller. `route`: why an
-    unsubmittable role is Manual apply or No apply URL."""
+    unsubmittable role is Manual apply or No apply URL. `no_employer`: the
+    score judge found no hiring company in the posting, which parks a role
+    with no resume yet."""
     state = state or {}
     current = state_io.shown_state(state, days=days) if state else ""
     verdict = ledger.verdict_of(sent)
@@ -111,6 +115,12 @@ def status_for(
         when = state["cleaned"].get("date", "")
         return "Cleaned", f"folder cleaned {when}; /tailor {job_id} builds a new one", ""
     if not state.get("tailored_dirs"):
+        if no_employer:
+            return (
+                NO_EMPLOYER,
+                f"the posting names no hiring company; /tailor {job_id} --company NAME",
+                "",
+            )
         return "New", "", ""
     if not submittable:
         if route is not None and route.status:
@@ -156,6 +166,8 @@ class Snapshot:
     # settings.yaml sheet_submittable_cutoff: a role /apply can fill joins from
     # this score when below its lane's cutoff. None: the lane's cutoff only.
     submittable_cutoff: int | None = None
+    # Roles whose score judge found no hiring company in the posting.
+    no_employer: frozenset[str] = frozenset()
 
 
 def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapshot:
@@ -191,6 +203,7 @@ def snapshot(outcomes: dict | None = None, config: dict | None = None) -> Snapsh
         jd_links=links,
         stored_urls=apply_url.load(),
         submittable_cutoff=config.get("sheet_submittable_cutoff"),
+        no_employer=frozenset(j for j, name in judged_employers().items() if name is None),
     )
 
 
@@ -279,6 +292,7 @@ def _row_status(job_id: str, snap: Snapshot) -> tuple[str, str, str]:
         cooldown.until(company, snap.latest, days=snap.cool_days),
         days=snap.ghost_days,
         route=path,
+        no_employer=job_id in snap.no_employer,
     )
 
 

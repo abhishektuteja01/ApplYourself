@@ -808,3 +808,73 @@ def test_a_lane_cutoff_below_review_fails_loading(cfg):
     )
     with pytest.raises(ValueError, match=r"score\.cutoff below"):
         load_scoring(paths.example("scoring.example.yaml"))
+
+
+REFUSAL = "We will not sponsor individuals for employment visas, now or in the future."
+
+
+def test_a_future_refusal_sentence_overrides_a_silent_answer(env, scfg):
+    _clean(env, [{"job_id": "aaaaaaaa", "jd_text": f"{JD}\n{REFUSAL}"}])
+    _start(env, scfg)
+    run = score_store.load_run(env["staging"])
+    _write_answers(env, run["slices"], {"aaaaaaaa": _answer("aaaaaaaa")})
+    _finish(env, scfg)
+    row = score_store.view(env["scored"], scfg, RULE).set_index("job_id").loc["aaaaaaaa"]
+    assert row["sponsorship_label"] == "ineligible" and row["fit_score"] == 0
+    assert row["sponsorship_evidence"] == REFUSAL
+    assert json.loads(_scored(env).loc["aaaaaaaa", "judge_answer"])["sponsorship"] == ["silent"]
+
+
+def test_a_row_without_the_refusal_fact_derives_as_before(cfg, scfg):
+    lane = cfg.verticals["example_primary"]
+    facts = {"years": 0, "words": 400, "contract": False}
+    a = _answer("aaaaaaaa")
+    before = score_store.derive(a, lane, facts, scfg, RULE, "m", NOW)
+    assert before["sponsorship_label"] == "unknown"
+    blank = score_store.derive(a, lane, {**facts, "future_refusal": ""}, scfg, RULE, "m", NOW)
+    assert blank == before
+
+
+def test_the_employer_field_is_left_out_of_input_hash(cfg, scfg):
+    lane = cfg.verticals["example_primary"]
+    hashed = score_store.packet_text(lane, scfg, "", for_hash=True)
+    full = score_store.packet_text(lane, scfg, "")
+    assert '"employer"' not in hashed and "## The employer" not in hashed
+    assert '"employer"' in full and "## The employer" in full
+    schema = json.loads(full.rsplit("```json\n", 1)[1].split("\n```")[0])
+    assert "employer" in schema["required"]
+
+
+@pytest.mark.parametrize(
+    "employer, stored",
+    [
+        (..., ...),  # a slice staged before the field: no key, as before
+        (None, None),
+        ("Acme", "Acme"),
+        ("Blue Yonder", ...),  # not in the posting: as if unanswered
+    ],
+)
+def test_finish_keeps_a_null_or_shown_employer_and_drops_an_unshown_one(
+    env, scfg, employer, stored
+):
+    _clean(env, [{"job_id": "aaaaaaaa"}])
+    _start(env, scfg)
+    run = score_store.load_run(env["staging"])
+    _write_answers(env, run["slices"], {"aaaaaaaa": _answer("aaaaaaaa", employer=employer)})
+    assert _finish(env, scfg)["merged"] == 1
+    answer = json.loads(_scored(env).loc["aaaaaaaa", "judge_answer"])
+    assert answer.get("employer", ...) == stored
+
+
+def test_employer_for_uses_the_judges_name_only_when_it_differs(tmp_path):
+    path = tmp_path / "scored.parquet"
+    scored_rows(
+        {"job_id": "aaaaaaaa", "judge_answer": json.dumps({"employer": "Blue Yonder"})},
+        {"job_id": "bbbbbbbb", "judge_answer": json.dumps({"employer": "Acme"})},
+        {"job_id": "cccccccc", "judge_answer": json.dumps({"employer": None})},
+        {"job_id": "dddddddd", "judge_answer": json.dumps({"fit": 80})},
+    ).to_parquet(path)
+    assert score_store.employer_for("aaaaaaaa", "Jda", path) == "Blue Yonder"
+    assert score_store.employer_for("bbbbbbbb", "Acme, Inc.", path) == "Acme, Inc."
+    assert score_store.employer_for("cccccccc", "Unknown", path) is None
+    assert score_store.employer_for("dddddddd", "Acme", path) == "Acme"

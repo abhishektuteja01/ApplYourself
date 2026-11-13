@@ -363,6 +363,32 @@ def years_required(jd_text: Any, degree: int | None = None) -> int:
     return max(found, default=0)
 
 
+# One sentence refusing sponsorship now or later: a sponsorship word, a
+# negation and future wording. Sentences end at . ! ? ;, a line break, a
+# bullet, a pipe or a run of spaces (postings flattened into one line).
+_SENTENCE_RE = re.compile(r"(?<=[.!?;])\s+|\n+|\s*[•|]\s*|\s{2,}")
+_SPONSOR_RE = re.compile(r"\bsponsor(?:s|ed|ing|ship|ships)?\b")
+_NEGATION_RE = re.compile(r"\b(?:not|no|unable|cannot|never|without|nor)\b|n't\b")
+_FUTURE_RE = re.compile(
+    r"\b(?:in the future|in future|now or later|at any (?:time|point)"
+    r"|(?:current|currently|now|present|today) (?:or|and|/) (?:the )?future"
+    r"|future (?:\w+ ){0,2}(?:sponsor\w*|visas?))\b"
+)
+
+
+def future_refusal(text: Any) -> str:
+    """The first sentence of `text` that refuses sponsorship now or in the
+    future ("unable to sponsor, now or in the future", "without current or
+    future sponsorship"), as written; "" when none does."""
+    if not isinstance(text, str):
+        return ""
+    for sentence in _SENTENCE_RE.split(text.replace("**", "").replace("\\", "")):
+        low = normalize(sentence)
+        if _SPONSOR_RE.search(low) and _NEGATION_RE.search(low) and _FUTURE_RE.search(low):
+            return sentence.strip()
+    return ""
+
+
 def word_count(jd_text: Any) -> int:
     return len(jd_text.split()) if isinstance(jd_text, str) else 0
 
@@ -449,6 +475,14 @@ def country_allowed(value: Any, lane: str, rule: CountryRule) -> bool:
 
 
 _LABEL_RANK = {"ineligible": 3, "sponsors": 2, "opt_ok": 1, "unknown": 0}
+
+
+def with_refusal(facts: list[str], refusal: str) -> list[str]:
+    """The judge's sponsorship facts, plus `no_future_sponsorship` when the
+    JD has a `future_refusal` sentence (it replaces `silent`)."""
+    if not refusal or "no_future_sponsorship" in facts:
+        return list(facts)
+    return [f for f in facts if f != "silent"] + ["no_future_sponsorship"]
 
 
 def sponsorship_label(facts: list[str], country: Any, cfg: ScoringConfig) -> str:

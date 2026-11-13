@@ -15,6 +15,7 @@ Staging holds only:
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import re
@@ -40,10 +41,12 @@ from applyourself.score_filter import (
     ScoringConfig,
     country_allowed,
     drop_reason,
+    future_refusal,
     load_scoring,
     normalize,
     sponsorship_label,
     trim_jd,
+    with_refusal,
     word_count,
     wrap,
     years_required,
@@ -65,7 +68,7 @@ SCORED_COLUMNS: list[str] = [
     "scored_at",
     "scored_by_model",
     "judge_answer",  # JSON: the judge's raw answer; empty on a legacy row
-    "judge_facts",  # JSON: {years, words, contract} read from the JD at start
+    "judge_facts",  # JSON: {years, words, contract, future_refusal} read from the JD at start
     "judge_input_hash",  # input_hash() of what was judged; empty on a legacy row
     "judge_profile_hash",  # profile_hash() of the digest the judge read; empty before v2
 ]
@@ -81,6 +84,9 @@ DERIVED_COLUMNS = (
 )
 VIEW_COLUMNS: list[str] = [c for c in SCORED_COLUMNS if not c.startswith("judge_")] + ["basis"]
 
+# What finish keeps of a slice's facts in judge_facts; derive reads them.
+FACT_KEYS = ("years", "words", "contract", "future_refusal")
+
 YEARS_GAP_LOG = 3  # regex and judge years this far apart are printed by finish
 
 SLICE_ROWS = 10
@@ -90,6 +96,9 @@ JUDGE_BYTES = 300_000
 
 JUDGE_AGENT = paths.REPO_ROOT / ".claude" / "agents" / "score-judge.md"
 SHARED_RUBRIC = paths.REPO_ROOT / ".claude" / "shared" / "scoring_rubric.md"
+EMPLOYER_RUBRIC = paths.REPO_ROOT / ".claude" / "shared" / "scoring_employer.md"
+# Answer fields no score reads, left out of input_hash so adding one stales nothing.
+UNHASHED_FIELDS = ("employer",)
 
 
 class RunOpen(RuntimeError):
@@ -165,6 +174,42 @@ def view(
         df["fit_score"] = df["fit_score"].astype("float64")
     df["basis"] = basis
     return df[VIEW_COLUMNS]
+
+
+def judged_employers(scored_path: Path | None = None) -> dict[str, str | None]:
+    """job_id -> the score judge's `employer` (a name, or None when the
+    posting names none), for the rows whose answer has the key."""
+    path = scored_path or paths.SCORED
+    if not path.exists():
+        return {}
+    return dict(_employers(path, path.stat().st_mtime))
+
+
+@functools.cache
+def _employers(path: Path, mtime: float) -> tuple[tuple[str, str | None], ...]:
+    scored = read_scored(path)
+    out = []
+    for jid, raw in zip(scored["job_id"], scored["judge_answer"], strict=True):
+        answer = json.loads(raw) if isinstance(raw, str) and raw else None
+        if isinstance(answer, dict) and "employer" in answer:
+            name = answer["employer"]
+            out.append((str(jid), name if isinstance(name, str) and name.strip() else None))
+    return tuple(out)
+
+
+def employer_for(job_id: str, saved: str, scored_path: Path | None = None) -> str | None:
+    """The company to write for a role: the judge's employer when it differs
+    from the saved name, the saved name when the judge gave none or the same
+    one, None when the judge found that the posting names no hiring company."""
+    from applyourself.shared.identity import normalize_company
+
+    table = judged_employers(scored_path)
+    if job_id not in table:
+        return saved
+    name = table[job_id]
+    if name is None:
+        return None
+    return saved if normalize_company(name) == normalize_company(saved) else name
 
 
 def merge_rows(scored_path: Path, rows: list[dict[str, Any]]) -> int:
@@ -244,7 +289,7 @@ def _judge_model() -> str:
 
 def input_hash(packet: str, jd: str) -> str:
     """What a judgment was made from: the lane's packet without the digest
-    (`packet_text(..., digest="")`) and the trimmed JD."""
+    (`packet_text(..., digest="", for_hash=True)`) and the trimmed JD."""
     return hashlib.sha1(f"{packet}\0{jd}".encode()).hexdigest()[:16]
 
 
@@ -259,29 +304,44 @@ def is_current(run: dict[str, Any]) -> bool:
     return bool(run.get("schema_version", 1) >= 2 and run.get("form", "v2") == "v2")
 
 
-def schema_text(model: type[BaseModel]) -> str:
-    """The packet's answer-schema section for one answer model."""
+def schema_text(model: type[BaseModel], leave_out: tuple[str, ...] = ()) -> str:
+    """The packet's answer-schema section for one answer model, without the
+    `leave_out` fields."""
+    schema = model.model_json_schema()
+    for name in leave_out:
+        schema["properties"].pop(name, None)
+        if name in schema.get("required", []):
+            schema["required"].remove(name)
     return (
         "## Answer schema\n\nEach object in your JSON array matches this JSON Schema.\n\n```json\n"
-        + json.dumps(model.model_json_schema(), indent=1)
+        + json.dumps(schema, indent=1)
         + "\n```\n"
     )
 
 
-def packet_text(lane: verticals.Vertical, cfg: ScoringConfig, digest: str | None = None) -> str:
+def packet_text(
+    lane: verticals.Vertical,
+    cfg: ScoringConfig,
+    digest: str | None = None,
+    *,
+    for_hash: bool = False,
+) -> str:
     """What every judge of the lane reads first, always in this order: the
-    shared rubric, the candidate digest, the lane, its calibration examples
-    and the answer schema. `digest`: `score_packet.digest(cfg)`, when the
-    caller already built it."""
+    shared rubric, the employer section, the candidate digest, the lane, its
+    calibration examples and the answer schema. `digest`:
+    `score_packet.digest(cfg)`, when the caller already built it. `for_hash`:
+    the text `input_hash` reads, without the employer section and field,
+    which no score depends on."""
     parts = [
         f"# Scoring packet — lane {lane.name} ({lane.display_name})\n",
         SHARED_RUBRIC.read_text(encoding="utf-8"),
         f"`keywords_to_mirror`: up to {cfg.keywords_max}.\n",
+        "" if for_hash else EMPLOYER_RUBRIC.read_text(encoding="utf-8"),
         score_packet.digest(cfg) if digest is None else digest,
         f"## Lane: {lane.display_name}\n\n"
         + (paths.VERTICALS_DIR / lane.name / "rubric.md").read_text(encoding="utf-8"),
         score_packet.examples_text(lane.name),
-        schema_text(JudgeAnswer),
+        schema_text(JudgeAnswer, UNHASHED_FIELDS if for_hash else ()),
     ]
     return "\n".join(p for p in parts if p)
 
@@ -559,7 +619,7 @@ def start(
                 digest = score_packet.digest(cfg, now.date())
                 profile = profile_hash(score_packet.digest(cfg, now.date(), open_lengths=False))
             packets[lane] = packet_text(vcfg.verticals[lane], cfg, digest)
-            hashed[lane] = packet_text(vcfg.verticals[lane], cfg, "")
+            hashed[lane] = packet_text(vcfg.verticals[lane], cfg, "", for_hash=True)
         row["_hash"] = input_hash(hashed[lane], row["_jd"])
         if row["job_id"] in profiles and profiles[row["job_id"]] != profile:
             changed += 1
@@ -656,6 +716,10 @@ def stage_rows(
                         "years": years_required(r.get("jd_text"), cfg.degree_rank),
                         "words": word_count(r.get("jd_text")),
                         "contract": "contract" in str(r.get("employment_type") or "").lower(),
+                        # the whole posting, as the hard-rule drops read it
+                        "future_refusal": future_refusal(
+                            f"{r.get('title') or ''}\n{r.get('jd_text') or ''}"
+                        ),
                         "hash": r["_hash"],
                         "profile_hash": profile,
                         # everything the judge is shown, so a quote from the title or company counts
@@ -687,11 +751,16 @@ def _quote_ok(evidence: str, jd: str) -> bool:
     return all(p in body for p in parts if len(p) >= 3)
 
 
+def _employer_required(schema: dict[str, Any]) -> None:
+    schema["properties"]["employer"].pop("default", None)
+    schema.setdefault("required", []).append("employer")
+
+
 class JudgeAnswer(BaseModel):
     """One role in a judge's answer file, facts first and the grade after.
     The scoring rubric says what each field means."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid", strict=True, json_schema_extra=_employer_required)
 
     job_id: str
     in_lane: bool
@@ -710,6 +779,9 @@ class JudgeAnswer(BaseModel):
 
     keywords_to_mirror: list[str]
     reasoning: Annotated[str, Field(pattern=r"\S")]
+    # The hiring company the posting names, or null. Optional here so a slice
+    # staged before the field still checks; the packet lists it as required.
+    employer: str | None = None
 
     @model_validator(mode="after")
     def _evidence(self) -> JudgeAnswer:
@@ -754,6 +826,19 @@ def check_answer(
     return errs
 
 
+def checked_employer(a: dict[str, Any], jd: str | None) -> dict[str, Any]:
+    """The answer with an `employer` name the posting does not show (its
+    title, company line or JD, as staged in `jd`) left out, as if the judge
+    had not answered it; a null employer stays."""
+    name = a.get("employer")
+    if not isinstance(name, str):
+        return a
+    letters = _letters(name)
+    if len(letters) >= 2 and (jd is None or letters in _letters(jd)):
+        return {**a, "employer": name.strip()}
+    return {k: v for k, v in a.items() if k != "employer"}
+
+
 def derive(
     a: dict[str, Any],
     lane: verticals.Vertical,
@@ -771,7 +856,8 @@ def derive(
     of the level and years penalties. A short JD is tagged either way."""
     rules = lane.score
     reasoning = a["reasoning"].strip()
-    label = sponsorship_label(a["sponsorship"], a["country"], cfg)
+    refusal = str(facts.get("future_refusal") or "")
+    label = sponsorship_label(with_refusal(a["sponsorship"], refusal), a["country"], cfg)
     years = a["years"]  # the regex only reports a gap; the judge's reading counts
     zero = label == "ineligible"
     if not a["in_lane"]:
@@ -811,7 +897,7 @@ def derive(
         total,
         {"fit": fit, "penalty": penalty, "level": a["level"], "years": years},
         label,
-        a["evidence"].strip(),
+        a["evidence"].strip() or refusal,
         reasoning,
         a["keywords_to_mirror"][: cfg.keywords_max],
         action,
@@ -870,9 +956,10 @@ def finish(
             continue
         for a in answer:
             facts = meta["facts"][a["job_id"]]
+            a = checked_employer(a, facts.get("jd"))
             row = derive(a, lane, facts, cfg, rule, run["model"], now)
             row["judge_answer"] = json.dumps(a)
-            row["judge_facts"] = json.dumps({k: facts[k] for k in ("years", "words", "contract")})
+            row["judge_facts"] = json.dumps({k: facts[k] for k in FACT_KEYS if k in facts})
             row["judge_input_hash"] = facts.get("hash", "")
             row["judge_profile_hash"] = facts.get("profile_hash", "")
             rows.append(row)

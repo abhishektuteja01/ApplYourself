@@ -63,6 +63,11 @@ CUES = {
         "sheet --list Submittable`; the sheet's column holds it). Only with the user's typed OK; one submit "
         "per company per run."
     ),
+    "no_employer": (
+        "→ No employer: the score judge found no hiring company in the posting "
+        "(`uv run apply sheet --list 'No employer'`). Check each posting, then "
+        "`/tailor <id> --company NAME`, or skip it."
+    ),
     "apply_paths": (
         "→ Manual / No apply URL: apply by hand (`uv run apply sheet --list 'Manual apply'`). "
         "`uv run apply resolve-urls --dry-run` lists roles whose company has a board /apply drives; "
@@ -716,13 +721,21 @@ def _answers(items: dict) -> list[str]:
 
 def _apply_paths(rows: list[dict]) -> list[str]:
     """Submittable / manual / no-URL counts over the roles with a resume, and
-    the commonest reasons, when any role cannot be submitted."""
-    manual, no_url = (
-        [r for r in rows if r["status"] == s] for s in ("Manual apply", "No apply URL")
+    the commonest reasons, when any role cannot be submitted; then how many
+    roles wait as No employer."""
+    manual, no_url, no_employer = (
+        [r for r in rows if r["status"] == s]
+        for s in ("Manual apply", "No apply URL", sheet.NO_EMPLOYER)
+    )
+    parked = (
+        ["", f"No employer: {len(no_employer)} parked before /tailor", "", CUES["no_employer"]]
+        if no_employer
+        else []
     )
     if not manual and not no_url:
-        return []
-    can = [r for r in rows if r["status"] not in ("New", "Cleaned", "Manual apply", "No apply URL")]
+        return parked
+    idle = ("New", "Cleaned", "Manual apply", "No apply URL", sheet.NO_EMPLOYER)
+    can = [r for r in rows if r["status"] not in idle]
     why: dict[str, int] = {}
     for r in manual + no_url:
         why[r["note"]] = why.get(r["note"], 0) + 1
@@ -733,6 +746,7 @@ def _apply_paths(rows: list[dict]) -> list[str]:
         *[f"- {n}: {note}" for note, n in top],
         "",
         CUES["apply_paths"],
+        *parked,
     ]
 
 

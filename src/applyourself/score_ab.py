@@ -260,7 +260,7 @@ def stage(
         "v2": {n: score_store.packet_text(vcfg.verticals[n], cfg, digest) for n in lanes},
     }
     packets["v2_repeat"] = packets["v2"]
-    hashed = {n: score_store.packet_text(vcfg.verticals[n], cfg, "") for n in lanes}
+    hashed = {n: score_store.packet_text(vcfg.verticals[n], cfg, "", for_hash=True) for n in lanes}
     lines: dict[str, list[str]] = {}
     for arm in ARMS:
         by = packets["v1"] if arm == "v1" else hashed

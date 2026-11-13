@@ -119,6 +119,35 @@ def test_new_opens_a_folder_registers_the_role_and_snapshots_the_jd(repo, capsys
     )
 
 
+def _judged_employer(repo, employer):
+    scored_rows(
+        {
+            "job_id": JOB,
+            "vertical": "example_primary",
+            "fit_score": 80,
+            "keywords_to_mirror": ["SQL"],
+            "judge_answer": json.dumps({"employer": employer}),
+        }
+    ).to_parquet(repo / "scored.parquet")
+
+
+def test_new_names_the_judges_employer_in_the_folder_snapshot_and_state(repo, capsys):
+    _judged_employer(repo, "Blue Yonder")
+    code, out = _run(capsys, "new", JOB, "--today", "2026-09-28")
+    assert code == 0 and "_blue-yonder_" in out["work_dir"] and out["company"] == "Blue Yonder"
+    state = yaml.safe_load((repo / "pipeline" / JOB / "state.yaml").read_text(encoding="utf-8"))
+    assert state["company"] == "Blue Yonder"
+
+
+def test_new_refuses_a_posting_with_no_employer_until_one_is_given(repo, capsys):
+    _judged_employer(repo, None)
+    code, out = _run(capsys, "new", JOB)
+    assert code == 1 and "--company" in out["error"]
+    assert not (repo / "pipeline" / JOB).exists()
+    code, out = _run(capsys, "new", JOB, "--today", "2026-09-28", "--company", "Initech")
+    assert code == 0 and "_initech_" in out["work_dir"]
+
+
 def test_new_reuses_an_unfinished_folder_instead_of_piling_up_versions(repo, capsys):
     _, first = _run(capsys, "new", JOB, "--today", "2026-09-28")
     _, again = _run(capsys, "new", JOB, "--today", "2026-09-29")

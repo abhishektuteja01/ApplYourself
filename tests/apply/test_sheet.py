@@ -246,6 +246,15 @@ def test_unsubmittable_role_is_new_until_it_has_a_resume():
     assert sheet.status_for("aaaa1111", False, built, None, None)[0] == "Manual apply"
 
 
+def test_no_employer_parks_only_a_role_with_no_resume_yet():
+    parked = sheet.status_for("aaaa1111", True, {}, None, None, no_employer=True)
+    assert parked[0] == sheet.NO_EMPLOYER and "--company" in parked[1]
+    built = {"tailored_dirs": ["lane/x"]}
+    assert sheet.status_for("aaaa1111", True, built, None, None, no_employer=True)[0] != (
+        sheet.NO_EMPLOYER
+    )
+
+
 def test_a_ledger_line_under_another_job_id_for_the_same_form_counts_as_sent(tmp_path, monkeypatch):
     import json
 

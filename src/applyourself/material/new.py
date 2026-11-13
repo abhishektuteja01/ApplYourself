@@ -46,7 +46,10 @@ def _load_row(job_id: str) -> dict[str, Any]:
     }
 
 
-def cmd_new(job_id: str, today: str | None = None) -> dict[str, Any]:
+def cmd_new(job_id: str, today: str | None = None, company: str = "") -> dict[str, Any]:
+    """Open the role's folder. Its company: `company` when given, else the
+    score judge's employer when it names another one, else the posting's. A
+    role whose judge found no hiring company in the posting is refused."""
     today = today or clock.today().isoformat()
     if not (paths.PROFILE / "resume_template.docx").is_file():
         raise AppError("profile/resume_template.docx missing.")
@@ -59,8 +62,15 @@ def cmd_new(job_id: str, today: str | None = None) -> dict[str, Any]:
             f"{job_id} is scored in lane {lane!r}, which has no resume: block in "
             f"profile/verticals.yaml. Re-score it or add the lane."
         )
+    saved = str(row.get("company") or "")
+    employer = company.strip() or score_store.employer_for(job_id, saved)
+    if employer is None:
+        raise AppError(
+            f"{job_id}: the posting names no hiring company (saved as {saved!r}). "
+            f"Check it, then run /tailor {job_id} --company NAME."
+        )
     with contextlib.redirect_stdout(sys.stderr):
-        registered = track_cli.main(["ensure", job_id])
+        registered = track_cli.main(["ensure", job_id, "--company", employer])
     if registered != 0:
         raise AppError(f"could not register {job_id} in pipeline/.")
 
@@ -77,13 +87,13 @@ def cmd_new(job_id: str, today: str | None = None) -> dict[str, Any]:
     ):
         folder = newest  # an unfinished or unrecorded run: resume it
     else:
-        base = f"{today}_{_slug(row.get('company', '')) or job_id}_{_slug(row.get('title', ''))}_{job_id}"
+        base = f"{today}_{_slug(employer) or job_id}_{_slug(row.get('title', ''))}_{job_id}"
         folder = paths.APPLICATIONS / lane / (f"{base}_v{_version(newest) + 1}" if newest else base)
         folder.mkdir(parents=True)
 
     facts = {
         "job_id": job_id,
-        "company": row.get("company", ""),
+        "company": employer,
         "title": row.get("title", ""),
         "url": row.get("url", ""),
         "posted_date": row.get("posted_date", ""),

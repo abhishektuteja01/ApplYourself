@@ -69,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     p_new = sub.add_parser("new")
     p_new.add_argument("job_id")
     p_new.add_argument("--today", default=None)
+    p_new.add_argument("--company", default="", help="the employer, when the posting names none")
     p_dir = sub.add_parser("dir")
     p_dir.add_argument("job_id")
     p_dupes = sub.add_parser("dupes")
@@ -94,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     try:
         if args.cmd == "new":
-            return _emit(cmd_new(args.job_id, args.today))
+            return _emit(cmd_new(args.job_id, args.today, args.company))
         if args.cmd == "dir":
             return _emit(role_info(args.job_id))
         if args.cmd == "dupes":

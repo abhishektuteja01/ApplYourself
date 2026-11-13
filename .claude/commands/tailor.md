@@ -9,12 +9,13 @@ allowed-tools:
   - Bash(uv run app *)
   - Read
   - Write
-argument-hint: <job_id>
+argument-hint: <job_id> [--company NAME]
 ---
 
 # /tailor — one role, one resume
 
-`$1` = the 8-hex `job_id`. Run every step through to done without pausing
+`$1` = the 8-hex `job_id`. `--company NAME`, when given, is the employer to
+use for a role whose posting names none; pass it to `app new` as written. Run every step through to done without pausing
 (unattended runs depend on it). Read `.claude/shared/no_fab.md` first; it holds
 the writing rules and the fix loop this command follows.
 Run each command line below as its own Bash call; never join commands with `;` or `echo`.
@@ -27,11 +28,12 @@ writes `trace.md`, and records the folder in `state.yaml`.
 ## 1. Open the folder
 
 ```bash
-uv run verticals-check && uv run app new $1
+uv run verticals-check && uv run app new $1 [--company "NAME"]
 uv run app dupes $1
 ```
 
-Stop on a nonzero exit of `app new` and show the error. The JSON gives
+Stop on a nonzero exit of `app new` and show the error (a role whose
+posting names no hiring company is refused until `--company` is given). The JSON gives
 `work_dir`, `vertical`, `company`, `title` and `keywords_to_mirror`. `app dupes`
 lists other job_ids that may be this same role and are already tailored,
 applied or submitted; carry them to the report and keep going.

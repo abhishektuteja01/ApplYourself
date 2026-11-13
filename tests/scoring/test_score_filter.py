@@ -378,3 +378,27 @@ class TestCountryAllowed:
         )
         rule = sf.CountryRule.from_discovery(d)
         assert rule.home == {"us"} and rule.abroad == {"germany": {"lane_a"}}
+
+
+@pytest.mark.parametrize(
+    "text, hit",
+    [
+        ("We will not sponsor individuals for employment visas, now or in the future.", True),
+        ("Must be authorized to work without current or future visa sponsorship.", True),
+        ("Sponsorship is not available at any time for this role", True),
+        # a form question, not a refusal
+        ("Will you now or in the future require visa sponsorship?", False),
+        ("We are happy to sponsor visas now and in the future.", False),
+        # "Future" from the next line of a flattened posting
+        ("Sponsorship: Not Available  Shape the Future of Mobility", False),
+        ("We do not sponsor visas.", False),
+    ],
+)
+def test_future_refusal_needs_sponsorship_negation_and_future_in_one_sentence(text, hit):
+    assert bool(sf.future_refusal(f"About us.\n{text}\nApply today.")) is hit
+
+
+def test_a_refusal_sentence_replaces_silent_and_keeps_other_facts():
+    assert sf.with_refusal(["silent"], "x") == ["no_future_sponsorship"]
+    assert sf.with_refusal(["offers"], "x") == ["offers", "no_future_sponsorship"]
+    assert sf.with_refusal(["silent"], "") == ["silent"]

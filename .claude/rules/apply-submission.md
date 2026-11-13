@@ -189,6 +189,12 @@ judged (`basis: judged` or `v1`) `suggested_action` is skip (on a v2 answer, a
 blocker or a zero rule) only once it has `tailored_dirs` or is past `saved` (a
 legacy skip stays); highest score first, then job_id. Each status, note and submit command comes from `state.yaml`, the ledger,
 the newest run record naming the role, and answers waiting for confirmation.
+A role with no resume yet whose score judge set `employer` to null is `No
+employer` (the night's tailor skips it; the summary counts it); `/tailor <id>
+--company NAME` opens it. Where the judge names an employer other than the
+posting's company, `app new` and `track ensure` write that name (folder,
+`jd_snapshot.md`, a new `state.yaml`); a tracked role keeps its company, and
+`plan.company` stays the board's.
 Where a role is applied through is `apply_url.resolve()`, read by the sheet and
 `resolve_url` alike, with no network call: the `apply_url` stored in
 `jobs/apply_urls.json`, the clean.parquet and state.yaml urls, then a board link

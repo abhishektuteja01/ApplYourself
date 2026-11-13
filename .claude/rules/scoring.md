@@ -25,10 +25,11 @@ Three steps, one owner per rule:
    Filtered). Discovery's retention asks the same rule of an unscored row.
    The rest is staged in `jobs/scored.staging/` as one packet per
    lane and slices of at most 10 roles, each row with its `judge_input_hash`
-   (`input_hash` of the lane packet without the digest, and the trimmed JD)
-   and `judge_profile_hash` (the digest's `profile_hash`). The packet, always
-   in this order: `.claude/shared/scoring_rubric.md` (fixed fit bands,
-   tie-breaks), the candidate digest (`score_packet.digest`: every bullet with
+   (`input_hash` of the lane packet without the digest, the employer section
+   and the `employer` field (`UNHASHED_FIELDS`: no score reads them), and the
+   trimmed JD) and `judge_profile_hash` (the digest's `profile_hash`). The
+   packet, always in this order: `.claude/shared/scoring_rubric.md` (fixed fit
+   bands, tie-breaks), `.claude/shared/scoring_employer.md`, the candidate digest (`score_packet.digest`: every bullet with
    its tags, every skill with its aliases (no bullet rephrasings), each
    context's span (an open "Present" one up to the staging day), education
    with a "Currently enrolled" line from resume.yaml's education dates, the
@@ -43,10 +44,18 @@ Three steps, one owner per rule:
 2. `score-judge` agents (the only model step): the facts first (`in_lane`,
    `level` from the title, `years`, `country`, the JD's sponsorship
    statements with literal JD quotes, a `blocker` or null), then one `fit`
-   0-100, keywords and a reason of at most 15 words.
-3. `score finish` (Python): checks each answer against its slice, derives the
+   0-100, keywords, a reason of at most 15 words and the `employer` (the
+   hiring company the posting names, or null).
+3. `score finish` (Python): checks each answer against its slice (an
+   `employer` name the title, company line and JD do not show is dropped, as
+   if unanswered; a slice staged before the field merges without it), derives the
    sponsorship label (a `no_sponsorship` where the need is `later` takes
-   scoring.yaml `no_sponsorship_when_later`, else scoring_defaults.yaml's),
+   scoring.yaml `no_sponsorship_when_later`, else scoring_defaults.yaml's; a
+   JD sentence refusing sponsorship now or in the future,
+   `score_filter.future_refusal` over the title and whole JD and stored in
+   `judge_facts`, adds `no_future_sponsorship` in place of `silent`; a row
+   without the key derives as before, and
+   `scripts/dev/backfill_future_refusal.py --dry-run|--apply` fills it once),
    tags, score and action, merges (with the raw answer in
    `judge_answer`), and writes the shortlist. The score is 0 when the role is
    out of lane, ineligible, outside the lane's countries, asks the lane's

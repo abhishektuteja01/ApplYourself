@@ -25,10 +25,11 @@
                               prints the counts, the roles touched since the
                               last pipeline.md and the active roles older than
                               ghosted_after_days (read-only on state.yaml)
-  ensure <job_id>             create state.yaml at `saved` if absent; no-op if
+  ensure <job_id> [--company NAME]
+                              create state.yaml at `saved` if absent; no-op if
                               present. Bootstrap only, never a transition --
                               `app new` calls it so a re-tailor cannot rewind
-                              live state.
+                              live state. --company: the employer to record.
   stamp-schema --dry-run|--apply [--pipeline DIR]
                               add schema_version to every state.yaml that
                               lacks it and drop the dead cover_letters key;
@@ -69,6 +70,7 @@ from typing import Any
 
 import pandas as pd
 
+from applyourself import score_store
 from applyourself.apply import cooldown, ledger
 from applyourself.shared import clock, paths
 from applyourself.shared.logs import setup_logging
@@ -107,7 +109,10 @@ NEXT_ACTION = {
 }
 
 
-def _gather_initial_fields(job_id: str) -> dict[str, Any]:
+def _gather_initial_fields(job_id: str, company: str = "") -> dict[str, Any]:
+    """A new role's state.yaml fields. Its company: `company` when given,
+    else the score judge's employer when it names another one
+    (`score_store.employer_for`), else the posting's."""
     if not paths.CLEAN.exists():
         raise SystemExit("ERROR: jobs/clean.parquet missing -- run discovery first")
     clean = pd.read_parquet(paths.CLEAN).set_index("job_id")
@@ -127,9 +132,10 @@ def _gather_initial_fields(job_id: str) -> dict[str, Any]:
             )
         row = hits.sort_values("last_seen").iloc[-1].to_dict()
         row["location"] = row.get("location_raw", "")
+    saved = str(row.get("company", ""))
     initial: dict[str, Any] = {
         "job_id": job_id,
-        "company": str(row.get("company", "")),
+        "company": company or score_store.employer_for(job_id, saved) or saved,
         "title": str(row.get("title", "")),
         "source": str(row.get("source", "")),
         "url": str(row.get("url", "")),
@@ -238,7 +244,7 @@ def _cmd_ensure(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
-    initial = None if existing is not None else _gather_initial_fields(job_id)
+    initial = None if existing is not None else _gather_initial_fields(job_id, args.company)
     try:
         data, created = ensure_state(p, initial_fields=initial or {})
     except ValueError as e:
@@ -621,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "ensure":
         parser = argparse.ArgumentParser(prog="track ensure")
         parser.add_argument("job_id")
+        parser.add_argument(
+            "--company", default="", help="the employer, when the posting names none"
+        )
         args = parser.parse_args(argv[1:])
         return _cmd_ensure(args)
 
