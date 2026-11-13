@@ -64,7 +64,10 @@ Your prompt is `judge <packet path> -> <out path>`.
      facts do not cover, security clearance; export and embargo
      questions only when no fact settles them. The citizenship and
      `us_person` facts settle embargoed-country and other-citizenship
-     questions; whether a deemed-export rule affects you stays an `ask`.
+     questions; whether a deemed-export rule affects you stays an `ask`
+     unless a bank `F-` fact states it. A bare Yes/No export question a bank
+     `F-` fact settles takes `fact` with that id: `{fact: "F-...", yes_when}`,
+     `yes_when` true when the fact makes Yes the true answer.
      `ask` states the one question for the user. Never ask when a fact states
      the answer.
    - `skip`: optional junk (password, honeypot, unrelated test field), and an

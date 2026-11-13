@@ -44,6 +44,7 @@ from applyourself.apply.answers import (
     resolve,
     resolve_fact_wording,
 )
+from applyourself.apply.bank_schema import FACT_ID
 from applyourself.apply.reconcile import (
     PROSE_KINDS,
     MergedField,
@@ -479,7 +480,8 @@ def _unmapped(
 
 
 _FACT_ONLY_B0 = "a fact judgment is only for a work-authorization or export-control question"
-_EXPORT_US_PERSON = "export control takes only a us_person fact judgment"
+_EXPORT_US_PERSON = "export control takes only a us_person or bank F- fact judgment"
+_FACT_ID_EXPORT_ONLY = "a bank F- fact judgment is only for an export-control question"
 _EXPORT_OPTION = (
     "export control takes a judged option only once work_authorization.us_person is set"
 )
@@ -557,18 +559,31 @@ def no_sponsorship_phrases() -> tuple[str, ...]:
     return tuple(str(p) for p in phrases or () if str(p).strip())
 
 
+# A question sentence, up to its "?": "without sponsorship now or in the
+# future?" asks, it does not refuse.
+_QUESTION_SENTENCE = re.compile(r"[^.!?;\n]*\?")
+
+
+def _form_refuses_sponsorship(text: str, phrases: tuple[str, ...]) -> bool:
+    """The form's own words refuse sponsorship: a `no_sponsorship` phrase, or a
+    statement (not the question) refusing it now or in the future, the same
+    sentence rule scoring reads in a JD."""
+    from applyourself.score_filter import find_phrase, future_refusal
+
+    if phrases and find_phrase(phrases, text) is not None:
+        return True
+    return bool(future_refusal(_QUESTION_SENTENCE.sub(" ", text)))
+
+
 def _form_bars_sponsorship(
     field: MergedField, resolution: Resolution, answers: Answers, phrases: tuple[str, ...]
 ) -> Resolution:
     """A sponsorship answer saying you need it, on a field whose label says the
     employer will not sponsor, parks: the bar is on the form, not the JD."""
-    from applyourself.score_filter import find_phrase
-
     if (
         resolution.action != "fill"
         or resolution.source != _NEEDS_SPONSORSHIP_SOURCE
-        or not phrases
-        or find_phrase(phrases, f"{field.label} {field.description}") is None
+        or not _form_refuses_sponsorship(f"{field.label}\n{field.description}", phrases)
         or not fact_holds(field, answers, "requires_sponsorship")
     ):
         return resolution
@@ -593,8 +608,9 @@ def apply_override(
     or `(resolution, why)` unchanged when the gate refuses it. Identity and
     EEOC take no override; a fact answers only a work-authorization field (a
     judged one also any label `_judged_fact_label` reads as one); export
-    control takes only a fact (a judged one only `us_person`), or a judged
-    option once `us_person` is yes or no.
+    control takes only a fact (a judged one only `us_person` or a bank `F-`
+    fact, which nothing else takes), or a judged option once `us_person` is
+    yes or no.
     `known_ids`: the profile ids a judged basis may cite (an eval persona's)."""
     if resolution.tier in _CLOSED_TIERS:
         # A link the bank's own URL answers: that URL stands over any entry.
@@ -608,7 +624,11 @@ def apply_override(
             override.decision and _judged_fact_label(field.label or "")
         ):
             return resolution, _FACT_ONLY_B0
-        if override.decision and export and (fact or {}).get("fact") != "us_person":
+        name = str((fact or {}).get("fact") or "")
+        bank_fact = bool(FACT_ID.match(name))
+        if bank_fact and not export:
+            return resolution, _FACT_ID_EXPORT_ONLY
+        if override.decision and export and name != "us_person" and not bank_fact:
             return resolution, _EXPORT_US_PERSON
     elif export:
         if override.decision == "option":

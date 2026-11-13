@@ -113,6 +113,8 @@ _NOT_WORK_AUTH = re.compile(
 
 _PUNCT = re.compile(r"[^\w\s]+")
 _WS = re.compile(r"\s+")
+# Zero-width and invisible format characters some boards put in option text.
+_INVISIBLE = re.compile("[\u200b-\u200d\u2060\ufeff]")
 
 
 class AnswersError(Exception):
@@ -121,13 +123,13 @@ class AnswersError(Exception):
 
 def _norm(text: str) -> str:
     """Casefolded, punctuation-free, single-spaced — the form labels are compared in."""
-    text = unicodedata.normalize("NFKC", text or "").replace("’", "'")
+    text = _INVISIBLE.sub("", unicodedata.normalize("NFKC", text or "")).replace("’", "'")
     return _WS.sub(" ", _PUNCT.sub(" ", text.casefold())).strip()
 
 
 def _norm_option(text: str) -> str:
     """Same, but punctuation survives: option strings differ only in prose."""
-    text = unicodedata.normalize("NFKC", text or "").replace("’", "'")
+    text = _INVISIBLE.sub("", unicodedata.normalize("NFKC", text or "")).replace("’", "'")
     return _WS.sub(" ", text.casefold()).strip()
 
 

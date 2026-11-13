@@ -85,6 +85,25 @@ def test_export_control_takes_a_fact_not_a_typed_value(answers, tailor_dir):
     assert not plan.ignored_overrides and plan.fields[0].value == "No"
 
 
+def test_export_control_takes_a_bank_fact_that_exists(answers, tailor_dir):
+    f = field(
+        label="Does the deemed export rule affect your employment by Acme?",
+        kind="select",
+        options=YES_NO,
+    )
+    by_fact = Override(value="", decision="fact", fact={"fact": "F-DEEMED", "yes_when": False})
+    bank = replace(answers, facts={"F-DEEMED": "The deemed export rule does not affect me."})
+    assert plan_one(f, bank, tailor_dir, by_fact).fields[0].value == "No"
+    plan = plan_one(f, answers, tailor_dir, by_fact)  # no such fact in the bank
+    assert plan.parked and "F-DEEMED" in plan.unmapped[0].reason
+    session = Override(value="", fact={"fact": "F-DEEMED", "yes_when": False})
+    assert plan_one(f, bank, tailor_dir, session).fields[0].value == "No"
+    assert plan_one(f, bank, tailor_dir, Override(value="No")).ignored_overrides
+    # An F- fact answers nothing but export control.
+    visa = field(label="Are you authorized to work in the US?", kind="select", options=YES_NO)
+    assert plan_one(visa, bank, tailor_dir, by_fact).parked
+
+
 def test_a_question_renders_a_computed_start_date(answers, monkeypatch):
     monkeypatch.setattr(A, "_today", lambda: date(2026, 9, 27))
     f = field(label="Earliest day you could join us", kind="date")

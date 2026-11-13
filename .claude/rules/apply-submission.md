@@ -80,7 +80,9 @@ per field, one decision:
 
 - `question`: code renders that bank question (computed and role-file answers too);
 - `fact`: `{fact: authorized|requires_sponsorship|unrestricted|us_person, yes_when}`;
-  code computes Yes/No from `work_authorization` for the question's country;
+  code computes Yes/No from `work_authorization` for the question's country.
+  On export control only, `fact` may also be a bank `F-` id, which must exist:
+  Yes exactly when `yes_when` is true;
 - `option`: a board option, matched word for word;
 - `text`: prose, linted, or short factual text;
 - `ask`: parks the field with the question for the user;
@@ -97,14 +99,16 @@ Every `answers_override.json` entry, judged or the session's, passes
 
 - identity and EEOC (closed tiers A/A2) take no override;
 - a judged `fact` answers only a work-authorization label;
-- export control takes only a `us_person` fact, or an `option` once `us_person`
-  is yes or no (never on Yes/No options), never a typed value;
+- export control takes only a `us_person` or bank `F-` fact, or an `option` once
+  `us_person` is yes or no (never on Yes/No options), never a typed value;
 - an option must be one the widget offers; a single checkbox takes only Yes;
 - free text is linted (`lint.gate`): mechanical fixes applied, a banned phrase
   parks the field naming it. This holds for every value filled into a text box
   outside tiers A/A2 (bank prose, role-file answers, fallbacks), not only overrides;
-- a sponsorship fact saying you need it, on a field whose label holds a
-  scoring.yaml `no_sponsorship` phrase, parks: "form says no sponsorship";
+- a sponsorship fact saying you need it, on a field whose label or description
+  holds a scoring.yaml `no_sponsorship` phrase or a statement (not the question
+  sentence) refusing sponsorship now or in the future
+  (`score_filter.future_refusal`), parks: "form says no sponsorship";
 - a judged entry the gate refuses parks its field, the refusal as the reason; one
   whose field id is not on the form still lands in `Plan.ignored_overrides`;
 - a session entry it refuses (an id not on the form, a closed field, a missing

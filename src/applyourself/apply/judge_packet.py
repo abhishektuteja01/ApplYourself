@@ -62,7 +62,8 @@ class JudgeField(BaseModel):
 class FactRef(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    fact: Literal[FACT_WORDING_FACTS]  # type: ignore[valid-type]  # pydantic expands the tuple
+    fact: str = Field(pattern="^(" + "|".join(FACT_WORDING_FACTS) + "|F-[A-Z0-9-]+)$")
+    """A work-authorization fact, or a bank `F-` id (export control only)."""
     yes_when: bool
 
 
@@ -354,6 +355,9 @@ def _entry_problems(
                 errs.append(f"{where} text value is one non-empty string")
             elif problem := _fit_problem(entry.value, field, company):
                 errs.append(f"{where} {problem}")
+    facts = getattr(answers, "facts", {}) or {}
+    if entry.fact is not None and entry.fact.fact.startswith("F-") and entry.fact.fact not in facts:
+        errs.append(f"{where} fact {entry.fact.fact!r} is not in the bank's facts")
     options = tuple(field.get("options") or ())
     if entry.decision == "fact" and options and not _offers_bare_yes_no(options):
         errs.append(f"{where} sentence options: use decision option, copying the true one")

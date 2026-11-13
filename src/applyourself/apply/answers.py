@@ -27,6 +27,7 @@ from datetime import date, timedelta
 from urllib.parse import urlparse
 
 from applyourself.apply.bank_schema import (
+    FACT_ID,
     Answers,
     Question,
     _norm_option,
@@ -568,10 +569,15 @@ def fact_holds(field: MergedField, answers: Answers, fact: str) -> bool:
 
 def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> Resolution:
     """A judged `{fact, yes_when}`: Yes exactly when the fact it names equals
-    `yes_when` for the question's country, so the answer follows your facts."""
+    `yes_when` for the question's country, so the answer follows your facts.
+    A bank `F-` fact is one you state, so it holds: Yes exactly when `yes_when`."""
     fact = judged["fact"]
     source = f"fact_wording:{fact}"
-    if fact == "us_person":
+    if FACT_ID.match(fact):
+        if fact not in answers.facts:
+            return _park(f"{source}: no bank fact {fact}", "B0", source=source)
+        value: bool | None = True
+    elif fact == "us_person":
         if answers.us_person == "park":
             return _park(
                 'asks whether you are a "U.S. person". Set '
@@ -579,7 +585,7 @@ def resolve_fact_wording(field: MergedField, answers: Answers, judged: dict) -> 
                 "B0",
                 source=source,
             )
-        value: bool | None = answers.us_person == "yes"
+        value = answers.us_person == "yes"
     else:
         if UNKNOWN_COUNTRY in _question_countries(field.label, answers):
             return _park(

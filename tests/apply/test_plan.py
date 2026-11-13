@@ -881,6 +881,42 @@ def test_a_form_only_sponsorship_bar_parks(answers, tailor_dir, tmp_path, monkey
     assert plan.parked and "form says no sponsorship" in plan.unmapped[0].reason
 
 
+@pytest.mark.parametrize(
+    ("label", "parks"),
+    [
+        (
+            "This position is not eligible for employment-based visa sponsorship. Applicants "
+            "must be authorized without the need for current or future sponsorship. Will you "
+            "now or in the future require any form of work-based sponsorship?",
+            True,
+        ),
+        # The question itself ("without ... now or in the future?") is no refusal.
+        ("Can you work here without sponsorship now or in the future?", False),
+    ],
+)
+def test_a_form_refusing_future_sponsorship_parks_without_a_phrase(
+    answers, tailor_dir, tmp_path, monkeypatch, label, parks
+):
+    from applyourself.shared import paths
+
+    scoring = tmp_path / "scoring.yaml"
+    scoring.write_text("no_sponsorship:\n  - do not sponsor\n", encoding="utf-8")
+    monkeypatch.setitem(paths._overrides, "SCORING", scoring)
+    f = field(
+        id="q",
+        label=label,
+        kind="select",
+        required=True,
+        options=(MergedOption(label="Yes"), MergedOption(label="No")),
+    )
+    fact = Override(
+        value="", decision="fact", fact={"fact": "requires_sponsorship", "yes_when": True}
+    )
+    plan = build_plan(one([f]), answers, tailor_dir, overrides={"q": fact})
+    reasons = [u.reason for u in plan.unmapped]
+    assert any("form says no sponsorship" in r for r in reasons) is parks
+
+
 class TestCoverLetterWhenOffered:
     """`cover_letter: when_offered`: an optional letter upload with no letter
     in the folder parks the role, so /apply writes one."""

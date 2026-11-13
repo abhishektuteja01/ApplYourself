@@ -85,6 +85,7 @@ from applyourself.apply.answers import (
 )
 from applyourself.apply.bank_schema import (
     EXAMPLE_NAME,
+    FACT_ID,
     FACT_WORDING_FACTS,
     AnswersError,
     load_answers,
@@ -341,12 +342,15 @@ def load_overrides(path: Path, job_id: str | None = None) -> dict[str, Override]
             if fact is not None and (
                 not isinstance(fact, dict)
                 or set(fact) != {"fact", "yes_when"}
-                or fact["fact"] not in FACT_WORDING_FACTS
+                or not (
+                    fact["fact"] in FACT_WORDING_FACTS
+                    or (isinstance(fact["fact"], str) and FACT_ID.match(fact["fact"]))
+                )
                 or not isinstance(fact["yes_when"], bool)
             ):
                 raise ApplyCliError(
                     f'{where} fact is {{"fact": one of '
-                    f'{", ".join(FACT_WORDING_FACTS)}, "yes_when": true|false}}'
+                    f'{", ".join(FACT_WORDING_FACTS)} or a bank F- id, "yes_when": true|false}}'
                 )
             if "decision" in entry:
                 overrides[field_id] = _judged_override(entry, where)

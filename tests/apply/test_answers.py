@@ -325,6 +325,13 @@ class TestMatchMode:
             "Yes, I am able and willing to work in the office location listed."
         )
 
+    def test_zero_width_characters_in_an_option_still_match_and_fill_the_board_text(self, tmp_path):
+        qs = {"q0": {"answer": "I have reviewed the Background Check Policy"}}
+        answers = load_answers(write_config(tmp_path, questions=qs))
+        board = "​​I have reviewed the Background Check Policy﻿"
+        f = field(label="Background check", required=True, kind="select", options=[board])
+        assert ask(answers, "q0", f).value == board
+
     def test_a_contains_question_still_parks_when_no_option_holds_any_candidate(self, tmp_path):
         qs = {
             "q0": {
