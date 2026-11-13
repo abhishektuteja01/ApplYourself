@@ -16,7 +16,8 @@ Your prompt is `judge <packet path> -> <out path>`.
 2. For every field in the packet's Fields, write exactly one entry with exactly
    one decision, and a short `why`:
    - `question`: a bank question whose answer says what the field asks. Prefer
-     it whenever one does, including computed and role_file answers and
+     it whenever one does, including computed and role_file answers (even one
+     shown as not written for this role; code parks it) and
      approved prose for the same question; draft new `text` only when none
      fits. Never when the bank answer conflicts with a fact (notice period,
      current company, a certification): answer from the fact (`option` or
