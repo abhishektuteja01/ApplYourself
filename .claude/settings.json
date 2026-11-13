@@ -4,15 +4,25 @@
     "allow": [
       "Bash(uv run pytest:*)",
       "Bash(uv run verticals-check)",
+      "Bash(uv run ay config check-verticals)",
       "Bash(uv run discovery-check)",
+      "Bash(uv run ay discover check)",
       "Bash(uv run discover-digest:*)",
+      "Bash(uv run ay discover digest:*)",
       "Bash(uv run score:*)",
+      "Bash(uv run ay score:*)",
       "Bash(uv run track:*)",
+      "Bash(uv run ay track:*)",
       "Bash(uv run app:*)",
+      "Bash(uv run ay app:*)",
       "Bash(uv run profile-extract:*)",
+      "Bash(uv run ay onboard extract:*)",
       "Bash(uv run apply prepare:*)",
+      "Bash(uv run ay apply prepare:*)",
       "Bash(uv run apply plan:*)",
+      "Bash(uv run ay apply plan:*)",
       "Bash(uv run apply learn:*)",
+      "Bash(uv run ay apply learn:*)",
       "Bash(./scripts/pii_scan.sh)",
       "Bash(uv run python scripts/dev/scrub_example_templates.py:*)",
       "Bash(git status:*)",
@@ -26,12 +36,17 @@
       "Bash(tail:*)",
       "Bash(wc:*)",
       "Bash(uv run config:*)",
+      "Bash(uv run ay config:*)",
       "Bash(uv run apply judge-pack:*)",
+      "Bash(uv run ay apply judge-pack:*)",
       "Bash(uv run apply judge-check:*)",
-      "Bash(uv run apply-eval:*)"
+      "Bash(uv run ay apply judge-check:*)",
+      "Bash(uv run apply-eval:*)",
+      "Bash(uv run ay apply eval:*)"
     ],
     "ask": [
-      "Bash(uv run apply run *--submit*)"
+      "Bash(uv run apply run *--submit*)",
+      "Bash(uv run ay apply run *--submit*)"
     ]
   },
   "hooks": {
