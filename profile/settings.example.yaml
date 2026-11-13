@@ -18,6 +18,10 @@ retries: 1                   # a failed tailor or owed judge is retried this man
 max_budget_usd_per_call: 10  # spend cap for one claude -p call
 # max_spend_usd_per_night: 30  # once a night's claude calls cost this, later claude stages wait (absent = no cap)
 tailor_max_per_night: 0      # most roles /tailor takes a night; the rest wait (0 = no cap)
+# The tailor stage skips, and the summary lists (absent: data/defaults/settings_defaults.yaml):
+# tailor_min_jd_chars: 1000    # a role whose JD is shorter (0 = never)
+# tailor_live_check_days: 30   # a role posted longer ago whose board says it is gone (0 = never check)
+# tailor_dupe_min_jd: 95       # a maybe duplicate, at this JD score, of a role tailored, applied or picked tonight
 apply_prep_max_per_night: 0  # most roles /apply takes a night (0 = no cap)
 # A stage that hits the claude usage limit waits for the reset, then runs again.
 usage_limit_wait_until: "19:00"  # latest local time (quoted HH:MM) a wait may end, before the night's start; absent = no waits

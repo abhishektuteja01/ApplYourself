@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pandas as pd
+from rapidfuzz.utils import default_process
 
 from applyourself.discovery import parse
 from applyourself.discovery import store as store_mod
@@ -26,6 +27,10 @@ from applyourself.shared.parquet_io import locked, write_parquet
 from applyourself.state_io import ACTIVE_STATES
 
 log = logging.getLogger(__name__)
+
+# A longer copy of a job's JD replaces the representative's when it holds at
+# least this share of the representative's words.
+JD_COPY_COVER = 0.8
 
 
 # Closed schema, fixed order: what every downstream reader of clean.parquet
@@ -226,9 +231,29 @@ def build_view(
     return view, funnel
 
 
+def _words(text: str) -> set[str]:
+    return set(default_process(text or "").split())
+
+
+def _longest_copy(rep: str, copies: list[str]) -> str:
+    """The longest of `copies` holding at least JD_COPY_COVER of `rep`'s words,
+    else `rep`: a short teaser gets the full text of the same posting, never
+    another requisition's JD under the same id."""
+    words, best = None, rep
+    for jd in copies:
+        if len(jd) <= len(best):
+            continue
+        words = _words(rep) if words is None else words
+        if words and len(words & _words(jd)) >= JD_COPY_COVER * len(words):
+            best = jd
+    return best
+
+
 def _one_per_job(df: pd.DataFrame) -> pd.DataFrame:
     """The representative posting of each job_id: an applyable url, then a
-    resolved location, then the newest sighting, then the longest JD."""
+    resolved location, then the newest sighting, then the longest JD. Its JD is
+    the longest copy among the job's postings that is the same text
+    (`_longest_copy`)."""
     if df.empty:
         return df.drop(columns=["_resolved"], errors="ignore")
     work = df.assign(
@@ -241,6 +266,16 @@ def _one_per_job(df: pd.DataFrame) -> pd.DataFrame:
         kind="stable",
     )
     out = work.drop_duplicates("job_id", keep="first")
+    longest = work.groupby("job_id")["_jd"].max()
+    short = out["job_id"].map(longest) > out["_jd"]
+    if short.any():
+        copies = work[work["job_id"].isin(out.loc[short, "job_id"])].groupby("job_id")["jd_text"]
+        texts = {j: list(g) for j, g in copies}
+        out = out.copy()
+        out.loc[short, "jd_text"] = [
+            _longest_copy(jd, texts[j])
+            for j, jd in zip(out.loc[short, "job_id"], out.loc[short, "jd_text"], strict=True)
+        ]
     return out.drop(columns=["_apply", "_unres", "_jd", "_resolved"])
 
 

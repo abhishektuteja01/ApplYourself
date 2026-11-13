@@ -293,6 +293,7 @@ def test_a_rerun_after_a_wait_keeps_the_cap_and_skips_the_roles_done(tmp_path):
         '  "run config get settings "*_max_per_night) echo 2;;\n'
         '  "run config get settings "*) echo 0;;\n'
         '  "run apply sheet --list "*) printf "aaaa\\nbbbb\\ncccc\\n";;\n'
+        '  "run night tailor-pick "*) cat;;\n'
         "esac\n",
         encoding="utf-8",
     )
@@ -321,6 +322,37 @@ def test_a_rerun_after_a_wait_keeps_the_cap_and_skips_the_roles_done(tmp_path):
         "cccc deferred",
     ]
     assert (run / "apply_prep.tried").read_text(encoding="utf-8") == "aaaa fail\nbbbb ok\n"
+
+
+def test_tailor_takes_every_new_role_when_the_pick_fails(tmp_path):
+    import subprocess
+
+    from applyourself.shared import paths
+
+    uv = tmp_path / "uv"
+    uv.write_text(
+        '#!/bin/bash\ncase "$*" in\n'
+        '  "run config get settings tailor_parallel") echo 5;;\n'
+        '  "run config get settings "*) echo 0;;\n'
+        '  "run apply sheet --list "*) printf "aaaa\\nbbbb\\n";;\n'
+        '  "run night tailor-pick "*) echo aaaa; exit 1;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    one = tmp_path / "tailor_one.sh"
+    one.write_text('#!/bin/bash\necho "$1 ok" >> "$RUN_DIR/tailor_results.txt"\n', encoding="utf-8")
+    for f in (uv, one):
+        f.chmod(0o755)
+    run = tmp_path / "run"
+    run.mkdir()
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "UV": str(uv), "RUN_DIR": str(run)}
+    env |= {"DRY_RUN": "1", "STAGES_DIR": str(tmp_path), "PDF_BROKER_DIR": str(tmp_path)}
+    script = paths.REPO_ROOT / "scripts" / "stages" / "tailor.sh"
+    subprocess.run([str(script)], env=env, check=True, capture_output=True)
+    assert sorted((run / "tailor_results.txt").read_text(encoding="utf-8").splitlines()) == [
+        "aaaa ok",
+        "bbbb ok",
+    ]
 
 
 def test_a_reset_just_passed_is_not_read_as_tomorrow(tmp_path, monkeypatch):

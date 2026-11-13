@@ -42,6 +42,7 @@ _LAYOUT = {
     "SCORING": "profile/scoring.yaml",
     "DE_AI_RULES": "profile/de_ai_rules.yaml",
     "SCORING_DEFAULTS": "profile/scoring_defaults.yaml",
+    "SETTINGS_DEFAULTS": "profile/settings_defaults.yaml",
     "ANSWER_BANK": "profile/application_answers.yaml",
     "DISCOVERY_CONFIG": "profile/discovery.yaml",
     "VERTICALS_CONFIG": "profile/verticals.yaml",
@@ -87,6 +88,7 @@ CONTACTS: Path
 SCORING: Path
 DE_AI_RULES: Path
 SCORING_DEFAULTS: Path
+SETTINGS_DEFAULTS: Path
 ANSWER_BANK: Path
 DISCOVERY_CONFIG: Path
 VERTICALS_CONFIG: Path

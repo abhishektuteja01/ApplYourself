@@ -23,7 +23,7 @@ paths:
 `jobs/jobs.parquet` as it arrives, then rebuilds `jobs/clean.parquet` and writes
 `jobs/runs/<run_id>.json` + `.md`. `clean.parquet` is the only discovery output
 anything downstream reads, apart from `jobs/maybe_duplicates.jsonl` (see the
-store), which only `summary` and `app dupes` read. `jobs/raw/` holds nightly debug shards (every
+store), which only `summary`, `app dupes` and the night's tailor pick read. `jobs/raw/` holds nightly debug shards (every
 classified listing plus its gate verdict and drop `reason`; the feed's passes
 only), pruned after `raw_keep_days`; nothing in the pipeline reads them.
 
@@ -68,8 +68,11 @@ fuzzy rules join an id only when the title agrees with that id's own title
 row's `job_id`, `company_normalized` and `title` never change, and its
 `first_seen` only restarts when it comes back after more than `live_days`
 unseen: a refresh cannot move the id pair, though it may improve the shown `company`. A posting's `board` is its url's own ATS + slug,
-whichever lane found it. Two postings of one board never merge, and two titles
-that disagree on level tokens never merge.
+whichever lane found it. Two postings of one board never merge: at `JD_MERGE`
+(titles at `TITLE_MIN`, one level) they are a `same_board` maybe, whatever their
+names and title words (a Workday tenant's career sites, one posting per city),
+which the summary does not list. Two titles that disagree on level tokens never
+merge.
 
 `same_job_elsewhere` merges only when the titles agree (`TITLE_MIN`, and no
 role word apart beyond workplace and location words), the names are one employer
@@ -110,7 +113,9 @@ undated. Then the title gate and the
 location allowlist, both re-applied at build time (a stored row whose title no
 longer fits its lane moves to the lane it fits now), then JD >= `MIN_JD_CHARS`.
 One row per `job_id`: an applyable url, then a resolved location, then the
-newest sighting, then the longest JD. Retention runs from the job's earliest
+newest sighting, then the longest JD. Its `jd_text` is the longest copy among
+the job's postings there that holds `JD_COPY_COVER` of its own words (a teaser
+gets the full text, never another requisition's JD under the same id). Retention runs from the job's earliest
 `first_seen`, or with `retention_from: newest` from the newest `first_seen`
 among its postings that passed the gates above (a repost restarts it): `high_days` at fit >= threshold or unscored, else `low_days`; an
 unscored row `score_filter.drop_reason` drops today gets `low_days`.

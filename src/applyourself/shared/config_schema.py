@@ -181,6 +181,9 @@ class Settings(_Strict):
     summary_email: str | None = None
     uncovered_words_days: Annotated[int, Field(ge=1)] | None = None
     tailor_max_per_night: int | None = None
+    tailor_min_jd_chars: Annotated[int, Field(ge=0)] | None = None
+    tailor_live_check_days: Annotated[int, Field(ge=0)] | None = None
+    tailor_dupe_min_jd: Annotated[float, Field(ge=0, le=100)] | None = None
     apply_prep_max_per_night: int | None = None
     ghosted_after_days: int | None = None
     company_cooldown_days: int | None = None
@@ -232,6 +235,15 @@ class ScoringDefaults(_Strict):
     example_targets: list[tuple[bool, Score]]
     v1_skills_cap: Score
     no_sponsorship_when_later: Literal["ineligible", "opt_ok"]
+
+
+class SettingsDefaults(_Strict):
+    """data/defaults/settings_defaults.yaml, or the profile/ copy that replaces it."""
+
+    schema_version: Literal[1]
+    tailor_min_jd_chars: Annotated[int, Field(ge=0)]
+    tailor_live_check_days: Annotated[int, Field(ge=0)]
+    tailor_dupe_min_jd: Annotated[float, Field(ge=0, le=100)]
 
 
 class DeAiRules(_Strict):

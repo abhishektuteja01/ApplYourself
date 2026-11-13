@@ -294,8 +294,12 @@ DUPES_SHOWN = 10
 
 
 def duplicates_section(rows: list[dict], states: dict[str, dict]) -> list[str]:
-    """Tonight's maybe-duplicate pairs (never the backfill), tracked first."""
-    rows = [r for r in rows if not str(r.get("reason", "")).startswith("backfill_")]
+    """Tonight's maybe-duplicate pairs (never the backfill or `same_board`), tracked first."""
+    rows = [
+        r
+        for r in rows
+        if not str(r.get("reason", "")).startswith("backfill_") and r.get("reason") != "same_board"
+    ]
     if not rows:
         return ["None tonight."]
 
@@ -478,10 +482,36 @@ def uncovered_section(
     return lines if len(lines) > 1 else [*lines, "", "No title at or above a cutoff."]
 
 
+def tailor_skipped(run_dir: Path | None, tail: list[str]) -> dict[str, str]:
+    """job_id -> why the tailor stage left it New (thin JD, duplicate, gone),
+    for the roles whose result line says so."""
+    left = {p[0]: p[1] for r in tail if len(p := r.split()) == 2 and p[1] in SKIP_KINDS}
+    path = run_dir / "tailor_skipped.json" if run_dir else None
+    said: dict = {}
+    if left and path is not None and path.is_file():
+        try:
+            said = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            said = {}
+    return {
+        j: SKIP_KINDS[kind] + (f": {d}" if (d := (said.get(j) or {}).get("detail")) else "")
+        for j, kind in left.items()
+    }
+
+
+SKIP_KINDS = {"thin": "thin JD", "dupe": "duplicate", "gone": "posting gone"}
+
+
 def tailoring_section(
-    total: int, unresolved: dict[str, str], names: dict[str, str], detail: str, code: int | None
+    total: int,
+    unresolved: dict[str, str],
+    names: dict[str, str],
+    detail: str,
+    code: int | None,
+    skipped: dict[str, str] | None = None,
 ) -> list[str]:
-    """`unresolved`: job_id -> why it has no finished resume now. Every one is listed."""
+    """`unresolved`: job_id -> why it has no finished resume now; `skipped`:
+    job_id -> why the stage left it New. Every one is listed."""
     if not total and not unresolved:
         head = detail or "Nothing to tailor."
     else:
@@ -489,7 +519,14 @@ def tailoring_section(
     errors = [f"{j} {names.get(j, '')}".strip() + f": {why}" for j, why in unresolved.items()]
     if code:
         errors.append(f"stage exited {code}: {detail}")
-    return [head, *_errors(errors, cap=False)]
+    lines = [head, *_errors(errors, cap=False)]
+    if skipped:
+        lines += [
+            "",
+            f"**Left New ({len(skipped)})**",
+            *[f"- {j} {names.get(j, '')}".rstrip() + f": {why}" for j, why in skipped.items()],
+        ]
+    return lines
 
 
 def tailor_reason(job: str, run_dir: Path | None, live: set[str]) -> str:
@@ -858,7 +895,8 @@ def build(run_dir: Path | None, since: datetime) -> str:
 
     snaps, unreadable = _snapshots(since)
     tail = tailor_lines(run_dir)
-    tried = [r.split()[0] for r in tail if r.strip() and not r.strip().endswith(" deferred")]
+    tried = [r.split()[0] for r in tail if len(r.split()) == 2 and r.split()[1] in ("ok", "fail")]
+    skipped = tailor_skipped(run_dir, tail)
     live = set(clean["job_id"])
     failed = [r.split()[0] for r in tail if r.strip().endswith(" fail")]
     unresolved = {j: why for j in failed if (why := tailor_reason(j, run_dir, live))}
@@ -895,7 +933,7 @@ def build(run_dir: Path | None, since: datetime) -> str:
         logging.getLogger(__name__).exception("uncovered title words failed")
         uncovered = [f"Could not list them: {exc}"]
     tailoring = tailoring_section(
-        len(tried), unresolved, names, tailor.get("detail", ""), tailor.get("code")
+        len(tried), unresolved, names, tailor.get("detail", ""), tailor.get("code"), skipped
     )
     out = [
         f"# Night summary — {since:%Y-%m-%d} (started {since:%H:%M})",

@@ -112,22 +112,26 @@ def cmd_new(job_id: str, today: str | None = None) -> dict[str, Any]:
 _IDLE_STATES = frozenset({"", "saved", "skip"})
 
 
-def cmd_dupes(job_id: str) -> dict[str, Any]:
-    """Other job_ids recorded in maybe_duplicates.jsonl with this one whose
-    role is tailored or further, or was submitted. Read-only; a warning for
-    the session to show, never a stop."""
+def partners(
+    job_id: str, records: list[dict[str, Any]] | None = None, sent: set[str] | None = None
+) -> list[dict[str, Any]]:
+    """Every other job_id recorded in maybe_duplicates.jsonl with this one, or
+    sent through the same form, best JD score kept, each with its `state`,
+    `submitted` and `idle` (nothing tailored or sent for it). `records` and
+    `sent` save rereading for a caller that asks of many ids."""
     submitted = paths.APPLY_RUNS / ledger.LEDGER_NAME
-    sent = ledger.sent_job_ids(submitted) if submitted.exists() else set()
+    if sent is None:
+        sent = ledger.sent_job_ids(submitted) if submitted.exists() else set()
+    if records is None:
+        records = load_maybe_duplicates(paths.MAYBE_DUPES)
     found: dict[str, dict[str, Any]] = {}
-    for rec in load_maybe_duplicates(paths.MAYBE_DUPES):
+    for rec in records:
         ids = str(rec["pair"]).split("|")
         if job_id not in ids or len(ids) != 2:
             continue
         other = ids[1] if ids[0] == job_id else ids[0]
         state = _state(other)
         status = str(state.get("state") or "")
-        if status in _IDLE_STATES and other not in sent:
-            continue
         mine = rec.get("job_id") == other
         hit = {
             "job_id": other,
@@ -137,6 +141,7 @@ def cmd_dupes(job_id: str) -> dict[str, Any]:
             "submitted": other in sent,
             "reason": rec.get("reason", ""),
             "jd_score": rec.get("jd_score"),
+            "idle": status in _IDLE_STATES and other not in sent,
         }
         if other not in found or (hit["jd_score"] or 0) > (found[other]["jd_score"] or 0):
             found[other] = hit
@@ -148,7 +153,7 @@ def cmd_dupes(job_id: str) -> dict[str, Any]:
             if not other or other == job_id or ledger.url_key(rec.get("form_url", "")) != key:
                 continue
             if other in found:
-                found[other]["submitted"] = True
+                found[other].update(submitted=True, idle=False)
                 continue
             state = _state(other)
             found[other] = {
@@ -159,5 +164,14 @@ def cmd_dupes(job_id: str) -> dict[str, Any]:
                 "submitted": True,
                 "reason": "same_form",
                 "jd_score": None,
+                "idle": False,
             }
-    return {"job_id": job_id, "duplicates": sorted(found.values(), key=lambda h: h["job_id"])}
+    return sorted(found.values(), key=lambda h: h["job_id"])
+
+
+def cmd_dupes(job_id: str) -> dict[str, Any]:
+    """Other job_ids recorded in maybe_duplicates.jsonl with this one whose
+    role is tailored or further, or was submitted. Read-only; a warning for
+    the session to show, never a stop."""
+    hits = [{k: v for k, v in h.items() if k != "idle"} for h in partners(job_id) if not h["idle"]]
+    return {"job_id": job_id, "duplicates": hits}

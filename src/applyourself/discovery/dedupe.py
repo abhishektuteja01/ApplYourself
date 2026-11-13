@@ -220,21 +220,24 @@ def _jd_of(rec: dict, trim: Trim) -> str:
     return rec["_jd_key"]
 
 
-# Why a pair is only a maybe duplicate.
-MAYBE_REASONS = ("other_name", "weak_jd", "other_title")
+# Why a pair is only a maybe duplicate. `same_board`: one board lists the role
+# twice (a Workday tenant's career sites, one posting per city).
+MAYBE_REASONS = ("other_name", "weak_jd", "other_title", "same_board")
 
 
 def same_job_elsewhere(new: dict, old: dict, trim: Trim = NO_TRIM) -> tuple[str, float]:
-    """(verdict, JD score): is `old` the same role as `new`, found by another
-    board? The verdict is "merge", a MAYBE_REASONS entry (recorded, never
-    merged) or "". Never two postings of one board, which lists each of its
-    jobs once."""
-    if new["board"] and new["board"] == old["board"]:
-        return "", 0.0
+    """(verdict, JD score): is `old` the same role as `new`? The verdict is
+    "merge", a MAYBE_REASONS entry (recorded, never merged) or "". Two
+    postings of one board never merge: at `JD_MERGE` they are `same_board`,
+    whatever their names and title words, else nothing."""
     if fuzz.WRatio(new["title_normalized"], old["title_normalized"]) < TITLE_MIN:
         return "", 0.0
     if level_tokens(new["title_normalized"]) != level_tokens(old["title_normalized"]):
         return "", 0.0
+    if new["board"] and new["board"] == old["board"]:
+        ja, jb = _jd_of(new, trim), _jd_of(old, trim)
+        score = fuzz.ratio(ja, jb, score_cutoff=JD_MERGE) if ja and jb else 0.0
+        return ("same_board", score) if score else ("", 0.0)
     named = same_company(new["company_normalized"], old["company_normalized"])
     ja, jb = _jd_of(new, trim), _jd_of(old, trim)
     if not (ja and jb):

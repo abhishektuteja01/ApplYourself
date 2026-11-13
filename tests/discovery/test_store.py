@@ -90,11 +90,22 @@ def test_fuzzy_joins_the_same_role_from_another_source():
     assert store["job_id"].nunique() == 1 and stats.by_rule == {"fuzzy": 1}
 
 
-def test_fuzzy_never_merges_two_postings_of_one_board():
+def test_one_board_never_merges_but_records_the_same_jd_as_same_board():
     store, _ = fold(S.empty_store(), post(GH.format(1), title="Applied AI Architect"))
     other = post(GH.format(2), title="Applied AI Architect Enterprise")
-    store, _ = fold(store, other)
-    assert store["job_id"].nunique() == 2
+    store, stats = fold(store, other)
+    assert store["job_id"].nunique() == 2 and stats.by_rule == {"hash": 1}
+    [m] = stats.maybe_duplicates
+    assert m["reason"] == "same_board" and m["jd_score"] == 100
+    [pair] = dedupe.find_pairs(store)
+    assert pair["reason"] == "backfill_same_board"
+
+
+def test_one_board_with_another_jd_records_nothing():
+    store, _ = fold(S.empty_store(), post(GH.format(1), title="Applied AI Architect"))
+    other = post(GH.format(2), title="Applied AI Architect Enterprise", jd=JD_OTHER)
+    store, stats = fold(store, other)
+    assert store["job_id"].nunique() == 2 and stats.maybe_duplicates == []
 
 
 @pytest.mark.parametrize(
@@ -753,6 +764,19 @@ def test_view_representative_prefers_an_applyable_url_then_the_newest():
     store, _ = fold(S.empty_store(), li, gh)
     out, _ = view(store)
     assert out.at[0, "url"] == GH.format(1)
+
+
+def test_view_keeps_its_posting_but_takes_the_longest_copy_of_the_same_jd():
+    full = JD + " Ship evals weekly and own the on call rota." * 20
+    li = post("https://www.linkedin.com/jobs/view/1", source="linkedin", jd=full)
+    store, _ = fold(S.empty_store(), li, post(GH.format(1)))
+    out, _ = view(store)
+    assert out.at[0, "url"] == GH.format(1) and out.at[0, "jd_text"] == full
+    # Another requisition's longer JD under the same id is not this posting's text.
+    other = post("https://www.linkedin.com/jobs/view/2", source="linkedin", jd=JD_OTHER * 3)
+    store, _ = fold(S.empty_store(), other, post(GH.format(1)))
+    out, _ = view(store)
+    assert store["job_id"].nunique() == 1 and out.at[0, "jd_text"] == JD
 
 
 def test_view_is_deterministic():

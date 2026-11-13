@@ -1,0 +1,16 @@
+# The night's shipped defaults for the settings.yaml keys below. A
+# profile/settings_defaults.yaml replaces this whole file; a key set in
+# profile/settings.yaml wins over both.
+schema_version: 1
+
+# The tailor stage skips a role whose JD is shorter than this (0 = never).
+tailor_min_jd_chars: 1000
+
+# The tailor stage first checks that a role posted more than this many days ago
+# is still live, and skips it when its board says gone (0 = never check).
+tailor_live_check_days: 30
+
+# The tailor stage skips a role recorded as a maybe duplicate, at this JD score
+# or more, of a role already tailored, applied or submitted, or picked earlier
+# that night.
+tailor_dupe_min_jd: 95

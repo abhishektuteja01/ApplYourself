@@ -23,6 +23,7 @@ waits); each wait is in run.json `waits`, each earlier run in the stage's
   STAGES_DIR=D       run the stage scripts from D (tests)
 
   night record STAGE RC STATUS DEFERRED DETAIL   a stage's own result (lib_pipeline.sh stage_end)
+  night tailor-pick --run-dir D [--limit N]      New ids on stdin -> the ones tailor takes
 """
 
 from __future__ import annotations
@@ -190,6 +191,29 @@ def record(argv: list[str]) -> int:
         "items": items,
     }
     write_json(a.run_dir / f"{a.stage}.result.json", result)
+    return 0
+
+
+def tailor_pick(argv: list[str]) -> int:
+    """New ids on stdin -> the ones to tailor on stdout; each one left out is
+    appended `<id> thin|dupe|gone` to tailor_results.txt, its reason to
+    tailor_skipped.json (material/pick.py)."""
+    from applyourself.material import pick
+
+    ap = argparse.ArgumentParser(prog="night tailor-pick")
+    ap.add_argument("--run-dir", type=Path, required=True)
+    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--dry-run", action="store_true", help="ask no board")
+    a = ap.parse_args(argv)
+    ids = [x for x in sys.stdin.read().split() if x]
+    picked, skipped = pick.pick(ids, a.limit, check_live=not a.dry_run)
+    if skipped:
+        with (a.run_dir / "tailor_results.txt").open("a", encoding="utf-8") as f:
+            f.writelines(f"{j} {s['why']}\n" for j, s in skipped.items())
+    path = a.run_dir / "tailor_skipped.json"
+    earlier = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    write_json(path, {**earlier, **skipped})
+    print("\n".join(picked))
     return 0
 
 
@@ -380,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["record"]:
         return record(argv[1:])
+    if argv[:1] == ["tailor-pick"]:
+        return tailor_pick(argv[1:])
     ap = argparse.ArgumentParser(prog="night", description=__doc__.split("\n\n")[0])
     ap.add_argument("--resume", action="store_true", help="rerun the last run's stages not ok")
     ap.add_argument("--only", choices=STAGES + FINISH, help="run just this stage")

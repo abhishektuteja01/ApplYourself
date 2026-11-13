@@ -33,6 +33,7 @@ _PLACEHOLDER_MARKERS = ("<", ">", "*", "YYYY", "MM", "DD")
 COMMITTED_DEFAULTS = {
     "profile/de_ai_rules.yaml",
     "profile/scoring_defaults.yaml",
+    "profile/settings_defaults.yaml",
 }
 
 # Suffix -> template suffix.
