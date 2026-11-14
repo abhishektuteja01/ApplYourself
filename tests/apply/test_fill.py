@@ -2571,3 +2571,46 @@ class TestRevealedFields:
         with pytest.raises(F.SubmitGuardError, match="Which ones\\?"):
             F.submit(p, result, d)
         assert ("click_submit", p.submit_selector) not in d.calls
+
+
+class TestFieldsShownLater:
+    """A field drawn only once another is answered, and a section redraw that
+    clears a value already written (b2c11c7f, Lever)."""
+
+    class _Revealing(FakeDriver):
+        def __init__(self, reveals: dict[str, str], **kw):
+            super().__init__(**kw)
+            self.reveals = reveals  # hidden id -> the id whose answer shows it
+
+        def is_shown(self, field_id):
+            trigger = self.reveals.get(field_id)
+            return trigger is None or bool(self.values.get(trigger))
+
+        def fill_text(self, field_id, value):
+            if not self.is_shown(field_id):
+                raise AssertionError(f"{field_id} was written while hidden")
+            super().fill_text(field_id, value)
+
+    def test_a_field_shown_only_after_a_later_answer_still_fills(self):
+        d = self._Revealing({"age": "loc", "ghost": "nowhere"})
+        p = plan(
+            fields=[
+                field(id="age", label="Age range", value="21-29"),
+                field(id="ghost", label="Never drawn", value="x", required=True),
+                field(id="loc", label="Location", value="Berlin"),
+            ]
+        )
+        result = fill_plan(p, d)
+        assert d.values["age"] == "21-29"
+        assert not result.failures
+        assert F.blocking_questions(p, result) == ("Never drawn",)
+        assert result.absent[0]["reason"] == F.NEVER_APPEARED
+        assert ("wait", F.REVEAL_WAIT_MS) in d.calls
+
+    def test_a_text_box_cleared_by_a_redraw_is_refilled_before_the_check(self):
+        d = FakeDriver()
+        p = plan(fields=[field(id="other", label="Other website", value="https://a.example")])
+        result = fill_plan(p, d)
+        d.values["other"] = ""  # a later answer redrew the section
+        F._reverify_fields(d, p, F._never_shown(result))
+        assert F.form_check(F.form_manifest(d, p, result)) == []

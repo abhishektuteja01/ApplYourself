@@ -89,7 +89,7 @@ class SubmitGuardError(Exception):
 @dataclass
 class FieldOutcome:
     id: str
-    action: str  # filled | attached | failed
+    action: str  # filled | attached | failed | skipped (never appeared on the page)
     before: str = ""  # what was in the field before we wrote to it
     after: str = ""
     note: str = ""
@@ -119,6 +119,10 @@ class FillResult:
     """Required fields the page drew only once the fill answered another one
     (race after "not Hispanic", "Which ones?" after "Yes") that nothing could
     answer, as `blocking_details` rows. The submit guard refuses on these."""
+
+    absent: list[dict] = dc_field(default_factory=list)
+    """Required planned fields that never appeared on the page, as
+    `blocking_details` rows. The submit guard refuses on these."""
 
     manifest: list[dict] = dc_field(default_factory=list)
     """`form_manifest()` — every question and what the page actually held for
@@ -432,21 +436,56 @@ def fill_plan(
     if plan.files:
         driver.settle(timeout=UPLOAD_PARSE_TIMEOUT, floor_ms=UPLOAD_PARSE_FLOOR_MS)
 
-    for field in plan.fields:
-        try:
-            result.outcomes.append(_apply_field(driver, field, result, answers))
-        except FillError as exc:
-            result.failures.append(str(exc))
-            result.outcomes.append(FieldOutcome(field.id, "failed", note=str(exc)))
+    # Page order: a field another answer reveals comes after that answer, and
+    # an answer that redraws a section does so before the section is filled.
+    # A field not shown yet is set aside for the reveal passes, not waited on.
+    hidden: list[FieldPlan] = []
+    for field in page_order(plan):
+        if not _shown(driver, field.id):
+            hidden.append(field)
+            continue
+        _fill_planned(driver, field, result, answers)
         driver.wait(FIELD_PACE_MS)
 
     _probe_parked_selects(driver, plan, result, answers)
-    _fill_revealed(driver, plan, result, answers)
+    _fill_revealed(driver, plan, result, answers, hidden)
     return result
+
+
+def page_order(plan: Plan) -> list[FieldPlan]:
+    """`plan.fields` in the form's own order (`plan.order`); a field it does not
+    name keeps its relative position, at the end."""
+    position = {fid: i for i, fid in enumerate(plan.order)}
+    end = len(position)
+    return sorted(plan.fields, key=lambda f: position.get(f.id, end))
+
+
+def _shown(driver, field_id: str) -> bool:
+    """The driver's no-wait visibility check. A driver without one, or a check
+    that fails, lets the fill try the field as before."""
+    check = getattr(driver, "is_shown", None)
+    if check is None:
+        return True
+    try:
+        return bool(check(field_id))
+    except Exception as exc:  # noqa: BLE001 - the fill's own read-back still guards it
+        log.debug("%s: visibility unreadable (%s)", field_id, exc)
+        return True
+
+
+def _fill_planned(driver, field: FieldPlan, result: FillResult, answers: Answers | None) -> None:
+    try:
+        result.outcomes.append(_apply_field(driver, field, result, answers))
+    except FillError as exc:
+        result.failures.append(str(exc))
+        result.outcomes.append(FieldOutcome(field.id, "failed", note=str(exc)))
 
 
 #: Rescans after filling a revealed field, which can reveal another.
 REVEAL_PASSES = 3
+#: Pause before a pass that retries planned fields not shown yet.
+REVEAL_WAIT_MS = 1000
+NEVER_APPEARED = "never appeared on the page"
 
 
 def _plan_ids(plan: Plan) -> set[str]:
@@ -456,26 +495,46 @@ def _plan_ids(plan: Plan) -> set[str]:
     return ids
 
 
-def _fill_revealed(driver, plan: Plan, result: FillResult, answers: Answers | None = None) -> None:
-    """Answer the required fields the fill itself revealed, or record them.
+def _fill_revealed(
+    driver,
+    plan: Plan,
+    result: FillResult,
+    answers: Answers | None = None,
+    hidden: list[FieldPlan] | tuple[FieldPlan, ...] = (),
+) -> None:
+    """Answer the fields the fill itself revealed, or record them.
 
-    The plan is built before the page is touched, so a field another answer
-    reveals is in no list of it. Rescan for required fields the plan does not
-    name, resolve each through `answers.resolve` (a react-select's options
-    read first) and fill it; one nothing answers lands in `result.revealed`,
-    which `blocking_questions` refuses on, named by its label.
+    Two kinds. Planned fields the page did not show during the main pass
+    (`hidden`) are retried each pass once shown; one that never shows is
+    skipped with a note when optional, and lands in `result.absent` when
+    required. And the plan is built before the page is touched, so a field
+    another answer reveals is in no list of it: rescan for required fields the
+    plan does not name, resolve each through `answers.resolve` (a
+    react-select's options read first) and fill it; one nothing answers lands
+    in `result.revealed`. `blocking_questions` refuses on both, by label.
     """
-    if not hasattr(driver, "required_fields"):
-        return
+    pending = list(hidden)
+    scan = hasattr(driver, "required_fields")
     known = _plan_ids(plan)
     for _ in range(REVEAL_PASSES):
-        try:
-            found = [f for f in driver.required_fields() if f.id not in known]
-        except Exception as exc:  # noqa: BLE001 - the browser's own check still guards the click
-            log.warning("rescan for revealed fields failed: %s", exc)
-            return
-        if not found:
-            return
+        if pending:
+            driver.wait(REVEAL_WAIT_MS)
+            still = []
+            for field in pending:
+                if _shown(driver, field.id):
+                    _fill_planned(driver, field, result, answers)
+                else:
+                    still.append(field)
+            pending = still
+        found: list[MergedField] = []
+        if scan:
+            try:
+                found = [f for f in driver.required_fields() if f.id not in known]
+            except Exception as exc:  # noqa: BLE001 - the browser's own check still guards the click
+                log.warning("rescan for revealed fields failed: %s", exc)
+                scan = False
+        if not found and not pending:
+            break
         for field in found:
             known.add(field.id)
             reason = _fill_one_revealed(driver, field, result, answers)
@@ -491,6 +550,20 @@ def _fill_revealed(driver, plan: Plan, result: FillResult, answers: Answers | No
                         "description": field.description,
                     }
                 )
+    for field in pending:
+        result.outcomes.append(FieldOutcome(field.id, "skipped", note=NEVER_APPEARED))
+        if field.required:
+            result.absent.append(
+                {
+                    "id": field.id,
+                    "label": field.label or field.id,
+                    "tier": field.tier,
+                    "reason": NEVER_APPEARED,
+                    "source": field.source,
+                    "options": list(field.options),
+                    "description": field.description,
+                }
+            )
 
 
 def _fill_one_revealed(
@@ -611,11 +684,12 @@ def blocking_questions(plan: Plan, result: FillResult) -> tuple[str, ...]:
 
     `Plan.required_parked`, not all of `plan.unmapped`: an optional field the
     judge asked about parks too, and is never a reason to refuse the click.
-    A required field the fill revealed and nothing answered is named by label.
+    A required field the fill revealed and nothing answered, or a planned one
+    that never appeared, is named by label.
     """
     recovered = set(result.recovered)
     parked = tuple(i for i in plan.required_parked if i not in recovered)
-    return parked + tuple(r["label"] for r in result.revealed)
+    return parked + tuple(r["label"] for r in (*result.revealed, *result.absent))
 
 
 def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
@@ -648,7 +722,7 @@ def blocking_details(plan: Plan, result: FillResult) -> tuple[dict, ...]:
                 "description": u.description,
             }
         )
-    return (*rows, *result.revealed)
+    return (*rows, *result.revealed, *result.absent)
 
 
 def read_back(driver, field_id: str, planned_kind: str) -> str:
@@ -745,13 +819,14 @@ def form_manifest(driver, plan: Plan, result: FillResult) -> list[dict]:
         }
 
     for f in plan.fields:
+        unseen = outcomes.get(f.id) is not None and outcomes[f.id].action == "skipped"
         rows.append(
             row(
                 f.id,
                 f.label,
                 f.kind,
                 _planned_text(f.value),
-                "filled",
+                "not shown" if unseen else "filled",
                 options=f.options,
                 tier=f.tier,
                 source=f.source,
@@ -857,7 +932,7 @@ def form_check(manifest: list[dict]) -> list[str]:
     ]
 
 
-def _reverify_fields(driver, plan: Plan) -> list[str]:
+def _reverify_fields(driver, plan: Plan, skip: frozenset[str] = frozenset()) -> list[str]:
     """Re-check every field immediately before the click, and re-apply any
     that drifted since `fill_plan` set it. Returns the lone checkboxes still
     not holding their planned tick, which refuse the click.
@@ -892,6 +967,8 @@ def _reverify_fields(driver, plan: Plan) -> list[str]:
     """
     unticked: list[str] = []
     for field in plan.fields:
+        if field.id in skip:
+            continue
         kind = driver.resolve_kind(field.id, field.kind)
 
         if kind == "checkbox":
@@ -947,7 +1024,7 @@ def _reverify_fields(driver, plan: Plan) -> list[str]:
         elif kind in ("text", "textarea", "number", "date"):
             want = str(field.value)
             shown = driver.value_of(field.id)
-            if shown.strip() == want.strip():
+            if any(_matches(field.id, kind, w, shown) for w in (want, *field.alternates)):
                 continue
             try:
                 driver.fill_text(field.id, want)
@@ -960,6 +1037,10 @@ def _reverify_fields(driver, plan: Plan) -> list[str]:
             except FillError:
                 continue
     return unticked
+
+
+def _never_shown(result: FillResult) -> frozenset[str]:
+    return frozenset(o.id for o in result.outcomes if o.action == "skipped")
 
 
 def submit(
@@ -999,7 +1080,7 @@ def submit(
         # happens during the wait it is meant to guard against. Repeated on
         # every retry attempt too — a drift caught and fixed on attempt 1 is
         # not evidence attempt 2 is still safe.
-        unticked = _reverify_fields(driver, plan)
+        unticked = _reverify_fields(driver, plan, _never_shown(result))
         if unticked:
             raise SubmitGuardError(
                 f"checkbox not holding its planned tick: {', '.join(unticked)}. "
@@ -1238,6 +1319,13 @@ def run_one(
         try:
             driver = _driver_for(plan.ats, page)
             fill_plan(plan, driver, answers, result=result)
+            # A later answer can redraw a section and clear a value already
+            # written. Rewritten here so the manifest below re-reads it; one
+            # still wrong there refuses the click.
+            try:
+                _reverify_fields(driver, plan, _never_shown(result))
+            except Exception as exc:  # noqa: BLE001 - the manifest still checks every field
+                log.warning("re-checking fields after the fill failed: %s", exc)
             # After the fill, before any click: the one moment the page holds
             # the finished form and nothing irreversible has happened.
             try:

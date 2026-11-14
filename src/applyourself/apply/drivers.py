@@ -270,6 +270,20 @@ class BrowserDriver:
         """
         return planned
 
+    def is_shown(self, field_id: str) -> bool:
+        """Whether the field is on the page and displayed right now, with no
+        wait: `count()` and `is_visible()` return at once. A control a widget
+        hides behind its own label (a styled radio) counts by its parent; a
+        `type=hidden` decoy never counts."""
+        controls = self._locator(field_id)
+        for i in range(controls.count()):
+            control = controls.nth(i)
+            if (control.get_attribute("type", timeout=1000) or "") == "hidden":
+                continue
+            if control.is_visible() or control.locator("xpath=..").is_visible():
+                return True
+        return False
+
     #: The board's cookie-banner accept buttons, tried in order, as (selector,
     #: button text); "" takes any button the selector finds. None: no banner.
     cookie_accept: tuple[tuple[str, str], ...] = ()
@@ -1130,6 +1144,11 @@ class AshbyBrowserDriver(BrowserDriver):
             "button": entry.locator("button").count(),
         }
         return ashby_widget_kind(planned, counts)
+
+    def is_shown(self, field_id: str) -> bool:
+        """The field entry, not its controls: a yes/no toggle holds no input."""
+        entry = self._entry(field_id)
+        return entry.count() > 0 and entry.is_visible()
 
     def required_fields(self) -> tuple[MergedField, ...]:
         """Every field entry whose title is marked required, keyed by its
