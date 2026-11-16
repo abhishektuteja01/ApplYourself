@@ -7,6 +7,7 @@ import math
 import os
 import re
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,9 @@ def _clean_value(v: Any) -> Any:
 
 
 def _slug(text: str, limit: int = 60) -> str:
-    s = re.sub(r"[^\w]+", "-", str(text).lower(), flags=re.UNICODE).strip("-_")
+    # ASCII only: a non-UTF-8 locale cannot create a folder with accents.
+    ascii_text = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode()
+    s = re.sub(r"[^\w]+", "-", ascii_text.lower()).strip("-_")
     if len(s) > limit:
         s = s[:limit].rsplit("-", 1)[0] or s[:limit]
     return s

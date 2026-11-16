@@ -183,7 +183,7 @@ def test_new_refuses_a_row_with_no_configured_lane(repo, capsys):
 def test_new_slug_falls_back_to_the_job_id(repo, capsys):
     _parquets(repo, company="!!!", title="Ingénieur Widgets")
     _, out = _run(capsys, "new", JOB, "--today", "2026-09-28")
-    assert out["work_dir"].endswith(f"2026-09-28_{JOB}_ingénieur-widgets_{JOB}")
+    assert out["work_dir"].endswith(f"2026-09-28_{JOB}_ingenieur-widgets_{JOB}")
 
 
 def test_new_without_scored_parquet_errors(repo, capsys):
