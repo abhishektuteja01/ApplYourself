@@ -797,23 +797,6 @@ class TestPassThrough:
         assert plan.company == board.schema.company_name
 
 
-class TestPhoneDialCode:
-    def test_the_dial_code_is_dropped_only_where_the_form_has_its_own_picker(
-        self, answers, tailor_dir
-    ):
-        """Greenhouse's `country` picker already shows "+1"; the full number
-        there read "+1 +1 ...". A number with no separator stays whole."""
-        phone = field(id="phone", name="phone", label="Phone", section="basic")
-        country = field(id="country", name="country", label="Country", section="basic")
-
-        def planned(fields):
-            return {f.id: f.value for f in build_plan(one(fields), answers, tailor_dir).fields}
-
-        assert planned([phone, country])["phone"] == "555 0100"
-        assert planned([phone])["phone"] == "+1 555 0100"
-        assert P.national_number("+15550100") == "+15550100"
-
-
 class TestDraftedTextIsLinted:
     """A drafted answer in a free-text box gets the same lint as every other
     drafted text: mechanical fixes applied, a banned phrase parks the field."""

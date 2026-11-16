@@ -354,7 +354,8 @@ def _apply_field(
             driver.check_radio_group(field.id, label)
         return FieldOutcome(field.id, "filled", before, ", ".join(labels))
 
-    driver.fill_text(field.id, str(field.value))
+    typed = _typed_phone(field, result) if field.id == "phone" else str(field.value)
+    driver.fill_text(field.id, typed)
     if field.kind == "date":
         # Ashby's react-datepicker opens on focus and nothing else dismisses
         # it, so the overlay intercepts the click on every later field.
@@ -363,9 +364,29 @@ def _apply_field(
         # is really there.
         driver.close()
     after = driver.value_of(field.id)
-    if after.strip() != str(field.value).strip():
-        raise FillError(f"{field.id}: wrote {field.value!r} but the field reads {after!r}")
+    if after.strip() != typed.strip():
+        raise FillError(f"{field.id}: wrote {typed!r} but the field reads {after!r}")
     return FieldOutcome(field.id, "filled", before, after)
+
+
+# A leading "+<dial code>" and its separator: "+1 510-..." -> "+1", "510-...".
+_DIAL_CODE = re.compile(r"^(\+\d{1,4})[\s.-]+(?=\d)")
+
+
+def _typed_phone(field: FieldPlan, result: FillResult) -> str:
+    """The phone without its leading dial code when the form's own `country`
+    picker (Greenhouse's, inside its phone fieldset) already shows that same
+    code; otherwise the number as planned. The picker is read from what it
+    showed once set, so a picker on another country keeps the full number."""
+    value = str(field.value).strip()
+    code = _DIAL_CODE.match(value)
+    picker = next(
+        (o.after for o in result.outcomes if o.id == "country" and o.action == "filled"), ""
+    )
+    shown = re.search(r"\+\d+$", picker.strip())
+    if code and shown and shown.group() == code.group(1):
+        return value[code.end() :]
+    return value
 
 
 def _attach(driver, upload: FilePlan) -> FieldOutcome:

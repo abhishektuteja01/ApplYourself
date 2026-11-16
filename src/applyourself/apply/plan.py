@@ -540,17 +540,6 @@ def _fits_input(field: MergedField, resolution: Resolution, company: str = "") -
     return Resolution(action, tier=resolution.tier, source=resolution.source, reason=problem)
 
 
-# A leading "+<dial code>" and its separator: "+1 510-..." -> "510-...".
-_DIAL_CODE = re.compile(r"^\+\d{1,4}[\s.-]+(?=\d)")
-
-
-def national_number(phone: str) -> str:
-    """`phone` without its leading dial code, for a form whose own picker
-    (Greenhouse's `country`, inside its phone fieldset) supplies it. A number
-    with no separator after the code is kept whole: the code's length is unknown."""
-    return _DIAL_CODE.sub("", phone.strip())
-
-
 # Says the user needs sponsorship, from the facts.
 _NEEDS_SPONSORSHIP_SOURCE = "fact_wording:requires_sponsorship"
 
@@ -708,7 +697,6 @@ def build_plan(
     )
 
     bar_phrases = no_sponsorship_phrases()
-    dial_picker = any(f.id == "country" for f in reconciled.fields)
     fields: list[FieldPlan] = []
     files: list[FilePlan] = []
     unmapped: list[Unmapped] = []
@@ -749,8 +737,6 @@ def build_plan(
             override = None
 
         resolution = resolve(field, answers)
-        if dial_picker and field.id == "phone" and isinstance(resolution.value, str):
-            resolution = replace(resolution, value=national_number(resolution.value))
         judged_skip = False
         if override is not None and field.kind != "file":
             applied, why = apply_override(field, resolution, override, answers, company)
