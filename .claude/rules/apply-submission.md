@@ -52,7 +52,8 @@ country from `work_authorization.countries`, and refuses `sponsorship_need` or
 ## Who answers what
 
 Code answers identity, uploads, education and employment by DOM id (tiers A/A2;
-Ashby's phone by API type `Phone`), and EEOC and demographic fields by section (your `demographics.answers` for the
+Ashby's phone by API type `Phone`; on a form with Greenhouse's `country` dial-code
+picker, `phone` drops its leading `+<code>`), and EEOC and demographic fields by section (your `demographics.answers` for the
 topic, exact or as the start of a longer option, else the decline option).
 Export control is answered by code only for a "U.S. person" question from an
 explicit `us_person`. A question's country is the one its label names
