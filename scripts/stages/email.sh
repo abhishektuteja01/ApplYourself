@@ -31,12 +31,17 @@ if [[ "$DRY_RUN" == 1 ]]; then
   echo "[dry-run] mail to $ADDR | $SUBJECT | $HTML"
   stage_end 0 "dry-run"; exit 0
 fi
-osascript - "$ADDR" "$SUBJECT" "$HTML" "$MD" <<'OSA'
+# Mail may be closed at night: start it in the background and wait for it, then
+# give the send 5 minutes instead of AppleScript's 2.
+open -gj -a Mail
+for _ in $(seq 1 60); do pgrep -xq Mail && break; sleep 3; done
+ERR="$(osascript - "$ADDR" "$SUBJECT" "$HTML" "$MD" 2>&1 <<'OSA'
 on run argv
     set addr to item 1 of argv
     set subj to item 2 of argv
     set htmlText to read (POSIX file (item 3 of argv)) as «class utf8»
     set plainText to read (POSIX file (item 4 of argv)) as «class utf8»
+    with timeout of 300 seconds
     tell application "Mail"
         set m to make new outgoing message with properties {subject:subj, content:plainText, visible:false}
         try
@@ -45,8 +50,11 @@ on run argv
         tell m to make new to recipient at end of to recipients with properties {address:addr}
         send m
     end tell
+    end timeout
 end run
 OSA
+)"
 CODE=$?
-stage_end "$CODE" "$SUBJECT"
+[[ -n "$ERR" ]] && echo "$ERR"
+if [[ "$CODE" -eq 0 ]]; then stage_end 0 "$SUBJECT"; else stage_end "$CODE" "Mail: ${ERR:-osascript code $CODE}"; fi
 exit "$CODE"
