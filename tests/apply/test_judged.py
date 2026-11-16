@@ -61,13 +61,10 @@ def test_a_missing_basis_id_parks_naming_it(answers):
 
 def test_a_decision_on_an_identity_field_is_dropped(answers, tailor_dir):
     f = field(id="phone", name="phone", label="Phone Number")
-    entry = Override(value="", decision="question", question="phone")
+    entry = Override(value="+1 555 0199", decision="text", basis=("jd",))
     plan = plan_one(f, answers, tailor_dir, entry)
     assert not plan.unmapped and not plan.ignored_overrides
-    assert plan.fields[0].value == answers.identity["phone"]
-    session = plan_one(f, answers, tailor_dir, Override(value="+1 555 0199"))
-    assert session.fields[0].value == answers.identity["phone"]
-    assert session.ignored_overrides == ("phone: identity and EEOC fields take no override",)
+    assert plan.fields[0].value == answers.identity["phone"] != entry.value
 
 
 def test_a_session_override_the_gate_refuses_is_ignored(answers, tailor_dir):

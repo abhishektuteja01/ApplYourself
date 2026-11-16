@@ -681,8 +681,8 @@ def build_plan(
 
     `overrides` maps a field id to the session's answer for it. One gate: an
     override answers anything except identity/EEOC fields and export control.
-    A judged override the gate refuses parks its field with the refusal as
-    the reason; any other override that cannot apply is listed in
+    A judged override on an identity/EEOC field is dropped; one the gate
+    refuses elsewhere parks its field with the refusal as the reason; any other override that cannot apply is listed in
     `ignored_overrides`.
     """
     overrides = overrides or {}

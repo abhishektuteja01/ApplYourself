@@ -110,7 +110,7 @@ Every `answers_override.json` entry, judged or the session's, passes
   holds a scoring.yaml `no_sponsorship` phrase or a statement (not the question
   sentence) refusing sponsorship now or in the future
   (`score_filter.future_refusal`), parks: "form says no sponsorship";
-- a judged entry the gate refuses parks its field, the refusal as the reason; one
+- a judged entry the gate refuses (outside tiers A/A2) parks its field, the refusal as the reason; one
   whose field id is not on the form still lands in `Plan.ignored_overrides`;
 - a session entry it refuses (an id not on the form, a closed field, a missing
   file) lands in `Plan.ignored_overrides`, and `plan`/`run` fail while any remain.
