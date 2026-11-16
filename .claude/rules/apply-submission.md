@@ -97,7 +97,8 @@ per field, one decision:
 Every `answers_override.json` entry, judged or the session's, passes
 `plan.apply_override`:
 
-- identity and EEOC (closed tiers A/A2) take no override;
+- identity and EEOC (closed tiers A/A2) take no override: a judged entry there
+  is dropped and code's own answer (or park) stands; a session entry is refused;
 - a judged `fact` answers only a work-authorization label;
 - export control takes only a `us_person` or bank `F-` fact, or an `option` once
   `us_person` is yes or no (never on Yes/No options), never a typed value;

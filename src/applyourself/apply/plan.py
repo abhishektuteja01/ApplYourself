@@ -606,15 +606,17 @@ def apply_override(
 ) -> tuple[Resolution, str]:
     """`(resolution, "")` once `override` replaces the code's own `resolution`,
     or `(resolution, why)` unchanged when the gate refuses it. Identity and
-    EEOC take no override; a fact answers only a work-authorization field (a
+    EEOC take no override (a judged entry there is dropped, the code's own
+    resolution standing); a fact answers only a work-authorization field (a
     judged one also any label `_judged_fact_label` reads as one); export
     control takes only a fact (a judged one only `us_person` or a bank `F-`
     fact, which nothing else takes), or a judged option once `us_person` is
     yes or no.
     `known_ids`: the profile ids a judged basis may cite (an eval persona's)."""
     if resolution.tier in _CLOSED_TIERS:
-        # A link the bank's own URL answers: that URL stands over any entry.
-        if resolution.source.startswith("bank:"):
+        # A link the bank's own URL answers, or a judged entry: the code's own
+        # resolution stands.
+        if resolution.source.startswith("bank:") or override.decision:
             return resolution, ""
         return resolution, "identity and EEOC fields take no override"
     export = resolution.source == "export_control"

@@ -59,12 +59,15 @@ def test_a_missing_basis_id_parks_naming_it(answers):
     assert judged.render(f, entry, with_fact).action == "fill"
 
 
-def test_a_decision_on_an_identity_field_parks_it(answers, tailor_dir):
-    f = field(id="first_name", name="first_name", label="First Name")
-    entry = Override(value="", decision="question", question="linkedin")
+def test_a_decision_on_an_identity_field_is_dropped(answers, tailor_dir):
+    f = field(id="phone", name="phone", label="Phone Number")
+    entry = Override(value="", decision="question", question="phone")
     plan = plan_one(f, answers, tailor_dir, entry)
-    assert not plan.fields and not plan.ignored_overrides
-    assert plan.unmapped[0].reason == "identity and EEOC fields take no override"
+    assert not plan.unmapped and not plan.ignored_overrides
+    assert plan.fields[0].value == answers.identity["phone"]
+    session = plan_one(f, answers, tailor_dir, Override(value="+1 555 0199"))
+    assert session.fields[0].value == answers.identity["phone"]
+    assert session.ignored_overrides == ("phone: identity and EEOC fields take no override",)
 
 
 def test_a_session_override_the_gate_refuses_is_ignored(answers, tailor_dir):
