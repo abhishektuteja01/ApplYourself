@@ -2544,6 +2544,26 @@ class TestTheReadBackComparison:
         assert F._matches("country", "react_select", "United States", "+1")
 
 
+class TestPhoneDialCode:
+    def test_the_dial_code_is_dropped_only_when_the_picker_shows_the_same_one(self):
+        """Greenhouse's `country` picker shows its own "+1"; typing "+1 ..."
+        too read "+1 +1 ...". A picker on another code, or none, keeps it."""
+
+        def typed(fields):
+            d = FakeDriver()
+            assert fill_plan(plan(fields=fields), d, None).ok
+            return next(c[2] for c in d.calls if c[:2] == ("fill", "phone"))
+
+        phone = field(id="phone", value="+1 555 0100")
+
+        def picker(label):
+            return field(id="country", kind="react_select", value=label)
+
+        assert typed([picker("United States +1"), phone]) == "555 0100"
+        assert typed([picker("Germany +49"), phone]) == "+1 555 0100"
+        assert typed([phone]) == "+1 555 0100"
+
+
 class TestRevealedFields:
     """A required field another answer reveals is in no list of the plan."""
 
