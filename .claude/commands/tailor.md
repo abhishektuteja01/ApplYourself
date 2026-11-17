@@ -11,6 +11,7 @@ allowed-tools:
   - Bash(uv run ay app *)
   - Read
   - Write
+  - Skill
 argument-hint: <job_id> [--company NAME]
 ---
 
@@ -77,6 +78,10 @@ skills:                           # optional; a line left out keeps its default 
   "not only X but also Y".
 - **Skills:** reorder a line so JD-matching skills lead. A skill may appear
   only on the line its `show` names.
+
+Then run the `no_ai_slop` skill in detect mode over every reworded `text` and
+a written `summary` (NO-SLOP). Fix what it flags under REPHRASE-LICENSE in the
+plan; canonical bullets stay as they are.
 
 ## 4. Build
 

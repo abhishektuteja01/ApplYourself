@@ -130,8 +130,8 @@ uv run ay apply plan <job_id> --questions --answers <OVERRIDES_FILE>
 ```
 
 - Exit 1 with `OVERRIDES IGNORED`: report it verbatim and stop.
-- A park reason says "form says no sponsorship": run `/track <job_id> skip`
-  and stop.
+- A park reason says "form says no sponsorship": run
+  `uv run ay track <job_id> skip --note "form says no sponsorship"` and stop.
 - A park reason says `company_answers.yaml has no`: run the `company-answers`
   skill with `<job_id>`, then redo this step. Once per run.
 - Nothing parked: go to step 7. No confirmation.

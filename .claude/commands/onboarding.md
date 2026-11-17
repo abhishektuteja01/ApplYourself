@@ -164,8 +164,9 @@ the resume.
    uv run ay onboard scaffold --vertical <lane> --work-auth <citizen|needs_now|time_limited>
    ```
 
-   Copies every `profile/*.example.*` to its real name including the two Word
-   templates, empties `lanes:` and the example classifier rules in `verticals.yaml`, sets your home
+   Copies each `profile/*.example.*` to its real name, including the two Word
+   templates (the optional ones, voice samples, stories, contacts and the PII
+   denylist, only with `--with-optional`), empties `lanes:` and the example classifier rules in `verticals.yaml`, sets your home
    country's row in `application_answers.yaml`'s `work_authorization.countries`. Never overwrites — an existing file is skipped and
    listed. Read the report; `SKIPPED` and `FAILED` are the only parts that need
    you. `--with-apply` and `--with-optional` are step 5's menu, not this path.
@@ -174,7 +175,7 @@ the resume.
    `/cover-letter`: the letter's letterhead is literal placeholder text — `NAME`
    at the top, `City, ST | Num| Email` under it, `NAME` again after `Sincerely,`
    — and mails as written.
-   No Microsoft Word on this Mac: tell them every `uv run ay app build` needs `--no-pdf`.
+   No Microsoft Word on this Mac: tell them every resume and letter build (`uv run ay app build resume|letter`) needs `--no-pdf`.
 
 4. Run **`/new-vertical <lane> pass-a "<their stated roles>"`** and let it drive.
    Pass A writes only the lane's `profile/verticals/<lane>/lane.yaml`, its `lanes:` entry and one classifier rule,
@@ -224,7 +225,7 @@ shown, and the one thing that needs a verdict is folded into step 3's questions.
    - `.pdf` or `.md` → read it directly
 
 2. Print the assumed discovery block and move on; step 3 confirms it against real
-   rows: **US-wide, every source on, and a 4-hour limit on each nightly run.**
+   rows: **Your home country (the answer bank's one row), every source on, and a 4-hour limit on each nightly run.**
    Step 1's first scrape is capped much shorter so it finishes while they wait.
 
 3. `resume.yaml`, `bullets.md` and `skills_master.md` — **draft all three
@@ -349,7 +350,7 @@ Never judge a slice yourself, and never read, edit or delete files in
 - **Question 6** — *"A few things in your resume I had to interpret — did I get
   these right?"* The 3-5 genuinely ambiguous items from step 2.3, each with the
   reading you took. Nothing else goes in this list.
-- **Question 7** — *"I guessed anywhere in the US, every job board on, and up to
+- **Question 7** — *"I guessed jobs in <home country>, every job board on, and up to
   4 hours per nightly run. You capped jobs at N years, the judge scores titles
   outside <band> down, and the ban list dropped M of the rows scraped.
   Anything wrong?"*

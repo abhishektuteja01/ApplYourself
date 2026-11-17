@@ -114,8 +114,7 @@ except `no-lane`, so a deliberately chosen role gets a real fit and `keywords_to
 
 Requested (or implied)? Spawn one Agent, prompt exactly: `/tailor <job_id>`
 
-`/tailor` registers `pipeline/<job_id>/state.yaml` at `saved` itself (`uv run
-app new`). If it reports a failure, stop — do not run step 5.
+`/tailor` registers `pipeline/<job_id>/state.yaml` at `saved` itself (`uv run ay app new`). If it reports a failure, stop — do not run step 5.
 
 ## Step 5 — cover letter
 

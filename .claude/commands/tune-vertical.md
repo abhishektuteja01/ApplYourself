@@ -165,7 +165,7 @@ for the night's sheet and retention. Change only against observed JDs and
 scores (`uv run ay score lane <name>` prints the cutoff and how many sit above
 it). Nothing else drops a JD before judging but scoring.yaml's
 `ineligible` phrases, plus its `no_sponsorship` phrases when your home need is
-"now": `drop_phrases` no longer drops, so put what the lane must avoid in its
+"now": `drop_phrases` drops nothing, so put what the lane must avoid in its
 rubric.
 
 Verify:
@@ -233,7 +233,7 @@ lane's window, so it costs a full scoring pass — their call.
 
 2. `tests/repo/test_real_config_drift.py` runs against `profile/verticals.yaml` when
    present and is what covers this lane. It fails if any
-   `search_terms`/`linkedin_terms` entry misclassifies, if
+   `search_terms`/`linkedin_terms`/`abroad_terms` entry misclassifies, if
    the source check fails or a baseline resume does not build, or if a
    search term does not pass its own lane's title gate. Add structural assertions there if this
    round's changes need more — never a literal real term.
@@ -255,5 +255,5 @@ lane's window, so it costs a full scoring pass — their call.
    anchors, resume shape), anything deliberately left alone, and the two follow-ups —
    `uv run ay discover` for the term and rule changes to take effect, and
    `/score --all --vertical <name>` for the rubric and example changes to reach rows
-   already scored (a `score:` change applies on the next read to rows the v2
-   judge scored; older rows keep their stored score until re-judged).
+   already scored (a `score:` change applies on the next read to judged
+   rows; legacy rows keep their stored score until re-judged).

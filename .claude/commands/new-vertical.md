@@ -302,8 +302,7 @@ it never saw the lane.
 ## Step 6a — report (`pass-a`)
 
 The lane block, the rule, the years cap, the level answer, and the marker
-path. State that the lane is scrape-ready but not yet scoreable: `uv run
-discover` can run now; scoring needs `pass-b`'s prose and resume shape. Name the single next
+path. State that the lane is scrape-ready but not yet scoreable: `uv run ay discover` can run now; scoring needs `pass-b`'s prose and resume shape. Name the single next
 step, `/new-vertical <name> pass-b`.
 
 ## Step 6b — report (bare mode and `pass-b`)

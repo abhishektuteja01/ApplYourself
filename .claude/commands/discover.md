@@ -1,5 +1,5 @@
 ---
-description: Run the scrape, then a 10-line health digest of the run against its 7-day history. Writes nothing outside jobs/.
+description: Run the scrape, then a 10-line health digest of the run against its last 7 runs. Writes nothing outside jobs/.
 model: sonnet
 effort: medium
 disable-model-invocation: true
