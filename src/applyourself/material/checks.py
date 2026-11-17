@@ -33,15 +33,19 @@ def _prose_problems(
     warnings: list[dict[str, Any]],
     context: Literal["resume", "outreach"] = "resume",
 ) -> list[dict[str, Any]]:
-    """Numbers must come from a cited bullet or the JD; lint with keep-terms.
-    `warn` lint hits go to `warnings`, never to the problems."""
+    """Numbers must come from a cited bullet or story, or the JD; lint with
+    keep-terms. `warn` lint hits go to `warnings`, never to the problems."""
     out = [
-        {"where": where, "code": ProblemCode.UNKNOWN_ID, "detail": f"{u} is not in bullets.md"}
+        {
+            "where": where,
+            "code": ProblemCode.UNKNOWN_ID,
+            "detail": f"{u} is not in bullets.md or stories.md",
+        }
         for u in uses
-        if u not in src.bullets
+        if u not in src.bullets and u not in src.stories
     ]
     allowed = " ".join(
-        [grounds, resume_model.context_text(src)] + [resume_model.bullet_text(src, u) for u in uses]
+        [grounds, resume_model.context_text(src)] + [resume_model.cited_text(src, u) for u in uses]
     )
     out += [
         {

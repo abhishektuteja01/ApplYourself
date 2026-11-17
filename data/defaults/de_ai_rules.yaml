@@ -158,6 +158,20 @@ rules:
       - "To Whom It May Concern"
       - "Dear Sir/Madam"
       - "Dear Sir or Madam"
+  - label: stock_letter_lines
+    match: word
+    scope: [resume]
+    level: block
+    phrases:
+      - "the work I want"
+      - "I would welcome"
+      - "I'd welcome"
+      - "I would bring"
+      - "I'd bring"
+      - "which is how I"
+      - "draws me"
+      - "most worth doing"
+      - "thank you for your time"
   - label: filler_starters
     match: sentence_start
     scope: [resume, outreach]

@@ -44,6 +44,8 @@ ground "why this role" in the JD's work, not in the company.
 - `<dir>/trace.md` — which bullets are on this resume. The letter draws on
   these, so the letter and the resume tell one story.
 - `profile/bullets.md` — those bullets' canonical text and synonyms
+- `profile/stories.md` — the stories whose `anchors` name a bullet in `trace.md`
+- `profile/why.md` — your own reasons and opinions
 
 ## 4. Write `<dir>/cover_letter.yaml`
 
@@ -51,21 +53,23 @@ ground "why this role" in the JD's work, not in the company.
 
 ```yaml
 salutation: "Dear Hiring Manager,"
-uses: [B-XXX-01, B-YYY-02]        # every bullet a sentence about you draws on
+uses: [S-XXX-01, B-XXX-01]        # every story and bullet a sentence about you draws on
 body:
   - "First paragraph."
   - "Second paragraph."
 ```
 
-Write fresh prose about this role, not a mail-merge. Across the letter, cover:
-- the role and a genuine reason for wanting it, with a theme from
-  `company_answers.yaml` only if one is specific
-- 2-3 achievements from `uses`, mapped onto the JD's keywords, honest and
-  specific, with no invented scope
-- a close
-
-Start without a filler opener. Aim for 230-300 words in 2-3 paragraphs, so it
-fits one page. The build measures the page itself.
+Write it the way you would tell a person, not a mail-merge:
+- 2 paragraphs, 150-220 words.
+- Tell one story from `stories.md`, anchored to a bullet in `trace.md` and
+  closest to the JD's work: what was going on, what you did, what you learned.
+  At most one or two numbers. The resume carries the rest.
+- A motive, preference or opinion comes only from `why.md`. None fits: state
+  no motive.
+- Name the company in one specific clause from `company_answers.yaml`. Never
+  open with what the company does or what the role is.
+- Do not end on a line mapping you onto the role, or on a thank-you. End on
+  the last concrete sentence.
 
 ## 5. De-slop
 

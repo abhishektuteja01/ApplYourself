@@ -97,6 +97,7 @@ class Sources:
     bullets: dict[str, dict]
     skills: dict[str, dict]
     rules: dict
+    stories: dict[str, dict] = field(default_factory=dict)
 
     @property
     def contexts(self) -> dict[str, dict]:
@@ -125,6 +126,11 @@ def load_sources() -> Sources:
         bullets=parse_entries(paths.BULLETS.read_text(encoding="utf-8"), paths.BULLETS.name),
         skills=parse_entries(paths.SKILLS.read_text(encoding="utf-8"), paths.SKILLS.name),
         rules=lint.load_de_ai_rules(),
+        stories=(
+            parse_entries(paths.STORIES.read_text(encoding="utf-8"), paths.STORIES.name)
+            if paths.STORIES.is_file()
+            else {}
+        ),
     )
 
 
@@ -365,6 +371,21 @@ def bullet_text(src: Sources, bid: str) -> str:
     b = src.bullets.get(bid) or {}
     return " ".join(
         [str(b.get("canonical") or "")] + [str(s) for s in b.get("allowable_synonyms") or []]
+    )
+
+
+_STORY_FIELDS = ("situation", "action", "outcome", "retrospect")
+
+
+def cited_text(src: Sources, cid: str) -> str:
+    """What a cited id grounds in prose: a bullet's text, or a story's
+    situation, action, outcome, retrospect and synonyms."""
+    if cid in src.bullets:
+        return bullet_text(src, cid)
+    s = src.stories.get(cid) or {}
+    return " ".join(
+        [str(s.get(k) or "") for k in _STORY_FIELDS]
+        + [str(x) for x in s.get("allowable_synonyms") or []]
     )
 
 

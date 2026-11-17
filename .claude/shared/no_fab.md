@@ -10,7 +10,9 @@ Read by `/tailor`, `/cover-letter`, `/company-answers`, `/apply`, `/outreach`,
   source attests. The sources are `profile/bullets.md` (claims),
   `profile/skills_master.md` (skills) and `profile/resume.yaml` (the fixed
   lines). A sentence about the company or the role may use the JD and your
-  research. A sentence about you may only use your bullets.
+  research. A sentence about you may only use your bullets, and in a letter
+  or company answers also `profile/stories.md`. A motive or opinion there
+  comes only from `profile/why.md`.
 - **NO-DRIFT** — analogy is not equivalence. A specialized module's workflow is
   not the generic workflow it resembles, and integration-level exposure is not
   ownership. Relabeling that asserts equivalence is fabrication, even when it
