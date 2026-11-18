@@ -22,6 +22,7 @@ from applyourself.shared.location.places import (
     DOUBT,
     DOUBT_CC,
     MIN_FOREIGN_CITY,
+    SCRIPT_COUNTRY,
     SUB_CODE,
     SUB_NAME,
     US_LIKE,
@@ -114,6 +115,8 @@ def _classify(p: str, allowed: frozenset[str], closing: bool = False, first: boo
         named, kind = {COUNTRY[f]}, "country"
     elif _is_code(p, 2) and p in CODE2:
         named, kind = {CODE2[p]}, "code"
+    elif cc := next((c for rx, c in SCRIPT_COUNTRY if rx.search(p)), ""):
+        named, kind = {cc}, "country"
     subs = dict(SUB_NAME.get(f, {}))
     cities = CITY.get(saint(f), [])
     if kind == "country":

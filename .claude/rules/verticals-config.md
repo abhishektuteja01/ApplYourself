@@ -30,7 +30,7 @@ A "vertical" is a job lane. `src/applyourself/shared/verticals.py` is the single
   title_exclude_terms`. A lane's own `title_include_terms` /
   `title_strong_keep_terms` / `title_exclude_terms` are still read (include
   and strong-keep count as fits for the lane's own search rows, strong-keep
-  beats a ban). `uv run ay config migrate` moves them out: multi-word terms into
+  beats a ban; a lane's own exclude terms ban only in that lane). `uv run ay config migrate` moves them out: multi-word terms into
   `terms` rules, most words first (strong-keep ones `keep: true`), each lane's
   single words into one `{match, require_any, search_is_context: true}` rule
   needing another of its words; every exclude term all lanes share into

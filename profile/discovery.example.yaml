@@ -50,5 +50,7 @@ sources:
   # The stapply.ai daily file of public ATS jobs (one download a night).
   # A snapshot older than max_snapshot_age_hours is skipped. A new posting
   # whose JD read failed page_read_max_failures nights (default 3) has its page
-  # read again only every page_read_retry_days (default 7).
+  # read again only every page_read_retry_days (default 7). Optional: lanes
+  # (the lanes a feed row may go to; absent: every lane) and skip_hosts (sites,
+  # with their subdomains, whose rows are never read).
   stapply:       {enabled: true,  max_snapshot_age_hours: 36}

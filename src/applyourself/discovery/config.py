@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -31,6 +32,8 @@ LANE_KINDS: dict[str, str] = {
 }
 JOBSPY_SOURCES = tuple(n for n, k in LANE_KINDS.items() if k == "search")
 FEED_SOURCES = tuple(n for n, k in LANE_KINDS.items() if k == "feed")
+# Feed lanes that read `lanes` and `skip_hosts`.
+FEED_FILTER_SOURCES = ("stapply",)
 SOURCE_NAMES = tuple(LANE_KINDS)
 # Default pacing where a lane differs from SourceConfig's.
 _DEFAULT_PACING = {"linkedin": 3.0, "indeed": 2.0, "ashby": 2.0, "workday": 2.0}
@@ -71,6 +74,8 @@ _SOURCE_KEYS = frozenset(
         "page_read_retry_days",
         "companies",
         "terms_per_lane",
+        "lanes",
+        "skip_hosts",
     }
 )
 _ABROAD_KEYS = frozenset({"lanes", "sources"})
@@ -150,6 +155,20 @@ class SourceConfig:
     max_snapshot_age_hours: int = 36
     page_read_max_failures: int = 3
     page_read_retry_days: int = 7
+    # Feed filters: the lanes a feed row may go to (empty: every lane), and
+    # the sites (a host and its subdomains) whose rows are never read.
+    lanes: list[str] = field(default_factory=list)
+    skip_hosts: list[str] = field(default_factory=list)
+
+    def feed_drop(self, lane: str, url) -> str:
+        """Why a feed row in `lane` at `url` is left out ("feed_lane",
+        "skip_host"), or "" when it is read."""
+        if self.lanes and lane not in self.lanes:
+            return "feed_lane"
+        host = (urlsplit(url).hostname or "") if isinstance(url, str) else ""
+        if any(host == h or host.endswith("." + h) for h in self.skip_hosts):
+            return "skip_host"
+        return ""
 
 
 @dataclass
@@ -240,6 +259,13 @@ class DiscoveryConfig:
                     f"search_locations to the countries to query."
                 )
         problems += self._abroad_problems()
+        lanes = verticals.get_config().verticals
+        problems += [
+            f"sources.{name}.lanes: {v!r} is not a vertical"
+            for name, s in self.sources.items()
+            for v in s.lanes
+            if v not in lanes
+        ]
         for name, most in MAX_RESULTS_WANTED.items():
             src = self.sources.get(name)
             if src is not None and src.results_wanted > most:
@@ -373,6 +399,15 @@ def _source(name: str, v: dict, p: Path, cfg: DiscoveryConfig) -> SourceConfig:
         raise ValueError(f"{where}.companies is LinkedIn only")
     if ids and not terms:
         raise ValueError(f"{where}.companies.ids needs companies.terms")
+    for key in ("lanes", "skip_hosts"):
+        if key not in v:
+            continue
+        if name not in FEED_FILTER_SOURCES:
+            raise ValueError(f"{where}.{key} is read only by {', '.join(FEED_FILTER_SOURCES)}")
+        items = v.get(key) or []
+        if not isinstance(items, list) or not all(isinstance(x, str) and x.strip() for x in items):
+            raise ValueError(f"{where}.{key} must be a list of names")
+        setattr(out, key, [x.strip().lower() for x in items])
     out.company_terms = [x.strip() for x in terms]
     out.company_ids = {k.strip(): i for k, i in ids.items()}
     return out

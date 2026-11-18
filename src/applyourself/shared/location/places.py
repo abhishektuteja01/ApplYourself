@@ -77,8 +77,25 @@ for _name, _country in NATIVE_NAMES.items():
     _clash = _name in SUB_NAME or any(
         c.cc != _cc and c.population >= MIN_FOREIGN_CITY for c in CITY.get(_name, [])
     )
-    if _cc and len(_name) > 3 and _name.isascii() and not _clash:
+    _latin = any("a" <= ch <= "z" for ch in _name)
+    if _cc and not _clash and ((len(_name) > 3 and _name.isascii()) or not _latin):
         COUNTRY.setdefault(_name, _cc)
+COUNTRY.setdefault("한국", "KR")
+COUNTRY.setdefault("韓国", "KR")
+
+# A part written in a script only one country uses reads as that country:
+# hiragana, or katakana beside kanji, is Japan ("東京都渋谷区…ヒューリック");
+# hangul is South Korea ("강남구"). Kanji alone is shared with Chinese, and
+# katakana alone spells foreign places ("アメリカ"): both read nothing.
+SCRIPT_COUNTRY: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"[\u3040-\u309f]|[\u4e00-\u9fff].*[\u30a0-\u30ff]|[\u30a0-\u30ff].*[\u4e00-\u9fff]"
+        ),
+        "JP",
+    ),
+    (re.compile(r"[\uac00-\ud7af]"), "KR"),
+)
 
 
 # Region and global words: never a drop, the judge reads them.

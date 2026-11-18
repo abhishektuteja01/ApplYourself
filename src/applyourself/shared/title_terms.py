@@ -142,10 +142,21 @@ def compile_terms(
     return re.compile("|".join(alts), re.IGNORECASE) if alts else None
 
 
+# Between two words of a ban term: one space, hyphen, slash, "_" or ".", or none.
+_EXACT_SEP_SPLIT = re.compile(r"[\s\-/_]+")
+_EXACT_SEP = r"[\s\-/_.]?"
+
+
 def exact_pattern(term: str) -> str:
     r"""`term` escaped, with \b only on a side that ends in a word character,
-    so "c++" and ".net" still match. What a ban term matches: only itself."""
-    pat = re.escape(term)
+    so "c++" and ".net" still match. What a ban term matches: itself, with one
+    separator or none between its words ("sap pp": "SAP-PP") and an optional
+    plural on a last word ending in a letter ("planner": "Planners"). Never
+    another ending: "intern" is not "internal"."""
+    words = [w for w in _EXACT_SEP_SPLIT.split(term.strip()) if w]
+    pat = _EXACT_SEP.join(re.escape(w) for w in words)
+    if term[-1:].isalpha():
+        pat += "(?:e?s)?"
     if term[:1].isalnum():
         pat = r"\b" + pat
     if term[-1:].isalnum():

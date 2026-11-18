@@ -690,6 +690,20 @@ def test_view_applies_the_location_allowlist():
     assert list(out["location"]) == ["Austin, TX"]
 
 
+def test_view_reapplies_the_feed_filters_to_stored_rows():
+    from applyourself.discovery.config import SourceConfig
+
+    store, _ = fold(S.empty_store(), post("https://jobs.site.example/1", source="stapply"))
+    jid = store.at[0, "job_id"]
+    inp = live_view.ViewInputs(TODAY, {}, {}, 14, None, 80, 60, 15)
+    inp.feeds = {"stapply": SourceConfig(skip_hosts=["site.example"])}
+    out, _ = live_view.build_view(store, AllowAll(), inp)
+    assert out.empty
+    inp.state_index = {jid: {"state": "saved"}}  # a tracked role stays
+    out, _ = live_view.build_view(store, AllowAll(), inp)
+    assert list(out["job_id"]) == [jid]
+
+
 def test_view_retention_tiers():
     rows = [
         post(GH.format(i), title=t, jd=JD + t)
