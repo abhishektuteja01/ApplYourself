@@ -340,7 +340,7 @@ def test_answers_accepts_null_for_no_research(repo, capsys):
 @pytest.mark.parametrize(
     "over,code",
     [
-        ({"why_company": "One sentence only."}, "layout"),
+        ({"why_company": "One. Two. Three. Four sentences is too many."}, "layout"),
         ({"why_role": "The role pays well. It cut costs 40% in a year."}, "number"),
         ({"why_company": "Acme is a robust team. It builds widgets."}, "lint"),
         ({"extra": "x"}, "layout"),
@@ -411,6 +411,19 @@ def test_letter_problems(repo, capsys, over, code):
     _write(repo, rel, "cover_letter.yaml", _letter(**over))
     rc, out = _run(capsys, "build", "letter", JOB)
     assert rc == 2 and code in {p["code"] for p in out["problems"]}
+
+
+@pytest.mark.parametrize("uses,ok", [(["S-SPR-BANDS"], True), (["S-NOPE-01"], False)])
+def test_letter_cites_a_story(repo, capsys, monkeypatch, uses, ok):
+    monkeypatch.setitem(paths._overrides, "STORIES", paths.example("stories.example.md"))
+    rel = _built(repo, capsys)
+    body = ["At Acme I would score widgets the way I caught 12,400 rows where 12,000 belonged."]
+    _write(repo, rel, "cover_letter.yaml", _letter(uses=uses, body=body))
+    rc, out = _run(capsys, "build", "letter", JOB)
+    if ok:
+        assert rc == 0, out
+    else:
+        assert rc == 2 and "unknown_id" in {p["code"] for p in out["problems"]}
 
 
 def test_letter_before_a_resume_is_refused(repo, capsys):

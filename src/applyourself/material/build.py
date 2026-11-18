@@ -148,12 +148,12 @@ def cmd_build_answers(job_id: str) -> tuple[dict[str, Any], int]:
             continue
         v = lint.fix_mechanical(v.strip(), src.rules)[0]
         data[k] = v
-        if not 2 <= _sentences(v) <= 4:
+        if not 1 <= _sentences(v) <= 3:
             problems.append(
                 {
                     "where": k,
                     "code": ProblemCode.LAYOUT,
-                    "detail": f"{_sentences(v)} sentences; write 2-4",
+                    "detail": f"{_sentences(v)} sentences; write 1-3",
                 }
             )
         problems += _prose_problems(src, k, v, uses, jd, keep, warnings)

@@ -32,7 +32,7 @@ never overwrite them silently.
 
 ## 2. Research
 
-Read `<dir>/jd_snapshot.md`. Find the company's actual focus, specific enough to
+Read `<dir>/jd_snapshot.md` and `profile/why.md`. Find the company's actual focus, specific enough to
 show you looked, never its tagline:
 
 - Search the company name **plus a disambiguating detail from the JD** (domain
@@ -53,11 +53,15 @@ show you looked, never its tagline:
 ```yaml
 researched_at: YYYY-MM-DD
 sources: ["https://..."]          # the pages the answers rest on
-uses: []                          # bullet ids, only if a sentence claims your experience
-why_company: "2-4 sentences from the research."      # or null
-why_role: "2-4 sentences from the JD's actual work."  # almost never null
-what_interests_you_about_product: null               # or 2-4 sentences
+uses: []                          # bullet or story ids, only if a sentence claims your experience
+why_company: "1-3 sentences."     # or null
+why_role: "1-3 sentences."        # almost never null
+what_interests_you_about_product: null   # or 1-3 sentences
 ```
+
+Each answer: one plain, specific fact from the research or the JD, then one
+real reason from `why.md` that connects to it. Do not restate the company's
+pitch or list its products. No reason in `why.md` fits: give the fact alone.
 
 `null` means "no research". /apply parks a question rather than send an
 invented "why us".
