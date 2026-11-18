@@ -9,7 +9,7 @@ Deterministic and LLM-free (R7). Reads pipeline/*/state.yaml, never writes it
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +18,7 @@ from rapidfuzz.utils import default_process
 
 from applyourself.discovery import parse
 from applyourself.discovery import store as store_mod
-from applyourself.discovery.config import JOBSPY_SOURCES
+from applyourself.discovery.config import FEED_FILTER_SOURCES, JOBSPY_SOURCES, SourceConfig
 from applyourself.discovery.store import coerce_store
 from applyourself.score_filter import ScoringConfig, drop_reason, load_scoring
 from applyourself.shared import paths, schemas, title_gate, verticals
@@ -69,6 +69,8 @@ class ViewInputs:
     # today's hard filter; an unscored row it drops gets low_days. None: no filter.
     scoring: ScoringConfig | None = None
     retention_from: str = "first"
+    # Feed sources' lane and site filters, re-applied to stored rows.
+    feeds: dict[str, SourceConfig] = field(default_factory=dict)
 
 
 def load_filter() -> ScoringConfig | None:
@@ -109,6 +111,7 @@ def inputs_from(cfg, today, state_index: dict, scored_path: Path) -> ViewInputs:
         low_days=cfg.retention_low_days,
         scoring=load_filter(),
         retention_from=cfg.retention_from,
+        feeds={n: cfg.sources[n] for n in FEED_FILTER_SOURCES if n in cfg.sources},
     )
 
 
@@ -161,8 +164,14 @@ def build_view(
             strict=True,
         )
     ]
+    passes = [
+        g.passes and (j in tracked or s not in inp.feeds or not inp.feeds[s].feed_drop(g.lane, u))
+        for g, s, j, u in zip(
+            gate, df_live["source"], df_live["job_id"], df_live["url"], strict=True
+        )
+    ]
     df_live = df_live.assign(vertical=[g.lane for g in gate])[
-        pd.Series([g.passes for g in gate], index=df_live.index, dtype=bool)
+        pd.Series(passes, index=df_live.index, dtype=bool)
     ]
     funnel["after_title_gate"] = len(df_live)
 

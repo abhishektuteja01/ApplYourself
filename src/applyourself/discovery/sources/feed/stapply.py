@@ -222,6 +222,7 @@ class StapplyLane(Lane):
     def read(self, path: Path, crawl, feed_names: dict | None = None) -> None:
         """Gate every title and map the rows that pass."""
         names = board_names(crawl.boards_dir)
+        src = crawl.cfg.sources[self.name]
         pf = pq.ParquetFile(path)
         cols = [c for c in COLUMNS if c in pf.schema_arrow.names]
         gate: dict[str, title_gate.Verdict] = {}
@@ -236,17 +237,21 @@ class StapplyLane(Lane):
                 v = gate.get(t)
                 if v is None:
                     v = gate[t] = title_gate.lane_for(t or "", "", self.name, crawl.vcfg)
-                keep.append(v.passes)
-                if v.passes:
+                why = v.reason or (src.feed_drop(v.lane, None) if v.passes else "")
+                keep.append(not why)
+                if not why:
                     verticals.append(v.lane)
                 else:
-                    self.stats.drop(v.reason, t or "")
+                    self.stats.drop(why, t or "")
                 if v.lane:
                     self.stats.classified += 1
             if not any(keep):
                 continue
             full = pf.read_row_group(i, columns=cols).filter(pa.array(keep)).to_pylist()
             for row, vertical in zip(full, verticals, strict=True):
+                if why := src.feed_drop(vertical, row.get("url")):
+                    self.stats.drop(why, row.get("title") or "")
+                    continue
                 posting = posting_from(row, vertical, names, feed_names or {})
                 crawl.record_listing(
                     self.name, posting["title"], vertical, True, posting["posting_key"]

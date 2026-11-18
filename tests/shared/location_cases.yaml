@@ -140,6 +140,11 @@ cases:
   - {loc: "Bangalore", allow: us, keep: false, countries: ["India"]}
   - {loc: "Ciudad de México", allow: us, keep: true, countries: [], was: drop, why: "nothing reads (native name, alias or prefix dropped): keep"}
   - {loc: "Deutschland", allow: us, keep: false, countries: ["Germany"]}
+  - {loc: "강남구, 서울, 한국", allow: us, keep: false, countries: ["Korea, Republic of"]}
+  - {loc: "東京都渋谷区渋谷2-7-5 ヒューリック渋谷二丁目 4階", allow: us, keep: false, countries: ["Japan"]}
+  - {loc: "日本", allow: us, keep: false, countries: ["Japan"]}
+  - {loc: "北京", allow: us, keep: true, countries: [], why: "kanji alone is shared with Chinese: nothing reads"}
+  - {loc: "美国·加利福尼亚·旧金山, 北京市, China", allow: us, keep: true}
   - {loc: "España", allow: us, keep: false, countries: ["Spain"]}
   - {loc: "Brasil", allow: us, keep: false, countries: ["Brazil"]}
   - {loc: "Nederland", allow: us, keep: true, countries: ["Netherlands", "United States"], was: drop, why: "a foreign country name that is also an allowed town is unsure: keep"}

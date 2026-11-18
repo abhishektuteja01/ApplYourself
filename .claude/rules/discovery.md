@@ -46,7 +46,9 @@ include / strong-keep term. Otherwise, and for board and feed rows, it goes to
 the first classifier lane, else to the first lane one of whose search terms
 it holds, else is dropped `no_lane`. A title in a lane passes unless it holds
 a `title_exclude_terms` word (the global list in verticals.yaml `defaults:`,
-matched as written): `banned: <word>`; a `keep: true` rule or a legacy
+matched as written, with one separator or none between words and an optional
+plural: "sap pp" bans "SAP-PP", never "internal" for "intern"; a lane's own
+list adds to it for that lane): `banned: <word>`; a `keep: true` rule or a legacy
 strong-keep term of that lane beats the ban. Each lane counts its drops per
 reason with a few sample titles (`LaneStats.drops`, `drop_samples`), and the
 run report lists them. A manual add, a tracked role in the view whose lane is
@@ -152,7 +154,11 @@ deleted. The board lanes crawl every due board whether or not the file carried
 its postings: the file misses many of a board's live postings. A company is
 named by our `boards.csv` name, then the
 feed's own company list (by slug, or site host for Phenom), then the row; the feed's
-`country_iso` is added to a location unless the text is one country for sure. One
+`country_iso` is added to a location unless the text is one country for sure.
+`sources.stapply.lanes` (the lanes a feed row may go to) and `skip_hosts`
+(sites, with their subdomains) leave a row out at read (`feed_lane`,
+`skip_host`), and the view re-applies both to stored feed rows, tracked roles
+excepted. One
 paced page read serves a new row with a short JD and any row whose company
 still `looks_like_slug`, read from the page's schema.org `JobPosting` block
 (`jobposting_text`, also `ay ingest`'s first try; `jobposting_employer`). A
@@ -194,7 +200,9 @@ pycountry and geonamescache tables only (no libpostal); it decides keep or drop
 only, and clean.parquet shows the posting's own text, trimmed. A postcode after
 a state code is dropped first ("Peru, IN 46970"). The text splits into parts (`, ; / | ( ) [ ] + : " - "`, dashes,
 " or "; and/&/hyphen only when the whole reads nothing), and each part keeps
-every reading: a country, alias or native name ("Deutschland"; a country's
+every reading: a country, alias or native name ("Deutschland", "日本"; a
+hangul part, or hiragana or katakana beside kanji, reads as South Korea or
+Japan; kanji or katakana alone reads nothing; a country's
 name is that country unless it is a foreign one that is also an allowed town,
 "Lebanon", which is unsure and keeps), an uppercase 2-letter code, a state, every city
 namesake. A part that reads nothing still keeps an allowed country it names in

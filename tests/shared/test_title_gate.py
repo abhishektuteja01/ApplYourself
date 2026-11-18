@@ -58,6 +58,21 @@ def test_terms_match_loosely_but_never_inside_a_latin_word(term, title, hit):
     assert bool(rx and rx.search(title_terms.normalize(title))) is hit
 
 
+@pytest.mark.parametrize(
+    "term, title, hit",
+    [
+        ("sap pp", "SAP-PP Consultant", True),
+        ("planner", "Production Planners", True),
+        ("plant maintenance", "Ironwood Plant - Maintenance Manager", False),
+        ("intern", "Internal Audit", False),
+        ("planner", "Production Planning", False),
+        ("c++", "C++ Developer", True),
+    ],
+)
+def test_a_ban_term_takes_one_separator_and_a_plural_only(term, title, hit):
+    assert bool(title_terms.first_exact((term,), title)) is hit
+
+
 def test_a_single_word_needs_its_lanes_context_except_on_its_own_search():
     rule = verticals.CompoundRule(("agent", "agents"), ("ai", "llm", "agents"), (), True)
     assert rule.matches("AI Agent Developer")

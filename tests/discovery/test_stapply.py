@@ -122,6 +122,20 @@ def test_only_rows_that_pass_the_title_gate_are_kept(cfg, tmp_path, feed):
     assert lane.stats.drop_samples == {"no_lane": ["Barista", "Store Manager"]}
 
 
+def test_feed_filters_drop_other_lanes_and_skipped_sites(cfg, tmp_path, feed):
+    dcfg = DiscoveryConfig()
+    dcfg.sources["stapply"].skip_hosts = ["lever.co"]  # jobs.lever.co: a subdomain
+    lane = stapply.StapplyLane()
+    lane.read(feed, make_crawl(cfg, tmp_path, cfg=dcfg))
+    assert len(lane.rows) == 3 and lane.stats.drops["skip_host"] == 1
+    assert not any("lever" in r["url"] for r in lane.rows)
+    other = next(v for v in cfg.verticals if v != lane.rows[0]["vertical"])
+    dcfg.sources["stapply"].lanes = [other]
+    lane = stapply.StapplyLane()
+    lane.read(feed, make_crawl(cfg, tmp_path, cfg=dcfg))
+    assert lane.rows == [] and lane.stats.drops["feed_lane"] == 4
+
+
 def test_a_known_board_keeps_our_name_and_a_placeholder_is_no_company(cfg, tmp_path, feed):
     lane, _ = read(cfg, tmp_path, feed)
     by_url = {r["url"]: r for r in lane.rows}
