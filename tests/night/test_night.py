@@ -60,7 +60,7 @@ def test_resume_reruns_only_the_stages_not_ok_in_the_last_run_of_its_kind(logs):
     )
     night("2026-10-02_200000", False, dict.fromkeys(M.STAGES, "fail"))  # real: not this kind
     assert M.main(["--dry-run", "--resume"]) == 0
-    assert _ran(logs) == ["synonyms", "tailor", "apply_prep", "summary", "email"]
+    assert _ran(logs) == ["synonyms", "tailor", "apply_prep", "summary", "digest", "email"]
     run = json.loads((target / "run.json").read_text(encoding="utf-8"))
     assert run["stages"]["discover"]["status"] == "ok" and run["stages"]["tailor"]["rc"] == 0
     assert run["resumes"]
@@ -69,7 +69,7 @@ def test_resume_reruns_only_the_stages_not_ok_in_the_last_run_of_its_kind(logs):
 def test_a_failed_score_defers_the_rest_and_the_summary_still_runs(logs, tmp_path):
     (tmp_path / "stages" / "score.sh").write_text(FAKE.format(rc=1), encoding="utf-8")
     assert M.main(["--dry-run"]) == 1
-    assert _ran(logs) == ["discover", "score", "summary", "email"]
+    assert _ran(logs) == ["discover", "score", "summary", "digest", "email"]
     (d,) = logs.glob("pipeline_*")
     stages = json.loads((d / "run.json").read_text(encoding="utf-8"))["stages"]
     assert stages["score"]["status"] == "fail" and stages["score"]["rc"] == 1
@@ -114,7 +114,7 @@ def test_the_spend_cap_defers_the_claude_stages_left_and_the_finishers_still_run
         encoding="utf-8",
     )
     assert M.main(["--dry-run"]) == 0
-    assert _ran(logs) == ["discover", "score", "cleanup", "summary", "email"]
+    assert _ran(logs) == ["discover", "score", "cleanup", "summary", "digest", "email"]
     (d,) = logs.glob("pipeline_*")
     run = json.loads((d / "run.json").read_text(encoding="utf-8"))
     assert run["cost_usd"] == 5.0 and run["stages"]["score"]["cost_usd"] == 5.0
@@ -259,7 +259,7 @@ def test_a_usage_limit_waits_for_the_reset_then_reruns_the_stage(
         assert run["stages"]["score"]["status"] == "ok" and run["stages"]["tailor"]["rc"] == 0
         assert [p["status"] for p in run["stages"]["score"]["passes"]] == ["fail"]
     else:
-        assert slept == [] and _ran(logs) == ["discover", "score", "summary", "email"]
+        assert slept == [] and _ran(logs) == ["discover", "score", "summary", "digest", "email"]
         assert run["stages"]["tailor"]["status"] == "deferred"
     history = (logs / "pipeline_history.log").read_text(encoding="utf-8")
     assert ("waited 1x for the usage limit" in history) is waited

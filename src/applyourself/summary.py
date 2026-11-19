@@ -998,6 +998,138 @@ def build(run_dir: Path | None, since: datetime) -> str:
     return "\n".join(out) + "\n"
 
 
+OPTIONS_SHOWN = 12
+
+
+def parked_questions(items: dict, companies: dict[str, str] | None = None) -> list[dict]:
+    """Tonight's open questions and missing values, one entry per distinct
+    label or reason, with every company it holds up; most companies first.
+    `companies` (job_id -> name, from clean.parquet) wins over the plan's
+    company, which can be a board slug. The digest session merges labels
+    that ask the same thing."""
+    company = {
+        j: (companies or {}).get(j) or r.get("company") or j for j, r in items["roles"].items()
+    }
+    out = []
+    for a in items["asks"]:
+        asked = next(
+            (
+                q["question"]
+                for j in a["roles"]
+                for q in items["roles"][j]["asks"]
+                if q["label"] == a["label"] and q.get("question")
+            ),
+            "",
+        )
+        opts = a["options"]
+        out.append(
+            {
+                "kind": "question",
+                "label": _cut(a["label"], 200),
+                "asked_as": asked,
+                "options": opts[:OPTIONS_SHOWN] + (["…"] if len(opts) > OPTIONS_SHOWN else []),
+                "companies": sorted({company[j] for j in a["roles"]}),
+            }
+        )
+    for f in items["facts"]:
+        out.append(
+            {
+                "kind": "missing",
+                "label": _fact_text(f["reason"]),
+                "companies": sorted({company[j] for j in f["roles"]}),
+            }
+        )
+    return sorted(out, key=lambda q: (-len(q["companies"]), q["label"]))
+
+
+def digest_facts(run_dir: Path | None, since: datetime) -> dict:
+    """The few numbers and questions the emailed digest is written from."""
+    stages = stage_lines(run_dir)
+    run = _run_json(run_dir) or {}
+    rows = sheet.rows()
+    status = Counter(r["status"] for r in rows)
+
+    judged: set[str] = set()
+    line: dict[str, int] = {}
+    if paths.SCORED.exists():
+        scored = view(paths.SCORED)
+        new = scored[pd.to_datetime(scored["scored_at"]) >= since]
+        new = new[new["scored_by_model"].astype(str).str.startswith("score-judge")]
+        judged = set(new["job_id"])
+        cuts = lane_cutoffs()
+        floor = min(cuts.values())
+        line = {r.job_id: cuts.get(r.vertical, floor) for r in new.itertuples()}
+    added = [r for r in rows if r["name"] in judged]
+    at_line = sum(int(r["score"]) >= line[r["name"]] for r in added)
+
+    tail = Counter(r.split()[1] for r in tailor_lines(run_dir) if len(r.split()) == 2)
+    reports = [
+        r
+        for r in digest.load_reports()
+        if str(r.get("run_id", "")) >= since.strftime("%Y-%m-%d_%H%M")
+    ]
+    snaps, _ = _snapshots(since)
+    items = open_items(snaps)
+    companies = (
+        dict(pd.read_parquet(paths.CLEAN, columns=["job_id", "company"]).itertuples(index=False))
+        if paths.CLEAN.exists()
+        else {}
+    )
+    opened = (
+        (yaml.safe_load(paths.SYNONYM_OPEN.read_text(encoding="utf-8")) or {}).get("open") or []
+        if paths.SYNONYM_OPEN.is_file()
+        else []
+    )
+    waiting = [r for r in rows if r["status"] == "Needs your OK"]
+    asked = {j for j, r in items["roles"].items() if r["asks"] or r["facts"]}
+    return {
+        "date": f"{since:%Y-%m-%d}",
+        "problems": [
+            {"stage": n, "status": st["status"], "detail": _cut(st["detail"], 200)}
+            for n, st in stages.items()
+            if st["status"] != "ok"
+        ],
+        "discovery": {
+            "new": len({j for r in reports for j in r.get("new_job_ids") or []}),
+            "live": reports[0].get("view", {}).get("clean") if reports else None,
+            "took": _took(stages["discover"]["seconds"]) if "discover" in stages else None,
+        },
+        "scored": len(judged),
+        "cutoffs": {
+            "lane": sorted(set(lane_cutoffs().values())),
+            "fill_only": setting("sheet_submittable_cutoff", None),
+        },
+        "added_to_sheet": {"at_lane_cutoff": at_line, "fill_only_band": len(added) - at_line},
+        "tailored": {"ok": tail["ok"], "failed": tail["fail"], "deferred": tail["deferred"]},
+        "ready_to_submit": status["Submittable"],
+        "ready_in_cooldown": status["Cooldown"],
+        "waiting_on_you": status["Needs your OK"] + status["Parked"],
+        "drafts_to_confirm": len([r for r in waiting if r["name"] not in asked]),
+        "written_answers_to_review": pending_prose(),
+        "limits": {
+            "usage_waits": [
+                {
+                    "stage": w["stage"],
+                    "until": str(w.get("until", ""))[:16],
+                    "waited": bool(w.get("waited")),
+                }
+                for w in run.get("waits") or []
+            ],
+            "deferred": {n: st["deferred"] for n, st in stages.items() if st.get("deferred")},
+            "spend_cap_hit": [
+                n
+                for n, st in (run.get("stages") or {}).items()
+                if st.get("detail") == night.SPEND_CAP
+            ],
+        },
+        "spend_usd": round(run.get("cost_usd", 0), 2),
+        "parked_questions": parked_questions(items, companies),
+        "skill_questions": [
+            {"thing": o["thing"], "context": o["context"], "id": o["id"]} for o in opened
+        ],
+    }
+
+
 _CSS = (
     "body{font:16px/1.5 -apple-system,Helvetica,Arial,sans-serif;margin:0;padding:16px;"
     "max-width:680px;color:#1c1c1e;background:#fff}h1{font-size:22px;margin:0 0 6px}"
@@ -1086,7 +1218,15 @@ def main(argv: list[str] | None = None) -> int:
         "--since", default=None, help="ISO time the run started (default: from the run dir)"
     )
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument(
+        "--render", type=Path, default=None, help="only write PATH's .html next to it (the digest)"
+    )
     args = ap.parse_args(argv)
+    if args.render:
+        atomic_write_text(
+            args.render.with_suffix(".html"), to_html(args.render.read_text(encoding="utf-8"))
+        )
+        return 0
     run_dir = args.run_dir or latest_run_dir()
     since = _ts(args.since) if args.since else since_of(run_dir)
     if since is None:
@@ -1100,6 +1240,13 @@ def main(argv: list[str] | None = None) -> int:
     for path, content in ((out, text), (out.with_suffix(".html"), to_html(text))):
         atomic_write_text(path, content)
     print(f"wrote {out} and {out.with_suffix('.html').name}")
+    if run_dir is not None:
+        try:
+            facts = digest_facts(run_dir, since)
+        except Exception:  # the digest is extra: summary.md is already written
+            logging.getLogger(__name__).exception("digest facts failed")
+        else:
+            atomic_write_text(run_dir / "digest_input.json", json.dumps(facts, indent=2))
     return 0
 
 

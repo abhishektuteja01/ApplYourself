@@ -4,7 +4,7 @@
 
 Each stage is its script in scripts/stages/; this only orders, locks and records
 (the stages call `claude`, never this). A failed discover or score stops the
-chain; the stages after it are `deferred`. summary and email always run last.
+chain; the stages after it are `deferred`. summary, digest and email always run last.
 Each stage's claude spend (the costs run_claude logs to <stage>.cost) goes into
 run.json; once the night's total reaches settings.yaml `max_spend_usd_per_night`,
 the claude stages still to run are `deferred` ("spend cap").
@@ -53,7 +53,7 @@ STAGES = ("discover", "score", "synonyms", "tailor", "apply_prep", "cleanup")
 STOPS = ("discover", "score")
 CLAUDE_STAGES = ("score", "synonyms", "tailor", "apply_prep")
 SPEND_CAP = "not run: spend cap"
-FINISH = ("summary", "email")
+FINISH = ("summary", "digest", "email")
 DONE = ("ok", "skipped")
 LOCKED = 75
 PASS_KEYS = ("rc", "status", "detail", "start", "end", "seconds")
@@ -364,7 +364,7 @@ class Night:
                 stopped = name
                 self.say(f"=== {name} failed: stopping the chain ===")
         for name in FINISH if finish else ():
-            self.stage(name)  # best effort: a failed summary or email never changes the exit
+            self.stage(name)  # best effort: a failed finisher never changes the exit
         return stopped
 
     def history_line(self) -> str:

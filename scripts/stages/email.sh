@@ -1,5 +1,5 @@
 #!/bin/bash
-# Email stage: mail summary.html (summary.md as the plain-text part) to
+# Email stage: mail digest.html (digest.md as the plain text), else summary.html, to
 # `summary_email` in profile/settings.yaml, through the Mail app. Best effort:
 # a failure is logged and never stops anything. No address set: nothing is sent.
 set -uo pipefail
@@ -26,6 +26,13 @@ PY
 if [[ "$FAILED" -gt 0 ]]; then SUBJECT="Night summary $DATE: $FAILED stage(s) failed"
 elif [[ "$PARTIAL" -gt 0 ]]; then SUBJECT="Night summary $DATE: partial ($PARTIAL stage(s))"
 else SUBJECT="Night summary $DATE: ok"; fi
+
+# The digest stage's short digest.md goes out in place of summary.md when it wrote one.
+if [[ -s "$RUN_DIR/digest.md" && -s "$RUN_DIR/digest.html" ]]; then
+  MD="$RUN_DIR/digest.md"; HTML="$RUN_DIR/digest.html"
+  SUBJECT="$(head -1 "$MD" | sed 's/^# *//')"
+  [[ "$FAILED" -gt 0 ]] && SUBJECT="$SUBJECT ($FAILED stage(s) failed)"
+fi
 
 if [[ "$DRY_RUN" == 1 ]]; then
   echo "[dry-run] mail to $ADDR | $SUBJECT | $HTML"
