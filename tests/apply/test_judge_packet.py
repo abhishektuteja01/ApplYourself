@@ -396,3 +396,17 @@ def test_a_demographics_basis_must_name_a_stated_topic(answers):
     entry["basis"] = ["demographics.gender"]
     [err] = check_entries([entry], [field], answers)
     assert "demographics.gender" in err
+
+
+def test_a_country_row_shows_the_salary_the_bank_computes(answers):
+    from applyourself.apply.bank_schema import Salary
+
+    us = replace(answers.countries["United States"], salary=Salary(120000, "USD", markup_pct=10))
+    de = replace(answers.countries["default"], salary=Salary(83671, "EUR"))
+    countries = {**answers.countries, "United States": us, "Germany": de}
+    text = build_packet(FIELDS, replace(answers, countries=countries), "Germany")
+    assert "- Germany: authorized=false, requires_sponsorship=true" in text
+    assert "salary=83671 EUR" in text
+    assert "salary=posting minimum +10% (USD), else 120000 USD" in text
+    assert "- default: authorized=false" in text
+    assert "salary" not in next(ln for ln in text.splitlines() if ln.startswith("- default:"))

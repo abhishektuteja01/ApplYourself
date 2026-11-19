@@ -149,7 +149,19 @@ def _country_row(answers: Answers, name: str) -> str:
         f"requires_sponsorship={str(f.requires_sponsorship).lower()}, "
         f"unrestricted={str(f.unrestricted).lower()}"
         + (f", status_label={f.status_label!r}" if f.status_label else "")
+        + _salary_note(answers, name)
     )
+
+
+def _salary_note(answers: Answers, name: str) -> str:
+    """The row's salary as the bank's `salary` question computes it, or ""."""
+    s = answers.countries[name].salary
+    if s is None:
+        return ""
+    amount = f"{s.amount:.0f} {s.currency}"
+    if s.markup_pct is not None and name == answers.home_country:
+        return f", salary=posting minimum +{s.markup_pct:g}% ({s.currency}), else {amount}"
+    return f", salary={amount}"
 
 
 def _work_authorization(answers: Answers, job_country: str | None) -> list[str]:
