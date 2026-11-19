@@ -287,6 +287,32 @@ def test_open_items_sort_into_questions_and_missing_values_with_a_tally_per_role
     assert asked == {"Old": "", "Notice?": "How many weeks notice do you owe?"}
 
 
+def test_parked_questions_group_one_label_across_companies_most_first():
+    ask = {"required": True, "tier": "B", "source": "judged:ask"}
+    sponsor = {
+        **ask,
+        "label": "Sponsorship?",
+        "options": ["Yes", "No"],
+        "reason": "ask: Need a visa?",
+    }
+    states = [str(i) for i in range(20)]
+    snaps = [
+        ("a1", _plan(company="Acme", unmapped=[sponsor])),
+        (
+            "b2",
+            _plan(company="Beta", unmapped=[sponsor, {**ask, "label": "State", "options": states}]),
+        ),
+        ("c3", _plan(company="Acme", unmapped=[sponsor])),
+    ]
+    got = M.parked_questions(M.open_items(snaps))
+    assert [(q["label"], q["companies"]) for q in got] == [
+        ("Sponsorship?", ["Acme", "Beta"]),
+        ("State", ["Beta"]),
+    ]
+    assert got[0]["asked_as"] == "Need a visa?"
+    assert len(got[1]["options"]) == M.OPTIONS_SHOWN + 1
+
+
 def test_why_a_role_needs_you_is_said_in_plain_counts():
     why = M._why({"asks": 2, "facts": 1})
     assert [p.split()[:2] for p in why.split(", ")] == [["2", "questions"], ["1", "value"]]

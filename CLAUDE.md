@@ -105,7 +105,7 @@ Run every command from the repo root. Every CLI runs as `uv run ay <verb> ...`
 ```bash
 uv run pytest tests -q                # must be fully green after any src/ or fixture change
 ./scripts/nightly_pipeline.sh         # the whole night: discover, score, synonyms, tailor, apply_prep,
-                                      # cleanup, summary. DRY_RUN=1 prints only; STAGE_LIMIT=N caps score/tailor/apply_prep
+                                      # cleanup, summary, digest, email. DRY_RUN=1 prints only; STAGE_LIMIT=N caps score/tailor/apply_prep
 uv run ay night --resume              # what that script runs: --resume reruns the last night's stages not ok,
                                       # --only STAGE runs one; one lock; logs/pipeline_<stamp>/run.json records each stage
 ./scripts/pii_scan.sh                 # PII gate: denylisted strings in tracked files
